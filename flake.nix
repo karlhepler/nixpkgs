@@ -1,17 +1,19 @@
 {
-  description = "Karl's Home Manager Flake";
+  description = "Home Manager Configuration";
 
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
-    home-manager.url = "github:nix-community/home-manager";
-    home-manager.inputs.nixpkgs.follows = "nixpkgs";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    home-manager = {
+      url = "github:nix-community/home-manager";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = inputs: {
+  outputs = { nixpkgs, home-manager, ... }: {
     defaultPackage.x86_64-darwin = home-manager.defaultPackage.x86_64-darwin;
 
     homeConfigurations = {
-      karlhepler = inputs.home-manager.lib.homeManagerConfiguration {
+      karlhepler = home-manager.lib.homeManagerConfiguration {
         system = "x86_64-darwin";
 	homeDirectory = "/Users/karlhepler";
 	username = "karlhepler";
