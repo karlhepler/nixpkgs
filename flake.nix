@@ -9,16 +9,15 @@
     };
   };
 
-  outputs = { nixpkgs, home-manager, ... }: {
-    defaultPackage.x86_64-darwin = home-manager.defaultPackage.x86_64-darwin;
+  outputs = { nixpkgs, home-manager, ... }:
+    let
+      system = "x86_64-darwin";
+      pkgs = nixpkgs.legacyPackages.${system};
+    in {
+      homeConfigurations.karlhepler = home-manager.lib.homeManagerConfiguration {
+        inherit pkgs;
 
-    homeConfigurations = {
-      karlhepler = home-manager.lib.homeManagerConfiguration {
-        system = "x86_64-darwin";
-	homeDirectory = "/Users/karlhepler";
-	username = "karlhepler";
-	configuration.imports = [ ./home.nix ];
+        modules = [ ./home.nix ];
       };
     };
-  };
 }
