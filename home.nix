@@ -10,6 +10,8 @@
   # https://search.nixos.org/packages
   home.packages = with pkgs; [
     cowsay
+    fd
+    ripgrep
   ];
 
   # This value determines the Home Manager release that your
@@ -28,6 +30,28 @@
   # Program Modules
   # https://nix-community.github.io/home-manager/options.html
 
+  programs.kitty = {
+    enable = true;
+  };
+
+  programs.fish = {
+    enable = true;
+    shellAliases = {
+      desk = "cd ~/Desktop";
+      down = "cd ~/Downloads";
+      docs = "cd ~/Documents";
+      pics = "cd ~/Pictures";
+      hms = "home-manager switch --flake ~/.config/nixpkgs#karlhepler";
+      hme = "vim ~/.config/nixpkgs/home.nix";
+      hm = "cd ~/.config/nixpkgs";
+    };
+  };
+
+  programs.fzf = {
+    enable = true;
+    enableFishIntegration = true;
+  };
+
   programs.neovim = {
     enable = true;
     viAlias = true;
@@ -35,6 +59,7 @@
     vimdiffAlias = true;
 
     plugins = with pkgs.vimPlugins; [
+      vim-sensible
       vim-surround
       vim-signify
       vim-pasta
