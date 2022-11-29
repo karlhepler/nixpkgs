@@ -49,6 +49,7 @@
       cursor_shape = "block";
       cursor_blink_interval = 0;
       shell_integration = "no-cursor";
+      mouse_hide_wait = -1;
     };
     font = {
       package = (pkgs.nerdfonts.override { fonts = [ "SourceCodePro" ]; });
