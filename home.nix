@@ -1,6 +1,15 @@
 { config, pkgs, ... }:
 
-{
+let
+  bin-commit = pkgs.writeShellApplication {
+    name = "commit";
+    runtimeInputs = [ pkgs.git ];
+    text = ''
+      git add "$(git rev-parse --show-toplevel)"
+      git commit -nm "$*"
+    '';
+  };
+in {
   # Home Manager needs a bit of information about you and the
   # paths it should manage.
   home.username = "karlhepler";
@@ -11,6 +20,7 @@
   home.packages = with pkgs; [
     fd
     ripgrep
+    bin-commit
   ];
 
   # This value determines the Home Manager release that your
