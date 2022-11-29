@@ -52,7 +52,7 @@
     };
     font = {
       package = (pkgs.nerdfonts.override { fonts = [ "SourceCodePro" ]; });
-      name = "SauceCodePro Nerd Font Mono";
+      name = "SauceCodePro Nerd Font";
       size = 18;
     };
     theme = "Tokyo Night Storm";
@@ -108,6 +108,76 @@
         '';
       }
       tokyonight-nvim
+      {
+        plugin = lightline-vim;
+        config = ''
+          set laststatus=2    " Always show status line
+          set noshowmode      " Hide -- INSERT --
+          let g:lightline={
+          \   'colorscheme': 'tokyonight',
+          \   'active': {
+          \       'left': [
+          \           ['mode'],
+          \           ['gitbranch'],
+          \           ['filename']
+          \       ],
+          \       'right': [
+          \           ['lineinfo'],
+          \           ['percent']
+          \       ]
+          \   },
+          \   'component_function': {
+          \       'gitbranch': 'FugitiveHead',
+          \       'filename': 'LightlineFilename',
+          \   }
+          \}
+
+          function! LightlineFilename()
+              let cmd = winwidth(0) > 70 ? '%:f' : '%:t'
+              let filename = expand(cmd) !=# "" ? expand(cmd) : '[No Name]'
+              let modified = &modified ? '+ ' : ""
+              return modified . filename
+          endfunction
+        '';
+      }
+      {
+        plugin = vim-rooter;
+        config = ''
+          let g:rooter_silent_chdir = 1
+          let g:rooter_patters = ['.git']
+        '';
+      }
+      {
+        plugin = fzfWrapper;
+        config = ''
+          function! s:build_quickfix_list(lines)
+            call setqflist(map(copy(a:lines), '{ "filename": v:val }'))
+            copen
+            cc
+          endfunction
+
+          let g:fzf_action = {
+          \ 'ctrl-q': function('s:build_quickfix_list'),
+          \ 'ctrl-t': 'tab split',
+          \ 'ctrl-s': 'split',
+          \ 'ctrl-v': 'vsplit'
+          \}
+
+          let $FZF_DEFAULT_OPTS = '--bind ctrl-a:select-all'
+        '';
+      }
+      {
+        plugin = fzf-vim;
+        config = ''
+          nmap <c-p> :GFiles<cr>
+          imap <c-p> <esc>:GFiles<cr>
+          vmap <c-p> <esc>:GFiles<cr>
+
+          nmap <c-b> :BTags<cr>
+          imap <c-b> <esc>:BTags<cr>
+          vmap <c-b> <esc>:BTags<cr>
+        '';
+      }
     ];
     
     extraConfig = ''
@@ -217,6 +287,30 @@
 
       " disable fancy cursor
       set guicursor=
+
+      " vim fugitive mapping
+      " this has to be done here because plugins are loaded before extraConfig
+      nmap <leader>b :Buffers<cr>
+      imap <leader>b <esc>:Buffers<cr>
+      vmap <leader>b <esc>:Buffers<cr>
+
+      " RestoreCursor restores the last cursor position.
+      function! RestoreCursor()
+          if line("'\"") <= line("$")
+              normal! g`"
+              return 1
+          endif
+      endfunction
+
+      augroup config
+        autocmd!
+
+        " jump to last cursor position on file load
+        autocmd BufWinEnter * silent! call RestoreCursor()
+
+        " force quickfix to always open full width
+        autocmd FileType qf wincmd J
+      augroup end
     '';
   };
 }
