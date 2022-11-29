@@ -138,6 +138,9 @@
       set noerrorbells
       set visualbell
 
+      " highlight current line (not supported in kitty)
+      set cursorline
+
       " always show at least 1 line above/below cursor
       set scrolloff=1
 
@@ -147,7 +150,7 @@
       set wrapmargin=0
       set formatoptions-=t
 
-      " always show the ruler
+      " show the ruler
       set ruler
 
       " ignore case when searching lowercase
@@ -208,6 +211,9 @@
       " not quite high and low
       noremap H 3H
       noremap L 3L
+
+      " disable fancy cursor
+      set guicursor=
     '';
   };
 }
