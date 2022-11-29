@@ -1,13 +1,42 @@
 { config, pkgs, ... }:
 
 let
-  bin-commit = pkgs.writeShellApplication {
-    name = "commit";
-    runtimeInputs = [ pkgs.git ];
-    text = ''
-      git add "$(git rev-parse --show-toplevel)"
-      git commit -nm "$*"
-    '';
+  shellapps = {
+    commit = pkgs.writeShellApplication {
+      name = "commit";
+      runtimeInputs = [ pkgs.git ];
+      text = ''
+        git add "$(git rev-parse --show-toplevel)"
+        git commit -nm "$*"
+      '';
+    };
+    git-kill = pkgs.writeShellApplication {
+      name = "git-kill";
+      runtimeInputs = [ pkgs.git ];
+      text = ''
+        cd "$(git rev-parse --show-toplevel)"
+        git reset --hard
+        git clean -fd
+      '';
+    };
+    git-remain = pkgs.writeShellApplication {
+      name = "git-remain";
+      runtimeInputs = [ pkgs.git ];
+      text = ''
+        git checkout main
+        git pull
+        git checkout -
+        git rebase main
+      '';
+    };
+    git-tmp = pkgs.writeShellApplication {
+      name = "git-tmp";
+      runtimeInputs = [ pkgs.git ];
+      text = ''
+        git branch -D karlhepler/tmp
+        git checkout -b karlhepler/tmp
+      '';
+    };
   };
 in {
   # Home Manager needs a bit of information about you and the
@@ -20,8 +49,7 @@ in {
   home.packages = with pkgs; [
     fd
     ripgrep
-    bin-commit
-  ];
+  ] ++ (builtins.attrValues shellapps);
 
   # This value determines the Home Manager release that your
   # configuration is compatible with. This helps avoid breakage
