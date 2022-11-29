@@ -120,6 +120,27 @@ in {
     enableFishIntegration = true;
   };
 
+  programs.git = {
+    enable = true;
+    delta.enable = true;
+    ignores = [ ".DS_Store" ".tags*" ];
+    userName = "Karl Hepler";
+    userEmail = "karl.hepler@gmail.com";
+    includes = [
+      {
+        contents = {
+          core = { editor = "vim"; };
+          diff = { tool = "vimdiff"; };
+          merge = { tool = "vimdiff"; };
+          difftool = { prompt = false; };
+          push = { default = "current"; };
+          init = { defaultBranch = "main"; };
+          pull = { rebase = false; };
+        };
+      }
+    ];
+  };
+
   programs.neovim = {
     enable = true;
     viAlias = true;
