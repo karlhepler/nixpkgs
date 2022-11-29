@@ -33,7 +33,7 @@ let
       name = "git-tmp";
       runtimeInputs = [ pkgs.git ];
       text = ''
-        git branch -D karlhepler/tmp
+        git branch -D karlhepler/tmp || true
         git checkout -b karlhepler/tmp
       '';
     };
