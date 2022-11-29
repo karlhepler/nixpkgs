@@ -46,6 +46,9 @@
       macos_traditional_fullscreen = "yes";
       shell = "fish --login --interactive";
       editor = "nvim";
+      cursor_shape = "block";
+      cursor_blink_interval = 0;
+      shell_integration = "no-cursor";
     };
     font = {
       package = (pkgs.nerdfonts.override { fonts = [ "SourceCodePro" ]; });
