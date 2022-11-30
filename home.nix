@@ -50,9 +50,10 @@ in rec {
   # https://search.nixos.org/packages
   home.packages = with pkgs; [
     fd
-    ripgrep
-    gopls
     go_1_19
+    gopls
+    ripgrep
+    tree
   ] ++ (builtins.attrValues shellapps);
 
   # This value determines the Home Manager release that your
