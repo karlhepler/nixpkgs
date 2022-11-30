@@ -1,6 +1,7 @@
 { config, pkgs, ... }:
 
 let
+
   shellapps = {
     commit = pkgs.writeShellApplication {
       name = "commit";
@@ -38,6 +39,7 @@ let
       '';
     };
   };
+
 in {
   # Home Manager needs a bit of information about you and the
   # paths it should manage.
@@ -72,6 +74,10 @@ in {
     darwinLaunchOptions = [
       "--single-instance"
     ];
+    environment = {
+      EDITOR = "nvim";
+      VISUAL = "nvim";
+    };
     keybindings = {
       "cmd+enter" = "toggle_fullscreen";
       "cmd+n" = "new_os_window_with_cwd";
@@ -108,6 +114,7 @@ in {
       hme = "vim ~/.config/nixpkgs/home.nix";
       hm = "cd ~/.config/nixpkgs";
     };
+    interactiveShellInit = "bind \\cx\\ce edit_command_buffer";
   };
 
   programs.starship = {
@@ -282,9 +289,6 @@ in {
       set textwidth=0
       set wrapmargin=0
       set formatoptions-=t
-
-      " show the ruler
-      set ruler
 
       " ignore case when searching lowercase
       set ignorecase
