@@ -79,6 +79,7 @@ in rec {
     environment = {
       EDITOR = "nvim";
       VISUAL = "nvim";
+      SHELL = "fish";
     };
     keybindings = {
       "cmd+enter" = "toggle_fullscreen";
@@ -105,6 +106,11 @@ in rec {
     theme = "Tokyo Night Storm";
   };
 
+  programs.direnv = {
+    enable = true;
+    nix-direnv.enable = true;
+  };
+
   programs.fish = {
     enable = true;
     shellAliases = {
@@ -116,7 +122,9 @@ in rec {
       hme = "vim ~/.config/nixpkgs/home.nix";
       hm = "cd ~/.config/nixpkgs";
     };
-    interactiveShellInit = "bind \\cx\\ce edit_command_buffer";
+    interactiveShellInit = ''
+      bind \cx\ce edit_command_buffer
+    '';
   };
 
   programs.starship = {
@@ -165,7 +173,10 @@ in rec {
       vim-commentary
       {
         plugin = vim-vinegar;
-	      config = "let g:netrw_list_hide = '\(^\|\s\s\)\zs\.\S\+'";
+        config = ''
+          " hide hidden files by default
+          let g:netrw_list_hide = '\(^\|\s\s\)\zs\.\S\+'
+        '';
       }
       vim-repeat
       vim-fugitive
