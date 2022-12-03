@@ -139,6 +139,11 @@ in rec {
     enableFishIntegration = true;
   };
 
+  programs.nix-index = {
+    enable = true;
+    enableFishIntegration = true;
+  };
+
   programs.git = {
     enable = true;
     delta.enable = true;
