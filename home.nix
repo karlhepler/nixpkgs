@@ -123,6 +123,7 @@ in rec {
       hms = "home-manager switch --flake ~/.config/nixpkgs#karlhepler";
       hme = "vim ~/.config/nixpkgs/home.nix";
       hm = "cd ~/.config/nixpkgs";
+      ll = "${pkgs.exa}/bin/exa --oneline --icons --sort=type";
     };
     interactiveShellInit = ''
       bind \cx\ce edit_command_buffer
