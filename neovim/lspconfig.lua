@@ -2,7 +2,7 @@ local lspconfig = require 'lspconfig'
 local treesitter_configs = require 'nvim-treesitter.configs'
 
 treesitter_configs.setup {
-	ensure_installed = {'go'},
+	ensure_installed = {'go', 'typescript'},
 	highlight = {
 		enable = true,
 	},
@@ -40,14 +40,19 @@ local on_attach = function(client, bufnr)
 	vim.api.nvim_buf_set_keymap(bufnr, 'n', '<space>f', '<cmd>lua vim.lsp.buf.formatting()<CR>', opts)
 end
 
+lspconfig.tsserver.setup {
+	on_attach = on_attach,
+}
+
 lspconfig.gopls.setup {
 	on_attach = on_attach,
 }
 
 -- https://github.com/golang/tools/blob/1f10767725e2be1265bef144f774dc1b59ead6dd/gopls/doc/vim.md#imports
-function OrgImports(wait_ms)
+-- https://github.com/typescript-language-server/typescript-language-server#code-actions-on-save
+function OrgImports(code_action, wait_ms)
 	local params = vim.lsp.util.make_range_params()
-	params.context = {only = {"source.organizeImports"}}
+	params.context = {only = { code_action }}
 	local result = vim.lsp.buf_request_sync(0, "textDocument/codeAction", params, wait_ms)
 	for _, res in pairs(result or {}) do
 		for _, r in pairs(res.result or {}) do
@@ -64,7 +69,17 @@ vim.api.nvim_create_autocmd("BufWritePre", {
 	pattern = {'*.go'},
 	callback = function()
 			vim.lsp.buf.formatting_sync()
-			OrgImports(1000)
+			OrgImports("source.organizeImports", 1000)
 	end,
-	group = vim.api.nvim_create_augroup("lsp_document_format", {clear = true}),
+	group = vim.api.nvim_create_augroup("lsp_document_format_go", {clear = true}),
+})
+
+vim.api.nvim_create_autocmd("BufWritePre", {
+	pattern = {'*.ts', '*.tsx', '*.js', '*.jsx'},
+	callback = function()
+			vim.lsp.buf.formatting_sync()
+			OrgImports("source.addMissingImports.ts", 1000)
+			OrgImports("source.organizeImports.ts", 1000)
+	end,
+	group = vim.api.nvim_create_augroup("lsp_document_format_ts", {clear = true}),
 })

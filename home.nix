@@ -55,6 +55,9 @@ in rec {
     ripgrep
     tree
     comma
+    nodejs
+    nodePackages.typescript
+    nodePackages.typescript-language-server
   ] ++ (builtins.attrValues shellapps);
 
   # This value determines the Home Manager release that your
@@ -270,6 +273,7 @@ in rec {
       (nvim-treesitter.withPlugins (
         plugins: with plugins; [
           tree-sitter-go
+          tree-sitter-typescript
         ]
       ))
     ];
