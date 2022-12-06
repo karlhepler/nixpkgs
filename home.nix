@@ -49,15 +49,15 @@ in rec {
   # Home Packages
   # https://search.nixos.org/packages
   home.packages = with pkgs; [
+    comma
     fd
     go_1_19
     gopls
-    ripgrep
-    tree
-    comma
-    nodejs
     nodePackages.typescript
     nodePackages.typescript-language-server
+    nodejs
+    ripgrep
+    yarn
   ] ++ (builtins.attrValues shellapps);
 
   # This value determines the Home Manager release that your
@@ -127,6 +127,7 @@ in rec {
       hme = "vim ~/.config/nixpkgs/home.nix";
       hm = "cd ~/.config/nixpkgs";
       ll = "${pkgs.exa}/bin/exa --oneline --icons --sort=type";
+      tree = "${pkgs.exa}/bin/exa --oneline --icons --sort=type --tree";
     };
     interactiveShellInit = ''
       bind \cx\ce edit_command_buffer
