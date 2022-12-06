@@ -73,7 +73,7 @@ vim.api.nvim_create_autocmd("BufWritePre", {
 })
 
 vim.api.nvim_create_autocmd("BufWritePre", {
-	pattern = {'*.ts', '*.tsx', '*.js', '*.jsx'},
+	pattern = {'*.ts', '*.tsx'},
 	callback = function()
 			vim.lsp.buf.formatting_sync()
 			OrgImports("source.addMissingImports.ts", 1000)
