@@ -40,6 +40,12 @@ end
 
 lspconfig.tsserver.setup {
 	on_attach = on_attach,
+	cmd = {
+		"@typescriptLanguageServer@/bin/typescript-language-server",
+		"--stdio",
+		"--tsserver-path",
+		"@typescript@/lib/node_modules/typescript/lib/"
+	}
 }
 
 lspconfig.gopls.setup {
