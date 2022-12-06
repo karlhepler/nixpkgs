@@ -278,11 +278,22 @@ in rec {
           tree-sitter-typescript
         ]
       ))
+      {
+        plugin = vim-prettier;
+        config = ''
+          let g:prettier#autoformat = 1
+          let g:prettier#autoformat_require_pragma = 0
+        '';
+      }
     ];
     
     extraConfig = ''
       lua << EOF
-      ${builtins.readFile ./neovim/lspconfig.lua}
+      ${builtins.readFile (pkgs.substituteAll {
+        src = ./neovim/lspconfig.lua;
+        typescript = "${pkgs.nodePackages.typescript}";
+        typescriptLanguageServer = "${pkgs.nodePackages.typescript-language-server}";
+      })}
       EOF
 
       set nocompatible
