@@ -2,11 +2,9 @@ local lspconfig = require 'lspconfig'
 local treesitter_configs = require 'nvim-treesitter.configs'
 
 treesitter_configs.setup {
-	ensure_installed = {'go', 'typescript'},
-	highlight = {
-		enable = true,
-	},
-	parser_install_dir = "~/.vim/treesitter-parsers",
+	highlight = { enable = true },
+	incremental_selection = { enable = true },
+	indent = { enable = true },
 }
 
 -- Mappings (adapted from https://github.com/neovim/nvim-lspconfig#suggested-configuration)
