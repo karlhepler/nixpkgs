@@ -128,6 +128,7 @@ in rec {
       hm = "cd ~/.config/nixpkgs";
       ll = "${pkgs.exa}/bin/exa --oneline --icons --sort=type";
       tree = "${pkgs.exa}/bin/exa --oneline --icons --sort=type --tree";
+      github = "cd ~/github.com/karlhepler";
     };
     interactiveShellInit = ''
       bind \cx\ce edit_command_buffer
