@@ -373,8 +373,8 @@ in rec {
       nmap <c-w><c-w> :keepjumps normal! mi*`i<cr>
 
       " tame the half-page scroller
-      nmap <c-d> 5j5<c-e>
-      vmap <c-d> 5j5<c-e>
+      nmap <c-d> 5<c-e>5j
+      vmap <c-d> 5<c-e>5j
       nmap <c-u> 5k5<c-y>
       vmap <c-u> 5k5<c-y>
 
