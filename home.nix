@@ -1,6 +1,7 @@
-{ config, pkgs, ... }:
+{ config, pkgs, specialArgs, ... }:
 
 let
+  inherit (specialArgs) username;
 
   shellapps = {
     commit = pkgs.writeShellApplication {
@@ -41,11 +42,6 @@ let
   };
 
 in rec {
-  # Home Manager needs a bit of information about you and the
-  # paths it should manage.
-  home.username = "karlhepler";
-  home.homeDirectory = "/Users/karlhepler";
-
   # Home Packages
   # https://search.nixos.org/packages
   home.packages = with pkgs; [
@@ -82,9 +78,9 @@ in rec {
       "--single-instance"
     ];
     environment = {
-      EDITOR = "nvim";
-      VISUAL = "nvim";
-      SHELL = "fish";
+      EDITOR = "${pkgs.neovim}/bin/nvim";
+      VISUAL = "${pkgs.neovim}/bin/nvim";
+      SHELL = "${pkgs.fish}/bin/fish";
     };
     keybindings = {
       "cmd+enter" = "toggle_fullscreen";
@@ -96,8 +92,8 @@ in rec {
     settings = {
       enabled_layouts = "splits";
       macos_traditional_fullscreen = "yes";
-      shell = "fish --login --interactive";
-      editor = "nvim";
+      shell = "${pkgs.fish}/bin/fish --login --interactive";
+      editor = "${pkgs.neovim}/bin/nvim";
       cursor_shape = "block";
       cursor_blink_interval = 0;
       shell_integration = "no-cursor";
@@ -123,7 +119,7 @@ in rec {
       down = "cd ~/Downloads";
       docs = "cd ~/Documents";
       pics = "cd ~/Pictures";
-      hms = "home-manager switch --flake ~/.config/nixpkgs#karlhepler";
+      hms = "home-manager switch --flake ~/.config/nixpkgs#${username}";
       hme = "vim ~/.config/nixpkgs/home.nix";
       hm = "cd ~/.config/nixpkgs";
       ll = "${pkgs.exa}/bin/exa --oneline --icons --sort=type";
@@ -132,6 +128,9 @@ in rec {
     };
     interactiveShellInit = ''
       bind \cx\ce edit_command_buffer
+    '';
+    shellInit = ''
+      fish_add_path --prepend --global "/Users/${username}/.nix-profile/bin"
     '';
   };
 

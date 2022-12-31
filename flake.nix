@@ -11,13 +11,25 @@
 
   outputs = { nixpkgs, home-manager, ... }:
     let
-      system = "x86_64-darwin";
-      pkgs = nixpkgs.legacyPackages.${system};
-    in {
-      homeConfigurations.karlhepler = home-manager.lib.homeManagerConfiguration {
-        inherit pkgs;
-
-        modules = [ ./home.nix ];
+      homeConfig = username: system: {
+        ${username} = home-manager.lib.homeManagerConfiguration {
+          pkgs = nixpkgs.legacyPackages.${system};
+          extraSpecialArgs = { inherit username; };
+          modules = [
+            ./home.nix
+            {
+              home = {
+                inherit username;
+                homeDirectory = "/Users/${username}";
+              };
+            }
+          ];
+        };
       };
+
+    in {
+      homeConfigurations =
+        (homeConfig "karlhepler" "x86_64-darwin") //
+        (homeConfig "karl" "aarch64-darwin");
     };
 }
