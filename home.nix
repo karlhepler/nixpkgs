@@ -130,6 +130,7 @@ in rec {
       bind \cx\ce edit_command_buffer
     '';
     shellInit = ''
+      fish_add_path --prepend --global "/nix/var/nix/profiles/default/bin"
       fish_add_path --prepend --global "/Users/${username}/.nix-profile/bin"
     '';
   };
