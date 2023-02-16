@@ -49,9 +49,11 @@ in rec {
     fd
     go_1_19
     gopls
+    nodePackages.pyright
     nodePackages.typescript
     nodePackages.typescript-language-server
     nodejs
+    python39
     ripgrep
     yarn
   ] ++ (builtins.attrValues shellapps);
@@ -275,6 +277,7 @@ in rec {
       (nvim-treesitter.withPlugins (
         plugins: with plugins; [
           tree-sitter-go
+          tree-sitter-python
           tree-sitter-typescript
         ]
       ))
