@@ -100,6 +100,7 @@ in rec {
       cursor_blink_interval = 0;
       shell_integration = "no-cursor";
       mouse_hide_wait = -1;
+      enable_audio_bell = "no";
     };
     font = {
       package = (pkgs.nerdfonts.override { fonts = [ "SourceCodePro" ]; });
@@ -335,7 +336,7 @@ in rec {
       set noerrorbells
       set visualbell
 
-      " highlight current line (not supported in kitty)
+      " highlight current line (not supported by kitty, so need to do here)
       set cursorline
 
       " always show at least 1 line above/below cursor
