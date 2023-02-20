@@ -146,6 +146,23 @@ in rec {
   programs.fzf = {
     enable = true;
     enableFishIntegration = true;
+    tmux.enableShellIntegration = true;
+  };
+
+  programs.tmux = {
+    enable = true;
+    keyMode = "vi";
+    extraConfig = ''
+      # customize status bar
+      set-option -g status-position top
+      set-option -g status-style bg=color8,fg=white
+      set-option -g status-right "%a %b %d %l:%M %p"
+
+      # vim mode with <C-b>[]
+      set-window-option -g mode-keys vi
+      bind-key -T copy-mode-vi 'v' send -X begin-selection
+      bind-key -T copy-mode-vi 'y' send -X copy-selection-and-cancel
+    '';
   };
 
   programs.nix-index = {
@@ -155,7 +172,6 @@ in rec {
 
   programs.git = {
     enable = true;
-    delta.enable = true;
     ignores = [ ".DS_Store" ".tags*" ];
     userName = "Karl Hepler";
     userEmail = "karl.hepler@gmail.com";
