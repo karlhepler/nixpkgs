@@ -3,13 +3,21 @@
 let
   inherit (specialArgs) username;
 
-  shellapps = {
+  shellapps = rec {
     commit = pkgs.writeShellApplication {
       name = "commit";
       runtimeInputs = [ pkgs.git ];
       text = ''
         git add "$(git rev-parse --show-toplevel)"
         git commit -nm "$*"
+      '';
+    };
+    save = pkgs.writeShellApplication {
+      name = "save";
+      runtimeInputs = [ pkgs.git commit ];
+      text = ''
+        commit "$*"
+        git push
       '';
     };
     git-kill = pkgs.writeShellApplication {
