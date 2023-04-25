@@ -9,7 +9,7 @@ let
       runtimeInputs = [ pkgs.git ];
       text = ''
         git add "$(git rev-parse --show-toplevel)"
-        git commit -nm "$*"
+        git commit -m "$*"
       '';
     };
     save = pkgs.writeShellApplication {
@@ -55,15 +55,16 @@ in rec {
   home.packages = with pkgs; [
     comma
     fd
-    go_1_19
+    go
     gopls
     nodePackages.pyright
     nodePackages.typescript
     nodePackages.typescript-language-server
     nodejs
-    python39
+    python3
     ripgrep
     yarn
+    devbox
   ] ++ (builtins.attrValues shellapps);
 
   # This value determines the Home Manager release that your
@@ -74,7 +75,7 @@ in rec {
   # You can update Home Manager without changing this value. See
   # the Home Manager release notes for a list of state version
   # changes in each release.
-  home.stateVersion = "22.11";
+  home.stateVersion = "23.05";
 
   # Let Home Manager install and manage itself.
   programs.home-manager.enable = true;
