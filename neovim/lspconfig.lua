@@ -76,7 +76,7 @@ end
 vim.api.nvim_create_autocmd("BufWritePre", {
 	pattern = {'*.go'},
 	callback = function()
-			vim.lsp.buf.formatting_sync()
+			vim.lsp.buf.format()
 			OrgImports("source.organizeImports", 1000)
 	end,
 	group = vim.api.nvim_create_augroup("lsp_document_format_go", {clear = true}),
@@ -85,7 +85,7 @@ vim.api.nvim_create_autocmd("BufWritePre", {
 vim.api.nvim_create_autocmd("BufWritePre", {
 	pattern = {'*.ts', '*.tsx'},
 	callback = function()
-			vim.lsp.buf.formatting_sync()
+			vim.lsp.buf.format()
 			OrgImports("source.addMissingImports.ts", 1000)
 			OrgImports("source.organizeImports.ts", 1000)
 	end,
