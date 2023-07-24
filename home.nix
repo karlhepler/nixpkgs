@@ -65,6 +65,7 @@ in rec {
     ripgrep
     yarn
     devbox
+    htop
   ] ++ (builtins.attrValues shellapps);
 
   # This value determines the Home Manager release that your
