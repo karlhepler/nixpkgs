@@ -34,6 +34,6 @@
     in {
       homeConfigurations =
         (homeConfig "karlhepler" "x86_64-darwin") //
-        (homeConfig "karl" "aarch64-darwin");
+        (homeConfig "karlhepler" "aarch64-darwin");
     };
 }
