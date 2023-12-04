@@ -76,7 +76,7 @@ in rec {
   # You can update Home Manager without changing this value. See
   # the Home Manager release notes for a list of state version
   # changes in each release.
-  home.stateVersion = "23.05";
+  home.stateVersion = "23.11";
 
   # Let Home Manager install and manage itself.
   programs.home-manager.enable = true;
@@ -135,8 +135,8 @@ in rec {
       hms = "home-manager switch --flake ~/.config/nixpkgs#${username}";
       hme = "vim ~/.config/nixpkgs/home.nix";
       hm = "cd ~/.config/nixpkgs";
-      ll = "${pkgs.exa}/bin/exa --oneline --icons --sort=type";
-      tree = "${pkgs.exa}/bin/exa --oneline --icons --sort=type --tree";
+      ll = "${pkgs.eza}/bin/eza --oneline --icons --sort=type";
+      tree = "${pkgs.eza}/bin/eza --oneline --icons --sort=type --tree";
       github = "cd ~/github.com/karlhepler";
     };
     interactiveShellInit = ''
