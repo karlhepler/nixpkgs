@@ -1,4 +1,4 @@
-{ config, pkgs, specialArgs, ... }:
+{ config, pkgs, specialArgs, lib, ... }:
 
 let
   inherit (specialArgs) username;
@@ -77,6 +77,27 @@ in rec {
   # the Home Manager release notes for a list of state version
   # changes in each release.
   home.stateVersion = "23.11";
+
+  home.activation = {
+    copyApplications = let
+      apps = pkgs.buildEnv {
+        name = "home-manager-applications";
+        paths = config.home.packages;
+        pathsToLink = "/Applications";
+      };
+    in lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      aliasDir="$HOME/Applications/Home Manager Aliases"
+
+      $DRY_RUN_CMD rm -rf "$aliasDir"
+      $DRY_RUN_CMD mkdir -p "$aliasDir"
+
+      for appFile in ${apps}/Applications/*; do
+        target="$aliasDir/$(basename "$appFile")"
+        $DRY_RUN_CMD cp ''${VERBOSE_ARG:+-v} -fHRL "$appFile" "$aliasDir"
+        $DRY_RUN_CMD chmod ''${VERBOSE_ARG:+-v} -R +w "$target"
+      done
+    '';
+  };
 
   # Let Home Manager install and manage itself.
   programs.home-manager.enable = true;
