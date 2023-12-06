@@ -78,6 +78,7 @@ in rec {
   # changes in each release.
   home.stateVersion = "23.11";
 
+  # Alias all Home Manager symlinks so that Spotlight and Alfred can find them.
   home.activation = {
     copyApplications = let
       apps = pkgs.buildEnv {
@@ -86,15 +87,18 @@ in rec {
         pathsToLink = "/Applications";
       };
     in lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-      aliasDir="$HOME/Applications/Home Manager Aliases"
+      aliasdir="$HOME/Applications/Home Manager Aliases"
 
-      $DRY_RUN_CMD rm -rf "$aliasDir"
-      $DRY_RUN_CMD mkdir -p "$aliasDir"
+      $DRY_RUN_CMD rm -rf "$aliasdir"
+      $DRY_RUN_CMD mkdir -p "$aliasdir"
 
-      for appFile in ${apps}/Applications/*; do
-        target="$aliasDir/$(basename "$appFile")"
-        $DRY_RUN_CMD cp ''${VERBOSE_ARG:+-v} -fHRL "$appFile" "$aliasDir"
-        $DRY_RUN_CMD chmod ''${VERBOSE_ARG:+-v} -R +w "$target"
+      for appfile in ${apps}/Applications/*; do
+        echo "appfile: $appfile"
+        $DRY_RUN_CMD /usr/bin/osascript \
+          -e "tell app \"Finder\"" \
+          -e "make new alias file at POSIX file \"$aliasdir\" to POSIX file \"$appfile\"" \
+          -e "set name of result to \"$(basename $appfile)\"" \
+          -e "end tell"
       done
     '';
   };
