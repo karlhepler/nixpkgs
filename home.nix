@@ -3,7 +3,12 @@
 let
   inherit (specialArgs) username;
 
-  overconfig = import ./overconfig.nix;
+  overconfigFile = import ./overconfig.nix;
+  overconfig = key: fallback:
+    let
+      value = lib.attrsets.attrByPath (lib.splitString "." key) fallback overconfigFile;
+    in
+      if value == null then fallback else value;
 
   shellapps = rec {
     commit = pkgs.writeShellApplication {
@@ -215,7 +220,7 @@ in rec {
     enable = true;
     ignores = [ ".DS_Store" ".tags*" ];
     userName = "Karl Hepler";
-    userEmail = overconfig.gitUserEmail or "karl.hepler@gmail.com";
+    userEmail = overconfig "gitUserEmail" "karl.hepler@gmail.com";
     includes = [
       {
         contents = {
