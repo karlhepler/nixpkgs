@@ -102,8 +102,10 @@ in rec {
           -e "set name of result to \"$(basename $appfile)\"" \
           -e "end tell"
       done
+    '';
 
-      git -C ~/.config/nixpkgs update-index --assume-unchanged overconfig.nix
+    gitIgnoreOverconfigChanges = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      $DRY_RUN_CMD ${pkgs.git}/bin/git -C ~/.config/nixpkgs update-index --assume-unchanged overconfig.nix
     '';
   };
 
