@@ -1,3 +1,3 @@
 {
-  # gitUserEmail = "email@example.org";
+  programs.git = {};
 }

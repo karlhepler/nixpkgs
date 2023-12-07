@@ -3,12 +3,7 @@
 let
   inherit (specialArgs) username;
 
-  overconfigFile = import ./overconfig.nix;
-  overconfig = key: fallback:
-    let
-      value = lib.attrsets.attrByPath (lib.splitString "." key) fallback overconfigFile;
-    in
-      if value == null then fallback else value;
+  overconfig = import ./overconfig.nix;
 
   shellapps = rec {
     commit = pkgs.writeShellApplication {
@@ -222,22 +217,17 @@ in rec {
     enable = true;
     ignores = [ ".DS_Store" ".tags*" ];
     userName = "Karl Hepler";
-    userEmail = overconfig "gitUserEmail" "karl.hepler@gmail.com";
-    includes = [
-      {
-        contents = {
-          core.editor = "vim";
-          diff.tool = "vimdiff";
-          merge.tool = "vimdiff";
-          difftool.prompt = false;
-          push.default = "current";
-          init.defaultBranch = "main";
-          pull.rebase = false;
-          commit.gpgsign = true; # move to overconfig.nix
-        };
-      }
-    ];
-  };
+    userEmail = "karl.hepler@gmail.com";
+    extraConfig = {
+      core.editor = "vim";
+      diff.tool = "vimdiff";
+      merge.tool = "vimdiff";
+      difftool.prompt = false;
+      push.default = "current";
+      init.defaultBranch = "main";
+      pull.rebase = false;
+    };
+  } // overconfig.programs.git;
 
   programs.neovim = {
     enable = true;
