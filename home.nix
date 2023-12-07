@@ -80,6 +80,9 @@ in rec {
   # changes in each release.
   home.stateVersion = "23.11";
 
+  # Custom files in the home directory.
+  home.file = {} // overconfig.home.file;
+
   # Alias all Home Manager symlinks so that Spotlight and Alfred can find them.
   home.activation = {
     copyApplications = let
@@ -173,7 +176,7 @@ in rec {
     };
     interactiveShellInit = ''
       bind \cx\ce edit_command_buffer
-    '';
+    '' + overconfig.programs.fish.interactiveShellInit;
     shellInit = ''
       fish_add_path --prepend --global "/nix/var/nix/profiles/default/bin"
       fish_add_path --prepend --global "/Users/${username}/.nix-profile/bin"
