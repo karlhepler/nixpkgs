@@ -3,6 +3,8 @@
 let
   inherit (specialArgs) username;
 
+  overconfig = import ./overconfig.nix;
+
   shellapps = rec {
     commit = pkgs.writeShellApplication {
       name = "commit";
@@ -100,6 +102,10 @@ in rec {
           -e "set name of result to \"$(basename $appfile)\"" \
           -e "end tell"
       done
+    '';
+
+    gitIgnoreOverconfigChanges = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      git -C ~/.config/nixpkgs update-index --assume-unchanged overconfig.nix
     '';
   };
 
@@ -209,7 +215,7 @@ in rec {
     enable = true;
     ignores = [ ".DS_Store" ".tags*" ];
     userName = "Karl Hepler";
-    userEmail = "karl.hepler@gmail.com";
+    userEmail = overconfig.gitUserEmail or "karl.hepler@gmail.com";
     includes = [
       {
         contents = {

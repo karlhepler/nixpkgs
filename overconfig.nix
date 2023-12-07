@@ -1,0 +1,3 @@
+{
+  # gitUserEmail = "email@example.org"
+}
