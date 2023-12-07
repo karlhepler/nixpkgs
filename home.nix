@@ -3,7 +3,7 @@
 let
   inherit (specialArgs) username;
 
-  overconfig = import ./overconfig.nix;
+  overconfig = import ./overconfig.nix { inherit pkgs; };
 
   shellapps = rec {
     commit = pkgs.writeShellApplication {
@@ -212,6 +212,8 @@ in rec {
     enable = true;
     enableFishIntegration = true;
   };
+
+  programs.gpg = {} // overconfig.programs.gpg;
 
   programs.git = {
     enable = true;
