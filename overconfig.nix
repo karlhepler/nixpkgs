@@ -1,3 +1,3 @@
 {
-  # gitUserEmail = "email@example.org"
+  gitUserEmail = "karl.hepler@example.org"
 }
