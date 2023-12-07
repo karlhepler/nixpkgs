@@ -164,8 +164,7 @@ in rec {
       docs = "cd ~/Documents";
       pics = "cd ~/Pictures";
       hms = "${pkgs.git}/bin/git -C ~/.config/nixpkgs update-index --no-assume-unchanged overconfig.nix &&"
-        + "touch ~/.config/nixpkgs/overconfig.nix &&"
-        + "home-manager switch --flake ~/.config/nixpkgs#${username}";
+        + "${pkgs.home-manager}/bin/home-manager switch --flake ~/.config/nixpkgs#${username}";
       hme = "vim ~/.config/nixpkgs/home.nix";
       hm = "cd ~/.config/nixpkgs";
       ll = "${pkgs.eza}/bin/eza --oneline --icons --sort=type";
