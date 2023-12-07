@@ -168,7 +168,7 @@ in rec {
       down = "cd ~/Downloads";
       docs = "cd ~/Documents";
       pics = "cd ~/Pictures";
-      hms = "${pkgs.git}/bin/git -C ~./config/nixpkgs update-index --no-assume-unchanged overconfig.nix &&"
+      hms = "${pkgs.git}/bin/git -C ~/.config/nixpkgs update-index --no-assume-unchanged overconfig.nix &&"
         + "touch ~/.config/nixpkgs/overconfig.nix &&"
         + "home-manager switch --flake ~/.config/nixpkgs#${username}";
       hme = "vim ~/.config/nixpkgs/home.nix";
@@ -226,13 +226,14 @@ in rec {
     includes = [
       {
         contents = {
-          core = { editor = "vim"; };
-          diff = { tool = "vimdiff"; };
-          merge = { tool = "vimdiff"; };
-          difftool = { prompt = false; };
-          push = { default = "current"; };
-          init = { defaultBranch = "main"; };
-          pull = { rebase = false; };
+          core.editor = "vim";
+          diff.tool = "vimdiff";
+          merge.tool = "vimdiff";
+          difftool.prompt = false;
+          push.default = "current";
+          init.defaultBranch = "main";
+          pull.rebase = false;
+          commit.gpgsign = true; # move to overconfig.nix
         };
       }
     ];
