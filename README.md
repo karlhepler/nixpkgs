@@ -41,6 +41,11 @@ git -C ~/.config/nixpkgs update-index --no-assume-unchanged overconfig.nix
 **NOTE:** Because of this customization, this repository **MUST** be installed
 at `~/.config/nixpkgs`. Installing it anywhere else will likely cause an error.
 
+**ANOTHER NOTE**: In order for this to work, `--no-assume-unchanged` **MUST**
+be run prior to syncing home manager. To make this automatic, it runs first as
+a part of running `hms`. So, as long as you always sync home manager using
+`hms`, this will work properly.
+
 
 ## Helpful Commands
 
