@@ -122,6 +122,7 @@ in rec {
       EDITOR = "${pkgs.neovim}/bin/nvim";
       VISUAL = "${pkgs.neovim}/bin/nvim";
       SHELL = "${pkgs.fish}/bin/fish";
+      GOPATH= "/Users/${username}/go";
     };
     keybindings = {
       "cmd+enter" = "toggle_fullscreen";
