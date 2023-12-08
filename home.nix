@@ -167,6 +167,7 @@ in rec {
         "${pkgs.home-manager}/bin/home-manager switch --flake ~/.config/nixpkgs#${username}"
       ];
       hme = "vim ~/.config/nixpkgs/home.nix";
+      hmo = "vim ~/.config/nixpkgs/overconfig.nix";
       hm = "cd ~/.config/nixpkgs";
       ll = "${pkgs.eza}/bin/eza --oneline --icons --sort=type";
       tree = "${pkgs.eza}/bin/eza --oneline --icons --sort=type --tree";
