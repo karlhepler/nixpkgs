@@ -26,6 +26,7 @@
                 homeDirectory = "/Users/${username}";
               };
             }
+            ./overconfig.nix
             nix-index-database.hmModules.nix-index
           ];
         };
