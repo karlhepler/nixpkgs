@@ -163,6 +163,7 @@ in rec {
       docs = "cd ~/Documents";
       pics = "cd ~/Pictures";
       hms = lib.strings.concatStringsSep "&&" [
+        "cp ~/.config/nixpkgs/overconfig.nix ~/.config-nixpkgs-overconfig.nix.bak"
         "${pkgs.git}/bin/git -C ~/.config/nixpkgs update-index --no-assume-unchanged overconfig.nix"
         "${pkgs.home-manager}/bin/home-manager switch --flake ~/.config/nixpkgs#${username}"
       ];
