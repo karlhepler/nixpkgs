@@ -39,6 +39,16 @@ let
         git rebase main
       '';
     };
+    git-remaster = pkgs.writeShellApplication {
+      name = "git-remaster";
+      runtimeInputs = [ pkgs.git ];
+      text = ''
+        git checkout master
+        git pull
+        git checkout -
+        git rebase master
+      '';
+    };
     git-tmp = pkgs.writeShellApplication {
       name = "git-tmp";
       runtimeInputs = [ pkgs.git ];
