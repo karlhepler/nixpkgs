@@ -184,6 +184,7 @@ in rec {
       ll = "${pkgs.eza}/bin/eza --oneline --icons --sort=type";
       tree = "${pkgs.eza}/bin/eza --oneline --icons --sort=type --tree";
       github = "cd ~/github.com/karlhepler";
+      cd = "z";
     };
     interactiveShellInit = ''
       bind \cx\ce edit_command_buffer
@@ -502,5 +503,10 @@ in rec {
         autocmd FileType qf wincmd J
       augroup end
     '';
+  };
+
+  programs.zoxide = {
+    enable = true;
+    enableFishIntegration = true;
   };
 }
