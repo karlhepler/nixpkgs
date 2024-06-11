@@ -52,7 +52,11 @@ lspconfig.gopls.setup {
 	on_attach = on_attach,
 }
 
-lspconfig.pyright.setup{
+lspconfig.pyright.setup {
+	on_attach = on_attach,
+}
+
+lspconfig.denols.setup {
 	on_attach = on_attach,
 }
 
