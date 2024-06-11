@@ -64,9 +64,11 @@ in rec {
   # https://search.nixos.org/packages
   home.packages = with pkgs; [
     comma
+    deno
     fd
     go
     gopls
+    htop
     nodePackages.pyright
     nodePackages.typescript
     nodePackages.typescript-language-server
@@ -74,8 +76,6 @@ in rec {
     python3
     ripgrep
     yarn
-    devbox
-    htop
   ] ++ (builtins.attrValues shellapps);
 
   # This value determines the Home Manager release that your
