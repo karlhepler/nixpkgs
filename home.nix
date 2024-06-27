@@ -65,6 +65,7 @@ in rec {
   home.packages = with pkgs; [
     comma
     devbox
+    deno
     fd
     go
     gopls
@@ -87,7 +88,7 @@ in rec {
   # You can update Home Manager without changing this value. See
   # the Home Manager release notes for a list of state version
   # changes in each release.
-  home.stateVersion = "23.11";
+  home.stateVersion = "24.05";
 
   # Alias all Home Manager symlinks so that Spotlight and Alfred can find them.
   home.activation = {
@@ -184,10 +185,11 @@ in rec {
       hm = "cd ~/.config/nixpkgs";
       ll = "${pkgs.eza}/bin/eza --oneline --icons --sort=type";
       tree = "${pkgs.eza}/bin/eza --oneline --icons --sort=type --tree";
-      github = "cd ~/github.com/karlhepler";
     };
     interactiveShellInit = ''
       bind \cx\ce edit_command_buffer
+      zoxide init fish | source
+      alias cd="z"
     '';
     shellInit = ''
       fish_add_path --prepend --global "/nix/var/nix/profiles/default/bin"
@@ -503,5 +505,10 @@ in rec {
         autocmd FileType qf wincmd J
       augroup end
     '';
+  };
+
+  programs.zoxide = {
+    enable = true;
+    enableFishIntegration = true;
   };
 }
