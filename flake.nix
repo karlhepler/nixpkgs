@@ -36,9 +36,9 @@
       };
 
     in {
-      # homeConfigurations =
-      #   (homeConfig "karlhepler" "x86_64-darwin") //
-      #   (homeConfig "karlhepler" "aarch64-darwin");
-      homeConfigurations = (homeConfig "karlhepler" "x86_64-darwin");
+      homeConfigurations =
+        (homeConfig "karlhepler" "x86_64-darwin") //
+        (homeConfig "karlhepler" "aarch64-darwin");
+      # homeConfigurations = (homeConfig "karlhepler" "x86_64-darwin");
     };
 }
