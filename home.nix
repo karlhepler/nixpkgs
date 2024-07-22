@@ -243,6 +243,9 @@ in rec {
       init.defaultBranch = "main";
       pull.rebase = false;
     };
+    aliases = {
+      who = "blame -w -C -C -C";
+    };
   };
 
   programs.neovim = {
