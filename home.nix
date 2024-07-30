@@ -342,10 +342,6 @@ in rec {
           nmap <c-p> :GFiles<cr>
           imap <c-p> <esc>:GFiles<cr>
           vmap <c-p> <esc>:GFiles<cr>
-
-          nmap <c-b> :BTags<cr>
-          imap <c-b> <esc>:BTags<cr>
-          vmap <c-b> <esc>:BTags<cr>
         '';
       }
       nvim-lspconfig
@@ -356,6 +352,15 @@ in rec {
           tree-sitter-typescript
         ]
       ))
+      plenary-nvim
+      {
+        plugin = fzf-lsp-nvim;
+        config = ''
+          nmap <c-b> :DocumentSymbols<cr>
+          imap <c-b> <esc>:DocumentSymbols<cr>
+          vmap <c-b> <esc>:DocumentSymbols<cr>
+        '';
+      }
       {
         plugin = vim-prettier;
         config = ''
