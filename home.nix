@@ -162,9 +162,28 @@ in rec {
     theme = "Tokyo Night Storm";
   };
 
-  programs.direnv = {
+  # TODO: https://github.com/zatchheems/tokyo-night-alacritty-theme/blob/main/tokyo-night.yaml
+  # TODO: Make sure font is working correctly
+  # TODO: finish copying over fish config
+  programs.alacritty = {
     enable = true;
-    nix-direnv.enable = true;
+    settings = {
+      env = {
+        EDITOR = "${pkgs.neovim}/bin/nvim";
+        VISUAL = "${pkgs.neovim}/bin/nvim";
+        SHELL = "${pkgs.zsh}/bin/zsh";
+        GOPATH= "/Users/${username}/go";
+      };
+      font = {
+        normal.family = "SauceCodePro Nerd Font";
+        size = 18;
+      };
+    };
+  };
+
+  # TODO: copy fish config
+  programs.zsh = {
+    enable = true;
   };
 
   programs.fish = {
@@ -200,6 +219,12 @@ in rec {
   programs.starship = {
     enable = true;
     enableFishIntegration = true;
+    enableZshIntegration = true;
+  };
+
+  programs.direnv = {
+    enable = true;
+    nix-direnv.enable = true;
   };
 
   programs.fzf = {
