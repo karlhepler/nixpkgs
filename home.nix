@@ -129,43 +129,6 @@ in rec {
   # Program Modules
   # https://nix-community.github.io/home-manager/options.html
 
-  programs.kitty = {
-    enable = true;
-    darwinLaunchOptions = [
-      "--single-instance"
-    ];
-    environment = {
-      EDITOR = "${pkgs.neovim}/bin/nvim";
-      VISUAL = "${pkgs.neovim}/bin/nvim";
-      SHELL = "${pkgs.fish}/bin/fish";
-      GOPATH= "/Users/${username}/go";
-    };
-    keybindings = {
-      "cmd+enter" = "toggle_fullscreen";
-      "cmd+n" = "new_os_window_with_cwd";
-      "cmd+t" = "new_tab_with_cwd";
-      "cmd+d" = "launch --cwd=current --location=vsplit";
-      "cmd+shift+d" = "launch --cwd=current --location=hsplit";
-    };
-    settings = {
-      enabled_layouts = "splits";
-      macos_traditional_fullscreen = "yes";
-      shell = "${pkgs.fish}/bin/fish --login --interactive";
-      editor = "${pkgs.neovim}/bin/nvim";
-      cursor_shape = "block";
-      cursor_blink_interval = 0;
-      shell_integration = "no-cursor";
-      mouse_hide_wait = -1;
-      enable_audio_bell = "no";
-    };
-    font = {
-      package = (pkgs.nerdfonts.override { fonts = [ "SourceCodePro" ]; });
-      name = "SauceCodePro Nerd Font";
-      size = 18;
-    };
-    theme = "Tokyo Night Storm";
-  };
-
   programs.alacritty = {
     enable = true;
     settings = {
@@ -248,39 +211,8 @@ in rec {
     };
   };
 
-  programs.fish = {
-    enable = true;
-    shellAliases = {
-      desk = "cd ~/Desktop";
-      down = "cd ~/Downloads";
-      docs = "cd ~/Documents";
-      pics = "cd ~/Pictures";
-      hms = lib.strings.concatStringsSep "&&" [
-        "mkdir -p ~/.backup/.config/nixpkgs"
-        "cp ~/.config/nixpkgs/overconfig.nix ~/.backup/.config/nixpkgs/overconfig.nix"
-        "${pkgs.git}/bin/git -C ~/.config/nixpkgs update-index --no-assume-unchanged overconfig.nix"
-        "${pkgs.home-manager}/bin/home-manager switch --flake ~/.config/nixpkgs#${username}"
-      ];
-      hme = "vim ~/.config/nixpkgs/home.nix";
-      hmo = "vim ~/.config/nixpkgs/overconfig.nix";
-      hm = "cd ~/.config/nixpkgs";
-      ll = "${pkgs.eza}/bin/eza --oneline --icons --sort=type";
-      tree = "${pkgs.eza}/bin/eza --oneline --icons --sort=type --tree";
-    };
-    interactiveShellInit = ''
-      bind \cx\ce edit_command_buffer
-      zoxide init fish | source
-      alias cd="z"
-    '';
-    shellInit = ''
-      fish_add_path --prepend --global "/nix/var/nix/profiles/default/bin"
-      fish_add_path --prepend --global "/Users/${username}/.nix-profile/bin"
-    '';
-  };
-
   programs.starship = {
     enable = true;
-    enableFishIntegration = true;
     enableZshIntegration = true;
   };
 
@@ -291,7 +223,6 @@ in rec {
 
   programs.fzf = {
     enable = true;
-    enableFishIntegration = true;
     enableZshIntegration = true;
     tmux.enableShellIntegration = true;
   };
@@ -314,7 +245,6 @@ in rec {
 
   programs.nix-index = {
     enable = true;
-    enableFishIntegration = true;
     enableZshIntegration = true;
   };
 
@@ -482,7 +412,7 @@ in rec {
       set background=dark
       colorscheme tokyonight-storm
 
-      set shell=fish " use fish for :term
+      set shell=zsh " use zsh for :term
       set grepprg=rg\ --vimgrep " use ripgrep for :grep
 
       " no swap files or backup files
@@ -504,7 +434,7 @@ in rec {
       set noerrorbells
       set visualbell
 
-      " highlight current line (not supported by kitty, so need to do here)
+      " highlight current line (not supported by alacritty, so need to do here)
       set cursorline
 
       " always show at least 1 line above/below cursor
@@ -606,7 +536,6 @@ in rec {
 
   programs.zoxide = {
     enable = true;
-    enableFishIntegration = true;
     enableZshIntegration = true;
   };
 }
