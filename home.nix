@@ -64,8 +64,8 @@ in rec {
   # https://search.nixos.org/packages
   home.packages = with pkgs; [
     comma
-    devbox
     deno
+    devbox
     fd
     go
     gopls
@@ -78,7 +78,11 @@ in rec {
     ripgrep
     yaml-language-server
     yarn
+  ] ++ [
+    (pkgs.nerdfonts.override { fonts = [ "SourceCodePro" ]; })
   ] ++ (builtins.attrValues shellapps);
+
+  fonts.fontconfig.enable = true;
 
   # This value determines the Home Manager release that your
   # configuration is compatible with. This helps avoid breakage
@@ -162,28 +166,86 @@ in rec {
     theme = "Tokyo Night Storm";
   };
 
-  # TODO: https://github.com/zatchheems/tokyo-night-alacritty-theme/blob/main/tokyo-night.yaml
-  # TODO: Make sure font is working correctly
-  # TODO: finish copying over fish config
   programs.alacritty = {
     enable = true;
     settings = {
+      mouse.hide_when_typing = true;
+      keyboard.bindings = [
+        { key = "Enter"; mods = "Command"; action = "ToggleSimpleFullscreen";  }
+      ];
       env = {
         EDITOR = "${pkgs.neovim}/bin/nvim";
         VISUAL = "${pkgs.neovim}/bin/nvim";
         SHELL = "${pkgs.zsh}/bin/zsh";
-        GOPATH= "/Users/${username}/go";
+        GOPATH = "/Users/${username}/go";
       };
       font = {
-        normal.family = "SauceCodePro Nerd Font";
+        normal = {
+          family = "SauceCodePro Nerd Font Mono";
+          style = "Regular";
+        };
         size = 18;
+      };
+      # Tokyo Night Storm
+      # Reference: https://github.com/zatchheems/tokyo-night-alacritty-theme/blob/main/tokyo-night.yaml
+      colors = {
+        primary = {
+          background = "#24283b";
+          foreground = "#a9b1d6";
+        };
+        normal = {
+          black = "#32344a";
+          red = "#f7768e";
+          green = "#9ece6a";
+          yellow = "#e0af68";
+          blue = "#7aa2f7";
+          magenta = "#ad8ee6";
+          cyan = "#449dab";
+          white = "#9699a8";
+        };
+        bright = {
+          black = "#444b6a";
+          red = "#ff7a93";
+          green = "#b9f27c";
+          yellow = "#ff9e64";
+          blue = "#7da6ff";
+          magenta = "#bb9af7";
+          cyan = "#0db9d7";
+          white = "#acb0d0";
+        };
       };
     };
   };
 
-  # TODO: copy fish config
   programs.zsh = {
     enable = true;
+    autosuggestion.enable = true;
+    syntaxHighlighting.enable = true;
+    profileExtra = ''
+      nix_path='/nix/var/nix/profiles/default/bin'
+      nix_profile_path='/Users/${username}/.nix-profile/bin'
+      export PATH="$nix_profile_path:$nix_path:$PATH"
+    '';
+    initExtra = ''
+      eval "$(${pkgs.zoxide}/bin/zoxide init --cmd cd zsh)"
+    '';
+    shellAliases = {
+      desk = "cd ~/Desktop";
+      down = "cd ~/Downloads";
+      docs = "cd ~/Documents";
+      pics = "cd ~/Pictures";
+      hms = lib.strings.concatStringsSep "&&" [
+        "mkdir -p ~/.backup/.config/nixpkgs"
+        "cp ~/.config/nixpkgs/overconfig.nix ~/.backup/.config/nixpkgs/overconfig.nix"
+        "${pkgs.git}/bin/git -C ~/.config/nixpkgs update-index --no-assume-unchanged overconfig.nix"
+        "${pkgs.home-manager}/bin/home-manager switch --flake ~/.config/nixpkgs#${username}"
+      ];
+      hme = "vim ~/.config/nixpkgs/home.nix";
+      hmo = "vim ~/.config/nixpkgs/overconfig.nix";
+      hm = "cd ~/.config/nixpkgs";
+      ll = "${pkgs.eza}/bin/eza --oneline --icons --sort=type";
+      tree = "${pkgs.eza}/bin/eza --oneline --icons --sort=type --tree";
+    };
   };
 
   programs.fish = {
@@ -230,6 +292,7 @@ in rec {
   programs.fzf = {
     enable = true;
     enableFishIntegration = true;
+    enableZshIntegration = true;
     tmux.enableShellIntegration = true;
   };
 
@@ -252,6 +315,7 @@ in rec {
   programs.nix-index = {
     enable = true;
     enableFishIntegration = true;
+    enableZshIntegration = true;
   };
 
   programs.git = {
@@ -543,5 +607,6 @@ in rec {
   programs.zoxide = {
     enable = true;
     enableFishIntegration = true;
+    enableZshIntegration = true;
   };
 }
