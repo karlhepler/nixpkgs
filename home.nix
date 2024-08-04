@@ -78,6 +78,7 @@ in rec {
     ripgrep
     yaml-language-server
     yarn
+    zsh-fzf-tab
   ] ++ [
     (pkgs.nerdfonts.override { fonts = [ "SourceCodePro" ]; })
   ] ++ (builtins.attrValues shellapps);
@@ -191,6 +192,7 @@ in rec {
     '';
     initExtra = ''
       eval "$(${pkgs.zoxide}/bin/zoxide init --cmd cd zsh)"
+      source '${pkgs.zsh-fzf-tab}/share/fzf-tab/fzf-tab.plugin.zsh'
     '';
     shellAliases = {
       desk = "cd ~/Desktop";
