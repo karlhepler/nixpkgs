@@ -20,6 +20,14 @@ let
         git push
       '';
     };
+    git-branches = pkgs.writeShellApplication {
+      name = "git-branches";
+      runtimeInputs = [ pkgs.git ];
+      text = ''
+        branch="''${1:-karlhepler/}"
+        git for-each-ref --sort=-committerdate --format='%(refname:short)' "refs/heads/''${branch}*" "refs/remotes/''${branch}*"
+      '';
+    };
     git-kill = pkgs.writeShellApplication {
       name = "git-kill";
       runtimeInputs = [ pkgs.git ];
