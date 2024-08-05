@@ -57,6 +57,13 @@ let
         git rebase master
       '';
     };
+    git-resume = pkgs.writeShellApplication {
+      name = "git-resume";
+      runtimeInputs = [ pkgs.git git-branches pkgs.coreutils ];
+      text = ''
+        git checkout "$(git branches | head -1)"
+      '';
+    };
     git-tmp = pkgs.writeShellApplication {
       name = "git-tmp";
       runtimeInputs = [ pkgs.git ];
