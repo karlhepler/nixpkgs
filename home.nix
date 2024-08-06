@@ -32,8 +32,22 @@ let
       name = "git-kill";
       runtimeInputs = [ pkgs.git ];
       text = ''
+        # Navigate to the top-level directory of the git repository
         cd "$(git rev-parse --show-toplevel)"
-        git reset --hard
+
+        # Get the current branch name
+        current_branch=$(git rev-parse --abbrev-ref HEAD)
+
+        # Check if the branch exists remotely
+        if git ls-remote --exit-code --heads origin "$current_branch" &> /dev/null; then
+            # If the branch exists remotely, reset the local branch to match the remote branch
+            git reset --hard "origin/$current_branch"
+        else
+            # If the branch does not exist remotely, perform the local reset and clean operations
+            git reset --hard
+        fi
+
+        # Clean untracked files and directories
         git clean -fd
       '';
     };
@@ -44,7 +58,7 @@ let
         git checkout main
         git pull
         git checkout -
-        git rebase main
+        git merge main
       '';
     };
     git-remaster = pkgs.writeShellApplication {
@@ -54,7 +68,7 @@ let
         git checkout master
         git pull
         git checkout -
-        git rebase master
+        git merge master
       '';
     };
     git-resume = pkgs.writeShellApplication {
