@@ -51,6 +51,22 @@ let
         git clean -fd
       '';
     };
+    git-main = pkgs.writeShellApplication {
+      name = "git-main";
+      runtimeInputs = [ pkgs.git ];
+      text = ''
+        git checkout main
+        git pull
+      '';
+    };
+    master = pkgs.writeShellApplication {
+      name = "git-master";
+      runtimeInputs = [ pkgs.git ];
+      text = ''
+        git checkout master
+        git pull
+      '';
+    };
     git-remain = pkgs.writeShellApplication {
       name = "git-remain";
       runtimeInputs = [ pkgs.git ];
