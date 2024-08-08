@@ -229,6 +229,7 @@ in rec {
     initExtra = ''
       eval "$(${pkgs.zoxide}/bin/zoxide init --cmd cd zsh)"
       source '${pkgs.zsh-fzf-tab}/share/fzf-tab/fzf-tab.plugin.zsh'
+      bindkey -M viins 'jk' vi-cmd-mode
     '';
     shellAliases = {
       desk = "cd ~/Desktop";
