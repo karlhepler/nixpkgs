@@ -22,10 +22,17 @@ let
     };
     git-branches = pkgs.writeShellApplication {
       name = "git-branches";
-      runtimeInputs = [ pkgs.git ];
+      runtimeInputs = [ pkgs.git pkgs.fzf ];
       text = ''
         branch="''${1:-karlhepler/}"
-        git for-each-ref --sort=-committerdate --format='%(refname:short)' "refs/heads/''${branch}*" "refs/remotes/''${branch}*"
+        output="$(git for-each-ref --sort=-committerdate --format='%(refname:short)' "refs/heads/''${branch}*" "refs/remotes/''${branch}*")"
+        
+        # check if the script's output is connected to a terminal
+        if [ -t 1 ]; then
+          echo "$output" | fzf --preview 'git log --color {} -p -n 3' --bind 'enter:execute(git checkout {})+abort'
+        else
+          echo "$output"
+        fi
       '';
     };
     git-kill = pkgs.writeShellApplication {
@@ -51,40 +58,22 @@ let
         git clean -fd
       '';
     };
-    git-main = pkgs.writeShellApplication {
-      name = "git-main";
-      runtimeInputs = [ pkgs.git ];
+    git-trunk = pkgs.writeShellApplication {
+      name = "git-trunk";
+      runtimeInputs = [ pkgs.git pkgs.gnused ];
       text = ''
-        git checkout main
+        trunk="$(git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@')"
+        git checkout "$trunk"
         git pull
       '';
     };
-    master = pkgs.writeShellApplication {
-      name = "git-master";
-      runtimeInputs = [ pkgs.git ];
+    git-remix = pkgs.writeShellApplication {
+      name = "git-remix";
+      runtimeInputs = [ pkgs.git git-trunk ];
       text = ''
-        git checkout master
-        git pull
-      '';
-    };
-    git-remain = pkgs.writeShellApplication {
-      name = "git-remain";
-      runtimeInputs = [ pkgs.git ];
-      text = ''
-        git checkout main
-        git pull
+        git trunk
         git checkout -
-        git merge main
-      '';
-    };
-    git-remaster = pkgs.writeShellApplication {
-      name = "git-remaster";
-      runtimeInputs = [ pkgs.git ];
-      text = ''
-        git checkout master
-        git pull
-        git checkout -
-        git merge master
+        git merge "$(git rev-parse --abbrev-ref '@{-1}')"
       '';
     };
     git-resume = pkgs.writeShellApplication {
@@ -113,6 +102,7 @@ in rec {
     deno
     devbox
     fd
+    gnused
     go
     gopls
     htop
