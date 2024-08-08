@@ -1,4 +1,4 @@
-{ config, pkgs, specialArgs, lib, ... }:
+{ config, pkgs, lib, ... }:
 
 let
   username = config.home.username;
