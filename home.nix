@@ -109,6 +109,7 @@ in rec {
   # https://search.nixos.org/packages
   home.packages = with pkgs; [
     comma
+    darwin.trash
     deno
     devbox
     fd
