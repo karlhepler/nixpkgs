@@ -7,38 +7,37 @@
       url = "github:nix-community/home-manager/release-24.05";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-
-    nix-index-database.url = "github:Mic92/nix-index-database";
-    nix-index-database.inputs.nixpkgs.follows = "nixpkgs";
+    nix-index-database = {
+      url = "github:Mic92/nix-index-database";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { nixpkgs, home-manager, nix-index-database, ... }:
-    let
-      homeConfig = username: system: {
-        ${username} = home-manager.lib.homeManagerConfiguration {
-          pkgs = import nixpkgs {
-            inherit system;
-            config.allowUnfree = true;
-          };
-          extraSpecialArgs = { inherit username; };
+  outputs = { nixpkgs, home-manager, nix-index-database, flake-utils, ... }:
+    flake-utils.lib.eachDefaultSystem (system:
+      let
+        username = "karlhepler";
+        pkgs = import nixpkgs {
+          inherit system;
+          config.allowUnfree = true;
+        };
+      in {
+        packages.homeConfigurations.${username} = home-manager.lib.homeManagerConfiguration {
+          inherit pkgs;
           modules = [
-            ./home.nix
             {
               home = {
+                stateVersion = "24.05"; # This config is compatible with this Home Manager release.
                 inherit username;
                 homeDirectory = "/Users/${username}";
               };
             }
+            ./home.nix
             ./overconfig.nix
             nix-index-database.hmModules.nix-index
           ];
         };
-      };
-
-    in {
-      homeConfigurations =
-        (homeConfig "karlhepler" "x86_64-darwin") //
-        (homeConfig "karlhepler" "aarch64-darwin");
-      # homeConfigurations = (homeConfig "karlhepler" "x86_64-darwin");
-    };
+      }
+    );
 }

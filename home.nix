@@ -1,7 +1,7 @@
 { config, pkgs, specialArgs, lib, ... }:
 
 let
-  inherit (specialArgs) username;
+  username = config.home.username;
 
   shellapps = rec {
     commit = pkgs.writeShellApplication {
@@ -240,7 +240,7 @@ in rec {
         "mkdir -p ~/.backup/.config/nixpkgs"
         "cp ~/.config/nixpkgs/overconfig.nix ~/.backup/.config/nixpkgs/overconfig.nix"
         "${pkgs.git}/bin/git -C ~/.config/nixpkgs update-index --no-assume-unchanged overconfig.nix"
-        "${pkgs.home-manager}/bin/home-manager switch --flake ~/.config/nixpkgs#${username}"
+        "${pkgs.home-manager}/bin/home-manager switch --flake ~/.config/nixpkgs"
       ];
       hme = "vim ~/.config/nixpkgs/home.nix";
       hmo = "vim ~/.config/nixpkgs/overconfig.nix";
