@@ -415,6 +415,7 @@ in rec {
           tree-sitter-yaml
         ]
       ))
+      SchemaStore-nvim
       plenary-nvim
       {
         plugin = fzf-lsp-nvim;
