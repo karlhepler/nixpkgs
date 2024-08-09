@@ -297,10 +297,9 @@ in rec {
       diff.tool = "vimdiff";
       merge.tool = "vimdiff";
       difftool.prompt = false;
-      push.default = "upstream";
+      push.default = "current";
       init.defaultBranch = "main";
       pull.rebase = false;
-      branch.autoSetupMerge = "always";
     };
     aliases = {
       who = "blame -w -C -C -C";
