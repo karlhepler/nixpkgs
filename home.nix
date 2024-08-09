@@ -406,9 +406,12 @@ in rec {
       nvim-lspconfig
       (nvim-treesitter.withPlugins (
         plugins: with plugins; [
+          tree-sitter-bash
           tree-sitter-go
+          tree-sitter-lua
           tree-sitter-python
           tree-sitter-typescript
+          tree-sitter-yaml
         ]
       ))
       plenary-nvim
