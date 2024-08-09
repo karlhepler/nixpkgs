@@ -300,6 +300,7 @@ in rec {
       push.default = "current";
       init.defaultBranch = "main";
       pull.rebase = false;
+      branch.autoSetupMerge = "always";
     };
     aliases = {
       who = "blame -w -C -C -C";
