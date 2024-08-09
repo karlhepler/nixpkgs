@@ -64,9 +64,16 @@ lspconfig.yamlls.setup{
 	on_attach = on_attach,
 	settings = {
 		yaml = {
-			schemas = { kubernetes = "*.yaml" },
-		}
-	}
+			schemaStore = {
+				-- You must disable built-in schemaStore support if you want to use
+        -- this plugin and its advanced options like `ignore`.
+        enable = false,
+        -- Avoid TypeError: Cannot read properties of undefined (reading 'length')
+        url = "",
+			},
+			schemas = require('schemastore').yaml.schemas(),
+		},
+	},
 }
 
 -- https://github.com/golang/tools/blob/1f10767725e2be1265bef144f774dc1b59ead6dd/gopls/doc/vim.md#imports
