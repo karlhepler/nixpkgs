@@ -409,6 +409,7 @@ in rec {
           tree-sitter-bash
           tree-sitter-go
           tree-sitter-lua
+          tree-sitter-nix
           tree-sitter-python
           tree-sitter-typescript
           tree-sitter-yaml
