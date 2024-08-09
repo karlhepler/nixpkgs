@@ -297,7 +297,7 @@ in rec {
       diff.tool = "vimdiff";
       merge.tool = "vimdiff";
       difftool.prompt = false;
-      push.default = "current";
+      push.default = "upstream";
       init.defaultBranch = "main";
       pull.rebase = false;
       branch.autoSetupMerge = "always";
