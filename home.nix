@@ -2,6 +2,7 @@
 
 let
   username = config.home.username;
+  homeDirectory = config.home.homeDirectory;
 
   shellapps = rec {
     commit = pkgs.writeShellApplication {
@@ -99,8 +100,6 @@ in rec {
   home.packages = with pkgs; [
     comma
     darwin.trash
-    deno
-    devbox
     fd
     gnused
     go
@@ -120,16 +119,6 @@ in rec {
   ] ++ (builtins.attrValues shellapps);
 
   fonts.fontconfig.enable = true;
-
-  # This value determines the Home Manager release that your
-  # configuration is compatible with. This helps avoid breakage
-  # when a new Home Manager release introduces backwards
-  # incompatible changes.
-  #
-  # You can update Home Manager without changing this value. See
-  # the Home Manager release notes for a list of state version
-  # changes in each release.
-  home.stateVersion = "24.05";
 
   # Alias all Home Manager symlinks so that Spotlight and Alfred can find them.
   home.activation = {
@@ -177,7 +166,7 @@ in rec {
         EDITOR = "${pkgs.neovim}/bin/nvim";
         VISUAL = "${pkgs.neovim}/bin/nvim";
         SHELL = "${pkgs.zsh}/bin/zsh";
-        GOPATH = "/Users/${username}/go";
+        GOPATH = "${homeDirectory}/go";
       };
       font = {
         normal = {
@@ -223,7 +212,7 @@ in rec {
     syntaxHighlighting.enable = true;
     profileExtra = ''
       nix_path='/nix/var/nix/profiles/default/bin'
-      nix_profile_path='/Users/${username}/.nix-profile/bin'
+      nix_profile_path='${homeDirectory}/.nix-profile/bin'
       export PATH="$nix_profile_path:$nix_path:$PATH"
     '';
     initExtra = ''
@@ -398,8 +387,10 @@ in rec {
         plugin = fzf-vim;
         config = ''
           nmap <c-p> :GFiles<cr>
-          imap <c-p> <esc>:GFiles<cr>
           vmap <c-p> <esc>:GFiles<cr>
+
+          " Map <C-p> to either navigate the popup menu or trigger :GFiles
+          inoremap <expr> <C-p> pumvisible() ? "''\<C-p>" : "''\<esc>:GFiles''\<cr>"
         '';
       }
       nvim-lspconfig

@@ -15,10 +15,32 @@ vim.api.nvim_set_keymap('n', '[d', '<cmd>lua vim.diagnostic.goto_prev()<CR>', op
 vim.api.nvim_set_keymap('n', ']d', '<cmd>lua vim.diagnostic.goto_next()<CR>', opts)
 vim.api.nvim_set_keymap('n', '<space>q', '<cmd>lua vim.diagnostic.setloclist()<CR>', opts)
 
+-- Define the function locally
+local function fallback_or_omnifunc()
+  -- Check if the popup menu is visible
+  if vim.fn.pumvisible() == 1 then
+    -- Use <C-n> to navigate the popup menu
+    return vim.api.nvim_replace_termcodes('<C-n>', true, true, true)
+  end
+
+  -- Check if omnifunc is set and not empty
+  local omnifunc = vim.api.nvim_buf_get_option(0, 'omnifunc')
+  if omnifunc ~= '' then
+    -- Trigger omnifunc completion
+    return vim.api.nvim_replace_termcodes('<C-x><C-o>', true, true, true)
+  else
+    -- If no omnifunc and no popup menu, fallback to normal <C-n> behavior
+    return vim.api.nvim_replace_termcodes('<C-n>', true, true, true)
+  end
+end
+
+-- Map <C-n> to the local function in insert mode using vim.keymap.set
+vim.keymap.set('i', '<C-n>', fallback_or_omnifunc, {expr = true, noremap = true})
+
 -- Use an on_attach function to only map the following keys
 -- after the language server attaches to the current buffer
 local on_attach = function(client, bufnr)
-	-- Enable completion triggered by <c-x><c-o>
+	-- Enable omnifunc completion
 	vim.api.nvim_buf_set_option(bufnr, 'omnifunc', 'v:lua.vim.lsp.omnifunc')
 
 	-- Mappings.
@@ -53,10 +75,6 @@ lspconfig.gopls.setup {
 }
 
 lspconfig.pyright.setup {
-	on_attach = on_attach,
-}
-
-lspconfig.denols.setup {
 	on_attach = on_attach,
 }
 
