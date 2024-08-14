@@ -108,18 +108,31 @@ nmap <leader>b :Buffers<cr>
 imap <leader>b <esc>:Buffers<cr>
 vmap <leader>b <esc>:Buffers<cr>
 
-function! OpenInGitHub()
-	let l:remote = system('git remote get-url origin')
-	let l:repo = substitute(l:remote, '.*github.com[:/]', '', '')
-	let l:repo = substitute(l:repo, '.git$', '', '')
-	let l:branch = system('git rev-parse --abbrev-ref HEAD')
-	let l:path = expand('%')
-	let l:line = line('.')
-	let l:url = printf('https://github.com/%s/blob/%s/%s#L%s', l:repo, l:branch, l:path, l:line)
-	execute 'silent !open ' . shellescape(l:url)
+function! GitHubURL()
+    let l:remote = substitute(system('git remote get-url origin'), '\n', '', 'g')
+    let l:repo = substitute(l:remote, '.*github.com[:/]', '', '')
+    let l:repo = substitute(l:repo, '.git$', '', '')
+    let l:branch = substitute(system('git rev-parse --abbrev-ref HEAD'), '\n', '', 'g')
+    let l:path = substitute(expand('%'), '\n', '', 'g')
+    let l:line = substitute(line('.'), '\n', '', 'g')
+    return printf('https://github.com/%s/blob/%s/%s#L%s', l:repo, l:branch, l:path, l:line)
 endfunction
 
-nnoremap <leader>gh :call OpenInGitHub()<CR>
+function! OpenInGitHub()
+    let l:url = GitHubURL()
+    " Escape # character in the URL to prevent substitution issues
+    let l:url = substitute(l:url, '#', '\\#', 'g')
+    execute 'silent !open ' . shellescape(l:url)
+endfunction
+
+function! CopyGitHubURL()
+    let l:url = GitHubURL()
+    let @+ = l:url
+    echo "GitHub URL copied to clipboard: " . l:url
+endfunction
+
+nnoremap <leader>gho :call OpenInGitHub()<CR>
+nnoremap <leader>ghc :call CopyGitHubURL()<CR>
 
 " RestoreCursor restores the last cursor position.
 function! RestoreCursor()
