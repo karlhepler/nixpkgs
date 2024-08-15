@@ -13,12 +13,50 @@ let
         git commit -m "$*"
       '';
     };
+    pull = pkgs.writeShellApplication {
+      name = "pull";
+      runtimeInputs = [ pkgs.git ];
+      text = ''
+        set +e # keep going
+        git pull 2> >(
+          must_set_upstream=
+          while IFS= read -r line; do
+            if [[ $line == 'There is no tracking information for the current branch.' ]]; then
+              must_set_upstream=true
+              break
+            fi
+            echo "$line" >&2
+          done
+
+          git_pull_exit_code=$?
+          if [[ $must_set_upstream != true ]]; then
+            exit $git_pull_exit_code
+          fi
+
+          set -e # reset error handling
+          branch="$(git symbolic-ref --short HEAD)"
+          git branch --set-upstream-to="origin/$branch" "$branch"
+          git pull
+        )
+      '';
+    };
+    push = pkgs.writeShellApplication {
+      name = "push";
+      runtimeInputs = [ pkgs.git ];
+      text = ''
+        git_push='git push'
+        if ! git rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
+          git_push="$git_push --set-upstream"
+        fi
+        $git_push "$@"
+      '';
+    };
     save = pkgs.writeShellApplication {
       name = "save";
-      runtimeInputs = [ pkgs.git commit ];
+      runtimeInputs = [ commit push ];
       text = ''
         commit "$*"
-        git push
+        push
       '';
     };
     git-branches = pkgs.writeShellApplication {
@@ -44,7 +82,7 @@ let
         cd "$(git rev-parse --show-toplevel)"
 
         # Get the current branch name
-        current_branch=$(git rev-parse --abbrev-ref HEAD)
+        current_branch="$(git symbolic-ref --short HEAD)"
 
         # Check if the branch exists remotely
         if git ls-remote --exit-code --heads origin "$current_branch" &> /dev/null; then
