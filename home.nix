@@ -396,13 +396,6 @@ in rec {
         '';
       }
       {
-        plugin = vim-rooter;
-        config = ''
-          let g:rooter_silent_chdir = 1
-          let g:rooter_patters = ['.git']
-        '';
-      }
-      {
         plugin = fzfWrapper;
         config = ''
           function! s:build_quickfix_list(lines)
@@ -461,9 +454,11 @@ in rec {
         '';
       }
       {
-        plugin = emmet-vim;
+        plugin = vim-rooter;
         config = ''
-          let g:user_emmet_leader_key='<c-e>'
+          let g:rooter_silent_chdir = 1
+          let g:rooter_patterns = [".git"]
+          let g:rooter_cd_cmd = "lcd"
         '';
       }
     ];

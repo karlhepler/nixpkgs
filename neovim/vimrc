@@ -81,7 +81,7 @@ nmap <left> :cprevious<cr>
 nmap <right> :cnext<cr>
 
 " copy relative & absolute paths to system clipboard
-nmap <silent> <LEADER>cf :let @+ = expand("%")<CR>
+nmap <silent> <LEADER>cf :let @+ = fnamemodify(expand('%'), ':~:.')<CR>
 nmap <silent> <LEADER>cF :let @+ = expand("%:p")<CR>
 
 " horizontal center to cursor position
@@ -113,7 +113,7 @@ function! GitHubURL()
     let l:repo = substitute(l:remote, '.*github.com[:/]', '', '')
     let l:repo = substitute(l:repo, '.git$', '', '')
     let l:branch = substitute(system('git rev-parse --abbrev-ref HEAD'), '\n', '', 'g')
-    let l:path = substitute(expand('%'), '\n', '', 'g')
+    let l:path = substitute(fnamemodify(expand('%'), ':~:.'), '\n', '', 'g')
     let l:line = substitute(line('.'), '\n', '', 'g')
     return printf('https://github.com/%s/blob/%s/%s#L%s', l:repo, l:branch, l:path, l:line)
 endfunction
