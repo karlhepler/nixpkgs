@@ -129,3 +129,13 @@ vim.api.nvim_create_autocmd("BufWritePre", {
 	end,
 	group = vim.api.nvim_create_augroup("lsp_document_format_ts", {clear = true}),
 })
+
+vim.api.nvim_create_autocmd('FileType', {
+  pattern = 'sh',
+  callback = function()
+    vim.lsp.start({
+      name = 'bash-language-server',
+      cmd = { '@bashLanguageServer@/bin/bash-language-server', 'start' },
+    })
+  end,
+})

@@ -143,12 +143,14 @@ in rec {
     go
     gopls
     htop
+    nodePackages.bash-language-server
     nodePackages.pyright
     nodePackages.typescript
     nodePackages.typescript-language-server
     nodejs
     python3
     ripgrep
+    shellcheck
     yaml-language-server
     yarn
     zsh-fzf-tab
@@ -469,6 +471,7 @@ in rec {
       src = ./neovim/lspconfig.lua;
       typescript = "${pkgs.nodePackages.typescript}";
       typescriptLanguageServer = "${pkgs.nodePackages.typescript-language-server}";
+      bashLanguageServer = "${pkgs.nodePackages.bash-language-server}";
     });
   };
 
