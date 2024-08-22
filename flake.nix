@@ -28,8 +28,8 @@
           modules = [
             {
               home = {
-                stateVersion = "24.05"; # This config is compatible with this Home Manager release.
                 inherit username;
+                stateVersion = "24.05"; # This config is compatible with this Home Manager release.
                 homeDirectory = "/Users/${username}";
               };
             }
