@@ -94,6 +94,16 @@ lspconfig.yamlls.setup{
 	},
 }
 
+lspconfig.helm_ls.setup{
+	settings = {
+		['helm-ls'] = {
+			yamlls = {
+				path = 'yaml-language-server'
+			}
+		}
+	}
+}
+
 -- https://github.com/golang/tools/blob/1f10767725e2be1265bef144f774dc1b59ead6dd/gopls/doc/vim.md#imports
 -- https://github.com/typescript-language-server/typescript-language-server#code-actions-on-save
 function OrgImports(code_action, wait_ms)
