@@ -336,6 +336,7 @@ in rec {
     };
   };
 
+  # https://github.com/nix-community/home-manager/blob/master/modules/programs/neovim.nix
   programs.neovim = {
     enable = true;
     viAlias = true;
@@ -433,7 +434,6 @@ in rec {
         plugins: with plugins; [
           tree-sitter-bash
           tree-sitter-go
-          tree-sitter-gotmpl
           tree-sitter-helm
           tree-sitter-lua
           tree-sitter-nix
@@ -465,6 +465,23 @@ in rec {
           let g:rooter_silent_chdir = 1
           let g:rooter_patterns = [".git"]
           let g:rooter_cd_cmd = "lcd"
+        '';
+      }
+      {
+        plugin = indent-blankline-nvim;
+        type = "lua";
+        config = ''
+          local hooks = require "ibl.hooks"
+          hooks.register(
+            hooks.type.ACTIVE,
+            function(bufnum)
+              local filetype = vim.api.nvim_buf_get_option(bufnum, "filetype")
+              return filetype == "python"
+                  or filetype == "helm"
+                  or filetype == "yaml"
+            end
+          )
+          require("ibl").setup()
         '';
       }
     ];
