@@ -260,6 +260,13 @@ in rec {
       eval "$(${pkgs.zoxide}/bin/zoxide init --cmd cd zsh)"
       source '${pkgs.zsh-fzf-tab}/share/fzf-tab/fzf-tab.plugin.zsh'
       bindkey -M viins 'jk' vi-cmd-mode
+
+      function super_newline() {
+        echo -e '\n\n\n\n\n'
+        zle accept-line
+      }
+      zle -N super_newline
+      bindkey '^J' super_newline
     '';
     shellAliases = {
       desk = "cd ~/Desktop";
