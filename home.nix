@@ -142,6 +142,7 @@ in rec {
     gnused
     go
     gopls
+    helm-ls
     htop
     nodePackages.bash-language-server
     nodePackages.pyright
@@ -426,11 +427,14 @@ in rec {
           inoremap <expr> <C-p> pumvisible() ? "''\<C-p>" : "''\<esc>:GFiles''\<cr>"
         '';
       }
+      vim-helm
       nvim-lspconfig
       (nvim-treesitter.withPlugins (
         plugins: with plugins; [
           tree-sitter-bash
           tree-sitter-go
+          tree-sitter-gotmpl
+          tree-sitter-helm
           tree-sitter-lua
           tree-sitter-nix
           tree-sitter-python
