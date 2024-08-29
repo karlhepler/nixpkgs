@@ -106,8 +106,8 @@ let
         git pull
       '';
     };
-    git-remix = pkgs.writeShellApplication {
-      name = "git-remix";
+    git-sync = pkgs.writeShellApplication {
+      name = "git-sync";
       runtimeInputs = [ pkgs.git git-trunk ];
       text = ''
         git trunk
