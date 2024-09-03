@@ -1,3 +1,5 @@
+-- TODO: Separate this file by language and use this guide.
+-- https://rishabhrd.github.io/jekyll/update/2020/09/19/nvim_lsp_config.html
 local lspconfig = require 'lspconfig'
 local treesitter_configs = require 'nvim-treesitter.configs'
 
@@ -64,9 +66,7 @@ lspconfig.tsserver.setup {
 	on_attach = on_attach,
 	cmd = {
 		"@typescriptLanguageServer@/bin/typescript-language-server",
-		"--stdio",
-		"--tsserver-path",
-		"@typescript@/lib/node_modules/typescript/lib/"
+		"--stdio"
 	}
 }
 
