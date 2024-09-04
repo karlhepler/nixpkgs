@@ -78,7 +78,7 @@ lspconfig.pyright.setup {
 	on_attach = on_attach,
 }
 
-lspconfig.yamlls.setup{
+lspconfig.yamlls.setup {
 	on_attach = on_attach,
 	settings = {
 		yaml = {
@@ -94,12 +94,34 @@ lspconfig.yamlls.setup{
 	},
 }
 
-lspconfig.helm_ls.setup{
+lspconfig.helm_ls.setup {
 	settings = {
 		['helm-ls'] = {
 			yamlls = {
 				path = 'yaml-language-server'
 			}
+		}
+	}
+}
+
+lspconfig.rust_analyzer.setup {
+	on_attach = on_attach,
+	settings = {
+		['rust-analyzer'] = {
+			imports = {
+				granularity = {
+					group = "module",
+				},
+				prefix = "self",
+			},
+			cargo = {
+				buildScripts = {
+					enable = true,
+				},
+			},
+			procMacro = {
+				enable = true
+			},
 		}
 	}
 }

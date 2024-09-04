@@ -445,6 +445,7 @@ in rec {
           tree-sitter-lua
           tree-sitter-nix
           tree-sitter-python
+          tree-sitter-rust
           tree-sitter-typescript
           tree-sitter-yaml
         ]
