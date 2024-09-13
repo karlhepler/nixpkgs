@@ -4,7 +4,6 @@ let mapleader=','
 imap jk <esc>
 
 set background=dark
-colorscheme tokyonight-storm
 
 set shell=zsh " use zsh for :term
 set grepprg=rg\ --vimgrep " use ripgrep for :grep

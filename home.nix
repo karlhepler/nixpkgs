@@ -144,6 +144,7 @@ in rec {
     gopls
     helm-ls
     htop
+    just
     nodePackages.bash-language-server
     nodePackages.pyright
     nodePackages.typescript
@@ -204,9 +205,9 @@ in rec {
         { key = "Enter"; mods = "Command"; action = "ToggleSimpleFullscreen";  }
       ];
       env = {
-        EDITOR = "${pkgs.neovim}/bin/nvim";
-        VISUAL = "${pkgs.neovim}/bin/nvim";
-        SHELL = "${pkgs.zsh}/bin/zsh";
+        EDITOR = "${homeDirectory}/.nix-profile/bin/nvim";
+        VISUAL = "${homeDirectory}/.nix-profile/bin/nvim";
+        SHELL = "${homeDirectory}/.nix-profile/bin/zsh";
         GOPATH = "${homeDirectory}/go";
       };
       font = {
@@ -267,6 +268,13 @@ in rec {
       }
       zle -N super_newline
       bindkey '^J' super_newline
+      bindkey -M viins '^A' beginning-of-line
+      bindkey -M viins '^E' end-of-line
+
+      autoload -U edit-command-line
+      zle -N edit-command-line
+      bindkey -M vicmd '^X^E' edit-command-line
+      bindkey -M viins '^X^E' edit-command-line
     '';
     shellAliases = {
       desk = "cd ~/Desktop";
@@ -374,6 +382,13 @@ in rec {
         '';
       }
       tokyonight-nvim
+      {
+        plugin = tokyonight-nvim;
+        type = "lua";
+        config = ''
+          vim.cmd[[colorscheme tokyonight-storm]]
+        '';
+      }
       {
         plugin = lightline-vim;
         config = ''
