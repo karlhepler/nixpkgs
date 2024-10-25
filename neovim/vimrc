@@ -107,6 +107,10 @@ nmap <leader>b :Buffers<cr>
 imap <leader>b <esc>:Buffers<cr>
 vmap <leader>b <esc>:Buffers<cr>
 
+" Run :RustFmt when saving rust files
+" Reference: https://github.com/rust-lang/rust.vim?tab=readme-ov-file#formatting-with-rustfmt
+let g:rustfmt_autosave = 1
+
 function! GitHubURL()
     let l:remote = substitute(system('git remote get-url origin'), '\n', '', 'g')
     let l:repo = substitute(l:remote, '.*github.com[:/]', '', '')
