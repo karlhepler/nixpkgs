@@ -160,6 +160,7 @@ in rec {
     shellcheck
     yaml-language-server
     yarn
+    yq
     zsh-fzf-tab
   ] ++ [
     (pkgs.nerdfonts.override { fonts = [ "SourceCodePro" ]; })
