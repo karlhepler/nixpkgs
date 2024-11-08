@@ -106,6 +106,7 @@ let
       name = "git-trunk";
       runtimeInputs = [ pkgs.git pkgs.gnused ];
       text = ''
+        git remote set-head origin -a # make sure there is an origin/HEAD
         trunk="$(git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@')"
         git checkout "$trunk"
         git pull
