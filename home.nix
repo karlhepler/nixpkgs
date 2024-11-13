@@ -459,6 +459,15 @@ in rec {
       }
       vim-helm
       nvim-lspconfig
+      {
+        plugin = goto-preview;
+        type = "lua";
+        config = ''
+          require('goto-preview').setup {
+            default_mappings = true,
+          }
+        '';
+      }
       (nvim-treesitter.withPlugins (
         plugins: with plugins; [
           tree-sitter-bash
