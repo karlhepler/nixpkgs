@@ -62,7 +62,7 @@ local on_attach = function(client, bufnr)
 	vim.api.nvim_buf_set_keymap(bufnr, 'n', '<space>f', '<cmd>lua vim.lsp.buf.formatting()<CR>', opts)
 end
 
-lspconfig.tsserver.setup {
+lspconfig.ts_ls.setup {
 	on_attach = on_attach,
 	cmd = {
 		"@typescriptLanguageServer@/bin/typescript-language-server",
