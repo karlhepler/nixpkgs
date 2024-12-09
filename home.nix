@@ -1,7 +1,6 @@
 { config, pkgs, lib, ... }:
 
 let
-  username = config.home.username;
   homeDirectory = config.home.homeDirectory;
 
   shellapps = rec {
@@ -138,7 +137,7 @@ let
     };
   };
 
-in rec {
+in {
   # Home Packages
   # https://search.nixos.org/packages
   home.packages = with pkgs; [
@@ -153,10 +152,10 @@ in rec {
     just
     nil
     nodePackages.bash-language-server
-    nodePackages.pyright
     nodePackages.typescript
     nodePackages.typescript-language-server
     nodejs
+    pyright
     python3
     ripgrep
     shellcheck
