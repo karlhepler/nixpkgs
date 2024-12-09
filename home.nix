@@ -151,6 +151,7 @@ in rec {
     helm-ls
     htop
     just
+    nil
     nodePackages.bash-language-server
     nodePackages.pyright
     nodePackages.typescript
@@ -466,6 +467,13 @@ in rec {
           require('goto-preview').setup {
             default_mappings = true,
           }
+          require('lspconfig').nil_ls.setup({
+            on_attach = function(client, bufnr)
+              local opts = { noremap = true, silent = true, buffer = bufnr }
+              vim.keymap.set('n', 'gd', vim.lsp.buf.definition, opts) -- Go to definition
+              vim.keymap.set('n', 'K', vim.lsp.buf.hover, opts)       -- Floating hover window
+            end,
+          })
         '';
       }
       (nvim-treesitter.withPlugins (
