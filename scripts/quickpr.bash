@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
 set -eou pipefail
-set -x
 
 : "${EDITOR:?EDITOR is not set. Please export it before running this script.}"
 : "${JIRA_API_TOKEN:?JIRA_API_TOKEN is not set. Please export it before running this script.}"
@@ -9,7 +8,7 @@ set -x
 
 main() {
 	local body summary
-	local issue_number="$1"
+	local issue_number="${1:-}"
 
 	if [ -z "$issue_number" ]; then
 		# get summary and body
