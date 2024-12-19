@@ -141,12 +141,15 @@ in {
   # Home Packages
   # https://search.nixos.org/packages
   home.packages = with pkgs; [
+    cabal-install # Cabal installation tool for managing Haskell software
     comma
     darwin.trash
     fd
+    ghc # Glasgow Haskell Compiler
     gnused
     go
     gopls
+    haskell-language-server # Haskell language server
     helm-ls
     htop
     just
@@ -159,6 +162,7 @@ in {
     python3
     ripgrep
     shellcheck
+    stack  # A cross-platform program for developing Haskell projects
     yaml-language-server
     yarn
     yq
@@ -528,6 +532,13 @@ in {
             end
           )
           require("ibl").setup()
+        '';
+      }
+      {
+        plugin = haskell-tools-nvim;
+        type = "lua";
+        config = ''
+          local ht = require('haskell-tools')
         '';
       }
     ];
