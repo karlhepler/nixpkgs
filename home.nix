@@ -148,6 +148,7 @@ in {
     ghc # Glasgow Haskell Compiler
     gnused
     go
+    go-tools
     gopls
     haskell-language-server # Haskell language server
     helm-ls
