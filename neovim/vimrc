@@ -55,6 +55,11 @@ set sidescroll=1
 " no double spaces after periods when joining lines
 set nojoinspaces
 
+" todos
+nmap <silent> <leader>T :grep 'TODO\(karlhepler\): '<cr>:copen<cr>
+nmap <silent> <leader>t o<esc>ccTODO(karlhepler): <esc>gccA
+imap <silent> <leader>t <esc><leader>t
+
 " search highlighting off
 nmap <silent> <leader><space> :nohlsearch<cr>
 
