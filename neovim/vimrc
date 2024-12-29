@@ -58,7 +58,7 @@ set nojoinspaces
 " todos
 nmap <silent> <leader>t :grep 'TODO\(karlhepler\):'<cr>:copen<cr>
 nmap <silent> <leader>T o<esc>ccTODO(karlhepler): <esc>gccA
-imap <silent> <leader>T <esc><leader>t
+imap <silent> <leader>T <esc><leader>T
 
 " search highlighting off
 nmap <silent> <leader><space> :nohlsearch<cr>
