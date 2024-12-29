@@ -56,9 +56,9 @@ set sidescroll=1
 set nojoinspaces
 
 " todos
-nmap <silent> <leader>T :grep 'TODO\(karlhepler\): '<cr>:copen<cr>
-nmap <silent> <leader>t o<esc>ccTODO(karlhepler): <esc>gccA
-imap <silent> <leader>t <esc><leader>t
+nmap <silent> <leader>t :grep 'TODO\(karlhepler\): '<cr>:copen<cr>
+nmap <silent> <leader>T o<esc>ccTODO(karlhepler): <esc>gccA
+imap <silent> <leader>T <esc><leader>t
 
 " search highlighting off
 nmap <silent> <leader><space> :nohlsearch<cr>
