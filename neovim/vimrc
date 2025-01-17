@@ -154,7 +154,8 @@ augroup config
 	autocmd!
 
 	" jump to last cursor position on file load
-	autocmd BufWinEnter * silent! call RestoreCursor()
+  " also enable text dimming "focus mode"
+	autocmd BufWinEnter * silent! call RestoreCursor() | TwilightEnable
 
 	" force quickfix to always open full width
 	autocmd FileType qf wincmd J
