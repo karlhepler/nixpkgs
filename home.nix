@@ -562,6 +562,7 @@ in {
                                -- but you can further control the types of nodes that should always be fully expanded
             expand = { -- for treesitter, we we always try to expand to the top-most ancestor with these types
               "attribute_item",
+              "binding",
               "const_declaration",
               "const_item",
               "enum_item",
@@ -598,5 +599,26 @@ in {
   programs.zoxide = {
     enable = true;
     enableZshIntegration = true;
+  };
+
+  programs.neovide = {
+    enable = true;
+    settings = {
+      fork = false;
+      frame = "full";
+      idle = true;
+      maximized = false;
+      no-multigrid = false;
+      srgb = false;
+      tabs = true;
+      theme = "auto";
+      title-hidden = true;
+      vsync = true;
+      wsl = false;
+      font = {
+        normal = ["SauceCodePro Nerd Font Mono"];
+        size = 18;
+      };
+    };
   };
 }

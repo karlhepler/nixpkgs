@@ -116,6 +116,11 @@ vmap <leader>b <esc>:Buffers<cr>
 " Reference: https://github.com/rust-lang/rust.vim?tab=readme-ov-file#formatting-with-rustfmt
 let g:rustfmt_autosave = 1
 
+" Neovide options (check home.nix)
+let g:neovide_cursor_animation_length = 0.05
+let g:neovide_cursor_trail_size = 0.25
+let g:neovide_cursor_vfx_mode = "pixiedust"
+
 function! GitHubURL()
     let l:remote = substitute(system('git remote get-url origin'), '\n', '', 'g')
     let l:repo = substitute(l:remote, '.*github.com[:/]', '', '')
