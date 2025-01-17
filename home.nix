@@ -542,6 +542,46 @@ in {
           local ht = require('haskell-tools')
         '';
       }
+      {
+        plugin = twilight-nvim;
+        type = "lua";
+        # NOTE: To make the highlighting better, run :InspectTree in the buffer to see which treesitter attributes to expand.
+        config = ''
+          require("twilight").setup {
+            dimming = {
+              alpha = 0.25, -- amount of dimming
+                            -- we try to get the foreground from the highlight groups or fallback color
+              color = { "Normal", "#ffffff" },
+              term_bg = "#000000", -- if guibg=NONE, this will be used to calculate text color
+              inactive = false, -- when true, other windows will be fully dimmed (unless they contain the same buffer)
+            },
+            context = 10, -- amount of lines we will try to show around the current line
+            treesitter = true, -- use treesitter when available for the filetype
+                               -- treesitter is used to automatically expand the visible text,
+                               -- but you can further control the types of nodes that should always be fully expanded
+            expand = { -- for treesitter, we we always try to expand to the top-most ancestor with these types
+              "attribute_item",
+              "const_declaration",
+              "const_item",
+              "enum_item",
+              "function_declaration",
+              "function_definition",
+              "function_item",
+              "impl_item",
+              "import_declaration",
+              "method_declaration",
+              "mod_item",
+              "package_clause",
+              "struct_item",
+              "trait_item",
+              "type_declaration",
+              "use_declaration",
+              "var_declaration",
+            },
+            exclude = {}, -- exclude these filetypes
+          }
+        '';
+      }
     ];
     
     extraConfig = builtins.readFile ./neovim/vimrc;
