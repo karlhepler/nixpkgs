@@ -227,7 +227,7 @@ in {
           family = "SauceCodePro Nerd Font Mono";
           style = "Regular";
         };
-        size = 18;
+        size = 20;
       };
       # Tokyo Night Storm
       # Reference: https://github.com/zatchheems/tokyo-night-alacritty-theme/blob/main/tokyo-night.yaml
@@ -342,16 +342,23 @@ in {
       set-option -g status-style bg=color8,fg=white
       set-option -g status-right "%a %b %d %l:%M %p"
 
-      # show date and time
+      # show date and time, with a little padding
       set-option -g status-left " "
-      set-option -g status-right "#[fg=cyan]#(date +\"%Y-%m-%d %H:%M:%S\")"
+      set-option -g status-right "%a %b %d %-I:%M %p "
 
-      # refresh the status every second
-      set-option -g status-interval 1
+      # refresh the status every 60 seconds
+      set-option -g status-interval 60
 
       # set shell (both shell and command must be set)
       set-option -g default-shell ${homeDirectory}/.nix-profile/bin/zsh
       set-option -g default-command ${homeDirectory}/.nix-profile/bin/zsh
+
+      # fix colors
+      set -g default-terminal "tmux-256color"
+      set -g terminal-overrides ",*256col*:Tc"
+
+      # enable mouse
+      set -g mouse on
     '';
   };
 
@@ -633,7 +640,7 @@ in {
       wsl = false;
       font = {
         normal = ["SauceCodePro Nerd Font Mono"];
-        size = 18;
+        size = 20;
       };
     };
   };
