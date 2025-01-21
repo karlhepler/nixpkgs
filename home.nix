@@ -287,6 +287,11 @@ in {
       zle -N edit-command-line
       bindkey -M vicmd '^X^E' edit-command-line
       bindkey -M viins '^X^E' edit-command-line
+
+      # start tmux if not started
+      if [ -z "$TMUX" ]; then
+        exec ${homeDirectory}/.nix-profile/bin/tmux
+      fi
     '';
     shellAliases = {
       desk = "cd ~/Desktop";
@@ -327,15 +332,26 @@ in {
     enable = true;
     keyMode = "vi";
     extraConfig = ''
-      # customize status bar
-      set-option -g status-position top
-      set-option -g status-style bg=color8,fg=white
-      set-option -g status-right "%a %b %d %l:%M %p"
-
       # vim mode with <C-b>[]
       set-window-option -g mode-keys vi
       bind-key -T copy-mode-vi 'v' send -X begin-selection
       bind-key -T copy-mode-vi 'y' send -X copy-selection-and-cancel
+
+      # customize status bar ---------------------------------------------------
+      set-option -g status-position top
+      set-option -g status-style bg=color8,fg=white
+      set-option -g status-right "%a %b %d %l:%M %p"
+
+      # show date and time
+      set-option -g status-left " "
+      set-option -g status-right "#[fg=cyan]#(date +\"%Y-%m-%d %H:%M:%S\")"
+
+      # refresh the status every second
+      set-option -g status-interval 1
+
+      # set shell (both shell and command must be set)
+      set-option -g default-shell ${homeDirectory}/.nix-profile/bin/zsh
+      set-option -g default-command ${homeDirectory}/.nix-profile/bin/zsh
     '';
   };
 

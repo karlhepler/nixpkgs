@@ -112,6 +112,8 @@ nmap <leader>b :Buffers<cr>
 imap <leader>b <esc>:Buffers<cr>
 vmap <leader>b <esc>:Buffers<cr>
 
+map <c-f> <esc>:Twilight<cr>
+
 " Run :RustFmt when saving rust files
 " Reference: https://github.com/rust-lang/rust.vim?tab=readme-ov-file#formatting-with-rustfmt
 let g:rustfmt_autosave = 1
@@ -160,7 +162,7 @@ augroup config
 
 	" jump to last cursor position on file load
   " also enable text dimming "focus mode"
-	autocmd BufWinEnter * silent! call RestoreCursor() | TwilightEnable
+	autocmd BufWinEnter * silent! call RestoreCursor()
 
 	" force quickfix to always open full width
 	autocmd FileType qf wincmd J
