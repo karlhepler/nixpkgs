@@ -332,6 +332,11 @@ in {
     enable = true;
     keyMode = "vi";
     extraConfig = ''
+      # Change prefix to Ctrl-e
+      unbind C-b
+      set-option -g prefix C-e
+      bind C-e send-prefix
+
       # vim mode with <C-b>[]
       set-window-option -g mode-keys vi
       bind-key -T copy-mode-vi 'v' send -X begin-selection
@@ -359,6 +364,28 @@ in {
 
       # enable mouse
       set -g mouse on
+
+      # Split panes like Vim
+      bind -T prefix v split-window -h   # Horizontal split
+      bind -T prefix s split-window -v   # Vertical split
+
+      # Move between panes like Vim
+      bind -T prefix h select-pane -L
+      bind -T prefix j select-pane -D
+      bind -T prefix k select-pane -U
+      bind -T prefix l select-pane -R
+
+      # Bind <C-e> w to create a new window
+      bind-key -T prefix w new-window
+
+      # Bind gw for next window
+      bind-key -T prefix w next-window
+
+      # Bind gW (Shift + gw) for previous window
+      bind-key -T prefix W previous-window
+
+      # Bind <C-e>x to swap panes
+      bind-key -T prefix x swap-pane
     '';
   };
 
