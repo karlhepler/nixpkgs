@@ -365,27 +365,18 @@ in {
       # enable mouse
       set -g mouse on
 
-      # Split panes like Vim
-      bind -T prefix v split-window -h   # Horizontal split
-      bind -T prefix s split-window -v   # Vertical split
+      # Window management
+      bind-key -T prefix n new-window                # New window (tab)
+      bind-key -T prefix v split-window -h           # Split window vertically
+      bind-key -T prefix s split-window -v           # Split window horizontally
+      bind-key -T prefix w next-window               # Next tab (window)
+      bind-key -T prefix W previous-window           # Previous tab (window)
 
-      # Move between panes like Vim
-      bind -T prefix h select-pane -L
-      bind -T prefix j select-pane -D
-      bind -T prefix k select-pane -U
-      bind -T prefix l select-pane -R
-
-      # Bind <C-e> w to create a new window
-      bind-key -T prefix w new-window
-
-      # Bind gw for next window
-      bind-key -T prefix w next-window
-
-      # Bind gW (Shift + gw) for previous window
-      bind-key -T prefix W previous-window
-
-      # Bind <C-e>x to swap panes
-      bind-key -T prefix x swap-pane
+      # Pane navigation with <C-e> + hjkl
+      bind-key -T prefix h select-pane -L            # Move to the left pane
+      bind-key -T prefix j select-pane -D            # Move to the pane below
+      bind-key -T prefix k select-pane -U            # Move to the pane above
+      bind-key -T prefix l select-pane -R            # Move to the right pane
     '';
   };
 
