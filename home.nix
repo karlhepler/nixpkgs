@@ -331,12 +331,13 @@ in {
   programs.tmux = {
     enable = true;
     keyMode = "vi";
+    customPaneNavigationAndResize = true;
+    mouse = true;
+    shell = "${homeDirectory}/.nix-profile/bin/zsh";
+    shortcut = "e";
+    terminal = "tmux-256color";
+    historyLimit = 5000;
     extraConfig = ''
-      # Change prefix to Ctrl-e
-      unbind C-b
-      set-option -g prefix C-e
-      bind C-e send-prefix
-
       # vim mode with <C-b>[]
       set-window-option -g mode-keys vi
       bind-key -T copy-mode-vi 'v' send -X begin-selection
@@ -354,29 +355,11 @@ in {
       # refresh the status every 60 seconds
       set-option -g status-interval 60
 
-      # set shell (both shell and command must be set)
-      set-option -g default-shell ${homeDirectory}/.nix-profile/bin/zsh
+      # set shell (both shell and command must be set) -------------------------
       set-option -g default-command ${homeDirectory}/.nix-profile/bin/zsh
 
-      # fix colors
-      set -g default-terminal "tmux-256color"
+      # fix colors -------------------------------------------------------------
       set -g terminal-overrides ",*256col*:Tc"
-
-      # enable mouse
-      set -g mouse on
-
-      # Window management
-      bind-key -T prefix n new-window                # New window (tab)
-      bind-key -T prefix v split-window -h           # Split window vertically
-      bind-key -T prefix s split-window -v           # Split window horizontally
-      bind-key -T prefix w next-window               # Next tab (window)
-      bind-key -T prefix W previous-window           # Previous tab (window)
-
-      # Pane navigation with <C-e> + hjkl
-      bind-key -T prefix h select-pane -L            # Move to the left pane
-      bind-key -T prefix j select-pane -D            # Move to the pane below
-      bind-key -T prefix k select-pane -U            # Move to the pane above
-      bind-key -T prefix l select-pane -R            # Move to the right pane
     '';
   };
 
