@@ -337,6 +337,7 @@ in {
     shortcut = "e";
     terminal = "tmux-256color";
     historyLimit = 5000;
+    sensibleOnTop = true;
     extraConfig = ''
       # vim mode with <C-b>[]
       set-window-option -g mode-keys vi
