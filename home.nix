@@ -334,12 +334,12 @@ in {
     customPaneNavigationAndResize = true;
     mouse = true;
     shell = "${homeDirectory}/.nix-profile/bin/zsh";
-    shortcut = "e";
+    shortcut = "g";
     terminal = "tmux-256color";
     historyLimit = 5000;
     sensibleOnTop = true;
     extraConfig = ''
-      # vim mode with <C-b>[]
+      # vim mode with <shortcut>[
       set-window-option -g mode-keys vi
       bind-key -T copy-mode-vi 'v' send -X begin-selection
       bind-key -T copy-mode-vi 'y' send -X copy-selection-and-cancel
