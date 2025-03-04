@@ -146,8 +146,8 @@ in {
     comma
     darwin.trash
     fd
-    git-lfs
     ghc # Glasgow Haskell Compiler
+    git-lfs
     gnused
     go
     go-tools
@@ -340,6 +340,31 @@ in {
     terminal = "tmux-256color";
     historyLimit = 5000;
     sensibleOnTop = true;
+    plugins = with pkgs.tmuxPlugins; [
+      {
+        # https://github.com/janoamaral/tokyo-night-tmux
+        plugin = tokyo-night-tmux;
+        extraConfig = ''
+          # Theme Style
+          set -g @tokyo-night-tmux_theme storm
+          set -g @tokyo-night-tmux_transparent 0
+
+          # Number Style
+          set -g @tokyo-night-tmux_window_id_style digital
+          set -g @tokyo-night-tmux_pane_id_style hsquare
+          set -g @tokyo-night-tmux_zoom_id_style dsquare
+
+          # Icon Style
+          set -g @tokyo-night-tmux_terminal_icon 
+          set -g @tokyo-night-tmux_active_terminal_icon 
+          set -g @tokyo-night-tmux_window_tidy_icons 0 # No extra spaces between icons
+
+          # Date and Time Widget
+          set -g @tokyo-night-tmux_date_format MDY
+          set -g @tokyo-night-tmux_time_format 12H
+        '';
+      }
+    ];
     extraConfig = ''
       # vim mode with <shortcut>[
       set-window-option -g mode-keys vi
@@ -348,15 +373,6 @@ in {
 
       # customize status bar ---------------------------------------------------
       set-option -g status-position top
-      set-option -g status-style bg=color8,fg=white
-      set-option -g status-right "%a %b %d %l:%M %p"
-
-      # show date and time, with a little padding
-      set-option -g status-left " "
-      set-option -g status-right "%a %b %d %-I:%M %p "
-
-      # refresh the status every 60 seconds
-      set-option -g status-interval 60
 
       # set shell (both shell and command must be set) -------------------------
       set-option -g default-command ${homeDirectory}/.nix-profile/bin/zsh
