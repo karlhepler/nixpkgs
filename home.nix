@@ -141,10 +141,12 @@ in {
   # Home Packages
   # https://search.nixos.org/packages
   home.packages = with pkgs; [
+    bash
     cabal-install # Cabal installation tool for managing Haskell software
     comma
     darwin.trash
     fd
+    git-lfs
     ghc # Glasgow Haskell Compiler
     gnused
     go
