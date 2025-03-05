@@ -342,26 +342,24 @@ in {
     sensibleOnTop = true;
     plugins = with pkgs.tmuxPlugins; [
       {
-        # https://github.com/janoamaral/tokyo-night-tmux
-        plugin = tokyo-night-tmux;
+        plugin = mkTmuxPlugin {
+          pluginName = "tmux-tokyo-night";
+          rtpFilePath = "tmux-tokyo-night.tmux";
+          version = "1.10.0";
+          src = pkgs.fetchFromGitHub {
+            owner = "fabioluciano";
+            repo = "tmux-tokyo-night";
+            rev = "5ce373040f893c3a0d1cb93dc1e8b2a25c94d3da";
+            hash = "sha256-9nDgiJptXIP+Hn9UY+QFMgoghw4HfTJ5TZq0f9KVOFg=";
+          };
+        };
         extraConfig = ''
-          # Theme Style
-          set -g @tokyo-night-tmux_theme storm
-          set -g @tokyo-night-tmux_transparent 0
-
-          # Number Style
-          set -g @tokyo-night-tmux_window_id_style digital
-          set -g @tokyo-night-tmux_pane_id_style hsquare
-          set -g @tokyo-night-tmux_zoom_id_style dsquare
-
-          # Icon Style
-          set -g @tokyo-night-tmux_terminal_icon 
-          set -g @tokyo-night-tmux_active_terminal_icon 
-          set -g @tokyo-night-tmux_window_tidy_icons 0 # No extra spaces between icons
-
-          # Date and Time Widget
-          set -g @tokyo-night-tmux_date_format MDY
-          set -g @tokyo-night-tmux_time_format 12H
+          set -g @theme_variation 'storm'
+          set -g @theme_plugins 'datetime'
+          set -g @theme_plugin_datetime_format ' %a %b%e %l:%M%p'
+          set -g @theme_plugin_datetime_icon '  '
+          set -g @theme_left_separator ''
+          set -g @theme_right_separator ''
         '';
       }
     ];
@@ -370,6 +368,9 @@ in {
       set-window-option -g mode-keys vi
       bind-key -T copy-mode-vi 'v' send -X begin-selection
       bind-key -T copy-mode-vi 'y' send -X copy-selection-and-cancel
+      bind-key N new-window -c "#{pane_current_path}"
+      bind-key v split -h -c "#{pane_current_path}"
+      bind-key s split -v -c "#{pane_current_path}"
 
       # customize status bar ---------------------------------------------------
       set-option -g status-position top
