@@ -195,7 +195,7 @@ in {
         $DRY_RUN_CMD /usr/bin/osascript \
           -e "tell app \"Finder\"" \
           -e "make new alias file at POSIX file \"$aliasdir\" to POSIX file \"$appfile\"" \
-          -e "set name of result to \"$(basename $appfile)\"" \
+          -e "set name of result to \"$(basename "$appfile")\"" \
           -e "end tell"
       done
     '';
