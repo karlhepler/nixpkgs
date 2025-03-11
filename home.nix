@@ -205,6 +205,9 @@ in {
     '';
   };
 
+  # Automatically run the garbage collector weekly.
+  nix.gc.automatic = true;
+
   # Let Home Manager install and manage itself.
   programs.home-manager.enable = true;
 
