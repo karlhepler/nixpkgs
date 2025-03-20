@@ -530,6 +530,7 @@ in {
       (nvim-treesitter.withPlugins (
         plugins: with plugins; [
           tree-sitter-bash
+          tree-sitter-gdscript
           tree-sitter-go
           tree-sitter-helm
           tree-sitter-lua

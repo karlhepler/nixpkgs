@@ -171,3 +171,61 @@ vim.api.nvim_create_autocmd('FileType', {
     })
   end,
 })
+
+-- GODOT CONFIGURATION ---------------------------------------------------------
+
+-- Early filetype configuration
+vim.filetype.add({
+  extension = {
+    gd = 'gdscript',      -- GDScript files
+    tscn = 'gdresource',  -- Godot scene files
+    tres = 'gdresource',  -- Godot resource files
+  },
+  filename = {
+    ["project.godot"] = 'conf',  -- Godot project file
+  },
+})
+
+-- Fallback using autocmd for stubborn cases
+vim.api.nvim_create_autocmd({"BufRead", "BufNewFile"}, {
+  pattern = {"*.gd"},
+  command = "set filetype=gdscript",
+})
+vim.api.nvim_create_autocmd({"BufRead", "BufNewFile"}, {
+  pattern = {"*.tscn"},
+  command = "set filetype=gdresource",
+})
+vim.api.nvim_create_autocmd({"BufRead", "BufNewFile"}, {
+  pattern = {"*.tres"},
+  command = "set filetype=gdresource",
+})
+vim.api.nvim_create_autocmd({"BufRead", "BufNewFile"}, {
+  pattern = {"project.godot"},
+  command = "set filetype=conf",
+})
+
+-- Reference: https://www.reddit.com/r/neovim/comments/13ski66/neovim_configuration_for_godot_4_lsp_as_simple_as/
+local port = os.getenv('GDScript_Port') or '6005'
+local cmd = vim.lsp.rpc.connect('127.0.0.1', port)
+local pipe = '/tmp/godot.pipe'
+vim.lsp.start({
+  name = 'Godot',
+  cmd = cmd,
+  autostart = true,
+  filetypes = { 'gdscript', 'gdresource', 'conf' },
+  root_dir = vim.fs.dirname(vim.fs.find({ 'project.godot', '.git' }, { upward = true })[1]),
+  on_attach = on_attach
+})
+
+-- Autocmd to force attaching the Godot LSP client to buffers with matching filetypes
+vim.api.nvim_create_autocmd("BufEnter", {
+  pattern = {"*.gd", "*.tscn", "*.tres", "project.godot"},
+  callback = function()
+    for _, client in ipairs(vim.lsp.get_active_clients()) do
+      if client.name == "Godot" and not vim.lsp.buf_is_attached(0, client.id) then
+        vim.lsp.buf_attach_client(0, client.id)
+        print("Godot LSP attached to buffer " .. vim.api.nvim_get_current_buf())
+      end
+    end
+  end,
+})
