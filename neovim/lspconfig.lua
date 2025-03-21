@@ -178,11 +178,6 @@ vim.api.nvim_create_autocmd('FileType', {
 vim.filetype.add({
   extension = {
     gd = 'gdscript',      -- GDScript files
-    tscn = 'gdresource',  -- Godot scene files
-    tres = 'gdresource',  -- Godot resource files
-  },
-  filename = {
-    ["project.godot"] = 'conf',  -- Godot project file
   },
 })
 
@@ -190,18 +185,6 @@ vim.filetype.add({
 vim.api.nvim_create_autocmd({"BufRead", "BufNewFile"}, {
   pattern = {"*.gd"},
   command = "set filetype=gdscript",
-})
-vim.api.nvim_create_autocmd({"BufRead", "BufNewFile"}, {
-  pattern = {"*.tscn"},
-  command = "set filetype=gdresource",
-})
-vim.api.nvim_create_autocmd({"BufRead", "BufNewFile"}, {
-  pattern = {"*.tres"},
-  command = "set filetype=gdresource",
-})
-vim.api.nvim_create_autocmd({"BufRead", "BufNewFile"}, {
-  pattern = {"project.godot"},
-  command = "set filetype=conf",
 })
 
 -- Reference: https://www.reddit.com/r/neovim/comments/13ski66/neovim_configuration_for_godot_4_lsp_as_simple_as/
@@ -212,14 +195,14 @@ vim.lsp.start({
   name = 'Godot',
   cmd = cmd,
   autostart = true,
-  filetypes = { 'gdscript', 'gdresource', 'conf' },
+  filetypes = { 'gdscript' },
   root_dir = vim.fs.dirname(vim.fs.find({ 'project.godot', '.git' }, { upward = true })[1]),
   on_attach = on_attach
 })
 
 -- Autocmd to force attaching the Godot LSP client to buffers with matching filetypes
 vim.api.nvim_create_autocmd("BufEnter", {
-  pattern = {"*.gd", "*.tscn", "*.tres", "project.godot"},
+  pattern = {"*.gd"},
   callback = function()
     for _, client in ipairs(vim.lsp.get_active_clients()) do
       if client.name == "Godot" and not vim.lsp.buf_is_attached(0, client.id) then
