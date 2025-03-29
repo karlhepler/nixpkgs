@@ -148,6 +148,7 @@ in {
     fd
     ghc # Glasgow Haskell Compiler
     git-lfs
+    github-copilot-cli
     gnused
     go
     go-tools
@@ -314,6 +315,9 @@ in {
       hm = "cd ~/.config/nixpkgs";
       ll = "${pkgs.eza}/bin/eza --oneline --icons --sort=type";
       tree = "${pkgs.eza}/bin/eza --oneline --icons --sort=type --tree";
+      "??" = "${pkgs.github-copilot-cli}/bin/github-copilot-cli what-the-shell";
+      "git?" = "${pkgs.github-copilot-cli}/bin/github-copilot-cli git-assist";
+      "gh?" = "${pkgs.github-copilot-cli}/bin/github-copilot-cli gh-assist";
     };
   };
 
@@ -418,6 +422,7 @@ in {
     vimdiffAlias = true;
 
     plugins = with pkgs.vimPlugins; [
+      copilot-vim
       vim-sensible
       vim-surround
       vim-signify
