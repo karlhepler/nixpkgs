@@ -166,6 +166,7 @@ in {
     ripgrep
     shellcheck
     stack  # A cross-platform program for developing Haskell projects
+    tilt
     yaml-language-server
     yarn
     yq
