@@ -273,7 +273,8 @@ in {
     profileExtra = ''
       nix_path='/nix/var/nix/profiles/default/bin'
       nix_profile_path='${homeDirectory}/.nix-profile/bin'
-      export PATH="$nix_profile_path:$nix_path:$PATH"
+      go_bin_path="$GOPATH/bin"
+      export PATH="$go_bin_path:$nix_profile_path:$nix_path:$PATH"
     '';
     initExtra = ''
       eval "$(${pkgs.zoxide}/bin/zoxide init --cmd cd zsh)"
