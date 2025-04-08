@@ -148,6 +148,7 @@ in {
     fd
     ghc # Glasgow Haskell Compiler
     git-lfs
+    github-copilot-cli
     gnused
     go
     go-tools
@@ -205,6 +206,9 @@ in {
       $DRY_RUN_CMD ${pkgs.git}/bin/git -C ~/.config/nixpkgs update-index --assume-unchanged overconfig.nix
     '';
   };
+
+  # Automatically run the garbage collector weekly.
+  nix.gc.automatic = true;
 
   # Let Home Manager install and manage itself.
   programs.home-manager.enable = true;
@@ -270,7 +274,8 @@ in {
     profileExtra = ''
       nix_path='/nix/var/nix/profiles/default/bin'
       nix_profile_path='${homeDirectory}/.nix-profile/bin'
-      export PATH="$nix_profile_path:$nix_path:$PATH"
+      go_bin_path="$GOPATH/bin"
+      export PATH="$go_bin_path:$nix_profile_path:$nix_path:$PATH"
     '';
     initExtra = ''
       eval "$(${pkgs.zoxide}/bin/zoxide init --cmd cd zsh)"
@@ -312,6 +317,9 @@ in {
       hm = "cd ~/.config/nixpkgs";
       ll = "${pkgs.eza}/bin/eza --oneline --icons --sort=type";
       tree = "${pkgs.eza}/bin/eza --oneline --icons --sort=type --tree";
+      "??" = "${pkgs.github-copilot-cli}/bin/github-copilot-cli what-the-shell";
+      "git?" = "${pkgs.github-copilot-cli}/bin/github-copilot-cli git-assist";
+      "gh?" = "${pkgs.github-copilot-cli}/bin/github-copilot-cli gh-assist";
     };
   };
 
@@ -416,6 +424,7 @@ in {
     vimdiffAlias = true;
 
     plugins = with pkgs.vimPlugins; [
+      copilot-vim
       vim-sensible
       vim-surround
       vim-signify
@@ -528,6 +537,7 @@ in {
       (nvim-treesitter.withPlugins (
         plugins: with plugins; [
           tree-sitter-bash
+          tree-sitter-gdscript
           tree-sitter-go
           tree-sitter-helm
           tree-sitter-lua
@@ -644,26 +654,5 @@ in {
   programs.zoxide = {
     enable = true;
     enableZshIntegration = true;
-  };
-
-  programs.neovide = {
-    enable = true;
-    settings = {
-      fork = false;
-      frame = "full";
-      idle = true;
-      maximized = false;
-      no-multigrid = false;
-      srgb = false;
-      tabs = true;
-      theme = "auto";
-      title-hidden = true;
-      vsync = true;
-      wsl = false;
-      font = {
-        normal = ["SauceCodePro Nerd Font Mono"];
-        size = 20;
-      };
-    };
   };
 }
