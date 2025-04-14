@@ -199,11 +199,10 @@ vim.api.nvim_create_autocmd("FileType", {
     -- This prevents trying to start it multiple times for the same project
     local clients = vim.lsp.get_active_clients({ name = "Godot", bufnr = 0 })
     if #clients > 0 then
-      -- print("Godot LSP already active for this project.")
+      -- print("Godot LSP already active for this project.") -- Keep commented or remove
       return
     end
 
-    print("Attempting to start Godot LSP...")
     local port = os.getenv('GDScript_Port') or '6005'
     local cmd_connect -- Use a different name to avoid conflict with vim.cmd
     -- Use pcall for safety in case connection fails
@@ -215,24 +214,24 @@ vim.api.nvim_create_autocmd("FileType", {
     cmd_connect = result -- Assign the connection object if successful
 
     -- Determine root directory
-    local root_dir = vim.fs.dirname(vim.fs.find({ 'project.godot', '.git' }, { upward = true, stop = vim.loop.os_homedir() })[1])
+    local root_dir_path = vim.fs.find({ 'project.godot', '.git' }, { upward = true, stop = vim.loop.os_homedir(), type = 'file' })
+    local root_dir = nil
+    if root_dir_path and #root_dir_path > 0 then
+        root_dir = vim.fs.dirname(root_dir_path[1])
+    end
+
     if not root_dir then
         vim.notify("Could not find 'project.godot' or '.git' to determine project root.", vim.log.levels.INFO)
-        -- Optionally decide if you want to proceed without a root_dir or just stop
-        -- return
     end
 
     -- Start the LSP client configuration
-    -- Note: autostart = false (or omitted, as false is default) because
-    -- this whole block only runs when the FileType autocmd triggers.
     vim.lsp.start({
       name = 'Godot',
       cmd = cmd_connect, -- Pass the established connection
-      -- autostart = false, -- Explicitly false or omitted
+      -- autostart = false, -- Default is false, no need to explicitly set when using vim.lsp.start manually
       filetypes = { 'gdscript' },
       root_dir = root_dir,
-      on_attach = on_attach -- Make sure 'on_attach' is defined
+      on_attach = on_attach -- Make sure 'on_attach' is defined and accessible
     })
-    print("Godot LSP configuration loaded.")
   end,
 })
