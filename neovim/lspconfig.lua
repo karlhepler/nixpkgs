@@ -187,28 +187,52 @@ vim.api.nvim_create_autocmd({"BufRead", "BufNewFile"}, {
   command = "set filetype=gdscript",
 })
 
--- Reference: https://www.reddit.com/r/neovim/comments/13ski66/neovim_configuration_for_godot_4_lsp_as_simple_as/
-local port = os.getenv('GDScript_Port') or '6005'
-local cmd = vim.lsp.rpc.connect('127.0.0.1', port)
-local pipe = '/tmp/godot.pipe'
-vim.lsp.start({
-  name = 'Godot',
-  cmd = cmd,
-  autostart = true,
-  filetypes = { 'gdscript' },
-  root_dir = vim.fs.dirname(vim.fs.find({ 'project.godot', '.git' }, { upward = true })[1]),
-  on_attach = on_attach
-})
+-- Autocmd group for Godot LSP setup
+local godotLspGroup = vim.api.nvim_create_augroup("GodotLspConfig", { clear = true })
 
--- Autocmd to force attaching the Godot LSP client to buffers with matching filetypes
-vim.api.nvim_create_autocmd("BufEnter", {
-  pattern = {"*.gd"},
+-- Autocmd to start the Godot LSP client only when a gdscript file is opened
+vim.api.nvim_create_autocmd("FileType", {
+  group = godotLspGroup,
+  pattern = "gdscript", -- Trigger on the gdscript filetype
   callback = function()
-    for _, client in ipairs(vim.lsp.get_active_clients()) do
-      if client.name == "Godot" and not vim.lsp.buf_is_attached(0, client.id) then
-        vim.lsp.buf_attach_client(0, client.id)
-        print("Godot LSP attached to buffer " .. vim.api.nvim_get_current_buf())
-      end
+    -- Check if the Godot client is already running for this buffer's project
+    -- This prevents trying to start it multiple times for the same project
+    local clients = vim.lsp.get_active_clients({ name = "Godot", bufnr = 0 })
+    if #clients > 0 then
+      -- print("Godot LSP already active for this project.")
+      return
     end
+
+    print("Attempting to start Godot LSP...")
+    local port = os.getenv('GDScript_Port') or '6005'
+    local cmd_connect -- Use a different name to avoid conflict with vim.cmd
+    -- Use pcall for safety in case connection fails
+    local ok, result = pcall(vim.lsp.rpc.connect, '127.0.0.1', port)
+    if not ok or not result then
+        vim.notify("Failed to connect to Godot LSP on port " .. port .. ". Is Godot editor running with LSP enabled?", vim.log.levels.WARN)
+        return
+    end
+    cmd_connect = result -- Assign the connection object if successful
+
+    -- Determine root directory
+    local root_dir = vim.fs.dirname(vim.fs.find({ 'project.godot', '.git' }, { upward = true, stop = vim.loop.os_homedir() })[1])
+    if not root_dir then
+        vim.notify("Could not find 'project.godot' or '.git' to determine project root.", vim.log.levels.INFO)
+        -- Optionally decide if you want to proceed without a root_dir or just stop
+        -- return
+    end
+
+    -- Start the LSP client configuration
+    -- Note: autostart = false (or omitted, as false is default) because
+    -- this whole block only runs when the FileType autocmd triggers.
+    vim.lsp.start({
+      name = 'Godot',
+      cmd = cmd_connect, -- Pass the established connection
+      -- autostart = false, -- Explicitly false or omitted
+      filetypes = { 'gdscript' },
+      root_dir = root_dir,
+      on_attach = on_attach -- Make sure 'on_attach' is defined
+    })
+    print("Godot LSP configuration loaded.")
   end,
 })
