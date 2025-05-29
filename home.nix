@@ -157,6 +157,7 @@ in {
     helm-ls
     htop
     just
+    mkcert
     nil
     nodePackages.bash-language-server
     nodePackages.typescript
