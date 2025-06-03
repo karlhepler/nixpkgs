@@ -158,6 +158,7 @@ in {
     htop
     just
     mkcert
+    nerd-fonts.sauce-code-pro
     nil
     nodePackages.bash-language-server
     nodePackages.typescript
@@ -173,8 +174,6 @@ in {
     yarn
     yq
     zsh-fzf-tab
-  ] ++ [
-    (pkgs.nerdfonts.override { fonts = [ "SourceCodePro" ]; })
   ] ++ (builtins.attrValues shellapps);
 
   fonts.fontconfig.enable = true;
@@ -278,7 +277,7 @@ in {
       go_bin_path="$GOPATH/bin"
       export PATH="$go_bin_path:$nix_profile_path:$nix_path:$PATH"
     '';
-    initExtra = ''
+    initContent = ''
       eval "$(${pkgs.zoxide}/bin/zoxide init --cmd cd zsh)"
       source '${pkgs.zsh-fzf-tab}/share/fzf-tab/fzf-tab.plugin.zsh'
       bindkey -M viins 'jk' vi-cmd-mode
@@ -644,9 +643,7 @@ in {
     
     extraConfig = builtins.readFile ./neovim/vimrc;
 
-    extraLuaConfig = builtins.readFile (pkgs.substituteAll {
-      src = ./neovim/lspconfig.lua;
-      typescript = "${pkgs.nodePackages.typescript}";
+    extraLuaConfig = builtins.readFile (pkgs.replaceVars ./neovim/lspconfig.lua {
       typescriptLanguageServer = "${pkgs.nodePackages.typescript-language-server}";
       bashLanguageServer = "${pkgs.nodePackages.bash-language-server}";
     });
