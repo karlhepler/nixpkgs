@@ -2,9 +2,9 @@
   description = "Home Manager Configuration";
 
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-24.11";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-25.05";
     home-manager = {
-      url = "github:nix-community/home-manager/release-24.11";
+      url = "github:nix-community/home-manager/release-25.05";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     nix-index-database = {
@@ -29,7 +29,7 @@
             {
               home = {
                 inherit username;
-                stateVersion = "24.11"; # This config is compatible with this Home Manager release.
+                stateVersion = "25.05"; # This config is compatible with this Home Manager release.
                 homeDirectory = "/Users/${username}";
               };
             }
