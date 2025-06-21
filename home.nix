@@ -465,13 +465,16 @@ in {
             owner = "karlhepler";
             repo = "claude-tmux-neovim";
             rev = "main"; 
-            sha256 = "sha256-Bz6xwnTd7wYU4liG2/awUgDNVRAXAuezW4rfQbnI4Fk=";
+            sha256 = "sha256-FonULrCIWdGzodU4PjzpmFBB/unt/sNf5xyQYwTvGJM=";
           };
         };
         type = "lua";
         config = ''
-          -- Initialize claude-tmux-neovim plugin
-          require('claude-tmux-neovim').setup({})
+          -- Initialize claude-tmux-neovim plugin with debugging enabled
+          require('claude-tmux-neovim').setup({
+            debug = true,  -- Enable debug mode to troubleshoot instance detection
+            claude_code_cmd = "claude"  -- Explicitly set the command name
+          })
         '';
       }
       {
