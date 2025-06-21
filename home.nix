@@ -465,7 +465,7 @@ in {
             owner = "karlhepler";
             repo = "claude-tmux-neovim";
             rev = "main"; 
-            sha256 = "sha256-/o39RTqIxxIfKkM2QOz+tuyYXBME66iWj2Ku4Jyyi/Q=";
+            sha256 = "sha256-dGKyjZDHovbtj7+XyY4MLFAAHHYF1AEuYX8Uam/IYnA=";
           };
         };
         type = "lua";
