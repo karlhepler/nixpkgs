@@ -470,9 +470,9 @@ in {
         };
         type = "lua";
         config = ''
-          -- Initialize claude-tmux-neovim plugin with debugging enabled
+          -- Initialize claude-tmux-neovim plugin with debugging disabled
           require('claude-tmux-neovim').setup({
-            debug = true,  -- Enable debug mode to troubleshoot instance detection
+            debug = false,  -- Disable debug mode for silent operation
             claude_code_cmd = "claude"  -- Explicitly set the command name
           })
         '';
