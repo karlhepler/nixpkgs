@@ -456,6 +456,24 @@ in {
           vim.cmd[[colorscheme tokyonight-storm]]
         '';
       }
+      # Use plugin from GitHub repository
+      {
+        plugin = pkgs.vimUtils.buildVimPlugin {
+          pname = "claude-tmux-neovim";
+          version = "1.0.0";
+          src = pkgs.fetchFromGitHub {
+            owner = "karlhepler";
+            repo = "claude-tmux-neovim";
+            rev = "main"; 
+            sha256 = "sha256-PPa8Flrwr3+kBplAOMvLK2k/cROGFP+VSuMKsscQly0=";
+          };
+        };
+        type = "lua";
+        config = ''
+          -- Initialize claude-tmux-neovim plugin
+          require('claude-tmux-neovim').setup({})
+        '';
+      }
       {
         plugin = lightline-vim;
         config = ''
