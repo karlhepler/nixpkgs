@@ -143,7 +143,6 @@ in {
   home.packages = with pkgs; [
     bash
     cabal-install # Cabal installation tool for managing Haskell software
-    claude-code
     comma
     darwin.trash
     fd
