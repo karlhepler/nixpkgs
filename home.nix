@@ -228,6 +228,9 @@ in {
         VISUAL = "${homeDirectory}/.nix-profile/bin/nvim";
         SHELL = "${homeDirectory}/.nix-profile/bin/zsh";
         GOPATH = "${homeDirectory}/go";
+        LANG = "en_US.UTF-8";
+        LC_ALL = "en_US.UTF-8";
+        LC_CTYPE = "en_US.UTF-8";
       };
       font = {
         normal = {
@@ -276,6 +279,9 @@ in {
       nix_profile_path='${homeDirectory}/.nix-profile/bin'
       go_bin_path="$GOPATH/bin"
       export PATH="$go_bin_path:$nix_profile_path:$nix_path:$PATH"
+      export LANG="en_US.UTF-8"
+      export LC_ALL="en_US.UTF-8"
+      export LC_CTYPE="en_US.UTF-8"
     '';
     initContent = ''
       eval "$(${pkgs.zoxide}/bin/zoxide init --cmd cd zsh)"
