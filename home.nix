@@ -405,7 +405,7 @@ in {
 
   programs.git = {
     enable = true;
-    ignores = [ ".DS_Store" ".tags*" ];
+    ignores = [ ".DS_Store" ".tags*" ".claude/settings.local.json" ];
     userName = "Karl Hepler";
     userEmail = "karl.hepler@gmail.com";
     extraConfig = {
