@@ -166,6 +166,7 @@ in {
     nodejs
     pyright
     python3
+    python3Packages.pip
     ripgrep
     shellcheck
     stack  # A cross-platform program for developing Haskell projects
