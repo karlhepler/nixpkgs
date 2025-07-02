@@ -158,7 +158,9 @@ nnoremap <leader>ghc :call CopyGitHubURL()<CR>
 " GitHub Copilot configuration
 " Disable tab mapping for copilot
 let g:copilot_no_tab_map = v:true
-" Note: Ctrl+N mapping for smart completion is handled in lspconfig.lua
+" Use a different key for accepting Copilot suggestions
+imap <silent><script><expr> <C-J> copilot#Accept("\<CR>")
+" Note: Ctrl+N is reserved for regular completion (handled in lspconfig.lua)
 
 " RestoreCursor restores the last cursor position.
 function! RestoreCursor()

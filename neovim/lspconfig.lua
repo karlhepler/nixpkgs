@@ -17,19 +17,8 @@ vim.api.nvim_set_keymap('n', '[d', '<cmd>lua vim.diagnostic.goto_prev()<CR>', op
 vim.api.nvim_set_keymap('n', ']d', '<cmd>lua vim.diagnostic.goto_next()<CR>', opts)
 vim.api.nvim_set_keymap('n', '<space>q', '<cmd>lua vim.diagnostic.setloclist()<CR>', opts)
 
--- Smart completion function that tries:
--- 1. GitHub Copilot (if available)
--- 2. LSP/omnifunc completion
--- 3. Regular keyword completion
-local function smart_complete()
-  -- First, try Copilot if it's available
-  if vim.fn.exists('*copilot#Accept') == 1 then
-    local copilot_keys = vim.fn['copilot#Accept']('\r')
-    if copilot_keys ~= '\r' then
-      return copilot_keys
-    end
-  end
-  
+-- LSP completion with fallback to regular vim completion
+local function lsp_or_keyword_complete()
   -- Check if the popup menu is visible
   if vim.fn.pumvisible() == 1 then
     -- Use <C-n> to navigate the popup menu
@@ -42,13 +31,13 @@ local function smart_complete()
     -- Trigger omnifunc completion
     return vim.api.nvim_replace_termcodes('<C-x><C-o>', true, true, true)
   else
-    -- If no omnifunc and no popup menu, fallback to normal <C-n> behavior
+    -- If no omnifunc, fallback to normal <C-n> keyword completion
     return vim.api.nvim_replace_termcodes('<C-n>', true, true, true)
   end
 end
 
--- Map <C-n> to the smart completion function in insert mode
-vim.keymap.set('i', '<C-n>', smart_complete, {expr = true, noremap = true})
+-- Map <C-n> to use LSP completion with fallback to keyword completion
+vim.keymap.set('i', '<C-n>', lsp_or_keyword_complete, {expr = true, noremap = true})
 
 -- Use an on_attach function to only map the following keys
 -- after the language server attaches to the current buffer
