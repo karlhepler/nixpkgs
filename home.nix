@@ -171,6 +171,7 @@ in {
     shellcheck
     stack  # A cross-platform program for developing Haskell projects
     tilt
+    uv
     yaml-language-server
     yarn
     yq
