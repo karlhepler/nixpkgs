@@ -170,6 +170,7 @@ in {
     ripgrep
     shellcheck
     stack  # A cross-platform program for developing Haskell projects
+    terminal-notifier # macOS notification tool
     tilt
     uv
     yaml-language-server
