@@ -72,7 +72,7 @@ create_jira_issue() {
 		--no-input \
 		| tee "$stdout_file" >&2
 
-	sed -n 's/.*\(DEV-[0-9]\{1,\}\).*/\1/p' "$stdout_file"
+	sed -n 's/.*\(PEP-[0-9]\{1,\}\).*/\1/p' "$stdout_file"
 }
 
 get_current_sprint_id() {
