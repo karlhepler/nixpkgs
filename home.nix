@@ -386,6 +386,56 @@ in {
         compinit
       fi
 
+      # Enhanced completion styling
+      autoload -U colors && colors
+
+      # Enable completion menu with selection
+      zstyle ':completion:*' menu select
+
+      # Use LS_COLORS for file completion
+      eval "$(${pkgs.coreutils}/bin/dircolors -b)"
+      zstyle ':completion:*' list-colors ''${(s.:.)LS_COLORS}
+
+      # Highlight selected completion
+      zstyle ':completion:*' menu select=2
+      zmodload zsh/complist
+
+      # Add file type suffixes
+      zstyle ':completion:*' file-patterns \
+        '%p:globbed-files' \
+        '*(-/):directories' \
+        '*:all-files'
+
+      # Show descriptions for options
+      zstyle ':completion:*' verbose yes
+      zstyle ':completion:*:descriptions' format ' '
+      zstyle ':completion:*:messages' format '%B%F{yellow}── %d ──%f%b'
+      zstyle ':completion:*:warnings' format '%B%F{red}── no matches found ──%f%b'
+
+      # Group completions by type
+      zstyle ':completion:*' group-name '''
+      zstyle ':completion:*:*:-command-:*' group-order builtins commands functions
+
+      # Case insensitive completion
+      zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}' 'r:|[._-]=* r:|=*' 'l:|=* r:|=*'
+
+      # Better completion for cd
+      zstyle ':completion:*:cd:*' tag-order local-directories directory-stack path-directories
+      zstyle ':completion:*:cd:*' ignore-parents parent pwd
+
+      # Process completion shows process IDs and names
+      zstyle ':completion:*:*:kill:*:processes' list-colors '=(#b) #([0-9]#)*=0=01;31'
+      zstyle ':completion:*:kill:*' command 'ps -u $USER -o pid,%cpu,tty,cputime,cmd'
+
+      # Add indicators after filenames (/ for dirs, @ for symlinks, etc)
+      setopt list_types
+
+      # Enable menu navigation with arrow keys
+      bindkey -M menuselect '^[[A' up-line-or-history
+      bindkey -M menuselect '^[[B' down-line-or-history
+      bindkey -M menuselect '^[[C' forward-char
+      bindkey -M menuselect '^[[D' backward-char
+
       # Load add-zsh-hook for lazy loading
       autoload -Uz add-zsh-hook
 
