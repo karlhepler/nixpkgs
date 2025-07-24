@@ -170,6 +170,7 @@ in {
     ripgrep
     shellcheck
     stack  # A cross-platform program for developing Haskell projects
+    starpls # Language server for Starlark
     terminal-notifier # macOS notification tool
     tilt
     uv
@@ -575,6 +576,7 @@ in {
           tree-sitter-nix
           tree-sitter-python
           tree-sitter-rust
+          tree-sitter-starlark
           tree-sitter-typescript
           tree-sitter-yaml
         ]

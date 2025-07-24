@@ -126,6 +126,11 @@ lspconfig.rust_analyzer.setup {
 	}
 }
 
+lspconfig.starpls.setup {
+	on_attach = on_attach,
+	filetypes = { "bzl", "bazel", "star", "starlark" },
+}
+
 -- https://github.com/golang/tools/blob/1f10767725e2be1265bef144f774dc1b59ead6dd/gopls/doc/vim.md#imports
 -- https://github.com/typescript-language-server/typescript-language-server#code-actions-on-save
 function OrgImports(code_action, wait_ms)
@@ -170,6 +175,24 @@ vim.api.nvim_create_autocmd('FileType', {
       cmd = { '@bashLanguageServer@/bin/bash-language-server', 'start' },
     })
   end,
+})
+
+-- STARLARK CONFIGURATION ------------------------------------------------------
+
+-- Early filetype configuration for Starlark
+vim.filetype.add({
+  extension = {
+    star = 'starlark',
+    bzl = 'starlark',
+  },
+  filename = {
+    ['BUILD'] = 'starlark',
+    ['BUILD.bazel'] = 'starlark',
+    ['MODULE.bazel'] = 'starlark',
+    ['WORKSPACE'] = 'starlark',
+    ['WORKSPACE.bazel'] = 'starlark',
+    ['Tiltfile'] = 'starlark',
+  },
 })
 
 -- GODOT CONFIGURATION ---------------------------------------------------------
