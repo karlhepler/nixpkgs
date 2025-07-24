@@ -389,13 +389,8 @@ in {
       # Load add-zsh-hook for lazy loading
       autoload -Uz add-zsh-hook
 
-      # Lazy load zoxide on first cd
-      __zoxide_hook() {
-        if ! command -v __zoxide_cd &>/dev/null; then
-          eval "$(${pkgs.zoxide}/bin/zoxide init --cmd cd zsh --hook prompt)"
-        fi
-      }
-      add-zsh-hook precmd __zoxide_hook
+      # Initialize zoxide with cd replacement
+      eval "$(${pkgs.zoxide}/bin/zoxide init --cmd cd zsh)"
 
 
       # Load static direnv hook if available
