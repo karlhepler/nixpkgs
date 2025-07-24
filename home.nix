@@ -135,6 +135,16 @@ let
         git checkout -b karlhepler/tmp
       '';
     };
+    claude-notification-hook = pkgs.writeShellApplication {
+      name = "claude-notification-hook";
+      runtimeInputs = [ pkgs.terminal-notifier pkgs.python3 ];
+      text = builtins.readFile ./scripts/claude-notification-hook.bash;
+    };
+    claude-complete-hook = pkgs.writeShellApplication {
+      name = "claude-complete-hook";
+      runtimeInputs = [ pkgs.terminal-notifier ];
+      text = builtins.readFile ./scripts/claude-complete-hook.bash;
+    };
   };
 
 in {
@@ -208,6 +218,31 @@ in {
 
     gitIgnoreOverconfigChanges = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       $DRY_RUN_CMD ${pkgs.git}/bin/git -C ~/.config/nixpkgs update-index --assume-unchanged overconfig.nix
+    '';
+
+    claudeSettings = let
+      settingsContent = {
+        hooks = {
+          Notification = [{
+            hooks = [{
+              type = "command";
+              command = "${shellapps.claude-notification-hook}/bin/claude-notification-hook";
+            }];
+          }];
+          Stop = [{
+            hooks = [{
+              type = "command";
+              command = "${shellapps.claude-complete-hook}/bin/claude-complete-hook";
+            }];
+          }];
+        };
+      };
+      claudeSettingsJson = pkgs.runCommand "claude-settings.json" {} ''
+        echo '${builtins.toJSON settingsContent}' | ${pkgs.jq}/bin/jq . > $out
+      '';
+    in lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      $DRY_RUN_CMD mkdir -p ~/.claude
+      $DRY_RUN_CMD ln -sf ${claudeSettingsJson} ~/.claude/settings.json
     '';
   };
 
