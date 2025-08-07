@@ -155,6 +155,7 @@ in {
     cabal-install # Cabal installation tool for managing Haskell software
     comma
     darwin.trash
+    devbox
     fd
     ghc # Glasgow Haskell Compiler
     git-lfs
@@ -178,6 +179,7 @@ in {
     python3
     python3Packages.pip
     ripgrep
+    ruby
     shellcheck
     stack  # A cross-platform program for developing Haskell projects
     starpls # Language server for Starlark
