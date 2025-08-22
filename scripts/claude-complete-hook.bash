@@ -35,4 +35,4 @@ except Exception as e:
 IFS='|' read -r title message <<< "$data"
 
 # Send notification with Alacritty activation on click
-terminal-notifier -title "$title" -message "$message" -sound Glass -sender com.anthropic.claudefordesktop -activate org.alacritty
+terminal-notifier -title "$title" -message "$message" -sound Glass -sender com.anthropic.claudefordesktop -execute 'osascript -e "tell application \"Alacritty\" to activate"'
