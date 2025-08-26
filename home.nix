@@ -324,11 +324,24 @@ in {
         LANG = "en_US.UTF-8";
         LC_ALL = "en_US.UTF-8";
         LC_CTYPE = "en_US.UTF-8";
+        TERM = "xterm-256color";
       };
       font = {
         normal = {
           family = "SauceCodePro Nerd Font Mono";
           style = "Regular";
+        };
+        bold = {
+          family = "SauceCodePro Nerd Font Mono";
+          style = "Bold";
+        };
+        italic = {
+          family = "SauceCodePro Nerd Font Mono";
+          style = "Italic";
+        };
+        bold_italic = {
+          family = "SauceCodePro Nerd Font Mono";
+          style = "Bold Italic";
         };
         size = 20;
       };
