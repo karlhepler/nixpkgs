@@ -390,6 +390,9 @@ in {
       export LANG="en_US.UTF-8"
       export LC_ALL="en_US.UTF-8"
       export LC_CTYPE="en_US.UTF-8"
+      
+      # Initialize zoxide for all zsh contexts
+      eval "$(${pkgs.zoxide}/bin/zoxide init --cmd cd zsh)"
     '';
     initContent = ''
       # Fast compinit with precompiled dump
@@ -455,8 +458,6 @@ in {
       # Load add-zsh-hook for lazy loading
       autoload -Uz add-zsh-hook
 
-      # Initialize zoxide with cd replacement
-      eval "$(${pkgs.zoxide}/bin/zoxide init --cmd cd zsh)"
 
 
       # Load static direnv hook if available
@@ -509,6 +510,14 @@ in {
       "git?" = "${pkgs.github-copilot-cli}/bin/github-copilot-cli git-assist";
       "gh?" = "${pkgs.github-copilot-cli}/bin/github-copilot-cli gh-assist";
     };
+  };
+
+  programs.bash = {
+    enable = true;
+    profileExtra = ''
+      # Initialize zoxide for all bash contexts
+      eval "$(${pkgs.zoxide}/bin/zoxide init --cmd cd bash)"
+    '';
   };
 
   programs.starship = {
@@ -862,5 +871,6 @@ in {
   programs.zoxide = {
     enable = true;
     enableZshIntegration = true;
+    options = [ "--cmd" "cd" ];
   };
 }
