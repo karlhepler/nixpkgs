@@ -385,7 +385,8 @@ in {
       nix_path='/nix/var/nix/profiles/default/bin'
       nix_profile_path='${homeDirectory}/.nix-profile/bin'
       go_bin_path="$GOPATH/bin"
-      export PATH="$go_bin_path:$nix_profile_path:$nix_path:$PATH"
+      npm_bin_path='${homeDirectory}/.npm-packages/bin'
+      export PATH="$go_bin_path:$npm_bin_path:$nix_profile_path:$nix_path:$PATH"
       export LANG="en_US.UTF-8"
       export LC_ALL="en_US.UTF-8"
       export LC_CTYPE="en_US.UTF-8"
