@@ -39,7 +39,7 @@ This repository contains Nix Home Manager configuration for managing the user's 
    - After each successful Home Manager sync, the command `git update-index --assume-unchanged overconfig.nix` is run (see `gitIgnoreOverconfigChanges` in `home.nix`)
    - The `hms` command temporarily makes it visible with `git update-index --no-assume-unchanged overconfig.nix` before syncing, then makes it invisible again
    - This allows machine-specific secrets and configurations to be stored without being tracked by git
-4. **Automatic Backups**: The `hms` command automatically backs up `overconfig.nix` to `~/.backup/.config/nixpkgs/overconfig.nix` before each sync. It is recommended to sync the `~/.backup` folder with an online provider (e.g., Google Drive, Dropbox) to ensure your machine-specific configurations are safely backed up.
+4. **Automatic Backups**: The `hms` command automatically backs up `overconfig.nix` to `~/.backup/.config/nixpkgs/overconfig.YYYYMMDD-HHMMSS.nix` with a timestamp before each sync. A symlink `overconfig.latest.nix` is also created pointing to the most recent backup. It is recommended to sync the `~/.backup` folder with an online provider (e.g., Google Drive, Dropbox) to ensure your machine-specific configurations are safely backed up.
 5. Use the `hms` command to sync changes, as it handles the git tracking of `overconfig.nix` appropriately.
 6. The repository contains custom shell applications defined in `home.nix` under the `shellapps` section.
 7. When updating GitHub packages using `rev = "main"`, always update the hash using the procedure in the "GitHub Package Updates" section.
