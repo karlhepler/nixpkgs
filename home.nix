@@ -911,11 +911,13 @@ This ensures Sonnet receives the explicit, detailed guidance needed for accurate
       down = "cd ~/Downloads";
       docs = "cd ~/Documents";
       pics = "cd ~/Pictures";
-      hms = lib.strings.concatStringsSep "&&" [
+      hms = lib.strings.concatStringsSep " && " [
         "mkdir -p ~/.backup/.config/nixpkgs"
-        "cp ~/.config/nixpkgs/overconfig.nix ~/.backup/.config/nixpkgs/overconfig.nix"
+        "cp ~/.config/nixpkgs/overconfig.nix ~/.backup/.config/nixpkgs/overconfig.$(date +%Y%m%d-%H%M%S).nix"
+        "ln -sf overconfig.$(date +%Y%m%d-%H%M%S).nix ~/.backup/.config/nixpkgs/overconfig.latest.nix"
         "${pkgs.git}/bin/git -C ~/.config/nixpkgs update-index --no-assume-unchanged overconfig.nix"
         "${pkgs.home-manager}/bin/home-manager switch --flake ~/.config/nixpkgs"
+        ''printf "\nRestart tmux server to apply all changes? (y/n) " && read -r response && if [[ "$response" =~ ^[Yy]$ ]]; then tmux kill-server 2>/dev/null || true; else echo "Run 'tmux kill-server' to restart tmux manually"; fi''
       ];
       hme = "vim ~/.config/nixpkgs/home.nix";
       hmo = "vim ~/.config/nixpkgs/overconfig.nix";
