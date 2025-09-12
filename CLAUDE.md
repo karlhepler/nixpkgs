@@ -8,9 +8,7 @@ This repository contains Nix Home Manager configuration for managing development
 
 ## Quick Commands
 
-- `hms`: Update Home Manager with latest changes (runs `home-manager switch --flake ~/.config/nixpkgs`)
-  - **Safe tmux handling**: Prompts before killing tmux server - only kills if you explicitly type `y`/`Y`
-  - **Never use with `yes`**: Command is designed to require manual confirmation for tmux restart
+- `hms`: Apply Home Manager changes (use `--expunge` for complete environment refresh)
 - `hme`: Edit the `home.nix` file (main configuration)
 - `hmo`: Edit the `overconfig.nix` file (machine-specific customizations)
 - `hm`: Change directory to Nix Packages configuration directory (`~/.config/nixpkgs`)
@@ -98,12 +96,6 @@ For packages using `rev = "main"` with fixed hash:
 3. **Backup Synchronization**: Sync `~/.backup` folder with cloud storage for machine-specific configuration safety
 4. **Shell Applications**: All custom commands are defined in `home.nix` under the `shellapps` section
 
-## Automation Safety for Claude Code
+## Automation Safety
 
-When Claude Code runs `hms`, it must use: `echo 'n' | hms`
-
-This ensures:
-- Home Manager configuration is applied successfully
-- tmux server is never killed automatically
-- User retains full control over tmux restart timing
-- All other hms functionality works normally (backup, git handling, etc.)
+Claude Code must never use the `--expunge` flag with `hms`.

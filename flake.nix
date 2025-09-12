@@ -11,33 +11,31 @@
       url = "github:Mic92/nix-index-database";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { nixpkgs, home-manager, nix-index-database, flake-utils, ... }:
-    flake-utils.lib.eachDefaultSystem (system:
-      let
-        username = "karlhepler";
-        pkgs = import nixpkgs {
-          inherit system;
-          config.allowUnfree = true;
-        };
-      in {
-        packages.homeConfigurations.${username} = home-manager.lib.homeManagerConfiguration {
-          inherit pkgs;
-          modules = [
-            {
-              home = {
-                inherit username;
-                stateVersion = "25.05"; # This config is compatible with this Home Manager release.
-                homeDirectory = "/Users/${username}";
-              };
-            }
-            ./home.nix
-            ./overconfig.nix
-            nix-index-database.hmModules.nix-index
-          ];
-        };
-      }
-    );
+  outputs = { nixpkgs, home-manager, nix-index-database, ... }:
+    let
+      system = "aarch64-darwin";  # Only macOS ARM
+      username = "karlhepler";
+      pkgs = import nixpkgs {
+        inherit system;
+        config.allowUnfree = true;
+      };
+    in {
+      homeConfigurations.${username} = home-manager.lib.homeManagerConfiguration {
+        inherit pkgs;
+        modules = [
+          {
+            home = {
+              inherit username;
+              stateVersion = "25.05"; # This config is compatible with this Home Manager release.
+              homeDirectory = "/Users/${username}";
+            };
+          }
+          ./home.nix
+          ./overconfig.nix
+          nix-index-database.hmModules.nix-index
+        ];
+      };
+    };
 }

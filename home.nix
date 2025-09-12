@@ -4,6 +4,37 @@ let
   homeDirectory = config.home.homeDirectory;
 
   shellapps = rec {
+    hms = pkgs.writeShellApplication {
+      name = "hms";
+      runtimeInputs = [ pkgs.git pkgs.home-manager ];
+      text = ''
+        # Parse arguments
+        EXPUNGE=false
+        for arg in "$@"; do
+          if [[ "$arg" == "--expunge" ]]; then
+            EXPUNGE=true
+          fi
+        done
+        
+        # Backup overconfig.nix
+        mkdir -p ~/.backup/.config/nixpkgs
+        timestamp=$(date +%Y%m%d-%H%M%S)
+        cp ~/.config/nixpkgs/overconfig.nix ~/.backup/.config/nixpkgs/overconfig."$timestamp".nix
+        ln -sf overconfig."$timestamp".nix ~/.backup/.config/nixpkgs/overconfig.latest.nix
+        
+        # Temporarily track overconfig.nix
+        git -C ~/.config/nixpkgs update-index --no-assume-unchanged overconfig.nix
+        
+        # Run home-manager switch
+        home-manager switch --flake ~/.config/nixpkgs
+        
+        # Expunge tmux server for complete refresh if flag was passed
+        if [[ "$EXPUNGE" == "true" ]]; then
+          echo "Expunging tmux server for complete environment refresh..."
+          tmux kill-server 2>/dev/null || true
+        fi
+      '';
+    };
     commit = pkgs.writeShellApplication {
       name = "commit";
       runtimeInputs = [ pkgs.git ];
@@ -503,14 +534,6 @@ in {
       down = "cd ~/Downloads";
       docs = "cd ~/Documents";
       pics = "cd ~/Pictures";
-      hms = lib.strings.concatStringsSep " && " [
-        "mkdir -p ~/.backup/.config/nixpkgs"
-        "cp ~/.config/nixpkgs/overconfig.nix ~/.backup/.config/nixpkgs/overconfig.$(date +%Y%m%d-%H%M%S).nix"
-        "ln -sf overconfig.$(date +%Y%m%d-%H%M%S).nix ~/.backup/.config/nixpkgs/overconfig.latest.nix"
-        "${pkgs.git}/bin/git -C ~/.config/nixpkgs update-index --no-assume-unchanged overconfig.nix"
-        "${pkgs.home-manager}/bin/home-manager switch --flake ~/.config/nixpkgs"
-        ''printf "\nRestart tmux server to apply all changes? (y/n) " && read -r response && if [[ "$response" =~ ^[Yy]$ ]]; then tmux kill-server 2>/dev/null || true; else echo "Run 'tmux kill-server' to restart tmux manually"; fi''
-      ];
       hme = "vim ~/.config/nixpkgs/home.nix";
       hmo = "vim ~/.config/nixpkgs/overconfig.nix";
       hm = "cd ~/.config/nixpkgs";
