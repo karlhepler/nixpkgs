@@ -111,32 +111,13 @@ let
     };
     git-kill = pkgs.writeShellApplication {
       name = "git-kill";
-      runtimeInputs = [ pkgs.git pkgs.git-lfs ];
-      text = ''
-        # Navigate to the top-level directory of the git repository
-        cd "$(git rev-parse --show-toplevel)"
-
-        # Get the current branch name
-        current_branch="$(git symbolic-ref --short HEAD)"
-
-        # Check if the branch exists remotely
-        if git ls-remote --exit-code --heads origin "$current_branch" &> /dev/null; then
-            # If the branch exists remotely, reset the local branch to match the remote branch
-            git reset --hard "origin/$current_branch"
-        else
-            # If the branch does not exist remotely, perform the local reset and clean operations
-            git reset --hard
-        fi
-
-        # Clean untracked files and directories
-        git clean -fd
-
-        # Check if the repository uses LFS and restore LFS files if needed
-        if git lfs ls-files &> /dev/null && [ -n "$(git lfs ls-files)" ]; then
-            echo "Restoring LFS files..."
-            git lfs pull
-        fi
-      '';
+      runtimeInputs = [
+        pkgs.git
+        pkgs.git-lfs
+        pkgs.coreutils
+        pkgs.gnugrep
+      ];
+      text = builtins.readFile ./scripts/git-kill.bash;
     };
     git-trunk = pkgs.writeShellApplication {
       name = "git-trunk";
