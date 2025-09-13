@@ -402,10 +402,12 @@ confirm_safe_operation() {
 
 show_file_preview() {
     local tracked_changes untracked_files ignored_files
-    local file_count dir_size
+    local tracked_count untracked_count ignored_count
+    local notable_files
 
     # Get tracked files with changes
     tracked_changes=$(git diff --name-only HEAD 2>/dev/null || true)
+    tracked_count=$(echo "$tracked_changes" | grep -c . 2>/dev/null || echo "0")
 
     # Get untracked files (respecting .gitignore unless nuclear)
     if [ "$NUCLEAR_MODE" = true ]; then
@@ -413,76 +415,102 @@ show_file_preview() {
         ignored_files=$(git ls-files --others --ignored --exclude-standard 2>/dev/null || true)
     else
         untracked_files=$(git ls-files --others --exclude-standard 2>/dev/null || true)
-        ignored_files=$(git ls-files --others --ignored --exclude-standard 2>/dev/null || true)
+        ignored_files=""  # Don't show ignored files in safe mode
+    fi
+
+    if [ -n "$untracked_files" ]; then
+        untracked_count=$(echo "$untracked_files" | grep -c . 2>/dev/null || echo "0")
+    else
+        untracked_count=0
+    fi
+
+    if [ -n "$ignored_files" ]; then
+        ignored_count=$(echo "$ignored_files" | grep -c . 2>/dev/null || echo "0")
+    else
+        ignored_count=0
+    fi
+
+    # Show nuclear mode summary
+    if [ "$NUCLEAR_MODE" = true ]; then
+        show_nuclear_summary "$tracked_count" "$untracked_count" "$ignored_count"
+        return
     fi
 
     # Show files that will be reset
-    if [ -n "$tracked_changes" ]; then
-        echo -e "${YELLOW}RESET TO LAST COMMIT:${NC}"
-        while IFS= read -r file; do
-            if [ -n "$file" ]; then
-                echo "  $file - Local changes will be discarded"
-            fi
-        done <<< "$tracked_changes"
-        echo
+    if [ "$tracked_count" -gt 0 ]; then
+        if [ "$tracked_count" -le 5 ]; then
+            # Show individual files for small counts
+            notable_files=$(echo "$tracked_changes" | head -5 | tr '\n' ', ' | sed 's/,$//')
+            echo "🔶 Reset: $tracked_count files ($notable_files)"
+        else
+            # Show count and first few for larger counts
+            notable_files=$(echo "$tracked_changes" | head -3 | tr '\n' ', ' | sed 's/,$//')
+            echo "🔶 Reset: $tracked_count files ($notable_files, ...)"
+        fi
     fi
 
     # Show files that will be deleted
-    if [ -n "$untracked_files" ]; then
-        if [ "$NUCLEAR_MODE" = true ]; then
-            echo -e "${RED}DELETE (All untracked):${NC}"
+    if [ "$untracked_count" -gt 0 ]; then
+        if [ "$untracked_count" -le 3 ]; then
+            # Show individual files for small counts
+            notable_files=$(echo "$untracked_files" | head -3 | tr '\n' ', ' | sed 's/,$//')
+            echo "❌ Delete: $untracked_count untracked files ($notable_files)"
         else
-            echo -e "${RED}DELETE (Untracked, not in .gitignore):${NC}"
-        fi
-        while IFS= read -r file; do
-            if [ -n "$file" ] && [ -f "$file" ]; then
-                echo "  $file - Will be permanently deleted"
-            elif [ -n "$file" ] && [ -d "$file" ]; then
-                file_count=$(find "$file" -type f 2>/dev/null | wc -l | tr -d ' ')
-                dir_size=$(du -sh "$file" 2>/dev/null | cut -f1 || echo "?")
-                echo "  $file/ - Will be permanently deleted ($dir_size, $file_count files)"
-            fi
-        done <<< "$untracked_files"
-        echo
-    fi
+            # Show count and notable directories/files
+            notable_files=""
+            while IFS= read -r file; do
+                if [ -d "$file" ]; then
+                    local dir_size
+                    dir_size=$(du -sh "$file" 2>/dev/null | cut -f1 || echo "?")
+                    if [ -z "$notable_files" ]; then
+                        notable_files="$file/ ($dir_size)"
+                    else
+                        notable_files="$notable_files, $file/ ($dir_size)"
+                    fi
+                fi
+            done <<< "$untracked_files"
 
-    # Show files that will be preserved or deleted in nuclear mode
-    if [ -n "$ignored_files" ]; then
-        if [ "$NUCLEAR_MODE" = true ]; then
-            echo -e "${RED}DELETE (Ignored files - NUCLEAR MODE):${NC}"
-        else
-            echo -e "${GREEN}PRESERVE (Ignored by .gitignore):${NC}"
-        fi
-        while IFS= read -r file; do
-            if [ -n "$file" ] && [ -f "$file" ]; then
-                if [ "$NUCLEAR_MODE" = true ]; then
-                    echo "  $file - Will be permanently deleted"
-                else
-                    echo "  $file - Will be kept (ignored by .gitignore)"
-                fi
-            elif [ -n "$file" ] && [ -d "$file" ]; then
-                file_count=$(find "$file" -type f 2>/dev/null | wc -l | tr -d ' ')
-                dir_size=$(du -sh "$file" 2>/dev/null | cut -f1 || echo "?")
-                if [ "$NUCLEAR_MODE" = true ]; then
-                    echo "  $file/ - Will be permanently deleted ($dir_size, $file_count files)"
-                else
-                    echo "  $file/ - Will be kept ($dir_size, $file_count files)"
-                fi
+            if [ -z "$notable_files" ]; then
+                notable_files=$(echo "$untracked_files" | head -3 | tr '\n' ', ' | sed 's/,$//')
             fi
-        done <<< "$ignored_files"
-        echo
+            echo "❌ Delete: $untracked_count untracked files ($notable_files)"
+        fi
     fi
 
     # Show stash information if there are uncommitted changes
     if has_uncommitted_changes; then
-        echo -e "${BLUE}STASH:${NC}"
-        echo "  Uncommitted changes will be stashed before reset"
-        echo "  (Recover with: git stash pop)"
-        echo
+        echo "💾 Stash: Uncommitted changes will be saved (recover with: git stash pop)"
     fi
 
-    if [ -z "$tracked_changes" ] && [ -z "$untracked_files" ] && [ -z "$ignored_files" ]; then
-        echo -e "${GREEN}✅ No files will be affected - repository is already clean${NC}"
+    if [ "$tracked_count" -eq 0 ] && [ "$untracked_count" -eq 0 ]; then
+        echo "✅ Repository is already clean - no changes needed"
+    fi
+}
+
+show_nuclear_summary() {
+    local tracked_count="$1"
+    local untracked_count="$2"
+    local ignored_count="$3"
+    local total_count=$((tracked_count + untracked_count + ignored_count))
+
+    if [ "$total_count" -gt 0 ]; then
+        echo "❌ DELETE EVERYTHING:"
+        if [ "$tracked_count" -gt 0 ]; then
+            echo "   • $tracked_count tracked changes"
+        fi
+        if [ "$untracked_count" -gt 0 ]; then
+            echo "   • $untracked_count untracked files"
+        fi
+        if [ "$ignored_count" -gt 0 ]; then
+            echo "   • $ignored_count ignored files/directories"
+        fi
+
+        # Estimate total size for nuclear mode
+        local total_size
+        total_size=$(du -sh . 2>/dev/null | cut -f1 || echo "?")
+        echo "   • Estimated cleanup: ~$total_size total"
+    else
+        echo "✅ Repository is already clean - no changes needed"
     fi
 }
 
