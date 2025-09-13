@@ -111,7 +111,7 @@ let
     };
     git-kill = pkgs.writeShellApplication {
       name = "git-kill";
-      runtimeInputs = [ pkgs.git ];
+      runtimeInputs = [ pkgs.git pkgs.git-lfs ];
       text = ''
         # Navigate to the top-level directory of the git repository
         cd "$(git rev-parse --show-toplevel)"
@@ -130,6 +130,12 @@ let
 
         # Clean untracked files and directories
         git clean -fd
+
+        # Check if the repository uses LFS and restore LFS files if needed
+        if git lfs ls-files &> /dev/null && [ -n "$(git lfs ls-files)" ]; then
+            echo "Restoring LFS files..."
+            git lfs pull
+        fi
       '';
     };
     git-trunk = pkgs.writeShellApplication {
