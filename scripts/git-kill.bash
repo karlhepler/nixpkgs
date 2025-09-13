@@ -1,6 +1,55 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Command line flags
+NUCLEAR_MODE=false
+DRY_RUN=false
+
+# Parse command line arguments
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --nuclear)
+                NUCLEAR_MODE=true
+                shift
+                ;;
+            --dry-run)
+                DRY_RUN=true
+                shift
+                ;;
+            --help|-h)
+                show_help
+                exit 0
+                ;;
+            *)
+                error "Unknown option: $1"
+                ;;
+        esac
+    done
+}
+
+show_help() {
+    echo "git-kill - Safe repository reset tool"
+    echo
+    echo "USAGE:"
+    echo "  git-kill                Reset repository safely (respects .gitignore)"
+    echo "  git-kill --dry-run      Show what would be done without executing"
+    echo "  git-kill --nuclear      🚨 DANGEROUS: Delete everything (ignores .gitignore)"
+    echo
+    echo "DESCRIPTION:"
+    echo "  Resets your repository to the last commit, removing uncommitted changes"
+    echo "  and untracked files. By default, respects .gitignore patterns to preserve"
+    echo "  local configuration, build caches, and IDE settings."
+    echo
+    echo "  --nuclear mode is equivalent to:"
+    echo "    rm -rf * && git clone <repo> ."
+    echo
+    echo "OPTIONS:"
+    echo "  --dry-run    Show preview without making changes"
+    echo "  --nuclear    🚨 Delete everything (requires 'NUKE IT' confirmation)"
+    echo "  --help, -h   Show this help message"
+}
+
 # Environment setup
 readonly DATE_FORMAT='%Y-%m-%d %H:%M:%S'
 
@@ -24,6 +73,7 @@ trap 'handle_exit $?' EXIT INT TERM
 
 # Main entry point
 main() {
+    parse_args "$@"
 
     validate_git_repository
 
@@ -35,6 +85,17 @@ main() {
     current_branch="$(get_current_branch)"
 
     status "Starting git-kill for: $repo_root"
+
+    # Show preview and get confirmation
+    if ! show_preview_and_confirm "$current_branch"; then
+        info "Operation cancelled by user"
+        exit 0
+    fi
+
+    if [ "$DRY_RUN" = true ]; then
+        info "Dry run complete - no changes made"
+        exit 0
+    fi
 
     handle_uncommitted_changes
     reset_submodules
@@ -79,6 +140,8 @@ handle_uncommitted_changes() {
 
         if git stash push -u -m "$stash_msg"; then
             info "Changes stashed (recover with: git stash pop)"
+        else
+            error "Failed to create safety stash - aborting for safety"
         fi
     fi
 }
@@ -104,7 +167,7 @@ reset_submodules() {
         else
             # Fallback if git-kill not available in submodule context
             git reset --hard
-            git clean -fdx
+            git clean -fd
         fi
     '
 
@@ -143,8 +206,13 @@ perform_hard_reset() {
 }
 
 clean_untracked_files() {
-    status "Removing ALL untracked files and directories..."
-    git clean -fdx
+    if [ "$NUCLEAR_MODE" = true ]; then
+        status "🚨 NUCLEAR MODE: Removing ALL untracked files (ignoring .gitignore)..."
+        git clean -fdx
+    else
+        status "Removing untracked files (respecting .gitignore)..."
+        git clean -fd
+    fi
 }
 
 # LFS handling
@@ -258,6 +326,164 @@ handle_exit() {
     fi
 
     exit "$exit_code"
+}
+
+# Preview and confirmation system
+show_preview_and_confirm() {
+    local current_branch="$1"
+
+    if [ "$NUCLEAR_MODE" = true ]; then
+        show_nuclear_warning
+        if ! confirm_nuclear; then
+            return 1
+        fi
+    fi
+
+    echo
+    echo -e "${BLUE}📋 git-kill preview for branch: $current_branch${NC}"
+    echo "==========================================="
+    echo
+
+    show_file_preview
+
+    if [ "$DRY_RUN" = true ]; then
+        return 0
+    fi
+
+    echo
+    if [ "$NUCLEAR_MODE" = true ]; then
+        return 0  # Already confirmed above
+    else
+        confirm_safe_operation
+    fi
+}
+
+show_nuclear_warning() {
+    echo
+    echo -e "${RED}🚨🚨🚨 NUCLEAR MODE ACTIVATED 🚨🚨🚨${NC}"
+    echo
+    echo -e "${RED}This will DELETE EVERYTHING not committed, including:${NC}"
+    echo -e "${RED}❌ ALL local configuration files${NC}"
+    echo -e "${RED}❌ ALL build caches (node_modules, Unity Library/, etc.)${NC}"
+    echo -e "${RED}❌ ALL IDE settings (.idea, .vscode)${NC}"
+    echo -e "${RED}❌ ALL environment files (.env, .envrc)${NC}"
+    echo -e "${RED}❌ EVERYTHING in .gitignore${NC}"
+    echo
+    echo -e "${RED}This is equivalent to:${NC}"
+    echo -e "${RED}rm -rf * && git clone <repo> .${NC}"
+    echo
+}
+
+confirm_nuclear() {
+    echo -e "${RED}Are you ABSOLUTELY SURE?${NC}"
+    echo -n "Type 'NUKE IT' to confirm: "
+    read -r confirmation
+
+    if [ "$confirmation" = "NUKE IT" ]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+confirm_safe_operation() {
+    echo -n "Proceed with git-kill? (y/N): "
+    read -r confirmation
+
+    case "$confirmation" in
+        [yY]|[yY][eE][sS])
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+show_file_preview() {
+    local tracked_changes untracked_files ignored_files
+    local file_count dir_size
+
+    # Get tracked files with changes
+    tracked_changes=$(git diff --name-only HEAD 2>/dev/null || true)
+
+    # Get untracked files (respecting .gitignore unless nuclear)
+    if [ "$NUCLEAR_MODE" = true ]; then
+        untracked_files=$(git ls-files --others --exclude-standard 2>/dev/null || true)
+        ignored_files=$(git ls-files --others --ignored --exclude-standard 2>/dev/null || true)
+    else
+        untracked_files=$(git ls-files --others --exclude-standard 2>/dev/null || true)
+        ignored_files=$(git ls-files --others --ignored --exclude-standard 2>/dev/null || true)
+    fi
+
+    # Show files that will be reset
+    if [ -n "$tracked_changes" ]; then
+        echo -e "${YELLOW}RESET TO LAST COMMIT:${NC}"
+        while IFS= read -r file; do
+            if [ -n "$file" ]; then
+                echo "  $file - Local changes will be discarded"
+            fi
+        done <<< "$tracked_changes"
+        echo
+    fi
+
+    # Show files that will be deleted
+    if [ -n "$untracked_files" ]; then
+        if [ "$NUCLEAR_MODE" = true ]; then
+            echo -e "${RED}DELETE (All untracked):${NC}"
+        else
+            echo -e "${RED}DELETE (Untracked, not in .gitignore):${NC}"
+        fi
+        while IFS= read -r file; do
+            if [ -n "$file" ] && [ -f "$file" ]; then
+                echo "  $file - Will be permanently deleted"
+            elif [ -n "$file" ] && [ -d "$file" ]; then
+                file_count=$(find "$file" -type f 2>/dev/null | wc -l | tr -d ' ')
+                dir_size=$(du -sh "$file" 2>/dev/null | cut -f1 || echo "?")
+                echo "  $file/ - Will be permanently deleted ($dir_size, $file_count files)"
+            fi
+        done <<< "$untracked_files"
+        echo
+    fi
+
+    # Show files that will be preserved or deleted in nuclear mode
+    if [ -n "$ignored_files" ]; then
+        if [ "$NUCLEAR_MODE" = true ]; then
+            echo -e "${RED}DELETE (Ignored files - NUCLEAR MODE):${NC}"
+        else
+            echo -e "${GREEN}PRESERVE (Ignored by .gitignore):${NC}"
+        fi
+        while IFS= read -r file; do
+            if [ -n "$file" ] && [ -f "$file" ]; then
+                if [ "$NUCLEAR_MODE" = true ]; then
+                    echo "  $file - Will be permanently deleted"
+                else
+                    echo "  $file - Will be kept (ignored by .gitignore)"
+                fi
+            elif [ -n "$file" ] && [ -d "$file" ]; then
+                file_count=$(find "$file" -type f 2>/dev/null | wc -l | tr -d ' ')
+                dir_size=$(du -sh "$file" 2>/dev/null | cut -f1 || echo "?")
+                if [ "$NUCLEAR_MODE" = true ]; then
+                    echo "  $file/ - Will be permanently deleted ($dir_size, $file_count files)"
+                else
+                    echo "  $file/ - Will be kept ($dir_size, $file_count files)"
+                fi
+            fi
+        done <<< "$ignored_files"
+        echo
+    fi
+
+    # Show stash information if there are uncommitted changes
+    if has_uncommitted_changes; then
+        echo -e "${BLUE}STASH:${NC}"
+        echo "  Uncommitted changes will be stashed before reset"
+        echo "  (Recover with: git stash pop)"
+        echo
+    fi
+
+    if [ -z "$tracked_changes" ] && [ -z "$untracked_files" ] && [ -z "$ignored_files" ]; then
+        echo -e "${GREEN}✅ No files will be affected - repository is already clean${NC}"
+    fi
 }
 
 # Execute main function with all arguments
