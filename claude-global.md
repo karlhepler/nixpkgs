@@ -33,8 +33,6 @@
 - **Devbox** for package management (create Nix flake if package unavailable)
 - **Justfiles** for task automation and build scripts
 - **Bazel** for larger projects requiring build orchestration
-- **ripgrep (rg)** over grep for text searching
-- **fd** over find for file searching
 - **.envrc** for environment config (always add to .gitignore)
 - **Python scripts** over bash for batch file operations (cleaner error handling, better readability)
 
