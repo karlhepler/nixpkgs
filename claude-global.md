@@ -36,6 +36,7 @@
 - **ripgrep (rg)** over grep for text searching
 - **fd** over find for file searching
 - **.envrc** for environment config (always add to .gitignore)
+- **Python scripts** over bash for batch file operations (cleaner error handling, better readability)
 
 ## Architecture Principles
 - Start simple, abstract only when substantial functionality justifies it
