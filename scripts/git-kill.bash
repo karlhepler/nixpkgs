@@ -4,6 +4,7 @@ set -euo pipefail
 # Command line flags
 NUCLEAR_MODE=false
 DRY_RUN=false
+AUTO_CONFIRM=false
 
 # Parse command line arguments
 parse_args() {
@@ -15,6 +16,10 @@ parse_args() {
                 ;;
             --dry-run)
                 DRY_RUN=true
+                shift
+                ;;
+            --auto-confirm)
+                AUTO_CONFIRM=true
                 shift
                 ;;
             --help|-h)
@@ -87,9 +92,11 @@ main() {
     status "Starting git-kill for: $repo_root"
 
     # Show preview and get confirmation
-    if ! show_preview_and_confirm "$current_branch"; then
-        info "Operation cancelled by user"
-        exit 0
+    if [ "$AUTO_CONFIRM" != true ]; then
+        if ! show_preview_and_confirm "$current_branch"; then
+            info "Operation cancelled by user"
+            exit 0
+        fi
     fi
 
     if [ "$DRY_RUN" = true ]; then
@@ -163,7 +170,7 @@ reset_submodules() {
     git submodule foreach --recursive '
         if command -v git-kill &>/dev/null; then
             echo "  Running git-kill in $displaypath"
-            git-kill
+            git-kill --auto-confirm
         else
             # Fallback if git-kill not available in submodule context
             git reset --hard
@@ -406,7 +413,9 @@ show_file_preview() {
 
     # Get tracked files with changes
     tracked_changes=$(git diff --name-only HEAD 2>/dev/null || true)
-    tracked_count=$(echo "$tracked_changes" | grep -c . 2>/dev/null || echo "0")
+    tracked_count=$(echo "$tracked_changes" | wc -l | tr -d ' ')
+    # Ensure tracked_count is a valid integer
+    tracked_count=$((tracked_count + 0))
 
     # Get untracked files (respecting .gitignore unless nuclear)
     if [ "$NUCLEAR_MODE" = true ]; then
@@ -418,16 +427,20 @@ show_file_preview() {
     fi
 
     if [ -n "$untracked_files" ]; then
-        untracked_count=$(echo "$untracked_files" | grep -c . 2>/dev/null || echo "0")
+        untracked_count=$(echo "$untracked_files" | wc -l | tr -d ' ')
     else
         untracked_count=0
     fi
+    # Ensure untracked_count is a valid integer
+    untracked_count=$((untracked_count + 0))
 
     if [ -n "$ignored_files" ]; then
-        ignored_count=$(echo "$ignored_files" | grep -c . 2>/dev/null || echo "0")
+        ignored_count=$(echo "$ignored_files" | wc -l | tr -d ' ')
     else
         ignored_count=0
     fi
+    # Ensure ignored_count is a valid integer
+    ignored_count=$((ignored_count + 0))
 
     # Nuclear mode shows everything that will be deleted
     if [ "$NUCLEAR_MODE" = true ]; then
