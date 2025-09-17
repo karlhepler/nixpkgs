@@ -268,7 +268,7 @@ in {
       claudeMdFile = ./claude-global.md;
     in lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       $DRY_RUN_CMD mkdir -p ~/.claude
-      $DRY_RUN_CMD ln -sf ${claudeMdFile} ~/.claude/CLAUDE.md
+      $DRY_RUN_CMD cp -f ${claudeMdFile} ~/.claude/CLAUDE.md
     '';
 
     precompileZshCompletions = lib.hm.dag.entryAfter [ "writeBoundary" ] ''

@@ -57,6 +57,25 @@
 
 **🛑 RECITE THIS:** "I will implement EXACTLY what was requested and nothing more."
 
+## 🔴 TODO ITEM STOP PROTOCOL (CRITICAL)
+
+**🚨 BEFORE MARKING ANY TODO AS "IN_PROGRESS":**
+
+**MANDATORY SEQUENCE:**
+1. **STOP** - Review the 5-point MANDATORY STOP CHECK above
+2. **VERIFY** - ALL 5 boxes must be "YES" for this specific todo item:
+   □ Am I implementing EXACTLY what was requested in this todo?
+   □ Will this todo change ONLY the system mentioned?
+   □ Am I avoiding ALL "while I'm here" improvements in this todo?
+   □ Does this todo have ONE clear deliverable?
+   □ Have I confirmed scope with user for this todo?
+3. **ONLY THEN** - Mark todo as "in_progress"
+
+**🛑 VIOLATION = IMMEDIATE TODO ABORT**
+- If ANY box is unchecked, STOP and clarify scope
+- Never mark a todo as "in_progress" without completing this check
+- One todo = One focused action = One verification cycle
+
 ---
 
 ## 🔴 PARTNERSHIP PROTOCOL (CRITICAL)
