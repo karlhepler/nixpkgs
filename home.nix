@@ -264,11 +264,11 @@ in {
       $DRY_RUN_CMD ln -sf ${claudeSettingsJson} ~/.claude/settings.json
     '';
 
-    claudeMd = let
-      claudeMdFile = ./claude-global.md;
+    claudeGlobal = let
+      claudeGlobalDir = ./claude-global;
     in lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       $DRY_RUN_CMD mkdir -p ~/.claude
-      $DRY_RUN_CMD cp -f ${claudeMdFile} ~/.claude/CLAUDE.md
+      $DRY_RUN_CMD cp -rf ${claudeGlobalDir}/* ~/.claude/
     '';
 
     precompileZshCompletions = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
