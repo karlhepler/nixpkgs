@@ -601,7 +601,7 @@ in {
         extraConfig = ''
           set -g @scroll-speed-num-lines-per-scroll 1
           set -g @scroll-without-changing-pane on
-          set -g @scroll-down-exit-copy-mode on
+          set -g @scroll-down-exit-copy-mode off
           set -g @prevent-scroll-for-fullscreen-alternate-buffer on
         '';
       }
@@ -622,6 +622,10 @@ in {
       set-window-option -g mode-keys vi
       bind-key -T copy-mode-vi 'v' send -X begin-selection
       bind-key -T copy-mode-vi 'y' send -X copy-selection-and-cancel
+
+      # Custom mouse bindings to prevent jumping to bottom after selection
+      bind-key -T copy-mode-vi MouseDragEnd1Pane send -X copy-selection
+      bind-key -T copy-mode-vi Escape send -X cancel
       bind-key N new-window -c "#{pane_current_path}"
       bind-key v split -h -c "#{pane_current_path}"
       bind-key s split -v -c "#{pane_current_path}"
