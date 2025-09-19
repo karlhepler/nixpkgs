@@ -341,6 +341,10 @@ in {
       keyboard.bindings = [
         { key = "Enter"; mods = "Command"; action = "ToggleSimpleFullscreen";  }
       ];
+      scrolling = {
+        history = 10000;
+        multiplier = 1;
+      };
       env = {
         EDITOR = "${homeDirectory}/.nix-profile/bin/nvim";
         VISUAL = "${homeDirectory}/.nix-profile/bin/nvim";
@@ -408,6 +412,10 @@ in {
     syntaxHighlighting.enable = true;
     enableCompletion = false;  # We handle this ourselves for performance
     profileExtra = ''
+      # Optimize zsh autosuggestions
+      export ZSH_AUTOSUGGEST_USE_ASYNC=true
+      export ZSH_AUTOSUGGEST_BUFFER_MAX_SIZE=20
+
       nix_path='/nix/var/nix/profiles/default/bin'
       nix_profile_path='${homeDirectory}/.nix-profile/bin'
       go_bin_path="$GOPATH/bin"
@@ -427,8 +435,8 @@ in {
         # Use precompiled dump without security checks
         compinit -C -d ${homeDirectory}/.zcompdump
       else
-        # Fallback to regular compinit
-        compinit
+        # Fallback to fast compinit without security checks
+        compinit -C
       fi
 
       # Enhanced completion styling
@@ -564,7 +572,7 @@ in {
     shell = "${homeDirectory}/.nix-profile/bin/zsh";
     shortcut = "g";
     terminal = "tmux-256color";
-    historyLimit = 5000;
+    historyLimit = 50000;
     sensibleOnTop = true;
     plugins = with pkgs.tmuxPlugins; [
       {
@@ -588,8 +596,28 @@ in {
           set -g @theme_right_separator ''
         '';
       }
+      {
+        plugin = better-mouse-mode;
+        extraConfig = ''
+          set -g @scroll-speed-num-lines-per-scroll 1
+          set -g @scroll-without-changing-pane on
+          set -g @scroll-down-exit-copy-mode on
+          set -g @prevent-scroll-for-fullscreen-alternate-buffer on
+        '';
+      }
     ];
     extraConfig = ''
+      # Performance optimizations
+      set-option -sg escape-time 10
+      set-option -g focus-events on
+      set-option -g aggressive-resize on
+
+      # Smooth scrolling optimizations
+      set -ga terminal-overrides ',*256color*:smcup@:rmcup@'
+      set -ga terminal-overrides ',alacritty:Tc'
+      set -g status-interval 1
+      set -g renumber-windows on
+
       # vim mode with <shortcut>[
       set-window-option -g mode-keys vi
       bind-key -T copy-mode-vi 'v' send -X begin-selection
