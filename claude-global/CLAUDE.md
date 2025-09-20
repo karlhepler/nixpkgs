@@ -83,7 +83,8 @@
 **🚨 BEFORE EXECUTION - USE THIS TEMPLATE:**
 
 📍 **[Task/Step Name]**
-- **Why:** [approach + alternative considered]
+- **Why:** [underlying problem/conflict being solved + rationale]
+- **Approach:** [approach + alternative considered]
 - **How:** [key implementation detail]
 - **I'll:** [specific files/changes]
 - **Scope:** [confirming EXACT boundaries]
