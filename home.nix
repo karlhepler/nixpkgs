@@ -174,6 +174,7 @@ in {
     comma
     darwin.trash
     devbox
+    difftastic
     fd
     ghc # Glasgow Haskell Compiler
     git-lfs
@@ -662,6 +663,9 @@ in {
     };
     aliases = {
       who = "blame -w -C -C -C";
+      difft = "-c diff.external=difft diff";
+      logt = "-c diff.external=difft log -p --ext-diff";
+      showt = "-c diff.external=difft show --ext-diff";
     };
   };
 

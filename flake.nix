@@ -3,6 +3,7 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-25.05";
+    nixpkgs-unstable.url = "github:nixos/nixpkgs/nixos-unstable";
     home-manager = {
       url = "github:nix-community/home-manager/release-25.05";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -13,11 +14,15 @@
     };
   };
 
-  outputs = { nixpkgs, home-manager, nix-index-database, ... }:
+  outputs = { nixpkgs, nixpkgs-unstable, home-manager, nix-index-database, ... }:
     let
       system = "aarch64-darwin";  # Only macOS ARM
       username = "karlhepler";
       pkgs = import nixpkgs {
+        inherit system;
+        config.allowUnfree = true;
+      };
+      unstable = import nixpkgs-unstable {
         inherit system;
         config.allowUnfree = true;
       };
@@ -31,6 +36,7 @@
               stateVersion = "25.05"; # This config is compatible with this Home Manager release.
               homeDirectory = "/Users/${username}";
             };
+            _module.args = { inherit unstable; };
           }
           ./home.nix
           ./overconfig.nix
