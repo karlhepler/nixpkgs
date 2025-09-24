@@ -601,7 +601,7 @@ in {
         extraConfig = ''
           set -g @scroll-speed-num-lines-per-scroll 1
           set -g @scroll-without-changing-pane on
-          set -g @scroll-down-exit-copy-mode off
+          set -g @scroll-down-exit-copy-mode on
           set -g @prevent-scroll-for-fullscreen-alternate-buffer on
         '';
       }
