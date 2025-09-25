@@ -196,6 +196,7 @@ in {
     nodejs
     pyright
     python3
+    omnisharp-roslyn
     python3Packages.pip
     ripgrep
     ruby
@@ -811,6 +812,7 @@ in {
       (nvim-treesitter.withPlugins (
         plugins: with plugins; [
           tree-sitter-bash
+          tree-sitter-c_sharp
           tree-sitter-gdscript
           tree-sitter-go
           tree-sitter-helm
@@ -829,9 +831,9 @@ in {
       {
         plugin = fzf-lsp-nvim;
         config = ''
-          nmap <c-b> :DocumentSymbols<cr>
-          imap <c-b> <esc>:DocumentSymbols<cr>
-          vmap <c-b> <esc>:DocumentSymbols<cr>
+          nmap <c-b> :lua vim.lsp.buf.document_symbol()<cr>
+          imap <c-b> <esc>:lua vim.lsp.buf.document_symbol()<cr>
+          vmap <c-b> <esc>:lua vim.lsp.buf.document_symbol()<cr>
         '';
       }
       {
@@ -921,6 +923,7 @@ in {
     extraLuaConfig = builtins.readFile (pkgs.replaceVars ./neovim/lspconfig.lua {
       typescriptLanguageServer = "${pkgs.nodePackages.typescript-language-server}";
       bashLanguageServer = "${pkgs.nodePackages.bash-language-server}";
+      omnisharpRoslyn = "${pkgs.omnisharp-roslyn}";
     });
   };
 
