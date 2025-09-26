@@ -1,4 +1,4 @@
-{ config, pkgs, lib, ... }:
+{ config, pkgs, lib, unstable, ... }:
 
 let
   homeDirectory = config.home.homeDirectory;
@@ -405,6 +405,19 @@ in {
           cyan = "#0db9d7";
           white = "#acb0d0";
         };
+      };
+    };
+  };
+
+  programs.neovide = {
+    enable = true;
+    package = unstable.neovide;
+    settings = {
+      fork = false;
+      frame = "full";
+      font = {
+        normal = ["SauceCodePro Nerd Font Mono"];
+        size = 20.0;
       };
     };
   };
