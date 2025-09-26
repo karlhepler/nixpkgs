@@ -198,6 +198,7 @@ in {
     python3
     omnisharp-roslyn
     python3Packages.pip
+    dotnet-sdk_9
     ripgrep
     ruby
     shellcheck
