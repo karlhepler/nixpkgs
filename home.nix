@@ -744,8 +744,8 @@ in {
           src = pkgs.fetchFromGitHub {
             owner = "karlhepler";
             repo = "claude-tmux-neovim";
-            rev = "a5144d20fab6adbaebafc5b02ba20369e21a93f5";
-            hash = "sha256-beDzMUvxSdfEL5REzYzAF884OeRoNGsod0rAdYW0V+U=";
+            rev = "6cd54cc2522e3d37d5ea0004f8632a432f1dce71";
+            hash = "sha256-yPobmoEv/XOp2Crno2nTjKjg6scCpJ4r8sYjQTwVdLU=";
           };
         };
         type = "lua";
