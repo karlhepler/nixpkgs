@@ -202,7 +202,9 @@ vim.api.nvim_create_autocmd("BufWritePre", {
 	pattern = {'*.cs'},
 	callback = function()
 			vim.lsp.buf.format()
-			-- OmniSharp handles using statements automatically during formatting
+			-- Run csharpier for consistent code formatting after LSP handles using statements
+			local file = vim.fn.expand('%:p')
+			vim.fn.system('csharpier "' .. file .. '"')
 	end,
 	group = vim.api.nvim_create_augroup("lsp_document_format_cs", {clear = true}),
 })
