@@ -163,6 +163,11 @@ let
       runtimeInputs = [ pkgs.terminal-notifier ];
       text = builtins.readFile ./scripts/claude-complete-hook.bash;
     };
+    claude-csharp-format-hook = pkgs.writeShellApplication {
+      name = "claude-csharp-format-hook";
+      runtimeInputs = [ pkgs.csharpier pkgs.python3 ];
+      text = builtins.readFile ./scripts/claude-csharp-format-hook.bash;
+    };
   };
 
 in {
@@ -172,6 +177,7 @@ in {
     bash
     cabal-install # Cabal installation tool for managing Haskell software
     comma
+    csharpier # Opinionated code formatter for C#
     darwin.trash
     devbox
     difftastic
@@ -255,6 +261,13 @@ in {
             hooks = [{
               type = "command";
               command = "${shellapps.claude-complete-hook}/bin/claude-complete-hook";
+            }];
+          }];
+          PostToolUse = [{
+            matcher = "Edit|MultiEdit|Write";
+            hooks = [{
+              type = "command";
+              command = "${shellapps.claude-csharp-format-hook}/bin/claude-csharp-format-hook";
             }];
           }];
         };
