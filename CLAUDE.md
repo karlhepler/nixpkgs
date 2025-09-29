@@ -99,3 +99,163 @@ For packages using `rev = "main"` with fixed hash:
 ## Automation Safety
 
 Claude Code must never use the `--expunge` flag with `hms`.
+
+## Communication Best Practices
+
+### Structured Response Format
+
+Use XML tags to structure complex responses for clarity:
+
+```xml
+<analysis>
+  <current_state>Description of what exists now</current_state>
+  <goal>What we're trying to achieve</goal>
+  <approach>Chosen strategy with rationale</approach>
+</analysis>
+
+<implementation>
+  <step number="1">
+    <action>What will be done</action>
+    <file>Specific file path</file>
+    <rationale>Why this approach</rationale>
+  </step>
+</implementation>
+```
+
+### Investigation Protocol
+
+When debugging or researching issues:
+
+1. **Think Step-by-Step**: Articulate reasoning at each stage
+2. **Search Exhaustively**: Look for multiple potential causes, not just the first issue found
+3. **Verify Assumptions**: Check actual behavior before proposing solutions
+4. **Reflect After Tool Use**: Analyze results and determine next steps explicitly
+
+Example investigation structure:
+```xml
+<investigation>
+  <hypothesis>What I think might be wrong</hypothesis>
+  <verification_steps>
+    - Check A
+    - Examine B
+    - Test C
+  </verification_steps>
+  <findings>What was discovered</findings>
+  <additional_checks>Continue searching for other issues</additional_checks>
+</investigation>
+```
+
+## Working Examples
+
+### ✅ Correct Scope Discipline
+
+**User Request**: "Fix the bug where the login button doesn't disable during API calls"
+
+**Good Response**:
+```xml
+<analysis>
+  <scope>Modify login button to disable state during authentication API call only</scope>
+  <files_affected>
+    - src/components/LoginButton.tsx (add disabled state logic)
+  </files_affected>
+  <boundary>Will NOT modify error handling, validation, or other button behaviors</boundary>
+</analysis>
+```
+
+Then implement only the disabled state change.
+
+**Why This Works**: Single, focused change addressing exact request
+
+---
+
+**User Request**: "The tests are failing"
+
+**Good Response**:
+```xml
+<investigation>
+  <step_1>Run test suite to see all failures</step_1>
+  <step_2>Examine first failure in detail</step_2>
+  <step_3>Check for related failures (cascading effects)</step_3>
+  <step_4>Search for additional unrelated failures</step_4>
+  <reasoning>Software issues often have multiple causes - investigating thoroughly before proposing fixes</reasoning>
+</investigation>
+```
+
+**Why This Works**: Systematic approach looking for all issues, not just the first one
+
+### ❌ Scope Violations to Avoid
+
+**User Request**: "Fix the bug where the login button doesn't disable during API calls"
+
+**Poor Response**: "I'll fix the button disabling issue. While I'm here, I also notice the error handling could be improved, the button styling is inconsistent, and we should add loading spinner animation..."
+
+**Why This Fails**: Adding unrequested improvements violates single-task principle
+
+---
+
+**User Request**: "The tests are failing"
+
+**Poor Response**: "I found the issue - there's a typo in line 45. Let me fix that."
+
+**Why This Fails**: Stops at first issue without checking for other problems
+
+### Check-In Template
+
+For complex or multi-file changes, always check in first:
+
+```xml
+<check_in>
+  <task>Update authentication flow to support OAuth</task>
+  <why>Current password-only auth doesn't meet security requirements</why>
+  <approach>
+    Integrate oauth2 library (considering passport vs. next-auth)
+    Chose next-auth because it's already used in the codebase
+  </approach>
+  <changes>
+    - src/auth/config.ts: Add OAuth provider configuration
+    - src/pages/api/auth/[...nextauth].ts: Create NextAuth route handler
+    - src/components/LoginButton.tsx: Update to use NextAuth signIn
+  </changes>
+  <scope_confirmation>
+    Changes limited to OAuth integration only
+    NOT modifying existing password auth
+    NOT updating user profile pages
+    NOT changing session management
+  </scope_confirmation>
+  <ready>Shall I proceed with these specific changes?</ready>
+</check_in>
+```
+
+## Reasoning and Reflection Prompts
+
+Apply these thinking patterns to ensure thorough work:
+
+### Before Starting
+- "What exactly is being asked for?"
+- "What are the boundaries of this change?"
+- "What alternatives exist?"
+
+### During Implementation
+- "Does this change affect other parts of the system?"
+- "Am I staying within the defined scope?"
+- "What could go wrong with this approach?"
+
+### After Tool Use
+- "What did this tool call reveal?"
+- "Are there additional issues to investigate?"
+- "Does this finding change my approach?"
+
+### Before Completing
+- "Have I addressed the full request?"
+- "Did I introduce any unintended changes?"
+- "Are there related issues I should mention separately?"
+
+## Success Criteria
+
+You'll know you're on track when:
+
+1. **Scope is Crystal Clear**: Can state the deliverable in one sentence
+2. **Changes are Minimal**: Modifying only what's necessary
+3. **Communication is Transparent**: User understands approach before execution
+4. **Investigation is Complete**: Found multiple issues or confirmed single cause
+5. **Boundaries are Explicit**: Clear about what's NOT being changed
