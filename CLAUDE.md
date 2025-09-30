@@ -13,9 +13,20 @@ This repository contains Nix Home Manager configuration for managing development
 - `hmo`: Edit the `overconfig.nix` file (machine-specific customizations)
 - `hm`: Change directory to Nix Packages configuration directory (`~/.config/nixpkgs`)
 
+## Nix Development Commands
+
+- `nix run nixpkgs#nix-prefetch-github -- owner repo --rev main`: Get hash for GitHub packages
+- `nix flake update`: Update flake dependencies
+- `nix flake metadata`: Show flake metadata
+- `nix search nixpkgs <package>`: Search for available packages
+
 ## Configuration Structure
 
 - `flake.nix`: Defines inputs and outputs for the Nix flake
+  - **nixpkgs**: Stable channel (25.05)
+  - **nixpkgs-unstable**: Unstable channel for bleeding-edge packages (available as `unstable` in home.nix)
+  - **home-manager**: Release 25.05
+  - **nix-index-database**: Fast command-not-found alternative
 - `home.nix`: Main configuration file defining packages, programs, and configuration
 - `overconfig.nix`: Machine-specific customizations (gitignored after sync)
 - `claude-global.md`: Global Claude Code configuration and development preferences
@@ -35,6 +46,16 @@ This repository contains Nix Home Manager configuration for managing development
    - Makes git ignore `overconfig.nix` changes again
    - Prompts to restart tmux server (requires explicit `y`/`Y` confirmation)
 
+## Home Manager Activation Process
+
+When running `hms`, these activation hooks run automatically:
+1. **copyApplications**: Creates aliases in ~/Applications for Spotlight/Alfred indexing
+2. **gitIgnoreOverconfigChanges**: Makes git ignore overconfig.nix changes
+3. **claudeSettings**: Symlinks Claude Code settings with configured hooks
+4. **claudeGlobal**: Copies global Claude settings
+5. **precompileZshCompletions**: Compiles zsh completions for faster shell startup
+6. **generateDirenvHook**: Creates static direnv hook for performance
+
 ## Shell Applications (Custom Commands)
 
 ### Git Workflow
@@ -48,10 +69,12 @@ This repository contains Nix Home Manager configuration for managing development
 - `git-sync`: Merge latest trunk changes into current branch
 - `git-resume`: Checkout most recently used branch
 - `git-tmp`: Create/switch to temporary branch (karlhepler/tmp)
+- `workout`: Git worktree management tool (auto-evaluates cd commands)
 
 ### Claude Code Integration
 - `claude-notification-hook`: Handles Claude Code notifications
 - `claude-complete-hook`: Handles Claude Code completion events
+- `claude-csharp-format-hook`: Auto-formats C# files after Edit/Write operations
 
 ## Custom Scripts
 
@@ -74,6 +97,23 @@ This repository contains Nix Home Manager configuration for managing development
 - **Automatic backups**: Created at `~/.backup/.config/nixpkgs/overconfig.YYYYMMDD-HHMMSS.nix`
 - Symlink `overconfig.latest.nix` points to most recent backup
 
+## Editors and Terminal
+
+- **Primary Editor**: Neovim (vim/vi aliases enabled)
+- **GUI Editor**: Neovide (unstable channel)
+- **Terminal**: Alacritty (configured with Tokyo Night Storm theme)
+- **Font**: SauceCodePro Nerd Font Mono, size 20
+- **Color Scheme**: Tokyo Night Storm (consistent across tmux, Alacritty, Neovim)
+
+## Neovim Plugin Architecture
+
+Key integrations:
+- **LSP**: Configured for TypeScript, Bash, C#, Nix, Go, Python, Haskell
+- **claude-tmux-neovim**: Special plugin for Claude Code integration (keybindings for sending selections)
+- **FZF Integration**: `<C-p>` for file search, `<C-b>` for LSP symbols
+- **Copilot**: GitHub Copilot enabled
+- **Treesitter**: Parsers for bash, C#, gdscript, go, helm, lua, markdown, nix, python, rust, starlark, typescript, yaml
+
 ## Claude Code Configuration
 
 This repository includes integrated Claude Code settings:
@@ -88,6 +128,14 @@ For packages using `rev = "main"` with fixed hash:
 1. Get latest hash: `nix run nixpkgs#nix-prefetch-github -- owner repo --rev main`
 2. Update hash in `home.nix`
 3. Apply changes: `hms`
+
+## Performance Optimizations
+
+This config includes several shell performance optimizations:
+- Precompiled zsh completions (`.zcompdump.zwc`)
+- Static direnv hook generation
+- Async zsh autosuggestions
+- Fast compinit without security checks (`compinit -C`)
 
 ## Critical Requirements
 
