@@ -7,107 +7,32 @@ let
     hms = pkgs.writeShellApplication {
       name = "hms";
       runtimeInputs = [ pkgs.git pkgs.home-manager ];
-      text = ''
-        # Parse arguments
-        EXPUNGE=false
-        for arg in "$@"; do
-          if [[ "$arg" == "--expunge" ]]; then
-            EXPUNGE=true
-          fi
-        done
-        
-        # Backup overconfig.nix
-        mkdir -p ~/.backup/.config/nixpkgs
-        timestamp=$(date +%Y%m%d-%H%M%S)
-        cp ~/.config/nixpkgs/overconfig.nix ~/.backup/.config/nixpkgs/overconfig."$timestamp".nix
-        ln -sf overconfig."$timestamp".nix ~/.backup/.config/nixpkgs/overconfig.latest.nix
-        
-        # Temporarily track overconfig.nix
-        git -C ~/.config/nixpkgs update-index --no-assume-unchanged overconfig.nix
-        
-        # Run home-manager switch
-        home-manager switch --flake ~/.config/nixpkgs
-        
-        # Expunge tmux server for complete refresh if flag was passed
-        if [[ "$EXPUNGE" == "true" ]]; then
-          echo "Expunging tmux server for complete environment refresh..."
-          tmux kill-server 2>/dev/null || true
-        fi
-      '';
+      text = builtins.readFile ./scripts/hms.bash;
     };
     commit = pkgs.writeShellApplication {
       name = "commit";
       runtimeInputs = [ pkgs.git ];
-      text = ''
-        msg="$*"
-        if [ "$msg" == 'noop' ]; then
-          git commit --allow-empty -m "$msg"
-        else
-          git add "$(git rev-parse --show-toplevel)"
-          git commit -m "$msg"
-        fi
-      '';
+      text = builtins.readFile ./scripts/commit.bash;
     };
     pull = pkgs.writeShellApplication {
       name = "pull";
       runtimeInputs = [ pkgs.git ];
-      text = ''
-        set +e # keep going
-        git pull 2> >(
-          must_set_upstream=
-          while IFS= read -r line; do
-            if [[ $line == 'There is no tracking information for the current branch.' ]]; then
-              must_set_upstream=true
-              break
-            fi
-            echo "$line" >&2
-          done
-
-          git_pull_exit_code=$?
-          if [[ $must_set_upstream != true ]]; then
-            exit $git_pull_exit_code
-          fi
-
-          set -e # reset error handling
-          branch="$(git symbolic-ref --short HEAD)"
-          git branch --set-upstream-to="origin/$branch" "$branch"
-          git pull
-        )
-      '';
+      text = builtins.readFile ./scripts/pull.bash;
     };
     push = pkgs.writeShellApplication {
       name = "push";
       runtimeInputs = [ pkgs.git ];
-      text = ''
-        git_push='git push'
-        if ! git rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
-          git_push="$git_push --set-upstream"
-        fi
-        $git_push "$@"
-      '';
+      text = builtins.readFile ./scripts/push.bash;
     };
     save = pkgs.writeShellApplication {
       name = "save";
       runtimeInputs = [ commit push ];
-      text = ''
-        commit "$*"
-        push
-      '';
+      text = builtins.readFile ./scripts/save.bash;
     };
     git-branches = pkgs.writeShellApplication {
       name = "git-branches";
       runtimeInputs = [ pkgs.git pkgs.fzf ];
-      text = ''
-        branch="''${1:-karlhepler/}"
-        output="$(git for-each-ref --sort=-committerdate --format='%(refname:short)' "refs/heads/''${branch}*" "refs/remotes/''${branch}*")"
-        
-        # check if the script's output is connected to a terminal
-        if [ -t 1 ]; then
-          echo "$output" | fzf --preview 'git log --color {} -p -n 3' --bind 'enter:execute(git checkout {})+abort'
-        else
-          echo "$output"
-        fi
-      '';
+      text = builtins.readFile ./scripts/git-branches.bash;
     };
     git-kill = pkgs.writeShellApplication {
       name = "git-kill";
@@ -122,109 +47,27 @@ let
     git-trunk = pkgs.writeShellApplication {
       name = "git-trunk";
       runtimeInputs = [ pkgs.git pkgs.gnused ];
-      text = ''
-        git remote set-head origin -a # make sure there is an origin/HEAD
-        trunk="$(git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@')"
-        git checkout "$trunk"
-        git pull
-      '';
+      text = builtins.readFile ./scripts/git-trunk.bash;
     };
     git-sync = pkgs.writeShellApplication {
       name = "git-sync";
       runtimeInputs = [ pkgs.git pkgs.gnused ];
-      text = ''
-        # Determine trunk branch (main or master)
-        git remote set-head origin -a
-        trunk="$(git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@')"
-
-        # Fetch latest trunk from remote and merge into current branch
-        git fetch origin "$trunk"
-        git merge "origin/$trunk"
-      '';
+      text = builtins.readFile ./scripts/git-sync.bash;
     };
     git-resume = pkgs.writeShellApplication {
       name = "git-resume";
       runtimeInputs = [ pkgs.git git-branches pkgs.coreutils ];
-      text = ''
-        git checkout "$(git branches | head -1)"
-      '';
+      text = builtins.readFile ./scripts/git-resume.bash;
     };
     git-tmp = pkgs.writeShellApplication {
       name = "git-tmp";
       runtimeInputs = [ pkgs.git ];
-      text = ''
-        git branch -D karlhepler/tmp || true
-        git checkout -b karlhepler/tmp
-      '';
+      text = builtins.readFile ./scripts/git-tmp.bash;
     };
     workout = pkgs.writeShellApplication {
       name = "workout";
       runtimeInputs = [ pkgs.git pkgs.coreutils pkgs.gnused ];
-      text = ''
-        # Parse arguments
-        branch_name=""
-        create_new=false
-
-        if [ $# -eq 0 ]; then
-          # No args - use current branch
-          branch_name="$(git rev-parse --abbrev-ref HEAD)"
-
-          if [ "$branch_name" = "HEAD" ]; then
-            echo "Error: Not on a branch (detached HEAD state)" >&2
-            exit 1
-          fi
-        elif [ $# -eq 1 ]; then
-          # One arg - smart mode: use existing branch or create if doesn't exist
-          branch_name="$1"
-
-          # Check if branch exists
-          if ! git show-ref --verify --quiet "refs/heads/$branch_name"; then
-            # Branch doesn't exist, we'll create it
-            create_new=true
-          fi
-        else
-          echo "Usage: workout [branch-name]" >&2
-          echo "  workout              Move current branch to worktree" >&2
-          echo "  workout <branch>     Create worktree for branch (creates branch if needed)" >&2
-          exit 1
-        fi
-
-        # Get remote URL and extract org/repo
-        remote_url="$(git remote get-url origin)"
-
-        # Extract org/repo from URL (handles both SSH and HTTPS)
-        # git@github.com:org/repo.git -> org/repo
-        # https://github.com/org/repo.git -> org/repo
-        org_repo="$(echo "$remote_url" | sed -E 's#.*[:/]([^/]+/[^/]+)\.git$#\1#')"
-
-        if [ -z "$org_repo" ]; then
-          echo "Error: Could not extract org/repo from remote URL: $remote_url" >&2
-          exit 1
-        fi
-
-        # Build worktree path
-        worktree_path="$HOME/worktrees/$org_repo/$branch_name"
-
-        # Check if worktree already exists
-        if [ -d "$worktree_path" ]; then
-          # Worktree exists, just cd into it
-          echo "cd '$worktree_path'"
-          exit 0
-        fi
-
-        # Create parent directory if needed
-        mkdir -p "$(dirname "$worktree_path")"
-
-        # Create the worktree (redirect output to stderr so it displays but doesn't interfere with eval)
-        if [ "$create_new" = true ]; then
-          git worktree add -b "$branch_name" "$worktree_path" >&2
-        else
-          git worktree add "$worktree_path" "$branch_name" >&2
-        fi
-
-        # Output the cd command to stdout for the wrapper function to eval
-        echo "cd '$worktree_path'"
-      '';
+      text = builtins.readFile ./scripts/workout.bash;
     };
     claude-notification-hook = pkgs.writeShellApplication {
       name = "claude-notification-hook";
