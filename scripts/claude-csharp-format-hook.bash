@@ -17,10 +17,10 @@ except Exception:
 
 # Only process C# files
 if [[ -n "$file_path" && "$file_path" == *.cs ]]; then
-    # Check if csharpier is available and the file exists
-    if command -v csharpier >/dev/null 2>&1 && [[ -f "$file_path" ]]; then
-        # Run csharpier on the file, suppress output to avoid noise
-        csharpier "$file_path" &>/dev/null || true
+    # Check if dotnet-csharpier is available and the file exists
+    if command -v dotnet-csharpier >/dev/null 2>&1 && [[ -f "$file_path" ]]; then
+        # Run dotnet-csharpier on the file, suppress output to avoid noise
+        dotnet-csharpier "$file_path" &>/dev/null || true
     fi
 fi
 
