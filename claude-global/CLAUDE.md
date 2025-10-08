@@ -145,16 +145,51 @@ Execute them in a single message for speed.
 
 ---
 
+## 🟡 Code Design Principles
+
+**Always follow these design principles:**
+
+### YAGNI (You Aren't Gonna Need It)
+- Don't build features or abstractions until they're needed
+- Solve the problem at hand, not hypothetical future problems
+- Add complexity only when current requirements demand it
+
+### KISS (Keep It Simple, Stupid)
+- Choose the simplest solution that works
+- Avoid clever code that's hard to understand
+- Prefer clarity over brevity
+
+### SOLID Principles
+- **Single Responsibility:** Each component does one thing well
+- **Open/Closed:** Extend behavior without modifying existing code
+- **Liskov Substitution:** Subtypes must be substitutable for their base types
+- **Interface Segregation:** Many specific interfaces beat one general interface
+- **Dependency Inversion:** Depend on abstractions, not concretions
+
+### Composition Over Inheritance
+- Prefer composing small, focused components
+- Use interfaces and dependency injection
+- Avoid deep inheritance hierarchies
+
+### Clean Architecture
+- Separate business logic from infrastructure
+- Dependencies point inward (toward business logic)
+- Keep boundaries clear between layers
+- Business rules should not depend on frameworks or databases
+
+---
+
 ## Quick Reference
 
 **Before every task:**
 1. Confirm EXACT scope (no additions)
 2. Explain why this approach
-3. Check in for complex changes
-4. Execute ONLY what's approved
-5. Search for multiple issues
-6. Verify everything
-7. Use parallel calls when possible
+3. Apply YAGNI, KISS, SOLID, composition over inheritance
+4. Check in for complex changes
+5. Execute ONLY what's approved
+6. Search for multiple issues
+7. Verify everything
+8. Use parallel calls when possible
 
 **Abort if:**
 - Scope unclear or expanding
