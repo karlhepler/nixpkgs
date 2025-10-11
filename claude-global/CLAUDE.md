@@ -177,6 +177,69 @@ Execute them in a single message for speed.
 - Keep boundaries clear between layers
 - Business rules should not depend on frameworks or databases
 
+### Early Returns & Control Flow
+- Prefer early returns over nested conditionals
+- Use `continue` in loops to reduce nesting
+- Handle edge cases and errors first, then main logic
+- Reduce cognitive load by minimizing indentation levels
+
+**Examples:**
+
+```javascript
+// ❌ Nested conditionals
+function process(data) {
+  if (data) {
+    if (data.isValid) {
+      if (data.hasPermission) {
+        return doWork(data);
+      }
+    }
+  }
+  return null;
+}
+
+// ✅ Early returns
+function process(data) {
+  if (!data) return null;
+  if (!data.isValid) return null;
+  if (!data.hasPermission) return null;
+  return doWork(data);
+}
+
+// ❌ Nested loop logic
+for (const item of items) {
+  if (item.isActive) {
+    if (item.hasData) {
+      processItem(item);
+    }
+  }
+}
+
+// ✅ Continue statements
+for (const item of items) {
+  if (!item.isActive) continue;
+  if (!item.hasData) continue;
+  processItem(item);
+}
+```
+
+### DRY (Don't Repeat Yourself) - Loose Interpretation
+- Eliminate meaningful duplication, not all duplication
+- Balance DRY with clarity and simplicity
+- Don't create abstractions until pattern repeats 3+ times
+- Duplication is acceptable when abstraction adds complexity
+- Prefer duplication over wrong abstraction
+
+**When to apply DRY:**
+- Business logic that changes together
+- Complex algorithms used in multiple places
+- Configuration that needs consistency
+
+**When duplication is fine:**
+- Similar-looking code with different purposes
+- Code that may evolve independently
+- Simple operations where abstraction obscures intent
+
 ---
 
 ## Quick Reference
