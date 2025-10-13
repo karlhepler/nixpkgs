@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Files to preserve even when git-ignored (e.g., local environment config)
+# These files will be backed up and restored even in nuclear mode
+readonly PRESERVE_PATTERNS=(
+    ".envrc"
+)
+
 # Command line flags
 NUCLEAR_MODE=false
 DRY_RUN=false
@@ -105,10 +111,12 @@ main() {
     fi
 
     handle_uncommitted_changes
+    backup_preserved_files
     reset_submodules
     clear_git_operation_states
     perform_hard_reset "$current_branch"
     clean_untracked_files
+    restore_preserved_files
     restore_lfs_files
     handle_special_worktrees
     refresh_git_index
@@ -219,6 +227,61 @@ clean_untracked_files() {
     else
         status "Removing untracked files (respecting .gitignore)..."
         git clean -fd
+    fi
+}
+
+# Preserved files handling
+backup_preserved_files() {
+    local backup_dir="/tmp/git-kill-preserve-$$"
+    local backed_up=0
+
+    for pattern in "${PRESERVE_PATTERNS[@]}"; do
+        local files
+        files=$(find . -name "$pattern" -type f 2>/dev/null || true)
+
+        while IFS= read -r file; do
+            if [ -n "$file" ] && git check-ignore -q "$file" 2>/dev/null; then
+                local rel_path="${file#./}"
+                local file_backup_dir
+                file_backup_dir="$backup_dir/$(dirname "$rel_path")"
+                mkdir -p "$file_backup_dir"
+                cp "$file" "$backup_dir/$rel_path"
+                backed_up=$((backed_up + 1))
+            fi
+        done <<< "$files"
+    done
+
+    if [ "$backed_up" -gt 0 ]; then
+        status "Backed up $backed_up git-ignored file(s) to preserve"
+    fi
+}
+
+restore_preserved_files() {
+    local backup_dir="/tmp/git-kill-preserve-$$"
+
+    if [ ! -d "$backup_dir" ]; then
+        return 0
+    fi
+
+    local restored=0
+    local backup_files
+    backup_files=$(find "$backup_dir" -type f 2>/dev/null || true)
+
+    while IFS= read -r backup_file; do
+        if [ -n "$backup_file" ]; then
+            local original_path="${backup_file#"$backup_dir"/}"
+            local original_dir
+            original_dir=$(dirname "$original_path")
+            mkdir -p "$original_dir"
+            cp "$backup_file" "$original_path"
+            restored=$((restored + 1))
+        fi
+    done <<< "$backup_files"
+
+    rm -rf "$backup_dir"
+
+    if [ "$restored" -gt 0 ]; then
+        info "Restored $restored preserved file(s)"
     fi
 }
 
