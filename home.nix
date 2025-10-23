@@ -492,6 +492,7 @@ in {
       "??" = "${pkgs.github-copilot-cli}/bin/github-copilot-cli what-the-shell";
       "git?" = "${pkgs.github-copilot-cli}/bin/github-copilot-cli git-assist";
       "gh?" = "${pkgs.github-copilot-cli}/bin/github-copilot-cli gh-assist";
+      k = "${pkgs.kubectl}/bin/kubectl";
     };
   };
 
