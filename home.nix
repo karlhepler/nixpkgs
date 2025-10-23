@@ -109,6 +109,7 @@ in {
     helm-ls
     htop
     just
+    kubectl
     mkcert
     nerd-fonts.sauce-code-pro
     nil
@@ -383,6 +384,9 @@ in {
         # Fallback to fast compinit without security checks
         compinit -C
       fi
+
+      # Load kubectl completions
+      source <(${pkgs.kubectl}/bin/kubectl completion zsh)
 
       # Enhanced completion styling
       autoload -U colors && colors
