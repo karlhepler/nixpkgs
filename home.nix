@@ -91,6 +91,7 @@ in {
   # https://search.nixos.org/packages
   home.packages = with pkgs; [
     bash
+    bat
     cabal-install # Cabal installation tool for managing Haskell software
     comma
     csharpier # Opinionated code formatter for C#
@@ -481,6 +482,15 @@ in {
         return $exit_code
       }
 
+      # kubectl wrapper with syntax highlighting for explain command
+      k() {
+        if [[ "$1" == "explain" ]]; then
+          ${pkgs.kubectl}/bin/kubectl "$@" | ${pkgs.bat}/bin/bat --language md --paging auto --style plain
+        else
+          ${pkgs.kubectl}/bin/kubectl "$@"
+        fi
+      }
+
       # Start tmux if not started
       if [ -z "$TMUX" ]; then
         exec ${homeDirectory}/.nix-profile/bin/tmux
@@ -499,7 +509,6 @@ in {
       "??" = "${pkgs.github-copilot-cli}/bin/github-copilot-cli what-the-shell";
       "git?" = "${pkgs.github-copilot-cli}/bin/github-copilot-cli git-assist";
       "gh?" = "${pkgs.github-copilot-cli}/bin/github-copilot-cli gh-assist";
-      k = "${pkgs.kubectl}/bin/kubectl";
     };
   };
 
