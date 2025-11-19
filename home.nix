@@ -98,6 +98,7 @@ in {
     darwin.trash
     devbox
     difftastic
+    dotnet-sdk_9
     fd
     ghc # Glasgow Haskell Compiler
     git-lfs
@@ -111,6 +112,7 @@ in {
     htop
     just
     kubectl
+    kubectx
     mkcert
     nerd-fonts.sauce-code-pro
     nil
@@ -118,11 +120,10 @@ in {
     nodePackages.typescript
     nodePackages.typescript-language-server
     nodejs
+    omnisharp-roslyn
     pyright
     python3
-    omnisharp-roslyn
     python3Packages.pip
-    dotnet-sdk_9
     ripgrep
     ruby
     shellcheck
@@ -509,6 +510,8 @@ in {
       "??" = "${pkgs.github-copilot-cli}/bin/github-copilot-cli what-the-shell";
       "git?" = "${pkgs.github-copilot-cli}/bin/github-copilot-cli git-assist";
       "gh?" = "${pkgs.github-copilot-cli}/bin/github-copilot-cli gh-assist";
+      kn = "${pkgs.kubectx}/bin/kubens";
+      kx = "${pkgs.kubectx}/bin/kubectx";
     };
   };
 
