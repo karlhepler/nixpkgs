@@ -139,7 +139,8 @@ in {
 
   fonts.fontconfig.enable = true;
 
-  # Alias all Home Manager symlinks so that Spotlight and Alfred can find them.
+  # Application Management: Copy-Metadata Approach
+  # Creates shadow .app bundles for Spotlight/Alfred indexing
   home.activation = {
     copyApplications = let
       apps = pkgs.buildEnv {
@@ -148,19 +149,71 @@ in {
         pathsToLink = "/Applications";
       };
     in lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-      aliasdir="$HOME/Applications/Home Manager Aliases"
+      echo "Setting up Nix applications for Spotlight..."
 
-      $DRY_RUN_CMD rm -rf "$aliasdir"
-      $DRY_RUN_CMD mkdir -p "$aliasdir"
+      appDir="$HOME/Applications/Nix Apps"
 
-      for appfile in ${apps}/Applications/*; do
-        echo "appfile: $appfile"
-        $DRY_RUN_CMD /usr/bin/osascript \
-          -e "tell app \"Finder\"" \
-          -e "make new alias file at POSIX file \"$aliasdir\" to POSIX file \"$appfile\"" \
-          -e "set name of result to \"$(basename "$appfile")\"" \
-          -e "end tell"
+      # Clean and recreate directory (handles Nix store path changes)
+      $DRY_RUN_CMD rm -rf "$appDir"
+      $DRY_RUN_CMD mkdir -p "$appDir"
+
+      # Process each application
+      for app_link in ${apps}/Applications/*.app; do
+        if [ ! -e "$app_link" ]; then
+          continue
+        fi
+
+        # Resolve symlinks to actual Nix store path
+        app_source=$(readlink -f "$app_link")
+        appname=$(basename "$app_source")
+        target="$appDir/$appname"
+
+        echo "  Processing $appname..."
+
+        # Create app bundle structure
+        $DRY_RUN_CMD mkdir -p "$target/Contents"
+
+        # Copy Info.plist (required for Spotlight)
+        if [ -f "$app_source/Contents/Info.plist" ]; then
+          $DRY_RUN_CMD cp -f "$app_source/Contents/Info.plist" "$target/Contents/"
+        fi
+
+        # Copy icon files (required for Spotlight/Finder display)
+        if [ -d "$app_source/Contents/Resources" ]; then
+          $DRY_RUN_CMD mkdir -p "$target/Contents/Resources"
+          for icon in "$app_source/Contents/Resources"/*.icns; do
+            if [ -f "$icon" ]; then
+              $DRY_RUN_CMD cp -f "$icon" "$target/Contents/Resources/"
+            fi
+          done
+        fi
+
+        # Symlink MacOS directory (actual executables)
+        if [ -d "$app_source/Contents/MacOS" ]; then
+          $DRY_RUN_CMD ln -sfn "$app_source/Contents/MacOS" "$target/Contents/MacOS"
+        fi
+
+        # Symlink other Contents subdirectories
+        for dir in "$app_source/Contents"/*; do
+          if [ ! -e "$dir" ]; then
+            continue
+          fi
+
+          dirname=$(basename "$dir")
+
+          # Skip already-handled items
+          if [ "$dirname" = "Info.plist" ] || \
+             [ "$dirname" = "Resources" ] || \
+             [ "$dirname" = "MacOS" ]; then
+            continue
+          fi
+
+          # Symlink everything else
+          $DRY_RUN_CMD ln -sfn "$dir" "$target/Contents/$dirname"
+        done
       done
+
+      echo "Applications setup complete. Apps available in: $appDir"
     '';
 
     gitIgnoreOverconfigChanges = lib.hm.dag.entryAfter [ "writeBoundary" ] ''

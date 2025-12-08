@@ -49,7 +49,7 @@ This repository contains Nix Home Manager configuration for managing development
 ## Home Manager Activation Process
 
 When running `hms`, these activation hooks run automatically:
-1. **copyApplications**: Creates aliases in ~/Applications for Spotlight/Alfred indexing
+1. **copyApplications**: Creates shadow app bundles in ~/Applications/Nix Apps for Spotlight/Alfred indexing
 2. **gitIgnoreOverconfigChanges**: Makes git ignore overconfig.nix changes
 3. **claudeSettings**: Symlinks Claude Code settings with configured hooks
 4. **claudeGlobal**: Copies global Claude settings
