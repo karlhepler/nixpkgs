@@ -3,36 +3,39 @@ set -eou pipefail
 # Read JSON from stdin
 json=$(cat)
 
-# Extract data from the new hook format
+# Extract data using official Claude Code Stop hook fields
 data=$(echo "$json" | python3 -c "
 import sys, json
 try:
     data = json.load(sys.stdin)
-    session_id = data.get('session_id', '')
-    cwd = data.get('cwd', '')
     hook_event_name = data.get('hook_event_name', 'Stop')
-    
-    # Create context-aware message
-    message = 'Task finished'
-    if cwd:
-        dir_name = cwd.split('/')[-1] if '/' in cwd else cwd
-        message = f'Task finished in {dir_name}'
-    
-    # Determine title based on event
-    if 'error' in str(data).lower():
-        title = 'Claude Code Error'
-    elif hook_event_name == 'SubagentStop':
+    transcript_path = data.get('transcript_path', '')
+
+    # Extract directory from transcript_path (Stop hook doesn't provide cwd!)
+    dir_name = ''
+    if transcript_path:
+        # transcript_path format: ~/.claude/projects/{project_name}/{session_id}.jsonl
+        parts = transcript_path.split('/')
+        if 'projects' in parts:
+            idx = parts.index('projects')
+            if idx + 1 < len(parts):
+                dir_name = parts[idx + 1]
+
+    # Determine title and message
+    if hook_event_name == 'SubagentStop':
         title = 'Claude Subagent Complete'
+        message = f'Subagent task finished{\" in \" + dir_name if dir_name else \"\"}'
     else:
         title = 'Claude Code Complete'
-    
+        message = f'Task finished{\" in \" + dir_name if dir_name else \"\"}'
+
     print(f'{title}|{message}')
 except Exception as e:
     print('Claude Code Complete|Task finished')
 ")
 
-# Split the output into title and message
+# Split output
 IFS='|' read -r title message <<< "$data"
 
-# Send notification with Alacritty activation on click
-terminal-notifier -title "$title" -message "$message" -sound Glass -sender com.anthropic.claudefordesktop -execute 'osascript -e "tell application \"Alacritty\" to activate"'
+# Send via osascript with Alacritty sender
+osascript -e "tell app \"Alacritty\" to display notification \"$message\" with title \"$title\" sound name \"Glass\""

@@ -3,36 +3,42 @@ set -eou pipefail
 # Read JSON from stdin
 json=$(cat)
 
-# Extract data from the new hook format
+# Extract data using official Claude Code hook fields
 data=$(echo "$json" | python3 -c "
 import sys, json
 try:
     data = json.load(sys.stdin)
     message = data.get('message', 'Claude needs input')
-    event_name = data.get('hook_event_name', 'Unknown')
-    session_id = data.get('session_id', '')
+    notification_type = data.get('notification_type', '')
+    hook_event_name = data.get('hook_event_name', 'Notification')
     cwd = data.get('cwd', '')
-    
-    # Create context-aware title based on event
-    if 'error' in message.lower():
-        title = 'Claude Error'
-    elif 'input' in message.lower() or 'prompt' in message.lower():
+
+    # Use notification_type for better title categorization
+    if notification_type == 'permission_prompt':
+        title = 'Claude Permission Request'
+    elif notification_type == 'idle_prompt':
+        title = 'Claude Waiting'
+    elif notification_type == 'auth_success':
+        title = 'Claude Authenticated'
+    elif notification_type == 'elicitation_dialog':
         title = 'Claude Needs Input'
+    elif 'error' in message.lower():
+        title = 'Claude Error'
     else:
         title = 'Claude Notification'
-    
-    # Add context info if available
-    context = ''
+
+    # Add context if available
     if cwd:
-        context = f' in {cwd.split(\"/\")[-1] if \"/\" in cwd else cwd}'
-    
-    print(f'{title}|{message}{context}')
+        dir_name = cwd.split('/')[-1] if '/' in cwd else cwd
+        message = f'{message} [in {dir_name}]'
+
+    print(f'{title}|{message}')
 except Exception as e:
     print('Claude Notification|Claude needs input')
 ")
 
-# Split the output into title and message
+# Split output
 IFS='|' read -r title message <<< "$data"
 
-# Send notification with Alacritty activation on click
-terminal-notifier -title "$title" -message "$message" -sound Ping -sender com.anthropic.claudefordesktop -execute 'osascript -e "tell application \"Alacritty\" to activate"'
+# Send via osascript with Alacritty sender
+osascript -e "tell app \"Alacritty\" to display notification \"$message\" with title \"$title\" sound name \"Ping\""
