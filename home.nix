@@ -71,12 +71,12 @@ let
     };
     claude-notification-hook = pkgs.writeShellApplication {
       name = "claude-notification-hook";
-      runtimeInputs = [ pkgs.terminal-notifier pkgs.python3 ];
+      runtimeInputs = [ pkgs.python3 ];
       text = builtins.readFile ./scripts/claude-notification-hook.bash;
     };
     claude-complete-hook = pkgs.writeShellApplication {
       name = "claude-complete-hook";
-      runtimeInputs = [ pkgs.terminal-notifier ];
+      runtimeInputs = [ ];
       text = builtins.readFile ./scripts/claude-complete-hook.bash;
     };
     claude-csharp-format-hook = pkgs.writeShellApplication {
@@ -129,7 +129,6 @@ in {
     shellcheck
     stack  # A cross-platform program for developing Haskell projects
     starpls # Language server for Starlark
-    terminal-notifier # macOS notification tool
     tilt
     uv
     yaml-language-server
