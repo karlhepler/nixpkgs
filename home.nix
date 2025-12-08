@@ -138,83 +138,9 @@ in {
 
   fonts.fontconfig.enable = true;
 
-  # Application Management: Copy-Metadata Approach
-  # Creates shadow .app bundles for Spotlight/Alfred indexing
+  # Application Management: Handled natively by home-manager 25.11+
+  # Apps are automatically available in ~/Applications/Home Manager Apps
   home.activation = {
-    copyApplications = let
-      apps = pkgs.buildEnv {
-        name = "home-manager-applications";
-        paths = config.home.packages;
-        pathsToLink = "/Applications";
-      };
-    in lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-      echo "Setting up Nix applications for Spotlight..."
-
-      appDir="$HOME/Applications/Nix Apps"
-
-      # Clean and recreate directory (handles Nix store path changes)
-      $DRY_RUN_CMD rm -rf "$appDir"
-      $DRY_RUN_CMD mkdir -p "$appDir"
-
-      # Process each application
-      for app_link in ${apps}/Applications/*.app; do
-        if [ ! -e "$app_link" ]; then
-          continue
-        fi
-
-        # Resolve symlinks to actual Nix store path
-        app_source=$(readlink -f "$app_link")
-        appname=$(basename "$app_source")
-        target="$appDir/$appname"
-
-        echo "  Processing $appname..."
-
-        # Create app bundle structure
-        $DRY_RUN_CMD mkdir -p "$target/Contents"
-
-        # Copy Info.plist (required for Spotlight)
-        if [ -f "$app_source/Contents/Info.plist" ]; then
-          $DRY_RUN_CMD cp -f "$app_source/Contents/Info.plist" "$target/Contents/"
-        fi
-
-        # Copy icon files (required for Spotlight/Finder display)
-        if [ -d "$app_source/Contents/Resources" ]; then
-          $DRY_RUN_CMD mkdir -p "$target/Contents/Resources"
-          for icon in "$app_source/Contents/Resources"/*.icns; do
-            if [ -f "$icon" ]; then
-              $DRY_RUN_CMD cp -f "$icon" "$target/Contents/Resources/"
-            fi
-          done
-        fi
-
-        # Symlink MacOS directory (actual executables)
-        if [ -d "$app_source/Contents/MacOS" ]; then
-          $DRY_RUN_CMD ln -sfn "$app_source/Contents/MacOS" "$target/Contents/MacOS"
-        fi
-
-        # Symlink other Contents subdirectories
-        for dir in "$app_source/Contents"/*; do
-          if [ ! -e "$dir" ]; then
-            continue
-          fi
-
-          dirname=$(basename "$dir")
-
-          # Skip already-handled items
-          if [ "$dirname" = "Info.plist" ] || \
-             [ "$dirname" = "Resources" ] || \
-             [ "$dirname" = "MacOS" ]; then
-            continue
-          fi
-
-          # Symlink everything else
-          $DRY_RUN_CMD ln -sfn "$dir" "$target/Contents/$dirname"
-        done
-      done
-
-      echo "Applications setup complete. Apps available in: $appDir"
-    '';
-
     gitIgnoreOverconfigChanges = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       $DRY_RUN_CMD ${pkgs.git}/bin/git -C ~/.config/nixpkgs update-index --assume-unchanged overconfig.nix
     '';
@@ -679,9 +605,11 @@ in {
   programs.git = {
     enable = true;
     ignores = [ ".DS_Store" ".tags*" ".claude/settings.local.json" ];
-    userName = "Karl Hepler";
-    userEmail = "karl.hepler@gmail.com";
-    extraConfig = {
+    settings = {
+      user = {
+        name = "Karl Hepler";
+        email = "karl.hepler@gmail.com";
+      };
       core.editor = "vim";
       diff.tool = "vimdiff";
       merge.tool = "vimdiff";
@@ -689,12 +617,12 @@ in {
       push.default = "current";
       init.defaultBranch = "main";
       pull.rebase = false;
-    };
-    aliases = {
-      who = "blame -w -C -C -C";
-      difft = "-c diff.external=difft diff";
-      logt = "-c diff.external=difft log -p --ext-diff";
-      showt = "-c diff.external=difft show --ext-diff";
+      alias = {
+        who = "blame -w -C -C -C";
+        difft = "-c diff.external=difft diff";
+        logt = "-c diff.external=difft log -p --ext-diff";
+        showt = "-c diff.external=difft show --ext-diff";
+      };
     };
   };
 

@@ -40,5 +40,5 @@ except Exception as e:
 # Split output
 IFS='|' read -r title message <<< "$data"
 
-# Send via osascript with Alacritty sender
-osascript -e "tell app \"Alacritty\" to display notification \"$message\" with title \"$title\" sound name \"Ping\""
+# Send notification from Alacritty (using bundle ID to avoid path issues)
+osascript -e "tell application id \"org.alacritty\" to display notification \"$message\" with title \"$title\" sound name \"Ping\""

@@ -23,9 +23,9 @@ This repository contains Nix Home Manager configuration for managing development
 ## Configuration Structure
 
 - `flake.nix`: Defines inputs and outputs for the Nix flake
-  - **nixpkgs**: Stable channel (25.05)
+  - **nixpkgs**: Stable channel (25.11)
   - **nixpkgs-unstable**: Unstable channel for bleeding-edge packages (available as `unstable` in home.nix)
-  - **home-manager**: Release 25.05
+  - **home-manager**: Release 25.11
   - **nix-index-database**: Fast command-not-found alternative
 - `home.nix`: Main configuration file defining packages, programs, and configuration
 - `overconfig.nix`: Machine-specific customizations (gitignored after sync)
@@ -49,12 +49,13 @@ This repository contains Nix Home Manager configuration for managing development
 ## Home Manager Activation Process
 
 When running `hms`, these activation hooks run automatically:
-1. **copyApplications**: Creates shadow app bundles in ~/Applications/Nix Apps for Spotlight/Alfred indexing
-2. **gitIgnoreOverconfigChanges**: Makes git ignore overconfig.nix changes
-3. **claudeSettings**: Symlinks Claude Code settings with configured hooks
-4. **claudeGlobal**: Copies global Claude settings
-5. **precompileZshCompletions**: Compiles zsh completions for faster shell startup
-6. **generateDirenvHook**: Creates static direnv hook for performance
+1. **gitIgnoreOverconfigChanges**: Makes git ignore overconfig.nix changes
+2. **claudeSettings**: Symlinks Claude Code settings with configured hooks
+3. **claudeGlobal**: Copies global Claude settings
+4. **precompileZshCompletions**: Compiles zsh completions for faster shell startup
+5. **generateDirenvHook**: Creates static direnv hook for performance
+
+Note: Application management is handled natively by home-manager 25.11+. Apps are automatically available in ~/Applications/Home Manager Apps for Spotlight/Alfred indexing.
 
 ## Shell Applications (Custom Commands)
 

@@ -1,11 +1,12 @@
 {
   description = "Home Manager Configuration";
 
+  # VERSION: 25.11 - Update nixpkgs.url and home-manager.url below to change version
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-25.05";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-25.11";
     nixpkgs-unstable.url = "github:nixos/nixpkgs/nixos-unstable";
     home-manager = {
-      url = "github:nix-community/home-manager/release-25.05";
+      url = "github:nix-community/home-manager/release-25.11";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     nix-index-database = {
@@ -16,6 +17,9 @@
 
   outputs = { nixpkgs, nixpkgs-unstable, home-manager, nix-index-database, ... }:
     let
+      # Release version - keep in sync with nixpkgs.url and home-manager.url above
+      releaseVersion = "25.11";
+
       system = "aarch64-darwin";  # Only macOS ARM
       username = "karlhepler";
       pkgs = import nixpkgs {
@@ -33,7 +37,7 @@
           {
             home = {
               inherit username;
-              stateVersion = "25.05"; # This config is compatible with this Home Manager release.
+              stateVersion = releaseVersion;
               homeDirectory = "/Users/${username}";
             };
             _module.args = { inherit unstable; };
