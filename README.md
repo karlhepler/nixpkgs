@@ -21,7 +21,7 @@ $ cd nixpkgs
 $ nix run nixpkgs#home-manager -- switch --flake .#karlhepler
 ```
 
-Once that is done, run `~/Applications/Home Manager Apps/kitty.app` from Finder.
+Once that is done, applications will be available in `~/Applications/Nix Apps/` and searchable via Spotlight.
 
 ## Additional Customization
 
