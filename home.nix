@@ -111,9 +111,9 @@ in {
     helm-ls
     htop
     just
-    kubectl
     kubectx
     mkcert
+    orbstack # Includes kubectl - replaces standalone kubectl package
     nerd-fonts.sauce-code-pro
     nil
     nodePackages.bash-language-server
@@ -442,7 +442,10 @@ in {
       fi
 
       # Load kubectl completions
-      source <(${pkgs.kubectl}/bin/kubectl completion zsh)
+      source <(kubectl completion zsh)
+
+      # Tell completion system that k function uses kubectl completion
+      compdef k=kubectl
 
       # Enhanced completion styling
       autoload -U colors && colors
@@ -538,9 +541,9 @@ in {
       # kubectl wrapper with syntax highlighting for explain command
       k() {
         if [[ "$1" == "explain" ]]; then
-          ${pkgs.kubectl}/bin/kubectl "$@" | ${pkgs.bat}/bin/bat --language md --paging auto --style plain
+          kubectl "$@" | ${pkgs.bat}/bin/bat --language md --paging auto --style plain
         else
-          ${pkgs.kubectl}/bin/kubectl "$@"
+          kubectl "$@"
         fi
       }
 
