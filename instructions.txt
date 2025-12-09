@@ -1,0 +1,56 @@
+Apply the Changes
+
+# Run home-manager switch to activate the new configuration
+hms
+
+This will:
+1. Apply all the module changes we've made
+2. Reorganize everything according to the new structure
+3. Keep all your existing functionality intact
+
+What to Test
+
+After running hms, test these to verify everything works:
+
+1. Shell and Terminal
+# Test shell aliases
+ll
+tree
+
+# Test git commands
+git status
+
+# Test custom git commands
+git-branches  # (press Ctrl-C to exit)
+
+2. Applications
+# Test terminal
+alacritty  # Should open with Tokyo Night Storm theme
+
+# Test neovim
+nvim  # Should work with all plugins and LSPs
+
+# Test neovide
+neovide  # Should open with correct font
+
+3. Verify Theme Consistency
+- Alacritty: Should show Tokyo Night Storm colors
+- Tmux: Status bar should show Tokyo Night Storm
+- Neovim: Should use tokyonight-storm colorscheme
+
+4. Check File Structure
+# See the new module organization
+tree modules/
+
+# See the reorganized scripts
+tree scripts/
+
+If Everything Works
+
+Great! We can continue with the remaining refactoring (Neovim plugins/LSP splitting, final documentation).
+
+If Something's Wrong
+
+Let me know what's not working and I'll fix it immediately. We have full backups and git history, so we can roll back if needed.
+
+Ready to test? Just run hms and let me know how it goes!
