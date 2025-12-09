@@ -12,6 +12,7 @@ This repository contains Nix Home Manager configuration for managing development
 
 - `hms`: Apply Home Manager changes (use `--expunge` for complete environment refresh)
 - `hme`: Edit the `home.nix` file (main configuration)
+- `hmu`: Edit the `user.nix` file (user-specific identity)
 - `hmo`: Edit the `overconfig.nix` file (machine-specific customizations)
 - `hm`: Change directory to Nix Packages configuration directory (`~/.config/nixpkgs`)
 
@@ -30,6 +31,7 @@ This repository uses a **domain-centric module architecture** where related func
 ### Core Files
 - `flake.nix`: Defines inputs/outputs, manages nixpkgs (25.11 stable) and nixpkgs-unstable
 - `home.nix`: Main entry point that imports all modules and aggregates shellapps
+- `user.nix`: User-specific identity (name, email, username, homeDirectory) - gitignored after sync
 - `overconfig.nix`: Machine-specific customizations (gitignored after sync, manages its own git-ignore behavior)
 
 ### Module Architecture
@@ -87,6 +89,34 @@ Centralized theme configuration in `modules/theme.nix` provides:
 
 Theme is imported in home.nix and passed to all modules via `_module.args`.
 
+## User Configuration
+
+**user.nix File Management:**
+- Contains user identity information used across all modules
+- Made "invisible" to git using `git update-index --assume-unchanged`
+- The `hms` command handles visibility automatically:
+  1. Validates user.nix exists and has no placeholder values
+  2. Makes file visible: `git update-index --no-assume-unchanged user.nix`
+  3. Backs up to `~/.backup/.config/nixpkgs/user.YYYYMMDD-HHMMSS.nix`
+  4. Runs home-manager switch
+  5. Configures local git for this repo using user.nix values
+  6. Makes file invisible again via activation hook
+- **Automatic backups**: Created at `~/.backup/.config/nixpkgs/user.YYYYMMDD-HHMMSS.nix`
+- Symlink `user.latest.nix` points to most recent backup
+
+**Fields:**
+- `userName`: Full name (used for git user.name)
+- `userEmail`: Personal email (used for git user.email)
+- `username`: System username (used for homeConfigurations, GitHub repos)
+- `homeDirectory`: Home directory path
+
+**Editing:** Use `hmu` to edit user.nix
+
+**Work Email Override:** Still handled in overconfig.nix:
+```nix
+programs.git.settings.user.email = lib.mkForce "work@email.com";
+```
+
 ## Important Git Handling
 
 **overconfig.nix File Management:**
@@ -102,24 +132,21 @@ Theme is imported in home.nix and passed to all modules via `_module.args`.
 
 **Local Git Configuration for This Repository:**
 
-CRITICAL: When using `overconfig.nix` to override global git settings (e.g., work email), you MUST configure this repository to use personal credentials for commits.
+CRITICAL: `user.nix` values are automatically configured as local git settings by `hms`.
 
-Default git config in `modules/git/default.nix`:
-- Name: "Karl Hepler"
-- Email: "karl.hepler@gmail.com" (personal)
-
-If `overconfig.nix` overrides with work email, after cloning this repository run:
-
+The `hms` command automatically runs:
 ```bash
-cd ~/.config/nixpkgs
-git config --local user.email "karl.hepler@gmail.com"
+git config --local user.name "<userName from user.nix>"
+git config --local user.email "<userEmail from user.nix>"
 ```
 
-This ensures commits to THIS repository always use personal credentials, regardless of global overrides. Verify with:
+This ensures commits to THIS repository always use personal credentials from user.nix,
+even on work machines where overconfig.nix overrides global git config.
 
+Verify with:
 ```bash
 git config --local --get user.email
-# Should output: karl.hepler@gmail.com
+# Should output your personal email from user.nix
 ```
 
 **Why**: This is a personal repository that should always use personal git credentials, even on work machines where global config is overridden for work projects.

@@ -1,4 +1,4 @@
-{ config, pkgs, lib, theme, ... }:
+{ config, pkgs, lib, user, theme, ... }:
 
 {
   # ============================================================================
@@ -75,8 +75,8 @@
     ignores = [ ".DS_Store" ".tags*" ".claude/settings.local.json" ];
     settings = {
       user = {
-        name = "Karl Hepler";
-        email = "karl.hepler@gmail.com";
+        name = user.userName;
+        email = user.userEmail;
       };
       core.editor = "vim";
       diff.tool = "vimdiff";

@@ -3,7 +3,8 @@
 let
   homeDirectory = config.home.homeDirectory;
 
-  # Import theme for use in modules
+  # Import cross-cutting concerns
+  user = (import ./user.nix { inherit config pkgs lib; }).user;
   theme = (import ./modules/theme.nix { inherit lib; }).theme;
 
 in {
@@ -31,7 +32,7 @@ in {
       // (config._module.args.gitShellapps or {})
       // (config._module.args.claudeShellapps or {})
       // (config._module.args.neovimShellapps or {});
-  in { inherit theme shellapps; };
+  in { inherit user theme shellapps; };
 
 
   fonts.fontconfig.enable = true;

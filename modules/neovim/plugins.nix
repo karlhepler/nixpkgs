@@ -1,4 +1,4 @@
-{ config, pkgs, lib, theme, ... }:
+{ config, pkgs, lib, user, theme, ... }:
 
 {
   # ============================================================================
@@ -211,7 +211,7 @@
         pname = "claude-tmux-neovim";
         version = "1.0.0";
         src = pkgs.fetchFromGitHub {
-          owner = "karlhepler";
+          owner = user.username;
           repo = "claude-tmux-neovim";
           rev = "2fdd8531add11cf300fde34e4127d18a5e753a16";
           hash = "sha256-aTtsPAepD+nGsYcCyZ895DiTSPVWObR6U38YHQ9ozzE=";
