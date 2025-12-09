@@ -1,4 +1,4 @@
-{ config, pkgs, lib, theme, shellapps, ... }:
+{ config, pkgs, lib, theme, shellapps, unstable, ... }:
 
 {
   home.packages = with pkgs; [
@@ -82,4 +82,44 @@
 
     # === Shell Applications (from scripts/) ===
   ] ++ (builtins.attrValues shellapps);
+
+  # ============================================================================
+  # Simple Program Configurations
+  # ============================================================================
+  # Programs with minimal configuration (too simple for their own module files)
+
+  programs.fzf = {
+    enable = true;
+    enableZshIntegration = true;
+    tmux.enableShellIntegration = true;
+  };
+
+  programs.neovide = {
+    enable = true;
+    package = unstable.neovide;
+    settings = {
+      fork = false;
+      frame = "full";
+      font = {
+        normal = [theme.font.family];
+        size = theme.font.sizeFloat;
+      };
+    };
+  };
+
+  programs.starship = {
+    enable = true;
+    enableZshIntegration = true;
+  };
+
+  programs.zoxide = {
+    enable = true;
+    enableZshIntegration = true;
+    options = [ "--cmd" "cd" ];
+  };
+
+  programs.nix-index = {
+    enable = true;
+    enableZshIntegration = true;
+  };
 }

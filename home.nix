@@ -10,7 +10,7 @@ let
     hms = pkgs.writeShellApplication {
       name = "hms";
       runtimeInputs = [ pkgs.git pkgs.home-manager ];
-      text = builtins.readFile ./scripts/system/hms.bash;
+      text = builtins.readFile ./scripts/hms.bash;
     };
     commit = pkgs.writeShellApplication {
       name = "commit";
@@ -92,12 +92,13 @@ let
 in {
   # Import all modules
   imports = [
-    ./modules/packages.nix
-    ./modules/shell.nix
-    ./modules/terminal.nix
-    ./modules/editors.nix
-    ./modules/git.nix
-    ./modules/activation.nix
+    ./modules/packages.nix   # Packages + simple programs (fzf, neovide, starship, zoxide, nix-index)
+    ./modules/zsh.nix        # Zsh configuration + precompileZshCompletions activation
+    ./modules/direnv.nix     # Direnv configuration + generateDirenvHook activation
+    ./modules/alacritty.nix  # Alacritty terminal emulator
+    ./modules/tmux.nix       # Tmux terminal multiplexer
+    ./modules/git.nix        # Git configuration
+    ./modules/claude.nix     # Claude Code activation hooks
   ];
 
   # Pass theme and shellapps to all modules
@@ -115,12 +116,6 @@ in {
 
   # Program Modules
   # https://nix-community.github.io/home-manager/options.html
-
-
-  programs.nix-index = {
-    enable = true;
-    enableZshIntegration = true;
-  };
 
   # https://github.com/nix-community/home-manager/blob/master/modules/programs/neovim.nix
   programs.neovim = {
