@@ -1,14 +1,34 @@
 # Claude Code Guidelines
 
+## ⚡ Pre-Flight Checklist (Before ANY Task)
+
+**STOP. Check these BEFORE starting:**
+
+- [ ] **Scope**: Do I understand EXACTLY what's requested? (One deliverable only)
+- [ ] **Security**: Have I identified potential security risks?
+- [ ] **Existing Solutions**: Have I searched for third-party solutions first?
+- [ ] **Verification**: Have I read the relevant code/files?
+- [ ] **Approach**: Can I explain WHY this approach?
+- [ ] **Check-In**: For complex changes, have I gotten approval?
+
+**If ANY box is unchecked, STOP and address it first.**
+
+---
+
+# TIER 1: CRITICAL RULES 🔴
+*These rules MUST be followed for every task*
+
+---
+
 ## 🔴 Scope Discipline (CRITICAL)
 
 ### S.C.O.P.E. Protocol
 
-- **S**pecific task only
-- **C**onfirm understanding first
-- **O**nly what's requested
-- **P**revent "while I'm here" additions
-- **E**xact deliverable defined
+- **Specific** task only
+- **Confirm** understanding first
+- **Only** what's requested
+- **Prevent** "while I'm here" additions
+- **Exact** deliverable defined
 
 ### Before Any Implementation
 
@@ -45,7 +65,65 @@ Before implementing any non-trivial change, explain:
 - **Alternatives considered:** Other approaches and why not chosen
 - **Key decisions:** Technical choices that affect the outcome
 
+**"Non-trivial" means**:
+- Affects >1 file OR >20 lines OR changes behavior
+- Introduces new patterns or approaches
+- When in doubt: Explain anyway
+
 Then implement.
+
+---
+
+## 🔴 Security-First Protocol
+
+**Security is non-negotiable. Every decision must consider security implications.**
+
+### Before Any Implementation:
+
+- [ ] Have I identified potential security risks?
+- [ ] Am I validating/sanitizing all external input?
+- [ ] Am I using secure defaults?
+- [ ] Have I considered authentication and authorization?
+- [ ] Am I handling sensitive data appropriately?
+- [ ] Could this introduce injection vulnerabilities (SQL, command, XSS)?
+
+### Security Checklist:
+
+**Input Validation:**
+- **Validate** at system boundaries (user input, API requests, file uploads)
+- **Use** allowlists over denylists when possible
+- **Sanitize** data before use in commands, queries, or rendering
+
+**Authentication & Authorization:**
+- **Never** trust client-side validation alone
+- **Implement** proper session management
+- **Use** principle of least privilege
+- **Validate** permissions for every sensitive operation
+
+**Data Protection:**
+- **Never** log passwords, tokens, or sensitive data
+- **Use** secure credential storage (environment variables, secret managers)
+- **Encrypt** sensitive data at rest and in transit
+- **Be careful** with file permissions
+
+**Common Vulnerabilities (OWASP Top 10):**
+- **SQL Injection:** Use parameterized queries
+- **XSS:** Escape output, use CSP headers
+- **Command Injection:** Avoid shell execution with user input
+- **Path Traversal:** Validate and sanitize file paths
+- **Insecure Dependencies:** Keep dependencies updated
+
+### Threat Modeling for Larger Initiatives:
+
+For multi-file changes or new features, consider:
+
+1. **Attack Surface:** What new entry points are being created?
+2. **Trust Boundaries:** Where does untrusted data enter the system?
+3. **Data Flow:** How does sensitive data move through the system?
+4. **Impact Assessment:** What's the worst case if this is compromised?
+5. **Mitigations:** What security controls are in place?
+
+Document findings in check-in format before proceeding.
 
 ---
 
@@ -61,6 +139,16 @@ Then implement.
 - Tool or dependency changes
 - Database schema modifications
 - API contract changes
+
+### What Counts as "Complex"?
+
+A change is complex if it meets ANY of these:
+- **Affects** 3+ files
+- **Architectural** or design decisions required
+- **Wide impact** (multiple features, many users)
+- **Database** schema modifications
+- **API** contract changes
+- **When in doubt**: Check in anyway (better safe than sorry)
 
 ### Check-In Format:
 
@@ -90,12 +178,12 @@ Wait for confirmation before executing.
 
 ### Investigation Process:
 
-1. Identify first issue
-2. Search for knock-on effects
-3. Look for related problems in same area
-4. Check dependencies and calling code
-5. Verify no additional issues exist
-6. Report ALL findings together
+1. **Identify** first issue
+2. **Search** for knock-on effects
+3. **Look** for related problems in same area
+4. **Check** dependencies and calling code
+5. **Verify** no additional issues exist
+6. **Report** ALL findings together
 
 ### Language Pattern:
 
@@ -115,7 +203,7 @@ Always continue investigating after finding the first problem.
 - [ ] Verify user claims match reality (read files, check APIs)
 - [ ] Check actual file locations, function names, signatures
 - [ ] Read source code to understand real vs assumed behavior
-- [ ] Search for existing solutions before building custom
+- [ ] Search for existing solutions (see Technology Selection)
 - [ ] Investigate ALL potential causes, not just obvious ones
 
 ### During Action:
@@ -132,56 +220,8 @@ Always continue investigating after finding the first problem.
 
 ---
 
-## 🔴 Security-First Protocol
-
-**Security is non-negotiable. Every decision must consider security implications.**
-
-### Before Any Implementation:
-
-- [ ] Have I identified potential security risks?
-- [ ] Am I validating/sanitizing all external input?
-- [ ] Am I using secure defaults?
-- [ ] Have I considered authentication and authorization?
-- [ ] Am I handling sensitive data appropriately?
-- [ ] Could this introduce injection vulnerabilities (SQL, command, XSS)?
-
-### Security Checklist:
-
-**Input Validation:**
-- Validate at system boundaries (user input, API requests, file uploads)
-- Use allowlists over denylists when possible
-- Sanitize data before use in commands, queries, or rendering
-
-**Authentication & Authorization:**
-- Never trust client-side validation alone
-- Implement proper session management
-- Use principle of least privilege
-- Validate permissions for every sensitive operation
-
-**Data Protection:**
-- Never log passwords, tokens, or sensitive data
-- Use secure credential storage (environment variables, secret managers)
-- Encrypt sensitive data at rest and in transit
-- Be careful with file permissions
-
-**Common Vulnerabilities (OWASP Top 10):**
-- SQL Injection: Use parameterized queries
-- XSS: Escape output, use CSP headers
-- Command Injection: Avoid shell execution with user input
-- Path Traversal: Validate and sanitize file paths
-- Insecure Dependencies: Keep dependencies updated
-
-### Threat Modeling for Larger Initiatives:
-
-For multi-file changes or new features, consider:
-
-1. **Attack Surface:** What new entry points are being created?
-2. **Trust Boundaries:** Where does untrusted data enter the system?
-3. **Data Flow:** How does sensitive data move through the system?
-4. **Impact Assessment:** What's the worst case if this is compromised?
-5. **Mitigations:** What security controls are in place?
-
-Document findings in check-in format before proceeding.
+# TIER 2: IMPORTANT GUIDELINES 🟡
+*Follow these patterns for better results*
 
 ---
 
@@ -282,46 +322,6 @@ Execute them in a single message for speed.
 - Handle edge cases and errors first, then main logic
 - Reduce cognitive load by minimizing indentation levels
 
-**Examples:**
-
-```javascript
-// ❌ Nested conditionals
-function process(data) {
-  if (data) {
-    if (data.isValid) {
-      if (data.hasPermission) {
-        return doWork(data);
-      }
-    }
-  }
-  return null;
-}
-
-// ✅ Early returns
-function process(data) {
-  if (!data) return null;
-  if (!data.isValid) return null;
-  if (!data.hasPermission) return null;
-  return doWork(data);
-}
-
-// ❌ Nested loop logic
-for (const item of items) {
-  if (item.isActive) {
-    if (item.hasData) {
-      processItem(item);
-    }
-  }
-}
-
-// ✅ Continue statements
-for (const item of items) {
-  if (!item.isActive) continue;
-  if (!item.hasData) continue;
-  processItem(item);
-}
-```
-
 ### DRY (Don't Repeat Yourself) - Loose Interpretation
 - Eliminate meaningful duplication, not all duplication
 - Balance DRY with clarity and simplicity
@@ -341,19 +341,26 @@ for (const item of items) {
 
 ---
 
+---
+
+# QUICK REFERENCE
+
+---
+
 ## Quick Reference
 
 **Before every task:**
-1. Confirm EXACT scope (no additions)
-2. Explain why this approach
-3. Consider security implications (validate input, secure defaults, threat model)
-4. Search for third-party solutions first (use boring technology)
-5. Apply YAGNI, KISS, SOLID, composition over inheritance
-6. Check in for complex changes
-7. Execute ONLY what's approved
-8. Search for multiple issues
-9. Verify everything
-10. Use parallel calls when possible
+1. **Complete Pre-Flight Checklist** (ALL boxes must be checked)
+2. Confirm EXACT scope (no additions)
+3. Explain why this approach
+4. Consider security implications (validate input, secure defaults, threat model)
+5. Search for third-party solutions first (use boring technology)
+6. Apply YAGNI, KISS, SOLID, composition over inheritance
+7. Check in for complex changes
+8. Execute ONLY what's approved
+9. Search for multiple issues
+10. Verify everything
+11. Use parallel calls when possible
 
 **Abort if:**
 - Scope unclear or expanding
