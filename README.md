@@ -51,4 +51,5 @@ a part of running `hms`. So, as long as you always sync home manager using
 
 - `hms`: Update Home Manager with latest changes.
 - `hme`: Edit `home.nix` file.
+- `hmo`: Edit `overconfig.nix` file.
 - `hm`: Change directory to Nix Packages configuration directory.

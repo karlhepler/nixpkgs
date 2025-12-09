@@ -80,7 +80,7 @@
     # === macOS Utilities ===
     darwin.trash
 
-    # === Shell Applications (from scripts/) ===
+    # === Shell Applications (from modules/) ===
   ] ++ (builtins.attrValues shellapps);
 
   # ============================================================================
