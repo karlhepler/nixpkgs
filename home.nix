@@ -10,32 +10,32 @@ let
     hms = pkgs.writeShellApplication {
       name = "hms";
       runtimeInputs = [ pkgs.git pkgs.home-manager ];
-      text = builtins.readFile ./scripts/hms.bash;
+      text = builtins.readFile ./scripts/system/hms.bash;
     };
     commit = pkgs.writeShellApplication {
       name = "commit";
       runtimeInputs = [ pkgs.git ];
-      text = builtins.readFile ./scripts/commit.bash;
+      text = builtins.readFile ./scripts/git/commit.bash;
     };
     pull = pkgs.writeShellApplication {
       name = "pull";
       runtimeInputs = [ pkgs.git ];
-      text = builtins.readFile ./scripts/pull.bash;
+      text = builtins.readFile ./scripts/git/pull.bash;
     };
     push = pkgs.writeShellApplication {
       name = "push";
       runtimeInputs = [ pkgs.git ];
-      text = builtins.readFile ./scripts/push.bash;
+      text = builtins.readFile ./scripts/git/push.bash;
     };
     save = pkgs.writeShellApplication {
       name = "save";
       runtimeInputs = [ commit push ];
-      text = builtins.readFile ./scripts/save.bash;
+      text = builtins.readFile ./scripts/git/save.bash;
     };
     git-branches = pkgs.writeShellApplication {
       name = "git-branches";
       runtimeInputs = [ pkgs.git pkgs.fzf ];
-      text = builtins.readFile ./scripts/git-branches.bash;
+      text = builtins.readFile ./scripts/git/git-branches.bash;
     };
     git-kill = pkgs.writeShellApplication {
       name = "git-kill";
@@ -45,47 +45,47 @@ let
         pkgs.coreutils
         pkgs.gnugrep
       ];
-      text = builtins.readFile ./scripts/git-kill.bash;
+      text = builtins.readFile ./scripts/git/git-kill.bash;
     };
     git-trunk = pkgs.writeShellApplication {
       name = "git-trunk";
       runtimeInputs = [ pkgs.git pkgs.gnused ];
-      text = builtins.readFile ./scripts/git-trunk.bash;
+      text = builtins.readFile ./scripts/git/git-trunk.bash;
     };
     git-sync = pkgs.writeShellApplication {
       name = "git-sync";
       runtimeInputs = [ pkgs.git pkgs.gnused ];
-      text = builtins.readFile ./scripts/git-sync.bash;
+      text = builtins.readFile ./scripts/git/git-sync.bash;
     };
     git-resume = pkgs.writeShellApplication {
       name = "git-resume";
       runtimeInputs = [ pkgs.git git-branches pkgs.coreutils ];
-      text = builtins.readFile ./scripts/git-resume.bash;
+      text = builtins.readFile ./scripts/git/git-resume.bash;
     };
     git-tmp = pkgs.writeShellApplication {
       name = "git-tmp";
       runtimeInputs = [ pkgs.git ];
-      text = builtins.readFile ./scripts/git-tmp.bash;
+      text = builtins.readFile ./scripts/git/git-tmp.bash;
     };
     workout = pkgs.writeShellApplication {
       name = "workout";
       runtimeInputs = [ pkgs.git pkgs.coreutils pkgs.gnused ];
-      text = builtins.readFile ./scripts/workout.bash;
+      text = builtins.readFile ./scripts/git/workout.bash;
     };
     claude-notification-hook = pkgs.writeShellApplication {
       name = "claude-notification-hook";
       runtimeInputs = [ pkgs.python3 ];
-      text = builtins.readFile ./scripts/claude-notification-hook.bash;
+      text = builtins.readFile ./scripts/claude/claude-notification-hook.bash;
     };
     claude-complete-hook = pkgs.writeShellApplication {
       name = "claude-complete-hook";
       runtimeInputs = [ ];
-      text = builtins.readFile ./scripts/claude-complete-hook.bash;
+      text = builtins.readFile ./scripts/claude/claude-complete-hook.bash;
     };
     claude-csharp-format-hook = pkgs.writeShellApplication {
       name = "claude-csharp-format-hook";
       runtimeInputs = [ pkgs.csharpier pkgs.python3 ];
-      text = builtins.readFile ./scripts/claude-csharp-format-hook.bash;
+      text = builtins.readFile ./scripts/claude/claude-csharp-format-hook.bash;
     };
   };
 
