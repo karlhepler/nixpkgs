@@ -756,13 +756,12 @@ in {
           require('goto-preview').setup {
             default_mappings = true,
           }
-          require('lspconfig').nil_ls.setup({
-            on_attach = function(client, bufnr)
-              local opts = { noremap = true, silent = true, buffer = bufnr }
-              vim.keymap.set('n', 'gd', vim.lsp.buf.definition, opts) -- Go to definition
-              vim.keymap.set('n', 'K', vim.lsp.buf.hover, opts)       -- Floating hover window
-            end,
+          -- Nix LSP
+          vim.lsp.config('nil_ls', {
+            filetypes = { 'nix' },
+            root_markers = { 'flake.nix', 'flake.lock', 'default.nix', '.git' }
           })
+          vim.lsp.enable('nil_ls')
         '';
       }
       (nvim-treesitter.withPlugins (
