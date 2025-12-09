@@ -15,11 +15,6 @@
   # - Program enables: programs.gh.enable = true;
   # ============================================================================
 
-  # Activation hook to make git ignore changes to this file
-  home.activation.gitIgnoreOverconfigChanges = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    $DRY_RUN_CMD ${pkgs.git}/bin/git -C ~/.config/nixpkgs update-index --assume-unchanged overconfig.nix
-  '';
-
   # Add your machine-specific configuration below:
-  # (This template will be ignored by git after first `hms` run)
+  # (This template will be ignored by git after first `hms` run via home.nix activation hook)
 }
