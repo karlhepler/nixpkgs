@@ -21,7 +21,7 @@
       releaseVersion = "25.11";
 
       system = "aarch64-darwin";  # Only macOS ARM
-      username = "karlhepler";
+
       pkgs = import nixpkgs {
         inherit system;
         config.allowUnfree = true;
@@ -30,6 +30,16 @@
         inherit system;
         config.allowUnfree = true;
       };
+
+      # Import user configuration (provides username and homeDirectory)
+      # Note: This requires a dummy config/pkgs for the import to work
+      userModule = import ./user.nix {
+        config = { home.homeDirectory = "/Users/DUMMY"; };
+        pkgs = pkgs;
+        lib = nixpkgs.lib;
+      };
+      user = userModule.user;
+      username = user.username;
     in {
       homeConfigurations.${username} = home-manager.lib.homeManagerConfiguration {
         inherit pkgs;
@@ -38,11 +48,12 @@
             home = {
               inherit username;
               stateVersion = releaseVersion;
-              homeDirectory = "/Users/${username}";
+              homeDirectory = user.homeDirectory;
             };
             _module.args = { inherit unstable; };
           }
           ./home.nix
+          ./user.nix
           ./overconfig.nix
           nix-index-database.homeModules.nix-index
         ];

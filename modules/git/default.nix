@@ -1,28 +1,96 @@
-{ lib ? (import <nixpkgs> {}).lib, ... }:
-
-# ============================================================================
-# User Configuration
-# ============================================================================
-# This file defines user-specific information used throughout the Nix config.
-# After first `hms` run, this file becomes git-ignored (via home.nix activation hook).
-#
-# CRITICAL: Replace all "CHANGE_ME" values below with your information.
-#
-# Field Usage:
-# - name: Your full name (for git user.name)
-# - email: Your personal email (for git user.email)
-# - username: Your system username (for flake homeConfigurations, GitHub)
-# - homeDirectory: Your home directory path (derived from username)
-#
-# NOTE: Work email can still be overridden in overconfig.nix using:
-#   programs.git.settings.user.email = lib.mkForce "work@email.com";
-# ============================================================================
+{ config, pkgs, lib, user, theme, ... }:
 
 {
-  user = {
-    name = "CHANGE_ME";           # Example: "Chuck Norris"
-    email = "CHANGE_ME";          # Example: "chuck.norris@example.org"
-    username = "CHANGE_ME";       # Example: "chucknorris"
-    homeDirectory = "/Users/CHANGE_ME";  # Example: "/Users/chucknorris"
+  # ============================================================================
+  # Git Configuration & Shell Applications
+  # ============================================================================
+  # Everything git-related: program config + 11 git shellapp definitions
+  # ============================================================================
+
+  _module.args.gitShellapps = rec {
+    commit = pkgs.writeShellApplication {
+      name = "commit";
+      runtimeInputs = [ pkgs.git ];
+      text = builtins.readFile ./commit.bash;
+    };
+    pull = pkgs.writeShellApplication {
+      name = "pull";
+      runtimeInputs = [ pkgs.git ];
+      text = builtins.readFile ./pull.bash;
+    };
+    push = pkgs.writeShellApplication {
+      name = "push";
+      runtimeInputs = [ pkgs.git ];
+      text = builtins.readFile ./push.bash;
+    };
+    save = pkgs.writeShellApplication {
+      name = "save";
+      runtimeInputs = [ commit push ];
+      text = builtins.readFile ./save.bash;
+    };
+    git-branches = pkgs.writeShellApplication {
+      name = "git-branches";
+      runtimeInputs = [ pkgs.git pkgs.fzf ];
+      text = builtins.readFile ./git-branches.bash;
+    };
+    git-kill = pkgs.writeShellApplication {
+      name = "git-kill";
+      runtimeInputs = [
+        pkgs.git
+        pkgs.git-lfs
+        pkgs.coreutils
+        pkgs.gnugrep
+      ];
+      text = builtins.readFile ./git-kill.bash;
+    };
+    git-trunk = pkgs.writeShellApplication {
+      name = "git-trunk";
+      runtimeInputs = [ pkgs.git pkgs.gnused ];
+      text = builtins.readFile ./git-trunk.bash;
+    };
+    git-sync = pkgs.writeShellApplication {
+      name = "git-sync";
+      runtimeInputs = [ pkgs.git pkgs.gnused ];
+      text = builtins.readFile ./git-sync.bash;
+    };
+    git-resume = pkgs.writeShellApplication {
+      name = "git-resume";
+      runtimeInputs = [ pkgs.git git-branches pkgs.coreutils ];
+      text = builtins.readFile ./git-resume.bash;
+    };
+    git-tmp = pkgs.writeShellApplication {
+      name = "git-tmp";
+      runtimeInputs = [ pkgs.git ];
+      text = builtins.readFile ./git-tmp.bash;
+    };
+    workout = pkgs.writeShellApplication {
+      name = "workout";
+      runtimeInputs = [ pkgs.git pkgs.coreutils pkgs.gnused ];
+      text = builtins.readFile ./workout.bash;
+    };
+  };
+
+  programs.git = {
+    enable = true;
+    ignores = [ ".DS_Store" ".tags*" ".claude/settings.local.json" ];
+    settings = {
+      user = {
+        name = user.userName;
+        email = user.userEmail;
+      };
+      core.editor = "vim";
+      diff.tool = "vimdiff";
+      merge.tool = "vimdiff";
+      difftool.prompt = false;
+      push.default = "current";
+      init.defaultBranch = "main";
+      pull.rebase = false;
+      alias = {
+        who = "blame -w -C -C -C";
+        difft = "-c diff.external=difft diff";
+        logt = "-c diff.external=difft log -p --ext-diff";
+        showt = "-c diff.external=difft show --ext-diff";
+      };
+    };
   };
 }

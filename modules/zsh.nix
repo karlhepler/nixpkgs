@@ -161,6 +161,7 @@ in {
       docs = "cd ~/Documents";
       pics = "cd ~/Pictures";
       hme = "vim ~/.config/nixpkgs/home.nix";
+      hmu = "vim ~/.config/nixpkgs/user.nix";
       hmo = "vim ~/.config/nixpkgs/overconfig.nix";
       hm = "cd ~/.config/nixpkgs";
       ll = "${pkgs.eza}/bin/eza --oneline --icons --sort=type";
