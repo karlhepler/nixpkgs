@@ -100,6 +100,30 @@ Theme is imported in home.nix and passed to all modules via `_module.args`.
 - **Automatic backups**: Created at `~/.backup/.config/nixpkgs/overconfig.YYYYMMDD-HHMMSS.nix`
 - Symlink `overconfig.latest.nix` points to most recent backup
 
+**Local Git Configuration for This Repository:**
+
+CRITICAL: When using `overconfig.nix` to override global git settings (e.g., work email), you MUST configure this repository to use personal credentials for commits.
+
+Default git config in `modules/git/default.nix`:
+- Name: "Karl Hepler"
+- Email: "karl.hepler@gmail.com" (personal)
+
+If `overconfig.nix` overrides with work email, after cloning this repository run:
+
+```bash
+cd ~/.config/nixpkgs
+git config --local user.email "karl.hepler@gmail.com"
+```
+
+This ensures commits to THIS repository always use personal credentials, regardless of global overrides. Verify with:
+
+```bash
+git config --local --get user.email
+# Should output: karl.hepler@gmail.com
+```
+
+**Why**: This is a personal repository that should always use personal git credentials, even on work machines where global config is overridden for work projects.
+
 ## Claude Code Configuration
 
 This repository includes integrated Claude Code settings:

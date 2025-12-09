@@ -46,6 +46,28 @@ be run prior to syncing home manager. To make this automatic, it runs first as
 a part of running `hms`. So, as long as you always sync home manager using
 `hms`, this will work properly.
 
+## Local Git Configuration
+
+**IMPORTANT**: If you use `overconfig.nix` to override global git settings (such as using a work email address), you must configure this repository locally to use your personal credentials.
+
+The default git configuration in this repository uses:
+- Email: `karl.hepler@gmail.com` (personal)
+
+After cloning on a machine where `overconfig.nix` overrides the git email to a work email, run:
+
+```bash
+cd ~/.config/nixpkgs
+git config --local user.email "karl.hepler@gmail.com"
+```
+
+Verify the local configuration:
+
+```bash
+git config --local --get user.email
+# Should output: karl.hepler@gmail.com
+```
+
+This ensures all commits to this personal repository use personal credentials, regardless of global git configuration overrides.
 
 ## Helpful Commands
 
