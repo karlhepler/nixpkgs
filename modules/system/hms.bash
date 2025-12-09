@@ -6,6 +6,8 @@
 # - Configures local git settings for this repo
 # - Optional --expunge flag to kill tmux server for complete environment refresh
 
+set -eou pipefail
+
 # Parse arguments
 EXPUNGE=false
 for arg in "$@"; do
@@ -21,7 +23,7 @@ if [[ ! -f ~/.config/nixpkgs/user.nix ]]; then
   exit 1
 fi
 
-if grep -q "CHANGE_ME" ~/.config/nixpkgs/user.nix; then
+if grep -q '= "CHANGE_ME"' ~/.config/nixpkgs/user.nix; then
   echo "ERROR: user.nix contains CHANGE_ME placeholder values"
   echo "Please edit user.nix and set all required fields: hmu"
   exit 1
@@ -43,8 +45,7 @@ git -C ~/.config/nixpkgs update-index --no-assume-unchanged user.nix overconfig.
 home-manager switch --flake ~/.config/nixpkgs
 
 # Configure local git for this repo (silent, idempotent)
-USER_NAME=$(grep 'name = ' ~/.config/nixpkgs/user.nix | head -1 | sed 's/.*name = "\(.*\)";/\1/')
-USER_EMAIL=$(grep 'email = ' ~/.config/nixpkgs/user.nix | head -1 | sed 's/.*email = "\(.*\)";/\1/')
+# USER_NAME and USER_EMAIL are provided as env vars by the nix wrapper
 git -C ~/.config/nixpkgs config --local user.name "$USER_NAME" 2>/dev/null
 git -C ~/.config/nixpkgs config --local user.email "$USER_EMAIL" 2>/dev/null
 
