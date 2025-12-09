@@ -1,4 +1,4 @@
-{ config ? null, pkgs ? null, lib, ... }:
+args:
 
 let
   # ============================================================================
@@ -19,6 +19,8 @@ let
   #   programs.git.settings.user.email = lib.mkForce "work@email.com";
   # ============================================================================
 
+  lib = args.lib or (import <nixpkgs> {}).lib;
+
   user = {
     name = "CHANGE_ME";           # Example: "Chuck Norris"
     email = "CHANGE_ME";          # Example: "chuck.norris@example.org"
@@ -35,15 +37,11 @@ let
     (lib.hasInfix "CHANGE_ME" user.homeDirectory);
 
 in
-# When imported directly (not as a module), return just the user data
-if config == null && pkgs == null then {
-  user = user;
-}
-# When used as a Home Manager module, return module configuration
-else {
+# When imported as a module (has config and pkgs), return module configuration
+if args ? config && args ? pkgs then {
   # Activation hook to make git ignore changes to this file
   home.activation.gitIgnoreUserChanges = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    $DRY_RUN_CMD ${pkgs.git}/bin/git -C ~/.config/nixpkgs update-index --assume-unchanged user.nix
+    $DRY_RUN_CMD ${args.pkgs.git}/bin/git -C ~/.config/nixpkgs update-index --assume-unchanged user.nix
   '';
 
   # Fail fast if placeholders not replaced
@@ -62,6 +60,10 @@ else {
     }
   ];
 
-  # Export via _module.args for modules to access
+  # Export user data via _module.args for modules to access
   _module.args.user = user;
+}
+# When imported directly (no config/pkgs), return just the data
+else {
+  user = user;
 }

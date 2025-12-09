@@ -32,7 +32,7 @@
       };
 
       # Import user configuration (provides username and homeDirectory)
-      user = (import ./user.nix { inherit (nixpkgs) lib; }).user;
+      user = (import ./user.nix {}).user;
       username = user.username;
     in {
       homeConfigurations.${username} = home-manager.lib.homeManagerConfiguration {

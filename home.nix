@@ -2,7 +2,7 @@
 
 let
   # Import cross-cutting concerns
-  user = (import ./user.nix { inherit lib; }).user;
+  user = (import ./user.nix {}).user;
   theme = (import ./modules/theme.nix { inherit lib; }).theme;
 
 in {
@@ -31,7 +31,6 @@ in {
       // (config._module.args.claudeShellapps or {})
       // (config._module.args.neovimShellapps or {});
   in { inherit user theme shellapps; };
-
 
   fonts.fontconfig.enable = true;
 
