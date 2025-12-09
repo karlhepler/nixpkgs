@@ -23,7 +23,7 @@
     github-copilot-cli
 
     # === Container & Kubernetes ===
-    orbstack  # Includes kubectl - replaces standalone kubectl package
+    kubectl
     kubectx
     tilt
     helm-ls
