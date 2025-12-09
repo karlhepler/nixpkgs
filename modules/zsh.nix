@@ -3,6 +3,12 @@
 let
   homeDirectory = config.home.homeDirectory;
 in {
+  # ============================================================================
+  # Zsh Configuration
+  # ============================================================================
+  # Everything related to Zsh: program configuration + activation hooks
+  # ============================================================================
+
   programs.zsh = {
     enable = true;
     autosuggestion.enable = true;
@@ -167,27 +173,38 @@ in {
     };
   };
 
-  programs.bash = {
-    enable = true;
-    profileExtra = ''
-      # Initialize zoxide for all bash contexts
-      eval "$(${pkgs.zoxide}/bin/zoxide init --cmd cd bash)"
-    '';
-  };
+  # ============================================================================
+  # Zsh Activation Hooks
+  # ============================================================================
 
-  programs.starship = {
-    enable = true;
-    enableZshIntegration = true;
-  };
+  home.activation.precompileZshCompletions = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    echo "Precompiling Zsh completions..."
 
-  programs.direnv = {
-    enable = true;
-    nix-direnv.enable = true;
-  };
+    # Create a temporary file with the fpath setup
+    $DRY_RUN_CMD cat > /tmp/zsh-compinit-setup <<'EOF'
+    fpath=(
+      ${homeDirectory}/.nix-profile/share/zsh/site-functions
+      ${homeDirectory}/.nix-profile/share/zsh/vendor-completions
+      /nix/var/nix/profiles/default/share/zsh/site-functions
+      /nix/var/nix/profiles/default/share/zsh/vendor-completions
+      $fpath
+    )
 
-  programs.zoxide = {
-    enable = true;
-    enableZshIntegration = true;
-    options = [ "--cmd" "cd" ];
-  };
+    # Remove old dump files
+    rm -f ${homeDirectory}/.zcompdump*
+
+    # Generate new completion dump
+    autoload -Uz compinit
+    compinit -d ${homeDirectory}/.zcompdump
+
+    # Compile the dump file for faster loading
+    zcompile ${homeDirectory}/.zcompdump
+    EOF
+
+    # Run the setup
+    $DRY_RUN_CMD ${pkgs.zsh}/bin/zsh /tmp/zsh-compinit-setup
+    $DRY_RUN_CMD rm -f /tmp/zsh-compinit-setup
+
+    echo "Zsh completions precompiled successfully"
+  '';
 }
