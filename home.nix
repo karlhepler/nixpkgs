@@ -64,6 +64,9 @@ in {
     }
   ];
 
+  # Disable Home Manager news display (fixes flake attribute error)
+  news.display = "silent";
+
   fonts.fontconfig.enable = true;
 
 
