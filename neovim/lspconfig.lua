@@ -1,6 +1,5 @@
 -- TODO: Separate this file by language and use this guide.
 -- https://rishabhrd.github.io/jekyll/update/2020/09/19/nvim_lsp_config.html
-local lspconfig = require 'lspconfig'
 local treesitter_configs = require 'nvim-treesitter.configs'
 
 treesitter_configs.setup {
@@ -39,47 +38,63 @@ end
 -- Map <C-n> to use LSP completion with fallback to keyword completion
 vim.keymap.set('i', '<C-n>', lsp_or_keyword_complete, {expr = true, noremap = true})
 
--- Use an on_attach function to only map the following keys
--- after the language server attaches to the current buffer
-local on_attach = function(client, bufnr)
-	-- Enable omnifunc completion
-	vim.api.nvim_buf_set_option(bufnr, 'omnifunc', 'v:lua.vim.lsp.omnifunc')
+-- Global LSP attach handler (replaces per-server on_attach)
+vim.api.nvim_create_autocmd('LspAttach', {
+	group = vim.api.nvim_create_augroup('user_lsp_config', { clear = true }),
+	callback = function(ev)
+		local bufnr = ev.buf
+		local client = vim.lsp.get_client_by_id(ev.data.client_id)
 
-	-- Mappings.
-	-- See `:help vim.lsp.*` for documentation on any of the below functions
-	vim.api.nvim_buf_set_keymap(bufnr, 'n', 'gD', '<cmd>lua vim.lsp.buf.declaration()<CR>', opts)
-	vim.api.nvim_buf_set_keymap(bufnr, 'n', 'gd', '<cmd>lua vim.lsp.buf.definition()<CR>', opts)
-	vim.api.nvim_buf_set_keymap(bufnr, 'n', 'K', '<cmd>lua vim.lsp.buf.hover()<CR>', opts)
-	vim.api.nvim_buf_set_keymap(bufnr, 'n', 'gi', '<cmd>lua vim.lsp.buf.implementation()<CR>', opts)
-	vim.api.nvim_buf_set_keymap(bufnr, 'n', '<C-k>', '<cmd>lua vim.lsp.buf.signature_help()<CR>', opts)
-	vim.api.nvim_buf_set_keymap(bufnr, 'n', '<space>wa', '<cmd>lua vim.lsp.buf.add_workspace_folder()<CR>', opts)
-	vim.api.nvim_buf_set_keymap(bufnr, 'n', '<space>wr', '<cmd>lua vim.lsp.buf.remove_workspace_folder()<CR>', opts)
-	vim.api.nvim_buf_set_keymap(bufnr, 'n', '<space>wl', '<cmd>lua print(vim.inspect(vim.lsp.buf.list_workspace_folders()))<CR>', opts)
-	vim.api.nvim_buf_set_keymap(bufnr, 'n', '<space>D', '<cmd>lua vim.lsp.buf.type_definition()<CR>', opts)
-	vim.api.nvim_buf_set_keymap(bufnr, 'n', '<space>rn', '<cmd>lua vim.lsp.buf.rename()<CR>', opts)
-	vim.api.nvim_buf_set_keymap(bufnr, 'n', '<space>ca', '<cmd>lua vim.lsp.buf.code_action()<CR>', opts)
-	vim.api.nvim_buf_set_keymap(bufnr, 'n', 'gr', '<cmd>lua vim.lsp.buf.references()<CR>', opts)
-	vim.api.nvim_buf_set_keymap(bufnr, 'n', '<space>f', '<cmd>lua vim.lsp.buf.formatting()<CR>', opts)
-end
+		-- Enable omnifunc completion
+		vim.bo[bufnr].omnifunc = 'v:lua.vim.lsp.omnifunc'
 
-lspconfig.ts_ls.setup {
-	on_attach = on_attach,
+		-- Mappings
+		local opts = { noremap = true, silent = true, buffer = bufnr }
+		vim.keymap.set('n', 'gD', vim.lsp.buf.declaration, opts)
+		vim.keymap.set('n', 'gd', vim.lsp.buf.definition, opts)
+		vim.keymap.set('n', 'K', vim.lsp.buf.hover, opts)
+		vim.keymap.set('n', 'gi', vim.lsp.buf.implementation, opts)
+		vim.keymap.set('n', '<C-k>', vim.lsp.buf.signature_help, opts)
+		vim.keymap.set('n', '<space>wa', vim.lsp.buf.add_workspace_folder, opts)
+		vim.keymap.set('n', '<space>wr', vim.lsp.buf.remove_workspace_folder, opts)
+		vim.keymap.set('n', '<space>wl', function() print(vim.inspect(vim.lsp.buf.list_workspace_folders())) end, opts)
+		vim.keymap.set('n', '<space>D', vim.lsp.buf.type_definition, opts)
+		vim.keymap.set('n', '<space>rn', vim.lsp.buf.rename, opts)
+		vim.keymap.set('n', '<space>ca', vim.lsp.buf.code_action, opts)
+		vim.keymap.set('n', 'gr', vim.lsp.buf.references, opts)
+		vim.keymap.set('n', '<space>f', function() vim.lsp.buf.format({ async = false }) end, opts)
+	end
+})
+
+-- TypeScript/JavaScript LSP
+vim.lsp.config('ts_ls', {
 	cmd = {
 		"@typescriptLanguageServer@/bin/typescript-language-server",
 		"--stdio"
-	}
-}
+	},
+	filetypes = { 'typescript', 'javascript', 'typescriptreact', 'javascriptreact' },
+	root_markers = { 'package.json', 'tsconfig.json', 'jsconfig.json', '.git' }
+})
+vim.lsp.enable('ts_ls')
 
-lspconfig.gopls.setup {
-	on_attach = on_attach,
-}
+-- Go LSP
+vim.lsp.config('gopls', {
+	filetypes = { 'go', 'gomod', 'gowork', 'gotmpl' },
+	root_markers = { 'go.work', 'go.mod', '.git' }
+})
+vim.lsp.enable('gopls')
 
-lspconfig.pyright.setup {
-	on_attach = on_attach,
-}
+-- Python LSP
+vim.lsp.config('pyright', {
+	filetypes = { 'python' },
+	root_markers = { 'pyproject.toml', 'setup.py', 'requirements.txt', 'Pipfile', '.git' }
+})
+vim.lsp.enable('pyright')
 
-lspconfig.yamlls.setup {
-	on_attach = on_attach,
+-- YAML LSP
+vim.lsp.config('yamlls', {
+	filetypes = { 'yaml', 'yaml.docker-compose' },
+	root_markers = { '.git' },
 	settings = {
 		yaml = {
 			schemas = {
@@ -87,9 +102,13 @@ lspconfig.yamlls.setup {
 			},
 		},
 	},
-}
+})
+vim.lsp.enable('yamlls')
 
-lspconfig.helm_ls.setup {
+-- Helm LSP
+vim.lsp.config('helm_ls', {
+	filetypes = { 'helm' },
+	root_markers = { 'Chart.yaml', '.git' },
 	settings = {
 		['helm-ls'] = {
 			yamlls = {
@@ -97,10 +116,13 @@ lspconfig.helm_ls.setup {
 			}
 		}
 	}
-}
+})
+vim.lsp.enable('helm_ls')
 
-lspconfig.rust_analyzer.setup {
-	on_attach = on_attach,
+-- Rust LSP
+vim.lsp.config('rust_analyzer', {
+	filetypes = { 'rust' },
+	root_markers = { 'Cargo.toml', 'Cargo.lock', '.git' },
 	settings = {
 		['rust-analyzer'] = {
 			imports = {
@@ -119,22 +141,21 @@ lspconfig.rust_analyzer.setup {
 			},
 		}
 	}
-}
+})
+vim.lsp.enable('rust_analyzer')
 
-lspconfig.starpls.setup {
-	on_attach = on_attach,
+-- Starlark/Bazel LSP
+vim.lsp.config('starpls', {
 	filetypes = { "bzl", "bazel", "star", "starlark" },
-}
+	root_markers = { 'BUILD', 'BUILD.bazel', 'WORKSPACE', 'WORKSPACE.bazel', '.git' }
+})
+vim.lsp.enable('starpls')
 
--- Configure OmniSharp for C# LSP
-lspconfig.omnisharp.setup({
+-- C# LSP (OmniSharp)
+vim.lsp.config('omnisharp', {
 	cmd = { "@omnisharpRoslyn@/bin/OmniSharp", "--languageserver", "--hostPID", tostring(vim.fn.getpid()) },
-	on_attach = on_attach,
-	capabilities = capabilities,
-	root_dir = function(fname)
-		return lspconfig.util.root_pattern("*.sln", "*.csproj", "omnisharp.json", "function.json")(fname)
-			or lspconfig.util.find_git_ancestor(fname)
-	end,
+	filetypes = { 'cs' },
+	root_markers = { "*.sln", "*.csproj", "omnisharp.json", "function.json", ".git" },
 	settings = {
 		FormattingOptions = {
 			EnableEditorConfigSupport = true,
@@ -149,6 +170,7 @@ lspconfig.omnisharp.setup({
 		},
 	},
 })
+vim.lsp.enable('omnisharp')
 
 -- Set up file associations for C#
 vim.filetype.add({
