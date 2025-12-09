@@ -6,103 +6,38 @@ let
   # Import theme for use in modules
   theme = (import ./modules/theme.nix { inherit lib; }).theme;
 
-  shellapps = rec {
-    hms = pkgs.writeShellApplication {
-      name = "hms";
-      runtimeInputs = [ pkgs.git pkgs.home-manager ];
-      text = builtins.readFile ./scripts/hms.bash;
-    };
-    commit = pkgs.writeShellApplication {
-      name = "commit";
-      runtimeInputs = [ pkgs.git ];
-      text = builtins.readFile ./scripts/git/commit.bash;
-    };
-    pull = pkgs.writeShellApplication {
-      name = "pull";
-      runtimeInputs = [ pkgs.git ];
-      text = builtins.readFile ./scripts/git/pull.bash;
-    };
-    push = pkgs.writeShellApplication {
-      name = "push";
-      runtimeInputs = [ pkgs.git ];
-      text = builtins.readFile ./scripts/git/push.bash;
-    };
-    save = pkgs.writeShellApplication {
-      name = "save";
-      runtimeInputs = [ commit push ];
-      text = builtins.readFile ./scripts/git/save.bash;
-    };
-    git-branches = pkgs.writeShellApplication {
-      name = "git-branches";
-      runtimeInputs = [ pkgs.git pkgs.fzf ];
-      text = builtins.readFile ./scripts/git/git-branches.bash;
-    };
-    git-kill = pkgs.writeShellApplication {
-      name = "git-kill";
-      runtimeInputs = [
-        pkgs.git
-        pkgs.git-lfs
-        pkgs.coreutils
-        pkgs.gnugrep
-      ];
-      text = builtins.readFile ./scripts/git/git-kill.bash;
-    };
-    git-trunk = pkgs.writeShellApplication {
-      name = "git-trunk";
-      runtimeInputs = [ pkgs.git pkgs.gnused ];
-      text = builtins.readFile ./scripts/git/git-trunk.bash;
-    };
-    git-sync = pkgs.writeShellApplication {
-      name = "git-sync";
-      runtimeInputs = [ pkgs.git pkgs.gnused ];
-      text = builtins.readFile ./scripts/git/git-sync.bash;
-    };
-    git-resume = pkgs.writeShellApplication {
-      name = "git-resume";
-      runtimeInputs = [ pkgs.git git-branches pkgs.coreutils ];
-      text = builtins.readFile ./scripts/git/git-resume.bash;
-    };
-    git-tmp = pkgs.writeShellApplication {
-      name = "git-tmp";
-      runtimeInputs = [ pkgs.git ];
-      text = builtins.readFile ./scripts/git/git-tmp.bash;
-    };
-    workout = pkgs.writeShellApplication {
-      name = "workout";
-      runtimeInputs = [ pkgs.git pkgs.coreutils pkgs.gnused ];
-      text = builtins.readFile ./scripts/git/workout.bash;
-    };
-    claude-notification-hook = pkgs.writeShellApplication {
-      name = "claude-notification-hook";
-      runtimeInputs = [ pkgs.python3 ];
-      text = builtins.readFile ./scripts/claude/claude-notification-hook.bash;
-    };
-    claude-complete-hook = pkgs.writeShellApplication {
-      name = "claude-complete-hook";
-      runtimeInputs = [ ];
-      text = builtins.readFile ./scripts/claude/claude-complete-hook.bash;
-    };
-    claude-csharp-format-hook = pkgs.writeShellApplication {
-      name = "claude-csharp-format-hook";
-      runtimeInputs = [ pkgs.csharpier pkgs.python3 ];
-      text = builtins.readFile ./scripts/claude/claude-csharp-format-hook.bash;
-    };
-  };
-
 in {
   # Import all modules
   imports = [
-    ./modules/packages.nix   # Packages + simple programs (fzf, neovide, starship, zoxide, nix-index)
-    ./modules/zsh.nix        # Zsh configuration + precompileZshCompletions activation
-    ./modules/direnv.nix     # Direnv configuration + generateDirenvHook activation
+    # Complex modules (with scripts)
+    ./modules/system      # System tools (hms shellapp)
+    ./modules/git         # Git config + 11 git shellapps
+    ./modules/claude      # Claude hooks + 3 claude shellapps
+
+    # Simple modules (no scripts)
+    ./modules/packages.nix   # Packages + simple programs
+    ./modules/zsh.nix        # Zsh configuration + activation
+    ./modules/direnv.nix     # Direnv configuration + activation
     ./modules/alacritty.nix  # Alacritty terminal emulator
     ./modules/tmux.nix       # Tmux terminal multiplexer
-    ./modules/git.nix        # Git configuration
-    ./modules/claude.nix     # Claude Code activation hooks
   ];
 
-  # Pass theme and shellapps to all modules
-  _module.args = { inherit theme shellapps; };
+  # Aggregate shellapps from modules and pass to all modules
+  _module.args = let
+    shellapps = rec {
+      # System shellapps
+      inherit (config._module.args.systemShellapps or {}) hms;
+
+      # Git shellapps
+      inherit (config._module.args.gitShellapps or {})
+        commit pull push save
+        git-branches git-kill git-trunk git-sync git-resume git-tmp workout;
+
+      # Claude shellapps
+      inherit (config._module.args.claudeShellapps or {})
+        claude-notification-hook claude-complete-hook claude-csharp-format-hook;
+    };
+  in { inherit theme shellapps; };
 
 
   fonts.fontconfig.enable = true;

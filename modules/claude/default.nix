@@ -2,10 +2,28 @@
 
 {
   # ============================================================================
-  # Claude Code Configuration
+  # Claude Code Configuration & Shell Applications
   # ============================================================================
-  # Everything related to Claude Code: settings and global configuration hooks
+  # Everything Claude-related: activation hooks + 3 claude shellapp definitions
   # ============================================================================
+
+  _module.args.claudeShellapps = rec {
+    claude-notification-hook = pkgs.writeShellApplication {
+      name = "claude-notification-hook";
+      runtimeInputs = [ pkgs.python3 ];
+      text = builtins.readFile ./claude-notification-hook.bash;
+    };
+    claude-complete-hook = pkgs.writeShellApplication {
+      name = "claude-complete-hook";
+      runtimeInputs = [ ];
+      text = builtins.readFile ./claude-complete-hook.bash;
+    };
+    claude-csharp-format-hook = pkgs.writeShellApplication {
+      name = "claude-csharp-format-hook";
+      runtimeInputs = [ pkgs.csharpier pkgs.python3 ];
+      text = builtins.readFile ./claude-csharp-format-hook.bash;
+    };
+  };
 
   home.activation = {
     # claudeSettings
@@ -51,7 +69,7 @@
     # When: After writeBoundary (after files are written to disk)
     # Note: Contents from claude-global/ directory (CLAUDE.md and commands/)
     claudeGlobal = let
-      claudeGlobalDir = ../claude-global;
+      claudeGlobalDir = ../../claude-global;
     in lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       $DRY_RUN_CMD mkdir -p ~/.claude
       $DRY_RUN_CMD cp -rf ${claudeGlobalDir}/* ~/.claude/
