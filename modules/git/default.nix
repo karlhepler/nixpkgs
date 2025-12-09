@@ -75,8 +75,8 @@
     ignores = [ ".DS_Store" ".tags*" ".claude/settings.local.json" ];
     settings = {
       user = {
-        name = user.userName;
-        email = user.userEmail;
+        name = user.name;
+        email = user.email;
       };
       core.editor = "vim";
       diff.tool = "vimdiff";

@@ -43,8 +43,8 @@ git -C ~/.config/nixpkgs update-index --no-assume-unchanged user.nix overconfig.
 home-manager switch --flake ~/.config/nixpkgs
 
 # Configure local git for this repo (silent, idempotent)
-USER_NAME=$(grep 'userName = ' ~/.config/nixpkgs/user.nix | sed 's/.*userName = "\(.*\)";/\1/')
-USER_EMAIL=$(grep 'userEmail = ' ~/.config/nixpkgs/user.nix | sed 's/.*userEmail = "\(.*\)";/\1/')
+USER_NAME=$(grep 'name = ' ~/.config/nixpkgs/user.nix | head -1 | sed 's/.*name = "\(.*\)";/\1/')
+USER_EMAIL=$(grep 'email = ' ~/.config/nixpkgs/user.nix | head -1 | sed 's/.*email = "\(.*\)";/\1/')
 git -C ~/.config/nixpkgs config --local user.name "$USER_NAME" 2>/dev/null
 git -C ~/.config/nixpkgs config --local user.email "$USER_EMAIL" 2>/dev/null
 

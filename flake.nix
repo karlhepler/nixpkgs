@@ -32,13 +32,7 @@
       };
 
       # Import user configuration (provides username and homeDirectory)
-      # Note: This requires a dummy config/pkgs for the import to work
-      userModule = import ./user.nix {
-        config = { home.homeDirectory = "/Users/DUMMY"; };
-        pkgs = pkgs;
-        lib = nixpkgs.lib;
-      };
-      user = userModule.user;
+      user = (import ./user.nix { inherit (nixpkgs) lib; }).user;
       username = user.username;
     in {
       homeConfigurations.${username} = home-manager.lib.homeManagerConfiguration {

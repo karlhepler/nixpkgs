@@ -105,8 +105,8 @@ Theme is imported in home.nix and passed to all modules via `_module.args`.
 - Symlink `user.latest.nix` points to most recent backup
 
 **Fields:**
-- `userName`: Full name (used for git user.name)
-- `userEmail`: Personal email (used for git user.email)
+- `name`: Full name (used for git user.name)
+- `email`: Personal email (used for git user.email)
 - `username`: System username (used for homeConfigurations, GitHub repos)
 - `homeDirectory`: Home directory path
 
@@ -136,8 +136,8 @@ CRITICAL: `user.nix` values are automatically configured as local git settings b
 
 The `hms` command automatically runs:
 ```bash
-git config --local user.name "<userName from user.nix>"
-git config --local user.email "<userEmail from user.nix>"
+git config --local user.name "<name from user.nix>"
+git config --local user.email "<email from user.nix>"
 ```
 
 This ensures commits to THIS repository always use personal credentials from user.nix,
