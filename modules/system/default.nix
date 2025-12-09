@@ -1,4 +1,4 @@
-{ config, pkgs, lib, ... }:
+{ config, pkgs, lib, user, ... }:
 
 {
   # ============================================================================
@@ -11,7 +11,13 @@
     hms = pkgs.writeShellApplication {
       name = "hms";
       runtimeInputs = [ pkgs.git pkgs.home-manager ];
-      text = builtins.readFile ./hms.bash;
+      text = ''
+        # User configuration from user.nix (passed as env vars)
+        export USER_NAME="${user.name}"
+        export USER_EMAIL="${user.email}"
+
+        ${builtins.readFile ./hms.bash}
+      '';
     };
   };
 }
