@@ -103,54 +103,6 @@ in {
   # Pass theme and shellapps to all modules
   _module.args = { inherit theme shellapps; };
 
-  # Home Packages
-  # https://search.nixos.org/packages
-  home.packages = with pkgs; [
-    bash
-    bat
-    cabal-install # Cabal installation tool for managing Haskell software
-    comma
-    csharpier # Opinionated code formatter for C#
-    darwin.trash
-    devbox
-    difftastic
-    dotnet-sdk_9
-    fd
-    ghc # Glasgow Haskell Compiler
-    git-lfs
-    github-copilot-cli
-    gnused
-    go
-    go-tools
-    gopls
-    haskell-language-server # Haskell language server
-    helm-ls
-    htop
-    just
-    kubectx
-    mkcert
-    orbstack # Includes kubectl - replaces standalone kubectl package
-    nerd-fonts.sauce-code-pro
-    nil
-    nodePackages.bash-language-server
-    nodePackages.typescript
-    nodePackages.typescript-language-server
-    nodejs
-    omnisharp-roslyn
-    pyright
-    python3
-    python3Packages.pip
-    ripgrep
-    ruby
-    shellcheck
-    stack  # A cross-platform program for developing Haskell projects
-    starpls # Language server for Starlark
-    tilt
-    uv
-    yaml-language-server
-    yarn
-    yq
-  ] ++ (builtins.attrValues shellapps);
 
   fonts.fontconfig.enable = true;
 

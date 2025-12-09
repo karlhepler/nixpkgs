@@ -1,5 +1,85 @@
 { config, pkgs, lib, theme, shellapps, ... }:
 
 {
-  # Package declarations will be moved here
+  home.packages = with pkgs; [
+    # === Core System Tools ===
+    bash
+    gnused
+
+    # === Shell Enhancement ===
+    bat
+    comma
+    difftastic
+    fd
+    htop
+    ripgrep
+
+    # === Development Tools ===
+    devbox
+    just
+    mkcert
+
+    # === Version Control ===
+    git-lfs
+    github-copilot-cli
+
+    # === Container & Kubernetes ===
+    orbstack  # Includes kubectl - replaces standalone kubectl package
+    kubectx
+    tilt
+    helm-ls
+
+    # === Programming Languages ===
+    # Go
+    go
+    go-tools
+    gopls
+
+    # Node.js / JavaScript
+    nodejs
+    nodePackages.typescript
+    nodePackages.typescript-language-server
+    yarn
+
+    # Python
+    python3
+    python3Packages.pip
+    pyright
+    uv
+
+    # .NET / C#
+    dotnet-sdk_9
+    omnisharp-roslyn
+    csharpier  # Opinionated code formatter for C#
+
+    # Haskell
+    ghc  # Glasgow Haskell Compiler
+    cabal-install  # Cabal installation tool for managing Haskell software
+    stack  # A cross-platform program for developing Haskell projects
+    haskell-language-server  # Haskell language server
+
+    # Ruby
+    ruby
+
+    # Nix
+    nil
+
+    # Starlark
+    starpls  # Language server for Starlark
+
+    # === Language Servers ===
+    nodePackages.bash-language-server
+    yaml-language-server
+
+    # === Shell Tools ===
+    shellcheck
+
+    # === Fonts ===
+    nerd-fonts.sauce-code-pro
+
+    # === macOS Utilities ===
+    darwin.trash
+
+    # === Shell Applications (from scripts/) ===
+  ] ++ (builtins.attrValues shellapps);
 }
