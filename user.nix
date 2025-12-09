@@ -34,19 +34,20 @@ let
     (isPlaceholder user.username) ||
     (lib.hasInfix "CHANGE_ME" user.homeDirectory);
 
-in {
-  # Export user for direct import (used by flake.nix)
-  inherit user;
+in
+# When imported directly (not as a module), return just the user data
+if config == null && pkgs == null then {
+  user = user;
+}
+# When used as a Home Manager module, return module configuration
+else {
+  # Activation hook to make git ignore changes to this file
+  home.activation.gitIgnoreUserChanges = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    $DRY_RUN_CMD ${pkgs.git}/bin/git -C ~/.config/nixpkgs update-index --assume-unchanged user.nix
+  '';
 
-  # Activation hook to make git ignore changes to this file (only when used as module)
-  home.activation.gitIgnoreUserChanges = lib.mkIf (config != null && pkgs != null) (
-    lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-      $DRY_RUN_CMD ${pkgs.git}/bin/git -C ~/.config/nixpkgs update-index --assume-unchanged user.nix
-    ''
-  );
-
-  # Fail fast if placeholders not replaced (only when used as module)
-  assertions = lib.mkIf (config != null) [
+  # Fail fast if placeholders not replaced
+  assertions = [
     {
       assertion = !hasPlaceholders;
       message = ''
