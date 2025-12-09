@@ -8,14 +8,6 @@ in {
   # Apps are automatically available in ~/Applications/Home Manager Apps
 
   home.activation = {
-    # gitIgnoreOverconfigChanges
-    # Purpose: Makes git ignore changes to overconfig.nix after home-manager activation
-    # Why: Allows machine-specific settings in overconfig.nix without polluting git status
-    # When: After writeBoundary (after files are written to disk)
-    gitIgnoreOverconfigChanges = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-      $DRY_RUN_CMD ${pkgs.git}/bin/git -C ~/.config/nixpkgs update-index --assume-unchanged overconfig.nix
-    '';
-
     # claudeSettings
     # Purpose: Creates Claude Code settings.json with configured hooks
     # Why: Integrates Claude Code with notification, completion, and formatting hooks
