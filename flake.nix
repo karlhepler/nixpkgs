@@ -47,7 +47,6 @@
             _module.args = { inherit unstable; };
           }
           ./home.nix
-          ./user.nix
           ./overconfig.nix
           nix-index-database.homeModules.nix-index
         ];

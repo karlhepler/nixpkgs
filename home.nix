@@ -32,6 +32,38 @@ in {
       // (config._module.args.neovimShellapps or {});
   in { inherit user theme shellapps; };
 
+  # Activation hooks to make git ignore changes to user.nix and overconfig.nix
+  home.activation.gitIgnoreUserChanges = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    $DRY_RUN_CMD ${pkgs.git}/bin/git -C ~/.config/nixpkgs update-index --assume-unchanged user.nix
+  '';
+
+  home.activation.gitIgnoreOverconfigChanges = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    $DRY_RUN_CMD ${pkgs.git}/bin/git -C ~/.config/nixpkgs update-index --assume-unchanged overconfig.nix
+  '';
+
+  # Validate user.nix doesn't have placeholders
+  assertions = let
+    isPlaceholder = value: value == "CHANGE_ME" || value == "";
+    hasPlaceholders =
+      (isPlaceholder user.name) ||
+      (isPlaceholder user.email) ||
+      (isPlaceholder user.username) ||
+      (lib.hasInfix "CHANGE_ME" user.homeDirectory);
+  in [
+    {
+      assertion = !hasPlaceholders;
+      message = ''
+        user.nix contains placeholder values. Please edit user.nix and set:
+        - name (for git user.name)
+        - email (for git user.email)
+        - username (for system username)
+        - homeDirectory (derived from username)
+
+        Run: hmu
+      '';
+    }
+  ];
+
   fonts.fontconfig.enable = true;
 
 
