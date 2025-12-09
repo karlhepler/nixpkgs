@@ -1,8 +1,6 @@
 { config, pkgs, lib, unstable, ... }:
 
 let
-  homeDirectory = config.home.homeDirectory;
-
   # Import cross-cutting concerns
   user = (import ./user.nix { inherit lib; }).user;
   theme = (import ./modules/theme.nix { inherit lib; }).theme;
