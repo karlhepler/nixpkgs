@@ -8,7 +8,6 @@
 
     # === Shell Enhancement ===
     bat
-    comma
     difftastic
     fd
     htop
@@ -63,6 +62,7 @@
 
     # Nix
     nil
+    comma
 
     # Starlark
     starpls  # Language server for Starlark
