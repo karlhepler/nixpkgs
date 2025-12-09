@@ -132,6 +132,105 @@ Always continue investigating after finding the first problem.
 
 ---
 
+## 🔴 Security-First Protocol
+
+**Security is non-negotiable. Every decision must consider security implications.**
+
+### Before Any Implementation:
+
+- [ ] Have I identified potential security risks?
+- [ ] Am I validating/sanitizing all external input?
+- [ ] Am I using secure defaults?
+- [ ] Have I considered authentication and authorization?
+- [ ] Am I handling sensitive data appropriately?
+- [ ] Could this introduce injection vulnerabilities (SQL, command, XSS)?
+
+### Security Checklist:
+
+**Input Validation:**
+- Validate at system boundaries (user input, API requests, file uploads)
+- Use allowlists over denylists when possible
+- Sanitize data before use in commands, queries, or rendering
+
+**Authentication & Authorization:**
+- Never trust client-side validation alone
+- Implement proper session management
+- Use principle of least privilege
+- Validate permissions for every sensitive operation
+
+**Data Protection:**
+- Never log passwords, tokens, or sensitive data
+- Use secure credential storage (environment variables, secret managers)
+- Encrypt sensitive data at rest and in transit
+- Be careful with file permissions
+
+**Common Vulnerabilities (OWASP Top 10):**
+- SQL Injection: Use parameterized queries
+- XSS: Escape output, use CSP headers
+- Command Injection: Avoid shell execution with user input
+- Path Traversal: Validate and sanitize file paths
+- Insecure Dependencies: Keep dependencies updated
+
+### Threat Modeling for Larger Initiatives:
+
+For multi-file changes or new features, consider:
+
+1. **Attack Surface:** What new entry points are being created?
+2. **Trust Boundaries:** Where does untrusted data enter the system?
+3. **Data Flow:** How does sensitive data move through the system?
+4. **Impact Assessment:** What's the worst case if this is compromised?
+5. **Mitigations:** What security controls are in place?
+
+Document findings in check-in format before proceeding.
+
+---
+
+## 🟡 Technology Selection
+
+**Prefer boring, battle-tested solutions over novel ones.**
+
+### The Boring Technology Principle:
+
+- Choose mature, well-understood technologies with proven track records
+- Avoid bleeding-edge tools unless absolutely necessary
+- Value stability, documentation, and community support
+- "Boring" doesn't mean outdated—it means reliable and well-tested
+
+**Why boring technology:**
+- Fewer surprises and edge cases
+- Better documentation and Stack Overflow answers
+- More libraries, tools, and integrations
+- Easier to hire for and onboard new developers
+- Predictable performance characteristics
+
+### Always Search for Third-Party Solutions First:
+
+**Before building anything custom, search for:**
+1. Standard library solutions
+2. Well-maintained open-source libraries
+3. Framework built-ins or official plugins
+4. Battle-tested community solutions
+
+**Build custom only when:**
+- No existing solution meets core requirements
+- Existing solutions are unmaintained or insecure
+- Business logic is truly unique to the domain
+- Cost/complexity of integration exceeds custom build
+
+**When evaluating third-party solutions:**
+- Check maintenance status (recent commits, active issues)
+- Review security track record
+- Assess community size and support
+- Consider license compatibility
+- Verify production usage at scale
+
+**Questions to ask:**
+- "Has someone already solved this problem?"
+- "Is this really unique to our use case?"
+- "What's the maintenance burden of custom vs third-party?"
+
+---
+
 ## 🟡 Parallel Tool Calling
 
 **Use parallel tool calling when operations are independent:**
@@ -247,15 +346,19 @@ for (const item of items) {
 **Before every task:**
 1. Confirm EXACT scope (no additions)
 2. Explain why this approach
-3. Apply YAGNI, KISS, SOLID, composition over inheritance
-4. Check in for complex changes
-5. Execute ONLY what's approved
-6. Search for multiple issues
-7. Verify everything
-8. Use parallel calls when possible
+3. Consider security implications (validate input, secure defaults, threat model)
+4. Search for third-party solutions first (use boring technology)
+5. Apply YAGNI, KISS, SOLID, composition over inheritance
+6. Check in for complex changes
+7. Execute ONLY what's approved
+8. Search for multiple issues
+9. Verify everything
+10. Use parallel calls when possible
 
 **Abort if:**
 - Scope unclear or expanding
 - No approval for complex changes
 - "While I'm here" thoughts appearing
 - Multiple unrelated improvements considered
+- Security risks not addressed
+- Building custom without checking for existing solutions
