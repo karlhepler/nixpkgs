@@ -1,55 +1,28 @@
-# Nix Home Manager Configuration
+{ lib ? (import <nixpkgs> {}).lib, ... }:
 
-This configuration lives in `/Users/karlhepler/.config/nixpkgs`.
+# ============================================================================
+# User Configuration
+# ============================================================================
+# This file defines user-specific information used throughout the Nix config.
+# After first `hms` run, this file becomes git-ignored (via home.nix activation hook).
+#
+# CRITICAL: Replace all "CHANGE_ME" values below with your information.
+#
+# Field Usage:
+# - name: Your full name (for git user.name)
+# - email: Your personal email (for git user.email)
+# - username: Your system username (for flake homeConfigurations, GitHub)
+# - homeDirectory: Your home directory path (derived from username)
+#
+# NOTE: Work email can still be overridden in overconfig.nix using:
+#   programs.git.settings.user.email = lib.mkForce "work@email.com";
+# ============================================================================
 
-## Installation
-
-```
-# Install Nix (https://nixos.org/download#nix-install-macos)
-$ sh <(curl -L https://nixos.org/nix/install)
-
-# Set up flakes
-$ mkdir -p ~/.config/nix
-$ echo 'experimental-features = nix-command flakes' > ~/.config/nix/nix.conf
-
-# Clone this repository
-$ cd ~/.config
-$ git clone git@github.com:karlhepler/nixpkgs.git
-$ cd nixpkgs
-
-# Install
-$ nix run nixpkgs#home-manager -- switch --flake .#karlhepler
-```
-
-Once that is done, applications will be available in `~/Applications/Nix Apps/` and searchable via Spotlight.
-
-## Additional Customization
-
-Per-machine customizations can be made using `overconfig.nix`. Valid
-customization keys are listed in this file and commented out. To enable
-customization, uncomment the applicable lines in this file and update their
-values as desired.
-
-Each time home manager sync successfully completes, a git command will run
-telling git to ignore changes to this file. In order to make permanent changes
-to this file, like adding new customizable configs, first run
-
-```
-git -C ~/.config/nixpkgs update-index --no-assume-unchanged overconfig.nix
-```
-
-**NOTE:** Because of this customization, this repository **MUST** be installed
-at `~/.config/nixpkgs`. Installing it anywhere else will likely cause an error.
-
-**ANOTHER NOTE**: In order for this to work, `--no-assume-unchanged` **MUST**
-be run prior to syncing home manager. To make this automatic, it runs first as
-a part of running `hms`. So, as long as you always sync home manager using
-`hms`, this will work properly.
-
-
-## Helpful Commands
-
-- `hms`: Update Home Manager with latest changes.
-- `hme`: Edit `home.nix` file.
-- `hmo`: Edit `overconfig.nix` file.
-- `hm`: Change directory to Nix Packages configuration directory.
+{
+  user = {
+    name = "CHANGE_ME";           # Example: "Chuck Norris"
+    email = "CHANGE_ME";          # Example: "chuck.norris@example.org"
+    username = "CHANGE_ME";       # Example: "chucknorris"
+    homeDirectory = "/Users/CHANGE_ME";  # Example: "/Users/chucknorris"
+  };
+}
