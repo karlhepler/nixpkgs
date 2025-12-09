@@ -72,11 +72,12 @@ This repository uses a **hybrid shellapp pattern** for managing custom bash scri
 ## Home Manager Activation Process
 
 When running `hms`, these activation hooks run automatically:
-1. **gitIgnoreOverconfigChanges** (in overconfig.nix): Makes git ignore overconfig.nix changes
-2. **claudeSettings** (modules/claude/): Symlinks Claude Code settings with configured hooks
-3. **claudeGlobal** (modules/claude/): Copies global Claude settings
-4. **precompileZshCompletions** (modules/zsh/): Compiles zsh completions for faster shell startup
-5. **generateDirenvHook** (modules/direnv/): Creates static direnv hook for performance
+1. **gitIgnoreUserChanges** (in home.nix): Makes git ignore user.nix changes
+2. **gitIgnoreOverconfigChanges** (in home.nix): Makes git ignore overconfig.nix changes
+3. **claudeSettings** (modules/claude/): Symlinks Claude Code settings with configured hooks
+4. **claudeGlobal** (modules/claude/): Copies global Claude settings
+5. **precompileZshCompletions** (modules/zsh.nix): Compiles zsh completions for faster shell startup
+6. **generateDirenvHook** (modules/direnv.nix): Creates static direnv hook for performance
 
 Note: Application management is handled natively by home-manager 25.11+. Apps are automatically available in ~/Applications/Home Manager Apps for Spotlight/Alfred indexing.
 
@@ -121,12 +122,11 @@ programs.git.settings.user.email = lib.mkForce "work@email.com";
 
 **overconfig.nix File Management:**
 - Designed for per-machine customizations and secrets
-- Contains its own `home.activation.gitIgnoreOverconfigChanges` hook
 - Made "invisible" to git using `git update-index --assume-unchanged`
 - The `hms` command handles visibility automatically:
   1. Makes file visible: `git update-index --no-assume-unchanged overconfig.nix`
   2. Runs home-manager switch
-  3. Makes file invisible again via activation hook
+  3. Makes file invisible again via `gitIgnoreOverconfigChanges` activation hook in home.nix
 - **Automatic backups**: Created at `~/.backup/.config/nixpkgs/overconfig.YYYYMMDD-HHMMSS.nix`
 - Symlink `overconfig.latest.nix` points to most recent backup
 
