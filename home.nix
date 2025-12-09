@@ -24,19 +24,11 @@ in {
 
   # Aggregate shellapps from modules and pass to all modules
   _module.args = let
-    shellapps = rec {
-      # System shellapps
-      inherit (config._module.args.systemShellapps or {}) hms;
-
-      # Git shellapps
-      inherit (config._module.args.gitShellapps or {})
-        commit pull push save
-        git-branches git-kill git-trunk git-sync git-resume git-tmp workout;
-
-      # Claude shellapps
-      inherit (config._module.args.claudeShellapps or {})
-        claude-notification-hook claude-complete-hook claude-csharp-format-hook;
-    };
+    # Dynamically merge all shellapps from modules
+    shellapps =
+      (config._module.args.systemShellapps or {})
+      // (config._module.args.gitShellapps or {})
+      // (config._module.args.claudeShellapps or {});
   in { inherit theme shellapps; };
 
 
