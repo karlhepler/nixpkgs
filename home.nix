@@ -3,6 +3,9 @@
 let
   homeDirectory = config.home.homeDirectory;
 
+  # Import theme for use in modules
+  theme = (import ./modules/theme.nix { inherit lib; }).theme;
+
   shellapps = rec {
     hms = pkgs.writeShellApplication {
       name = "hms";
@@ -87,6 +90,19 @@ let
   };
 
 in {
+  # Import all modules
+  imports = [
+    ./modules/packages.nix
+    ./modules/shell.nix
+    ./modules/terminal.nix
+    ./modules/editors.nix
+    ./modules/git.nix
+    ./modules/activation.nix
+  ];
+
+  # Pass theme and shellapps to all modules
+  _module.args = { inherit theme shellapps; };
+
   # Home Packages
   # https://search.nixos.org/packages
   home.packages = with pkgs; [
