@@ -203,7 +203,7 @@ preview_worktree() {
           ;;
         M)
           # Modified file - show M indicator and line counts
-          printf "M  %s ${GREEN}+%s${NC}/${RED}-%s${NC}\n" \
+          printf "${YELLOW}M${NC}  %s ${GREEN}+%s${NC}/${RED}-%s${NC}\n" \
             "$file" \
             "$(git diff --numstat "$trunk_branch"...HEAD -- "$file" 2>/dev/null | awk '{print $1}')" \
             "$(git diff --numstat "$trunk_branch"...HEAD -- "$file" 2>/dev/null | awk '{print $2}')"
