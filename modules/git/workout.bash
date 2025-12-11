@@ -190,29 +190,29 @@ preview_worktree() {
 
     # Combine name-status and numstat for comprehensive view
     git diff --name-status "$trunk_branch"...HEAD | while IFS=$'\t' read -r change_type file oldfile; do
-      # Get line counts for this file
-      local stats
-      if [ "$change_type" != "D" ]; then
-        stats=$(git diff --numstat "$trunk_branch"...HEAD -- "$file" 2>/dev/null | awk '{print $1, $2}')
-      fi
-
       case "$change_type" in
         A)
-          local added
-          added=$(echo "$stats" | awk '{print $1}')
-          echo -e "${GREEN}+  $file${NC} ${GREEN}(+$added)${NC}"
+          # Added file
+          local line_count
+          line_count=$(git diff --numstat "$trunk_branch"...HEAD -- "$file" 2>/dev/null | awk '{print $1}')
+          echo -e "${GREEN}+${NC}  $file ${GREEN}(+$line_count)${NC}"
           ;;
         D)
-          echo -e "${RED}-  $file${NC}"
+          # Deleted file
+          echo -e "${RED}-${NC}  $file"
           ;;
         M)
-          local added removed
-          added=$(echo "$stats" | awk '{print $1}')
-          removed=$(echo "$stats" | awk '{print $2}')
-          echo -e "   $file ${GREEN}+$added${NC}/${RED}-$removed${NC}"
+          # Modified file
+          local counts
+          counts=$(git diff --numstat "$trunk_branch"...HEAD -- "$file" 2>/dev/null | awk '{print $1, $2}')
+          local added_lines removed_lines
+          added_lines=$(echo "$counts" | cut -d' ' -f1)
+          removed_lines=$(echo "$counts" | cut -d' ' -f2)
+          echo -e "   $file ${GREEN}+$added_lines${NC}/${RED}-$removed_lines${NC}"
           ;;
         R*)
-          echo -e "${YELLOW}→  $oldfile → $file${NC}"
+          # Renamed file
+          echo -e "${YELLOW}→${NC}  $oldfile → $file"
           ;;
         *)
           echo "   $file ($change_type)"
