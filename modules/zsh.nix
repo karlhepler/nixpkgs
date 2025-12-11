@@ -135,6 +135,32 @@ in {
         local result
         result="$(${homeDirectory}/.nix-profile/bin/workout "$@")"
         local exit_code=$?
+
+        if [ $exit_code -eq 0 ]; then
+          # Only eval if result is a cd command
+          if [[ "$result" == cd\ * ]]; then
+            # Save current location to global state file if we're in a worktree
+            local worktree_root="''${WORKTREE_ROOT:-$HOME/worktrees}"
+            if [[ "$PWD" =~ ^$worktree_root/ ]]; then
+              mkdir -p "$worktree_root"
+              echo "$PWD" > "$worktree_root/.workout_prev"
+            fi
+
+            eval "$result"
+          else
+            # Not a cd command, just print the output
+            echo "$result"
+          fi
+        fi
+
+        return $exit_code
+      }
+
+      # Git root wrapper function that auto-evals cd command
+      git-root() {
+        local result
+        result="$(${homeDirectory}/.nix-profile/bin/git-root "$@")"
+        local exit_code=$?
         if [ $exit_code -eq 0 ]; then
           eval "$result"
         fi

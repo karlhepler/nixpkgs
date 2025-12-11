@@ -63,9 +63,14 @@
       runtimeInputs = [ pkgs.git ];
       text = builtins.readFile ./git-tmp.bash;
     };
+    git-root = pkgs.writeShellApplication {
+      name = "git-root";
+      runtimeInputs = [ pkgs.git ];
+      text = builtins.readFile ./git-root.bash;
+    };
     workout = pkgs.writeShellApplication {
       name = "workout";
-      runtimeInputs = [ pkgs.git pkgs.coreutils pkgs.gnused ];
+      runtimeInputs = [ pkgs.git pkgs.coreutils pkgs.gnused pkgs.fzf ];
       text = builtins.readFile ./workout.bash;
     };
   };
