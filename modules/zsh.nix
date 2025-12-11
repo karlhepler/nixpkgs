@@ -155,10 +155,10 @@ in {
         return $exit_code
       }
 
-      # Git root wrapper function that auto-evals cd command
-      git-root() {
+      # Groot wrapper function that auto-evals cd command to git root
+      groot() {
         local result
-        result="$(${homeDirectory}/.nix-profile/bin/git-root "$@")"
+        result="$(${homeDirectory}/.nix-profile/bin/groot "$@")"
         local exit_code=$?
         if [ $exit_code -eq 0 ]; then
           eval "$result"
