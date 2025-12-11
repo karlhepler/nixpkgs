@@ -139,12 +139,11 @@ in {
         if [ $exit_code -eq 0 ]; then
           # Only eval if result is a cd command
           if [[ "$result" == cd\ * ]]; then
-            # Save current location to global state file if we're in a worktree
+            # Save current location before changing directories
+            # (save any location, not just worktrees, so we can toggle back)
             local worktree_root="''${WORKTREE_ROOT:-$HOME/worktrees}"
-            if [[ "$PWD" =~ ^$worktree_root/ ]]; then
-              mkdir -p "$worktree_root"
-              echo "$PWD" > "$worktree_root/.workout_prev"
-            fi
+            mkdir -p "$worktree_root"
+            echo "$PWD" > "$worktree_root/.workout_prev"
 
             eval "$result"
           else
