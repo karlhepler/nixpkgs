@@ -384,11 +384,23 @@ if [ -z "$org_repo" ]; then
   exit 1
 fi
 
+# Check if branch is already checked out in any worktree
+existing_worktree=$(git worktree list --porcelain | awk -v branch="refs/heads/$branch_name" '
+  /^worktree / { path = substr($0, 10) }
+  /^branch / && $0 ~ branch { print path; exit }
+')
+
+if [ -n "$existing_worktree" ]; then
+  # Branch already checked out elsewhere, navigate there
+  echo "cd '$existing_worktree'"
+  exit 0
+fi
+
 # Build worktree path
 worktree_root="${WORKTREE_ROOT:-$HOME/worktrees}"
 worktree_path="$worktree_root/$org_repo/$branch_name"
 
-# Check if worktree already exists
+# Check if worktree already exists at expected path
 if [ -d "$worktree_path" ]; then
   # Worktree exists, just cd into it
   echo "cd '$worktree_path'"
