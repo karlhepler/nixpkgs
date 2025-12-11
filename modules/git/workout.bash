@@ -192,30 +192,28 @@ preview_worktree() {
     git diff --name-status "$trunk_branch"...HEAD | while IFS=$'\t' read -r change_type file oldfile; do
       case "$change_type" in
         A)
-          # Added file
-          local line_count
-          line_count=$(git diff --numstat "$trunk_branch"...HEAD -- "$file" 2>/dev/null | awk '{print $1}')
-          echo -e "${GREEN}+${NC}  $file ${GREEN}(+$line_count)${NC}"
+          # Added file - get line count without showing debug output
+          printf "${GREEN}+${NC}  %s ${GREEN}(+%s)${NC}\n" \
+            "$file" \
+            "$(git diff --numstat "$trunk_branch"...HEAD -- "$file" 2>/dev/null | awk '{print $1}')"
           ;;
         D)
           # Deleted file
-          echo -e "${RED}-${NC}  $file"
+          printf "${RED}-${NC}  %s\n" "$file"
           ;;
         M)
-          # Modified file
-          local counts
-          counts=$(git diff --numstat "$trunk_branch"...HEAD -- "$file" 2>/dev/null | awk '{print $1, $2}')
-          local added_lines removed_lines
-          added_lines=$(echo "$counts" | cut -d' ' -f1)
-          removed_lines=$(echo "$counts" | cut -d' ' -f2)
-          echo -e "   $file ${GREEN}+$added_lines${NC}/${RED}-$removed_lines${NC}"
+          # Modified file - show M indicator and line counts
+          printf "M  %s ${GREEN}+%s${NC}/${RED}-%s${NC}\n" \
+            "$file" \
+            "$(git diff --numstat "$trunk_branch"...HEAD -- "$file" 2>/dev/null | awk '{print $1}')" \
+            "$(git diff --numstat "$trunk_branch"...HEAD -- "$file" 2>/dev/null | awk '{print $2}')"
           ;;
         R*)
           # Renamed file
-          echo -e "${YELLOW}→${NC}  $oldfile → $file"
+          printf "${YELLOW}→${NC}  %s → %s\n" "$oldfile" "$file"
           ;;
         *)
-          echo "   $file ($change_type)"
+          printf "   %s (%s)\n" "$file" "$change_type"
           ;;
       esac
     done
