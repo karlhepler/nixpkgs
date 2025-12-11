@@ -63,10 +63,10 @@
       runtimeInputs = [ pkgs.git ];
       text = builtins.readFile ./git-tmp.bash;
     };
-    git-root = pkgs.writeShellApplication {
-      name = "git-root";
+    groot = pkgs.writeShellApplication {
+      name = "groot";
       runtimeInputs = [ pkgs.git ];
-      text = builtins.readFile ./git-root.bash;
+      text = builtins.readFile ./groot.bash;
     };
     workout = pkgs.writeShellApplication {
       name = "workout";
