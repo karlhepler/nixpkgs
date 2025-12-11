@@ -123,10 +123,12 @@ list_worktrees() {
       }
     }
   ' | while IFS='|' read -r path branch head; do
+    # Format: branch  commit  path
+    # Path is last so we can hide it but still extract it
     if [ -z "$branch" ]; then
-      printf "%-50s  %s  %s\n" "$path" "(main)" "$head"
+      printf "%-40s  %s  %s\n" "(main)" "$head" "$path"
     else
-      printf "%-50s  %s  %s\n" "$path" "$branch" "$head"
+      printf "%-40s  %s  %s\n" "$branch" "$head" "$path"
     fi
   done
 }
@@ -180,7 +182,51 @@ preview_worktree() {
   if [ "$current_branch" = "$trunk_branch" ]; then
     echo "This is the $trunk_branch branch (no diff)"
   else
-    git diff --stat "$trunk_branch"...HEAD 2>&1 || echo "Error: Could not generate diff stats"
+    # Get file changes with status and line counts
+    local RED='\033[0;31m'
+    local GREEN='\033[0;32m'
+    local YELLOW='\033[0;33m'
+    local NC='\033[0m' # No Color
+
+    # Combine name-status and numstat for comprehensive view
+    git diff --name-status "$trunk_branch"...HEAD | while IFS=$'\t' read -r change_type file oldfile; do
+      # Get line counts for this file
+      local stats
+      if [ "$change_type" != "D" ]; then
+        stats=$(git diff --numstat "$trunk_branch"...HEAD -- "$file" 2>/dev/null | awk '{print $1, $2}')
+      fi
+
+      case "$change_type" in
+        A)
+          local added
+          added=$(echo "$stats" | awk '{print $1}')
+          echo -e "${GREEN}+  $file${NC} ${GREEN}(+$added)${NC}"
+          ;;
+        D)
+          echo -e "${RED}-  $file${NC}"
+          ;;
+        M)
+          local added removed
+          added=$(echo "$stats" | awk '{print $1}')
+          removed=$(echo "$stats" | awk '{print $2}')
+          echo -e "   $file ${GREEN}+$added${NC}/${RED}-$removed${NC}"
+          ;;
+        R*)
+          echo -e "${YELLOW}→  $oldfile → $file${NC}"
+          ;;
+        *)
+          echo "   $file ($change_type)"
+          ;;
+      esac
+    done
+
+    # Show summary
+    local summary
+    summary=$(git diff --shortstat "$trunk_branch"...HEAD 2>/dev/null)
+    if [ -n "$summary" ]; then
+      echo
+      echo "$summary"
+    fi
   fi
 }
 
@@ -244,19 +290,20 @@ run_fzf_selector() {
   # shellcheck disable=SC2016
   selected="$(echo "$worktrees" | fzf \
     --ansi \
+    --with-nth=1,2 \
     --header 'Enter=select  D=delete  ESC=cancel' \
-    --preview "$(declare -f preview_worktree); preview_worktree {1}" \
+    --preview "$(declare -f preview_worktree); preview_worktree {3}" \
     --preview-window 'right:60%:wrap' \
-    --bind 'd:execute($(declare -f preview_worktree delete_worktree); delete_worktree {1})+reload($(declare -f list_worktrees); list_worktrees)')"
+    --bind 'd:execute($(declare -f preview_worktree delete_worktree); delete_worktree {3})+reload($(declare -f list_worktrees); list_worktrees)')"
 
   if [ -z "$selected" ]; then
     # User cancelled
     return 1
   fi
 
-  # Extract path (first field)
+  # Extract path (third field - hidden but still in data)
   local selected_path
-  selected_path="$(echo "$selected" | awk '{print $1}')"
+  selected_path="$(echo "$selected" | awk '{print $3}')"
 
   # Output cd command
   echo "cd '$selected_path'"
