@@ -17,7 +17,7 @@
     devbox
     just
     mkcert
-    yq
+    yq-go
 
     # === Version Control ===
     git-lfs
