@@ -49,8 +49,8 @@ show_help() {
   echo "COMMANDS:"
   echo "  .         Create/navigate to worktree for current branch"
   echo "  -         Toggle between current and previous worktree (like cd -)"
-  echo "  /         Interactive browser - view, navigate, and delete worktrees"
-  echo "            (Enter=select, D=delete, ESC=cancel)"
+  echo "  /         Interactive browser - view and navigate worktrees"
+  echo "            (Enter=select, ESC=cancel)"
   echo "  <branch>  Create/navigate to worktree for specified branch"
   echo "            If branch doesn't exist, creates it from current HEAD"
   echo
@@ -228,40 +228,6 @@ preview_worktree() {
   fi
 }
 
-# Delete a worktree with confirmation
-delete_worktree() {
-  local worktree_path="$1"
-
-  if [ ! -d "$worktree_path" ]; then
-    echo "Error: Worktree not found: $worktree_path" >&2
-    return 1
-  fi
-
-  # Show preview
-  echo "═══════════════════════════════════════════════════════════════"
-  echo "  ⚠️  DELETE WORKTREE"
-  echo "═══════════════════════════════════════════════════════════════"
-  echo
-  preview_worktree "$worktree_path"
-  echo
-  echo "═══════════════════════════════════════════════════════════════"
-  echo "  This will delete: $worktree_path"
-  echo "═══════════════════════════════════════════════════════════════"
-  echo
-  read -r -p "Delete this worktree? [y/N] " response
-  case "$response" in
-    [yY][eE][sS]|[yY])
-      echo "Deleting worktree..."
-      git worktree remove "$worktree_path" 2>&1
-      echo "Worktree deleted successfully"
-      ;;
-    *)
-      echo "Cancelled"
-      return 1
-      ;;
-  esac
-}
-
 # Run fzf selector for worktrees
 run_fzf_selector() {
   # Create worktree root directory if it doesn't exist
@@ -289,10 +255,9 @@ run_fzf_selector() {
   selected="$(echo "$worktrees" | fzf \
     --ansi \
     --with-nth=1,2 \
-    --header 'Enter=select  D=delete  ESC=cancel' \
+    --header 'Enter=select  ESC=cancel' \
     --preview "$(declare -f preview_worktree); preview_worktree {3}" \
-    --preview-window 'right:60%:wrap' \
-    --bind 'd:execute($(declare -f preview_worktree delete_worktree); delete_worktree {3})+reload($(declare -f list_worktrees); list_worktrees)')"
+    --preview-window 'right:60%:wrap')"
 
   if [ -z "$selected" ]; then
     # User cancelled

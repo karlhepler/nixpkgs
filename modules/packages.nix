@@ -4,6 +4,7 @@
   home.packages = with pkgs; [
     # === Core System Tools ===
     bash
+    coreutils
     gnused
 
     # === Shell Enhancement ===
