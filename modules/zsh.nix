@@ -130,6 +130,45 @@ in {
       bindkey -M vicmd '^X^E' edit-command-line
       bindkey -M viins '^X^E' edit-command-line
 
+      # Prevent Ctrl+D from immediately exiting (required for custom handler)
+      setopt IGNOREEOF
+
+      # Ctrl+D exit confirmation (default to no)
+      function confirm_exit() {
+        # Invalidate ZLE display to allow normal terminal I/O
+        zle -I
+
+        # Save terminal settings and enable echo
+        local saved_tty=$(stty -F /dev/tty -g)
+        stty -F /dev/tty echo
+
+        # Prompt and read response (requires Enter key)
+        print -n "\n👋 Exit shell? [y/N]: "
+        local response
+        read response </dev/tty
+
+        # Restore terminal settings
+        stty -F /dev/tty "$saved_tty"
+
+        # Exit only on explicit yes
+        if [[ $response == "y" || $response == "Y" ]]; then
+          exit
+        fi
+
+        # Clear the confirmation prompt from screen
+        # Move up 1 line (to prompt), clear it, move up 1 more (to blank line), clear it
+        print -n "\033[1A\033[2K\033[1A\033[2K\r"
+
+        # Redisplay the original command line
+        zle redisplay
+      }
+
+      # Register as ZLE widget
+      zle -N confirm_exit
+
+      # Bind Ctrl+D to confirmation function
+      bindkey '^D' confirm_exit
+
       # Worktree wrapper function that auto-evals cd command
       workout() {
         local result
