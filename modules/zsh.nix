@@ -103,7 +103,26 @@ in {
       # Load add-zsh-hook for lazy loading
       autoload -Uz add-zsh-hook
 
+      # Tmux attention alerting - ring bell when command completes in unfocused window
+      # This makes the tmux tab turn red (via window_bell_flag) when you're not looking
+      if [[ -n "$TMUX" ]]; then
+        _tmux_attention_preexec() {
+          _TMUX_COMMAND_STARTED=1
+        }
 
+        _tmux_attention_precmd() {
+          if [[ -n "''${_TMUX_COMMAND_STARTED:-}" ]]; then
+            unset _TMUX_COMMAND_STARTED
+            # Ring bell if window is not active
+            if [[ "$(tmux display-message -p '#{window_active}')" == "0" ]]; then
+              printf '\a'
+            fi
+          fi
+        }
+
+        add-zsh-hook preexec _tmux_attention_preexec
+        add-zsh-hook precmd _tmux_attention_precmd
+      fi
 
       # Load static direnv hook if available
       if [[ -f ${homeDirectory}/.config/zsh/direnv-hook.zsh ]]; then
