@@ -9,7 +9,10 @@ let
     set -g @theme_plugin_inactive_window_icon " "
   '';
   bellFormatConf = pkgs.writeText "bell-format.conf" ''
-    set -g window-status-format "#{?window_bell_flag,#[bg=#f7768e fg=#292e42]#{@theme_left_separator}#[none],#[bg=#737aa2 fg=#292e42]#{@theme_left_separator}#[none]}#[fg=#ffffff]#I#{?window_bell_flag,#[bg=#f7768e fg=#f7768e]#{@theme_left_separator}#[none],#[bg=#545c7e fg=#737aa2]#{@theme_left_separator}#[none]}#[fg=#ffffff] #{?window_zoomed_flag,#{@theme_plugin_zoomed_window_icon},#{@theme_plugin_inactive_window_icon}}#W #[bg=#292e42]#{?window_bell_flag,#[fg=#f7768e]#{@theme_left_separator}#[none],#[fg=#545c7e]#{@theme_left_separator}#[none]}"
+    set -g window-status-format "#{?#{||:#{window_bell_flag},#{==:#{@claude_attention},1}},#[bg=#f7768e fg=#292e42]#{@theme_left_separator}#[none],#[bg=#737aa2 fg=#292e42]#{@theme_left_separator}#[none]}#[fg=#ffffff]#I#{?#{||:#{window_bell_flag},#{==:#{@claude_attention},1}},#[bg=#f7768e fg=#f7768e]#{@theme_left_separator}#[none],#[bg=#545c7e fg=#737aa2]#{@theme_left_separator}#[none]}#[fg=#ffffff] #{?window_zoomed_flag,#{@theme_plugin_zoomed_window_icon},#{@theme_plugin_inactive_window_icon}}#W #[bg=#292e42]#{?#{||:#{window_bell_flag},#{==:#{@claude_attention},1}},#[fg=#f7768e]#{@theme_left_separator}#[none],#[fg=#545c7e]#{@theme_left_separator}#[none]}"
+
+    # Clear attention flag when window becomes active
+    set-hook -g after-select-window "set-window-option @claude_attention 0"
   '';
 in {
   # ============================================================================

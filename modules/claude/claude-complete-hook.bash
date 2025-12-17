@@ -40,10 +40,9 @@ IFS='|' read -r title message <<< "$data"
 # Send notification from Alacritty (using bundle ID to avoid path issues)
 osascript -e "tell application id \"org.alacritty\" to display notification \"$message\" with title \"$title\" sound name \"Glass\""
 
-# Ring tmux bell for attention (if in unfocused window)
-# This makes the tmux tab turn red via window_bell_flag
-if [[ -n "${TMUX:-}" ]]; then
-  if [[ "$(tmux display-message -p '#{window_active}')" == "0" ]]; then
-    printf '\a'
-  fi
+# Set tmux window option for attention flag
+# Can't ring bell directly because Claude Code is a TUI that would receive the keys
+if [[ -n "${TMUX:-}" && -n "${TMUX_PANE:-}" ]]; then
+  # Set custom window option to flag this window needs attention
+  tmux set-window-option -t "$TMUX_PANE" @claude_attention 1
 fi
