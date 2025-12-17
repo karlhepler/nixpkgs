@@ -1,13 +1,26 @@
-{ config, pkgs, lib, theme, ... }:
+{ config, pkgs, lib, theme, shellapps, ... }:
 
 let
   homeDirectory = config.home.homeDirectory;
+  # Powerline separator character (U+E0B0) as separate derivations to avoid Nix escaping issues
+  separatorsConf = pkgs.writeText "separators.conf" ''
+    set -g @theme_left_separator ""
+    set -g @theme_right_separator ""
+    set -g @theme_plugin_inactive_window_icon " "
+  '';
+  bellFormatConf = pkgs.writeText "bell-format.conf" ''
+    set -g window-status-format "#{?window_bell_flag,#[bg=#f7768e fg=#292e42]#{@theme_left_separator}#[none],#[bg=#737aa2 fg=#292e42]#{@theme_left_separator}#[none]}#[fg=#ffffff]#I#{?window_bell_flag,#[bg=#f7768e fg=#f7768e]#{@theme_left_separator}#[none],#[bg=#545c7e fg=#737aa2]#{@theme_left_separator}#[none]}#[fg=#ffffff] #{?window_zoomed_flag,#{@theme_plugin_zoomed_window_icon},#{@theme_plugin_inactive_window_icon}}#W #[bg=#292e42]#{?window_bell_flag,#[fg=#f7768e]#{@theme_left_separator}#[none],#[fg=#545c7e]#{@theme_left_separator}#[none]}"
+  '';
 in {
   # ============================================================================
-  # Tmux Configuration
+  # Tmux Configuration & Shell Applications
   # ============================================================================
-  # Terminal multiplexer with plugins and theme integration
+  # Terminal multiplexer with plugins, theme integration, and bell-based alerts
   # ============================================================================
+
+  # Link config files to home directory (using writeText to avoid Nix escaping issues with powerline chars)
+  home.file.".config/tmux/separators.conf".source = separatorsConf;
+  home.file.".config/tmux/bell-format.conf".source = bellFormatConf;
 
   programs.tmux = {
     enable = true;
@@ -37,8 +50,16 @@ in {
           set -g @theme_plugins 'datetime'
           set -g @theme_plugin_datetime_format ' %a %b%e %l:%M%p'
           set -g @theme_plugin_datetime_icon '  '
-          set -g @theme_left_separator '''
-          set -g @theme_right_separator '''
+
+          # Source separator config (avoids Nix escaping issues)
+          source-file ${homeDirectory}/.config/tmux/separators.conf
+
+          # Bell-based attention alerting
+          # When a bell rings in a non-active window, that window's tab turns red
+          # The flag is automatically cleared when the window becomes active
+          set -g monitor-bell on
+          set -g bell-action other
+          set -g visual-bell off
         '';
       }
       {
@@ -83,6 +104,14 @@ in {
 
       # fix colors -------------------------------------------------------------
       set -g terminal-overrides ",*256col*:Tc"
+
+      # ========================================================================
+      # Override window-status-format with bell-aware conditional
+      # Source multiple times to ensure it runs after async plugin completes
+      # ========================================================================
+      source-file ${homeDirectory}/.config/tmux/bell-format.conf
+      run-shell -b "tmux source-file ${homeDirectory}/.config/tmux/bell-format.conf"
+      set-hook -g after-new-session "source-file ${homeDirectory}/.config/tmux/bell-format.conf"
     '';
   };
 }

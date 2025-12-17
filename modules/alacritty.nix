@@ -52,6 +52,12 @@ in {
       };
       # Tokyo Night Storm theme from centralized theme.nix
       colors = theme.colors;
+      # Enable bell - required for tmux bell detection
+      bell = {
+        animation = "EaseOutExpo";
+        duration = 0;
+        color = "#ffffff";
+      };
     };
   };
 }
