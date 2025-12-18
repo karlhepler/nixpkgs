@@ -1,3 +1,40 @@
+#!/usr/bin/env bash
+
+show_help() {
+  echo "claude-notification-hook - Internal Claude Code notification hook"
+  echo
+  echo "DESCRIPTION:"
+  echo "  Internal hook script called automatically by Claude Code."
+  echo "  Should not be invoked manually by users."
+  echo
+  echo "PURPOSE:"
+  echo "  Sends macOS notifications and sets tmux window attention flags"
+  echo "  when Claude Code requires user input or interaction."
+  echo
+  echo "TRIGGER:"
+  echo "  Automatically invoked by Claude Code on Notification events:"
+  echo "  - Permission prompts"
+  echo "  - Idle prompts (waiting for user)"
+  echo "  - Authentication success"
+  echo "  - Input requests"
+  echo "  - Errors"
+  echo
+  echo "BEHAVIOR:"
+  echo "  - Parses JSON input from stdin (Claude Code hook format)"
+  echo "  - Sends macOS notification via Alacritty"
+  echo "  - Sets tmux @claude_attention window option"
+  echo "  - Plays 'Ping' notification sound"
+  echo
+  echo "CONFIGURATION:"
+  echo "  Configured in modules/claude/default.nix as notification hook."
+}
+
+# Parse arguments for help flag
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  show_help
+  exit 0
+fi
+
 set -eou pipefail
 
 # Read JSON from stdin
