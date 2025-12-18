@@ -249,9 +249,6 @@ in {
       hm = "cd ~/.config/nixpkgs";
       ll = "${pkgs.eza}/bin/eza --oneline --icons --sort=type";
       tree = "${pkgs.eza}/bin/eza --oneline --icons --sort=type --tree";
-      "??" = "${pkgs.github-copilot-cli}/bin/github-copilot-cli what-the-shell";
-      "git?" = "${pkgs.github-copilot-cli}/bin/github-copilot-cli git-assist";
-      "gh?" = "${pkgs.github-copilot-cli}/bin/github-copilot-cli gh-assist";
       kn = "${pkgs.kubectx}/bin/kubens";
       kx = "${pkgs.kubectx}/bin/kubectx";
     };

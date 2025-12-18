@@ -1,4 +1,4 @@
-{ config, pkgs, lib, shellapps, ... }:
+{ config, pkgs, lib, shellapps, user, ... }:
 
 {
   # ============================================================================
@@ -22,6 +22,40 @@
       name = "claude-csharp-format-hook";
       runtimeInputs = [ pkgs.csharpier pkgs.python3 ];
       text = builtins.readFile ./claude-csharp-format-hook.bash;
+    };
+
+    # Claude question assistants
+    claude-ask = pkgs.writeShellApplication {
+      name = "claude-ask";
+      runtimeInputs = [ ];
+      text = builtins.replaceStrings
+        ["@USER_NAME@"]
+        [user.name]
+        (builtins.readFile ./claude-ask.bash);
+    };
+
+    q = pkgs.writeShellApplication {
+      name = "q";
+      runtimeInputs = [ ];
+      text = ''
+        ${claude-ask}/bin/claude-ask haiku "$@"
+      '';
+    };
+
+    qq = pkgs.writeShellApplication {
+      name = "qq";
+      runtimeInputs = [ ];
+      text = ''
+        ${claude-ask}/bin/claude-ask sonnet "$@"
+      '';
+    };
+
+    qqq = pkgs.writeShellApplication {
+      name = "qqq";
+      runtimeInputs = [ ];
+      text = ''
+        ${claude-ask}/bin/claude-ask opus "$@"
+      '';
     };
   };
 
