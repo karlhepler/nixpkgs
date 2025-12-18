@@ -19,7 +19,7 @@ in {
     ./modules/zsh.nix        # Zsh configuration + activation
     ./modules/direnv.nix     # Direnv configuration + activation
     ./modules/alacritty.nix  # Alacritty terminal emulator
-    ./modules/tmux.nix       # Tmux terminal multiplexer
+    ./modules/tmux           # Tmux terminal multiplexer
   ];
 
   # Aggregate shellapps from modules and pass to all modules
@@ -29,7 +29,8 @@ in {
       (config._module.args.systemShellapps or {})
       // (config._module.args.gitShellapps or {})
       // (config._module.args.claudeShellapps or {})
-      // (config._module.args.neovimShellapps or {});
+      // (config._module.args.neovimShellapps or {})
+      // (config._module.args.tmuxShellapps or {});
   in { inherit user theme shellapps; };
 
   # Activation hooks to make git ignore changes to user.nix and overconfig.nix
