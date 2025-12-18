@@ -6,10 +6,13 @@ let
   separatorsConf = pkgs.writeText "separators.conf" ''
     set -g @theme_left_separator ""
     set -g @theme_right_separator ""
-    set -g @theme_plugin_inactive_window_icon " "
   '';
   bellFormatConf = pkgs.writeText "bell-format.conf" ''
-    set -g window-status-format "#{?#{||:#{window_bell_flag},#{==:#{@claude_attention},1}},#[bg=#f7768e fg=#292e42]#{@theme_left_separator}#[none],#[bg=#737aa2 fg=#292e42]#{@theme_left_separator}#[none]}#[fg=#ffffff]#I#{?#{||:#{window_bell_flag},#{==:#{@claude_attention},1}},#[bg=#f7768e fg=#f7768e]#{@theme_left_separator}#[none],#[bg=#545c7e fg=#737aa2]#{@theme_left_separator}#[none]}#[fg=#ffffff] #{?window_zoomed_flag,#{@theme_plugin_zoomed_window_icon},#{@theme_plugin_inactive_window_icon}}#W #[bg=#292e42]#{?#{||:#{window_bell_flag},#{==:#{@claude_attention},1}},#[fg=#f7768e]#{@theme_left_separator}#[none],#[fg=#545c7e]#{@theme_left_separator}#[none]}"
+    # Inactive window format with bell-aware conditional
+    set -g window-status-format "#{?#{||:#{window_bell_flag},#{==:#{@claude_attention},1}},#[bg=#f7768e fg=#292e42]#{@theme_left_separator}#[none],#[bg=#737aa2 fg=#292e42]#{@theme_left_separator}#[none]}#[fg=#ffffff] #I #{?#{||:#{window_bell_flag},#{==:#{@claude_attention},1}},#[bg=#db4b5e fg=#f7768e]#{@theme_left_separator}#[none],#[bg=#545c7e fg=#737aa2]#{@theme_left_separator}#[none]}#[fg=#ffffff] #{?window_zoomed_flag,#{@theme_plugin_zoomed_window_icon} ,#{@theme_plugin_inactive_window_icon} }#W #[bg=#292e42]#{?#{||:#{window_bell_flag},#{==:#{@claude_attention},1}},#[fg=#db4b5e]#{@theme_left_separator}#[none],#[fg=#545c7e]#{@theme_left_separator}#[none]}"
+
+    # Active window format with dynamic icon variable
+    set -g window-status-current-format "#[bg=#bb9af7,fg=#292e42]#{@theme_left_separator}#[none]#[fg=#ffffff] #I #[bg=#9d7cd8,fg=#bb9af7]#{@theme_left_separator}#[none]#[fg=#ffffff] #{?window_zoomed_flag,#{@theme_plugin_zoomed_window_icon} ,#{@theme_plugin_active_window_icon} }#W #{?pane_synchronized,✵,}#[bg=#292e42,fg=#9d7cd8]#{@theme_left_separator}#[none]#[none]"
 
     # Clear attention flag when window becomes active
     set-hook -g after-select-window "set-window-option @claude_attention 0"
@@ -20,6 +23,14 @@ in {
   # ============================================================================
   # Terminal multiplexer with plugins, theme integration, and bell-based alerts
   # ============================================================================
+
+  _module.args.tmuxShellapps = {
+    random-emoji = pkgs.writeShellApplication {
+      name = "random-emoji";
+      runtimeInputs = [ pkgs.tmux ];
+      text = builtins.readFile ./random-emoji.bash;
+    };
+  };
 
   # Link config files to home directory (using writeText to avoid Nix escaping issues with powerline chars)
   home.file.".config/tmux/separators.conf".source = separatorsConf;
@@ -51,8 +62,8 @@ in {
         extraConfig = ''
           set -g @theme_variation '${theme.variant}'
           set -g @theme_plugins 'datetime'
-          set -g @theme_plugin_datetime_format ' %a %b%e %l:%M%p'
-          set -g @theme_plugin_datetime_icon '  '
+          set -g @theme_plugin_datetime_format ' %a %b %d %I:%M%p'
+          set -g @theme_plugin_datetime_icon ' 📅 '
 
           # Source separator config (avoids Nix escaping issues)
           source-file ${homeDirectory}/.config/tmux/separators.conf
@@ -80,6 +91,9 @@ in {
       set-option -sg escape-time 10
       set-option -g focus-events on
       set-option -g aggressive-resize on
+
+      # Random emoji for each new window
+      set-hook -ga after-new-window "run-shell '${shellapps.random-emoji}/bin/random-emoji'"
 
       # Smooth scrolling optimizations
       set -ga terminal-overrides ',*256color*:smcup@:rmcup@'
@@ -115,6 +129,7 @@ in {
       source-file ${homeDirectory}/.config/tmux/bell-format.conf
       run-shell -b "tmux source-file ${homeDirectory}/.config/tmux/bell-format.conf"
       set-hook -g after-new-session "source-file ${homeDirectory}/.config/tmux/bell-format.conf"
+      set-hook -ga after-new-session "run-shell '${shellapps.random-emoji}/bin/random-emoji'"
     '';
   };
 }
