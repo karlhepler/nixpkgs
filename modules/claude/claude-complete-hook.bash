@@ -1,3 +1,38 @@
+#!/usr/bin/env bash
+
+show_help() {
+  echo "claude-complete-hook - Internal Claude Code completion hook"
+  echo
+  echo "DESCRIPTION:"
+  echo "  Internal hook script called automatically by Claude Code."
+  echo "  Should not be invoked manually by users."
+  echo
+  echo "PURPOSE:"
+  echo "  Sends macOS notifications and sets tmux window attention flags"
+  echo "  when Claude Code completes a task or subagent finishes."
+  echo
+  echo "TRIGGER:"
+  echo "  Automatically invoked by Claude Code on completion events:"
+  echo "  - Stop (main task completion)"
+  echo "  - SubagentStop (subagent task completion)"
+  echo
+  echo "BEHAVIOR:"
+  echo "  - Parses JSON input from stdin (Claude Code hook format)"
+  echo "  - Sends macOS notification via Alacritty"
+  echo "  - Sets tmux @claude_attention window option"
+  echo "  - Plays 'Glass' notification sound"
+  echo "  - Extracts directory context from transcript path"
+  echo
+  echo "CONFIGURATION:"
+  echo "  Configured in modules/claude/default.nix as completion hook."
+}
+
+# Parse arguments for help flag
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  show_help
+  exit 0
+fi
+
 set -eou pipefail
 
 # Read JSON from stdin

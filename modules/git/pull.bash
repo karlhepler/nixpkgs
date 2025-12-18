@@ -1,7 +1,34 @@
+#!/usr/bin/env bash
+
 # Smart git pull with automatic upstream tracking
 # - Pulls changes from remote branch
 # - Automatically sets upstream tracking if not configured
 # - Handles missing tracking information gracefully
+
+show_help() {
+  echo "pull - Smart git pull with automatic upstream tracking"
+  echo
+  echo "USAGE:"
+  echo "  pull    Pull changes from remote"
+  echo
+  echo "DESCRIPTION:"
+  echo "  Pulls changes from the remote branch. Automatically sets upstream"
+  echo "  tracking if not configured. Handles missing tracking information"
+  echo "  gracefully by detecting the error and configuring the upstream."
+  echo
+  echo "EXAMPLES:"
+  echo "  # Pull latest changes"
+  echo "  pull"
+  echo
+  echo "  # Pull with rebase"
+  echo "  pull --rebase"
+}
+
+# Parse arguments
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  show_help
+  exit 0
+fi
 
 set +e # keep going
 git pull 2> >(

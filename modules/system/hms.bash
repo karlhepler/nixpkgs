@@ -8,10 +8,65 @@
 
 set -eou pipefail
 
+show_help() {
+  echo "hms - Home Manager Switch: Apply Nix configuration changes"
+  echo
+  echo "USAGE:"
+  echo "  hms               Apply configuration changes"
+  echo "  hms --expunge     Apply changes and restart tmux server"
+  echo "  hms --help        Show this help message"
+  echo
+  echo "DESCRIPTION:"
+  echo "  Applies your Nix Home Manager configuration from ~/.config/nixpkgs."
+  echo "  This command validates configuration, creates backups, and switches"
+  echo "  your environment to the new configuration."
+  echo
+  echo "  Before switching:"
+  echo "  - Validates user.nix exists and has no placeholder values"
+  echo "  - Creates timestamped backups of user.nix and overconfig.nix"
+  echo "  - Temporarily tracks both files in git for the switch"
+  echo
+  echo "  After switching:"
+  echo "  - Configures local git settings for this repository"
+  echo "  - Restores git-ignore status for user.nix and overconfig.nix"
+  echo "  - Optionally kills tmux server for complete environment refresh"
+  echo
+  echo "OPTIONS:"
+  echo "  --expunge      Kill tmux server after switch for complete refresh"
+  echo "                 Use when tmux-related settings change"
+  echo "                 WARNING: Closes all tmux sessions"
+  echo "  -h, --help     Show this help message"
+  echo
+  echo "EXAMPLES:"
+  echo "  # Apply configuration changes"
+  echo "  hms"
+  echo
+  echo "  # Apply changes and restart tmux (for tmux config updates)"
+  echo "  hms --expunge"
+  echo
+  echo "BACKUPS:"
+  echo "  Automatic backups saved to:"
+  echo "  ~/.backup/.config/nixpkgs/user.YYYYMMDD-HHMMSS.nix"
+  echo "  ~/.backup/.config/nixpkgs/overconfig.YYYYMMDD-HHMMSS.nix"
+  echo
+  echo "  Latest backup symlinks:"
+  echo "  ~/.backup/.config/nixpkgs/user.latest.nix"
+  echo "  ~/.backup/.config/nixpkgs/overconfig.latest.nix"
+  echo
+  echo "NOTES:"
+  echo "  - Configuration must be at ~/.config/nixpkgs"
+  echo "  - Edit user config: hmu"
+  echo "  - Edit machine config: hmo"
+  echo "  - Edit main config: hme"
+}
+
 # Parse arguments
 EXPUNGE=false
 for arg in "$@"; do
-  if [[ "$arg" == "--expunge" ]]; then
+  if [[ "$arg" == "-h" || "$arg" == "--help" ]]; then
+    show_help
+    exit 0
+  elif [[ "$arg" == "--expunge" ]]; then
     EXPUNGE=true
   fi
 done
