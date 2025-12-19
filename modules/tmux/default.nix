@@ -114,6 +114,24 @@ in {
           set -g @prevent-scroll-for-fullscreen-alternate-buffer on
         '';
       }
+      {
+        plugin = resurrect;
+        extraConfig = ''
+          # Restore pane contents
+          set -g @resurrect-capture-pane-contents 'on'
+          # Restore Neovim sessions
+          set -g @resurrect-strategy-nvim 'session'
+        '';
+      }
+      {
+        plugin = continuum;
+        extraConfig = ''
+          # Automatically restore sessions on tmux start
+          set -g @continuum-restore 'on'
+          # Save interval in minutes (default: 15)
+          set -g @continuum-save-interval '15'
+        '';
+      }
     ];
     extraConfig = ''
       # Pane navigation (hjkl)
