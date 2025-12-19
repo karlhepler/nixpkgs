@@ -30,6 +30,11 @@ in {
       runtimeInputs = [ pkgs.tmux ];
       text = builtins.readFile ./random-emoji.bash;
     };
+    random-session-name = pkgs.writeShellApplication {
+      name = "random-session-name";
+      runtimeInputs = [ pkgs.tmux ];
+      text = builtins.readFile ./random-session-name.bash;
+    };
   };
 
   # Link config files to home directory (using writeText to avoid Nix escaping issues with powerline chars)
@@ -113,6 +118,18 @@ in {
       bind-key v split -h -c "#{pane_current_path}"
       bind-key s split -v -c "#{pane_current_path}"
 
+      # Remap last-window from 'b' to '-' (override delete-buffer)
+      unbind-key b
+      unbind-key -
+      bind-key - last-window
+
+      # Session chooser on prefix+L (override resize-pane)
+      unbind-key L
+      bind-key L choose-tree -s
+
+      # Create new session with name prompt on prefix+S
+      bind-key S command-prompt -p "New session name:" "new-session -s '%%'"
+
       # customize status bar ---------------------------------------------------
       set-option -g status-position top
 
@@ -130,6 +147,7 @@ in {
       run-shell -b "tmux source-file ${homeDirectory}/.config/tmux/bell-format.conf"
       set-hook -g after-new-session "source-file ${homeDirectory}/.config/tmux/bell-format.conf"
       set-hook -ga after-new-session "run-shell '${shellapps.random-emoji}/bin/random-emoji'"
+      set-hook -ga after-new-session "run-shell '${shellapps.random-session-name}/bin/random-session-name'"
     '';
   };
 }
