@@ -68,7 +68,7 @@ in {
   programs.tmux = {
     enable = true;
     keyMode = "vi";
-    customPaneNavigationAndResize = true;
+    customPaneNavigationAndResize = false;
     mouse = true;
     shell = "${homeDirectory}/.nix-profile/bin/zsh";
     shortcut = "g";
@@ -91,8 +91,8 @@ in {
         extraConfig = ''
           set -g @theme_variation '${theme.variant}'
           set -g @theme_plugins 'datetime'
-          set -g @theme_plugin_datetime_format ' %a %b %d %I:%M%p'
-          set -g @theme_plugin_datetime_icon ' 📅 '
+          set -g @theme_plugin_datetime_format '%a %b %d %I:%M%p'
+          set -g @theme_plugin_datetime_icon ' '
 
           # Source separator config (avoids Nix escaping issues)
           source-file ${homeDirectory}/.config/tmux/separators.conf
@@ -116,6 +116,18 @@ in {
       }
     ];
     extraConfig = ''
+      # Pane navigation (hjkl)
+      bind-key -N "Select pane to the left" h select-pane -L
+      bind-key -N "Select pane below" j select-pane -D
+      bind-key -N "Select pane above" k select-pane -U
+      bind-key -N "Select pane to the right" l select-pane -R
+
+      # Pane resizing (HJKL) - repeatable with -r flag
+      # Note: L is intentionally omitted and remapped to session chooser below
+      bind-key -r -N "Resize pane left by 5" H resize-pane -L 5
+      bind-key -r -N "Resize pane down by 5" J resize-pane -D 5
+      bind-key -r -N "Resize pane up by 5" K resize-pane -U 5
+
       # Performance optimizations
       set-option -sg escape-time 10
       set-option -g focus-events on
@@ -147,10 +159,6 @@ in {
       unbind-key -
       bind-key - last-window
 
-      # Session chooser on prefix+L (override resize-pane)
-      unbind-key L
-      bind-key L choose-tree -s
-
       # Create new session on prefix+S (will get random Simpsons name)
       bind-key S new-session
 
@@ -180,6 +188,12 @@ in {
       # ========================================================================
       source-file ${homeDirectory}/.config/tmux/session-icon.conf
       run-shell -b "tmux source-file ${homeDirectory}/.config/tmux/session-icon.conf"
+
+      # ========================================================================
+      # Session chooser on prefix+L
+      # We intentionally don't use L for resize-pane-right like the other resize bindings
+      # ========================================================================
+      bind-key -N "Choose session" L choose-tree -s
     '';
   };
 }
