@@ -17,6 +17,11 @@ let
     # Clear attention flag when window becomes active
     set-hook -g after-select-window "set-window-option @claude_attention 0"
   '';
+  sessionIconConf = pkgs.writeText "session-icon.conf" ''
+    # Override status-left to use session-specific icon
+    # Replace hardcoded ⋅ with #{@session_icon}, fallback to ⋅ if not set
+    set -g status-left "#[fg=#3b4261,bold]#{?client_prefix,#[bg=#e0af68],#[bg=#9ece6a]} #{?@session_icon,#{@session_icon},⋅} #S #[bg=#292e42]#{?client_prefix,#[fg=#e0af68],#[fg=#9ece6a]}#{@theme_left_separator}#[none]"
+  '';
 in {
   # ============================================================================
   # Tmux Configuration & Shell Applications
@@ -24,22 +29,41 @@ in {
   # Terminal multiplexer with plugins, theme integration, and bell-based alerts
   # ============================================================================
 
-  _module.args.tmuxShellapps = {
+  _module.args.tmuxShellapps = let
+    # Read shared arrays once
+    emojisContent = builtins.readFile ./emojis.bash;
+    simpsonsContent = builtins.readFile ./simpsons-words.bash;
+  in {
     random-emoji = pkgs.writeShellApplication {
       name = "random-emoji";
       runtimeInputs = [ pkgs.tmux ];
-      text = builtins.readFile ./random-emoji.bash;
+      text = ''
+        ${emojisContent}
+        ${builtins.readFile ./random-emoji.bash}
+      '';
     };
     random-session-name = pkgs.writeShellApplication {
       name = "random-session-name";
       runtimeInputs = [ pkgs.tmux ];
-      text = builtins.readFile ./random-session-name.bash;
+      text = ''
+        ${simpsonsContent}
+        ${builtins.readFile ./random-session-name.bash}
+      '';
+    };
+    random-session-icon = pkgs.writeShellApplication {
+      name = "random-session-icon";
+      runtimeInputs = [ pkgs.tmux ];
+      text = ''
+        ${emojisContent}
+        ${builtins.readFile ./random-session-icon.bash}
+      '';
     };
   };
 
   # Link config files to home directory (using writeText to avoid Nix escaping issues with powerline chars)
   home.file.".config/tmux/separators.conf".source = separatorsConf;
   home.file.".config/tmux/bell-format.conf".source = bellFormatConf;
+  home.file.".config/tmux/session-icon.conf".source = sessionIconConf;
 
   programs.tmux = {
     enable = true;
@@ -127,8 +151,8 @@ in {
       unbind-key L
       bind-key L choose-tree -s
 
-      # Create new session with name prompt on prefix+S
-      bind-key S command-prompt -p "New session name:" "new-session -s '%%'"
+      # Create new session on prefix+S (will get random Simpsons name)
+      bind-key S new-session
 
       # customize status bar ---------------------------------------------------
       set-option -g status-position top
@@ -148,6 +172,14 @@ in {
       set-hook -g after-new-session "source-file ${homeDirectory}/.config/tmux/bell-format.conf"
       set-hook -ga after-new-session "run-shell '${shellapps.random-emoji}/bin/random-emoji'"
       set-hook -ga after-new-session "run-shell '${shellapps.random-session-name}/bin/random-session-name'"
+      set-hook -ga after-new-session "run-shell '${shellapps.random-session-icon}/bin/random-session-icon'"
+
+      # ========================================================================
+      # Override status-left with session-specific icon
+      # Source multiple times to ensure it runs after async plugin completes
+      # ========================================================================
+      source-file ${homeDirectory}/.config/tmux/session-icon.conf
+      run-shell -b "tmux source-file ${homeDirectory}/.config/tmux/session-icon.conf"
     '';
   };
 }
