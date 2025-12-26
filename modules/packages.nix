@@ -21,6 +21,7 @@
     yq-go
 
     # === Version Control ===
+    codeowners
     git-lfs
     github-copilot-cli
 

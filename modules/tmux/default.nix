@@ -126,8 +126,8 @@ in {
       {
         plugin = continuum;
         extraConfig = ''
-          # Automatically restore sessions on tmux start
-          set -g @continuum-restore 'on'
+          # Disable automatic restore (use prefix+Ctrl-r to manually restore if needed)
+          set -g @continuum-restore 'off'
           # Save interval in minutes (default: 15)
           set -g @continuum-save-interval '15'
         '';
@@ -150,6 +150,12 @@ in {
       set-option -sg escape-time 10
       set-option -g focus-events on
       set-option -g aggressive-resize on
+
+      # Session switching on close
+      # When a session is destroyed (Ctrl+D in all panes), switch to the most recently
+      # active session instead of detaching and closing the terminal. This improves
+      # workflow continuity when working across multiple sessions.
+      set-option -g detach-on-destroy off
 
       # Random emoji for each new window
       set-hook -ga after-new-window "run-shell '${shellapps.random-emoji}/bin/random-emoji'"
