@@ -233,9 +233,13 @@ in {
         fi
       }
 
-      # Start tmux if not started
+      # Auto-attach to last active tmux session or create new one
       if [ -z "$TMUX" ]; then
-        exec ${homeDirectory}/.nix-profile/bin/tmux
+        if ${homeDirectory}/.nix-profile/bin/tmux has-session 2>/dev/null; then
+          exec ${homeDirectory}/.nix-profile/bin/tmux attach
+        else
+          exec ${homeDirectory}/.nix-profile/bin/tmux new-session
+        fi
       fi
     '';
     shellAliases = {
