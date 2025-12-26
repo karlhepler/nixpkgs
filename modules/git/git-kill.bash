@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Files to preserve even when git-ignored (e.g., local environment config)
+# Files to preserve during git-kill (both tracked and git-ignored files)
 # These files will be backed up and restored even in nuclear mode
 readonly PRESERVE_PATTERNS=(
     ".envrc"
+    "user.nix"
+    "overconfig.nix"
 )
 
 # Command line flags
@@ -51,6 +53,11 @@ show_help() {
     echo "  Resets your repository to the last commit, removing uncommitted changes"
     echo "  and untracked files. By default, respects .gitignore patterns to preserve"
     echo "  local configuration, build caches, and IDE settings."
+    echo
+    echo "  Certain files are always preserved (backed up and restored):"
+    echo "    - .envrc"
+    echo "    - user.nix"
+    echo "    - overconfig.nix"
     echo
     echo "  --nuclear mode is equivalent to:"
     echo "    rm -rf * && git clone <repo> ."
@@ -240,7 +247,7 @@ backup_preserved_files() {
         files=$(find . -name "$pattern" -type f 2>/dev/null || true)
 
         while IFS= read -r file; do
-            if [ -n "$file" ] && git check-ignore -q "$file" 2>/dev/null; then
+            if [ -n "$file" ] && [ -f "$file" ]; then
                 local rel_path="${file#./}"
                 local file_backup_dir
                 file_backup_dir="$backup_dir/$(dirname "$rel_path")"
@@ -252,7 +259,7 @@ backup_preserved_files() {
     done
 
     if [ "$backed_up" -gt 0 ]; then
-        status "Backed up $backed_up git-ignored file(s) to preserve"
+        status "Backed up $backed_up preserved file(s)"
     fi
 }
 
