@@ -40,15 +40,29 @@ set -eou pipefail
 # Read JSON from stdin
 json=$(cat)
 
+# Get tmux context if in tmux
+tmux_context=""
+if [[ -n "${TMUX:-}" ]]; then
+  # Get session name and window name
+  session_name=$(tmux display-message -p '#S' 2>/dev/null || echo "")
+  window_name=$(tmux display-message -p '#W' 2>/dev/null || echo "")
+
+  tmux_context="$session_name → $window_name"
+fi
+
+# Export for Python
+export TMUX_CONTEXT="$tmux_context"
+
 # Extract data using official Claude Code hook fields
 data=$(echo "$json" | python3 -c "
-import sys, json
+import sys, json, os
 try:
     data = json.load(sys.stdin)
     message = data.get('message', 'Claude needs input')
     notification_type = data.get('notification_type', '')
     hook_event_name = data.get('hook_event_name', 'Notification')
     cwd = data.get('cwd', '')
+    tmux_context = os.environ.get('TMUX_CONTEXT', '')
 
     # Use notification_type for better title categorization
     if notification_type == 'permission_prompt':
@@ -64,18 +78,18 @@ try:
     else:
         title = 'Claude Notification'
 
-    # Add context if available
-    if cwd:
-        dir_name = cwd.split('/')[-1] if '/' in cwd else cwd
-        message = f'{message} [in {dir_name}]'
+    # Prepend tmux context to message if available
+    if tmux_context:
+        message = f'{tmux_context}\n{message}'
 
     print(f'{title}|{message}')
 except Exception as e:
     print('Claude Notification|Claude needs input')
 ")
 
-# Split output
-IFS='|' read -r title message <<< "$data"
+# Split output on first pipe, preserving newlines in message
+title="${data%%|*}"
+message="${data#*|}"
 
 # Send notification from Alacritty (using bundle ID to avoid path issues)
 osascript -e "tell application id \"org.alacritty\" to display notification \"$message\" with title \"$title\" sound name \"Ping\""
@@ -85,4 +99,8 @@ osascript -e "tell application id \"org.alacritty\" to display notification \"$m
 if [[ -n "${TMUX:-}" && -n "${TMUX_PANE:-}" ]]; then
   # Set custom window option to flag this window needs attention
   tmux set-window-option -t "$TMUX_PANE" @claude_attention 1
+
+  # Also set session-level flag so it shows in session chooser
+  session_name=$(tmux display-message -p '#S')
+  tmux set-option -t "$session_name" @session_needs_attention 1
 fi
