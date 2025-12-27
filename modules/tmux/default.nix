@@ -140,6 +140,10 @@ in {
       bind-key -N "Select pane above" k select-pane -U
       bind-key -N "Select pane to the right" l select-pane -R
 
+      # Swap panes (vim-like behavior) - override default kill-pane
+      unbind-key x
+      bind-key -N "Swap pane with next" x swap-pane -D
+
       # Pane resizing (HJKL) - repeatable with -r flag
       # Note: L is intentionally omitted and remapped to session chooser below
       bind-key -r -N "Resize pane left by 5" H resize-pane -L 5
