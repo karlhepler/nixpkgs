@@ -209,20 +209,15 @@
     {
       plugin = pkgs.vimUtils.buildVimPlugin {
         pname = "claude-tmux-neovim";
-        version = "1.0.0";
-        src = pkgs.fetchFromGitHub {
-          owner = user.username;
-          repo = "claude-tmux-neovim";
-          rev = "2fdd8531add11cf300fde34e4127d18a5e753a16";
-          hash = "sha256-aTtsPAepD+nGsYcCyZ895DiTSPVWObR6U38YHQ9ozzE=";
-        };
+        version = "2.0.0-local";
+        src = ./claude-tmux-neovim-local;
       };
       type = "lua";
       config = ''
-        -- Initialize claude-tmux-neovim plugin with debugging disabled
+        -- Initialize claude-tmux-neovim plugin (local optimized version)
         require('claude-tmux-neovim').setup({
-          debug = false,  -- Disable debug mode for silent operation
-          claude_code_cmd = "claude"  -- Explicitly set the command name
+          debug = false,
+          claude_code_cmd = "claude"
         })
       '';
     }
