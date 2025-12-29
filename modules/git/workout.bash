@@ -255,9 +255,10 @@ run_fzf_selector() {
   selected="$(echo "$worktrees" | fzf \
     --ansi \
     --with-nth=1,2 \
-    --header 'Enter=select  ESC=cancel' \
+    --header 'Enter=select  Ctrl-D=delete  ESC=cancel' \
     --preview "$(declare -f preview_worktree); preview_worktree {3}" \
-    --preview-window 'right:60%:wrap')"
+    --preview-window 'right:60%:wrap' \
+    --bind "ctrl-d:execute(workout-delete {3} {1} < /dev/tty > /dev/tty 2>&1)+reload($(declare -f list_worktrees); list_worktrees)")"
 
   if [ -z "$selected" ]; then
     # User cancelled

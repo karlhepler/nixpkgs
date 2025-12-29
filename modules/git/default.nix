@@ -73,6 +73,11 @@
       runtimeInputs = [ pkgs.git pkgs.coreutils pkgs.gnused pkgs.fzf ];
       text = builtins.readFile ./workout.bash;
     };
+    workout-delete = pkgs.writeShellApplication {
+      name = "workout-delete";
+      runtimeInputs = [ pkgs.git pkgs.coreutils ];
+      text = builtins.readFile ./workout-delete.bash;
+    };
   };
 
   programs.git = {
