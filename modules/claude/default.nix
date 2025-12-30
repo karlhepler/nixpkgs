@@ -1,61 +1,79 @@
 { config, pkgs, lib, shellapps, user, ... }:
 
-{
+let
+  # Import shared shellApp helper
+  shellApp = import ../lib/shellApp.nix { inherit pkgs lib; moduleDir = ./.; };
+
+in {
   # ============================================================================
   # Claude Code Configuration & Shell Applications
   # ============================================================================
-  # Everything Claude-related: activation hooks + 3 claude shellapp definitions
+  # Everything Claude-related: activation hooks + 7 claude shellapp definitions
   # ============================================================================
 
   _module.args.claudeShellapps = rec {
-    claude-notification-hook = pkgs.writeShellApplication {
+    claude-notification-hook = shellApp {
       name = "claude-notification-hook";
       runtimeInputs = [ pkgs.python3 ];
       text = builtins.readFile ./claude-notification-hook.bash;
+      description = "Hook for Claude Code desktop notifications with tmux integration";
+      sourceFile = "claude-notification-hook.bash";
     };
-    claude-complete-hook = pkgs.writeShellApplication {
+    claude-complete-hook = shellApp {
       name = "claude-complete-hook";
       runtimeInputs = [ ];
       text = builtins.readFile ./claude-complete-hook.bash;
+      description = "Hook for Claude Code completion events";
+      sourceFile = "claude-complete-hook.bash";
     };
-    claude-csharp-format-hook = pkgs.writeShellApplication {
+    claude-csharp-format-hook = shellApp {
       name = "claude-csharp-format-hook";
       runtimeInputs = [ pkgs.csharpier pkgs.python3 ];
       text = builtins.readFile ./claude-csharp-format-hook.bash;
+      description = "Hook for automatic C# code formatting with csharpier";
+      sourceFile = "claude-csharp-format-hook.bash";
     };
 
     # Claude question assistants
-    claude-ask = pkgs.writeShellApplication {
+    claude-ask = shellApp {
       name = "claude-ask";
       runtimeInputs = [ ];
       text = builtins.replaceStrings
         ["@USER_NAME@"]
         [user.name]
         (builtins.readFile ./claude-ask.bash);
+      description = "Ask Claude quick questions without interactive TUI";
+      sourceFile = "claude-ask.bash";
     };
 
-    q = pkgs.writeShellApplication {
+    q = shellApp {
       name = "q";
       runtimeInputs = [ ];
       text = ''
         ${claude-ask}/bin/claude-ask haiku "$@"
       '';
+      description = "Quick Claude question using haiku model (fastest)";
+      sourceFile = "default.nix";
     };
 
-    qq = pkgs.writeShellApplication {
+    qq = shellApp {
       name = "qq";
       runtimeInputs = [ ];
       text = ''
         ${claude-ask}/bin/claude-ask sonnet "$@"
       '';
+      description = "Claude question using sonnet model (balanced)";
+      sourceFile = "default.nix";
     };
 
-    qqq = pkgs.writeShellApplication {
+    qqq = shellApp {
       name = "qqq";
       runtimeInputs = [ ];
       text = ''
         ${claude-ask}/bin/claude-ask opus "$@"
       '';
+      description = "Complex Claude question using opus model (most capable)";
+      sourceFile = "default.nix";
     };
   };
 
@@ -98,15 +116,29 @@
     '';
 
     # claudeGlobal
-    # Purpose: Copies global Claude Code configuration to ~/.claude
-    # Why: Provides global Claude Code settings and custom slash commands
+    # Purpose: Copies global Claude Code configuration + generates TOOLS.md to ~/.claude
+    # Why: Provides global Claude Code settings and tool documentation
     # When: After writeBoundary (after files are written to disk)
-    # Note: Contents from claude-global/ directory (CLAUDE.md and commands/)
+    # Note: Static contents from claude-global/ + generated TOOLS.md from package metadata
     claudeGlobal = let
       claudeGlobalDir = ../../claude-global;
+
+      # Generate TOOLS.md from package metadata
+      generateToolsMarkdown = import ./generate-tools-md.nix { inherit lib; };
+
+      toolsMarkdown = pkgs.runCommand "TOOLS.md" {} ''
+        cat > $out << 'EOF'
+${generateToolsMarkdown {
+  packages = config.home.packages;
+}}
+EOF
+      '';
     in lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       $DRY_RUN_CMD mkdir -p ~/.claude
+      # Copy static global files (CLAUDE.md, etc.)
       $DRY_RUN_CMD cp -rf ${claudeGlobalDir}/* ~/.claude/
+      # Copy generated TOOLS.md (force to overwrite read-only file from previous build)
+      $DRY_RUN_CMD cp -f ${toolsMarkdown} ~/.claude/TOOLS.md
     '';
   };
 }

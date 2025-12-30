@@ -2,6 +2,10 @@
 
 let
   homeDirectory = config.home.homeDirectory;
+
+  # Import shared shellApp helper
+  shellApp = import ../lib/shellApp.nix { inherit pkgs lib; moduleDir = ./.; };
+
   # Powerline separator character (U+E0B0) as separate derivations to avoid Nix escaping issues
   separatorsConf = pkgs.writeText "separators.conf" ''
     set -g @theme_left_separator ""
@@ -34,29 +38,37 @@ in {
     emojisContent = builtins.readFile ./emojis.bash;
     simpsonsContent = builtins.readFile ./simpsons-words.bash;
   in {
-    random-emoji = pkgs.writeShellApplication {
+    random-emoji = shellApp {
       name = "random-emoji";
       runtimeInputs = [ pkgs.tmux ];
       text = ''
         ${emojisContent}
         ${builtins.readFile ./random-emoji.bash}
       '';
+      description = "Set random emoji icon for tmux windows (internal utility)";
+      sourceFile = "random-emoji.bash";
     };
-    random-session-name = pkgs.writeShellApplication {
+
+    random-session-name = shellApp {
       name = "random-session-name";
       runtimeInputs = [ pkgs.tmux ];
       text = ''
         ${simpsonsContent}
         ${builtins.readFile ./random-session-name.bash}
       '';
+      description = "Generate Simpsons-themed random session names (internal utility)";
+      sourceFile = "random-session-name.bash";
     };
-    random-session-icon = pkgs.writeShellApplication {
+
+    random-session-icon = shellApp {
       name = "random-session-icon";
       runtimeInputs = [ pkgs.tmux ];
       text = ''
         ${emojisContent}
         ${builtins.readFile ./random-session-icon.bash}
       '';
+      description = "Set random emoji icon for tmux sessions (internal utility)";
+      sourceFile = "random-session-icon.bash";
     };
   };
 

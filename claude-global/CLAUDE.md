@@ -1,5 +1,20 @@
 # Claude Code Guidelines
 
+> **📦 Available Tools:** See [TOOLS.md](./TOOLS.md) for complete list of installed packages and custom utilities.
+
+## Tool Preferences
+
+**CRITICAL: Use the modern replacements documented in TOOLS.md:**
+- Use `rg` (ripgrep) instead of `grep` for searching
+- Use `fd` instead of `find` for finding files
+- Use `bat` instead of `cat` when syntax highlighting would be helpful
+- Use custom git utilities (`git-branches`, `workout`, `git-sync`, etc.) when working with git
+- Note: `htop` is available for interactive process viewing (not for scripting)
+
+See [TOOLS.md](./TOOLS.md) for complete documentation of all available tools and utilities.
+
+---
+
 ## ⚡ Pre-Flight Checklist (Before ANY Task)
 
 **STOP. Check these BEFORE starting:**
