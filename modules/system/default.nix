@@ -1,5 +1,10 @@
 { config, pkgs, lib, user, ... }:
 
+let
+  # Import shared shellApp helper
+  shellApp = import ../lib/shellApp.nix { inherit pkgs lib; moduleDir = ./.; };
+
+in
 {
   # ============================================================================
   # System Tools
@@ -8,7 +13,7 @@
   # ============================================================================
 
   _module.args.systemShellapps = rec {
-    hms = pkgs.writeShellApplication {
+    hms = shellApp {
       name = "hms";
       runtimeInputs = [ pkgs.git pkgs.home-manager ];
       text = ''
@@ -18,6 +23,8 @@
 
         ${builtins.readFile ./hms.bash}
       '';
+      description = "Apply Home Manager configuration with git handling and backups";
+      sourceFile = "hms.bash";
     };
   };
 }
