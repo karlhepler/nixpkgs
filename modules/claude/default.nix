@@ -135,6 +135,7 @@ EOF
       '';
     in lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       $DRY_RUN_CMD mkdir -p ~/.claude
+      $DRY_RUN_CMD mkdir -p ~/.claude/output-styles
       # Copy static global files (CLAUDE.md, etc.)
       $DRY_RUN_CMD cp -rf ${claudeGlobalDir}/* ~/.claude/
       # Copy generated TOOLS.md (force to overwrite read-only file from previous build)
