@@ -35,20 +35,13 @@ fi
 
 set -eou pipefail
 
+# @COMMON_FUNCTIONS@ - Will be replaced by Nix at build time
+
 # Read JSON from stdin
 json=$(cat)
 
-# Get tmux context if in tmux
-tmux_context=""
-if [[ -n "${TMUX:-}" ]]; then
-  # Get session name and window name
-  session_name=$(tmux display-message -p '#S' 2>/dev/null || echo "")
-  window_name=$(tmux display-message -p '#W' 2>/dev/null || echo "")
-
-  tmux_context="$session_name → $window_name"
-fi
-
-# Export for Python
+# Get tmux context
+tmux_context=$(get_tmux_context)
 export TMUX_CONTEXT="$tmux_context"
 
 # Extract data using official Claude Code Stop hook fields
@@ -91,16 +84,8 @@ except Exception as e:
 title="${data%%|*}"
 message="${data#*|}"
 
-# Send notification from Alacritty (using bundle ID to avoid path issues)
-osascript -e "tell application id \"org.alacritty\" to display notification \"$message\" with title \"$title\" sound name \"Glass\""
+# Send notification with 'Glass' sound
+send_notification "$title" "$message" "Glass"
 
-# Set tmux window option for attention flag
-# Can't ring bell directly because Claude Code is a TUI that would receive the keys
-if [[ -n "${TMUX:-}" && -n "${TMUX_PANE:-}" ]]; then
-  # Set custom window option to flag this window needs attention
-  tmux set-window-option -t "$TMUX_PANE" @claude_attention 1
-
-  # Also set session-level flag so it shows in session chooser
-  session_name=$(tmux display-message -p '#S')
-  tmux set-option -t "$session_name" @session_needs_attention 1
-fi
+# Set tmux attention flags
+set_tmux_attention
