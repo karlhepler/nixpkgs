@@ -112,7 +112,12 @@ show_help() {
 }
 
 # List all worktrees in format for fzf
+# Accepts optional git_root parameter to mark the primary repo with [brackets]
+# Accepts optional current_dir parameter to mark the current worktree with → prefix
 list_worktrees() {
+  local git_root="${1:-}"
+  local current_dir="${2:-}"
+
   git worktree list --porcelain | awk '
     /^worktree / {
       path = substr($0, 10)
@@ -140,10 +145,31 @@ list_worktrees() {
   ' | while IFS='|' read -r path branch head; do
     # Format: branch  commit  path
     # Path is last so we can hide it but still extract it
+
+    # Mark the current worktree with a right arrow
+    local prefix=""
+    if [ -n "$current_dir" ] && [ "$path" = "$current_dir" ]; then
+      prefix="→ "
+    fi
+
+    # Mark the primary repo (git root) with square brackets
+    local is_root=false
+    if [ -n "$git_root" ] && [ "$path" = "$git_root" ]; then
+      is_root=true
+    fi
+
     if [ -z "$branch" ]; then
-      printf "%-40s  %s  %s\n" "(main)" "$head" "$path"
+      if [ "$is_root" = true ]; then
+        printf "%-40s  %s  %s\n" "${prefix}[(main)]" "$head" "$path"
+      else
+        printf "%-40s  %s  %s\n" "${prefix}(main)" "$head" "$path"
+      fi
     else
-      printf "%-40s  %s  %s\n" "$branch" "$head" "$path"
+      if [ "$is_root" = true ]; then
+        printf "%-40s  %s  %s\n" "${prefix}[${branch}]" "$head" "$path"
+      else
+        printf "%-40s  %s  %s\n" "${prefix}${branch}" "$head" "$path"
+      fi
     fi
   done
 }
@@ -255,9 +281,18 @@ run_fzf_selector() {
     return 1
   fi
 
+  # Get git root directory (primary repo location) before launching fzf
+  # This is needed in case we delete the current worktree
+  # Use git worktree list to find primary repo (first entry), not git rev-parse which returns current worktree
+  local git_root
+  git_root="$(git worktree list --porcelain | awk '/^worktree / {print substr($0, 10); exit}')"
+
+  # Get current directory to mark with arrow
+  local current_dir="$PWD"
+
   # Get list of worktrees
   local worktrees
-  worktrees="$(list_worktrees)"
+  worktrees="$(list_worktrees "$git_root" "$current_dir")"
 
   if [ -z "$worktrees" ]; then
     echo "No worktrees found" >&2
@@ -269,22 +304,38 @@ run_fzf_selector() {
   # shellcheck disable=SC2016
   selected="$(echo "$worktrees" | fzf \
     --ansi \
-    --with-nth=1,2 \
+    --with-nth=1..-2 \
     --header 'Enter=select  Ctrl-D=delete  ESC=cancel' \
-    --preview "$(declare -f preview_worktree); preview_worktree {3}" \
+    --preview "$(declare -f preview_worktree); preview_worktree {-1}" \
     --preview-window 'right:60%:wrap' \
-    --bind "ctrl-d:execute(workout-delete {3} {1} < /dev/tty > /dev/tty 2>&1)+reload($(declare -f list_worktrees); list_worktrees)")"
+    --bind "ctrl-d:execute(workout-delete {-1} {1..2} < /dev/tty > /dev/tty 2>&1)+reload(cd '$git_root' 2>/dev/null && { $(declare -f list_worktrees); if [ -d '$current_dir' ]; then list_worktrees '$git_root' '$current_dir'; else list_worktrees '$git_root' '$git_root'; fi; })")" || true
 
+  # Check if user cancelled (empty selection)
   if [ -z "$selected" ]; then
-    # User cancelled
+    # Check if current directory still exists
+    # If not, navigate to git root (happens when current worktree was deleted)
+    if [ ! -d "$current_dir" ]; then
+      # User cancelled and directory was deleted - go to git root
+      echo "cd '$git_root'"
+      return 0
+    fi
+    # User cancelled and directory still exists - don't change directory
     return 1
   fi
 
-  # Extract path (third field - hidden but still in data)
-  local selected_path
-  selected_path="$(echo "$selected" | awk '{print $3}')"
+  # User selected something
+  # Check if current directory was deleted (need to cd somewhere)
+  if [ ! -d "$current_dir" ]; then
+    # Current dir was deleted but user selected something - cd to selection
+    local selected_path
+    selected_path="$(echo "$selected" | awk '{print $NF}')"
+    echo "cd '$selected_path'"
+    return 0
+  fi
 
-  # Output cd command
+  # Normal case: user selected something and current dir still exists
+  local selected_path
+  selected_path="$(echo "$selected" | awk '{print $NF}')"
   echo "cd '$selected_path'"
 }
 
