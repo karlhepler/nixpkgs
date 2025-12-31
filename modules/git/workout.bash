@@ -433,20 +433,19 @@ if [ -n "$existing_worktree" ]; then
     exit 0
   fi
 
-  # Branch is checked out in primary repo - need to move it to a worktree
-  echo "Branch '$branch_name' is checked out in primary repo. Moving to worktree..." >&2
+  # Branch is checked out in primary repo
+  # Check if this is the trunk branch - trunk should never be migrated to a worktree
+  git remote set-head origin -a >/dev/null 2>&1 || true
+  trunk_branch="$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')"
 
-  # Check if there are uncommitted changes
-  has_changes=false
-  if [ -n "$(git status --porcelain)" ]; then
-    echo "Stashing uncommitted changes..." >&2
-    git stash push -u -m "workout: moving to worktree" >&2
-    has_changes=true
+  if [ "$branch_name" = "$trunk_branch" ]; then
+    # Trunk branch stays in the primary repo - just navigate there
+    echo "cd '$existing_worktree'"
+    exit 0
   fi
 
-  # Switch primary repo to trunk (without pulling - just free up the branch)
-  echo "Switching primary repo to trunk..." >&2
-  git trunk --no-pull >&2
+  # Non-trunk branch in primary repo - need to move it to a worktree
+  echo "Branch '$branch_name' is checked out in primary repo. Moving to worktree..." >&2
 
   # Build worktree path
   worktree_path="$worktree_root/$org_repo/$branch_name"
@@ -454,15 +453,33 @@ if [ -n "$existing_worktree" ]; then
   # Create parent directory if needed
   mkdir -p "$(dirname "$worktree_path")"
 
-  # Create the worktree
-  echo "Creating worktree at $worktree_path..." >&2
-  git worktree add "$worktree_path" "$branch_name" >&2
+  # Perform all git operations in the primary repo (where the branch is checked out)
+  # This is critical - we need to stash/switch in the PRIMARY repo, not current worktree
+  (
+    cd "$existing_worktree" || exit 1
 
-  # Pop stash in worktree if we stashed
-  if [ "$has_changes" = true ]; then
-    echo "Restoring uncommitted changes in worktree..." >&2
-    (cd "$worktree_path" && git stash pop) >&2
-  fi
+    # Check if there are uncommitted changes
+    has_changes=false
+    if [ -n "$(git status --porcelain)" ]; then
+      echo "Stashing uncommitted changes..." >&2
+      git stash push -u -m "workout: moving to worktree" >&2
+      has_changes=true
+    fi
+
+    # Switch primary repo to trunk (without pulling - just free up the branch)
+    echo "Switching primary repo to trunk..." >&2
+    git trunk --no-pull >&2
+
+    # Create the worktree
+    echo "Creating worktree at $worktree_path..." >&2
+    git worktree add "$worktree_path" "$branch_name" >&2
+
+    # Pop stash in worktree if we stashed
+    if [ "$has_changes" = true ]; then
+      echo "Restoring uncommitted changes in worktree..." >&2
+      (cd "$worktree_path" && git stash pop) >&2
+    fi
+  ) || exit 1
 
   # Output the cd command
   echo "cd '$worktree_path'"
