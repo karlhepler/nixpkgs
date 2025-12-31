@@ -42,12 +42,13 @@ json=$(cat)
 
 # Get tmux context if in tmux
 tmux_context=""
-if [[ -n "${TMUX:-}" ]]; then
-  # Get session name and window name
-  session_name=$(tmux display-message -p '#S' 2>/dev/null || echo "")
-  window_name=$(tmux display-message -p '#W' 2>/dev/null || echo "")
+if [[ -n "${TMUX:-}" && -n "${TMUX_PANE:-}" ]]; then
+  # Get session name, window index, and window name from the pane where Claude is running
+  session_name=$(tmux display-message -t "$TMUX_PANE" -p '#S' 2>/dev/null || echo "")
+  window_index=$(tmux display-message -t "$TMUX_PANE" -p '#I' 2>/dev/null || echo "")
+  window_name=$(tmux display-message -t "$TMUX_PANE" -p '#W' 2>/dev/null || echo "")
 
-  tmux_context="$session_name → $window_name"
+  tmux_context="$session_name → $window_index:$window_name"
 fi
 
 # Export for Python
