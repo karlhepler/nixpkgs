@@ -299,6 +299,95 @@ Execute them in a single message for speed.
 
 ---
 
+## 🟡 Pull Request Descriptions
+
+**CRITICAL: PR descriptions must be concise and focus on intent, not implementation details.**
+
+### Core Principles:
+
+1. **Intent Over Implementation**: Describe WHY and WHAT you're trying to accomplish, not HOW the code does it
+2. **End State Only**: Describe the final state of the changes, never the iterative journey
+3. **Brevity**: Keep descriptions short and to the point
+
+### ❌ WRONG: Describing the Journey
+
+```markdown
+## Summary
+- Added feature X
+- Then fixed bug Y that appeared
+- Then refactored Z for clarity
+- Then updated tests
+- Then fixed linting issues
+```
+
+This describes the iterative development process, which is NOT what PR descriptions should contain.
+
+### ❌ WRONG: Describing What Code Does
+
+```markdown
+## Summary
+- Added new function `processData()` that takes an array and filters it
+- Updated component to call `processData()` in useEffect hook
+- Modified tests to cover new function
+```
+
+People can read the code to see what it does. This is redundant.
+
+### ❌ WRONG: Too Verbose
+
+Long, detailed descriptions with multiple paragraphs explaining every nuance and decision.
+
+### ✅ CORRECT: Intent-Focused, Concise, End State
+
+```markdown
+## Summary
+Enable users to filter dashboard data by date range to improve data analysis workflow.
+
+## Why
+Users need to focus on specific time periods without manually scrolling through all historical data.
+```
+
+**This describes**:
+- WHAT: Enable filtering by date range
+- WHY: Improve workflow, avoid manual scrolling
+- FOR WHOM: Users analyzing data
+
+### When Updating Existing PR Descriptions:
+
+**NEVER add iterative updates** like:
+- "Updated to fix CI errors"
+- "Now addressing review feedback"
+- "Fixed the bug mentioned above"
+
+**ALWAYS replace** the entire description to reflect the current end state.
+
+### PR Description Template:
+
+```markdown
+## Summary
+[1-3 sentences describing WHAT you're enabling/fixing and WHY it matters]
+
+## Why
+[Brief explanation of the intent - the problem being solved or need being addressed]
+
+## Test Plan
+[Bulleted checklist of how to verify the changes work]
+```
+
+### Key Questions to Ask Yourself:
+
+Before writing a PR description, ask:
+1. "Why does this change matter?" (Intent)
+2. "What capability are we adding/fixing?" (What)
+3. "Who benefits and how?" (Why)
+
+Do NOT ask:
+- "What did I do first, second, third?" (Journey)
+- "What functions did I add?" (Implementation)
+- "How does the code work?" (Implementation)
+
+---
+
 ## 🟡 Code Design Principles
 
 **Always follow these design principles:**

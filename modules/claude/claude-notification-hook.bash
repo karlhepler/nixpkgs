@@ -37,21 +37,13 @@ fi
 
 set -eou pipefail
 
+# @COMMON_FUNCTIONS@ - Will be replaced by Nix at build time
+
 # Read JSON from stdin
 json=$(cat)
 
-# Get tmux context if in tmux
-tmux_context=""
-if [[ -n "${TMUX:-}" && -n "${TMUX_PANE:-}" ]]; then
-  # Get session name, window index, and window name from the pane where Claude is running
-  session_name=$(tmux display-message -t "$TMUX_PANE" -p '#S' 2>/dev/null || echo "")
-  window_index=$(tmux display-message -t "$TMUX_PANE" -p '#I' 2>/dev/null || echo "")
-  window_name=$(tmux display-message -t "$TMUX_PANE" -p '#W' 2>/dev/null || echo "")
-
-  tmux_context="$session_name → $window_index:$window_name"
-fi
-
-# Export for Python
+# Get tmux context
+tmux_context=$(get_tmux_context)
 export TMUX_CONTEXT="$tmux_context"
 
 # Extract data using official Claude Code hook fields
@@ -61,8 +53,6 @@ try:
     data = json.load(sys.stdin)
     message = data.get('message', 'Claude needs input')
     notification_type = data.get('notification_type', '')
-    hook_event_name = data.get('hook_event_name', 'Notification')
-    cwd = data.get('cwd', '')
     tmux_context = os.environ.get('TMUX_CONTEXT', '')
 
     # Use notification_type for better title categorization
@@ -92,16 +82,8 @@ except Exception as e:
 title="${data%%|*}"
 message="${data#*|}"
 
-# Send notification from Alacritty (using bundle ID to avoid path issues)
-osascript -e "tell application id \"org.alacritty\" to display notification \"$message\" with title \"$title\" sound name \"Ping\""
+# Send notification with 'Ping' sound
+send_notification "$title" "$message" "Ping"
 
-# Set tmux window option for attention flag
-# Can't ring bell directly because Claude Code is a TUI that would receive the keys
-if [[ -n "${TMUX:-}" && -n "${TMUX_PANE:-}" ]]; then
-  # Set custom window option to flag this window needs attention
-  tmux set-window-option -t "$TMUX_PANE" @claude_attention 1
-
-  # Also set session-level flag so it shows in session chooser
-  session_name=$(tmux display-message -p '#S')
-  tmux set-option -t "$session_name" @session_needs_attention 1
-fi
+# Set tmux attention flags
+set_tmux_attention

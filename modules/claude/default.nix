@@ -4,6 +4,9 @@ let
   # Import shared shellApp helper
   shellApp = import ../lib/shellApp.nix { inherit pkgs lib; moduleDir = ./.; };
 
+  # Common hook library functions (inlined at build time)
+  hookCommon = builtins.readFile ./claude-hook-common.bash;
+
 in {
   # ============================================================================
   # Claude Code Configuration & Shell Applications
@@ -15,14 +18,20 @@ in {
     claude-notification-hook = shellApp {
       name = "claude-notification-hook";
       runtimeInputs = [ pkgs.python3 ];
-      text = builtins.readFile ./claude-notification-hook.bash;
+      text = builtins.replaceStrings
+        ["# @COMMON_FUNCTIONS@ - Will be replaced by Nix at build time"]
+        [hookCommon]
+        (builtins.readFile ./claude-notification-hook.bash);
       description = "Hook for Claude Code desktop notifications with tmux integration";
       sourceFile = "claude-notification-hook.bash";
     };
     claude-complete-hook = shellApp {
       name = "claude-complete-hook";
       runtimeInputs = [ ];
-      text = builtins.readFile ./claude-complete-hook.bash;
+      text = builtins.replaceStrings
+        ["# @COMMON_FUNCTIONS@ - Will be replaced by Nix at build time"]
+        [hookCommon]
+        (builtins.readFile ./claude-complete-hook.bash);
       description = "Hook for Claude Code completion events";
       sourceFile = "claude-complete-hook.bash";
     };
