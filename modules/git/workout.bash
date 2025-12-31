@@ -48,6 +48,8 @@ show_help() {
   echo
   echo "COMMANDS:"
   echo "  .         Create/navigate to worktree for current branch"
+  echo "            If in primary repo: migrates branch to worktree,"
+  echo "            preserves uncommitted changes, restores primary to trunk"
   echo "  -         Toggle between current and previous worktree (like cd -)"
   echo "  /         Interactive browser - view and navigate worktrees"
   echo "            (Enter=select, ESC=cancel)"
@@ -75,6 +77,18 @@ show_help() {
   echo "  workout main               # Quick check of main"
   echo "  workout -                  # Back to feature/xyz"
   echo
+  echo "PRIMARY REPO MIGRATION:"
+  echo "  When running 'workout .' from a branch checked out in the primary"
+  echo "  repository (not a worktree), workout will:"
+  echo "  1. Stash any uncommitted changes (including untracked files)"
+  echo "  2. Switch primary repo back to trunk branch"
+  echo "  3. Create worktree for the branch"
+  echo "  4. Restore uncommitted changes in the new worktree"
+  echo "  5. Navigate you into the worktree"
+  echo
+  echo "  This keeps your primary repo clean on trunk while doing all"
+  echo "  branch work in worktrees."
+  echo
   echo "WORKTREE ORGANIZATION:"
   echo "  All worktrees stored in: ~/worktrees/<org>/<repo>/<branch>/"
   echo "  (or \$WORKTREE_ROOT/<org>/<repo>/<branch>/ if WORKTREE_ROOT is set)"
@@ -94,6 +108,7 @@ show_help() {
   echo "  - Worktrees share .git directory (shared refs, tags, remotes)"
   echo "  - Each worktree has independent working directory and index"
   echo "  - Useful for reviewing PRs, testing changes, or parallel development"
+  echo "  - Uncommitted changes are preserved when migrating from primary repo"
 }
 
 # List all worktrees in format for fzf
@@ -357,8 +372,49 @@ existing_worktree=$(git worktree list --porcelain | awk -v branch="refs/heads/$b
 ')
 
 if [ -n "$existing_worktree" ]; then
-  # Branch already checked out elsewhere, navigate there
-  echo "cd '$existing_worktree'"
+  # Branch is checked out somewhere
+  worktree_root="${WORKTREE_ROOT:-$HOME/worktrees}"
+
+  # Check if it's already in a managed worktree location
+  if [[ "$existing_worktree" =~ ^$worktree_root/ ]]; then
+    # Already in a worktree, just navigate there
+    echo "cd '$existing_worktree'"
+    exit 0
+  fi
+
+  # Branch is checked out in primary repo - need to move it to a worktree
+  echo "Branch '$branch_name' is checked out in primary repo. Moving to worktree..." >&2
+
+  # Check if there are uncommitted changes
+  has_changes=false
+  if [ -n "$(git status --porcelain)" ]; then
+    echo "Stashing uncommitted changes..." >&2
+    git stash push -u -m "workout: moving to worktree" >&2
+    has_changes=true
+  fi
+
+  # Switch primary repo to trunk (without pulling - just free up the branch)
+  echo "Switching primary repo to trunk..." >&2
+  git trunk --no-pull >&2
+
+  # Build worktree path
+  worktree_path="$worktree_root/$org_repo/$branch_name"
+
+  # Create parent directory if needed
+  mkdir -p "$(dirname "$worktree_path")"
+
+  # Create the worktree
+  echo "Creating worktree at $worktree_path..." >&2
+  git worktree add "$worktree_path" "$branch_name" >&2
+
+  # Pop stash in worktree if we stashed
+  if [ "$has_changes" = true ]; then
+    echo "Restoring uncommitted changes in worktree..." >&2
+    (cd "$worktree_path" && git stash pop) >&2
+  fi
+
+  # Output the cd command
+  echo "cd '$worktree_path'"
   exit 0
 fi
 

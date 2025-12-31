@@ -1,38 +1,51 @@
 #!/usr/bin/env bash
 set -eou pipefail
 
-# Switch to trunk branch (main/master) and pull latest changes
+# Switch to trunk branch (main/master) and optionally pull latest changes
 # - Automatically detects whether trunk is 'main' or 'master'
-# - Updates local trunk branch with remote changes
+# - Updates local trunk branch with remote changes (unless --no-pull)
 
 show_help() {
   echo "git-trunk - Switch to trunk branch and pull latest"
   echo
   echo "USAGE:"
-  echo "  git-trunk    Checkout trunk and pull latest changes"
+  echo "  git-trunk              Checkout trunk and pull latest changes"
+  echo "  git-trunk --no-pull    Checkout trunk without pulling"
   echo
   echo "DESCRIPTION:"
   echo "  Switches to the trunk branch (main or master) and pulls the"
   echo "  latest changes from the remote. Automatically detects whether"
   echo "  the trunk branch is 'main' or 'master'."
   echo
+  echo "OPTIONS:"
+  echo "  --no-pull    Skip pulling latest changes (just checkout trunk)"
+  echo
   echo "EXAMPLES:"
   echo "  # Switch to trunk and update"
   echo "  git-trunk"
   echo
+  echo "  # Switch to trunk without updating"
+  echo "  git-trunk --no-pull"
+  echo
   echo "NOTES:"
   echo "  - Automatically detects trunk branch (main or master)"
-  echo "  - Pulls latest changes after checkout"
+  echo "  - Pulls latest changes after checkout (unless --no-pull)"
   echo "  - Use git-sync to merge trunk into current branch instead"
 }
 
 # Parse arguments
+no_pull=false
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   show_help
   exit 0
+elif [[ "${1:-}" == "--no-pull" ]]; then
+  no_pull=true
 fi
 
 git remote set-head origin -a # make sure there is an origin/HEAD
 trunk="$(git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@')"
 git checkout "$trunk"
-git pull
+
+if [ "$no_pull" = false ]; then
+  git pull
+fi
