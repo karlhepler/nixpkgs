@@ -174,6 +174,17 @@ list_worktrees() {
   done
 }
 
+# Check if git index is locked
+is_git_locked() {
+  local git_dir
+  git_dir="$(git rev-parse --git-dir 2>/dev/null)" || return 1
+
+  # Check for common lock files
+  [ -f "$git_dir/index.lock" ] || \
+  [ -f "$git_dir/HEAD.lock" ] || \
+  [ -f "$git_dir/refs/heads/*.lock" ] 2>/dev/null
+}
+
 # Generate preview for a worktree
 preview_worktree() {
   local worktree_path="$1"
@@ -186,6 +197,18 @@ preview_worktree() {
   # Change to worktree directory
   cd "$worktree_path" || return 1
 
+  # Check for lock files and wait briefly if found
+  if is_git_locked; then
+    echo "⏳ Git operation in progress, waiting..."
+    sleep 0.5
+    # If still locked after wait, skip preview
+    if is_git_locked; then
+      echo "⚠️  Git index is locked - preview unavailable"
+      echo "Try again in a moment"
+      return 0
+    fi
+  fi
+
   # Get current branch
   local current_branch
   current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "detached")"
@@ -196,17 +219,21 @@ preview_worktree() {
   echo "═══════════════════════════════════════════════════════════════"
   echo
 
-  # Section 1: Git Status
+  # Section 1: Git Status (with timeout and error handling)
   echo "━━━ GIT STATUS ━━━"
-  git status --short 2>&1 || echo "Error: Could not get git status"
+  if ! timeout 2 git status --short 2>&1; then
+    echo "(Status unavailable - git operation may be in progress)"
+  fi
   echo
 
-  # Section 2: Recent Commits
+  # Section 2: Recent Commits (with timeout)
   echo "━━━ RECENT COMMITS ━━━"
-  git log --oneline --color=always -5 2>&1 || echo "Error: Could not get git log"
+  if ! timeout 2 git log --oneline --color=always -5 2>&1; then
+    echo "(Log unavailable)"
+  fi
   echo
 
-  # Section 3: Diff stats vs main/master
+  # Section 3: Diff stats vs main/master (with timeout)
   echo "━━━ CHANGES VS TRUNK ━━━"
   # Try to find the main branch
   local trunk_branch
@@ -229,8 +256,8 @@ preview_worktree() {
     local YELLOW='\033[0;33m'
     local NC='\033[0m' # No Color
 
-    # Combine name-status and numstat for comprehensive view
-    git diff --name-status "$trunk_branch"...HEAD | while IFS=$'\t' read -r change_type file oldfile; do
+    # Combine name-status and numstat for comprehensive view (with timeout)
+    if timeout 3 git diff --name-status "$trunk_branch"...HEAD 2>/dev/null | while IFS=$'\t' read -r change_type file oldfile; do
       case "$change_type" in
         A)
           # Added file - get line count without showing debug output
@@ -257,14 +284,16 @@ preview_worktree() {
           printf "   %s (%s)\n" "$file" "$change_type"
           ;;
       esac
-    done
-
-    # Show summary
-    local summary
-    summary=$(git diff --shortstat "$trunk_branch"...HEAD 2>/dev/null)
-    if [ -n "$summary" ]; then
-      echo
-      echo "$summary"
+    done; then
+      # Show summary if diff succeeded
+      local summary
+      summary=$(timeout 2 git diff --shortstat "$trunk_branch"...HEAD 2>/dev/null || echo "")
+      if [ -n "$summary" ]; then
+        echo
+        echo "$summary"
+      fi
+    else
+      echo "(Diff unavailable - this may be a large changeset)"
     fi
   fi
 }
@@ -306,7 +335,7 @@ run_fzf_selector() {
     --ansi \
     --with-nth=1..-2 \
     --header 'Enter=select  Ctrl-D=delete  ESC=cancel' \
-    --preview "$(declare -f preview_worktree); preview_worktree {-1}" \
+    --preview "$(declare -f is_git_locked; declare -f preview_worktree); preview_worktree {-1}" \
     --preview-window 'right:60%:wrap' \
     --bind "ctrl-d:execute(workout-delete {-1} {1..2} < /dev/tty > /dev/tty 2>&1)+reload(cd '$git_root' 2>/dev/null && { $(declare -f list_worktrees); if [ -d '$current_dir' ]; then list_worktrees '$git_root' '$current_dir'; else list_worktrees '$git_root' '$git_root'; fi; })")" || true
 
