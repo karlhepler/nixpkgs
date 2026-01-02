@@ -15,18 +15,33 @@ See [TOOLS.md](./TOOLS.md) for complete documentation of all available tools and
 
 ---
 
-## ⚡ Pre-Flight Checklist (Before ANY Task)
+## ⚡ Essential Checklist (Check Before EVERY Task)
 
-**STOP. Check these BEFORE starting:**
+**STOP. Check ALL items BEFORE starting:**
 
-- [ ] **Scope**: Do I understand EXACTLY what's requested? (One deliverable only)
-- [ ] **Security**: Have I identified potential security risks?
-- [ ] **Existing Solutions**: Have I searched for third-party solutions first?
-- [ ] **Verification**: Have I read the relevant code/files?
-- [ ] **Approach**: Can I explain WHY this approach?
-- [ ] **Check-In**: For complex changes, have I gotten approval?
+- [ ] **Scope**: One deliverable only, no "while I'm here" additions
+- [ ] **Why**: Can I explain rationale, trade-offs, and alternatives?
+- [ ] **Security**: Input validation, secure defaults, threat model (if applicable)
+- [ ] **Verification**: Search for third-party solutions first, read code, verify claims
+- [ ] **Check-In**: Got approval for complex/multi-file changes?
+- [ ] **Git**: Using `karlhepler/` prefix for any new branches?
 
 **If ANY box is unchecked, STOP and address it first.**
+
+**Not sure if a rule applies?** See detailed guidance in TIER 1/TIER 2 sections below.
+
+---
+
+## 📖 How to Use This Document
+
+**Simple workflow for every task:**
+1. Check **Essential Checklist** above (all 6 items)
+2. Consult **TIER 1** sections for detailed guidance on checked items
+3. Reference **TIER 2** sections as needed for specific patterns
+4. Execute with confidence
+
+**TIER 1 = Critical protocols** - Always follow when applicable
+**TIER 2 = Best practices** - Apply these patterns for better results
 
 ---
 
@@ -44,16 +59,6 @@ See [TOOLS.md](./TOOLS.md) for complete documentation of all available tools and
 - **Only** what's requested
 - **Prevent** "while I'm here" additions
 - **Exact** deliverable defined
-
-### Before Any Implementation
-
-- [ ] Am I implementing EXACTLY what was requested?
-- [ ] Will this change ONLY the system mentioned?
-- [ ] Am I avoiding ALL "while I'm here" improvements?
-- [ ] Does this task have ONE clear deliverable?
-- [ ] Have I confirmed scope with user?
-
-**If ANY box is unchecked, STOP and clarify scope.**
 
 ### Scope Violations
 
@@ -92,15 +97,6 @@ Then implement.
 ## 🔴 Security-First Protocol
 
 **Security is non-negotiable. Every decision must consider security implications.**
-
-### Before Any Implementation:
-
-- [ ] Have I identified potential security risks?
-- [ ] Am I validating/sanitizing all external input?
-- [ ] Am I using secure defaults?
-- [ ] Have I considered authentication and authorization?
-- [ ] Am I handling sensitive data appropriately?
-- [ ] Could this introduce injection vulnerabilities (SQL, command, XSS)?
 
 ### Security Checklist:
 
@@ -187,7 +183,63 @@ Wait for confirmation before executing.
 
 ---
 
-## 🔴 Multiple Issues Debugging
+## 🔴 Verification Protocol
+
+**Trust but verify everything.**
+
+**Before Acting:**
+- Verify user claims match reality (read files, check APIs)
+- Check actual file locations, function names, signatures
+- Read source code to understand real vs assumed behavior
+- Search for existing solutions (see Technology Selection)
+- Investigate ALL potential causes, not just obvious ones
+
+**During Action:**
+- Verify each change works as intended
+- Check for unintended side effects
+- Follow established patterns
+
+**After Action:**
+- Verify final result matches requirements
+- Check all edge cases
+- Confirm scope maintained (no additions crept in)
+
+---
+
+## 🔴 Git Branch Naming Convention
+
+**CRITICAL: ALL branches created by Claude MUST use the `karlhepler/` prefix.**
+
+### Branch Naming Rules:
+
+- **ALWAYS** prefix branch names with `karlhepler/`
+- **Examples:**
+  - ✓ `karlhepler/add-feature`
+  - ✓ `karlhepler/fix-bug`
+  - ✓ `karlhepler/tmp`
+  - ✗ `add-feature` (missing prefix)
+  - ✗ `feature/add-feature` (wrong prefix)
+
+### When Creating Branches:
+
+```bash
+# Correct
+git checkout -b karlhepler/feature-name
+
+# Wrong
+git checkout -b feature-name
+```
+
+**No exceptions.** Every branch Claude creates must follow this convention.
+
+---
+
+# TIER 2: IMPORTANT GUIDELINES 🟡
+*Follow these patterns for better results*
+
+---
+
+## 🟡 Multiple Issues Debugging
 
 **Core Rule:** Software problems are rarely single-cause.
 
@@ -206,37 +258,6 @@ Wait for confirmation before executing.
 - ✗ Don't say: "I found THE issue..." / "Here's THE problem..."
 
 Always continue investigating after finding the first problem.
-
----
-
-## 🔴 Verification Protocol
-
-**Trust but verify everything.**
-
-### Before Acting:
-
-- [ ] Verify user claims match reality (read files, check APIs)
-- [ ] Check actual file locations, function names, signatures
-- [ ] Read source code to understand real vs assumed behavior
-- [ ] Search for existing solutions (see Technology Selection)
-- [ ] Investigate ALL potential causes, not just obvious ones
-
-### During Action:
-
-- [ ] Verify each change works as intended
-- [ ] Check for unintended side effects
-- [ ] Follow established patterns
-
-### After Action:
-
-- [ ] Verify final result matches requirements
-- [ ] Check all edge cases
-- [ ] Confirm scope maintained (no additions crept in)
-
----
-
-# TIER 2: IMPORTANT GUIDELINES 🟡
-*Follow these patterns for better results*
 
 ---
 
@@ -301,7 +322,7 @@ Execute them in a single message for speed.
 
 ## 🟡 Pull Request Descriptions
 
-**CRITICAL: PR descriptions must be concise and focus on intent, not implementation details.**
+**PR descriptions must be concise and focus on intent, not implementation details.**
 
 ### Core Principles:
 
@@ -442,34 +463,3 @@ Do NOT ask:
 - Similar-looking code with different purposes
 - Code that may evolve independently
 - Simple operations where abstraction obscures intent
-
----
-
----
-
-# QUICK REFERENCE
-
----
-
-## Quick Reference
-
-**Before every task:**
-1. **Complete Pre-Flight Checklist** (ALL boxes must be checked)
-2. Confirm EXACT scope (no additions)
-3. Explain why this approach
-4. Consider security implications (validate input, secure defaults, threat model)
-5. Search for third-party solutions first (use boring technology)
-6. Apply YAGNI, KISS, SOLID, composition over inheritance
-7. Check in for complex changes
-8. Execute ONLY what's approved
-9. Search for multiple issues
-10. Verify everything
-11. Use parallel calls when possible
-
-**Abort if:**
-- Scope unclear or expanding
-- No approval for complex changes
-- "While I'm here" thoughts appearing
-- Multiple unrelated improvements considered
-- Security risks not addressed
-- Building custom without checking for existing solutions
