@@ -16,6 +16,7 @@
 
     # === Development Tools ===
     devbox
+    jq
     just
     mkcert
     yq-go
