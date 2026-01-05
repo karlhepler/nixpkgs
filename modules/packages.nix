@@ -28,7 +28,6 @@
     # === Container & Kubernetes ===
     kubectl
     kubectx
-    tilt
     helm-ls
 
     # === Programming Languages ===
