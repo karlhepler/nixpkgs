@@ -39,7 +39,9 @@ This repository uses a **domain-centric module architecture** where related func
 **Complex Modules** (directories with default.nix):
 - `modules/system/` - System-level shellapp (hms) + bash script
 - `modules/git/` - Git configuration + 11 git shellapps + bash scripts (commit, pull, push, save, git-branches, git-kill, git-trunk, git-sync, git-resume, git-tmp, workout)
-- `modules/claude/` - Claude Code activation hooks + 3 claude shellapps + bash scripts (notification-hook, complete-hook, csharp-format-hook)
+- `modules/claude/` - Claude Code configuration with:
+  - 7 claude shellapps + bash scripts (notification-hook, complete-hook, csharp-format-hook, claude-ask, q, qq, qqq)
+  - `global/` directory containing Claude Code settings, output styles, and skills (mirrors ~/.claude/ structure)
 
 **Simple Modules** (single .nix files):
 - `modules/theme.nix` - Tokyo Night Storm color theme + font configuration (cross-cutting concern)
@@ -51,7 +53,10 @@ This repository uses a **domain-centric module architecture** where related func
 
 ### Other Directories
 - `neovim/` - Neovim configuration files (vimrc, lspconfig.lua, lsp/, plugins/)
-- `claude-global/` - Global Claude Code settings (CLAUDE.md)
+- `modules/claude/global/` - Global Claude Code settings and skills (mirrors ~/.claude/ structure)
+  - `CLAUDE.md` - Global guidelines for Claude Code
+  - `output-styles/` - Custom output styles (4qs-facilitator)
+  - `commands/` - User-level skills and commands (try-again, review-pr-comments)
 
 ## Shellapp Pattern
 
@@ -75,7 +80,10 @@ When running `hms`, these activation hooks run automatically:
 1. **gitIgnoreUserChanges** (in home.nix): Makes git ignore user.nix changes
 2. **gitIgnoreOverconfigChanges** (in home.nix): Makes git ignore overconfig.nix changes
 3. **claudeSettings** (modules/claude/): Symlinks Claude Code settings with configured hooks
-4. **claudeGlobal** (modules/claude/): Copies global Claude settings
+4. **claudeGlobal** (modules/claude/): Deploys all Claude Code configuration:
+   - Copies global settings (CLAUDE.md, output-styles/)
+   - Generates TOOLS.md from package metadata
+   - Deploys skills to ~/.claude/commands/
 5. **precompileZshCompletions** (modules/zsh.nix): Compiles zsh completions for faster shell startup
 6. **generateDirenvHook** (modules/direnv.nix): Creates static direnv hook for performance
 
@@ -154,9 +162,23 @@ git config --local --get user.email
 ## Claude Code Configuration
 
 This repository includes integrated Claude Code settings:
-- Global preferences defined in `claude-global/CLAUDE.md`
+- Global preferences and guidelines in `modules/claude/global/CLAUDE.md`
+- User-level skills in `modules/claude/global/commands/`:
+  - `review-pr-comments.md` - Auto-activates to review and respond to PR comments
+  - Future skills can be added here
 - Notification and completion hooks configured in `modules/claude/default.nix`
-- Settings managed through `.claude/` directory (gitignored)
+- Settings and skills automatically deployed to `~/.claude/` on `hms`
+- Runtime state managed through `.claude/` directory (gitignored)
+
+**Adding New Skills:**
+1. Create `modules/claude/global/commands/your-skill.md` with frontmatter:
+   ```markdown
+   ---
+   description: Trigger conditions for when Claude should use this skill
+   ---
+   ```
+2. Run `hms` to deploy
+3. Skill automatically discovered by Claude Code in `~/.claude/commands/`
 
 ## GitHub Package Updates
 
