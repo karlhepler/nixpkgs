@@ -50,26 +50,15 @@ import sys, json, os
 try:
     data = json.load(sys.stdin)
     hook_event_name = data.get('hook_event_name', 'Stop')
-    transcript_path = data.get('transcript_path', '')
     tmux_context = os.environ.get('TMUX_CONTEXT', '')
-
-    # Extract directory from transcript_path (Stop hook doesn't provide cwd!)
-    dir_name = ''
-    if transcript_path:
-        # transcript_path format: ~/.claude/projects/{project_name}/{session_id}.jsonl
-        parts = transcript_path.split('/')
-        if 'projects' in parts:
-            idx = parts.index('projects')
-            if idx + 1 < len(parts):
-                dir_name = parts[idx + 1]
 
     # Determine title and message
     if hook_event_name == 'SubagentStop':
         title = 'Claude Subagent Complete'
-        message = f'Subagent task finished{\" in \" + dir_name if dir_name else \"\"}'
+        message = 'Subagent task finished'
     else:
         title = 'Claude Code Complete'
-        message = f'Task finished{\" in \" + dir_name if dir_name else \"\"}'
+        message = 'Task finished'
 
     # Prepend tmux context to message if available
     if tmux_context:
