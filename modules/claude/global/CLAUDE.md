@@ -508,12 +508,39 @@ Users need to focus on specific time periods without manually scrolling through 
 
 ### When Updating Existing PR Descriptions:
 
+**CRITICAL: Treat every update as a complete rewrite from scratch.**
+
+When asked to update a PR description, you must:
+1. **Review ALL commits** in the PR (not just recent ones)
+2. **Understand the complete end state** of all changes collectively
+3. **Delete the old description entirely** (don't append or modify)
+4. **Write a new description** that describes the cohesive final state
+
 **NEVER add iterative updates** like:
 - "Updated to fix CI errors"
 - "Now addressing review feedback"
 - "Fixed the bug mentioned above"
+- "Also added X" (appending to existing list)
+- "Now includes Y" (adding to previous description)
 
 **ALWAYS replace** the entire description to reflect the current end state.
+
+**Wrong approach (adding on):**
+```markdown
+## Summary
+- Added user authentication
+- Now also includes password reset feature
+- Updated tests
+```
+
+**Correct approach (complete rewrite):**
+```markdown
+## Summary
+Enable secure user authentication with password reset capability.
+
+## Why
+Users need secure account access with self-service password recovery.
+```
 
 ### PR Description Template:
 
