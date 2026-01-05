@@ -44,7 +44,7 @@ gh api repos/$REPO/pulls/$PR_NUM/comments --paginate > /tmp/pr_comments.json
 # Filter for unreplied top-level comments
 cat /tmp/pr_comments.json | jq -r --arg user "$USERNAME" '
   [.[] | select(.in_reply_to_id == null) | select(.user.login == $user | not)] as $top |
-  [.[] | select(.in_reply_to_id != null and .user.login == $user) | .in_reply_to_id] as $replied |
+  [.[] | select(.in_reply_to_id == null | not) | select(.user.login == $user) | .in_reply_to_id] as $replied |
   $top[] | select(.id as $id | $replied | index($id) | not)
 ' > /tmp/unreplied_comments.json
 ```
