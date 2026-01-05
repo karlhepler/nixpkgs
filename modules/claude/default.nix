@@ -125,12 +125,12 @@ in {
     '';
 
     # claudeGlobal
-    # Purpose: Copies global Claude Code configuration + generates TOOLS.md to ~/.claude
-    # Why: Provides global Claude Code settings and tool documentation
+    # Purpose: Deploys all Claude Code configuration files to ~/.claude
+    # Why: Provides global settings, tool documentation, and custom skills for Claude Code
     # When: After writeBoundary (after files are written to disk)
-    # Note: Static contents from claude-global/ + generated TOOLS.md from package metadata
+    # Note: Source structure in global/ mirrors destination structure in ~/.claude/
     claudeGlobal = let
-      claudeGlobalDir = ../../claude-global;
+      claudeGlobalDir = ./global;
 
       # Generate TOOLS.md from package metadata
       generateToolsMarkdown = import ./generate-tools-md.nix { inherit lib; };
@@ -143,11 +143,11 @@ ${generateToolsMarkdown {
 EOF
       '';
     in lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      # Copy all global configuration (mirrors global/ -> ~/.claude/ structure)
       $DRY_RUN_CMD mkdir -p ~/.claude
-      $DRY_RUN_CMD mkdir -p ~/.claude/output-styles
-      # Copy static global files (CLAUDE.md, etc.)
       $DRY_RUN_CMD cp -rf ${claudeGlobalDir}/* ~/.claude/
-      # Copy generated TOOLS.md (force to overwrite read-only file from previous build)
+
+      # Add generated TOOLS.md (force overwrite read-only file from previous build)
       $DRY_RUN_CMD cp -f ${toolsMarkdown} ~/.claude/TOOLS.md
     '';
   };

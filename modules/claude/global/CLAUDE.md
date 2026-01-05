@@ -234,6 +234,139 @@ git checkout -b feature-name
 
 ---
 
+## 🔴 Pull Request Comment Handling
+
+**When responding to PR comments, ALWAYS reply directly to the comment thread.**
+
+### Critical Rules: The Three Nevers
+
+**❌ NEVER add PR-level comments:**
+```bash
+gh pr comment <number> -b "response"  # WRONG - adds comment to whole PR
+```
+
+**❌ NEVER edit original comments:**
+```bash
+gh api repos/{owner}/{repo}/pulls/comments/{id} --method PATCH  # WRONG - modifies original
+```
+
+**❌ NEVER reply without critical evaluation:**
+- Bots lack full codebase context - you have more information
+- Humans have domain expertise - respect but verify their suggestions
+- Read relevant code before accepting any recommendation
+- Trust but verify: Check claims against actual implementation
+
+### ✅ CORRECT: Direct Comment Reply
+
+**Always use this approach:**
+```bash
+gh api --method POST \
+  repos/{owner}/{repo}/pulls/{pr}/comments/{comment_id}/replies \
+  -f body='Your reply message'
+```
+
+This creates a proper threaded reply visible in GitHub UI.
+
+### Reply Content Guidelines
+
+**Tone: Positive, Curious, Thankful**
+- Be concise - no fluff or unnecessary elaboration
+- Express genuine curiosity about suggestions
+- Thank reviewers for their feedback
+- Focus on substance over politeness theater
+
+**Examples:**
+
+✅ **Good replies:**
+- "Good catch! Fixed in abc123. The issue was X because Y."
+- "Thanks for the suggestion. After checking Z, I think W is better here because [reason]. Thoughts?"
+- "Interesting point. I investigated and found [X]. Updated approach in commit abc123."
+- "You're right - this overlooks [edge case]. Fixed in abc123."
+
+❌ **Bad replies (too verbose/fluffy):**
+- "Thank you so much for taking the time to review this! I really appreciate your thorough feedback. You make an excellent point about..."
+- "I completely agree with you! This is a great suggestion and I'll definitely implement it right away. Thanks again!"
+
+### Critical Evaluation Process
+
+**For bot comments:**
+1. **Read the code** - Bots don't see full context
+2. **Evaluate the claim** - Is it actually a problem?
+3. **Check for false positives** - Bots misunderstand intent
+4. **Make judgment call** - You have more context
+5. **Reply with reasoning** - Explain why action taken or not
+
+**For human comments:**
+1. **Take seriously** - Humans have domain knowledge
+2. **Verify the claim** - Read code, check behavior
+3. **Consider edge cases** - They might know something you don't
+4. **Discuss if uncertain** - Ask clarifying questions
+5. **Reply with context** - Show you understood and investigated
+
+### PR Comment Review Workflow
+
+**When asked to review PR comments:**
+
+1. **Fetch unreplied comments:**
+```bash
+# Get current PR info
+REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+PR_NUM=$(gh pr view --json number -q .number)
+
+# List all comments user hasn't replied to
+gh api repos/$REPO/pulls/$PR_NUM/comments --paginate > /tmp/pr_comments.json
+cat /tmp/pr_comments.json | jq -r '
+  [.[] | select(.in_reply_to_id == null) | select(.user.login == "USERNAME" | not)] as $top |
+  [.[] | select(.in_reply_to_id != null and .user.login == "USERNAME") | .in_reply_to_id] as $replied |
+  $top[] | select(.id as $id | $replied | index($id) | not) |
+  {id, author: .user.login, path, line: (.line // .original_position), body_preview: (.body | split("\n")[0])}
+'
+```
+
+2. **For each unreplied comment:**
+   - Read the comment body and code location
+   - Determine if bot or human (check `user.login`)
+   - Read relevant code for context
+   - Critically evaluate the suggestion
+   - Decide: Fix, Defer, or Reject
+   - If fixing: implement, commit, push
+   - Reply to comment with reasoning
+
+3. **Reply directly to comment:**
+```bash
+gh api --method POST \
+  repos/$REPO/pulls/$PR_NUM/comments/COMMENT_ID/replies \
+  -f body='Concise reply explaining action taken'
+```
+
+4. **Verify replies:**
+   - Check GitHub UI to ensure replies are threaded correctly
+   - Never batch replies - handle each comment individually
+
+### Common Gotchas
+
+1. **Comment Types:** Three types exist on GitHub
+   - Issue comments (PR-level) - `/repos/{owner}/{repo}/issues/{pr}/comments`
+   - Review comments (inline code) - `/repos/{owner}/{repo}/pulls/{pr}/comments` ← Use this
+   - Commit comments - Different endpoint
+
+2. **Bot Detection:**
+   - Username ends with `bot` or `[bot]`
+   - Common: `dependabot[bot]`, `github-actions[bot]`, `cursor[bot]`, `claude-maze[bot]`
+   - Use: `jq 'select(.user.login | test("bot$|\\[bot\\]"))'`
+
+3. **Filtering Logic:**
+   - Top-level comments: `select(.in_reply_to_id == null)`
+   - Exclude your own: `select(.user.login == "USERNAME" | not)`
+   - Check if replied: Cross-reference with replies where `in_reply_to_id` matches comment ID
+
+4. **Shell Quoting:**
+   - Use `select(.user.login == "USERNAME" | not)` not `select(.user.login != "USERNAME")`
+   - The `!=` operator causes shell quoting issues
+   - The `| not` pattern is more reliable
+
+---
+
 # TIER 2: IMPORTANT GUIDELINES 🟡
 *Follow these patterns for better results*
 
