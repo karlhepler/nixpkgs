@@ -22,6 +22,11 @@ Activate this skill when the user asks to:
 2. ❌ Never edit original comments (PATCH method)
 3. ❌ Never reply without critical evaluation
 
+**The One Critical Order:**
+- ⚠️ **ALWAYS fix → commit → push → THEN reply**
+- Never reply before the push completes successfully
+- Reply MUST include the commit SHA if you fixed something
+
 **Always:**
 - ✅ Reply directly to comment threads
 - ✅ Be concise, positive, curious, thankful
@@ -92,7 +97,7 @@ cat /tmp/unreplied_comments.json | jq -r '.[] |
 
 ### Phase 3: Take Action (if fixing)
 
-If you decide to fix the issue:
+**CRITICAL: If you decide to fix the issue, you MUST complete ALL steps below BEFORE replying:**
 
 ```bash
 # 1. Make the change using Edit/Write tools
@@ -106,13 +111,15 @@ Addresses comment: <comment_url>"
 # 4. Push
 git push
 
-# 5. Get commit SHA
+# 5. Get commit SHA (needed for reply)
 COMMIT_SHA=$(git rev-parse --short HEAD)
 ```
 
+**STOP:** Do not proceed to Phase 4 until the push completes successfully.
+
 ### Phase 4: Reply to Comment
 
-**Always reply, regardless of action taken:**
+**Now reply (only after Phase 3 is complete if fixing):**
 
 ```bash
 gh api --method POST \
@@ -205,6 +212,8 @@ After replying to all comments:
 - [ ] Each comment critically evaluated
 - [ ] Code read for context on each
 - [ ] Appropriate action taken (fix/defer/reject)
+- [ ] **For fixes: Changes committed AND pushed BEFORE replying**
+- [ ] **For fixes: Reply includes commit SHA**
 - [ ] Direct reply posted to each comment
 - [ ] Replies are concise and substantive
 - [ ] No PR-level comments added
