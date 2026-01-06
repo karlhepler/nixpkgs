@@ -44,14 +44,16 @@ PR_NUM=$(gh pr view --json number -q .number)
 USERNAME=$(gh api user -q .login)
 
 # Fetch all comments
-gh api repos/$REPO/pulls/$PR_NUM/comments --paginate > /tmp/pr_comments.json
+gh api "repos/$REPO/pulls/$PR_NUM/comments" --paginate > /tmp/pr_comments.json
 
-# Filter for unreplied top-level comments
-cat /tmp/pr_comments.json | jq -r --arg user "$USERNAME" '
-  [.[] | select(.in_reply_to_id == null) | select(.user.login == $user | not)] as $top |
-  [.[] | select(.in_reply_to_id == null | not) | select(.user.login == $user) | .in_reply_to_id] as $replied |
-  $top[] | select(.id as $id | $replied | index($id) | not)
-' > /tmp/unreplied_comments.json
+# Extract top-level comments not by you
+jq --arg user "$USERNAME" '[.[] | select(.in_reply_to_id == null) | select(.user.login == $user | not)]' /tmp/pr_comments.json > /tmp/top_level.json
+
+# Extract comment IDs you've replied to
+jq --arg user "$USERNAME" '[.[] | select(.in_reply_to_id != null) | select(.user.login == $user) | .in_reply_to_id]' /tmp/pr_comments.json > /tmp/replied_ids.json
+
+# Find unreplied comments (top-level comments whose ID is not in replied_ids)
+jq --slurpfile replied /tmp/replied_ids.json '[.[] | select(.id as $id | $replied[0] | index($id) | not)]' /tmp/top_level.json > /tmp/unreplied_comments.json
 ```
 
 ### Phase 2: Evaluate Each Comment
