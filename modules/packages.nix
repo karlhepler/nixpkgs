@@ -113,6 +113,31 @@
   programs.starship = {
     enable = true;
     enableZshIntegration = true;
+    settings = {
+      # Configure prompt format to place custom directory at the beginning
+      format = "$custom$all";
+
+      # Disable default directory module
+      directory.disabled = true;
+
+      # Custom directory module that shows brackets + yellow when in worktree
+      custom.directory = {
+        description = "Directory with worktree indicator";
+        command = ''
+          dir=$(basename "$PWD")
+          if [ "$PWD" = "$HOME" ]; then
+            dir="~"
+          fi
+          if test -f .git; then
+            printf '\033[1;33m[%s]\033[0m' "$dir"
+          else
+            printf '\033[1;36m%s\033[0m' "$dir"
+          fi
+        '';
+        when = true;
+        format = "$output ";
+      };
+    };
   };
 
   programs.zoxide = {
