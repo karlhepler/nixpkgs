@@ -24,7 +24,6 @@
     # === Version Control ===
     codeowners
     git-lfs
-    github-copilot-cli
 
     # === Container & Kubernetes ===
     kubectl
