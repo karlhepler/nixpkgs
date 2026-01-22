@@ -118,7 +118,13 @@ in {
 
   programs.git = {
     enable = true;
-    ignores = [ ".DS_Store" ".tags*" "**/.claude/settings.local.json" ];
+    ignores = [
+      ".DS_Store"
+      ".tags*"
+      "**/.claude/settings.local.json"
+      ".ralph"
+      ".agent"
+    ];
     settings = {
       user = {
         name = user.name;
