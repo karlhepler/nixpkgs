@@ -275,13 +275,22 @@ This creates a proper threaded reply visible in GitHub UI.
 - Thank reviewers for their feedback
 - Focus on substance over politeness theater
 
+**Signature Requirement:**
+- **ALWAYS** end every reply with this exact signature:
+  ```
+  ---
+  _💬 Written by [Claude Code](https://claude.ai/code)_
+  ```
+- This makes it clear the reply is Claude-generated, not from you directly
+- Provides transparency to reviewers
+
 **Examples:**
 
 ✅ **Good replies:**
-- "Good catch! Fixed in abc123. The issue was X because Y."
-- "Thanks for the suggestion. After checking Z, I think W is better here because [reason]. Thoughts?"
-- "Interesting point. I investigated and found [X]. Updated approach in commit abc123."
-- "You're right - this overlooks [edge case]. Fixed in abc123."
+- "Good catch! Fixed in abc123. The issue was X because Y.\n\n---\n_💬 Written by [Claude Code](https://claude.ai/code)_"
+- "Thanks for the suggestion. After checking Z, I think W is better here because [reason]. Thoughts?\n\n---\n_💬 Written by [Claude Code](https://claude.ai/code)_"
+- "Interesting point. I investigated and found [X]. Updated approach in commit abc123.\n\n---\n_💬 Written by [Claude Code](https://claude.ai/code)_"
+- "You're right - this overlooks [edge case]. Fixed in abc123.\n\n---\n_💬 Written by [Claude Code](https://claude.ai/code)_"
 
 ❌ **Bad replies (too verbose/fluffy):**
 - "Thank you so much for taking the time to review this! I really appreciate your thorough feedback. You make an excellent point about..."
@@ -336,7 +345,10 @@ cat /tmp/pr_comments.json | jq -r '
 ```bash
 gh api --method POST \
   repos/$REPO/pulls/$PR_NUM/comments/COMMENT_ID/replies \
-  -f body='Concise reply explaining action taken'
+  -f body='Concise reply explaining action taken
+
+---
+_💬 Written by [Claude Code](https://claude.ai/code)_'
 ```
 
 4. **Verify replies:**
