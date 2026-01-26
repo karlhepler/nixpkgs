@@ -17,10 +17,15 @@ Activate this skill when the user asks to:
 
 ## Critical Rules
 
-**The Three Nevers:**
+**The Four Nevers:**
 1. ❌ Never add PR-level comments (`gh pr comment`)
 2. ❌ Never edit original comments (PATCH method)
-3. ❌ Never reply without critical evaluation
+3. ❌ Never reply to a comment where your most recent reply is already the last one
+   - Check the reply thread before responding
+   - If there are no replies → OK to reply
+   - If the most recent reply is from someone else → OK to reply
+   - If the most recent reply is from Claude → SKIP (do not reply again)
+4. ❌ Never reply without critical evaluation
 
 **The One Critical Order:**
 - ⚠️ **ALWAYS fix → commit → push → THEN reply**
@@ -35,7 +40,7 @@ Activate this skill when the user asks to:
 
 ## Workflow
 
-### Phase 1: Fetch Unreplied Comments
+### Phase 1: Fetch Comments Needing Replies
 
 ```bash
 # Get PR info
@@ -46,19 +51,35 @@ USERNAME=$(gh api user -q .login)
 # Fetch all comments
 gh api "repos/$REPO/pulls/$PR_NUM/comments" --paginate > /tmp/pr_comments.json
 
-# Extract top-level comments not by you
-jq --arg user "$USERNAME" '[.[] | select(.in_reply_to_id == null) | select(.user.login == $user | not)]' /tmp/pr_comments.json > /tmp/top_level.json
+# Filter to comments that need replies from Claude
+jq --arg user "$USERNAME" '
+  # Get all top-level comments not by Claude
+  [.[] | select(.in_reply_to_id == null) | select(.user.login == $user | not)] as $top_level |
 
-# Extract comment IDs you've replied to
-jq --arg user "$USERNAME" '[.[] | select(.in_reply_to_id != null) | select(.user.login == $user) | .in_reply_to_id]' /tmp/pr_comments.json > /tmp/replied_ids.json
+  # Group all comments for thread analysis
+  . as $all_comments |
 
-# Find unreplied comments (top-level comments whose ID is not in replied_ids)
-jq --slurpfile replied /tmp/replied_ids.json '[.[] | select(.id as $id | $replied[0] | index($id) | not)]' /tmp/top_level.json > /tmp/unreplied_comments.json
+  # For each top-level comment, check if we should reply
+  $top_level[] |
+  . as $comment |
+
+  # Get all replies to this comment
+  ($all_comments | map(select(.in_reply_to_id == $comment.id))) as $replies |
+
+  # Determine if we should reply
+  select(
+    # Case 1: No replies at all -> should reply
+    ($replies | length == 0) or
+
+    # Case 2: Has replies, but most recent reply is NOT by Claude -> should reply
+    (($replies | length > 0) and ($replies | sort_by(.created_at) | last | .user.login == $user | not))
+  )
+' /tmp/pr_comments.json > /tmp/unreplied_comments.json
 ```
 
 ### Phase 2: Evaluate Each Comment
 
-For each unreplied comment:
+For each comment that needs a reply:
 
 **1. Read the comment:**
 ```bash
@@ -129,31 +150,46 @@ gh api --method POST \
   -f body='<your concise reply>'
 ```
 
-**Reply templates:**
+**Reply templates (ALWAYS include signature):**
 
 **Fixed:**
 ```
 Good catch! Fixed in COMMIT_SHA. The issue was [X] because [Y].
+
+---
+_💬 Written by [Claude Code](https://claude.ai/code)_
 ```
 
 **Rejected (bot false positive):**
 ```
 Thanks for flagging this. After checking [context the bot missed], this is actually correct because [reason].
+
+---
+_💬 Written by [Claude Code](https://claude.ai/code)_
 ```
 
 **Rejected (human - explain reasoning):**
 ```
 Thanks for the suggestion! I investigated and found [X]. I think [alternative approach] is better here because [reason]. Thoughts?
+
+---
+_💬 Written by [Claude Code](https://claude.ai/code)_
 ```
 
 **Deferred:**
 ```
 Great point! This is out of scope for this PR, but I've created issue #XYZ to track it.
+
+---
+_💬 Written by [Claude Code](https://claude.ai/code)_
 ```
 
 **Discussing:**
 ```
 Interesting observation. Can you clarify [specific question]? I see [X] but wondering about [Y].
+
+---
+_💬 Written by [Claude Code](https://claude.ai/code)_
 ```
 
 ### Phase 5: Verify
@@ -210,13 +246,13 @@ After replying to all comments:
 
 ## Success Criteria
 
-- [ ] All unreplied comments identified
+- [ ] All comments needing replies identified (excluding comments where Claude's reply is most recent)
 - [ ] Each comment critically evaluated
 - [ ] Code read for context on each
 - [ ] Appropriate action taken (fix/defer/reject)
 - [ ] **For fixes: Changes committed AND pushed BEFORE replying**
 - [ ] **For fixes: Reply includes commit SHA**
-- [ ] Direct reply posted to each comment
+- [ ] Direct reply posted to each comment (only if Claude's reply is NOT already the most recent)
 - [ ] Replies are concise and substantive
 - [ ] No PR-level comments added
 - [ ] No original comments edited

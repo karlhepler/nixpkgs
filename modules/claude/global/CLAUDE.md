@@ -45,6 +45,72 @@ See [TOOLS.md](./TOOLS.md) for complete documentation of all available tools and
 
 ---
 
+## 🔴 Active Listening Protocol
+
+**For complex requests: Paraphrase your understanding before acting.**
+
+### When to Apply:
+
+Active listening is required for **complex requests only**. A request is complex if it meets ANY of these:
+
+- Multiple steps or components involved
+- Architectural or design decisions required
+- Affects multiple files or systems
+- Involves trade-offs or multiple valid approaches
+- Ambiguous requirements or unclear scope
+- When in doubt about what's being asked
+
+### What to Do:
+
+**1. Paraphrase your understanding:**
+   - Reflect back what you heard in your own words
+   - Identify the core goal/problem being addressed
+   - Confirm key assumptions or constraints
+   - Acknowledge the end state being requested
+
+**2. Ask clarifying questions ONLY if:**
+   - Something is genuinely vague or ambiguous
+   - Multiple interpretations are equally plausible
+   - Critical details are missing that affect the approach
+
+**3. Then proceed** once understanding is confirmed
+
+### Balance with Efficiency:
+
+**DON'T apply active listening to simple requests:**
+- "Read this file" → Just read it
+- "Run these tests" → Just run them
+- "Fix typo in line 42" → Just fix it
+- Single-step, unambiguous commands → Just execute
+
+**DO apply active listening to complex requests:**
+- "Implement feature X for users" → Paraphrase the goal and approach
+- "Refactor this module" → Confirm what aspects need refactoring and why
+- "Debug this issue" → Reflect the problem and investigation approach
+- Multi-step or ambiguous requests → Confirm understanding first
+
+### Format Example:
+
+```
+## What I'm hearing:
+
+[Paraphrase the request in your own words, identifying the goal and key components]
+
+## My understanding:
+
+- [Key assumption 1]
+- [Key assumption 2]
+- [Proposed approach]
+
+## Questions (if needed):
+
+- [Only ask if something is genuinely unclear]
+
+Is this understanding correct?
+```
+
+---
+
 # TIER 1: CRITICAL RULES 🔴
 *These rules MUST be followed for every task*
 
@@ -238,7 +304,7 @@ git checkout -b feature-name
 
 **When responding to PR comments, ALWAYS reply directly to the comment thread.**
 
-### Critical Rules: The Three Nevers
+### Critical Rules: The Four Nevers
 
 **❌ NEVER add PR-level comments:**
 ```bash
@@ -249,6 +315,13 @@ gh pr comment <number> -b "response"  # WRONG - adds comment to whole PR
 ```bash
 gh api repos/{owner}/{repo}/pulls/comments/{id} --method PATCH  # WRONG - modifies original
 ```
+
+**❌ NEVER reply to a comment where your most recent reply is already the last one:**
+- Check the reply thread before responding
+- If there are no replies → OK to reply
+- If the most recent reply is from someone else → OK to reply
+- If the most recent reply is from Claude → SKIP (do not reply again)
+- Prevents Claude from replying twice in a row without human feedback
 
 **❌ NEVER reply without critical evaluation:**
 - Bots lack full codebase context - you have more information
@@ -316,18 +389,41 @@ This creates a proper threaded reply visible in GitHub UI.
 
 **When asked to review PR comments:**
 
-1. **Fetch unreplied comments:**
+1. **Fetch comments needing replies:**
 ```bash
 # Get current PR info
 REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
 PR_NUM=$(gh pr view --json number -q .number)
+USERNAME=$(gh api user -q .login)
 
-# List all comments user hasn't replied to
+# Fetch all comments
 gh api repos/$REPO/pulls/$PR_NUM/comments --paginate > /tmp/pr_comments.json
-cat /tmp/pr_comments.json | jq -r '
-  [.[] | select(.in_reply_to_id == null) | select(.user.login == "USERNAME" | not)] as $top |
-  [.[] | select(.in_reply_to_id != null and .user.login == "USERNAME") | .in_reply_to_id] as $replied |
-  $top[] | select(.id as $id | $replied | index($id) | not) |
+
+# Filter to comments that need replies from Claude
+cat /tmp/pr_comments.json | jq -r --arg user "$USERNAME" '
+  # Get all top-level comments not by Claude
+  [.[] | select(.in_reply_to_id == null) | select(.user.login == $user | not)] as $top_level |
+
+  # Group all comments for thread analysis
+  . as $all_comments |
+
+  # For each top-level comment, check if we should reply
+  $top_level[] |
+  . as $comment |
+
+  # Get all replies to this comment
+  ($all_comments | map(select(.in_reply_to_id == $comment.id))) as $replies |
+
+  # Determine if we should reply
+  select(
+    # Case 1: No replies at all -> should reply
+    ($replies | length == 0) or
+
+    # Case 2: Has replies, but most recent reply is NOT by Claude -> should reply
+    (($replies | length > 0) and ($replies | sort_by(.created_at) | last | .user.login == $user | not))
+  ) |
+
+  # Output the comment info
   {id, author: .user.login, path, line: (.line // .original_position), body_preview: (.body | split("\n")[0])}
 '
 ```
