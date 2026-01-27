@@ -108,6 +108,8 @@ See `/review-pr-comments` skill for full workflow.
 
 **Technology:** Prefer boring over novel, existing over custom
 
+**12 Factor App:** Follow [12factor.net](https://12factor.net) methodology for building robust, scalable applications
+
 **DRY:** Eliminate meaningful duplication, but prefer duplication over wrong abstraction. Wait for 3+ repetitions before abstracting.
 
 **Mindset:** Always Be Curious - investigate thoroughly, ask why, verify claims
