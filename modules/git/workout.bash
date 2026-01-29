@@ -179,11 +179,14 @@ show_help() {
   echo "  - Delete worktrees via interactive browser (/) with Ctrl-D"
   echo
   echo "HOOKS:"
-  echo "  Workout supports a post-switch hook that runs automatically after"
-  echo "  navigating to a worktree. The hook runs in all three navigation paths:"
-  echo "  - Creating new worktrees"
-  echo "  - Navigating to existing worktrees"
-  echo "  - Migrating from primary repo to worktree"
+  echo "  Workout supports a post-switch hook that runs automatically when a"
+  echo "  worktree is FIRST CREATED. The hook only runs once per worktree:"
+  echo "  - When creating new worktrees (first time)"
+  echo "  - When migrating from primary repo to worktree (first time)"
+  echo "  - NOT when navigating to existing worktrees (subsequent times)"
+  echo
+  echo "  This is designed for one-time setup tasks like initial dependency"
+  echo "  installation, direnv allow, or environment configuration."
   echo
   echo "  Hook Location:"
   echo "    .git/workout-hooks/post-switch"
@@ -226,13 +229,14 @@ show_help() {
   echo "    EOF"
   echo "    chmod +x .git/workout-hooks/post-switch"
   echo
-  echo "  Common Use Cases:"
+  echo "  Common Use Cases (one-time setup):"
   echo "    - Auto-allow direnv (.envrc)"
-  echo "    - Install dependencies (npm install, bundle install)"
-  echo "    - Run database migrations"
-  echo "    - Set up environment-specific config"
-  echo "    - Send notifications"
-  echo "    - Update IDE workspace settings"
+  echo "    - Initial dependency installation (npm install, bundle install)"
+  echo "    - Database setup or migrations"
+  echo "    - Generate environment-specific config files"
+  echo "    - Send 'new worktree created' notifications"
+  echo "    - Initialize IDE workspace settings"
+  echo "    - Copy template files or configurations"
 }
 
 # Execute post-switch hook if it exists
@@ -682,8 +686,7 @@ worktree_path="$worktree_root/$org_repo/$branch_name"
 
 # Check if worktree already exists at expected path
 if [ -d "$worktree_path" ]; then
-  # Worktree exists, just cd into it
-  run_post_switch_hook "$worktree_path" "$branch_name"
+  # Worktree exists, just cd into it (no hook - only runs on creation)
   echo "cd '$worktree_path'"
   exit 0
 fi
