@@ -46,15 +46,27 @@ show_help() {
   echo "  Creates worktrees automatically if they don't exist (idempotent)."
   echo "  Enables working on multiple branches simultaneously without stashing."
   echo
+  echo "  Requires a shell wrapper function (automatically configured in this setup)"
+  echo "  that handles directory changes and state management."
+  echo
   echo "COMMANDS:"
   echo "  .         Create/navigate to worktree for current branch"
   echo "            If in primary repo: migrates branch to worktree,"
   echo "            preserves uncommitted changes, restores primary to trunk"
+  echo
   echo "  -         Toggle between current and previous worktree (like cd -)"
+  echo "            State persists across shell sessions in:"
+  echo "            \$WORKTREE_ROOT/.workout_prev"
+  echo "            Only tracks worktree locations (not primary repo)"
+  echo
   echo "  /         Interactive browser - view and navigate worktrees"
-  echo "            (Enter=select, ESC=cancel)"
+  echo "            Keys: Enter=select, Ctrl-D=delete, ESC=cancel"
+  echo "            Preview shows: git status, recent commits, diff vs trunk"
+  echo "            Delete handles navigation gracefully if current worktree removed"
+  echo
   echo "  <branch>  Create/navigate to worktree for specified branch"
   echo "            If branch doesn't exist, creates it from current HEAD"
+  echo "            Reuses existing worktree if already created (idempotent)"
   echo
   echo "EXAMPLES:"
   echo "  # Create worktree for current branch"
@@ -77,6 +89,30 @@ show_help() {
   echo "  workout main               # Quick check of main"
   echo "  workout -                  # Back to feature/xyz"
   echo
+  echo "INTERACTIVE BROWSER (/):"
+  echo "  The interactive browser uses fzf to show all worktrees with:"
+  echo
+  echo "  List View:"
+  echo "    - Current worktree marked with → prefix"
+  echo "    - Primary repo marked with [brackets] around branch name"
+  echo "    - Shows: branch name, commit SHA, path"
+  echo
+  echo "  Preview Pane (right side):"
+  echo "    - Git status (modified, staged, untracked files)"
+  echo "    - Recent commits (last 5)"
+  echo "    - Changes vs trunk (file-level diff with line counts)"
+  echo
+  echo "  Keybindings:"
+  echo "    - Enter: Navigate to selected worktree"
+  echo "    - Ctrl-D: Delete selected worktree (with confirmation)"
+  echo "    - ESC: Cancel and stay in current location"
+  echo
+  echo "  Delete Behavior:"
+  echo "    - If you delete your current worktree, workout navigates to:"
+  echo "      → Selected worktree (if you select one after deleting)"
+  echo "      → Git root / primary repo (if you ESC after deleting)"
+  echo "    - List refreshes automatically after deletion"
+  echo
   echo "PRIMARY REPO MIGRATION:"
   echo "  When running 'workout .' from a branch checked out in the primary"
   echo "  repository (not a worktree), workout will:"
@@ -88,6 +124,15 @@ show_help() {
   echo
   echo "  This keeps your primary repo clean on trunk while doing all"
   echo "  branch work in worktrees."
+  echo
+  echo "TRUNK BRANCH BEHAVIOR:"
+  echo "  The trunk branch (main/master) is treated specially:"
+  echo "  - Always stays checked out in the primary repository"
+  echo "  - Never migrated to a worktree location"
+  echo "  - Detected automatically via 'git symbolic-ref refs/remotes/origin/HEAD'"
+  echo "  - When navigating to trunk, workout goes to primary repo, not a worktree"
+  echo
+  echo "  This design ensures the primary clone remains stable and on trunk."
   echo
   echo "WORKTREE ORGANIZATION:"
   echo "  All worktrees stored in: ~/worktrees/<org>/<repo>/<branch>/"
@@ -104,11 +149,124 @@ show_help() {
   echo "    export WORKTREE_ROOT=~/dev/worktrees"
   echo "    workout feature-x  # Creates ~/dev/worktrees/org/repo/feature-x"
   echo
+  echo "TECHNICAL DETAILS:"
+  echo "  Shell Wrapper:"
+  echo "    - Workout requires a shell wrapper function to change directories"
+  echo "    - The wrapper evaluates the 'cd' command output by this script"
+  echo "    - Wrapper saves current location to state file for toggle feature"
+  echo "    - Automatically configured in this Nix Home Manager setup"
+  echo
+  echo "  Worktree Organization:"
+  echo "    - All worktrees stored under \$WORKTREE_ROOT/<org>/<repo>/<branch>/"
+  echo "    - Org/repo extracted from git remote URL (origin)"
+  echo "    - Works with both SSH and HTTPS remote URLs"
+  echo
+  echo "  Shared Git Data:"
+  echo "    - Worktrees share .git directory (refs, tags, remotes, config)"
+  echo "    - Each worktree has independent working directory and index"
+  echo "    - Enables parallel work without repo duplication"
+  echo
+  echo "  State Management:"
+  echo "    - Toggle history: \$WORKTREE_ROOT/.workout_prev"
+  echo "    - Only worktree paths saved (primary repo excluded from toggle)"
+  echo "    - State persists across shell sessions"
+  echo
   echo "NOTES:"
-  echo "  - Worktrees share .git directory (shared refs, tags, remotes)"
-  echo "  - Each worktree has independent working directory and index"
+  echo "  - Idempotent: safe to run multiple times with same branch"
+  echo "  - Creates branches from current HEAD if they don't exist"
+  echo "  - Uncommitted changes preserved when migrating from primary repo"
   echo "  - Useful for reviewing PRs, testing changes, or parallel development"
-  echo "  - Uncommitted changes are preserved when migrating from primary repo"
+  echo "  - Delete worktrees via interactive browser (/) with Ctrl-D"
+  echo
+  echo "HOOKS:"
+  echo "  Workout supports a post-switch hook that runs automatically after"
+  echo "  navigating to a worktree. The hook runs in all three navigation paths:"
+  echo "  - Creating new worktrees"
+  echo "  - Navigating to existing worktrees"
+  echo "  - Migrating from primary repo to worktree"
+  echo
+  echo "  Hook Location:"
+  echo "    .git/workout-hooks/post-switch"
+  echo "    (Stored in main .git directory, shared across all worktrees)"
+  echo
+  echo "  Format Requirements:"
+  echo "    - Must be an executable file (chmod +x)"
+  echo "    - Can be any executable (bash script, Python, compiled binary, etc.)"
+  echo "    - Must have proper shebang if it's a script (#!/usr/bin/env bash)"
+  echo "    - If not executable, silently ignored (no error)"
+  echo
+  echo "  Execution Context:"
+  echo "    - Working directory: The worktree directory (CWD set automatically)"
+  echo "    - Arguments: \$1 = absolute worktree path, \$2 = branch name"
+  echo "    - Environment: Inherits from parent shell"
+  echo "    - Runs in subshell (cannot affect parent workout process)"
+  echo
+  echo "  Exit Code Handling:"
+  echo "    - Exit 0: Success, no output"
+  echo "    - Non-zero: Warning logged to stderr, navigation continues"
+  echo "    - Hook failures never prevent navigation"
+  echo
+  echo "  Example Setup (Bash):"
+  echo "    mkdir -p .git/workout-hooks"
+  echo "    cat > .git/workout-hooks/post-switch << 'EOF'"
+  echo "    #!/usr/bin/env bash"
+  echo "    # Auto-allow direnv if .envrc exists"
+  echo "    [[ -f .envrc ]] && direnv allow"
+  echo "    EOF"
+  echo "    chmod +x .git/workout-hooks/post-switch"
+  echo
+  echo "  Example Setup (Python):"
+  echo "    cat > .git/workout-hooks/post-switch << 'EOF'"
+  echo "    #!/usr/bin/env python3"
+  echo "    import sys, os"
+  echo "    worktree_path = sys.argv[1]"
+  echo "    branch_name = sys.argv[2]"
+  echo "    # Custom logic here"
+  echo "    print(f\"Switched to {branch_name}\")"
+  echo "    EOF"
+  echo "    chmod +x .git/workout-hooks/post-switch"
+  echo
+  echo "  Common Use Cases:"
+  echo "    - Auto-allow direnv (.envrc)"
+  echo "    - Install dependencies (npm install, bundle install)"
+  echo "    - Run database migrations"
+  echo "    - Set up environment-specific config"
+  echo "    - Send notifications"
+  echo "    - Update IDE workspace settings"
+}
+
+# Execute post-switch hook if it exists
+# Arguments: worktree_path branch_name
+run_post_switch_hook() {
+  local worktree_path="$1"
+  local branch_name="$2"
+
+  # Get shared .git directory (handle .git file in worktrees)
+  local git_dir
+  git_dir="$(git rev-parse --git-dir 2>/dev/null)" || return 0
+
+  if [[ -f "$git_dir" ]]; then
+    # .git is a file (worktree) - extract main git directory
+    local real_git_dir
+    real_git_dir="$(grep '^gitdir:' "$git_dir" | cut -d' ' -f2)"
+    git_dir="${real_git_dir%/worktrees/*}"
+  fi
+
+  local hook_path="$git_dir/workout-hooks/post-switch"
+
+  # Silent return if hook doesn't exist or isn't executable
+  [[ ! -x "$hook_path" ]] && return 0
+
+  # Execute in subshell with worktree as CWD
+  (
+    cd "$worktree_path" || exit 1
+    "$hook_path" "$worktree_path" "$branch_name"
+  ) || {
+    local exit_code=$?
+    echo "Warning: post-switch hook failed (exit code: $exit_code)" >&2
+    echo "Hook location: $hook_path" >&2
+    return 0
+  }
 }
 
 # List all worktrees in format for fzf
@@ -510,6 +668,9 @@ if [ -n "$existing_worktree" ]; then
     fi
   ) || exit 1
 
+  # Run post-switch hook
+  run_post_switch_hook "$worktree_path" "$branch_name"
+
   # Output the cd command
   echo "cd '$worktree_path'"
   exit 0
@@ -522,6 +683,7 @@ worktree_path="$worktree_root/$org_repo/$branch_name"
 # Check if worktree already exists at expected path
 if [ -d "$worktree_path" ]; then
   # Worktree exists, just cd into it
+  run_post_switch_hook "$worktree_path" "$branch_name"
   echo "cd '$worktree_path'"
   exit 0
 fi
@@ -535,6 +697,9 @@ if [ "$create_new" = true ]; then
 else
   git worktree add "$worktree_path" "$branch_name" >&2
 fi
+
+# Run post-switch hook
+run_post_switch_hook "$worktree_path" "$branch_name"
 
 # Output the cd command to stdout for the wrapper function to eval
 echo "cd '$worktree_path'"
