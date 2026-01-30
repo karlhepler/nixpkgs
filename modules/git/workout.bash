@@ -34,10 +34,9 @@ show_help() {
   echo "workout - Create and navigate git worktrees"
   echo
   echo "USAGE:"
-  echo "  workout                    Show this help"
+  echo "  workout                    Browse and manage worktrees (interactive)"
   echo "  workout .                  Create worktree for current branch"
   echo "  workout -                  Toggle to previous worktree"
-  echo "  workout /                  Browse and manage worktrees (interactive)"
   echo "  workout <branch>           Create worktree for branch"
   echo "  workout -h, --help         Show this help"
   echo
@@ -538,10 +537,10 @@ run_fzf_selector() {
 branch_name=""
 create_new=false
 
-# No args: show help
+# No args: open interactive browser
 if [ $# -eq 0 ]; then
-  show_help
-  exit 0
+  run_fzf_selector
+  exit $?
 fi
 
 # One arg: check special cases
