@@ -10,11 +10,33 @@ This repository contains Nix Home Manager configuration for managing development
 
 ## Quick Commands
 
-- `hms`: Apply Home Manager changes (use `--expunge` for complete environment refresh)
+### Configuration Management
+- `hms`: Apply Home Manager changes (NEVER use `--expunge` flag)
 - `hme`: Edit the `home.nix` file (main configuration)
 - `hmu`: Edit the `user.nix` file (user-specific identity)
 - `hmo`: Edit the `overconfig.nix` file (machine-specific customizations)
-- `hm`: Change directory to Nix Packages configuration directory (`~/.config/nixpkgs`)
+- `hm`: Change directory to `~/.config/nixpkgs`
+
+### Git Workflow
+- `commit "message"`: Stage all changes and commit
+- `push`: Push current branch to origin
+- `pull`: Pull with automatic stash/unstash
+- `save "message"`: Commit and push in one command
+- `git trunk`: Switch to main/master branch (auto-detects)
+- `git sync`: Merge trunk into current branch
+- `git branches`: Interactive branch selector with fzf
+- `git resume`: Switch to most recently used branch
+- `git tmp`: Create temporary experimental branch
+- `workout [branch]`: Create/navigate to git worktree (organized in ~/worktrees/)
+- `workout .`: Create worktree for current branch
+- `workout -`: Toggle to previous worktree location
+- `workout /`: Interactive worktree browser and manager
+- `groot`: Navigate to git repository root
+
+### Claude Code Helpers
+- `q "question"`: Quick Claude question (haiku model - fastest)
+- `qq "question"`: Claude question (sonnet model - balanced)
+- `qqq "question"`: Complex Claude question (opus model - most capable)
 
 ## Nix Development Commands
 
@@ -30,6 +52,8 @@ This repository uses a **domain-centric module architecture** where related func
 
 ### Core Files
 - `flake.nix`: Defines inputs/outputs, manages nixpkgs (25.11 stable) and nixpkgs-unstable
+  - Version controlled in one place: Update `nixpkgs.url`, `home-manager.url`, and `releaseVersion` together
+  - System locked to `aarch64-darwin` (macOS ARM)
 - `home.nix`: Main entry point that imports all modules and aggregates shellapps
 - `user.nix`: User-specific identity (name, email, username, homeDirectory) - gitignored after sync
 - `overconfig.nix`: Machine-specific customizations (gitignored after sync, manages its own git-ignore behavior)
@@ -46,6 +70,9 @@ This repository uses a **domain-centric module architecture** where related func
 **Simple Modules** (single .nix files):
 - `modules/theme.nix` - Tokyo Night Storm color theme + font configuration (cross-cutting concern)
 - `modules/packages.nix` - Package declarations + simple program configs (fzf, neovide, starship, zoxide, nix-index)
+  - Most packages from stable `pkgs` (25.11)
+  - Cutting-edge packages from `unstable` channel (like neovide)
+  - Packages organized by category: Core Tools, Shell Enhancement, Development, Languages, etc.
 - `modules/zsh.nix` - Zsh shell configuration + precompileZshCompletions activation hook
 - `modules/direnv.nix` - Direnv configuration + generateDirenvHook activation hook (performance optimization)
 - `modules/alacritty.nix` - Alacritty terminal emulator with theme integration
@@ -67,12 +94,23 @@ This repository uses a **hybrid shellapp pattern** for managing custom bash scri
 3. **Distribution**: Aggregated shellapps passed to all modules via `_module.args`
 4. **Package Integration**: All shellapps exposed to system via `modules/packages.nix`
 
+**The shellApp Helper** (`modules/lib/shellApp.nix`):
+- Creates shell applications with metadata (description, mainProgram, source file location)
+- Automatically tracks source file locations for documentation generation
+- Provides runtime dependency injection via `runtimeInputs`
+- Generates TOOLS.md via `modules/claude/generate-tools-md.nix` during activation
+
 **Adding New Shellapps**:
 - Add bash script to appropriate module directory (e.g., `modules/git/new-script.bash`)
 - Add shellapp definition to that module's `_module.args.{domain}Shellapps` rec block
 - Automatically available system-wide (no changes needed in home.nix)
 
 **Recursive Dependencies**: Use `rec` pattern in module shellapp definitions for intra-module dependencies (e.g., `save` depends on `commit` + `push` in git module)
+
+**Shell Wrapper Pattern**: Some commands require shell wrappers for directory changes:
+- `workout`: Wrapper in `modules/zsh.nix` evaluates cd commands from the script
+- The script outputs shell commands to stdout, wrapper `eval`s them
+- Enables changing parent shell's directory (impossible from subprocess)
 
 ## Home Manager Activation Process
 
@@ -180,10 +218,42 @@ This repository includes integrated Claude Code settings:
 2. Run `hms` to deploy
 3. Skill automatically discovered by Claude Code in `~/.claude/commands/`
 
-## GitHub Package Updates
+## Common Development Workflows
 
+### Making Configuration Changes
+1. Edit configuration files (`hme`, `hmu`, or `hmo`)
+2. Apply changes: `hms` (backups created automatically)
+3. Check activation hook output for any errors
+4. Verify changes work as expected
+
+### Adding a New Package
+1. Add package to `modules/packages.nix` under appropriate category
+2. For language servers: Add to LSP section and update Neovim LSP config if needed
+3. Apply changes: `hms`
+4. Verify package is available: `which <package-name>`
+
+### Adding a New Shellapp
+1. Create bash script in appropriate module directory
+2. Add shellapp definition to module's `_module.args.{domain}Shellapps`
+3. Apply changes: `hms`
+4. New command automatically available system-wide
+5. Documentation auto-generated in `~/.claude/TOOLS.md`
+
+### Working with Worktrees
+1. Navigate to any git repository
+2. Run `workout feature-branch` to create/navigate to worktree
+3. Work in isolated directory: `~/worktrees/org/repo/feature-branch/`
+4. Use `workout -` to toggle back to previous location
+5. Use `workout /` to browse and manage all worktrees
+
+### Updating Nix Dependencies
+1. Update flake inputs: `nix flake update`
+2. Apply changes: `hms`
+3. Test that everything still works
+4. Commit flake.lock changes
+
+### GitHub Package Updates
 For packages using `rev = "main"` with fixed hash:
-
 1. Get latest hash: `nix run nixpkgs#nix-prefetch-github -- owner repo --rev main`
 2. Update hash in the appropriate module file
 3. Apply changes: `hms`
@@ -196,12 +266,22 @@ For packages using `rev = "main"` with fixed hash:
 4. **YAGNI**: Simple things stay simple (single .nix files), complex things get directories
 5. **DRY**: Centralized theme eliminates duplication across terminal, editor, multiplexer
 
+## Environment Variables
+
+Configured in `modules/zsh.nix`:
+- `PATH`: Includes `~/.local/bin`, `~/.nix-profile/bin`, Go bin, npm bin, Rancher Desktop bin
+- `LANG`, `LC_ALL`, `LC_CTYPE`: Set to `en_US.UTF-8`
+- `ZSH_AUTOSUGGEST_USE_ASYNC`: `true` (performance)
+- `ZSH_AUTOSUGGEST_BUFFER_MAX_SIZE`: `20` (performance)
+- `WORKTREE_ROOT`: Defaults to `~/worktrees` (can be overridden for custom worktree location)
+
 ## Critical Requirements
 
 1. **Repository Location**: MUST be installed at `~/.config/nixpkgs`
 2. **Use hms Command**: Always use `hms` for syncing to ensure proper git handling of overconfig.nix
 3. **Backup Synchronization**: Sync `~/.backup` folder with cloud storage for machine-specific configuration safety
 4. **No --expunge Flag**: Claude Code must never use the `--expunge` flag with `hms`
+5. **macOS ARM Only**: This configuration is locked to `aarch64-darwin` (Apple Silicon Macs)
 
 ## Adding New Modules
 
@@ -223,10 +303,30 @@ For packages using `rev = "main"` with fixed hash:
 ## Performance Optimizations
 
 This config includes several shell performance optimizations:
-- Precompiled zsh completions (`.zcompdump.zwc`)
-- Static direnv hook generation (avoids dynamic generation on every shell start)
-- Async zsh autosuggestions
-- Fast compinit without security checks (`compinit -C`)
+- **Precompiled zsh completions**: `.zcompdump.zwc` compiled via activation hook
+- **Static direnv hook**: Generated once, sourced on shell start (no dynamic generation)
+- **Async zsh autosuggestions**: `ZSH_AUTOSUGGEST_USE_ASYNC=true`
+- **Fast compinit**: Skips security checks with `compinit -C`
+- **Completion caching**: Completions precompiled at configuration time, not runtime
+
+## Tmux Integration
+
+**Session Management**:
+- Random emoji icons for sessions via `random-emoji` shellapp
+- Random session names from Simpsons words via `random-session-name`
+- Tokyo Night Storm theme integration
+
+**Window Attention System**:
+- Bell-based visual alerts when commands complete in background windows
+- Claude Code notification hook triggers tmux bells
+- Active window clears attention flag automatically
+- Inactive windows change color when attention needed
+
+**Theme Features**:
+- Powerline separators for clean visual hierarchy
+- Dynamic window icons (active vs inactive vs zoomed)
+- Prefix indicator (yellow when prefix key pressed)
+- Synchronized pane indicator (✵ when panes synced)
 
 ## Editors and Terminal
 
@@ -244,3 +344,45 @@ Key integrations:
 - **FZF Integration**: `<C-p>` for file search, `<C-b>` for LSP symbols
 - **Copilot**: GitHub Copilot enabled
 - **Treesitter**: Parsers for bash, C#, gdscript, go, helm, lua, markdown, nix, python, rust, starlark, typescript, yaml
+
+## Zsh Keybindings
+
+**Vi Mode**:
+- `jk` - Enter vi command mode from insert mode
+
+**Line Navigation**:
+- `^A` - Beginning of line (insert mode)
+- `^E` - End of line (insert mode)
+- `^X^E` - Edit command in Neovim (both insert and command mode)
+
+**Special Commands**:
+- `^J` - Super newline (adds 5 newlines and executes)
+- `^D` - Exit with confirmation (defaults to No, requires explicit y/Y)
+
+## Git Aliases
+
+Configured in `modules/git/default.nix`:
+- `git who` - Enhanced blame with whitespace/move detection (`-w -C -C -C`)
+- `git difft` - Use difftastic for diff output
+- `git logt` - Use difftastic for log with patches
+- `git showt` - Use difftastic for show command
+
+## Claude Code Hooks
+
+Configured in `modules/claude/default.nix`, automatically deployed to `~/.claude/settings.json`:
+
+**Notification Hook**:
+- Triggered on: Every notification event
+- Purpose: Desktop notifications with tmux integration
+- Script: `claude-notification-hook.bash`
+
+**Complete Hook**:
+- Triggered on: Session stop/completion
+- Purpose: Post-completion actions
+- Script: `claude-complete-hook.bash`
+
+**C# Format Hook**:
+- Triggered on: After Edit/MultiEdit/Write tool use
+- Purpose: Auto-format C# files with csharpier
+- Script: `claude-csharp-format-hook.bash`
+- Requires: `csharpier` package (included in packages.nix)
