@@ -27,10 +27,10 @@ This repository contains Nix Home Manager configuration for managing development
 - `git branches`: Interactive branch selector with fzf
 - `git resume`: Switch to most recently used branch
 - `git tmp`: Create temporary experimental branch
-- `workout [branch]`: Create/navigate to git worktree (organized in ~/worktrees/)
+- `workout`: Interactive worktree browser and manager (default with no args)
+- `workout <branch>`: Create/navigate to git worktree (organized in ~/worktrees/)
 - `workout .`: Create worktree for current branch
 - `workout -`: Toggle to previous worktree location
-- `workout /`: Interactive worktree browser and manager
 - `groot`: Navigate to git repository root
 
 ### Claude Code Helpers
@@ -244,7 +244,7 @@ This repository includes integrated Claude Code settings:
 2. Run `workout feature-branch` to create/navigate to worktree
 3. Work in isolated directory: `~/worktrees/org/repo/feature-branch/`
 4. Use `workout -` to toggle back to previous location
-5. Use `workout /` to browse and manage all worktrees
+5. Run `workout` (no args) to browse and manage all worktrees interactively
 
 ### Updating Nix Dependencies
 1. Update flake inputs: `nix flake update`
