@@ -85,7 +85,9 @@ Spawn engineer subagents using the Task tool:
 ```
 Task tool with subagent_type: general-purpose
 
-Prompt: "Implement [what] for [context].
+Prompt: "**First, read any CLAUDE.md files in the repository to understand project conventions.**
+
+Implement [what] for [context].
 
 ## Background
 [Why this matters, what problem it solves]
