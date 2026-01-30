@@ -195,14 +195,14 @@ in {
         local exit_code=$?
 
         if [ $exit_code -eq 0 ]; then
-          # Only eval if result is a cd command
+          # Check if output starts with cd command
           if [[ "$result" == cd\ * ]]; then
             # Save current location before changing directories
-            # (save any location, not just worktrees, so we can toggle back)
             local worktree_root="''${WORKTREE_ROOT:-$HOME/worktrees}"
             mkdir -p "$worktree_root"
             echo "$PWD" > "$worktree_root/.workout_prev"
 
+            # Execute all output (cd + optional hook path)
             eval "$result"
           else
             # Not a cd command, just print the output

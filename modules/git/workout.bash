@@ -258,8 +258,12 @@ run_post_switch_hook() {
 
   local hook_path="$git_dir/workout-hooks/post-switch"
 
-  # Silent return if hook doesn't exist or isn't executable
+  # Silent return if hook doesn't exist, isn't a regular file, or isn't executable
+  [[ ! -f "$hook_path" ]] && return 0
   [[ ! -x "$hook_path" ]] && return 0
+
+  # Resolve to absolute path before cd (in case hook_path is relative)
+  hook_path="$(cd "$(dirname "$hook_path")" && pwd)/$(basename "$hook_path")"
 
   # Execute in subshell with worktree as CWD
   (
@@ -672,11 +676,22 @@ if [ -n "$existing_worktree" ]; then
     fi
   ) || exit 1
 
-  # Run post-switch hook
-  run_post_switch_hook "$worktree_path" "$branch_name"
-
   # Output the cd command
   echo "cd '$worktree_path'"
+
+  # Output hook path if it exists (new worktree, so run hook)
+  git_dir="$(git rev-parse --git-dir 2>/dev/null)"
+  if [[ -f "$git_dir" ]]; then
+    real_git_dir="$(grep '^gitdir:' "$git_dir" | cut -d' ' -f2)"
+    git_dir="${real_git_dir%/worktrees/*}"
+  fi
+  hook_path="$git_dir/workout-hooks/post-switch"
+  if [[ -f "$hook_path" && -x "$hook_path" ]]; then
+    # Resolve to absolute path
+    hook_path="$(cd "$(dirname "$hook_path")" && pwd)/$(basename "$hook_path")"
+    echo "'$hook_path'"
+  fi
+
   exit 0
 fi
 
@@ -686,7 +701,7 @@ worktree_path="$worktree_root/$org_repo/$branch_name"
 
 # Check if worktree already exists at expected path
 if [ -d "$worktree_path" ]; then
-  # Worktree exists, just cd into it (no hook - only runs on creation)
+  # Worktree exists, just cd into it
   echo "cd '$worktree_path'"
   exit 0
 fi
@@ -701,8 +716,18 @@ else
   git worktree add "$worktree_path" "$branch_name" >&2
 fi
 
-# Run post-switch hook
-run_post_switch_hook "$worktree_path" "$branch_name"
-
 # Output the cd command to stdout for the wrapper function to eval
 echo "cd '$worktree_path'"
+
+# Output hook path if it exists (new worktree, so run hook)
+git_dir="$(git rev-parse --git-dir 2>/dev/null)"
+if [[ -f "$git_dir" ]]; then
+  real_git_dir="$(grep '^gitdir:' "$git_dir" | cut -d' ' -f2)"
+  git_dir="${real_git_dir%/worktrees/*}"
+fi
+hook_path="$git_dir/workout-hooks/post-switch"
+if [[ -f "$hook_path" && -x "$hook_path" ]]; then
+  # Resolve to absolute path
+  hook_path="$(cd "$(dirname "$hook_path")" && pwd)/$(basename "$hook_path")"
+  echo "'$hook_path'"
+fi
