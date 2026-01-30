@@ -61,7 +61,9 @@ echo
 # Check response (only y or Y confirms)
 if [ "$response" = "y" ] || [ "$response" = "Y" ]; then
   echo -e "  ${BLUE}Deleting...${NC}"
-  if git worktree remove "$path" --force 2>&1; then
+  if trash "$path" 2>&1; then
+    # Prune git's internal worktree tracking
+    git worktree prune 2>&1
     echo -e "  ${GREEN}✓ Deleted: $path${NC}"
   else
     echo -e "  ${RED}✗ Failed to delete${NC}"
