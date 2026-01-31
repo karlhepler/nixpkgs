@@ -7,12 +7,53 @@ let
   # Common hook library functions (inlined at build time)
   hookCommon = builtins.readFile ./claude-hook-common.bash;
 
+  # Staff Engineer output style content (stripped of YAML frontmatter)
+  staffEngineerContent = let
+    raw = builtins.readFile ./global/output-styles/staff-engineer.md;
+    # Split on "---" and take everything after the second occurrence
+    parts = lib.splitString "---" raw;
+    # parts[0] = "", parts[1] = frontmatter, parts[2...] = content
+    contentParts = lib.drop 2 parts;
+  in lib.concatStringsSep "---" contentParts;
+
+  # Generate Ralph hat YAML with embedded Staff Engineer instructions
+  staffEngineerHatYaml = pkgs.writeText "staff-engineer-hat.yml" ''
+    # Ralph Hat Configuration: Staff Engineer
+    # Generated from Home Manager - do not edit directly
+    # Source: modules/claude/global/output-styles/staff-engineer.md
+    #
+    # Usage:
+    #   cp $(staff-engineer-hat) ralph.yml
+    #   ralph run --config $(staff-engineer-hat)
+
+    event_loop:
+      prompt_file: "PROMPT.md"
+      completion_promise: "LOOP_COMPLETE"
+      max_iterations: 50
+
+    cli:
+      backend: "claude"
+
+    hats:
+      staff-engineer:
+        name: "Staff Engineer"
+        description: "Wise, curious team lead who delegates to specialist skills"
+        triggers: ["loop.start", "work.review_needed", "task.blocked"]
+        publishes: ["research.needed", "implementation.needed", "work.approved", "LOOP_COMPLETE"]
+        default_publishes: "work.approved"
+        instructions: |
+    ${lib.concatMapStringsSep "\n" (line: "      ${line}") (lib.splitString "\n" staffEngineerContent)}
+  '';
+
 in {
   # ============================================================================
   # Claude Code Configuration & Shell Applications
   # ============================================================================
   # Everything Claude-related: activation hooks + 7 claude shellapp definitions
   # ============================================================================
+
+  # Export Ralph hat path for use in zsh.nix
+  _module.args.staffEngineerHat = staffEngineerHatYaml;
 
   _module.args.claudeShellapps = rec {
     claude-notification-hook = shellApp {
