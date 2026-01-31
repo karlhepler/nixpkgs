@@ -202,8 +202,9 @@ git config --local --get user.email
 This repository includes integrated Claude Code settings:
 - Global preferences and guidelines in `modules/claude/global/CLAUDE.md`
 - User-level skills in `modules/claude/global/commands/`:
-  - `review-pr-comments.md` - Auto-activates to review and respond to PR comments
-  - Future skills can be added here
+  - Engineering: `backend-engineer`, `frontend-engineer`, `fullstack-engineer`
+  - Support: `researcher`, `facilitator`, `scribe`
+  - Workflow: `review-pr-comments`
 - Notification and completion hooks configured in `modules/claude/default.nix`
 - Settings and skills automatically deployed to `~/.claude/` on `hms`
 - Runtime state managed through `.claude/` directory (gitignored)
