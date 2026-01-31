@@ -143,6 +143,7 @@ in {
           allow = [
             "Bash(kanban)"
             "Bash(kanban *)"
+            "Bash(kanban:*)"
           ];
         };
         hooks = {
