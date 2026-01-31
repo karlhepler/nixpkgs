@@ -6,9 +6,9 @@ Priority field controls ordering within columns (lower = higher in list).
 """
 
 import argparse
-import hashlib
 import os
 import re
+import subprocess
 import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -17,23 +17,37 @@ COLUMNS = ["backlog", "in-progress", "waiting", "done"]
 WORK_COLUMNS = ["waiting", "in-progress", "backlog"]  # Right-to-left priority, exclude done
 
 
+def get_git_root() -> Path | None:
+    """Find the git repository root, or None if not in a git repo."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        return Path(result.stdout.strip())
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+
+
 def get_root(args_root: str | None, auto_init: bool = True) -> Path:
-    """Get kanban root directory from args, environment, or auto-compute from cwd.
+    """Get kanban root directory from args, environment, or auto-compute.
 
     Priority:
     1. Explicit --root argument
     2. KANBAN_ROOT environment variable
-    3. Auto-computed: /tmp/{md5(cwd)}/kanban (deterministic, auto-initialized)
+    3. Git root + .kanban/ (if in a git repo)
+    4. Current directory + .kanban/ (fallback)
     """
     if args_root:
         return Path(args_root)
     if root := os.environ.get("KANBAN_ROOT"):
         return Path(root)
 
-    # Auto-compute from cwd hash - deterministic and discoverable
-    cwd = os.getcwd()
-    cwd_hash = hashlib.md5(cwd.encode()).hexdigest()
-    root = Path(f"/tmp/{cwd_hash}/kanban")
+    # Use git root if available, otherwise current directory
+    base_dir = get_git_root() or Path.cwd()
+    root = base_dir / ".kanban"
 
     # Auto-initialize if needed
     if auto_init and not root.exists():
@@ -186,16 +200,14 @@ def cmd_init(args) -> None:
     if args.path:
         path = Path(args.path)
     else:
-        # Use auto-computed path
-        cwd = os.getcwd()
-        cwd_hash = hashlib.md5(cwd.encode()).hexdigest()
-        path = Path(f"/tmp/{cwd_hash}/kanban")
+        # Use git root if available, otherwise current directory
+        base_dir = get_git_root() or Path.cwd()
+        path = base_dir / ".kanban"
 
     for col in COLUMNS:
         (path / col).mkdir(parents=True, exist_ok=True)
 
     print(f"Kanban board ready at: {path}")
-    print(f"(derived from cwd: {os.getcwd()})")
 
 
 def cmd_add(args) -> None:

@@ -124,6 +124,7 @@ in {
       "**/.claude/settings.local.json"
       ".ralph"
       ".agent"
+      ".kanban"
     ];
     settings = {
       user = {
