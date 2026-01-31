@@ -10,8 +10,13 @@ $ARGUMENTS
 
 ## Kanban Protocol (Do This First)
 
-Create a kanban card to track this work. Use a heredoc to capture the full task:
+**1. Check what others are working on** to avoid conflicts:
+```bash
+kanban list
+```
+Review any in-progress cards - these are parallel agents working right now. Coordinate accordingly.
 
+**2. Create your card** and start work:
 ```bash
 kanban add "Facilitate: <brief 3-5 word title>" --persona Facilitator --content - --top << 'TASK'
 <paste your task here>
@@ -19,7 +24,7 @@ TASK
 kanban move <card#> in-progress
 ```
 
-When done: `kanban move <card#> done`
+**3. When done:** `kanban move <card#> done`
 
 ## Your Role
 
