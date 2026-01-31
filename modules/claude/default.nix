@@ -135,6 +135,7 @@ in {
     # Why: Provides global settings, tool documentation, and custom skills for Claude Code
     # When: After writeBoundary (after files are written to disk)
     # Note: Source structure in global/ mirrors destination structure in ~/.claude/
+    # Skills: facilitator, researcher, scribe, frontend-engineer, backend-engineer, fullstack-engineer
     claudeGlobal = let
       claudeGlobalDir = ./global;
 
