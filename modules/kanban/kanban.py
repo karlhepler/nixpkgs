@@ -548,6 +548,21 @@ def cmd_cat(args) -> None:
         print(card.read_text())
 
 
+def cmd_clear(args) -> None:
+    """Delete all cards from all columns."""
+    root = get_root(args.root)
+
+    count = 0
+    for col in COLUMNS:
+        col_path = root / col
+        if col_path.exists():
+            for card in col_path.glob("*.md"):
+                card.unlink()
+                count += 1
+
+    print(f"Cleared {count} cards from kanban board")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Kanban CLI - File-based kanban board for agent coordination"
@@ -621,6 +636,9 @@ def main() -> None:
     p_cat = subparsers.add_parser("cat", help="Output all cards in a column")
     p_cat.add_argument("column", help="Column to output (backlog, in-progress, waiting, done)")
 
+    # clear
+    subparsers.add_parser("clear", help="Delete all cards from all columns")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -642,6 +660,7 @@ def main() -> None:
         "list": cmd_list,
         "show": cmd_show,
         "cat": cmd_cat,
+        "clear": cmd_clear,
     }
 
     commands[args.command](args)
