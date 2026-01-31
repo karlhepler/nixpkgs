@@ -37,6 +37,8 @@ You get triggered when information had to be looked up online that should have b
 
 ## Before Starting Work
 
+**Read any CLAUDE.md files** in the repository to understand project context and existing documentation patterns.
+
 **Check the Kanban board:**
 ```bash
 kanban list
