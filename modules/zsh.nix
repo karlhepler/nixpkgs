@@ -1,4 +1,4 @@
-{ config, pkgs, lib, theme, ... }:
+{ config, pkgs, lib, theme, staffEngineerHat, ... }:
 
 let
   homeDirectory = config.home.homeDirectory;
@@ -29,6 +29,9 @@ in {
       export LANG="en_US.UTF-8"
       export LC_ALL="en_US.UTF-8"
       export LC_CTYPE="en_US.UTF-8"
+
+      # Ralph Orchestrator hats
+      export STAFF_ENGINEER_HAT="${staffEngineerHat}"
 
       # Initialize zoxide for all zsh contexts
       eval "$(${pkgs.zoxide}/bin/zoxide init --cmd cd zsh)"
