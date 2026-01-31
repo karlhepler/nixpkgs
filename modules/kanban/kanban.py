@@ -6,6 +6,7 @@ Priority field controls ordering within columns (lower = higher in list).
 """
 
 import argparse
+import hashlib
 import os
 import re
 import sys
@@ -16,14 +17,30 @@ COLUMNS = ["backlog", "in-progress", "waiting", "done"]
 WORK_COLUMNS = ["waiting", "in-progress", "backlog"]  # Right-to-left priority, exclude done
 
 
-def get_root(args_root: str | None) -> Path:
-    """Get kanban root directory from args or environment."""
+def get_root(args_root: str | None, auto_init: bool = True) -> Path:
+    """Get kanban root directory from args, environment, or auto-compute from cwd.
+
+    Priority:
+    1. Explicit --root argument
+    2. KANBAN_ROOT environment variable
+    3. Auto-computed: /tmp/{md5(cwd)}/kanban (deterministic, auto-initialized)
+    """
     if args_root:
         return Path(args_root)
     if root := os.environ.get("KANBAN_ROOT"):
         return Path(root)
-    print("Error: KANBAN_ROOT not set. Use --root or set KANBAN_ROOT env var.", file=sys.stderr)
-    sys.exit(1)
+
+    # Auto-compute from cwd hash - deterministic and discoverable
+    cwd = os.getcwd()
+    cwd_hash = hashlib.md5(cwd.encode()).hexdigest()
+    root = Path(f"/tmp/{cwd_hash}/kanban")
+
+    # Auto-initialize if needed
+    if auto_init and not root.exists():
+        for col in COLUMNS:
+            (root / col).mkdir(parents=True, exist_ok=True)
+
+    return root
 
 
 def slugify(text: str) -> str:
@@ -166,14 +183,19 @@ def get_backlog_context(root: Path) -> list[tuple[int, str, Path]]:
 
 def cmd_init(args) -> None:
     """Create kanban board structure."""
-    path = Path(args.path)
+    if args.path:
+        path = Path(args.path)
+    else:
+        # Use auto-computed path
+        cwd = os.getcwd()
+        cwd_hash = hashlib.md5(cwd.encode()).hexdigest()
+        path = Path(f"/tmp/{cwd_hash}/kanban")
+
     for col in COLUMNS:
         (path / col).mkdir(parents=True, exist_ok=True)
 
-    print(f"Created kanban board at: {path}")
-    print()
-    print("Set KANBAN_ROOT to use:")
-    print(f'  export KANBAN_ROOT="{path}"')
+    print(f"Kanban board ready at: {path}")
+    print(f"(derived from cwd: {os.getcwd()})")
 
 
 def cmd_add(args) -> None:
@@ -493,7 +515,7 @@ def main() -> None:
 
     # init
     p_init = subparsers.add_parser("init", help="Create kanban board structure")
-    p_init.add_argument("path", nargs="?", default="./kanban", help="Board path")
+    p_init.add_argument("path", nargs="?", default=None, help="Board path (default: auto-computed from cwd)")
 
     # add (with position requirement)
     p_add = subparsers.add_parser("add", help="Add card to backlog (position required)")

@@ -224,12 +224,7 @@ Before delegating, write a brief design doc. Keep it short - this is for small-t
 
 ## Kanban Protocol
 
-Before delegating any work, initialize the Kanban board for the session:
-
-```bash
-kanban init $SCRATCHPAD/kanban
-export KANBAN_ROOT=$SCRATCHPAD/kanban
-```
+The kanban board auto-initializes in `/tmp/{md5(cwd)}/kanban` - no setup required. Just use it.
 
 **Every specialist MUST follow these bookends:**
 
