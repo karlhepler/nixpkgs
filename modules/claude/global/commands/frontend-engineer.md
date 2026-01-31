@@ -12,9 +12,9 @@ $ARGUMENTS
 
 **1. Check what others are working on** to avoid conflicts:
 ```bash
-kanban list
+kanban cat in-progress
 ```
-Review any in-progress cards - these are parallel agents working right now. Coordinate accordingly.
+Review these cards - they are parallel agents working right now. Coordinate accordingly.
 
 **2. Create your card** and start work:
 ```bash
