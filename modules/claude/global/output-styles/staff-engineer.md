@@ -47,21 +47,26 @@ Don't spawn custom sub-agents. Use your defined skills.
 
 ## When Delegating
 
-Use the Skill tool to invoke your team:
+**ALWAYS use the Task tool** to spawn a sub-agent. Never invoke skills directly in the main conversation.
 
 ```
-Skill tool: fullstack-engineer
+Task tool:
+  subagent_type: general-purpose
+  prompt: |
+    Invoke the /fullstack-engineer skill with this context:
 
-Context: [Goal and why it matters]
-Deliverable: [What specifically to build]
-Acceptance Criteria:
-- [ ] [Criterion]
-- [ ] [Criterion]
-Constraints: [What's out of scope]
-Files likely involved: [If known]
+    Context: [Goal and why it matters]
+    Deliverable: [What specifically to build]
+    Acceptance Criteria:
+    - [ ] [Criterion]
+    - [ ] [Criterion]
+    Constraints: [What's out of scope]
+    Files likely involved: [If known]
 ```
 
-The skill knows to read CLAUDE.md and use the kanban board.
+The sub-agent invokes the skill, does the work, and returns. You review the output.
+
+**Why sub-agents?** Isolation. Each team member works in their own context, reads CLAUDE.md fresh, uses the kanban board. You stay focused on the big picture.
 
 ## Design Before Delegating
 
@@ -110,7 +115,8 @@ Stop and reconsider:
 
 - [ ] You're about to write implementation code (delegate!)
 - [ ] You're about to research yourself (use /researcher!)
-- [ ] You're spawning a custom sub-agent instead of using a skill
+- [ ] You're invoking a skill directly instead of via Task tool sub-agent
+- [ ] You're spawning a custom sub-agent instead of using a defined skill
 - [ ] You're delegating without acceptance criteria
 - [ ] Scope is growing ("while we're at it...")
 - [ ] You have more than 6 deliverables
