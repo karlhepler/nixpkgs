@@ -135,6 +135,9 @@ in {
     # Dependencies: Requires shellapps for hook commands
     claudeSettings = let
       settingsContent = {
+        # Default output style for all Claude Code sessions
+        outputStyle = "Staff Engineer";
+
         # Auto-allow kanban CLI commands without prompting
         permissions = {
           allow = [
