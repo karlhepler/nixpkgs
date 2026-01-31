@@ -244,6 +244,13 @@ def cmd_add(args) -> None:
     filepath = root / "backlog" / filename
     now = now_iso()
 
+    # Content can come from --content flag or stdin (if --content is "-")
+    if args.content == "-":
+        body_content = sys.stdin.read().strip()
+    elif args.content:
+        body_content = args.content
+    else:
+        body_content = ""
     content = f"""---
 persona: {args.persona or 'unassigned'}
 priority: {priority}
@@ -252,6 +259,8 @@ updated: {now}
 ---
 
 # {args.title}
+
+{body_content}
 """
     filepath.write_text(content)
     print(f"Created: backlog/{filename} (priority: {priority})")
@@ -521,6 +530,7 @@ def main() -> None:
     p_add = subparsers.add_parser("add", help="Add card to backlog (position required)")
     p_add.add_argument("title", help="Card title")
     p_add.add_argument("--persona", help="Persona for the card")
+    p_add.add_argument("--content", "-c", help="Card body content (e.g., task description)")
     p_add.add_argument("--top", action="store_true", help="Insert at top of backlog")
     p_add.add_argument("--bottom", action="store_true", help="Insert at bottom of backlog")
     p_add.add_argument("--after", help="Insert after specified card")
