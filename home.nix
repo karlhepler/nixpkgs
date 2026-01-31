@@ -13,6 +13,7 @@ in {
     ./modules/git         # Git config + 11 git shellapps
     ./modules/claude      # Claude hooks + 3 claude shellapps
     ./modules/neovim      # Neovim editor + 30+ plugins
+    ./modules/kanban      # Kanban CLI for agent coordination
 
     # Simple modules (no scripts)
     ./modules/packages.nix   # Packages + simple programs
@@ -30,7 +31,8 @@ in {
       // (config._module.args.gitShellapps or {})
       // (config._module.args.claudeShellapps or {})
       // (config._module.args.neovimShellapps or {})
-      // (config._module.args.tmuxShellapps or {});
+      // (config._module.args.tmuxShellapps or {})
+      // (config._module.args.kanbanShellapps or {});
   in { inherit user theme shellapps; };
 
   # Activation hooks to make git ignore changes to user.nix and overconfig.nix
