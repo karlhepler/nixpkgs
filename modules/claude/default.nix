@@ -94,6 +94,12 @@ in {
     # Dependencies: Requires shellapps for hook commands
     claudeSettings = let
       settingsContent = {
+        # Auto-allow kanban CLI commands without prompting
+        permissions = {
+          allow = [
+            "kanban *"
+          ];
+        };
         hooks = {
           Notification = [{
             hooks = [{
