@@ -526,6 +526,28 @@ def cmd_show(args) -> None:
     print(card_path.read_text())
 
 
+def cmd_cat(args) -> None:
+    """Output concatenated contents of all cards in a column."""
+    root = get_root(args.root)
+
+    if args.column not in COLUMNS:
+        print(f"Error: Invalid column '{args.column}'. Must be one of: {', '.join(COLUMNS)}", file=sys.stderr)
+        sys.exit(1)
+
+    cards = find_cards_in_column(root, args.column)
+
+    if not cards:
+        print(f"No cards in {args.column}")
+        return
+
+    for i, card in enumerate(cards):
+        if i > 0:
+            print("\n" + "=" * 60 + "\n")
+        print(f"=== {card.name} ===")
+        print()
+        print(card.read_text())
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Kanban CLI - File-based kanban board for agent coordination"
@@ -595,6 +617,10 @@ def main() -> None:
     p_show = subparsers.add_parser("show", help="Display card contents")
     p_show.add_argument("card", help="Card number or name")
 
+    # cat
+    p_cat = subparsers.add_parser("cat", help="Output all cards in a column")
+    p_cat.add_argument("column", help="Column to output (backlog, in-progress, waiting, done)")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -615,6 +641,7 @@ def main() -> None:
         "history": cmd_history,
         "list": cmd_list,
         "show": cmd_show,
+        "cat": cmd_cat,
     }
 
     commands[args.command](args)
