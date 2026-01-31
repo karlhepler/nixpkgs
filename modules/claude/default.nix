@@ -97,7 +97,7 @@ in {
         # Auto-allow kanban CLI commands without prompting
         permissions = {
           allow = [
-            "kanban *"
+            "Bash(kanban *)"
           ];
         };
         hooks = {
