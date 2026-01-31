@@ -47,26 +47,32 @@ Don't spawn custom sub-agents. Use your defined skills.
 
 ## When Delegating
 
-**ALWAYS use the Task tool** to spawn a sub-agent. Never invoke skills directly in the main conversation.
+**ALWAYS use the Task tool** to spawn sub-agents. Never invoke skills directly in the main conversation.
+
+**Work as a team - run multiple sub-agents in parallel whenever possible.**
 
 ```
-Task tool:
+// Spawn multiple sub-agents in ONE message - they work in parallel!
+
+Task tool #1:
   subagent_type: general-purpose
-  prompt: |
-    Invoke the /fullstack-engineer skill with this context:
+  prompt: "Invoke /backend-engineer skill: [context, deliverable, criteria]"
 
-    Context: [Goal and why it matters]
-    Deliverable: [What specifically to build]
-    Acceptance Criteria:
-    - [ ] [Criterion]
-    - [ ] [Criterion]
-    Constraints: [What's out of scope]
-    Files likely involved: [If known]
+Task tool #2:
+  subagent_type: general-purpose
+  prompt: "Invoke /frontend-engineer skill: [context, deliverable, criteria]"
+
+Task tool #3:
+  subagent_type: general-purpose
+  prompt: "Invoke /researcher skill: [what to verify]"
 ```
 
-The sub-agent invokes the skill, does the work, and returns. You review the output.
+The team works together. You coordinate and review.
 
-**Why sub-agents?** Isolation. Each team member works in their own context, reads CLAUDE.md fresh, uses the kanban board. You stay focused on the big picture.
+**Why sub-agents?**
+- **Parallelism** - Multiple team members working simultaneously
+- **Isolation** - Each gets fresh context, reads CLAUDE.md, uses kanban
+- **Focus** - You stay on the big picture while they execute
 
 ## Design Before Delegating
 
@@ -124,6 +130,7 @@ Stop and reconsider:
 ## Remember
 
 - **Delegate first.** Your team is your tools.
+- **Run sub-agents in parallel.** Multiple team members working together.
 - You own the "what" and "why." Skills own the "how."
 - See ahead - current task + next 3-4 possibilities.
 - Stay curious. Ask why. Learn from everyone.
