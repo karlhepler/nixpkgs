@@ -213,6 +213,31 @@ Before delegating, write a brief design doc. Keep it short - this is for small-t
 
 ---
 
+## Kanban Protocol
+
+Before delegating any work, initialize the Kanban board for the session:
+
+```bash
+kanban init $SCRATCHPAD/kanban
+export KANBAN_ROOT=$SCRATCHPAD/kanban
+```
+
+**Every specialist MUST follow these bookends:**
+
+### Before Starting Work
+1. Check the board: `kanban list` - be curious about what others are doing
+2. Get your card: `kanban next --persona "[Your Persona]"`
+3. If card is in waiting and blocked, use `--skip 1` to get next card
+4. Move to in-progress: `kanban move <card> in-progress`
+
+### After Completing Work
+1. Update card status: `kanban move <card> done` (or `waiting` if blocked)
+2. Add completion note: `kanban comment <card> "Brief one-sentence summary of what was done"`
+
+**No work without a card.** If no card exists for your task, create one first using `kanban add`.
+
+---
+
 ## Delegation
 
 Spawn specialist subagents using the Task tool:
@@ -222,7 +247,35 @@ Task tool with subagent_type: general-purpose
 
 Prompt: "You are a [SPECIALIST TYPE] engineer.
 
-**First, read any CLAUDE.md files in the repository to understand project conventions.**
+---
+## CRITICAL: Kanban Protocol (DO THIS FIRST)
+
+Before doing ANY work, you MUST:
+
+1. Check the board:
+   kanban list
+   (Be curious - glance at what others are working on)
+
+2. Get your card:
+   kanban next --persona '[YOUR PERSONA NAME]'
+   (If waiting/blocked, use --skip 1 to get next card)
+
+3. Move to in-progress:
+   kanban move <card-number> in-progress
+
+After completing ALL work, you MUST:
+
+1. Update status:
+   kanban move <card-number> done
+   (Or 'waiting' if blocked on something)
+
+2. Add completion note:
+   kanban comment <card-number> 'One sentence describing what you did'
+
+NO WORK WITHOUT A CARD. If no card exists, inform the staff engineer.
+---
+
+**Read any CLAUDE.md files in the repository to understand project conventions.**
 
 ## Context
 [Goal and objective from design doc]
@@ -248,11 +301,13 @@ Prompt: "You are a [SPECIALIST TYPE] engineer.
 - Full context (goal, objective, why this matters)
 - Specific acceptance criteria
 - Explicit constraints
+- **Kanban bookends included**
 
 **Bad delegation:**
 - "Build a login page" (no specs, no role)
 - "Fix the bug" (which bug? expected behavior?)
 - Generic engineer when specialist would excel
+- **Missing Kanban protocol**
 
 ---
 

@@ -9,10 +9,11 @@ import argparse
 import os
 import re
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 COLUMNS = ["backlog", "in-progress", "waiting", "done"]
+WORK_COLUMNS = ["waiting", "in-progress", "backlog"]  # Right-to-left priority, exclude done
 
 
 def get_root(args_root: str | None) -> Path:
@@ -33,6 +34,11 @@ def slugify(text: str) -> str:
 def now_iso() -> str:
     """Get current time in ISO format."""
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def parse_iso(date_str: str) -> datetime:
+    """Parse ISO format date string."""
+    return datetime.fromisoformat(date_str.replace("Z", "+00:00"))
 
 
 def parse_frontmatter(content: str) -> tuple[dict, str]:
@@ -80,6 +86,16 @@ def find_all_cards(root: Path) -> list[Path]:
     return cards
 
 
+def find_cards_in_column(root: Path, col: str) -> list[Path]:
+    """Find all cards in a specific column, sorted by priority."""
+    col_path = root / col
+    if not col_path.exists():
+        return []
+    cards = list(col_path.glob("*.md"))
+    cards.sort(key=get_priority)
+    return cards
+
+
 def next_number(root: Path) -> str:
     """Get next available card number."""
     max_num = 0
@@ -120,6 +136,13 @@ def get_priority(card_path: Path) -> int:
     return int(frontmatter.get("priority", 0))
 
 
+def get_persona(card_path: Path) -> str:
+    """Get persona from card frontmatter."""
+    content = card_path.read_text()
+    frontmatter, _ = parse_frontmatter(content)
+    return frontmatter.get("persona", "unassigned")
+
+
 def update_card(card_path: Path, updates: dict) -> None:
     """Update card frontmatter fields."""
     content = card_path.read_text()
@@ -129,6 +152,16 @@ def update_card(card_path: Path, updates: dict) -> None:
     frontmatter["updated"] = now_iso()
 
     card_path.write_text(serialize_frontmatter(frontmatter, body))
+
+
+def get_backlog_context(root: Path) -> list[tuple[int, str, Path]]:
+    """Get backlog cards with their priorities for display."""
+    cards = find_cards_in_column(root, "backlog")
+    result = []
+    for card in cards:
+        priority = get_priority(card)
+        result.append((priority, card.stem, card))
+    return result
 
 
 def cmd_init(args) -> None:
@@ -144,8 +177,45 @@ def cmd_init(args) -> None:
 
 
 def cmd_add(args) -> None:
-    """Add a new card to backlog."""
+    """Add a new card to backlog with insertion sort."""
     root = get_root(args.root)
+
+    # Show current backlog if no position specified
+    backlog = get_backlog_context(root)
+
+    # Determine priority based on position args
+    if args.top:
+        # Insert at top (lowest priority number)
+        min_priority = min((p for p, _, _ in backlog), default=0)
+        priority = min_priority - 10
+    elif args.bottom:
+        # Insert at bottom (highest priority number)
+        max_priority = max((p for p, _, _ in backlog), default=0)
+        priority = max_priority + 10
+    elif args.after:
+        # Insert after specified card
+        ref_card = find_card(root, args.after)
+        ref_priority = get_priority(ref_card)
+        priority = ref_priority + 5
+    elif args.before:
+        # Insert before specified card
+        ref_card = find_card(root, args.before)
+        ref_priority = get_priority(ref_card)
+        priority = ref_priority - 5
+    else:
+        # No position specified - show backlog and require position
+        if backlog:
+            print("Current backlog:", file=sys.stderr)
+            print(file=sys.stderr)
+            for p, name, _ in backlog:
+                print(f"  [{p:4d}] {name}", file=sys.stderr)
+            print(file=sys.stderr)
+            print("Error: Position required. Use --top, --bottom, --after <card>, or --before <card>", file=sys.stderr)
+            sys.exit(1)
+        else:
+            # Empty backlog, just use 0
+            priority = 0
+
     num = next_number(root)
     slug = slugify(args.title)
     filename = f"{num}-{slug}.md"
@@ -154,7 +224,7 @@ def cmd_add(args) -> None:
 
     content = f"""---
 persona: {args.persona or 'unassigned'}
-priority: 0
+priority: {priority}
 created: {now}
 updated: {now}
 ---
@@ -162,7 +232,7 @@ updated: {now}
 # {args.title}
 """
     filepath.write_text(content)
-    print(f"Created: backlog/{filename}")
+    print(f"Created: backlog/{filename} (priority: {priority})")
 
 
 def cmd_delete(args) -> None:
@@ -242,6 +312,133 @@ def cmd_bottom(args) -> None:
     print(f"Moved to bottom: {card_path.name} (priority: {new_priority})")
 
 
+def cmd_next(args) -> None:
+    """Get the next card to work on (right-to-left priority, skip done)."""
+    root = get_root(args.root)
+    persona_filter = args.persona
+    skip = args.skip or 0
+
+    # Search columns right-to-left: waiting -> in-progress -> backlog
+    found_cards = []
+    for col in WORK_COLUMNS:
+        cards = find_cards_in_column(root, col)
+        for card in cards:
+            if persona_filter:
+                if get_persona(card) == persona_filter:
+                    found_cards.append((col, card))
+            else:
+                found_cards.append((col, card))
+
+    if not found_cards:
+        if persona_filter:
+            print(f"No cards found for persona '{persona_filter}'")
+        else:
+            print("No cards to work on")
+        sys.exit(0)
+
+    if skip >= len(found_cards):
+        print(f"No more cards (skip={skip}, found={len(found_cards)})")
+        sys.exit(0)
+
+    col, card = found_cards[skip]
+    print(f"=== NEXT CARD ({col}) ===")
+    print(f"Card: {card.name}")
+    print()
+    print(card.read_text())
+
+
+def cmd_comment(args) -> None:
+    """Add a comment to a card."""
+    root = get_root(args.root)
+    card_path = find_card(root, args.card)
+
+    content = card_path.read_text()
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+
+    # Append comment to end of file
+    comment_line = f"\n- [{now}] {args.message}"
+
+    # Check if there's already a comments section
+    if "\n## Activity\n" not in content:
+        content += "\n\n## Activity\n"
+
+    content += comment_line
+    card_path.write_text(content)
+
+    # Update timestamp
+    update_card(card_path, {})
+
+    print(f"Added comment to: {card_path.name}")
+
+
+def cmd_history(args) -> None:
+    """Show completed cards with optional date filtering."""
+    root = get_root(args.root)
+    done_cards = find_cards_in_column(root, "done")
+
+    if not done_cards:
+        print("No completed cards")
+        return
+
+    # Parse date filters
+    since = None
+    until = None
+
+    if args.since:
+        if args.since == "today":
+            since = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        elif args.since == "yesterday":
+            since = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+        elif args.since == "week":
+            since = datetime.now(timezone.utc) - timedelta(days=7)
+        elif args.since == "month":
+            since = datetime.now(timezone.utc) - timedelta(days=30)
+        else:
+            try:
+                since = parse_iso(args.since)
+            except ValueError:
+                print(f"Error: Invalid date format '{args.since}'", file=sys.stderr)
+                sys.exit(1)
+
+    if args.until:
+        try:
+            until = parse_iso(args.until)
+        except ValueError:
+            print(f"Error: Invalid date format '{args.until}'", file=sys.stderr)
+            sys.exit(1)
+
+    print("## Completed Cards")
+    print()
+
+    count = 0
+    for card in done_cards:
+        content = card.read_text()
+        frontmatter, _ = parse_frontmatter(content)
+        updated_str = frontmatter.get("updated", "")
+        persona = frontmatter.get("persona", "")
+
+        # Filter by date
+        if updated_str and (since or until):
+            try:
+                updated = parse_iso(updated_str)
+                if since and updated < since:
+                    continue
+                if until and updated > until:
+                    continue
+            except ValueError:
+                pass
+
+        count += 1
+        name = card.stem
+        if persona and persona != "unassigned":
+            print(f"  - {name} ({persona}) - {updated_str[:10] if updated_str else 'unknown'}")
+        else:
+            print(f"  - {name} - {updated_str[:10] if updated_str else 'unknown'}")
+
+    print()
+    print(f"Total: {count} cards")
+
+
 def cmd_list(args) -> None:
     """Show board overview."""
     root = get_root(args.root)
@@ -298,10 +495,14 @@ def main() -> None:
     p_init = subparsers.add_parser("init", help="Create kanban board structure")
     p_init.add_argument("path", nargs="?", default="./kanban", help="Board path")
 
-    # add
-    p_add = subparsers.add_parser("add", help="Add card to backlog")
+    # add (with position requirement)
+    p_add = subparsers.add_parser("add", help="Add card to backlog (position required)")
     p_add.add_argument("title", help="Card title")
     p_add.add_argument("--persona", help="Persona for the card")
+    p_add.add_argument("--top", action="store_true", help="Insert at top of backlog")
+    p_add.add_argument("--bottom", action="store_true", help="Insert at bottom of backlog")
+    p_add.add_argument("--after", help="Insert after specified card")
+    p_add.add_argument("--before", help="Insert before specified card")
 
     # delete
     p_delete = subparsers.add_parser("delete", help="Delete a card")
@@ -328,6 +529,21 @@ def main() -> None:
     p_bottom = subparsers.add_parser("bottom", help="Move card to bottom of column")
     p_bottom.add_argument("card", help="Card number or name")
 
+    # next
+    p_next = subparsers.add_parser("next", help="Get next card to work on")
+    p_next.add_argument("--persona", help="Filter by persona")
+    p_next.add_argument("--skip", type=int, default=0, help="Skip N cards (for blocked cards)")
+
+    # comment
+    p_comment = subparsers.add_parser("comment", help="Add comment to card")
+    p_comment.add_argument("card", help="Card number or name")
+    p_comment.add_argument("message", help="Comment message")
+
+    # history
+    p_history = subparsers.add_parser("history", help="Show completed cards")
+    p_history.add_argument("--since", help="Filter by date (today, yesterday, week, month, or ISO date)")
+    p_history.add_argument("--until", help="Filter until date (ISO format)")
+
     # list
     subparsers.add_parser("list", help="Show board overview")
 
@@ -350,6 +566,9 @@ def main() -> None:
         "down": cmd_down,
         "top": cmd_top,
         "bottom": cmd_bottom,
+        "next": cmd_next,
+        "comment": cmd_comment,
+        "history": cmd_history,
         "list": cmd_list,
         "show": cmd_show,
     }
