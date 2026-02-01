@@ -138,18 +138,7 @@ You manage kanban cards on behalf of delegated skills. One card per skill invoca
 
 2. Create the card directly in doing with crystallized requirements:
    ```bash
-   kanban add "Prefix: brief task" --persona <Persona> --status doing --top --content "$(cat <<'EOF'
-   ## Task
-   [Brief description]
-
-   ## Requirements
-   - [Requirement 1]
-   - [Requirement 2]
-
-   ## Scope
-   [What this changes, what it doesn't]
-   EOF
-   )"
+   kanban add "Prefix: brief task" --persona <Persona> --status doing --top --content "## Task\n[Brief description]\n\n## Requirements\n- [Requirement 1]\n- [Requirement 2]\n\n## Scope\n[What this changes, what it doesn't]"
    ```
 
 3. Include coordination context in delegation prompt:
