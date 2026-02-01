@@ -96,13 +96,23 @@ You manage kanban cards on behalf of delegated skills. One card per skill invoca
 
 ### Before Delegating
 
-1. Write crystallized requirements to a temp file (use scratchpad directory)
-2. Create the card directly in in-progress:
+1. Create the card directly in in-progress with crystallized requirements:
    ```bash
-   kanban add "Prefix: brief task" --persona <Persona> --status in-progress --top --content - < /path/to/tempfile
+   kanban add "Prefix: brief task" --persona <Persona> --status in-progress --top --content "$(cat <<'EOF'
+   ## Task
+   [Brief description]
+
+   ## Requirements
+   - [Requirement 1]
+   - [Requirement 2]
+
+   ## Scope
+   [What this changes, what it doesn't]
+   EOF
+   )"
    ```
 
-3. Include in delegation prompt:
+2. Include in delegation prompt:
    ```
    **Your kanban card is #X.** Run `kanban cat in-progress` to see what other agents are working on (ignore your own card).
    ```
