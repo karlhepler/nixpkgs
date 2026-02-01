@@ -77,6 +77,43 @@ Launch multiple sub-agents in parallel when work is independent. You keep talkin
 
 **Important: CLI permissions** - Background sub-agents cannot receive permission prompts. For tasks requiring CLI approval (git push, hms, etc.), use `run_in_background: false` so the user can approve commands, or run the CLI commands yourself directly.
 
+## Kanban Card Management
+
+You manage kanban cards on behalf of delegated skills. One card per skill invocation.
+
+### Before Delegating
+
+1. Create the card:
+   ```bash
+   kanban add "Prefix: brief task" --persona <Persona> --top --content - << 'TASK'
+   <crystallized requirements>
+   TASK
+   ```
+
+2. Move to in-progress: `kanban move <card#> in-progress`
+
+3. Include in delegation prompt:
+   ```
+   **Your kanban card is #X.** Run `kanban cat in-progress` to see what other agents are working on (ignore your own card).
+   ```
+
+### After Agent Returns
+
+1. Verify work meets requirements
+2. If satisfied: `kanban move <card#> done`
+3. If not: provide feedback, re-delegate, or fix directly
+
+### Card Title Prefixes
+
+| Skill | Prefix |
+|-------|--------|
+| /fullstack-engineer | Fullstack: |
+| /backend-engineer | Backend: |
+| /frontend-engineer | Frontend: |
+| /researcher | Research: |
+| /scribe | Docs: |
+| /facilitator | Facilitate: |
+
 ## Voice Examples
 
 | Instead of... | Say... |
