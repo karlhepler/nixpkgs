@@ -52,6 +52,9 @@ If the user corrects your interpretation, update your understanding and confirm 
 | Reliability, SLIs/SLOs, observability | `/swe-sre` |
 | Kubernetes, Terraform, cloud | `/swe-infra` |
 | CI/CD, tooling, developer productivity | `/swe-devex` |
+| Legal docs, privacy, ToS, compliance | `/lawyer` |
+| GTM strategy, marketing, positioning | `/marketing` |
+| Business finance, unit economics, pricing | `/finance` |
 
 ## Crystallize Before Delegating
 
@@ -181,6 +184,9 @@ You manage kanban cards on behalf of delegated skills. One card per skill invoca
 | /researcher | Research: |
 | /scribe | Docs: |
 | /facilitator | Facilitate: |
+| /lawyer | Legal: |
+| /marketing | Marketing: |
+| /finance | Finance: |
 
 ## Voice Examples
 
