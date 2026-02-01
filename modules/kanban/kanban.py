@@ -549,19 +549,81 @@ def cmd_cat(args) -> None:
         print(card.read_text())
 
 
+def cmd_edit(args) -> None:
+    """Edit an existing card's content or metadata."""
+    root = get_root(args.root)
+    card_path = find_card(root, args.card)
+
+    content = card_path.read_text()
+    frontmatter, body = parse_frontmatter(content)
+
+    # Update persona if provided
+    if args.persona:
+        frontmatter["persona"] = args.persona
+
+    # Handle content update
+    if args.content is not None:
+        # Get new content from stdin or argument
+        if args.content == "-":
+            new_content = sys.stdin.read().strip()
+        else:
+            new_content = args.content
+
+        # Extract the actual body content (after frontmatter)
+        # body from parse_frontmatter starts with ---
+        parts = body.split("---", 2)
+        actual_body = parts[2] if len(parts) >= 3 else ""
+
+        # Extract title from body (first # heading)
+        title_match = re.search(r"^# (.+)$", actual_body, re.MULTILINE)
+        title = title_match.group(1) if title_match else card_path.stem
+
+        if args.append:
+            # Append to existing body content
+            body = actual_body.rstrip() + "\n\n" + new_content + "\n"
+        else:
+            # Replace body content (keep title)
+            body = f"\n# {title}\n\n{new_content}\n"
+
+    # Update timestamp
+    frontmatter["updated"] = now_iso()
+
+    card_path.write_text(serialize_frontmatter(frontmatter, body))
+    print(f"Updated: {card_path.parent.name}/{card_path.name}")
+
+
 def cmd_clear(args) -> None:
     """Delete all cards from all columns."""
     root = get_root(args.root)
 
+    # Count cards first
     count = 0
+    for col in COLUMNS:
+        col_path = root / col
+        if col_path.exists():
+            count += len(list(col_path.glob("*.md")))
+
+    if count == 0:
+        print("No cards to clear")
+        return
+
+    # Confirm unless --yes flag is passed
+    if not args.yes:
+        response = input(f"Delete all {count} cards from kanban board? [y/N] ")
+        if response.lower() != "y":
+            print("Aborted")
+            return
+
+    # Now delete
+    deleted = 0
     for col in COLUMNS:
         col_path = root / col
         if col_path.exists():
             for card in col_path.glob("*.md"):
                 card.unlink()
-                count += 1
+                deleted += 1
 
-    print(f"Cleared {count} cards from kanban board")
+    print(f"Cleared {deleted} cards from kanban board")
 
 
 def main() -> None:
@@ -590,6 +652,13 @@ def main() -> None:
     # delete
     p_delete = subparsers.add_parser("delete", help="Delete a card")
     p_delete.add_argument("card", help="Card number or name")
+
+    # edit
+    p_edit = subparsers.add_parser("edit", help="Edit a card's content or metadata")
+    p_edit.add_argument("card", help="Card number or name")
+    p_edit.add_argument("--content", "-c", help="New card body content (use '-' for stdin)")
+    p_edit.add_argument("--persona", help="Update persona")
+    p_edit.add_argument("--append", "-a", action="store_true", help="Append to content instead of replacing")
 
     # move
     p_move = subparsers.add_parser("move", help="Move card to column")
@@ -639,7 +708,8 @@ def main() -> None:
     p_cat.add_argument("column", help="Column to output (backlog, in-progress, waiting, done)")
 
     # clear
-    subparsers.add_parser("clear", help="Delete all cards from all columns")
+    p_clear = subparsers.add_parser("clear", help="Delete all cards from all columns")
+    p_clear.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt")
 
     args = parser.parse_args()
 
@@ -651,6 +721,7 @@ def main() -> None:
         "init": cmd_init,
         "add": cmd_add,
         "delete": cmd_delete,
+        "edit": cmd_edit,
         "move": cmd_move,
         "up": cmd_up,
         "down": cmd_down,
