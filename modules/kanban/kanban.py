@@ -13,8 +13,8 @@ import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-COLUMNS = ["backlog", "in-progress", "waiting", "done"]
-WORK_COLUMNS = ["waiting", "in-progress", "backlog"]  # Right-to-left priority, exclude done
+COLUMNS = ["todo", "doing", "waiting", "done"]
+WORK_COLUMNS = ["waiting", "doing", "todo"]  # Priority order for next command
 
 
 def get_git_root() -> Path | None:
@@ -185,9 +185,9 @@ def update_card(card_path: Path, updates: dict) -> None:
     card_path.write_text(serialize_frontmatter(frontmatter, body))
 
 
-def get_backlog_context(root: Path) -> list[tuple[int, str, Path]]:
-    """Get backlog cards with their priorities for display."""
-    cards = find_cards_in_column(root, "backlog")
+def get_todo_context(root: Path) -> list[tuple[int, str, Path]]:
+    """Get todo cards with their priorities for display."""
+    cards = find_cards_in_column(root, "todo")
     result = []
     for card in cards:
         priority = get_priority(card)
@@ -216,16 +216,16 @@ def cmd_add(args) -> None:
     target_column = args.status
 
     # Show current column if no position specified
-    backlog = get_backlog_context(root) if target_column == "backlog" else []
+    todo = get_todo_context(root) if target_column == "todo" else []
 
     # Determine priority based on position args
     if args.top:
         # Insert at top (lowest priority number)
-        min_priority = min((p for p, _, _ in backlog), default=0)
+        min_priority = min((p for p, _, _ in todo), default=0)
         priority = min_priority - 10
     elif args.bottom:
         # Insert at bottom (highest priority number)
-        max_priority = max((p for p, _, _ in backlog), default=0)
+        max_priority = max((p for p, _, _ in todo), default=0)
         priority = max_priority + 10
     elif args.after:
         # Insert after specified card
@@ -238,17 +238,17 @@ def cmd_add(args) -> None:
         ref_priority = get_priority(ref_card)
         priority = ref_priority - 5
     else:
-        # No position specified - show backlog and require position
-        if backlog:
-            print("Current backlog:", file=sys.stderr)
+        # No position specified - show todo and require position
+        if todo:
+            print("Current todo:", file=sys.stderr)
             print(file=sys.stderr)
-            for p, name, _ in backlog:
+            for p, name, _ in todo:
                 print(f"  [{p:4d}] {name}", file=sys.stderr)
             print(file=sys.stderr)
             print("Error: Position required. Use --top, --bottom, --after <card>, or --before <card>", file=sys.stderr)
             sys.exit(1)
         else:
-            # Empty backlog, just use 0
+            # Empty todo, just use 0
             priority = 0
 
     num = next_number(root)
@@ -527,40 +527,15 @@ def cmd_show(args) -> None:
     print(card_path.read_text())
 
 
-def cmd_cat(args) -> None:
-    """Output concatenated contents of all cards in a column."""
+def cmd_view(args) -> None:
+    """View cards in a column with bat markdown highlighting."""
     root = get_root(args.root)
+    column = args.column
 
-    if args.column not in COLUMNS:
-        print(f"Error: Invalid column '{args.column}'. Must be one of: {', '.join(COLUMNS)}", file=sys.stderr)
-        sys.exit(1)
-
-    cards = find_cards_in_column(root, args.column)
+    cards = find_cards_in_column(root, column)
 
     if not cards:
-        print(f"No cards in {args.column}")
-        return
-
-    for i, card in enumerate(cards):
-        if i > 0:
-            print("\n" + "=" * 60 + "\n")
-        print(f"=== {card.name} ===")
-        print()
-        print(card.read_text())
-
-
-def cmd_less(args) -> None:
-    """View cards in a column using bat with markdown highlighting."""
-    root = get_root(args.root)
-
-    if args.column not in COLUMNS:
-        print(f"Error: Invalid column '{args.column}'. Must be one of: {', '.join(COLUMNS)}", file=sys.stderr)
-        sys.exit(1)
-
-    cards = find_cards_in_column(root, args.column)
-
-    if not cards:
-        print(f"No cards in {args.column}")
+        print(f"No cards in {column}")
         return
 
     # Build output
@@ -576,7 +551,7 @@ def cmd_less(args) -> None:
     # Pipe through bat with markdown highlighting, no line numbers
     try:
         proc = subprocess.Popen(
-            ["bat", "--language", "md", "--style", "plain", "--paging", "always"],
+            ["bat", "--language", "md", "--style", "plain"],
             stdin=subprocess.PIPE,
             text=True
         )
@@ -675,11 +650,11 @@ def main() -> None:
     p_init.add_argument("path", nargs="?", default=None, help="Board path (default: auto-computed from cwd)")
 
     # add (with position requirement)
-    p_add = subparsers.add_parser("add", help="Add card to backlog (position required)")
+    p_add = subparsers.add_parser("add", help="Add card to todo (position required)")
     p_add.add_argument("title", help="Card title")
     p_add.add_argument("--persona", help="Persona for the card")
     p_add.add_argument("--content", "-c", help="Card body content (e.g., task description)")
-    p_add.add_argument("--status", choices=COLUMNS, default="backlog", help="Starting column (default: backlog)")
+    p_add.add_argument("--status", choices=COLUMNS, default="todo", help="Starting column (default: todo)")
     p_add.add_argument("--top", action="store_true", help="Insert at top of column")
     p_add.add_argument("--bottom", action="store_true", help="Insert at bottom of column")
     p_add.add_argument("--after", help="Insert after specified card")
@@ -732,20 +707,18 @@ def main() -> None:
     p_history.add_argument("--since", help="Filter by date (today, yesterday, week, month, or ISO date)")
     p_history.add_argument("--until", help="Filter until date (ISO format)")
 
-    # list
+    # list (with ls alias)
     subparsers.add_parser("list", help="Show board overview")
+    subparsers.add_parser("ls", help="Show board overview (alias for list)")
 
     # show
     p_show = subparsers.add_parser("show", help="Display card contents")
     p_show.add_argument("card", help="Card number or name")
 
-    # cat
-    p_cat = subparsers.add_parser("cat", help="Output all cards in a column")
-    p_cat.add_argument("column", help="Column to output (backlog, in-progress, waiting, done)")
-
-    # less
-    p_less = subparsers.add_parser("less", help="View cards in a column using pager")
-    p_less.add_argument("column", help="Column to view (backlog, in-progress, waiting, done)")
+    # Column view commands (kanban <column>)
+    for col in COLUMNS:
+        p_col = subparsers.add_parser(col, help=f"View cards in {col}")
+        p_col.set_defaults(column=col)
 
     # clear
     p_clear = subparsers.add_parser("clear", help="Delete all cards from all columns")
@@ -771,9 +744,12 @@ def main() -> None:
         "comment": cmd_comment,
         "history": cmd_history,
         "list": cmd_list,
+        "ls": cmd_list,
         "show": cmd_show,
-        "cat": cmd_cat,
-        "less": cmd_less,
+        "todo": cmd_view,
+        "doing": cmd_view,
+        "waiting": cmd_view,
+        "done": cmd_view,
         "clear": cmd_clear,
     }
 

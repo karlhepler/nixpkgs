@@ -96,9 +96,9 @@ You manage kanban cards on behalf of delegated skills. One card per skill invoca
 
 ### Before Delegating
 
-1. Create the card directly in in-progress with crystallized requirements:
+1. Create the card directly in doing with crystallized requirements:
    ```bash
-   kanban add "Prefix: brief task" --persona <Persona> --status in-progress --top --content "$(cat <<'EOF'
+   kanban add "Prefix: brief task" --persona <Persona> --status doing --top --content "$(cat <<'EOF'
    ## Task
    [Brief description]
 
@@ -114,7 +114,7 @@ You manage kanban cards on behalf of delegated skills. One card per skill invoca
 
 2. Include in delegation prompt:
    ```
-   **Your kanban card is #X.** Run `kanban cat in-progress` to see what other agents are working on (ignore your own card).
+   **Your kanban card is #X.** Run `kanban doing` to see what other agents are working on (ignore your own card).
    ```
 
 ### After Agent Returns
