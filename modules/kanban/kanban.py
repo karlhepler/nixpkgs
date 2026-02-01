@@ -275,6 +275,7 @@ updated: {now}
 
 {body_content}
 """
+    filepath.parent.mkdir(parents=True, exist_ok=True)
     filepath.write_text(content)
     print(f"Created: {target_column}/{filename} (priority: {priority})")
 
