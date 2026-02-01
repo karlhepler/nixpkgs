@@ -78,7 +78,13 @@ Task tool:
   model: sonnet
   run_in_background: true
   prompt: |
-    Use the Skill tool to invoke /swe-fullstack with these arguments:
+    Invoke the /swe-fullstack skill using the Skill tool.
+
+    IMPORTANT: The skill will read ~/.claude/CLAUDE.md and project CLAUDE.md files
+    FIRST to understand the environment, tools, and conventions. This is built into
+    the skill, so you don't need to do anything - just be aware they have that context.
+
+    Pass these task details as the skill arguments:
 
     ## Task
     Add dark mode toggle to Settings page.
@@ -123,22 +129,50 @@ Launch multiple sub-agents in parallel when work is independent. You keep talkin
 
 You manage kanban cards on behalf of delegated skills. One card per skill invocation.
 
+### Session Identification
+
+**CRITICAL:** Multiple Claude Code sessions can run concurrently. You must track which cards belong to YOUR session.
+
+Your session ID is embedded in the system message's scratchpad path. Extract it ONCE at the start:
+
+```bash
+# Extract session ID from scratchpad path (UUID component)
+SESSION_ID="<extract from system message scratchpad path>"
+```
+
+Example: If scratchpad is `/private/tmp/claude-501/-Users-karlhepler--config-nixpkgs/6b1d31f9-fdf3-4719-b84d-012a3d43d358/scratchpad`, then `SESSION_ID="6b1d31f9-fdf3-4719-b84d-012a3d43d358"`
+
+Store this at the start of your conversation and reuse for all kanban operations.
+
 ### Before Delegating
 
 1. **Check what's in progress:**
    ```bash
-   kanban doing
+   # Your session's cards only (filter by session)
+   kanban doing --session "$SESSION_ID"
+
+   # All sessions for coordination awareness
+   kanban doing --all-sessions
    ```
 
-   Analyze what other agents are working on. Identify:
-   - Potential overlaps (avoid duplicate work)
-   - Coordination opportunities (how new work complements existing work)
-   - Dependencies (does new work need existing work to complete first?)
-   - Conflicts (will new work interfere with in-progress work?)
+   Analyze:
+   - **Your cards** (matching session): Direct work you're managing
+   - **Other sessions' cards**: Avoid overlaps, identify dependencies, prevent conflicts
 
-2. Create the card directly in doing with crystallized requirements:
+2. Create the card with session tracking:
    ```bash
-   kanban add "Prefix: brief task" --persona <Persona> --status doing --top --content "## Task\n[Brief description]\n\n## Requirements\n- [Requirement 1]\n- [Requirement 2]\n\n## Scope\n[What this changes, what it doesn't]"
+   kanban add "Prefix: brief task" --persona <Persona> --status doing --top --session "$SESSION_ID" --content "$(cat <<'EOF'
+   ## Task
+   [Brief description]
+
+   ## Requirements
+   - [Requirement 1]
+   - [Requirement 2]
+
+   ## Scope
+   [What this changes, what it doesn't]
+   EOF
+   )"
    ```
 
 3. Include coordination context in delegation prompt:
@@ -146,12 +180,12 @@ You manage kanban cards on behalf of delegated skills. One card per skill invoca
    **Your kanban card is #X.**
 
    ## Coordination Context
-   [What other agents are working on and how to complement/avoid conflicts]
+   [What other sessions are working on and how to complement/avoid conflicts]
 
    Example:
-   - Card #5: /swe-backend is adding user authentication API endpoints
-   - **Your work:** Integrate with those endpoints (avoid implementing your own auth)
-   - **Timing:** They should finish before you need the endpoints; if not, mock for now
+   - Card #5 (other session): /swe-backend adding auth API
+   - **Your work:** Integrate with those endpoints (avoid duplicating)
+   - **Timing:** They're in progress; coordinate or mock for now
    ```
 
 ### After Agent Returns
