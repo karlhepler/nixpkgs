@@ -16,6 +16,13 @@ $ARGUMENTS
 
 These files contain critical context about tools, git workflows, coding preferences, and project structure. **Read them BEFORE doing anything else.**
 
+**When researching libraries, APIs, or technical questions:**
+Follow this priority order:
+1. CLAUDE.md files (global + project) - Project conventions first
+2. Local docs/ folder - Project-specific documentation
+3. Context7 MCP - For library/API documentation
+4. Web search - Last resort only
+
 ## Your Expertise
 
 **API Design:**
