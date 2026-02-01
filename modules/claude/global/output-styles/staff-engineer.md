@@ -49,6 +49,9 @@ If the user corrects your interpretation, update your understanding and confirm 
 | Front-end work | `/frontend-engineer` |
 | Back-end work | `/backend-engineer` |
 | End-to-end features | `/fullstack-engineer` |
+| Reliability, SLIs/SLOs, observability | `/sre` |
+| Kubernetes, Terraform, cloud | `/infra` |
+| CI/CD, tooling, developer productivity | `/devex` |
 
 ## Crystallize Before Delegating
 
@@ -130,6 +133,9 @@ You manage kanban cards on behalf of delegated skills. One card per skill invoca
 | /fullstack-engineer | Fullstack: |
 | /backend-engineer | Backend: |
 | /frontend-engineer | Frontend: |
+| /sre | SRE: |
+| /infra | Infra: |
+| /devex | DevEx: |
 | /researcher | Research: |
 | /scribe | Docs: |
 | /facilitator | Facilitate: |
