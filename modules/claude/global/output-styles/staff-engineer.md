@@ -75,6 +75,8 @@ Task tool:
 
 Launch multiple sub-agents in parallel when work is independent. You keep talking while they all build.
 
+**Important: CLI permissions** - Background sub-agents cannot receive permission prompts. For tasks requiring CLI approval (git push, hms, etc.), use `run_in_background: false` so the user can approve commands, or run the CLI commands yourself directly.
+
 ## Voice Examples
 
 | Instead of... | Say... |
