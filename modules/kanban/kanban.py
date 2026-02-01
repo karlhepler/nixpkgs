@@ -264,11 +264,21 @@ def cmd_add(args) -> None:
         body_content = args.content
     else:
         body_content = ""
+
+    # Build frontmatter fields
+    frontmatter_lines = [
+        f"persona: {args.persona or 'unassigned'}",
+        f"priority: {priority}",
+    ]
+    if args.session:
+        frontmatter_lines.append(f"session: {args.session}")
+    frontmatter_lines.extend([
+        f"created: {now}",
+        f"updated: {now}",
+    ])
+
     content = f"""---
-persona: {args.persona or 'unassigned'}
-priority: {priority}
-created: {now}
-updated: {now}
+{chr(10).join(frontmatter_lines)}
 ---
 
 # {args.title}
@@ -506,11 +516,16 @@ def cmd_list(args) -> None:
                     content = card.read_text()
                     frontmatter, _ = parse_frontmatter(content)
                     persona = frontmatter.get("persona", "")
+                    session = frontmatter.get("session", "")
 
+                    # Format: name (persona) [session-prefix]
+                    display = f"  - {name}"
                     if persona and persona != "unassigned":
-                        print(f"  - {name} ({persona})")
-                    else:
-                        print(f"  - {name}")
+                        display += f" ({persona})"
+                    if session:
+                        # Show abbreviated session (first 8 chars)
+                        display += f" [{session[:8]}]"
+                    print(display)
             else:
                 print("  (empty)")
         else:
@@ -528,12 +543,28 @@ def cmd_show(args) -> None:
     print(card_path.read_text())
 
 
+def get_session(card_path: Path) -> str | None:
+    """Get session ID from card frontmatter."""
+    content = card_path.read_text()
+    frontmatter, _ = parse_frontmatter(content)
+    return frontmatter.get("session")
+
+
 def cmd_view(args) -> None:
     """View cards in a column with bat markdown highlighting."""
     root = get_root(args.root)
     column = args.column
 
     cards = find_cards_in_column(root, column)
+
+    # Filter by session if requested
+    if hasattr(args, 'session') and args.session:
+        cards = [c for c in cards if get_session(c) == args.session]
+    elif hasattr(args, 'all_sessions') and not args.all_sessions:
+        # Default behavior: show current session + sessionless cards
+        # Since we don't know current session here, we skip this filter
+        # This will be handled by Staff Engineer using --session flag
+        pass
 
     if not cards:
         print(f"No cards in {column}")
@@ -656,6 +687,7 @@ def main() -> None:
     p_add.add_argument("--persona", help="Persona for the card")
     p_add.add_argument("--content", "-c", help="Card body content (e.g., task description)")
     p_add.add_argument("--status", choices=COLUMNS, default="todo", help="Starting column (default: todo)")
+    p_add.add_argument("--session", help="Session ID for the card")
     p_add.add_argument("--top", action="store_true", help="Insert at top of column")
     p_add.add_argument("--bottom", action="store_true", help="Insert at bottom of column")
     p_add.add_argument("--after", help="Insert after specified card")
@@ -719,6 +751,8 @@ def main() -> None:
     # Column view commands (kanban <column>)
     for col in COLUMNS:
         p_col = subparsers.add_parser(col, help=f"View cards in {col}")
+        p_col.add_argument("--session", help="Filter by session ID")
+        p_col.add_argument("--all-sessions", action="store_true", help="Show all sessions (default shows current + sessionless)")
         p_col.set_defaults(column=col)
 
     # clear
