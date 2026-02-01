@@ -138,12 +138,11 @@ in {
         # Default output style for all Claude Code sessions
         outputStyle = "Staff Engineer";
 
-        # Auto-allow kanban CLI commands without prompting
+        # Auto-allow kanban CLI commands (subagents can't prompt for approval)
         permissions = {
           allow = [
             "Bash(kanban)"
             "Bash(kanban *)"
-            "Bash(kanban:*)"
           ];
         };
         hooks = {
