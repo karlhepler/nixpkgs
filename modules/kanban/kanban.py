@@ -501,7 +501,11 @@ def cmd_list(args) -> None:
     print(f"KANBAN BOARD: {root}")
     print()
 
-    for col in COLUMNS:
+    # Filter columns based on --show-done flag
+    show_done = getattr(args, 'show_done', False)
+    columns_to_show = COLUMNS if show_done else [c for c in COLUMNS if c != "done"]
+
+    for col in columns_to_show:
         print(f"## {col}")
         col_path = root / col
 
@@ -741,8 +745,10 @@ def main() -> None:
     p_history.add_argument("--until", help="Filter until date (ISO format)")
 
     # list (with ls alias)
-    subparsers.add_parser("list", help="Show board overview")
-    subparsers.add_parser("ls", help="Show board overview (alias for list)")
+    p_list = subparsers.add_parser("list", help="Show board overview")
+    p_list.add_argument("--show-done", action="store_true", help="Include done column in output")
+    p_ls = subparsers.add_parser("ls", help="Show board overview (alias for list)")
+    p_ls.add_argument("--show-done", action="store_true", help="Include done column in output")
 
     # show
     p_show = subparsers.add_parser("show", help="Display card contents")
