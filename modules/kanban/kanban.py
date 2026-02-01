@@ -549,6 +549,42 @@ def cmd_cat(args) -> None:
         print(card.read_text())
 
 
+def cmd_less(args) -> None:
+    """View cards in a column using bat with markdown highlighting."""
+    root = get_root(args.root)
+
+    if args.column not in COLUMNS:
+        print(f"Error: Invalid column '{args.column}'. Must be one of: {', '.join(COLUMNS)}", file=sys.stderr)
+        sys.exit(1)
+
+    cards = find_cards_in_column(root, args.column)
+
+    if not cards:
+        print(f"No cards in {args.column}")
+        return
+
+    # Build output
+    lines = []
+    for i, card in enumerate(cards):
+        if i > 0:
+            lines.append("\n" + "=" * 60 + "\n")
+        lines.append(f"=== {card.name} ===")
+        lines.append("")
+        lines.append(card.read_text())
+    output = "\n".join(lines)
+
+    # Pipe through bat with markdown highlighting, no line numbers
+    try:
+        proc = subprocess.Popen(
+            ["bat", "--language", "md", "--style", "plain", "--paging", "always"],
+            stdin=subprocess.PIPE,
+            text=True
+        )
+        proc.communicate(input=output)
+    except (FileNotFoundError, BrokenPipeError):
+        print(output)
+
+
 def cmd_edit(args) -> None:
     """Edit an existing card's content or metadata."""
     root = get_root(args.root)
@@ -707,6 +743,10 @@ def main() -> None:
     p_cat = subparsers.add_parser("cat", help="Output all cards in a column")
     p_cat.add_argument("column", help="Column to output (backlog, in-progress, waiting, done)")
 
+    # less
+    p_less = subparsers.add_parser("less", help="View cards in a column using pager")
+    p_less.add_argument("column", help="Column to view (backlog, in-progress, waiting, done)")
+
     # clear
     p_clear = subparsers.add_parser("clear", help="Delete all cards from all columns")
     p_clear.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt")
@@ -733,6 +773,7 @@ def main() -> None:
         "list": cmd_list,
         "show": cmd_show,
         "cat": cmd_cat,
+        "less": cmd_less,
         "clear": cmd_clear,
     }
 
