@@ -211,11 +211,12 @@ def cmd_init(args) -> None:
 
 
 def cmd_add(args) -> None:
-    """Add a new card to backlog with insertion sort."""
+    """Add a new card with insertion sort."""
     root = get_root(args.root)
+    target_column = args.status
 
-    # Show current backlog if no position specified
-    backlog = get_backlog_context(root)
+    # Show current column if no position specified
+    backlog = get_backlog_context(root) if target_column == "backlog" else []
 
     # Determine priority based on position args
     if args.top:
@@ -253,7 +254,7 @@ def cmd_add(args) -> None:
     num = next_number(root)
     slug = slugify(args.title)
     filename = f"{num}-{slug}.md"
-    filepath = root / "backlog" / filename
+    filepath = root / target_column / filename
     now = now_iso()
 
     # Content can come from --content flag or stdin (if --content is "-")
@@ -275,7 +276,7 @@ updated: {now}
 {body_content}
 """
     filepath.write_text(content)
-    print(f"Created: backlog/{filename} (priority: {priority})")
+    print(f"Created: {target_column}/{filename} (priority: {priority})")
 
 
 def cmd_delete(args) -> None:
@@ -580,8 +581,9 @@ def main() -> None:
     p_add.add_argument("title", help="Card title")
     p_add.add_argument("--persona", help="Persona for the card")
     p_add.add_argument("--content", "-c", help="Card body content (e.g., task description)")
-    p_add.add_argument("--top", action="store_true", help="Insert at top of backlog")
-    p_add.add_argument("--bottom", action="store_true", help="Insert at bottom of backlog")
+    p_add.add_argument("--status", choices=COLUMNS, default="backlog", help="Starting column (default: backlog)")
+    p_add.add_argument("--top", action="store_true", help="Insert at top of column")
+    p_add.add_argument("--bottom", action="store_true", help="Insert at bottom of column")
     p_add.add_argument("--after", help="Insert after specified card")
     p_add.add_argument("--before", help="Insert before specified card")
 
