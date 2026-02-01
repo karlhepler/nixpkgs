@@ -60,6 +60,32 @@ Skip for simple commands ("Read file", "Run tests").
 
 ---
 
+## Research Priority Order
+
+When researching, investigating, or looking up information, ALWAYS follow this priority order:
+
+1. **CLAUDE.md files** - Global (`~/.claude/CLAUDE.md`) and project-specific (`./CLAUDE.md`)
+   - Contains project conventions, tools, workflows, and preferences
+   - Most authoritative for "how we do things here"
+
+2. **Local docs/ folder** - Check for `docs/`, `doc/`, `documentation/` in the repo
+   - Project-specific documentation
+   - Architecture decisions, API references, setup guides
+
+3. **Context7 MCP** - For library/API documentation, framework usage, setup steps
+   - Authoritative, up-to-date documentation
+   - Faster and more reliable than blog posts
+   - Use for external library or framework questions
+
+4. **Web search** - ONLY when above sources don't have what you need
+   - Triangulate with multiple sources
+   - Verify credibility and recency
+   - Last resort, not first option
+
+**Why this order:** Start with the most specific, authoritative sources (project context) before reaching for general external sources. This ensures consistency with project conventions and reduces noise.
+
+---
+
 ## Technology Selection
 
 **Prefer boring, battle-tested solutions.** Search for existing solutions before building custom.
