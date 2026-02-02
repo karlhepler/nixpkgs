@@ -40,6 +40,18 @@ This repository contains Nix Home Manager configuration for managing development
 - `burns "prompt"` or `burns file.md`: Run Ralph Orchestrator with Staff Engineer output style
 - `smithers` or `smithers <PR>`: Autonomous PR watcher (monitors checks, fixes issues, handles bot comments)
 
+### Kanban CLI (Agent Coordination)
+- `kanban init`: Create kanban board structure
+- `kanban add "task" --persona <name>`: Add card to todo column
+- `kanban list`: Show all cards in todo/doing/waiting columns
+- `kanban show <card#>`: Show full card details
+- `kanban move <card#> <column>`: Move card to todo/doing/waiting/done
+- `kanban next`: Get next card to work on
+- `kanban todo`, `kanban doing`, `kanban waiting`, `kanban done`: Filter by column
+- `kanban comment <card#> "text"`: Add comment to card
+- `kanban delete <card#>`: Delete a card
+- See `kanban --help` for full command list
+
 ## Nix Development Commands
 
 - `nix run nixpkgs#nix-prefetch-github -- owner repo --rev main`: Get hash for GitHub packages
@@ -68,6 +80,9 @@ This repository uses a **domain-centric module architecture** where related func
 - `modules/claude/` - Claude Code configuration with:
   - 9 claude shellapps + bash scripts (notification-hook, complete-hook, csharp-format-hook, claude-ask, q, qq, qqq, burns, smithers)
   - `global/` directory containing Claude Code settings, output styles, and skills (mirrors ~/.claude/ structure)
+- `modules/kanban/` - File-based kanban board CLI (Python) for agent coordination
+- `modules/neovim/` - Neovim editor configuration + 30+ plugins + LSP servers
+- `modules/tmux/` - Tmux terminal multiplexer + 3 internal shellapps (random-emoji, random-session-name, random-session-icon)
 
 **Simple Modules** (single .nix files):
 - `modules/theme.nix` - Tokyo Night Storm color theme + font configuration (cross-cutting concern)
@@ -429,3 +444,28 @@ This repository includes Ralph Orchestrator integration with the Staff Engineer 
 - **Source:** `modules/claude/smithers.bash`
 
 Both commands use the Staff Engineer output style configured in `modules/claude/global/output-styles/staff-engineer.md`
+
+## Kanban CLI for Agent Coordination
+
+The `kanban` command provides a file-based kanban board system designed for multi-agent coordination:
+
+**Architecture:**
+- Cards are markdown files stored in column folders (todo/, doing/, waiting/, done/)
+- Numbered globally for easy reference (#1, #2, etc.)
+- Enables subagents to coordinate by reading/writing to shared filesystem
+- Auto-allowed in Claude Code settings (subagents don't need permission prompts)
+
+**Typical Workflow:**
+1. Initialize board: `kanban init` (creates column structure)
+2. Add tasks: `kanban add "Implement feature X" --persona "Developer"`
+3. Claim work: `kanban move 1 doing`
+4. Track progress: `kanban list` shows all active cards
+5. Add updates: `kanban comment 1 "Completed testing"`
+6. Complete: `kanban move 1 done`
+
+**Session Isolation:**
+- Cards can be scoped to specific sessions using `--session <id>`
+- Useful when multiple Claude sessions coordinate on same board
+- Filter by session: `kanban doing --session <id>`
+
+**Source:** Python CLI in `modules/kanban/kanban.py`, deployed system-wide via Home Manager
