@@ -227,11 +227,13 @@ EOF
       fi
 
       # Merge MCP configuration into existing file (preserving all other fields)
+      # Note: Claude Code supports ''${VARIABLE_NAME} syntax for runtime env var expansion
+      # See: https://github.com/anthropics/claude-code/issues/2065
       $DRY_RUN_CMD ${pkgs.jq}/bin/jq '.mcpServers.context7 = {
         "command": "npx",
         "args": ["-y", "@upstash/context7-mcp"],
         "env": {
-          "CONTEXT7_API_KEY": "$CONTEXT7_API_KEY"
+          "CONTEXT7_API_KEY": "''${CONTEXT7_API_KEY}"
         }
       }' ~/.claude.json > ~/.claude.json.tmp
 
