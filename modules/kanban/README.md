@@ -6,6 +6,104 @@ File-based kanban board system designed for multi-agent coordination using an in
 
 This kanban system enforces **intentional prioritization** by requiring you to think about **where** a new card belongs in relation to existing work, just like insertion sort requires understanding the sorted list before inserting.
 
+## Column Semantics
+
+Understanding what each column represents helps agents coordinate effectively:
+
+### todo - Not Yet Started
+
+Work that needs to be done, organized in priority order (lowest number = highest priority). Cards here are **queued but not claimed**.
+
+**Move cards to todo when:**
+- New work is identified
+- Work becomes unblocked (move from blocked back to todo)
+- Work needs to be reprioritized
+
+**Don't use todo for:**
+- Work already in progress (use doing)
+- Work waiting on dependencies (use blocked)
+
+### doing - Active Work
+
+Work currently being executed by an agent or developer. Cards here are **claimed and in progress**.
+
+**Move cards to doing when:**
+- You start working on them (claim with `kanban move <card> doing`)
+- You actively resume work after interruption
+
+**Don't use doing for:**
+- Work you plan to start later (keep in todo until you actually start)
+- Work that's paused waiting for something (use blocked)
+
+**Best practice:** Limit doing cards per agent (1-3) to maintain focus.
+
+### blocked - Waiting on Dependencies
+
+Work that was started but cannot progress due to a **specific blocking reason**. Cards here are **paused with documented blockers**.
+
+**Move cards to blocked when:**
+- Waiting for external API/service/dependency
+- Waiting for user input or decision
+- Waiting for another card to complete first
+- Waiting for code review or approval
+- Waiting for CI/CD pipeline or deployment
+
+**Don't use blocked for:**
+- Work you haven't started yet (use todo)
+- Work that's just lower priority (adjust priority in todo instead)
+- Work you're actively doing (use doing)
+
+**Best practice:** Always add a comment explaining the blocker when moving to blocked:
+```bash
+kanban move 005 blocked
+kanban comment 005 "Blocked: Waiting for API key from ops team"
+```
+
+### done - Completed Work
+
+Work that's finished and verified. Cards here are **archived for history**.
+
+**Move cards to done when:**
+- Work is complete and tested
+- Pull request is merged
+- Task is verified by stakeholders
+
+**Use done for:**
+- Reference and learning (what's been accomplished)
+- Activity tracking and metrics
+- Historical context for similar future work
+
+**View completed work:**
+```bash
+kanban history              # All completed cards
+kanban history --since week # Last 7 days
+kanban list --show-done     # Include done in board view
+```
+
+### canceled - Abandoned or Obsolete Work
+
+Work that was not completed due to being abandoned, obsolete, or no longer needed.
+
+**Move cards to canceled when:**
+- Work in progress was abandoned (changed direction)
+- Todo items are no longer needed
+- Work was completed elsewhere (made obsolete)
+- Blocked work is no longer relevant
+
+**Best practice:** Add comment explaining why when moving to canceled
+
+**Distinction from done:**
+- done = Successfully completed and verified
+- canceled = Not completed (abandoned/obsolete/unneeded)
+
+**View canceled work:**
+```bash
+kanban canceled                      # View canceled cards
+kanban history --include-canceled    # Include canceled in history
+kanban list --show-canceled          # Include canceled in board view
+kanban list --show-all               # Include both done and canceled
+```
+
 ## Quick Start
 
 ```bash
@@ -273,6 +371,7 @@ kanban todo                     # View todo column
 kanban doing                    # View doing column
 kanban blocked                  # View blocked column
 kanban done                     # View done column
+kanban canceled                 # View canceled column
 
 # Session filtering (for multi-agent work)
 kanban todo --session <id>      # Specific session
@@ -305,8 +404,10 @@ kanban history --since 2024-01-01  # Since specific date
 ├── doing/
 │   └── 003-write-docs.md
 ├── blocked/
-└── done/
-    └── 004-completed-task.md
+├── done/
+│   └── 004-completed-task.md
+└── canceled/
+    └── 005-obsolete-feature.md
 ```
 
 ### Card Format
