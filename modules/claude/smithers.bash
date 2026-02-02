@@ -46,41 +46,59 @@ Watch this PR continuously until it is **completely green and ready to merge**.
 
 ## Tasks
 
-1. **Monitor ALL checks:**
+1. **Monitor ALL checks - CONTINUOUS POLLING:**
    - Use \`gh pr checks\` to see check status
-   - Ensure they all pass (green checkmarks)
+   - **CRITICAL:** Wait for ALL checks to reach terminal states:
+     - Terminal states: pass, fail, skipping, cancelled
+     - Non-terminal states: pending, running, queued, in_progress
+   - **DO NOT proceed** while ANY check is in a non-terminal state
+   - Poll every 30-60 seconds until all checks are terminal
+   - Only consider the PR ready when you see ONLY green checkmarks (no yellow circles)
 
 2. **Handle check failures:**
-   - If any check fails, investigate the failure
+   - If any check fails (not skipped/cancelled), investigate the failure
+   - For cancelled checks (like claude-review):
+     - Check if it's expected/normal (some checks cancel when superseded)
+     - If it's blocking, investigate why it was cancelled
    - Fix the issue (spawn sub-agents for investigation/implementation)
    - Commit and push the fix
-   - Wait for checks to re-run
-   - If you cannot fix a failing check, STOP and notify me
+   - **Wait for checks to re-run and complete** (back to step 1)
+   - If you cannot fix a failing check, STOP and notify the user
 
 3. **Handle bot comments:**
    - Find ALL bot comments (any user with [bot] in username)
    - Use \`gh api repos/:owner/:repo/issues/:number/comments\` to get PR comments
-   - Use \`gh api repos/:owner/:repo/pulls/:number/comments\` to get inline comments
+   - Use \`gh api repos/:owner/:repo/pulls/:number/comments\` to get inline code review comments
    - Use \`gh api repos/:owner/:repo/pulls/:number/reviews\` to get review comments
    - For each bot comment:
-     - Critically evaluate if it needs addressing
-     - Address the concern if necessary (make code changes, commit, push)
-     - Reply directly to the comment using \`gh api\` (ALWAYS reply)
-     - Skip comments where I (the user) already replied
+     - Check if there are already replies in the thread (look at full thread, not just the first comment)
+     - If user already replied, skip it
+     - If no replies OR only bot replies, critically evaluate if it needs addressing
+     - Informational bots (linear[bot] linkbacks, currents-bot test summaries) usually don't need replies
+     - Actionable bots (security warnings, linter feedback, failed test analysis) need addressing
+     - If addressing: make code changes, commit, push, THEN reply to the comment thread
+     - Use \`gh api\` to reply (NOT \`gh pr comment\` which doesn't thread)
 
 4. **Fix merge conflicts:**
    - Check for merge conflicts using \`gh pr view\`
    - If conflicts exist, fix them
    - Commit and push the resolution
+   - Wait for checks to re-run (back to step 1)
 
-5. **Loop until complete:**
-   - All checks pass (green)
-   - All bot comments addressed
-   - No merge conflicts
+5. **Loop until complete - STRICT VERIFICATION:**
+   - **All checks in terminal states** (no pending/running/queued)
+   - **All required checks pass** (green checkmarks only)
+   - **All actionable bot comments addressed** (or confirmed as informational-only)
+   - **No merge conflicts**
    - PR is ready to merge
 
-6. **When done:**
-   - Publish LOOP_COMPLETE to signal completion
+6. **Before emitting LOOP_COMPLETE:**
+   - **MANDATORY FINAL VERIFICATION:**
+     - Run \`gh pr checks\` one final time
+     - Verify ZERO checks in non-terminal states
+     - Verify all required checks show "pass"
+     - List any failed/cancelled checks and confirm they're non-blocking
+   - Only emit LOOP_COMPLETE after this final verification passes
    - Provide a summary of actions taken
 
 ## Important
@@ -88,6 +106,8 @@ Watch this PR continuously until it is **completely green and ready to merge**.
 - Use your Staff Engineer delegation patterns - spawn sub-agents for investigation and fixes
 - Stay available to coordinate while sub-agents work
 - Be thorough and obsessive about details (you're Smithers!)
+- **NEVER declare completion while checks are still running** (yellow circles = not done)
+- When in doubt, wait longer and poll again
 EOF
 
 # Run ralph with Staff Engineer hat and generated prompt
