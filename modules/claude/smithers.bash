@@ -34,8 +34,11 @@ else
   fi
 fi
 
-# Create PROMPT.md with PR watching instructions
-cat > PROMPT.md <<EOF
+# Create temporary prompt file (will be auto-cleaned by OS)
+PROMPT_FILE=$(mktemp /tmp/smithers-prompt.XXXXXX.md)
+trap 'rm -f "$PROMPT_FILE"' EXIT
+
+cat > "$PROMPT_FILE" <<EOF
 You are watching a pull request and ensuring it is completely ready to merge.
 
 PR: $PR_URL
@@ -111,4 +114,4 @@ Watch this PR continuously until it is **completely green and ready to merge**.
 EOF
 
 # Run ralph with Staff Engineer hat and generated prompt
-exec ralph run -a -c STAFF_ENGINEER_HAT_YAML --max-iterations 100 -P PROMPT.md
+exec ralph run -a -c STAFF_ENGINEER_HAT_YAML --max-iterations 100 -P "$PROMPT_FILE"
