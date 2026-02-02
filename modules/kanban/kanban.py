@@ -46,6 +46,7 @@ from pathlib import Path
 
 COLUMNS = ["todo", "doing", "blocked", "done", "canceled"]
 WORK_COLUMNS = ["blocked", "doing", "todo"]  # Priority order for next command
+ARCHIVE_DAYS_THRESHOLD = int(os.environ.get("KANBAN_ARCHIVE_DAYS", "30"))
 
 
 def get_git_root() -> Path | None:
@@ -86,6 +87,51 @@ def migrate_waiting_to_blocked(root: Path) -> None:
             print("Warning: Could not remove 'waiting' directory (not empty)", file=sys.stderr)
 
 
+def auto_archive_old_cards(root: Path, days_threshold: int = ARCHIVE_DAYS_THRESHOLD) -> None:
+    """Archive done cards older than threshold days to archive/YYYY-MM/ folders.
+
+    This runs automatically on every kanban command to keep the done column clean.
+    Cards are moved based on their 'updated' timestamp.
+    """
+    done_dir = root / "done"
+    archive_base = root / "archive"
+
+    if not done_dir.exists():
+        return
+
+    cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_threshold)
+    archived_count = 0
+
+    for card in done_dir.glob("*.md"):
+        try:
+            content = card.read_text()
+            frontmatter, _ = parse_frontmatter(content)
+            updated_str = frontmatter.get("updated")
+
+            if not updated_str:
+                # Skip cards without updated timestamp (fail-safe)
+                continue
+
+            updated = parse_iso(updated_str)
+
+            if updated < cutoff_date:
+                # Determine archive folder based on updated month
+                archive_month = updated.strftime("%Y-%m")
+                archive_dir = archive_base / archive_month
+                archive_dir.mkdir(parents=True, exist_ok=True)
+
+                # Move card to archive
+                target = archive_dir / card.name
+                card.rename(target)
+                archived_count += 1
+        except (ValueError, KeyError):
+            # Skip cards with invalid dates (fail-safe)
+            continue
+
+    if archived_count > 0:
+        print(f"Auto-archived {archived_count} old card(s) to {archive_base}/", file=sys.stderr)
+
+
 def get_root(args_root: str | None, auto_init: bool = True) -> Path:
     """Get kanban root directory from args, environment, or auto-compute.
 
@@ -112,6 +158,12 @@ def get_root(args_root: str | None, auto_init: bool = True) -> Path:
     if auto_init and not root.exists():
         for col in COLUMNS:
             (root / col).mkdir(parents=True, exist_ok=True)
+        # Create archive directory
+        (root / "archive").mkdir(parents=True, exist_ok=True)
+
+    # Auto-archive old done cards
+    if root.exists():
+        auto_archive_old_cards(root)
 
     return root
 
@@ -166,13 +218,23 @@ def serialize_frontmatter(frontmatter: dict, body: str) -> str:
     return "\n".join(lines) + "\n" + body
 
 
-def find_all_cards(root: Path) -> list[Path]:
-    """Find all card files across all columns."""
+def find_all_cards(root: Path, include_archived: bool = True) -> list[Path]:
+    """Find all card files across all columns and optionally archive."""
     cards = []
     for col in COLUMNS:
         col_path = root / col
         if col_path.exists():
             cards.extend(col_path.glob("*.md"))
+
+    # Include archived cards if requested
+    if include_archived:
+        archive_base = root / "archive"
+        if archive_base.exists():
+            # Search all YYYY-MM subdirectories
+            for archive_dir in archive_base.iterdir():
+                if archive_dir.is_dir():
+                    cards.extend(archive_dir.glob("*.md"))
+
     return cards
 
 
@@ -194,19 +256,31 @@ def next_number(root: Path) -> str:
         if match:
             num = int(match.group(1))
             max_num = max(max_num, num)
-    return f"{max_num + 1:03d}"
+    return str(max_num + 1)
 
 
 def find_card(root: Path, pattern: str) -> Path:
-    """Find a card by number or name pattern."""
-    # Normalize number patterns
+    """Find a card by number or name pattern, searching columns and archive."""
+    # Normalize number patterns (no zero-padding)
     if pattern.isdigit():
-        pattern = f"{int(pattern):03d}"
+        pattern = str(int(pattern))
 
     matches = []
-    for card in find_all_cards(root):
-        if card.name.startswith(pattern) or pattern in card.name:
+
+    # First search active columns
+    for card in find_all_cards(root, include_archived=False):
+        if card.name.startswith(pattern + "-") or pattern in card.name:
             matches.append(card)
+
+    # If not found in active columns, search archive
+    if not matches:
+        archive_base = root / "archive"
+        if archive_base.exists():
+            for archive_dir in archive_base.iterdir():
+                if archive_dir.is_dir():
+                    for card in archive_dir.glob("*.md"):
+                        if card.name.startswith(pattern + "-") or pattern in card.name:
+                            matches.append(card)
 
     if not matches:
         print(f"Error: No card found matching '{pattern}'", file=sys.stderr)
@@ -277,6 +351,9 @@ def cmd_init(args) -> None:
 
     for col in COLUMNS:
         (path / col).mkdir(parents=True, exist_ok=True)
+
+    # Create archive directory
+    (path / "archive").mkdir(parents=True, exist_ok=True)
 
     print(f"Kanban board ready at: {path}")
 
@@ -571,6 +648,13 @@ def cmd_history(args) -> None:
         canceled_cards = find_cards_in_column(root, "canceled")
         done_cards.extend(canceled_cards)
 
+    # Include archived cards
+    archive_base = root / "archive"
+    if archive_base.exists():
+        for archive_dir in archive_base.iterdir():
+            if archive_dir.is_dir():
+                done_cards.extend(archive_dir.glob("*.md"))
+
     # Filter by session if requested
     if hasattr(args, 'session') and args.session:
         # Explicit session filter
@@ -637,12 +721,19 @@ def cmd_history(args) -> None:
 
         count += 1
         name = card.stem
+
+        # Show archive location if archived
+        location = ""
+        if card.parent.name != "done" and card.parent.name != "canceled":
+            location = f" [archived: {card.parent.name}]"
+
         display = f"  - {name}"
         if persona and persona != "unassigned":
             display += f" ({persona})"
         if session:
             display += f" [{session[:8]}]"
         display += f" - {updated_str[:10] if updated_str else 'unknown'}"
+        display += location
         print(display)
 
     print()

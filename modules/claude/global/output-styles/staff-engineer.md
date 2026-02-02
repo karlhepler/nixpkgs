@@ -116,12 +116,7 @@ Good requirements are: **Specific** (no ambiguity), **Actionable** (clear next s
 
 CRITICAL: Follow these steps in order every time. Skipping steps causes race conditions and duplicate work.
 
-1. **Extract session ID** from scratchpad path in system message:
-   - Path format: `/path/to/scratchpad/SESSION_ID/scratchpad`
-   - Example: `/private/tmp/claude-501/.../9601acbb-8bd5-4e66-b8fd-8c69b446227a/scratchpad`
-   - Session ID: `9601acbb-8bd5-4e66-b8fd-8c69b446227a`
-
-2. **Check board state and analyze conflicts**:
+1. **Check board state and analyze conflicts**:
    ```bash
    kanban list                                # See ALL sessions, grouped by ownership
    kanban doing                               # See all in-progress work (yours + others)
@@ -135,18 +130,19 @@ CRITICAL: Follow these steps in order every time. Skipping steps causes race con
      - **Same file edits?** → Delegate sequentially OR have one agent handle both tasks
      - **Different files?** → Safe to delegate in parallel
 
-3. **YOU MUST create a kanban card**:
+2. **YOU MUST create a kanban card**:
    ```bash
    kanban add "Prefix: task description" \
      --persona "Skill Name" \
      --status doing \
      --top \
-     --session "$SESSION_ID" \
      --content "Detailed requirements"
    ```
    Capture the card number from output (e.g., "Created card #42")
 
-4. **YOU MUST delegate with Task tool** (model: sonnet by default):
+   **IMPORTANT:** Session ID is auto-detected from environment. NEVER manually extract or pass `--session` flag.
+
+3. **YOU MUST delegate with Task tool** (model: sonnet by default):
    ```
    Task tool:
      subagent_type: general-purpose
@@ -280,22 +276,18 @@ Commands auto-detect Claude Code session ID from environment (no `--session` fla
 ### Complete Example Workflow
 
 ```bash
-# 1. Extract session ID from scratchpad path
-SESSION_ID="9601acbb-8bd5-4e66-b8fd-8c69b446227a"
-
-# 2. Check board state and analyze conflicts
+# 1. Check board state and analyze conflicts
 kanban list && kanban doing
 
-# 3. Create card
+# 2. Create card (session ID auto-detected)
 kanban add "Fullstack: Add dark mode toggle" \
   --persona "Full-Stack Engineer" --status doing --top \
-  --session "$SESSION_ID" \
   --content "Add toggle in Settings, store in localStorage, apply via ThemeContext"
 # Output: Created card #42
 
-# 4. Delegate with Task tool (include card number in prompt)
-# 5. After completion: verify work with TaskOutput
-# 6. Complete card: kanban move 42 done
+# 3. Delegate with Task tool (include card number in prompt)
+# 4. After completion: verify work with TaskOutput
+# 5. Complete card: kanban move 42 done
 ```
 
 <voice_and_behavior>
