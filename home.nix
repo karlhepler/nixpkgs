@@ -11,7 +11,7 @@ in {
     # Complex modules (with scripts)
     ./modules/system      # System tools (hms shellapp)
     ./modules/git         # Git config + 11 git shellapps
-    ./modules/claude      # Claude hooks + 3 claude shellapps
+    ./modules/claude      # Claude hooks + 9 claude shellapps
     ./modules/neovim      # Neovim editor + 30+ plugins
     ./modules/kanban      # Kanban CLI for agent coordination
 
