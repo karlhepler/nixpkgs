@@ -2,7 +2,28 @@
 Kanban CLI - File-based kanban board for agent coordination.
 
 Cards are markdown files with YAML frontmatter, stored in column folders.
-Priority field controls ordering within columns (lower = higher in list).
+Priority field controls ordering within columns (lower number = higher priority = top of list).
+
+INSERTION SORT WORKFLOW:
+When adding cards to any column, think like insertion sort:
+1. Read ALL existing cards in the target column
+2. Understand their priorities and relative importance
+3. Determine where your new card fits in the sorted order
+4. Use position flags (--top, --bottom, --after, --before) to insert correctly
+5. System uses large number spacing (1000, 2000, 3000) to leave room for future insertions
+
+PRIORITY RULES:
+- Minimum priority: 0 (no negative numbers allowed)
+- Empty column: First card defaults to priority 1000 (no position needed!)
+- Non-empty column: Use position flags to specify where card belongs
+- Recommended spacing: 1000 between cards for easy future insertions
+- Lower number = higher priority = appears earlier in list
+
+PICKING NEXT WORK:
+1. Run 'kanban list' to see full board state
+2. Filter to your session's cards if working in multi-agent scenario
+3. Take card with highest priority (lowest number) from your todo
+4. Work order is determined by priority within your session/column
 """
 
 import argparse
@@ -13,8 +34,8 @@ import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-COLUMNS = ["todo", "doing", "waiting", "done"]
-WORK_COLUMNS = ["waiting", "doing", "todo"]  # Priority order for next command
+COLUMNS = ["todo", "doing", "blocked", "done"]
+WORK_COLUMNS = ["blocked", "doing", "todo"]  # Priority order for next command
 
 
 def get_git_root() -> Path | None:
@@ -31,6 +52,30 @@ def get_git_root() -> Path | None:
         return None
 
 
+def migrate_waiting_to_blocked(root: Path) -> None:
+    """Migrate legacy 'waiting' directory to 'blocked' if it exists."""
+    waiting_dir = root / "waiting"
+    blocked_dir = root / "blocked"
+
+    if waiting_dir.exists() and not blocked_dir.exists():
+        waiting_dir.rename(blocked_dir)
+        print(f"Migrated: {waiting_dir} -> {blocked_dir}", file=sys.stderr)
+    elif waiting_dir.exists() and blocked_dir.exists():
+        # Both exist - merge waiting into blocked
+        for card in waiting_dir.glob("*.md"):
+            target = blocked_dir / card.name
+            if not target.exists():
+                card.rename(target)
+            else:
+                print(f"Warning: Skipping {card.name} (already exists in blocked/)", file=sys.stderr)
+        # Remove empty waiting directory
+        try:
+            waiting_dir.rmdir()
+            print("Merged and removed legacy 'waiting' directory", file=sys.stderr)
+        except OSError:
+            print("Warning: Could not remove 'waiting' directory (not empty)", file=sys.stderr)
+
+
 def get_root(args_root: str | None, auto_init: bool = True) -> Path:
     """Get kanban root directory from args, environment, or auto-compute.
 
@@ -41,13 +86,17 @@ def get_root(args_root: str | None, auto_init: bool = True) -> Path:
     4. Current directory + .kanban/ (fallback)
     """
     if args_root:
-        return Path(args_root)
-    if root := os.environ.get("KANBAN_ROOT"):
-        return Path(root)
+        root = Path(args_root)
+    elif root_env := os.environ.get("KANBAN_ROOT"):
+        root = Path(root_env)
+    else:
+        # Use git root if available, otherwise current directory
+        base_dir = get_git_root() or Path.cwd()
+        root = base_dir / ".kanban"
 
-    # Use git root if available, otherwise current directory
-    base_dir = get_git_root() or Path.cwd()
-    root = base_dir / ".kanban"
+    # Auto-migrate legacy 'waiting' directory to 'blocked'
+    if root.exists():
+        migrate_waiting_to_blocked(root)
 
     # Auto-initialize if needed
     if auto_init and not root.exists():
@@ -160,6 +209,18 @@ def find_card(root: Path, pattern: str) -> Path:
     return matches[0]
 
 
+def validate_priority(priority: int) -> int:
+    """Validate priority value - must be >= 0.
+
+    Raises SystemExit with error message if invalid.
+    Returns validated priority value.
+    """
+    if priority < 0:
+        print(f"Error: Priority must be >= 0 (got {priority})", file=sys.stderr)
+        sys.exit(1)
+    return priority
+
+
 def get_priority(card_path: Path) -> int:
     """Get priority from card frontmatter."""
     content = card_path.read_text()
@@ -211,35 +272,75 @@ def cmd_init(args) -> None:
 
 
 def cmd_add(args) -> None:
-    """Add a new card with insertion sort."""
+    """Add a new card using insertion sort pattern.
+
+    Insertion Sort Workflow:
+    1. Reads ALL existing cards in target column
+    2. Requires position specification (--top, --bottom, --after, --before) for non-empty columns
+    3. Assigns priority to maintain sorted order
+    4. Uses large number spacing (1000, 2000, 3000) for easy future insertions
+
+    Priority Assignment:
+    - Empty column: Defaults to 1000 (baseline for first card)
+    - --top: Places card at top (lowest priority number)
+    - --bottom: Places card at bottom (highest priority number)
+    - --after <card>: Places card after specified card
+    - --before <card>: Places card before specified card
+
+    All priorities are validated to be >= 0 (no negative numbers).
+    """
     root = get_root(args.root)
     target_column = args.status
 
-    # Show current column if no position specified
+    # STEP 1: Read ALL existing cards in target column
+    # This is the "insertion sort" step - we need to know the full list
+    # to understand where the new card should be inserted
+    column_cards = find_cards_in_column(root, target_column)
+    is_empty_column = len(column_cards) == 0
+
+    # Show current column state for user guidance (helps them decide position)
     todo = get_todo_context(root) if target_column == "todo" else []
 
-    # Determine priority based on position args
+    # STEP 2: Determine priority based on position flags
+    # This is the core "insertion sort" logic - we're figuring out where
+    # in the sorted list the new card belongs, then assigning a priority
+    # that positions it correctly.
     if args.top:
-        # Insert at top (lowest priority number)
-        min_priority = min((p for p, _, _ in todo), default=0)
-        priority = min_priority - 10
+        # Insert at top of column (highest priority = lowest number)
+        if is_empty_column:
+            # Empty column: use 1000 as baseline (leaves room below for future inserts)
+            priority = 1000
+        else:
+            # Find current minimum and go lower (but not below 0)
+            min_priority = min((get_priority(c) for c in column_cards), default=0)
+            priority = max(0, min_priority - 10)  # Ensure non-negative
     elif args.bottom:
-        # Insert at bottom (highest priority number)
-        max_priority = max((p for p, _, _ in todo), default=0)
-        priority = max_priority + 10
+        # Insert at bottom of column (lowest priority = highest number)
+        if is_empty_column:
+            # Empty column: use 1000 as baseline (consistent with --top)
+            priority = 1000
+        else:
+            # Find current maximum and go higher
+            max_priority = max((get_priority(c) for c in column_cards), default=0)
+            priority = max_priority + 10
     elif args.after:
-        # Insert after specified card
+        # Insert after specified card (slightly higher number = lower priority)
         ref_card = find_card(root, args.after)
         ref_priority = get_priority(ref_card)
-        priority = ref_priority + 5
+        priority = ref_priority + 5  # Small gap for future insertions
     elif args.before:
-        # Insert before specified card
+        # Insert before specified card (slightly lower number = higher priority)
         ref_card = find_card(root, args.before)
         ref_priority = get_priority(ref_card)
-        priority = ref_priority - 5
+        priority = max(0, ref_priority - 5)  # Ensure non-negative
     else:
-        # No position specified - show todo and require position
-        if todo:
+        # No position specified - this is where we enforce "think before you add"
+        if is_empty_column:
+            # Empty column: default to 1000 (no position needed for first card)
+            priority = 1000
+        elif todo:
+            # Non-empty todo column: REQUIRE position specification
+            # This forces users to think about relative importance (insertion sort mindset)
             print("Current todo:", file=sys.stderr)
             print(file=sys.stderr)
             for p, name, _ in todo:
@@ -248,8 +349,11 @@ def cmd_add(args) -> None:
             print("Error: Position required. Use --top, --bottom, --after <card>, or --before <card>", file=sys.stderr)
             sys.exit(1)
         else:
-            # Empty todo, just use 0
+            # Non-empty non-todo column: default to 0 (backward compatibility)
             priority = 0
+
+    # STEP 3: Validate priority is non-negative before creating card
+    priority = validate_priority(priority)
 
     num = next_number(root)
     slug = slugify(args.title)
@@ -320,7 +424,8 @@ def cmd_up(args) -> None:
     root = get_root(args.root)
     card_path = find_card(root, args.card)
     current = get_priority(card_path)
-    new_priority = current - 10
+    new_priority = max(0, current - 10)  # Ensure non-negative
+    new_priority = validate_priority(new_priority)
     update_card(card_path, {"priority": new_priority})
     print(f"Moved up: {card_path.name} (priority: {new_priority})")
 
@@ -331,6 +436,7 @@ def cmd_down(args) -> None:
     card_path = find_card(root, args.card)
     current = get_priority(card_path)
     new_priority = current + 10
+    new_priority = validate_priority(new_priority)
     update_card(card_path, {"priority": new_priority})
     print(f"Moved down: {card_path.name} (priority: {new_priority})")
 
@@ -346,7 +452,8 @@ def cmd_top(args) -> None:
         if other != card_path:
             min_priority = min(min_priority, get_priority(other))
 
-    new_priority = min_priority - 10
+    new_priority = max(0, min_priority - 10)  # Ensure non-negative
+    new_priority = validate_priority(new_priority)
     update_card(card_path, {"priority": new_priority})
     print(f"Moved to top: {card_path.name} (priority: {new_priority})")
 
@@ -363,6 +470,7 @@ def cmd_bottom(args) -> None:
             max_priority = max(max_priority, get_priority(other))
 
     new_priority = max_priority + 10
+    new_priority = validate_priority(new_priority)
     update_card(card_path, {"priority": new_priority})
     print(f"Moved to bottom: {card_path.name} (priority: {new_priority})")
 
@@ -373,7 +481,7 @@ def cmd_next(args) -> None:
     persona_filter = args.persona
     skip = args.skip or 0
 
-    # Search columns right-to-left: waiting -> in-progress -> backlog
+    # Search columns right-to-left: blocked -> doing -> todo
     found_cards = []
     for col in WORK_COLUMNS:
         cards = find_cards_in_column(root, col)
@@ -506,7 +614,6 @@ def cmd_list(args) -> None:
     columns_to_show = COLUMNS if show_done else [c for c in COLUMNS if c != "done"]
 
     for col in columns_to_show:
-        print(f"## {col}")
         col_path = root / col
 
         if col_path.exists():
@@ -514,24 +621,44 @@ def cmd_list(args) -> None:
             # Sort by priority
             cards.sort(key=get_priority)
 
-            if cards:
-                for card in cards:
-                    name = card.stem
-                    content = card.read_text()
-                    frontmatter, _ = parse_frontmatter(content)
-                    persona = frontmatter.get("persona", "")
-                    session = frontmatter.get("session", "")
-
-                    # Format: name (persona) [session-prefix]
-                    display = f"  - {name}"
-                    if persona and persona != "unassigned":
-                        display += f" ({persona})"
-                    if session:
-                        # Show abbreviated session (first 8 chars)
-                        display += f" [{session[:8]}]"
-                    print(display)
+            # Filter by session if requested
+            if hasattr(args, 'session') and args.session:
+                # Explicit session override
+                cards = [c for c in cards if get_session(c) == args.session]
+            elif hasattr(args, 'all_sessions') and args.all_sessions:
+                # Show all sessions - no filtering
+                pass
             else:
-                print("  (empty)")
+                # Default behavior: auto-detect current session and show current + sessionless cards
+                current_session = get_current_session_id()
+                if current_session:
+                    cards = [c for c in cards if get_session(c) in (current_session, None)]
+                # If no session detected, show all cards (backwards compatible)
+
+            # Count cards after filtering
+            card_count = len(cards)
+        else:
+            card_count = 0
+            cards = []
+
+        print(f"## {col} ({card_count})")
+
+        if cards:
+            for card in cards:
+                name = card.stem
+                content = card.read_text()
+                frontmatter, _ = parse_frontmatter(content)
+                persona = frontmatter.get("persona", "")
+                session = frontmatter.get("session", "")
+
+                # Format: name (persona) [session-prefix]
+                display = f"  - {name}"
+                if persona and persona != "unassigned":
+                    display += f" ({persona})"
+                if session:
+                    # Show abbreviated session (first 8 chars)
+                    display += f" [{session[:8]}]"
+                print(display)
         else:
             print("  (empty)")
         print()
@@ -554,6 +681,52 @@ def get_session(card_path: Path) -> str | None:
     return frontmatter.get("session")
 
 
+def get_current_session_id() -> str | None:
+    """Auto-detect current Claude Code session ID.
+
+    Detection strategies (in order):
+    1. CLAUDE_SESSION_ID environment variable (if set)
+    2. Parse current working directory for pattern: /private/tmp/*/SESSION_ID/scratchpad
+    3. Parse TMPDIR environment variable for session patterns
+
+    Returns:
+        Session ID string if detected, None otherwise
+    """
+    # Strategy 1: Check for explicit environment variable
+    if session_id := os.environ.get("CLAUDE_SESSION_ID"):
+        return session_id
+
+    # Strategy 2: Parse current working directory
+    cwd = os.getcwd()
+    # Pattern: /private/tmp/claude-501/SESSION_ID/scratchpad or similar
+    # Look for a path segment that looks like a session ID (alphanumeric, typically UUID-like)
+    parts = Path(cwd).parts
+    for i, part in enumerate(parts):
+        # Session ID is typically before 'scratchpad' or similar
+        if part == "scratchpad" and i > 0:
+            # Previous part is likely the session ID
+            potential_session = parts[i - 1]
+            # Validate it looks like a session ID (alphanumeric with hyphens, reasonable length)
+            if re.match(r'^[a-zA-Z0-9_-]{8,}$', potential_session):
+                return potential_session
+        # Also check if we're anywhere in a claude-* temp directory structure
+        if part.startswith("claude-") and i + 1 < len(parts):
+            # Next part might be session ID
+            potential_session = parts[i + 1]
+            if re.match(r'^[a-zA-Z0-9_-]{8,}$', potential_session):
+                return potential_session
+
+    # Strategy 3: Parse TMPDIR for patterns
+    if tmpdir := os.environ.get("TMPDIR"):
+        # Check if TMPDIR itself contains session info
+        tmpdir_parts = Path(tmpdir).parts
+        for part in tmpdir_parts:
+            if re.match(r'^[a-zA-Z0-9_-]{8,}$', part) and not part.startswith("tmp"):
+                return part
+
+    return None
+
+
 def cmd_view(args) -> None:
     """View cards in a column with bat markdown highlighting."""
     root = get_root(args.root)
@@ -563,12 +736,17 @@ def cmd_view(args) -> None:
 
     # Filter by session if requested
     if hasattr(args, 'session') and args.session:
+        # Explicit session override
         cards = [c for c in cards if get_session(c) == args.session]
-    elif hasattr(args, 'all_sessions') and not args.all_sessions:
-        # Default behavior: show current session + sessionless cards
-        # Since we don't know current session here, we skip this filter
-        # This will be handled by Staff Engineer using --session flag
+    elif hasattr(args, 'all_sessions') and args.all_sessions:
+        # Show all sessions - no filtering
         pass
+    else:
+        # Default behavior: auto-detect current session and show current + sessionless cards
+        current_session = get_current_session_id()
+        if current_session:
+            cards = [c for c in cards if get_session(c) in (current_session, None)]
+        # If no session detected, show all cards (backwards compatible)
 
     if not cards:
         print(f"No cards in {column}")
@@ -640,42 +818,85 @@ def cmd_edit(args) -> None:
 
 
 def cmd_clear(args) -> None:
-    """Delete all cards from all columns."""
+    """Delete all cards from specified columns (or all columns if none specified)."""
     root = get_root(args.root)
 
-    # Count cards first
+    # Determine which columns to clear
+    if args.columns:
+        # Validate column names
+        invalid_columns = [col for col in args.columns if col not in COLUMNS]
+        if invalid_columns:
+            print(f"Error: Invalid column(s): {', '.join(invalid_columns)}", file=sys.stderr)
+            print(f"Valid columns: {', '.join(COLUMNS)}", file=sys.stderr)
+            sys.exit(1)
+        columns_to_clear = args.columns
+    else:
+        # Default: clear all columns
+        columns_to_clear = COLUMNS
+
+    # Count cards in target columns
     count = 0
-    for col in COLUMNS:
+    for col in columns_to_clear:
         col_path = root / col
         if col_path.exists():
             count += len(list(col_path.glob("*.md")))
 
     if count == 0:
-        print("No cards to clear")
+        if args.columns:
+            print(f"No cards to clear in: {', '.join(columns_to_clear)}")
+        else:
+            print("No cards to clear")
         return
 
     # Confirm unless --yes flag is passed
     if not args.yes:
-        response = input(f"Delete all {count} cards from kanban board? [y/N] ")
+        if args.columns:
+            response = input(f"Delete {count} card(s) from {', '.join(columns_to_clear)}? [y/N] ")
+        else:
+            response = input(f"Delete all {count} cards from kanban board? [y/N] ")
         if response.lower() != "y":
             print("Aborted")
             return
 
     # Now delete
     deleted = 0
-    for col in COLUMNS:
+    for col in columns_to_clear:
         col_path = root / col
         if col_path.exists():
             for card in col_path.glob("*.md"):
                 card.unlink()
                 deleted += 1
 
-    print(f"Cleared {deleted} cards from kanban board")
+    if args.columns:
+        print(f"Cleared {deleted} card(s) from {', '.join(columns_to_clear)}")
+    else:
+        print(f"Cleared {deleted} cards from kanban board")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Kanban CLI - File-based kanban board for agent coordination"
+        description="Kanban CLI - File-based kanban board for agent coordination",
+        epilog="""
+INSERTION SORT WORKFLOW:
+  Think like insertion sort when adding cards - consider where they belong in priority order.
+
+  1. Run 'kanban list' to see existing cards and their priorities
+  2. Determine where new card fits relative to others (more/less important?)
+  3. Use position flags (--top, --bottom, --after, --before) to place correctly
+  4. System maintains sorted order using priority numbers (lower = higher priority)
+
+PRIORITY SYSTEM:
+  - Empty column: First card defaults to priority 1000
+  - Non-empty column: Position flags required for todo (helps maintain order)
+  - Spacing: Uses increments of 5-10 to allow future insertions
+  - Minimum: Priority must be >= 0 (no negative numbers)
+
+PICKING NEXT WORK:
+  1. Run 'kanban list' to see full board
+  2. Filter to your session if in multi-agent scenario
+  3. Work cards in priority order (lowest number first)
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("--root", help="Kanban root directory (or set KANBAN_ROOT)")
 
@@ -686,16 +907,28 @@ def main() -> None:
     p_init.add_argument("path", nargs="?", default=None, help="Board path (default: auto-computed from cwd)")
 
     # add (with position requirement)
-    p_add = subparsers.add_parser("add", help="Add card to todo (position required)")
+    p_add = subparsers.add_parser(
+        "add",
+        help="Add card using insertion sort pattern (position required for non-empty columns)",
+        description="""
+Add a new card to the kanban board using insertion sort workflow.
+
+For non-empty todo columns, you MUST specify position (--top, --bottom, --after, --before).
+This enforces the insertion sort mindset: think about where the card belongs in priority order.
+
+Empty columns default to priority 1000 (baseline for first card).
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     p_add.add_argument("title", help="Card title")
     p_add.add_argument("--persona", help="Persona for the card")
     p_add.add_argument("--content", "-c", help="Card body content (e.g., task description)")
     p_add.add_argument("--status", choices=COLUMNS, default="todo", help="Starting column (default: todo)")
     p_add.add_argument("--session", help="Session ID for the card")
-    p_add.add_argument("--top", action="store_true", help="Insert at top of column")
-    p_add.add_argument("--bottom", action="store_true", help="Insert at bottom of column")
-    p_add.add_argument("--after", help="Insert after specified card")
-    p_add.add_argument("--before", help="Insert before specified card")
+    p_add.add_argument("--top", action="store_true", help="Insert at top (highest priority, lowest number)")
+    p_add.add_argument("--bottom", action="store_true", help="Insert at bottom (lowest priority, highest number)")
+    p_add.add_argument("--after", help="Insert after specified card (by number or name)")
+    p_add.add_argument("--before", help="Insert before specified card (by number or name)")
 
     # delete
     p_delete = subparsers.add_parser("delete", help="Delete a card")
@@ -747,8 +980,12 @@ def main() -> None:
     # list (with ls alias)
     p_list = subparsers.add_parser("list", help="Show board overview")
     p_list.add_argument("--show-done", action="store_true", help="Include done column in output")
+    p_list.add_argument("--session", help="Filter by session ID")
+    p_list.add_argument("--all-sessions", action="store_true", help="Show all sessions (default shows current + sessionless)")
     p_ls = subparsers.add_parser("ls", help="Show board overview (alias for list)")
     p_ls.add_argument("--show-done", action="store_true", help="Include done column in output")
+    p_ls.add_argument("--session", help="Filter by session ID")
+    p_ls.add_argument("--all-sessions", action="store_true", help="Show all sessions (default shows current + sessionless)")
 
     # show
     p_show = subparsers.add_parser("show", help="Display card contents")
@@ -762,7 +999,8 @@ def main() -> None:
         p_col.set_defaults(column=col)
 
     # clear
-    p_clear = subparsers.add_parser("clear", help="Delete all cards from all columns")
+    p_clear = subparsers.add_parser("clear", help="Delete all cards from all columns (or specific columns if provided)")
+    p_clear.add_argument("columns", nargs="*", help=f"Column(s) to clear ({', '.join(COLUMNS)}). If omitted, clears all columns.")
     p_clear.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt")
 
     args = parser.parse_args()
@@ -789,7 +1027,7 @@ def main() -> None:
         "show": cmd_show,
         "todo": cmd_view,
         "doing": cmd_view,
-        "waiting": cmd_view,
+        "blocked": cmd_view,
         "done": cmd_view,
         "clear": cmd_clear,
     }

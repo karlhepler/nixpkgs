@@ -157,11 +157,116 @@ in {
         # Default output style for all Claude Code sessions
         outputStyle = "Staff Engineer";
 
-        # Auto-allow kanban CLI commands (subagents can't prompt for approval)
+        # Auto-approve read-only commands (subagents can't prompt for approval)
+        # Research: /private/tmp/claude-501/-Users-karlhepler--config-nixpkgs/tasks/ac5f27d.output
+        # Total: ~100 command patterns across categories
         permissions = {
           allow = [
+            # Kanban CLI (agent coordination)
             "Bash(kanban)"
             "Bash(kanban *)"
+
+            # Category A - Purely Read-Only Tools (approve all uses)
+            "Bash(rg *)"
+            "Bash(fd *)"
+            "Bash(bat *)"
+            "Bash(htop *)"
+            "Bash(less *)"
+            "Bash(grep *)"
+            "Bash(head *)"
+            "Bash(tail *)"
+            "Bash(cat *)"
+            "Bash(tree *)"
+            "Bash(ls *)"
+            "Bash(ll *)"
+            "Bash(difftastic *)"
+            "Bash(shellcheck *)"
+            "Bash(jq *)"
+            "Bash(yq *)"
+            "Bash(codeowners *)"
+
+            # Category B - Git Read-Only Commands
+            "Bash(git status *)"
+            "Bash(git log *)"
+            "Bash(git show *)"
+            "Bash(git diff *)"
+            "Bash(git blame *)"
+            "Bash(git who *)"
+            "Bash(git branch)"
+            "Bash(git branch -l *)"
+            "Bash(git branch --list *)"
+            "Bash(git ls-files *)"
+            "Bash(git ls-remote *)"
+            "Bash(git remote)"
+            "Bash(git remote -v)"
+            "Bash(git remote show *)"
+            "Bash(git config --get *)"
+            "Bash(git config --list *)"
+            "Bash(git rev-parse *)"
+            "Bash(git describe *)"
+            "Bash(git reflog *)"
+            "Bash(git tag)"
+            "Bash(git tag -l *)"
+            "Bash(git tag --list *)"
+            "Bash(git worktree list *)"
+            "Bash(git stash list *)"
+            "Bash(git stash show *)"
+            "Bash(git grep *)"
+            "Bash(git for-each-ref *)"
+            "Bash(git difft *)"
+            "Bash(git logt *)"
+            "Bash(git showt *)"
+
+            # Category B - GitHub CLI Read-Only Commands
+            "Bash(gh pr view *)"
+            "Bash(gh pr list *)"
+            "Bash(gh pr status *)"
+            "Bash(gh pr checks *)"
+            "Bash(gh pr diff *)"
+            "Bash(gh issue view *)"
+            "Bash(gh issue list *)"
+            "Bash(gh issue status *)"
+            "Bash(gh repo view *)"
+            "Bash(gh repo list *)"
+            "Bash(gh run view *)"
+            "Bash(gh run list *)"
+            "Bash(gh release view *)"
+            "Bash(gh release list *)"
+            "Bash(gh gist view *)"
+            "Bash(gh gist list *)"
+
+            # Category B - kubectl Read-Only Commands
+            "Bash(kubectl get *)"
+            "Bash(kubectl describe *)"
+            "Bash(kubectl logs *)"
+            "Bash(kubectl explain *)"
+            "Bash(kubectl version *)"
+            "Bash(kubectl cluster-info *)"
+            "Bash(kubectl top *)"
+            "Bash(kubectl api-resources *)"
+            "Bash(kubectl api-versions *)"
+            "Bash(kubectl config view *)"
+            "Bash(kubectl config get-contexts *)"
+            "Bash(kubectl config current-context *)"
+            "Bash(kubectl diff *)"
+
+            # Category B - Other Tools
+            "Bash(kubectx)"
+            "Bash(kubens)"
+            "Bash(npm list *)"
+            "Bash(npm view *)"
+            "Bash(npm search *)"
+            "Bash(npm outdated *)"
+            "Bash(npm ls *)"
+            "Bash(yarn list *)"
+            "Bash(yarn info *)"
+            "Bash(tmux ls *)"
+            "Bash(tmux list-sessions *)"
+            "Bash(tmux list-windows *)"
+            "Bash(tmux list-panes *)"
+            "Bash(tmux display-message *)"
+            "Bash(tmux show-options *)"
+            "Bash(tmux show-environment *)"
           ];
         };
         hooks = {

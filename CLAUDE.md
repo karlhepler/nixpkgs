@@ -43,11 +43,11 @@ This repository contains Nix Home Manager configuration for managing development
 ### Kanban CLI (Agent Coordination)
 - `kanban init`: Create kanban board structure
 - `kanban add "task" --persona <name>`: Add card to todo column
-- `kanban list`: Show all cards in todo/doing/waiting columns
+- `kanban list`: Show all cards in todo/doing/blocked columns
 - `kanban show <card#>`: Show full card details
-- `kanban move <card#> <column>`: Move card to todo/doing/waiting/done
+- `kanban move <card#> <column>`: Move card to todo/doing/blocked/done
 - `kanban next`: Get next card to work on
-- `kanban todo`, `kanban doing`, `kanban waiting`, `kanban done`: Filter by column
+- `kanban todo`, `kanban doing`, `kanban blocked`, `kanban done`: Filter by column
 - `kanban comment <card#> "text"`: Add comment to card
 - `kanban delete <card#>`: Delete a card
 - See `kanban --help` for full command list
@@ -450,7 +450,7 @@ Both commands use the Staff Engineer output style configured in `modules/claude/
 The `kanban` command provides a file-based kanban board system designed for multi-agent coordination:
 
 **Architecture:**
-- Cards are markdown files stored in column folders (todo/, doing/, waiting/, done/)
+- Cards are markdown files stored in column folders (todo/, doing/, blocked/, done/)
 - Numbered globally for easy reference (#1, #2, etc.)
 - Enables subagents to coordinate by reading/writing to shared filesystem
 - Auto-allowed in Claude Code settings (subagents don't need permission prompts)
