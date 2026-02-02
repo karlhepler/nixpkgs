@@ -166,6 +166,16 @@ in {
             "Bash(kanban)"
             "Bash(kanban *)"
 
+            # Claude Code Read-Only Tools (no parameters needed - approve all uses)
+            "Read"
+            "Glob"
+            "Grep"
+            "WebSearch"
+            "WebFetch"
+            "TaskOutput"
+            "Task(subagent_type=Explore)"
+            "Task(subagent_type=explore)"
+
             # Category A - Purely Read-Only Tools (approve all uses)
             "Bash(rg *)"
             "Bash(fd *)"
