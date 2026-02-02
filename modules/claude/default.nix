@@ -123,14 +123,26 @@ in {
       sourceFile = "default.nix";
     };
 
-    moe = shellApp {
-      name = "moe";
+    burns = shellApp {
+      name = "burns";
       runtimeInputs = [ ];
-      text = ''
-        ralph run -c ${staffEngineerHatYaml} "$@"
-      '';
-      description = "Run Ralph Orchestrator with Staff Engineer hat";
-      sourceFile = "default.nix";
+      text = builtins.replaceStrings
+        ["STAFF_ENGINEER_HAT_YAML"]
+        ["${staffEngineerHatYaml}"]
+        (builtins.readFile ./burns.bash);
+      description = "Run Ralph Orchestrator with Staff Engineer hat (accepts prompt string or file path)";
+      sourceFile = "burns.bash";
+    };
+
+    smithers = shellApp {
+      name = "smithers";
+      runtimeInputs = [ pkgs.gh pkgs.jq ];
+      text = builtins.replaceStrings
+        ["STAFF_ENGINEER_HAT_YAML"]
+        ["${staffEngineerHatYaml}"]
+        (builtins.readFile ./smithers.bash);
+      description = "Autonomous PR watcher ensuring checks pass and bot comments addressed";
+      sourceFile = "smithers.bash";
     };
   };
 
