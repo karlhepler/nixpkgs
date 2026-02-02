@@ -219,6 +219,16 @@ This repository includes integrated Claude Code settings:
 2. Run `hms` to deploy
 3. Skill automatically discovered by Claude Code in `~/.claude/commands/`
 
+**MCP (Model Context Protocol) Configuration:**
+
+Context7 MCP integration is automatically configured when `CONTEXT7_API_KEY` is set in `overconfig.nix`:
+- The activation hook merges MCP config into `~/.claude.json` (preserves Claude's metadata)
+- Uses `$CONTEXT7_API_KEY` environment variable reference for runtime access
+- Configuration is merged, not overwritten - Claude Code can still manage its own metadata
+- The MCP server uses `npx -y @upstash/context7-mcp` for on-demand execution
+
+To disable: Remove `CONTEXT7_API_KEY` from `overconfig.nix` and run `hms`
+
 ## Common Development Workflows
 
 ### Making Configuration Changes
