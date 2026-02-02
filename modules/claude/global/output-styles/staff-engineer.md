@@ -119,16 +119,29 @@ Follow these steps every time to ensure coordination and visibility:
    - Example: `/private/tmp/claude-501/.../9601acbb-8bd5-4e66-b8fd-8c69b446227a/scratchpad`
    - Session ID: `9601acbb-8bd5-4e66-b8fd-8c69b446227a`
 
-2. **Check current work and analyze conflicts** (coordination awareness):
+2. **Check board state and analyze conflicts** (coordination awareness):
    ```bash
-   kanban list                                # Full board state
-   kanban doing                               # What's currently in progress
+   kanban list                                # ALWAYS check full board state first
    ```
+
+   **Start with full visibility:**
+   - `kanban list` shows ALL columns (todo/doing/blocked/done)
+   - Reveals todo cards assigned to your session that you may need to work on
+   - Provides complete coordination context across the board
+   - Run this FIRST to understand the full picture
+
+   **Optional - focused view:**
+   ```bash
+   kanban doing                               # Only if you need focused view of in-progress work
+   ```
+   - Use only if you need to zoom in on what's actively being worked on
+   - Don't check again if you already know the current state from previous checks
 
    **Why this matters:** The WHOLE POINT of kanban is coordination between multiple staff engineers and their sub-agents. Race conditions happen when multiple agents edit the same files simultaneously.
 
    **Conflict analysis workflow:**
-   - Review what's currently in `doing` column
+   - Review what's currently in `doing` column (from `kanban list` output)
+   - Check for todo cards with your session ID that need attention
    - Identify if new work would conflict with in-progress work:
      - **Same file edits?** → Delegate sequentially OR have one agent handle both tasks
      - **Different files?** → Safe to delegate in parallel
@@ -239,9 +252,14 @@ You manage kanban cards on behalf of delegated skills. One card per skill invoca
 
 ### Kanban Columns
 
-Available columns: `todo`, `doing`, `blocked`, `done`
+Available columns: `todo`, `doing`, `blocked`, `done`, `canceled`
 
-**Note:** The `waiting` column was renamed to `blocked` to better reflect its purpose (work that is blocked by external dependencies or impediments).
+**Column semantics:**
+- **todo**: Work not yet started. Priority ordered (lowest number = highest priority). If work depends on another card, keep it in todo with a note about the dependency - don't move to blocked until you actually START and hit the blocker.
+- **doing**: Active work currently in progress. Move cards here when you begin working on them.
+- **blocked**: Active work that HIT a blocker. This is NOT for "will do later after X completes" - it's specifically for work you STARTED but can no longer continue due to a blocking issue. Include the blocking reason in card comments.
+- **done**: Completed work. Verified and meets requirements.
+- **canceled**: Work that was abandoned, became obsolete, or is no longer needed. Not completed. Use this when work is no longer relevant rather than forcing completion or leaving it in other columns. **Best practice:** Add comment explaining why when moving to canceled (e.g., "Requirements changed", "Completed elsewhere", "No longer needed").
 
 ### Priority System
 

@@ -24,6 +24,16 @@ PICKING NEXT WORK:
 2. Filter to your session's cards if working in multi-agent scenario
 3. Take card with highest priority (lowest number) from your todo
 4. Work order is determined by priority within your session/column
+
+COLUMN SEMANTICS (when to use each column):
+  todo     - Things that need to be done next, in priority order. Not yet started.
+  doing    - Things currently being worked on. Active work in progress.
+  blocked  - Things that started but are now blocked waiting for something
+             (external dependency, user input, another card, etc.). Not just
+             'queued for later' - must have a specific blocking reason.
+  done     - Completed work. Archive of what's been accomplished.
+  canceled - Work that was abandoned, became obsolete, or is no longer needed.
+             Not completed. Kept for historical context and learning.
 """
 
 import argparse
@@ -34,7 +44,7 @@ import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-COLUMNS = ["todo", "doing", "blocked", "done"]
+COLUMNS = ["todo", "doing", "blocked", "done", "canceled"]
 WORK_COLUMNS = ["blocked", "doing", "todo"]  # Priority order for next command
 
 
@@ -539,6 +549,12 @@ def cmd_history(args) -> None:
     root = get_root(args.root)
     done_cards = find_cards_in_column(root, "done")
 
+    # Include canceled cards if --include-canceled flag is set
+    include_canceled = getattr(args, 'include_canceled', False)
+    if include_canceled:
+        canceled_cards = find_cards_in_column(root, "canceled")
+        done_cards.extend(canceled_cards)
+
     if not done_cards:
         print("No completed cards")
         return
@@ -609,9 +625,26 @@ def cmd_list(args) -> None:
     print(f"KANBAN BOARD: {root}")
     print()
 
-    # Filter columns based on --show-done flag
+    # Filter columns based on --show-done, --show-canceled, and --show-all flags
     show_done = getattr(args, 'show_done', False)
-    columns_to_show = COLUMNS if show_done else [c for c in COLUMNS if c != "done"]
+    show_canceled = getattr(args, 'show_canceled', False)
+    show_all = getattr(args, 'show_all', False)
+
+    if show_all:
+        # Show everything (done + canceled + active columns)
+        columns_to_show = COLUMNS
+    elif show_done and show_canceled:
+        # Show done and canceled (all columns)
+        columns_to_show = COLUMNS
+    elif show_done:
+        # Show done but not canceled
+        columns_to_show = [c for c in COLUMNS if c != "canceled"]
+    elif show_canceled:
+        # Show canceled but not done
+        columns_to_show = [c for c in COLUMNS if c != "done"]
+    else:
+        # Default: hide both done and canceled
+        columns_to_show = [c for c in COLUMNS if c not in ["done", "canceled"]]
 
     for col in columns_to_show:
         col_path = root / col
@@ -817,6 +850,98 @@ def cmd_edit(args) -> None:
     print(f"Updated: {card_path.parent.name}/{card_path.name}")
 
 
+def cmd_assign(args) -> None:
+    """Change or remove session ownership from cards."""
+    root = get_root(args.root)
+
+    # Validate mutually exclusive flags
+    if args.no_session and args.session:
+        print("Error: Cannot specify both --session and --no-session", file=sys.stderr)
+        sys.exit(1)
+
+    # Bulk reassignment mode
+    if args.from_session:
+        if not args.to_session and not args.no_session:
+            print("Error: Bulk reassignment requires --to <session> or --no-session", file=sys.stderr)
+            sys.exit(1)
+
+        # Find all cards with the source session
+        all_cards = find_all_cards(root)
+        cards_to_reassign = [c for c in all_cards if get_session(c) == args.from_session]
+
+        if not cards_to_reassign:
+            print(f"No cards found with session '{args.from_session}'")
+            return
+
+        # Confirm bulk operation
+        if not args.yes:
+            target = "no session (sessionless)" if args.no_session else f"session '{args.to_session}'"
+            response = input(f"Reassign {len(cards_to_reassign)} card(s) from '{args.from_session}' to {target}? [y/N] ")
+            if response.lower() != "y":
+                print("Aborted")
+                return
+
+        # Perform bulk reassignment
+        for card_path in cards_to_reassign:
+            content = card_path.read_text()
+            frontmatter, body = parse_frontmatter(content)
+
+            if args.no_session:
+                # Remove session field
+                if "session" in frontmatter:
+                    del frontmatter["session"]
+            else:
+                # Assign to new session
+                frontmatter["session"] = args.to_session
+
+            frontmatter["updated"] = now_iso()
+            card_path.write_text(serialize_frontmatter(frontmatter, body))
+
+        target = "sessionless" if args.no_session else args.to_session
+        print(f"Reassigned {len(cards_to_reassign)} card(s) from '{args.from_session}' to {target}")
+        return
+
+    # Single card reassignment mode
+    if not args.card:
+        print("Error: Card number/name required (or use --from for bulk reassignment)", file=sys.stderr)
+        sys.exit(1)
+
+    card_path = find_card(root, args.card)
+    content = card_path.read_text()
+    frontmatter, body = parse_frontmatter(content)
+
+    old_session = frontmatter.get("session")
+
+    if args.no_session:
+        # Remove session field
+        if "session" in frontmatter:
+            del frontmatter["session"]
+            new_session = "sessionless"
+        else:
+            print(f"Card {card_path.name} is already sessionless")
+            return
+    elif args.session:
+        # Assign to specific session
+        frontmatter["session"] = args.session
+        new_session = args.session
+    else:
+        # Assign to auto-detected current session
+        current_session = get_current_session_id()
+        if not current_session:
+            print("Error: Could not auto-detect current session. Use --session <id> or --no-session", file=sys.stderr)
+            sys.exit(1)
+        frontmatter["session"] = current_session
+        new_session = current_session
+
+    frontmatter["updated"] = now_iso()
+    card_path.write_text(serialize_frontmatter(frontmatter, body))
+
+    # Format output message
+    old_label = old_session if old_session else "sessionless"
+    new_label = new_session if new_session != "sessionless" else "sessionless"
+    print(f"Reassigned {card_path.name}: {old_label} -> {new_label}")
+
+
 def cmd_clear(args) -> None:
     """Delete all cards from specified columns (or all columns if none specified)."""
     root = get_root(args.root)
@@ -976,16 +1101,26 @@ Empty columns default to priority 1000 (baseline for first card).
     p_history = subparsers.add_parser("history", help="Show completed cards")
     p_history.add_argument("--since", help="Filter by date (today, yesterday, week, month, or ISO date)")
     p_history.add_argument("--until", help="Filter until date (ISO format)")
+    p_history.add_argument("--include-canceled", action="store_true", help="Include canceled cards in history")
 
     # list (with ls alias)
     p_list = subparsers.add_parser("list", help="Show board overview")
     p_list.add_argument("--show-done", action="store_true", help="Include done column in output")
+    p_list.add_argument("--show-canceled", action="store_true", help="Include canceled column in output")
+    p_list.add_argument("--show-all", action="store_true", help="Include both done and canceled columns in output")
     p_list.add_argument("--session", help="Filter by session ID")
     p_list.add_argument("--all-sessions", action="store_true", help="Show all sessions (default shows current + sessionless)")
     p_ls = subparsers.add_parser("ls", help="Show board overview (alias for list)")
     p_ls.add_argument("--show-done", action="store_true", help="Include done column in output")
+    p_ls.add_argument("--show-canceled", action="store_true", help="Include canceled column in output")
+    p_ls.add_argument("--show-all", action="store_true", help="Include both done and canceled columns in output")
     p_ls.add_argument("--session", help="Filter by session ID")
     p_ls.add_argument("--all-sessions", action="store_true", help="Show all sessions (default shows current + sessionless)")
+    p_lsa = subparsers.add_parser("lsa", help="Show board overview for all sessions (alias for list --all-sessions)")
+    p_lsa.add_argument("--show-done", action="store_true", help="Include done column in output")
+    p_lsa.add_argument("--show-canceled", action="store_true", help="Include canceled column in output")
+    p_lsa.add_argument("--show-all", action="store_true", help="Include both done and canceled columns in output")
+    p_lsa.set_defaults(all_sessions=True)
 
     # show
     p_show = subparsers.add_parser("show", help="Display card contents")
@@ -997,6 +1132,31 @@ Empty columns default to priority 1000 (baseline for first card).
         p_col.add_argument("--session", help="Filter by session ID")
         p_col.add_argument("--all-sessions", action="store_true", help="Show all sessions (default shows current + sessionless)")
         p_col.set_defaults(column=col)
+
+    # assign
+    p_assign = subparsers.add_parser(
+        "assign",
+        help="Change or remove session ownership from cards",
+        description="""
+Reassign cards to different sessions or make them sessionless.
+
+SINGLE CARD MODES:
+  kanban assign <card#>                    # Assign to auto-detected current session
+  kanban assign <card#> --session <id>     # Assign to specific session
+  kanban assign <card#> --no-session       # Remove session (make sessionless)
+
+BULK REASSIGNMENT:
+  kanban assign --from <old> --to <new>    # Reassign all cards from old to new session
+  kanban assign --from <old> --no-session  # Make all cards from old session sessionless
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    p_assign.add_argument("card", nargs="?", help="Card number or name (required for single card mode)")
+    p_assign.add_argument("--session", help="Assign to specific session ID")
+    p_assign.add_argument("--no-session", action="store_true", help="Remove session (make sessionless)")
+    p_assign.add_argument("--from", dest="from_session", help="Bulk reassignment: source session ID")
+    p_assign.add_argument("--to", dest="to_session", help="Bulk reassignment: target session ID")
+    p_assign.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt (bulk operations)")
 
     # clear
     p_clear = subparsers.add_parser("clear", help="Delete all cards from all columns (or specific columns if provided)")
@@ -1024,11 +1184,14 @@ Empty columns default to priority 1000 (baseline for first card).
         "history": cmd_history,
         "list": cmd_list,
         "ls": cmd_list,
+        "lsa": cmd_list,
         "show": cmd_show,
         "todo": cmd_view,
         "doing": cmd_view,
         "blocked": cmd_view,
         "done": cmd_view,
+        "canceled": cmd_view,
+        "assign": cmd_assign,
         "clear": cmd_clear,
     }
 
