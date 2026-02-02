@@ -107,6 +107,12 @@ home-manager switch --flake ~/.config/nixpkgs
 # Order matters: Ralph depends on Claude Code being installed first.
 # ============================================================================
 
+# Ensure we're not running as root (safety check)
+if [ "$EUID" -eq 0 ] || [ "$USER" = "root" ]; then
+  echo "ERROR: hms should not be run as root. Run as your normal user."
+  exit 1
+fi
+
 # Claude Code: AI coding assistant
 if command -v claude &>/dev/null; then
   echo "Updating Claude Code..."
