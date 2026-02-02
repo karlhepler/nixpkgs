@@ -16,8 +16,8 @@ ARG="$1"
 # Check if argument is a file path
 if [ -f "$ARG" ]; then
   # It's a file - use -P flag
-  exec ralph run -c STAFF_ENGINEER_HAT_YAML -P "$ARG"
+  exec ralph run -a -c STAFF_ENGINEER_HAT_YAML -P "$ARG"
 else
   # It's a prompt string - use -p flag
-  exec ralph run -c STAFF_ENGINEER_HAT_YAML -p "$ARG"
+  exec ralph run -a -c STAFF_ENGINEER_HAT_YAML -p "$ARG"
 fi
