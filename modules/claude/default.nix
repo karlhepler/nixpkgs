@@ -211,27 +211,30 @@ EOF
     '';
 
     # claudeMcp
-    # Purpose: Creates ~/.claude.json with MCP server configuration
-    # Why: Enables Context7 MCP integration for Claude Code library/API documentation
+    # Purpose: Merges Context7 MCP configuration into ~/.claude.json
+    # Why: Enables Context7 MCP integration while preserving Claude's metadata
     # When: After writeBoundary (after files are written to disk)
-    # Note: Only creates config if context7ApiKey is provided (not null)
-    claudeMcp = lib.mkIf (context7ApiKey != null) (let
-      mcpContent = {
-        mcpServers = {
-          context7 = {
-            command = "npx";
-            args = [ "-y" "@upstash/context7-mcp" ];
-            env = {
-              CONTEXT7_API_KEY = context7ApiKey;
-            };
-          };
-        };
-      };
-      claudeMcpJson = pkgs.runCommand "claude.json" {} ''
-        echo '${builtins.toJSON mcpContent}' | ${pkgs.jq}/bin/jq . > $out
-      '';
-    in lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-      $DRY_RUN_CMD ln -sf ${claudeMcpJson} ~/.claude.json
+    # Note: Only runs if context7ApiKey is provided (not null)
+    #       Merges config into existing file instead of overwriting
+    claudeMcp = lib.mkIf (context7ApiKey != null) (
+    lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      # Create ~/.claude.json if it doesn't exist
+      if [[ ! -f ~/.claude.json ]]; then
+        $DRY_RUN_CMD echo '{}' > ~/.claude.json
+      fi
+
+      # Merge MCP configuration into existing file (preserving all other fields)
+      $DRY_RUN_CMD ${pkgs.jq}/bin/jq '.mcpServers.context7 = {
+        "command": "npx",
+        "args": ["-y", "@upstash/context7-mcp"],
+        "env": {
+          "CONTEXT7_API_KEY": "$CONTEXT7_API_KEY"
+        }
+      }' ~/.claude.json > ~/.claude.json.tmp
+
+      # Replace original file with merged version
+      $DRY_RUN_CMD mv ~/.claude.json.tmp ~/.claude.json
+      $DRY_RUN_CMD chmod 600 ~/.claude.json
     '');
   };
 }
