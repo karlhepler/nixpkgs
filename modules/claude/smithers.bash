@@ -81,6 +81,7 @@ Watch this PR continuously until it is **completely green and ready to merge**.
      - Actionable bots (security warnings, linter feedback, failed test analysis) need addressing
      - If addressing: make code changes, commit, push, THEN reply to the comment thread
      - Use \`gh api\` to reply (NOT \`gh pr comment\` which doesn't thread)
+     - **After replying: if the comment is fully addressed, resolve the thread** using \`gh pr review --comment-body "" --resolve\` or the appropriate API endpoint
 
 4. **Fix merge conflicts:**
    - Check for merge conflicts using \`gh pr view\`
