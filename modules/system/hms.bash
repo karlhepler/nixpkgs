@@ -99,6 +99,33 @@ git -C ~/.config/nixpkgs update-index --no-assume-unchanged user.nix overconfig.
 # Run home-manager switch
 home-manager switch --flake ~/.config/nixpkgs
 
+# ============================================================================
+# Install/Update Developer Tools
+# ============================================================================
+# Claude Code and Ralph Orchestrator are installed via npm/curl (not Nix)
+# because they update frequently and have their own update mechanisms.
+# Order matters: Ralph depends on Claude Code being installed first.
+# ============================================================================
+
+# Claude Code: AI coding assistant
+if command -v claude &>/dev/null; then
+  echo "Updating Claude Code..."
+  claude update 2>/dev/null || echo "Claude Code update skipped (already up to date)"
+else
+  echo "Installing Claude Code..."
+  curl -fsSL https://claude.ai/install.sh | bash
+fi
+
+# Ralph Orchestrator: Multi-agent orchestration framework
+# Note: npm global installs go to ~/.npm-packages (already in PATH via zsh.nix)
+if command -v ralph &>/dev/null; then
+  echo "Updating Ralph Orchestrator..."
+  npm update -g --prefix ~/.npm-packages @ralph-orchestrator/ralph-cli 2>/dev/null || echo "Ralph Orchestrator update skipped"
+else
+  echo "Installing Ralph Orchestrator..."
+  npm install -g --prefix ~/.npm-packages @ralph-orchestrator/ralph-cli
+fi
+
 # Configure local git for this repo (silent, idempotent)
 # USER_NAME and USER_EMAIL are provided as env vars by the nix wrapper
 git -C ~/.config/nixpkgs config --local user.name "$USER_NAME" 2>/dev/null

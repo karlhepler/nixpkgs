@@ -33,7 +33,11 @@ in {
       // (config._module.args.neovimShellapps or {})
       // (config._module.args.tmuxShellapps or {})
       // (config._module.args.kanbanShellapps or {});
-  in { inherit user theme shellapps; };
+
+    # Context7 API key for Claude MCP configuration
+    # Set in overconfig.nix via: home.sessionVariables.CONTEXT7_API_KEY = "...";
+    context7ApiKey = config.home.sessionVariables.CONTEXT7_API_KEY or null;
+  in { inherit user theme shellapps context7ApiKey; };
 
   # Activation hooks to make git ignore changes to user.nix and overconfig.nix
   home.activation.gitIgnoreUserChanges = lib.hm.dag.entryAfter [ "writeBoundary" ] ''

@@ -1,4 +1,4 @@
-{ config, pkgs, lib, shellapps, user, ... }:
+{ config, pkgs, lib, shellapps, user, context7ApiKey ? null, ... }:
 
 let
   # Import shared shellApp helper
@@ -49,11 +49,8 @@ in {
   # ============================================================================
   # Claude Code Configuration & Shell Applications
   # ============================================================================
-  # Everything Claude-related: activation hooks + 7 claude shellapp definitions
+  # Everything Claude-related: activation hooks + 8 claude shellapp definitions
   # ============================================================================
-
-  # Export Ralph hat path for use in zsh.nix
-  _module.args.staffEngineerHat = staffEngineerHatYaml;
 
   _module.args.claudeShellapps = rec {
     claude-notification-hook = shellApp {
@@ -123,6 +120,16 @@ in {
         ${claude-ask}/bin/claude-ask opus "$@"
       '';
       description = "Complex Claude question using opus model (most capable)";
+      sourceFile = "default.nix";
+    };
+
+    moe = shellApp {
+      name = "moe";
+      runtimeInputs = [ ];
+      text = ''
+        ralph run -c ${staffEngineerHatYaml} "$@"
+      '';
+      description = "Run Ralph Orchestrator with Staff Engineer hat";
       sourceFile = "default.nix";
     };
   };
@@ -202,5 +209,29 @@ EOF
       # Add generated TOOLS.md (force overwrite read-only file from previous build)
       $DRY_RUN_CMD cp -f ${toolsMarkdown} ~/.claude/TOOLS.md
     '';
+
+    # claudeMcp
+    # Purpose: Creates ~/.claude.json with MCP server configuration
+    # Why: Enables Context7 MCP integration for Claude Code library/API documentation
+    # When: After writeBoundary (after files are written to disk)
+    # Note: Only creates config if context7ApiKey is provided (not null)
+    claudeMcp = lib.mkIf (context7ApiKey != null) (let
+      mcpContent = {
+        mcpServers = {
+          context7 = {
+            command = "npx";
+            args = [ "-y" "@upstash/context7-mcp" ];
+            env = {
+              CONTEXT7_API_KEY = context7ApiKey;
+            };
+          };
+        };
+      };
+      claudeMcpJson = pkgs.runCommand "claude.json" {} ''
+        echo '${builtins.toJSON mcpContent}' | ${pkgs.jq}/bin/jq . > $out
+      '';
+    in lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      $DRY_RUN_CMD ln -sf ${claudeMcpJson} ~/.claude.json
+    '');
   };
 }
