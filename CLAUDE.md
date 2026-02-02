@@ -37,6 +37,8 @@ This repository contains Nix Home Manager configuration for managing development
 - `q "question"`: Quick Claude question (haiku model - fastest)
 - `qq "question"`: Claude question (sonnet model - balanced)
 - `qqq "question"`: Complex Claude question (opus model - most capable)
+- `burns "prompt"` or `burns file.md`: Run Ralph Orchestrator with Staff Engineer output style
+- `smithers` or `smithers <PR>`: Autonomous PR watcher (monitors checks, fixes issues, handles bot comments)
 
 ## Nix Development Commands
 
@@ -64,7 +66,7 @@ This repository uses a **domain-centric module architecture** where related func
 - `modules/system/` - System-level shellapp (hms) + bash script
 - `modules/git/` - Git configuration + 11 git shellapps + bash scripts (commit, pull, push, save, git-branches, git-kill, git-trunk, git-sync, git-resume, git-tmp, workout)
 - `modules/claude/` - Claude Code configuration with:
-  - 7 claude shellapps + bash scripts (notification-hook, complete-hook, csharp-format-hook, claude-ask, q, qq, qqq)
+  - 9 claude shellapps + bash scripts (notification-hook, complete-hook, csharp-format-hook, claude-ask, q, qq, qqq, burns, smithers)
   - `global/` directory containing Claude Code settings, output styles, and skills (mirrors ~/.claude/ structure)
 
 **Simple Modules** (single .nix files):
@@ -397,3 +399,33 @@ Configured in `modules/claude/default.nix`, automatically deployed to `~/.claude
 - Purpose: Auto-format C# files with csharpier
 - Script: `claude-csharp-format-hook.bash`
 - Requires: `csharpier` package (included in packages.nix)
+
+## Ralph Orchestrator Integration
+
+This repository includes Ralph Orchestrator integration with the Staff Engineer output style:
+
+**burns Command**:
+- **Purpose:** Run Ralph with Staff Engineer persona for general tasks
+- **Usage:**
+  - `burns "inline prompt string"` - Uses `-p` flag for inline prompts
+  - `burns path/to/file.md` - Uses `-P` flag for file-based prompts
+- **Behavior:** Intelligently detects whether argument is a file path or prompt string
+- **Source:** `modules/claude/burns.bash`
+
+**smithers Command**:
+- **Purpose:** Autonomous PR watcher that ensures PRs are completely ready to merge
+- **Usage:**
+  - `smithers` - Infer PR from current branch
+  - `smithers 123` - Watch PR #123
+  - `smithers <url>` - Watch specific PR URL
+- **Features:**
+  - Monitors all PR checks until they pass
+  - Investigates and fixes check failures (spawns sub-agents for investigation)
+  - Critically evaluates ALL bot comments (any user with `[bot]` in username)
+  - Replies directly to bot comments that need addressing
+  - Fixes merge conflicts if present
+  - Loops continuously until PR is completely green and ready to merge
+- **Runtime:** Designed to run in dedicated terminal session (ralph's event loop auto-restarts)
+- **Source:** `modules/claude/smithers.bash`
+
+Both commands use the Staff Engineer output style configured in `modules/claude/global/output-styles/staff-engineer.md`
