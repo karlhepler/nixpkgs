@@ -486,7 +486,11 @@ def cmd_bottom(args) -> None:
 
 
 def cmd_next(args) -> None:
-    """Get the next card to work on (right-to-left priority, skip done)."""
+    """Get the next card to work on (right-to-left priority, skip done).
+
+    By default, filters to current session + sessionless cards to prevent
+    grabbing work assigned to other agents.
+    """
     root = get_root(args.root)
     persona_filter = args.persona
     skip = args.skip or 0
@@ -501,6 +505,18 @@ def cmd_next(args) -> None:
                     found_cards.append((col, card))
             else:
                 found_cards.append((col, card))
+
+    # Filter by session (default: current session + sessionless)
+    # This prevents claiming cards assigned to other agents
+    if hasattr(args, 'all_sessions') and args.all_sessions:
+        # Show all sessions - no filtering
+        pass
+    else:
+        # Default: filter to current session + sessionless cards
+        current_session = get_current_session_id()
+        if current_session:
+            found_cards = [(col, card) for col, card in found_cards
+                           if get_session(card) in (current_session, None)]
 
     if not found_cards:
         if persona_filter:
@@ -545,7 +561,7 @@ def cmd_comment(args) -> None:
 
 
 def cmd_history(args) -> None:
-    """Show completed cards with optional date filtering."""
+    """Show completed cards with optional date and session filtering."""
     root = get_root(args.root)
     done_cards = find_cards_in_column(root, "done")
 
@@ -554,6 +570,17 @@ def cmd_history(args) -> None:
     if include_canceled:
         canceled_cards = find_cards_in_column(root, "canceled")
         done_cards.extend(canceled_cards)
+
+    # Filter by session if requested
+    if hasattr(args, 'session') and args.session:
+        # Explicit session filter
+        done_cards = [c for c in done_cards if get_session(c) == args.session]
+    elif hasattr(args, 'mine') and args.mine:
+        # Show only current session's cards
+        current_session = get_current_session_id()
+        if current_session:
+            done_cards = [c for c in done_cards if get_session(c) in (current_session, None)]
+    # Default: show all sessions (history is reference material)
 
     if not done_cards:
         print("No completed cards")
@@ -595,6 +622,7 @@ def cmd_history(args) -> None:
         frontmatter, _ = parse_frontmatter(content)
         updated_str = frontmatter.get("updated", "")
         persona = frontmatter.get("persona", "")
+        session = frontmatter.get("session", "")
 
         # Filter by date
         if updated_str and (since or until):
@@ -609,17 +637,20 @@ def cmd_history(args) -> None:
 
         count += 1
         name = card.stem
+        display = f"  - {name}"
         if persona and persona != "unassigned":
-            print(f"  - {name} ({persona}) - {updated_str[:10] if updated_str else 'unknown'}")
-        else:
-            print(f"  - {name} - {updated_str[:10] if updated_str else 'unknown'}")
+            display += f" ({persona})"
+        if session:
+            display += f" [{session[:8]}]"
+        display += f" - {updated_str[:10] if updated_str else 'unknown'}"
+        print(display)
 
     print()
     print(f"Total: {count} cards")
 
 
 def cmd_list(args) -> None:
-    """Show board overview."""
+    """Show board overview with grouped session display."""
     root = get_root(args.root)
 
     print(f"KANBAN BOARD: {root}")
@@ -646,35 +677,51 @@ def cmd_list(args) -> None:
         # Default: hide both done and canceled
         columns_to_show = [c for c in COLUMNS if c not in ["done", "canceled"]]
 
+    # Check if --mine flag is set (show only your session's cards)
+    show_only_mine = getattr(args, 'mine', False)
+
+    # Get current session for grouping
+    current_session = get_current_session_id()
+
+    # Explicit session override
+    if hasattr(args, 'session') and args.session:
+        # Show only specific session
+        current_session = args.session
+        show_only_mine = True
+
+    # Group cards by session
+    my_cards = {col: [] for col in columns_to_show}
+    other_cards = {col: [] for col in columns_to_show}
+
     for col in columns_to_show:
         col_path = root / col
+        if not col_path.exists():
+            continue
 
-        if col_path.exists():
-            cards = list(col_path.glob("*.md"))
-            # Sort by priority
-            cards.sort(key=get_priority)
+        cards = list(col_path.glob("*.md"))
+        cards.sort(key=get_priority)
 
-            # Filter by session if requested
-            if hasattr(args, 'session') and args.session:
-                # Explicit session override
-                cards = [c for c in cards if get_session(c) == args.session]
-            elif hasattr(args, 'all_sessions') and args.all_sessions:
-                # Show all sessions - no filtering
-                pass
+        for card in cards:
+            card_session = get_session(card)
+            # Determine ownership
+            if current_session and (card_session == current_session or card_session is None):
+                my_cards[col].append(card)
+            elif not current_session:
+                # No session detected - show all as "mine" for backwards compatibility
+                my_cards[col].append(card)
             else:
-                # Default behavior: auto-detect current session and show current + sessionless cards
-                current_session = get_current_session_id()
-                if current_session:
-                    cards = [c for c in cards if get_session(c) in (current_session, None)]
-                # If no session detected, show all cards (backwards compatible)
+                other_cards[col].append(card)
 
-            # Count cards after filtering
-            card_count = len(cards)
-        else:
-            card_count = 0
-            cards = []
+    # Display: Your Session section
+    if current_session:
+        print(f"=== Your Session ({current_session[:8]}) ===")
+    else:
+        print("=== Your Cards ===")
+    print()
 
-        print(f"## {col} ({card_count})")
+    for col in columns_to_show:
+        cards = my_cards[col]
+        print(f"{col.upper()} ({len(cards)})")
 
         if cards:
             for card in cards:
@@ -682,19 +729,40 @@ def cmd_list(args) -> None:
                 content = card.read_text()
                 frontmatter, _ = parse_frontmatter(content)
                 persona = frontmatter.get("persona", "")
-                session = frontmatter.get("session", "")
 
-                # Format: name (persona) [session-prefix]
-                display = f"  - {name}"
+                # Format: #number: title (persona)
+                display = f"  {name}"
                 if persona and persona != "unassigned":
                     display += f" ({persona})"
-                if session:
-                    # Show abbreviated session (first 8 chars)
-                    display += f" [{session[:8]}]"
                 print(display)
         else:
             print("  (empty)")
         print()
+
+    # Display: Other Sessions section (if not --mine flag)
+    if not show_only_mine and any(other_cards[col] for col in columns_to_show):
+        print("=== Other Sessions ===")
+        print()
+
+        for col in columns_to_show:
+            cards = other_cards[col]
+            if cards:
+                print(f"{col.upper()} ({len(cards)})")
+                for card in cards:
+                    name = card.stem
+                    content = card.read_text()
+                    frontmatter, _ = parse_frontmatter(content)
+                    persona = frontmatter.get("persona", "")
+                    session = frontmatter.get("session", "")
+
+                    # Format: #number: title (persona) [session]
+                    display = f"  {name}"
+                    if persona and persona != "unassigned":
+                        display += f" ({persona})"
+                    if session:
+                        display += f" [session: {session[:8]}]"
+                    print(display)
+                print()
 
 
 def cmd_show(args) -> None:
@@ -761,50 +829,89 @@ def get_current_session_id() -> str | None:
 
 
 def cmd_view(args) -> None:
-    """View cards in a column with bat markdown highlighting."""
+    """View cards in a column with two-tiered display: full details for your session, summaries for others."""
     root = get_root(args.root)
     column = args.column
 
     cards = find_cards_in_column(root, column)
 
-    # Filter by session if requested
-    if hasattr(args, 'session') and args.session:
-        # Explicit session override
-        cards = [c for c in cards if get_session(c) == args.session]
-    elif hasattr(args, 'all_sessions') and args.all_sessions:
-        # Show all sessions - no filtering
-        pass
-    else:
-        # Default behavior: auto-detect current session and show current + sessionless cards
-        current_session = get_current_session_id()
-        if current_session:
-            cards = [c for c in cards if get_session(c) in (current_session, None)]
-        # If no session detected, show all cards (backwards compatible)
-
     if not cards:
         print(f"No cards in {column}")
         return
 
-    # Build output
-    lines = []
-    for i, card in enumerate(cards):
-        if i > 0:
-            lines.append("\n" + "=" * 60 + "\n")
-        lines.append(f"=== {card.name} ===")
-        lines.append("")
-        lines.append(card.read_text())
-    output = "\n".join(lines)
+    # Get current session
+    current_session = get_current_session_id()
 
-    # Pipe through bat with markdown highlighting, no line numbers
-    try:
-        proc = subprocess.Popen(
-            ["bat", "--language", "md", "--style", "plain"],
-            stdin=subprocess.PIPE,
-            text=True
-        )
-        proc.communicate(input=output)
-    except (FileNotFoundError, BrokenPipeError):
-        print(output)
+    # Check if --mine flag is set (show only your session's cards)
+    show_only_mine = getattr(args, 'mine', False)
+
+    # Explicit session override
+    if hasattr(args, 'session') and args.session:
+        current_session = args.session
+        show_only_mine = True
+
+    # Group cards by ownership
+    my_cards = []
+    other_cards = []
+
+    for card in cards:
+        card_session = get_session(card)
+        if current_session and (card_session == current_session or card_session is None):
+            my_cards.append(card)
+        elif not current_session:
+            # No session detected - show all as "mine" for backwards compatibility
+            my_cards.append(card)
+        else:
+            other_cards.append(card)
+
+    # Display: Your Session - Full Details
+    if my_cards:
+        if current_session:
+            print("=== Your Session - Full Details ===")
+        else:
+            print("=== Your Cards - Full Details ===")
+        print()
+
+        # Build output for your cards
+        lines = []
+        for i, card in enumerate(my_cards):
+            if i > 0:
+                lines.append("\n" + "=" * 60 + "\n")
+            lines.append(f"Card {card.name}")
+            lines.append("")
+            lines.append(card.read_text())
+        output = "\n".join(lines)
+
+        # Pipe through bat with markdown highlighting
+        try:
+            proc = subprocess.Popen(
+                ["bat", "--language", "md", "--style", "plain"],
+                stdin=subprocess.PIPE,
+                text=True
+            )
+            proc.communicate(input=output)
+        except (FileNotFoundError, BrokenPipeError):
+            print(output)
+
+    # Display: Other Sessions - Summaries Only
+    if other_cards and not show_only_mine:
+        print()
+        print("=== Other Sessions - Summaries Only ===")
+        print()
+
+        for card in other_cards:
+            content = card.read_text()
+            frontmatter, _ = parse_frontmatter(content)
+            persona = frontmatter.get("persona", "")
+            session = frontmatter.get("session", "")
+
+            # Format: #number: title (persona) [session]
+            display = f"  {card.stem}"
+            if persona and persona != "unassigned":
+                display += f" ({persona})"
+            if session:
+                display += f" [session: {session[:8]}]"
+            print(display)
 
 
 def cmd_edit(args) -> None:
@@ -1088,9 +1195,10 @@ Empty columns default to priority 1000 (baseline for first card).
     p_bottom.add_argument("card", help="Card number or name")
 
     # next
-    p_next = subparsers.add_parser("next", help="Get next card to work on")
+    p_next = subparsers.add_parser("next", help="Get next card to work on (default: current session only)")
     p_next.add_argument("--persona", help="Filter by persona")
     p_next.add_argument("--skip", type=int, default=0, help="Skip N cards (for blocked cards)")
+    p_next.add_argument("--all-sessions", action="store_true", help="Include cards from all sessions (default: current session + sessionless)")
 
     # comment
     p_comment = subparsers.add_parser("comment", help="Add comment to card")
@@ -1102,25 +1210,22 @@ Empty columns default to priority 1000 (baseline for first card).
     p_history.add_argument("--since", help="Filter by date (today, yesterday, week, month, or ISO date)")
     p_history.add_argument("--until", help="Filter until date (ISO format)")
     p_history.add_argument("--include-canceled", action="store_true", help="Include canceled cards in history")
+    p_history.add_argument("--session", help="Filter by session ID")
+    p_history.add_argument("--mine", action="store_true", help="Show only current session's cards")
 
     # list (with ls alias)
-    p_list = subparsers.add_parser("list", help="Show board overview")
+    p_list = subparsers.add_parser("list", help="Show board overview (default: all sessions grouped)")
     p_list.add_argument("--show-done", action="store_true", help="Include done column in output")
     p_list.add_argument("--show-canceled", action="store_true", help="Include canceled column in output")
     p_list.add_argument("--show-all", action="store_true", help="Include both done and canceled columns in output")
     p_list.add_argument("--session", help="Filter by session ID")
-    p_list.add_argument("--all-sessions", action="store_true", help="Show all sessions (default shows current + sessionless)")
+    p_list.add_argument("--mine", action="store_true", help="Show only current session's cards")
     p_ls = subparsers.add_parser("ls", help="Show board overview (alias for list)")
     p_ls.add_argument("--show-done", action="store_true", help="Include done column in output")
     p_ls.add_argument("--show-canceled", action="store_true", help="Include canceled column in output")
     p_ls.add_argument("--show-all", action="store_true", help="Include both done and canceled columns in output")
     p_ls.add_argument("--session", help="Filter by session ID")
-    p_ls.add_argument("--all-sessions", action="store_true", help="Show all sessions (default shows current + sessionless)")
-    p_lsa = subparsers.add_parser("lsa", help="Show board overview for all sessions (alias for list --all-sessions)")
-    p_lsa.add_argument("--show-done", action="store_true", help="Include done column in output")
-    p_lsa.add_argument("--show-canceled", action="store_true", help="Include canceled column in output")
-    p_lsa.add_argument("--show-all", action="store_true", help="Include both done and canceled columns in output")
-    p_lsa.set_defaults(all_sessions=True)
+    p_ls.add_argument("--mine", action="store_true", help="Show only current session's cards")
 
     # show
     p_show = subparsers.add_parser("show", help="Display card contents")
@@ -1128,9 +1233,9 @@ Empty columns default to priority 1000 (baseline for first card).
 
     # Column view commands (kanban <column>)
     for col in COLUMNS:
-        p_col = subparsers.add_parser(col, help=f"View cards in {col}")
+        p_col = subparsers.add_parser(col, help=f"View cards in {col} (default: all sessions, full details for yours)")
         p_col.add_argument("--session", help="Filter by session ID")
-        p_col.add_argument("--all-sessions", action="store_true", help="Show all sessions (default shows current + sessionless)")
+        p_col.add_argument("--mine", action="store_true", help="Show only current session's cards")
         p_col.set_defaults(column=col)
 
     # assign
@@ -1184,7 +1289,6 @@ BULK REASSIGNMENT:
         "history": cmd_history,
         "list": cmd_list,
         "ls": cmd_list,
-        "lsa": cmd_list,
         "show": cmd_show,
         "todo": cmd_view,
         "doing": cmd_view,
