@@ -91,4 +91,4 @@ Watch this PR continuously until it is **completely green and ready to merge**.
 EOF
 
 # Run ralph with Staff Engineer hat and generated prompt
-exec ralph run -a -c STAFF_ENGINEER_HAT_YAML -P PROMPT.md
+exec ralph run -a -c STAFF_ENGINEER_HAT_YAML --max-iterations 100 -P PROMPT.md
