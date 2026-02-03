@@ -45,6 +45,19 @@ let
     ${lib.concatMapStringsSep "\n" (line: "      ${line}") (lib.splitString "\n" staffEngineerContent)}
   '';
 
+  # Burns Python CLI (Ralph with Staff Engineer hat)
+  burnsScript = pkgs.writers.writePython3Bin "burns" {
+    flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
+  } (builtins.replaceStrings
+    ["STAFF_ENGINEER_HAT_YAML"]
+    ["${staffEngineerHatYaml}"]
+    (builtins.readFile ./burns.py));
+
+  # Smithers Python CLI (token-efficient PR watcher)
+  smithersScript = pkgs.writers.writePython3Bin "smithers" {
+    flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
+  } (builtins.readFile ./smithers.py);
+
 in {
   # ============================================================================
   # Claude Code Configuration & Shell Applications
@@ -123,26 +136,20 @@ in {
       sourceFile = "default.nix";
     };
 
-    burns = shellApp {
-      name = "burns";
-      runtimeInputs = [ ];
-      text = builtins.replaceStrings
-        ["STAFF_ENGINEER_HAT_YAML"]
-        ["${staffEngineerHatYaml}"]
-        (builtins.readFile ./burns.bash);
-      description = "Run Ralph Orchestrator with Staff Engineer hat (accepts prompt string or file path)";
-      sourceFile = "burns.bash";
+    burns = burnsScript // {
+      meta = {
+        description = "Run Ralph Orchestrator with Staff Engineer hat (accepts prompt string or file path)";
+        mainProgram = "burns";
+        homepage = "${builtins.toString ./.}/burns.py";
+      };
     };
 
-    smithers = shellApp {
-      name = "smithers";
-      runtimeInputs = [ pkgs.gh pkgs.jq ];
-      text = builtins.replaceStrings
-        ["STAFF_ENGINEER_HAT_YAML"]
-        ["${staffEngineerHatYaml}"]
-        (builtins.readFile ./smithers.bash);
-      description = "Autonomous PR watcher ensuring checks pass and bot comments addressed";
-      sourceFile = "smithers.bash";
+    smithers = smithersScript // {
+      meta = {
+        description = "Token-efficient PR watcher (polls CI, invokes Ralph only when work needed)";
+        mainProgram = "smithers";
+        homepage = "${builtins.toString ./.}/smithers.py";
+      };
     };
   };
 
