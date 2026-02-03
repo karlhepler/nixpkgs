@@ -78,7 +78,8 @@ This repository uses a **domain-centric module architecture** where related func
 - `modules/system/` - System-level shellapp (hms) + bash script
 - `modules/git/` - Git configuration + 11 git shellapps + bash scripts (commit, pull, push, save, git-branches, git-kill, git-trunk, git-sync, git-resume, git-tmp, workout)
 - `modules/claude/` - Claude Code configuration with:
-  - 9 claude shellapps + bash scripts (notification-hook, complete-hook, csharp-format-hook, claude-ask, q, qq, qqq, burns, smithers)
+  - 9 claude shellapps (notification-hook, complete-hook, csharp-format-hook, claude-ask, q, qq, qqq, burns, smithers)
+  - Mixed implementation: hooks in bash, burns and smithers in Python
   - `global/` directory containing Claude Code settings, output styles, and skills (mirrors ~/.claude/ structure)
 - `modules/kanban/` - File-based kanban board CLI (Python) for agent coordination
 - `modules/neovim/` - Neovim editor configuration + 30+ plugins + LSP servers
@@ -419,29 +420,35 @@ Configured in `modules/claude/default.nix`, automatically deployed to `~/.claude
 
 This repository includes Ralph Orchestrator integration with the Staff Engineer output style:
 
-**burns Command**:
+**burns Command** (Python):
 - **Purpose:** Run Ralph with Staff Engineer persona for general tasks
 - **Usage:**
   - `burns "inline prompt string"` - Uses `-p` flag for inline prompts
   - `burns path/to/file.md` - Uses `-P` flag for file-based prompts
 - **Behavior:** Intelligently detects whether argument is a file path or prompt string
-- **Source:** `modules/claude/burns.bash`
+- **Source:** `modules/claude/burns.py`
 
-**smithers Command**:
+**smithers Command** (Python, Token-Efficient):
 - **Purpose:** Autonomous PR watcher that ensures PRs are completely ready to merge
 - **Usage:**
   - `smithers` - Infer PR from current branch
   - `smithers 123` - Watch PR #123
   - `smithers <url>` - Watch specific PR URL
+- **Token-Efficient Architecture:**
+  1. **CLI polls CI checks** (cheap - just GitHub API, no tokens burned)
+  2. **Waits for all checks to reach terminal state** (10-second poll interval)
+  3. **Gathers intelligence** - failed checks, bot comments, merge conflicts
+  4. **Only invokes Ralph when work is needed** - generates focused prompt with specific issues
+  5. **Ralph fixes issues using kanban** - then exits
+  6. **CLI loops** - re-checks PR status after Ralph finishes
+  7. **Exits when PR is green** - all checks pass, no actionable bot comments, no conflicts
 - **Features:**
   - Monitors all PR checks until they pass
-  - Investigates and fixes check failures (spawns sub-agents for investigation)
+  - Investigates and fixes check failures (Ralph spawns sub-agents)
   - Critically evaluates ALL bot comments (any user with `[bot]` in username)
-  - Replies directly to bot comments that need addressing
   - Fixes merge conflicts if present
-  - Loops continuously until PR is completely green and ready to merge
-- **Runtime:** Designed to run in dedicated terminal session (ralph's event loop auto-restarts)
-- **Source:** `modules/claude/smithers.bash`
+  - Max 100 cycles to prevent runaway loops
+- **Source:** `modules/claude/smithers.py`
 
 Both commands use the Staff Engineer output style configured in `modules/claude/global/output-styles/staff-engineer.md`
 
