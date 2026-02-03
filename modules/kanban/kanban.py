@@ -320,6 +320,13 @@ def get_persona(card_path: Path) -> str:
     return frontmatter.get("persona", "unassigned")
 
 
+def get_model(card_path: Path) -> str | None:
+    """Get model from card frontmatter."""
+    content = card_path.read_text()
+    frontmatter, _ = parse_frontmatter(content)
+    return frontmatter.get("model")
+
+
 def update_card(card_path: Path, updates: dict) -> None:
     """Update card frontmatter fields."""
     content = card_path.read_text()
@@ -464,6 +471,8 @@ def cmd_add(args) -> None:
     ]
     if args.session:
         frontmatter_lines.append(f"session: {args.session}")
+    if args.model:
+        frontmatter_lines.append(f"model: {args.model}")
     frontmatter_lines.extend([
         f"created: {now}",
         f"updated: {now}",
@@ -674,6 +683,7 @@ def cmd_history(args) -> None:
 
         count += 1
         name = card.stem
+        model = frontmatter.get("model")
 
         # Show archive location if archived
         location = ""
@@ -683,6 +693,8 @@ def cmd_history(args) -> None:
         display = f"  - {name}"
         if persona and persona != "unassigned":
             display += f" ({persona})"
+        if model:
+            display += f" [model: {model}]"
         if session:
             display += f" [{session[:8]}]"
         display += f" - {updated_str[:10] if updated_str else 'unknown'}"
@@ -773,11 +785,14 @@ def cmd_list(args) -> None:
                 content = card.read_text()
                 frontmatter, _ = parse_frontmatter(content)
                 persona = frontmatter.get("persona", "")
+                model = frontmatter.get("model")
 
-                # Format: #number: title (persona)
+                # Format: #number: title (persona) [model]
                 display = f"  {name}"
                 if persona and persona != "unassigned":
                     display += f" ({persona})"
+                if model:
+                    display += f" [model: {model}]"
                 print(display)
         else:
             print("  (empty)")
@@ -798,11 +813,14 @@ def cmd_list(args) -> None:
                     frontmatter, _ = parse_frontmatter(content)
                     persona = frontmatter.get("persona", "")
                     session = frontmatter.get("session", "")
+                    model = frontmatter.get("model")
 
-                    # Format: #number: title (persona) [session]
+                    # Format: #number: title (persona) [model] [session]
                     display = f"  {name}"
                     if persona and persona != "unassigned":
                         display += f" ({persona})"
+                    if model:
+                        display += f" [model: {model}]"
                     if session:
                         display += f" [session: {session[:8]}]"
                     print(display)
@@ -956,11 +974,14 @@ def cmd_view(args) -> None:
             frontmatter, _ = parse_frontmatter(content)
             persona = frontmatter.get("persona", "")
             session = frontmatter.get("session", "")
+            model = frontmatter.get("model")
 
-            # Format: #number: title (persona) [session]
+            # Format: #number: title (persona) [model] [session]
             display = f"  {card.stem}"
             if persona and persona != "unassigned":
                 display += f" ({persona})"
+            if model:
+                display += f" [model: {model}]"
             if session:
                 display += f" [session: {session[:8]}]"
             print(display)
@@ -1296,6 +1317,7 @@ Empty columns default to priority 1000 (baseline for first card).
     p_add.add_argument("--content", "-c", help="Card body content (e.g., task description)")
     p_add.add_argument("--status", choices=COLUMNS, default="todo", help="Starting column (default: todo)")
     p_add.add_argument("--session", help="Session ID for the card")
+    p_add.add_argument("--model", choices=["sonnet", "opus", "haiku"], help="AI model used for this card (sonnet, opus, haiku)")
     p_add.add_argument("--top", action="store_true", help="Insert at top (highest priority, lowest number)")
     p_add.add_argument("--bottom", action="store_true", help="Insert at bottom (lowest priority, highest number)")
     p_add.add_argument("--after", help="Insert after specified card (by number or name)")
