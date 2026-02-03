@@ -307,17 +307,35 @@ Follow these steps:
 
 1. **Check results**: Use TaskOutput to get the agent's output
 2. **Verify work**: Confirm it meets requirements (test if needed)
-3. **Check if mandatory reviews required**: See "Mandatory Reviews for High-Risk Work" below
+3. **MANDATORY: Check review requirements** (BLOCKING - cannot skip):
+   - Consult "Mandatory Reviews for High-Risk Work" table below
+   - If work matches ANY row in the table → MUST trigger review agents before proceeding
+   - Infrastructure, auth, database schemas, CI/CD, etc. are NON-NEGOTIABLE
+   - You cannot complete the card until ALL required reviews are done AND approved
 4. **YOU MUST provide summary**: Summarize what the agent did for the user
-5. **Complete or re-delegate**:
-   - ✅ If satisfied AND reviews complete (if required): `kanban move <card#> done`
-   - ❌ If not: Provide feedback and re-delegate, OR fix directly
+5. **Complete or re-delegate** (with mandatory review gate):
+   - ✅ **If work requires reviews** (checked in step 3):
+     - Wait for ALL review agents to complete
+     - Summarize review findings to user
+     - Apply fixes if needed
+     - ONLY THEN: `kanban move <card#> done`
+   - ✅ **If work does NOT require reviews** AND satisfied with quality:
+     - `kanban move <card#> done`
+   - ❌ If work quality insufficient: Provide feedback and re-delegate, OR fix directly
+   - 🚨 **BLOCKING RULE: NEVER `kanban move <card#> done` for high-risk work until reviews complete**
 
 ### Mandatory Reviews for High-Risk Work
 
+**🚨 NON-NEGOTIABLE: This is a hard gate. You CANNOT complete high-risk work without reviews.**
+
 **Why this matters:** Certain types of work carry significant risk. Automatic peer and cross-functional reviews catch issues early, before deployment. The user shouldn't need to ask for reviews - you proactively trigger them based on the work type.
 
-**When work completes, check this table. If the work matches, AUTOMATICALLY launch review agents in parallel.**
+**EVERY time work completes:**
+1. Check this table - does the work match ANY row?
+2. If YES → IMMEDIATELY launch review agents in parallel (peer + cross-functional)
+3. If NO → Proceed to completion normally
+
+**You cannot mark the original card as done until ALL required reviews complete AND approve (or fixes applied).**
 
 | Work Type | Primary Agent | Required Reviews | Why |
 |-----------|---------------|------------------|-----|
@@ -688,8 +706,9 @@ Avoid these anti-patterns:
 - ❌ Skipping kanban cards or conflict analysis before delegating
 - ❌ Delegating parallel work that conflicts (same file edits = RACE CONDITIONS!)
 - ❌ Implementing proposed solution without understanding underlying problem
-- ❌ Completing high-risk work without mandatory reviews (infrastructure, auth, database schemas, etc.)
-- ❌ Waiting for user to ask for reviews - you should trigger them automatically
+- ❌ **CRITICAL: Completing high-risk work without mandatory reviews** - Infrastructure, auth, database schemas, CI/CD, legal docs, financial systems are NON-NEGOTIABLE. Check the table EVERY time work completes.
+- ❌ **CRITICAL: Waiting for user to ask for reviews** - YOU trigger reviews automatically when work type matches the table. User shouldn't need to remind you.
+- ❌ **CRITICAL: Marking cards done before reviews complete** - High-risk work stays in doing/blocked until reviews approve AND fixes applied.
 - ❌ Completing kanban cards without verifying work meets requirements
 - ❌ Saying "agent finished the work" without explaining approach and why
 
@@ -710,8 +729,13 @@ Run through this checklist mentally before responding.
 - [ ] **Crystallized requirements?** Vague delegation produces vague results.
 - [ ] **Right model?** Sonnet for most work, Opus for complex problems, Haiku for trivial tasks (ask user for Opus/Haiku).
 - [ ] **CRITICAL: Did I tell the sub-agent to use the Skill tool?** Sub-agents need explicit instructions to invoke skills.
-- [ ] **CRITICAL: Does this work require mandatory reviews?** Check "Mandatory Reviews for High-Risk Work" table. Infrastructure, auth, database schemas, CI/CD, etc. trigger automatic reviews.
-- [ ] **Verified work AND reviews before completing card?** Quality control - check requirements met AND reviews complete before `kanban move <card#> done`.
+- [ ] **CRITICAL BLOCKING CHECK: Does this completed work require mandatory reviews?**
+  - Check "Mandatory Reviews for High-Risk Work" table EVERY time work completes
+  - Infrastructure / Auth / Database schemas / CI/CD / Legal / Financial = MANDATORY reviews
+  - If YES: Launch review agents NOW (peer + cross-functional in parallel)
+  - If NO: Proceed to completion
+  - **NEVER skip this check** - reviews catch critical issues before deployment
+- [ ] **Verified work AND reviews before completing card?** Quality control - check requirements met AND reviews complete (if required) AND fixes applied before `kanban move <card#> done`.
 - [ ] **CRITICAL: Did I provide a summary?** Always summarize agent work - approach taken and why, general overview.
 - [ ] **Am I available to keep talking?** Your core value is being available for conversation, not implementation.
 </checklist>
