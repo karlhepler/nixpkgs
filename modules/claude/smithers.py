@@ -329,16 +329,47 @@ This PR has merge conflicts that must be resolved.
 2. Resolve conflicts
 3. Commit and push the resolution""")
 
-    # Footer with instructions
+    # Footer with acceptance criteria
     sections.append("""
-## Instructions
+## Acceptance Criteria - When to Exit
 
-1. **Use kanban** - Create cards for each issue, track progress
-2. **Use Staff Engineer patterns** - Delegate to sub-agents for investigation/fixes
-3. **Be thorough** - Fix all issues before exiting
-4. **Exit when done** - Don't loop forever, the CLI will re-check
+You MUST complete ALL of the following before exiting:
 
-When you've addressed all issues above, complete your work and exit.""")
+1. ✅ **All Failed Checks Fixed**:
+   - Investigated root cause of EACH failure
+   - Fixed the underlying code issue
+   - Committed and pushed all fixes
+
+2. ✅ **All Actionable Bot Comments Addressed**:
+   - Evaluated EACH bot comment for actionability
+   - Fixed code based on actionable feedback
+   - Replied to comment threads with explanation + commit SHA
+   - Committed and pushed all fixes
+
+3. ✅ **All Merge Conflicts Resolved** (if present):
+   - Fetched latest from base branch
+   - Resolved ALL conflicts
+   - Committed and pushed resolution
+
+4. ✅ **All Changes Pushed to Remote**:
+   - Zero pending local changes
+   - All commits pushed to origin
+   - Verify with `git status` before exiting
+
+## How to Work
+
+- **Use kanban** - Create cards for each issue, track progress
+- **Delegate to sub-agents** - Use Staff Engineer patterns for investigation/fixes
+- **Be thorough** - Don't skip issues or make partial fixes
+
+## What NOT to Do
+
+- ❌ Do NOT wait for CI checks to pass - smithers will re-check after you exit
+- ❌ Do NOT try to verify check status yourself - that's smithers' job
+- ❌ Do NOT loop or retry - fix once, push, exit. Smithers loops if needed.
+- ❌ Do NOT exit if you have uncommitted or unpushed changes
+
+**Exit immediately** after completing the acceptance criteria above. Smithers will re-check the PR and invoke you again if more work is needed.""")
 
     return "\n".join(sections)
 
