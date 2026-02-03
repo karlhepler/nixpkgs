@@ -1325,8 +1325,8 @@ def watch_and_run(args, command_func) -> None:
         while True:
             # Wait for refresh event or timeout
             if refresh_event.wait(timeout=0.5):
-                # Clear screen (cross-platform)
-                os.system('cls' if os.name == 'nt' else 'clear')
+                # Clear screen using ANSI escape sequences (more reliable than os.system)
+                print('\033[2J\033[H', end='', flush=True)
 
                 # Re-run command
                 try:
