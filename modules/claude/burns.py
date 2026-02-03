@@ -17,11 +17,10 @@ MAX_ITERATIONS = 100
 
 def main():
     """Main entry point."""
-    # Validate Nix substitution occurred
-    if STAFF_ENGINEER_HAT == "STAFF_ENGINEER_HAT_YAML":
+    # Validate Nix substitution occurred (check if hat file exists)
+    if not os.path.isfile(STAFF_ENGINEER_HAT):
         print(
-            "Error: burns was not built correctly. "
-            "The Staff Engineer hat path was not substituted by Nix.",
+            f"Error: Staff Engineer hat not found at: {STAFF_ENGINEER_HAT}",
             file=sys.stderr
         )
         sys.exit(1)

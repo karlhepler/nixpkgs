@@ -326,17 +326,13 @@ When you've addressed all issues above, complete your work and exit.""")
 
 def work_needed(failed_checks: list, bot_comments: dict, has_conflicts: bool) -> bool:
     """Determine if there's work for Ralph to do."""
+    # Only invoke Ralph for failed checks or merge conflicts
+    # Bot comments are informational and don't require automated fixes
     if failed_checks:
         return True
     if has_conflicts:
         return True
-
-    total_bot_comments = (
-        len(bot_comments.get("issue_comments", [])) +
-        len(bot_comments.get("review_comments", [])) +
-        len(bot_comments.get("reviews", []))
-    )
-    return total_bot_comments > 0
+    return False
 
 
 def wait_for_checks(pr_number: int) -> list:
