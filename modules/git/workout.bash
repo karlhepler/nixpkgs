@@ -58,11 +58,6 @@ show_help() {
   echo "            \$WORKTREE_ROOT/.workout_prev"
   echo "            Only tracks worktree locations (not primary repo)"
   echo
-  echo "  /         Interactive browser - view and navigate worktrees"
-  echo "            Keys: Enter=select, Ctrl-D=delete, ESC=cancel"
-  echo "            Preview shows: git status, recent commits, diff vs trunk"
-  echo "            Delete handles navigation gracefully if current worktree removed"
-  echo
   echo "  <branch>  Create/navigate to worktree for specified branch"
   echo "            If branch doesn't exist, creates it from current HEAD"
   echo "            Reuses existing worktree if already created (idempotent)"
@@ -81,15 +76,15 @@ show_help() {
   echo "  workout -"
   echo
   echo "  # Browse all worktrees interactively"
-  echo "  workout /"
+  echo "  workout"
   echo
   echo "  # Typical workflow: work on feature, switch to main, switch back"
   echo "  workout feature/xyz        # Work on feature"
   echo "  workout main               # Quick check of main"
   echo "  workout -                  # Back to feature/xyz"
   echo
-  echo "INTERACTIVE BROWSER (/):"
-  echo "  The interactive browser uses fzf to show all worktrees with:"
+  echo "INTERACTIVE BROWSER:"
+  echo "  Running 'workout' with no arguments launches an interactive browser using fzf:"
   echo
   echo "  List View:"
   echo "    - Current worktree marked with → prefix"
@@ -607,6 +602,13 @@ org_repo="$(echo "$remote_url" | sed -E 's#.*[:/]([^/]+/[^/]+)\.git$#\1#')"
 
 if [ -z "$org_repo" ]; then
   echo "Error: Could not extract org/repo from remote URL: $remote_url" >&2
+  exit 1
+fi
+
+# Security: Reject path traversal attempts in org/repo
+if [[ "$org_repo" == *".."* ]]; then
+  echo "Error: Invalid org/repo path detected (contains '..'): $org_repo" >&2
+  echo "This could indicate a malicious git remote URL." >&2
   exit 1
 fi
 

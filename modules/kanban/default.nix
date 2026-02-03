@@ -1,9 +1,42 @@
 { config, pkgs, lib, ... }:
 
 let
-  kanbanScript = pkgs.writers.writePython3Bin "kanban" {
-    flakeIgnore = [ "E265" "E501" "W503" ];  # Ignore shebang, line length, line break warnings
-  } (builtins.readFile ./kanban.py);
+  homeDirectory = config.home.homeDirectory;
+
+  # Create kanban package with completion file bundled
+  kanbanPackage = pkgs.stdenv.mkDerivation {
+    name = "kanban";
+    version = "1.0.0";
+    src = ./.;
+
+    buildInputs = [ pkgs.python3 ];
+
+    buildPhase = ''
+      # Use python3 writer to create the script
+      ${pkgs.python3}/bin/python3 -m py_compile kanban.py
+    '';
+
+    installPhase = ''
+      mkdir -p $out/bin
+      mkdir -p $out/share/zsh/site-functions
+
+      # Install the Python script
+      cat > $out/bin/kanban << 'EOF'
+      #!${pkgs.python3}/bin/python3
+      EOF
+      cat kanban.py >> $out/bin/kanban
+      chmod +x $out/bin/kanban
+
+      # Install the completion file
+      cp _kanban $out/share/zsh/site-functions/_kanban
+    '';
+
+    meta = {
+      description = "File-based kanban board CLI for agent coordination";
+      mainProgram = "kanban";
+      homepage = "${builtins.toString ./.}/kanban.py";
+    };
+  };
 
 in {
   # ============================================================================
@@ -14,12 +47,6 @@ in {
   # ============================================================================
 
   _module.args.kanbanShellapps = {
-    kanban = kanbanScript // {
-      meta = {
-        description = "File-based kanban board CLI for agent coordination";
-        mainProgram = "kanban";
-        homepage = "${builtins.toString ./.}/kanban.py";
-      };
-    };
+    kanban = kanbanPackage;
   };
 }

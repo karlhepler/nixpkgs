@@ -940,7 +940,8 @@ def cmd_view(args) -> None:
     show_only_mine = getattr(args, 'mine', False)
 
     # Explicit session override
-    if hasattr(args, 'session') and args.session:
+    explicit_session_filter = hasattr(args, 'session') and args.session
+    if explicit_session_filter:
         current_session = args.session
         show_only_mine = True
 
@@ -950,7 +951,14 @@ def cmd_view(args) -> None:
 
     for card in cards:
         card_session = get_session(card)
-        if current_session and (card_session == current_session or card_session is None):
+        # When explicitly filtering by --session, match ONLY that session (no sessionless cards)
+        # When viewing your own session, include sessionless cards too
+        if explicit_session_filter:
+            if card_session == current_session:
+                my_cards.append(card)
+            else:
+                other_cards.append(card)
+        elif current_session and (card_session == current_session or card_session is None):
             my_cards.append(card)
         elif not current_session:
             # No session detected - show all as "mine" for backwards compatibility
