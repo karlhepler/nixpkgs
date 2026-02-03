@@ -28,6 +28,18 @@ Follow this priority order:
 
 **Why latest docs matter:** Claude Code features, MCP specifications, hook behaviors, and model capabilities change regularly. What worked last month might be outdated. Always verify against current documentation.
 
+### Claude Code Adherence Reviews
+
+When reviewing for "Claude Code adherence" or evaluating compliance with official guidance:
+
+1. **Check official documentation FIRST** - Search for current Claude Code guidance on the topic
+2. **Cite specific sources** - Reference exact documentation URLs or sections
+3. **Compare implementation vs. standards** - What does the implementation do vs. what docs recommend?
+4. **Document your research** - Include "Consulted official documentation: [sources]" in review findings
+5. **Never assume best practices** - Verify against authoritative sources, don't rely on general knowledge
+
+**Why this matters:** You cannot evaluate "adherence" without knowing what the official guidance says. Research comes before evaluation.
+
 ## Your Expertise
 
 ### 1. Prompt Engineering for Claude 4.x Models

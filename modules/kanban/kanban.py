@@ -37,6 +37,7 @@ COLUMN SEMANTICS (when to use each column):
 """
 
 import argparse
+import json
 import os
 import re
 import subprocess
@@ -712,6 +713,33 @@ def cmd_list(args) -> None:
     print(f"KANBAN BOARD: {root}")
     print()
 
+    # Parse date filters
+    since = None
+    until = None
+
+    if hasattr(args, 'since') and args.since:
+        if args.since == "today":
+            since = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        elif args.since == "yesterday":
+            since = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+        elif args.since == "week":
+            since = datetime.now(timezone.utc) - timedelta(days=7)
+        elif args.since == "month":
+            since = datetime.now(timezone.utc) - timedelta(days=30)
+        else:
+            try:
+                since = parse_iso(args.since)
+            except ValueError:
+                print(f"Error: Invalid date format '{args.since}'", file=sys.stderr)
+                sys.exit(1)
+
+    if hasattr(args, 'until') and args.until:
+        try:
+            until = parse_iso(args.until)
+        except ValueError:
+            print(f"Error: Invalid date format '{args.until}'", file=sys.stderr)
+            sys.exit(1)
+
     # Filter columns based on --show-done, --show-canceled, and --show-all flags
     show_done = getattr(args, 'show_done', False)
     show_canceled = getattr(args, 'show_canceled', False)
@@ -756,6 +784,28 @@ def cmd_list(args) -> None:
 
         cards = list(col_path.glob("*.md"))
         cards.sort(key=get_priority)
+
+        # Apply date filtering if specified
+        if since or until:
+            filtered_cards = []
+            for card in cards:
+                content = card.read_text()
+                frontmatter, _ = parse_frontmatter(content)
+                updated_str = frontmatter.get("updated", "")
+
+                if updated_str:
+                    try:
+                        updated = parse_iso(updated_str)
+                        if since and updated < since:
+                            continue
+                        if until and updated > until:
+                            continue
+                    except ValueError:
+                        pass  # Skip cards with invalid dates
+
+                filtered_cards.append(card)
+
+            cards = filtered_cards
 
         for card in cards:
             card_session = get_session(card)
@@ -845,47 +895,32 @@ def get_session(card_path: Path) -> str | None:
 
 
 def get_current_session_id() -> str | None:
-    """Auto-detect current Claude Code session ID.
+    """Get Claude Code session ID from history file.
 
-    Detection strategies (in order):
-    1. CLAUDE_SESSION_ID environment variable (if set)
-    2. Parse current working directory for pattern: /private/tmp/*/SESSION_ID/scratchpad
-    3. Parse TMPDIR environment variable for session patterns
+    This ID persists across 'claude --continue' invocations, ensuring
+    kanban cards remain associated with the correct conversation even
+    after the process restarts.
 
     Returns:
-        Session ID string if detected, None otherwise
+        Session ID string (UUID) if detected, None otherwise
     """
-    # Strategy 1: Check for explicit environment variable
-    if session_id := os.environ.get("CLAUDE_SESSION_ID"):
-        return session_id
+    history_file = Path.home() / '.claude' / 'history.jsonl'
+    if not history_file.exists():
+        return None
 
-    # Strategy 2: Parse current working directory
-    cwd = os.getcwd()
-    # Pattern: /private/tmp/claude-501/SESSION_ID/scratchpad or similar
-    # Look for a path segment that looks like a session ID (alphanumeric, typically UUID-like)
-    parts = Path(cwd).parts
-    for i, part in enumerate(parts):
-        # Session ID is typically before 'scratchpad' or similar
-        if part == "scratchpad" and i > 0:
-            # Previous part is likely the session ID
-            potential_session = parts[i - 1]
-            # Validate it looks like a session ID (alphanumeric with hyphens, reasonable length)
-            if re.match(r'^[a-zA-Z0-9_-]{8,}$', potential_session):
-                return potential_session
-        # Also check if we're anywhere in a claude-* temp directory structure
-        if part.startswith("claude-") and i + 1 < len(parts):
-            # Next part might be session ID
-            potential_session = parts[i + 1]
-            if re.match(r'^[a-zA-Z0-9_-]{8,}$', potential_session):
-                return potential_session
+    try:
+        # Read last line (most recent session entry)
+        last_line = None
+        with open(history_file, 'r') as f:
+            for line in f:
+                if line.strip():
+                    last_line = line
 
-    # Strategy 3: Parse TMPDIR for patterns
-    if tmpdir := os.environ.get("TMPDIR"):
-        # Check if TMPDIR itself contains session info
-        tmpdir_parts = Path(tmpdir).parts
-        for part in tmpdir_parts:
-            if re.match(r'^[a-zA-Z0-9_-]{8,}$', part) and not part.startswith("tmp"):
-                return part
+        if last_line:
+            data = json.loads(last_line)
+            return data.get('sessionId')
+    except (json.JSONDecodeError, OSError, KeyError):
+        pass
 
     return None
 
@@ -900,6 +935,59 @@ def cmd_view(args) -> None:
     if not cards:
         print(f"No cards in {column}")
         return
+
+    # Parse date filters
+    since = None
+    until = None
+
+    if hasattr(args, 'since') and args.since:
+        if args.since == "today":
+            since = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        elif args.since == "yesterday":
+            since = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+        elif args.since == "week":
+            since = datetime.now(timezone.utc) - timedelta(days=7)
+        elif args.since == "month":
+            since = datetime.now(timezone.utc) - timedelta(days=30)
+        else:
+            try:
+                since = parse_iso(args.since)
+            except ValueError:
+                print(f"Error: Invalid date format '{args.since}'", file=sys.stderr)
+                sys.exit(1)
+
+    if hasattr(args, 'until') and args.until:
+        try:
+            until = parse_iso(args.until)
+        except ValueError:
+            print(f"Error: Invalid date format '{args.until}'", file=sys.stderr)
+            sys.exit(1)
+
+    # Filter cards by date if filters are provided
+    if since or until:
+        filtered_cards = []
+        for card in cards:
+            content = card.read_text()
+            frontmatter, _ = parse_frontmatter(content)
+            updated_str = frontmatter.get("updated", "")
+
+            if updated_str:
+                try:
+                    updated = parse_iso(updated_str)
+                    if since and updated < since:
+                        continue
+                    if until and updated > until:
+                        continue
+                except ValueError:
+                    pass  # Skip cards with invalid dates
+
+            filtered_cards.append(card)
+
+        cards = filtered_cards
+
+        if not cards:
+            print(f"No cards in {column} matching date filters")
+            return
 
     # Get current session
     current_session = get_current_session_id()
@@ -1375,12 +1463,16 @@ Empty columns default to priority 1000 (baseline for first card).
     p_list.add_argument("--show-all", action="store_true", help="Include both done and canceled columns in output")
     p_list.add_argument("--session", help="Filter by session ID")
     p_list.add_argument("--mine", action="store_true", help="Show only current session's cards")
+    p_list.add_argument("--since", help="Filter by date (today, yesterday, week, month, or ISO date)")
+    p_list.add_argument("--until", help="Filter until date (ISO format)")
     p_ls = subparsers.add_parser("ls", parents=[parent_parser], help="Show board overview (alias for list)")
     p_ls.add_argument("--show-done", action="store_true", help="Include done column in output")
     p_ls.add_argument("--show-canceled", action="store_true", help="Include canceled column in output")
     p_ls.add_argument("--show-all", action="store_true", help="Include both done and canceled columns in output")
     p_ls.add_argument("--session", help="Filter by session ID")
     p_ls.add_argument("--mine", action="store_true", help="Show only current session's cards")
+    p_ls.add_argument("--since", help="Filter by date (today, yesterday, week, month, or ISO date)")
+    p_ls.add_argument("--until", help="Filter until date (ISO format)")
 
     # show
     p_show = subparsers.add_parser("show", parents=[parent_parser], help="Display card contents")
@@ -1391,6 +1483,8 @@ Empty columns default to priority 1000 (baseline for first card).
         p_col = subparsers.add_parser(col, parents=[parent_parser], help=f"View cards in {col} (default: all sessions, full details for yours)")
         p_col.add_argument("--session", help="Filter by session ID")
         p_col.add_argument("--mine", action="store_true", help="Show only current session's cards")
+        p_col.add_argument("--since", help="Filter by date (today, yesterday, week, month, or ISO date)")
+        p_col.add_argument("--until", help="Filter until date (ISO format)")
         p_col.set_defaults(column=col)
 
     # assign

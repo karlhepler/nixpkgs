@@ -39,6 +39,67 @@ def log(msg: str):
     print(f"[{timestamp}] {msg}", flush=True)
 
 
+def get_all_descendants(pid):
+    """Recursively find all descendant PIDs of a given process.
+
+    Uses pgrep -P to find immediate children, then recursively finds their children.
+    Works across session boundaries because pgrep -P filters by PPID, which is
+    preserved even when processes call setsid().
+    """
+    descendants = []
+    try:
+        # Get immediate children using pgrep -P
+        result = subprocess.run(
+            ["pgrep", "-P", str(pid)],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        children = result.stdout.strip().split('\n') if result.stdout.strip() else []
+
+        for child in children:
+            if child:
+                child_pid = int(child)
+                descendants.append(child_pid)
+                # Recursively get grandchildren
+                descendants.extend(get_all_descendants(child_pid))
+    except Exception:
+        pass  # Ignore errors during tree traversal
+
+    return descendants
+
+
+def kill_process_tree(pid):
+    """Kill a process and all its descendants.
+
+    This uses recursive pgrep -P to find all descendants (even those that called
+    setsid() and are in different sessions/process groups), then kills them in
+    reverse order (children first, then parents) with SIGKILL for guaranteed
+    termination.
+
+    This approach is necessary because Ralph uses portable-pty which calls setsid()
+    before spawning Claude CLI, causing Claude processes to escape killpg() but
+    still maintaining the parent-child relationship (PPID).
+    """
+    # Get full process tree
+    all_pids = [pid] + get_all_descendants(pid)
+
+    # Kill in reverse order (children first, then parents)
+    # This prevents orphaned processes
+    for target_pid in reversed(all_pids):
+        try:
+            os.kill(target_pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass  # Process already exited
+        except PermissionError:
+            pass  # Can't kill (shouldn't happen for our own processes)
+        except Exception:
+            pass  # Ignore other errors
+
+    # Small delay to let kernel clean up
+    time.sleep(0.1)
+
+
 def send_notification(title: str, message: str, sound: str = "Ping"):
     """Send macOS notification via Alacritty (same as Claude hooks)."""
     try:
@@ -511,25 +572,16 @@ def main_loop_iteration(cycle: int, pr_number: int, pr_url: str, owner: str, rep
             if result != 0:
                 log(f"⚠️ Ralph exited with code {result}")
         except KeyboardInterrupt:
-            log("⚠️ Received Ctrl+C, terminating Ralph and all subprocesses...")
-            # Send SIGTERM to entire process group
+            log("⚠️ Received Ctrl+C, killing Ralph and all subprocesses...")
+            # Use recursive tree killer since killpg() doesn't work
+            # (processes escape via setsid() but maintain PPID relationship)
+            kill_process_tree(process.pid)
             try:
-                os.killpg(os.getpgid(process.pid), signal.SIGTERM)
-            except ProcessLookupError:
-                pass  # Process already exited
-            try:
-                # Wait up to 5 seconds for graceful shutdown
-                process.wait(timeout=5)
-                log("Ralph terminated gracefully")
+                # Wait for cleanup (should be quick since we SIGKILL'd)
+                process.wait(timeout=2)
             except subprocess.TimeoutExpired:
-                # Force kill entire process group if still running
-                log("Ralph didn't exit, force killing...")
-                try:
-                    os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-                process.wait()
-                log("Ralph force killed")
+                pass  # Already killed, just cleanup
+            log("✓ Ralph terminated")
             raise  # Re-raise to exit smithers
     finally:
         # Clean up prompt file
