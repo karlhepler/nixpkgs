@@ -16,6 +16,7 @@ Usage:
 
 import json
 import os
+import signal
 import subprocess
 import sys
 import tempfile
@@ -372,75 +373,109 @@ def main():
     log(f"🔍 Watching PR #{pr_number}: {pr_url}")
     log(f"Poll interval: {POLL_INTERVAL}s | Max cycles: {MAX_CYCLES}")
 
-    for cycle in range(1, MAX_CYCLES + 1):
-        log(f"━━━ Cycle {cycle}/{MAX_CYCLES} ━━━")
-
-        # 1. Wait for checks to complete
-        checks = wait_for_checks(pr_number)
-
-        # 2. Gather intelligence
-        failed_checks = get_failed_checks(checks)
-        bot_comments = get_bot_comments(owner, repo, pr_number)
-        conflicts = has_merge_conflicts(pr_number)
-        pr_info = get_pr_info(pr_number)
-
-        # 3. Report status
-        total_bot = (
-            len(bot_comments.get("issue_comments", [])) +
-            len(bot_comments.get("review_comments", [])) +
-            len(bot_comments.get("reviews", []))
-        )
-        conflict_str = "conflicts" if conflicts else "no conflicts"
-        log(
-            f"Status: {len(failed_checks)} failed checks | "
-            f"{total_bot} bot comments | {conflict_str}"
-        )
-
-        # 4. Check if work needed
-        if not work_needed(failed_checks, bot_comments, conflicts):
-            log("✅ PR is completely ready to merge!")
-            log(f"Completed in {cycle} cycle(s)")
-            return 0
-
-        # 5. Generate prompt and invoke Ralph
-        log("📝 Generating prompt for Ralph...")
-        prompt = generate_prompt(
-            pr_url, pr_info, failed_checks, bot_comments, conflicts
-        )
-
-        # Write to temp file
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            suffix=".md",
-            prefix="smithers-prompt-",
-            dir="/tmp",
-            delete=False
-        ) as f:
-            f.write(prompt)
-            prompt_file = f.name
-
-        log(f"🚀 Invoking Ralph (burns {prompt_file})")
-        try:
-            # Run burns with the prompt file
-            result = subprocess.run(
-                ["burns", prompt_file],
-                check=False  # Don't raise on non-zero exit
-            )
-            if result.returncode != 0:
-                log(f"⚠️ Ralph exited with code {result.returncode}")
-        finally:
-            # Clean up prompt file
-            try:
-                os.unlink(prompt_file)
-            except OSError:
-                pass
-
-        log("Ralph finished, re-checking PR status...")
-        # Small delay before re-checking to let GitHub update
-        time.sleep(5)
+    try:
+        for cycle in range(1, MAX_CYCLES + 1):
+            main_loop_iteration(cycle, pr_number, pr_url, owner, repo)
+    except KeyboardInterrupt:
+        log("\n⚠️ Interrupted by user")
+        return 130  # Standard exit code for SIGINT
 
     log(f"⚠️ Reached max cycles ({MAX_CYCLES}) without PR being ready")
     return 1
+
+
+def main_loop_iteration(cycle: int, pr_number: int, pr_url: str, owner: str, repo: str):
+    """Single iteration of the main watch loop."""
+    log(f"━━━ Cycle {cycle}/{MAX_CYCLES} ━━━")
+
+    # 1. Wait for checks to complete
+    checks = wait_for_checks(pr_number)
+
+    # 2. Gather intelligence
+    failed_checks = get_failed_checks(checks)
+    bot_comments = get_bot_comments(owner, repo, pr_number)
+    conflicts = has_merge_conflicts(pr_number)
+    pr_info = get_pr_info(pr_number)
+
+    # 3. Report status
+    total_bot = (
+        len(bot_comments.get("issue_comments", [])) +
+        len(bot_comments.get("review_comments", [])) +
+        len(bot_comments.get("reviews", []))
+    )
+    conflict_str = "conflicts" if conflicts else "no conflicts"
+    log(
+        f"Status: {len(failed_checks)} failed checks | "
+        f"{total_bot} bot comments | {conflict_str}"
+    )
+
+    # 4. Check if work needed
+    if not work_needed(failed_checks, bot_comments, conflicts):
+        log("✅ PR is completely ready to merge!")
+        log(f"Completed in {cycle} cycle(s)")
+        sys.exit(0)
+
+    # 5. Generate prompt and invoke Ralph
+    log("📝 Generating prompt for Ralph...")
+    prompt = generate_prompt(
+        pr_url, pr_info, failed_checks, bot_comments, conflicts
+    )
+
+    # Write to temp file
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        suffix=".md",
+        prefix="smithers-prompt-",
+        dir="/tmp",
+        delete=False
+    ) as f:
+        f.write(prompt)
+        prompt_file = f.name
+
+    log(f"🚀 Invoking Ralph (burns {prompt_file})")
+    try:
+        # Run burns with the prompt file
+        # Use Popen with process group for proper signal handling
+        # This ensures all child processes (Ralph and its subprocesses) get signals
+        process = subprocess.Popen(
+            ["burns", prompt_file],
+            start_new_session=True  # Create new process group
+        )
+        try:
+            result = process.wait()
+            if result != 0:
+                log(f"⚠️ Ralph exited with code {result}")
+        except KeyboardInterrupt:
+            log("⚠️ Received Ctrl+C, terminating Ralph and all subprocesses...")
+            # Send SIGTERM to entire process group
+            try:
+                os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+            except ProcessLookupError:
+                pass  # Process already exited
+            try:
+                # Wait up to 5 seconds for graceful shutdown
+                process.wait(timeout=5)
+                log("Ralph terminated gracefully")
+            except subprocess.TimeoutExpired:
+                # Force kill entire process group if still running
+                log("Ralph didn't exit, force killing...")
+                try:
+                    os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.wait()
+                log("Ralph force killed")
+            raise  # Re-raise to exit smithers
+    finally:
+        # Clean up prompt file
+        try:
+            os.unlink(prompt_file)
+        except OSError:
+            pass
+
+    log("Ralph finished, re-checking PR status...")
+    # Small delay before re-checking to let GitHub update
+    time.sleep(5)
 
 
 if __name__ == "__main__":
