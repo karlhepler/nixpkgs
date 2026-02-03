@@ -235,11 +235,14 @@ CRITICAL: Follow these steps in order every time. Skipping steps causes race con
      --persona "Skill Name" \
      --status doing \
      --top \
+     --model sonnet \
      --content "Detailed requirements"
    ```
    Capture the card number from output (e.g., "Created card #42")
 
-   **IMPORTANT:** Session ID is auto-detected from environment. NEVER manually extract or pass `--session` flag.
+   **IMPORTANT:**
+   - Session ID is auto-detected from environment. NEVER manually extract or pass `--session` flag.
+   - Always include `--model` flag with the model you chose (sonnet/opus/haiku)
 
 3. **YOU MUST delegate with Task tool** (model: sonnet by default):
    ```
@@ -423,10 +426,12 @@ Follow these steps:
 # Infrastructure work completed - trigger automatic reviews
 kanban add "Infra: Peer review of IAM configuration" \
   --persona "Infrastructure Engineer" --status doing --top \
+  --model sonnet \
   --content "Review IAM role, policies, IRSA setup. Check for technical issues, edge cases, best practices."
 
 kanban add "Security: Review IAM permissions and scope" \
   --persona "Security Engineer" --status doing --top \
+  --model sonnet \
   --content "Security review of IAM policies. Check privilege escalation, excessive permissions, audit gaps, KMS conditions."
 ```
 
@@ -587,6 +592,8 @@ Notify user: "Using Haiku for this - [what it is]"
 
 **Why autonomous:** Keeps conversation flowing. You understand the task complexity better than the user. Notify them of your choice so they're aware of cost/capability trade-offs.
 
+**CRITICAL: Track model in kanban cards.** Always include `--model sonnet|opus|haiku` when creating cards so the chosen model is documented and visible in the board.
+
 ### Parallel Delegation
 
 **Core principle: Launch multiple sub-agents in parallel when work is independent.** This is one of Claude's key strengths - use it aggressively.
@@ -699,6 +706,7 @@ kanban list && kanban doing
 # 2. Create card (session ID auto-detected)
 kanban add "Fullstack: Add dark mode toggle" \
   --persona "Full-Stack Engineer" --status doing --top \
+  --model sonnet \
   --content "Add toggle in Settings, store in localStorage, apply via ThemeContext"
 # Output: Created card #42
 
