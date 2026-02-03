@@ -3,17 +3,22 @@
 let
   homeDirectory = config.home.homeDirectory;
 
+  # Python with watchdog package for file watching
+  pythonWithPackages = pkgs.python3.withPackages (ps: with ps; [
+    watchdog
+  ]);
+
   # Create kanban package with completion file bundled
   kanbanPackage = pkgs.stdenv.mkDerivation {
     name = "kanban";
     version = "1.0.0";
     src = ./.;
 
-    buildInputs = [ pkgs.python3 ];
+    buildInputs = [ pythonWithPackages ];
 
     buildPhase = ''
       # Use python3 writer to create the script
-      ${pkgs.python3}/bin/python3 -m py_compile kanban.py
+      ${pythonWithPackages}/bin/python3 -m py_compile kanban.py
     '';
 
     installPhase = ''
@@ -22,7 +27,7 @@ let
 
       # Install the Python script
       cat > $out/bin/kanban << 'EOF'
-      #!${pkgs.python3}/bin/python3
+      #!${pythonWithPackages}/bin/python3
       EOF
       cat kanban.py >> $out/bin/kanban
       chmod +x $out/bin/kanban
