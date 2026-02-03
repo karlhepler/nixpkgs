@@ -11,7 +11,7 @@ This repository contains Nix Home Manager configuration for managing development
 ## Quick Commands
 
 ### Configuration Management
-- `hms`: Apply Home Manager changes (NEVER use `--expunge` flag)
+- `hms`: Apply Home Manager changes (Claude Code must never use `--expunge` flag)
 - `hme`: Edit the `home.nix` file (main configuration)
 - `hmu`: Edit the `user.nix` file (user-specific identity)
 - `hmo`: Edit the `overconfig.nix` file (machine-specific customizations)
@@ -76,7 +76,7 @@ This repository uses a **domain-centric module architecture** where related func
 
 **Complex Modules** (directories with default.nix):
 - `modules/system/` - System-level shellapp (hms) + bash script
-- `modules/git/` - Git configuration + 11 git shellapps + bash scripts (commit, pull, push, save, git-branches, git-kill, git-trunk, git-sync, git-resume, git-tmp, workout)
+- `modules/git/` - Git configuration + 13 git shellapps + bash scripts (commit, pull, push, save, git-branches, git-kill, git-trunk, git-sync, git-resume, git-tmp, groot, workout, workout-delete)
 - `modules/claude/` - Claude Code configuration with:
   - 9 claude shellapps (notification-hook, complete-hook, csharp-format-hook, claude-ask, q, qq, qqq, burns, smithers)
   - Mixed implementation: hooks in bash, burns and smithers in Python
@@ -100,7 +100,7 @@ This repository uses a **domain-centric module architecture** where related func
 - `neovim/` - Neovim configuration files (vimrc, lspconfig.lua, lsp/, plugins/)
 - `modules/claude/global/` - Global Claude Code settings and skills (mirrors ~/.claude/ structure)
   - `CLAUDE.md` - Global guidelines for Claude Code
-  - `output-styles/` - Custom output styles (4qs-facilitator)
+  - `output-styles/` - Custom output styles (4qs-facilitator, staff-engineer)
   - `commands/` - User-level skills and commands (try-again, review-pr-comments)
 
 ## Shellapp Pattern
@@ -140,8 +140,13 @@ When running `hms`, these activation hooks run automatically:
    - Copies global settings (CLAUDE.md, output-styles/)
    - Generates TOOLS.md from package metadata
    - Deploys skills to ~/.claude/commands/
-5. **precompileZshCompletions** (modules/zsh.nix): Compiles zsh completions for faster shell startup
-6. **generateDirenvHook** (modules/direnv.nix): Creates static direnv hook for performance
+5. **claudeMcp** (modules/claude/): Conditionally configures Context7 MCP integration (only if CONTEXT7_API_KEY is set in overconfig.nix)
+6. **precompileZshCompletions** (modules/zsh.nix): Compiles zsh completions for faster shell startup
+7. **generateDirenvHook** (modules/direnv.nix): Creates static direnv hook for performance
+
+In addition to Home Manager activation hooks, `hms` also installs and updates external tools:
+- **Claude Code**: Installs via `curl -fsSL https://claude.ai/install.sh | bash` (if not present) or updates via `claude update`
+- **Ralph Orchestrator**: Installs/updates via npm global package `@ralph-orchestrator/ralph-cli`
 
 Note: Application management is handled natively by home-manager 25.11+. Apps are automatically available in ~/Applications/Home Manager Apps for Spotlight/Alfred indexing.
 
@@ -220,9 +225,10 @@ git config --local --get user.email
 This repository includes integrated Claude Code settings:
 - Global preferences and guidelines in `modules/claude/global/CLAUDE.md`
 - User-level skills in `modules/claude/global/commands/`:
-  - Engineering: `backend-engineer`, `frontend-engineer`, `fullstack-engineer`
+  - Engineering: `swe-backend`, `swe-frontend`, `swe-fullstack`, `swe-devex`, `swe-infra`, `swe-security`, `swe-sre`
   - Support: `researcher`, `facilitator`, `scribe`
   - Workflow: `review-pr-comments`
+  - Business: `finance`, `lawyer`, `marketing`
 - Notification and completion hooks configured in `modules/claude/default.nix`
 - Settings and skills automatically deployed to `~/.claude/` on `hms`
 - Runtime state managed through `.claude/` directory (gitignored)
@@ -309,8 +315,9 @@ Configured in `modules/zsh.nix`:
 1. **Repository Location**: MUST be installed at `~/.config/nixpkgs`
 2. **Use hms Command**: Always use `hms` for syncing to ensure proper git handling of overconfig.nix
 3. **Backup Synchronization**: Sync `~/.backup` folder with cloud storage for machine-specific configuration safety
-4. **No --expunge Flag**: Claude Code must never use the `--expunge` flag with `hms`
+4. **--expunge Flag**: Claude Code must never use the `--expunge` flag with `hms` (users may use it manually, but Claude Code must not)
 5. **macOS ARM Only**: This configuration is locked to `aarch64-darwin` (Apple Silicon Macs)
+6. **NEVER USE HOMEBREW**: Do NOT suggest, recommend, or implement Homebrew for ANY purpose. This is a Nix-based configuration. All packages MUST be managed through Nix (nixpkgs or nixpkgs-unstable). The user has explicitly rejected Homebrew.
 
 ## Adding New Modules
 

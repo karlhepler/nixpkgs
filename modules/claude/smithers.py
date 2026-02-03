@@ -42,10 +42,16 @@ def log(msg: str):
 def send_notification(title: str, message: str, sound: str = "Ping"):
     """Send macOS notification via Alacritty (same as Claude hooks)."""
     try:
+        # Escape double quotes to prevent command injection
+        # Replace all " with \" to safely embed in AppleScript strings
+        safe_title = title.replace('"', '\\"')
+        safe_message = message.replace('"', '\\"')
+        safe_sound = sound.replace('"', '\\"')
+
         subprocess.run([
             "osascript",
             "-e",
-            f'tell application id "org.alacritty" to display notification "{message}" with title "{title}" sound name "{sound}"'
+            f'tell application id "org.alacritty" to display notification "{safe_message}" with title "{safe_title}" sound name "{safe_sound}"'
         ], check=False, capture_output=True)
     except Exception:
         pass  # Silently fail if notification can't be sent

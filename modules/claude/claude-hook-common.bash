@@ -18,7 +18,13 @@ send_notification() {
   local message="$2"
   local sound="${3:-Ping}"
 
-  osascript -e "tell application id \"org.alacritty\" to display notification \"$message\" with title \"$title\" sound name \"$sound\""
+  # Escape double quotes to prevent command injection
+  # Replace all " with \" to safely embed in AppleScript strings
+  local safe_title="${title//\"/\\\"}"
+  local safe_message="${message//\"/\\\"}"
+  local safe_sound="${sound//\"/\\\"}"
+
+  osascript -e "tell application id \"org.alacritty\" to display notification \"$safe_message\" with title \"$safe_title\" sound name \"$safe_sound\""
 }
 
 # Set tmux attention flags

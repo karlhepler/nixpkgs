@@ -1,0 +1,162 @@
+#compdef kanban
+
+# Zsh completion for kanban CLI
+# Provides tab completion for subcommands, card numbers, column names, and flags
+
+_kanban() {
+  local curcontext="$curcontext" state line
+  typeset -A opt_args
+
+  # Get kanban root directory using same logic as CLI
+  local kanban_root
+  if [[ -n "$KANBAN_ROOT" ]]; then
+    kanban_root="$KANBAN_ROOT"
+  else
+    # Try git root first
+    local git_root
+    git_root=$(git rev-parse --show-toplevel 2>/dev/null)
+    if [[ -n "$git_root" ]]; then
+      kanban_root="$git_root/.kanban"
+    else
+      kanban_root="$PWD/.kanban"
+    fi
+  fi
+
+  # Function to get card numbers from all columns
+  _kanban_cards() {
+    local -a cards
+    if [[ -d "$kanban_root" ]]; then
+      # Search all columns and archive for card files
+      for col in todo doing blocked done canceled archive/*; do
+        local col_path="$kanban_root/$col"
+        if [[ -d "$col_path" ]]; then
+          for card in "$col_path"/*.md(N); do
+            local card_name=${card:t}
+            local card_num=${card_name%%[-]*}
+            local card_title=${card_name#*-}
+            card_title=${card_title%.md}
+            # Format: card_num:description
+            cards+=("$card_num:$card_title")
+          done
+        fi
+      done
+    fi
+    _describe -t cards 'card number' cards
+  }
+
+  # Main command specification
+  _arguments -C \
+    '--root[Kanban root directory]:directory:_directories' \
+    '1: :->command' \
+    '*:: :->args'
+
+  case $state in
+    command)
+      local -a commands
+      commands=(
+        'init:Create kanban board structure'
+        'add:Add a new card to the board'
+        'list:Show board overview (alias: ls)'
+        'ls:Show board overview (alias for list)'
+        'show:Display card contents'
+        'move:Move card to a different column'
+        'delete:Delete a card'
+        'edit:Edit card content or metadata'
+        'comment:Add comment to card'
+        'next:Get next card to work on'
+        'up:Move card up in priority'
+        'down:Move card down in priority'
+        'top:Move card to top of column'
+        'bottom:Move card to bottom of column'
+        'history:Show completed cards'
+        'todo:View cards in todo column'
+        'doing:View cards in doing column'
+        'blocked:View cards in blocked column'
+        'done:View cards in done column'
+        'canceled:View cards in canceled column'
+        'assign:Change or remove session ownership'
+        'clear:Delete all cards from columns'
+      )
+      _describe -t commands 'kanban command' commands
+      ;;
+    args)
+      case $line[1] in
+        init)
+          _arguments \
+            '1:path:_directories'
+          ;;
+        add)
+          _arguments \
+            '1:title:' \
+            '--persona[Persona for the card]:persona:' \
+            '--content[Card body content]:content:' \
+            '--status[Starting column]:column:(todo doing blocked done canceled)' \
+            '--session[Session ID]:session:' \
+            '--top[Insert at top]' \
+            '--bottom[Insert at bottom]' \
+            '--after[Insert after card]:card:_kanban_cards' \
+            '--before[Insert before card]:card:_kanban_cards'
+          ;;
+        delete|show|edit|up|down|top|bottom)
+          _arguments \
+            '1:card:_kanban_cards'
+          ;;
+        move)
+          _arguments \
+            '1:card:_kanban_cards' \
+            '2:column:(todo doing blocked done canceled)'
+          ;;
+        comment)
+          _arguments \
+            '1:card:_kanban_cards' \
+            '2:message:'
+          ;;
+        next)
+          _arguments \
+            '--persona[Filter by persona]:persona:' \
+            '--skip[Skip N cards]:number:' \
+            '--all-sessions[Include all sessions]'
+          ;;
+        history)
+          _arguments \
+            '--since[Filter by date]:date:(today yesterday week month)' \
+            '--until[Filter until date]:date:' \
+            '--include-canceled[Include canceled cards]' \
+            '--session[Filter by session]:session:' \
+            '--mine[Show only current session]'
+          ;;
+        list|ls)
+          _arguments \
+            '--show-done[Include done column]' \
+            '--show-canceled[Include canceled column]' \
+            '--show-all[Include done and canceled columns]' \
+            '--session[Filter by session]:session:' \
+            '--mine[Show only current session]'
+          ;;
+        todo|doing|blocked|done|canceled)
+          _arguments \
+            '--session[Filter by session]:session:' \
+            '--mine[Show only current session]'
+          ;;
+        assign)
+          _arguments \
+            '1:card:_kanban_cards' \
+            '--session[Assign to session]:session:' \
+            '--no-session[Remove session]' \
+            '--from[Bulk reassignment source]:session:' \
+            '--to[Bulk reassignment target]:session:' \
+            '--yes[Skip confirmation]' \
+            '-y[Skip confirmation]'
+          ;;
+        clear)
+          _arguments \
+            '*:columns:(todo doing blocked done canceled)' \
+            '--yes[Skip confirmation]' \
+            '-y[Skip confirmation]'
+          ;;
+      esac
+      ;;
+  esac
+}
+
+_kanban "$@"
