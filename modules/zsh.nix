@@ -34,6 +34,15 @@ in {
       eval "$(${pkgs.zoxide}/bin/zoxide init --cmd cd zsh)"
     '';
     initContent = ''
+      # Set up fpath to include completion directories
+      fpath=(
+        ${homeDirectory}/.nix-profile/share/zsh/site-functions
+        ${homeDirectory}/.nix-profile/share/zsh/vendor-completions
+        /nix/var/nix/profiles/default/share/zsh/site-functions
+        /nix/var/nix/profiles/default/share/zsh/vendor-completions
+        $fpath
+      )
+
       # Fast compinit with precompiled dump
       autoload -Uz compinit
       if [[ -f ${homeDirectory}/.zcompdump.zwc ]]; then
