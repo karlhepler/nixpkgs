@@ -39,6 +39,18 @@ def log(msg: str):
     print(f"[{timestamp}] {msg}", flush=True)
 
 
+def send_notification(title: str, message: str, sound: str = "Ping"):
+    """Send macOS notification via Alacritty (same as Claude hooks)."""
+    try:
+        subprocess.run([
+            "osascript",
+            "-e",
+            f'tell application id "org.alacritty" to display notification "{message}" with title "{title}" sound name "{sound}"'
+        ], check=False, capture_output=True)
+    except Exception:
+        pass  # Silently fail if notification can't be sent
+
+
 def run_gh(args: list) -> tuple:
     """Run gh command and return (returncode, stdout, stderr)."""
     result = subprocess.run(
@@ -378,9 +390,19 @@ def main():
             main_loop_iteration(cycle, pr_number, pr_url, owner, repo)
     except KeyboardInterrupt:
         log("\n⚠️ Interrupted by user")
+        send_notification(
+            "Smithers Interrupted",
+            f"PR #{pr_number} watch interrupted by user",
+            "Basso"
+        )
         return 130  # Standard exit code for SIGINT
 
     log(f"⚠️ Reached max cycles ({MAX_CYCLES}) without PR being ready")
+    send_notification(
+        "Smithers Max Cycles",
+        f"PR #{pr_number} reached {MAX_CYCLES} cycles without being ready",
+        "Sosumi"
+    )
     return 1
 
 
@@ -413,6 +435,12 @@ def main_loop_iteration(cycle: int, pr_number: int, pr_url: str, owner: str, rep
     if not work_needed(failed_checks, bot_comments, conflicts):
         log("✅ PR is completely ready to merge!")
         log(f"Completed in {cycle} cycle(s)")
+        # Send macOS notification
+        send_notification(
+            "Smithers Complete",
+            f"PR #{pr_number} is ready to merge!\nCompleted in {cycle} cycle(s)",
+            "Glass"
+        )
         sys.exit(0)
 
     # 5. Generate prompt and invoke Ralph
