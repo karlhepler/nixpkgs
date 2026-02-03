@@ -1,7 +1,6 @@
 result
 
 **/.claude/settings.local.json
-/.serena
 
 # Python cache
 __pycache__/
