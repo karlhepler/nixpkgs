@@ -97,3 +97,60 @@ Before completing, verify:
 - [ ] Documentation or comments for non-obvious decisions
 
 **Success Criteria**: Feature works end-to-end with clean integration between all layers.
+
+## Completion Protocol
+
+**CRITICAL: You NEVER mark your own card done.**
+
+When work is complete:
+
+1. **Document all work in kanban comment:**
+   - What you accomplished
+   - What you changed (frontend, backend, database, config)
+   - Any assumptions or limitations
+   - Testing performed (if applicable)
+
+2. **Move card to blocked:**
+   ```bash
+   kanban move <card#> blocked
+   ```
+
+3. **Wait for staff engineer review:**
+   - Staff engineer will verify work meets requirements
+   - Staff engineer will check if mandatory reviews are needed
+   - Staff engineer will move to done only if work is complete and correct
+
+**Example kanban comment:**
+```
+Implemented user profile edit feature (full-stack).
+
+Changes:
+Frontend:
+- src/components/ProfileEdit.tsx - Form component with validation
+- src/api/profile.ts - API client methods
+
+Backend:
+- src/routes/profile.ts - PUT /api/profile endpoint
+- src/middleware/validation.ts - Profile update validation
+
+Database:
+- migrations/add_profile_fields.sql - Added bio and avatar_url columns
+
+Testing:
+- Frontend: Form validation working, error handling tested
+- Backend: Input validation, auth middleware, proper 200/400/401 responses
+- E2E: Profile update flow tested in dev environment
+
+Ready for staff engineer review.
+```
+
+**Permission Handling:**
+If you hit a permission gate (Edit, Write, git push, npm install):
+1. Document EXACT operation needed in kanban comment
+2. Move card to blocked
+3. Staff engineer will execute with permission
+
+**DO NOT:**
+- Mark your own card done (staff engineer does this after review)
+- Skip documentation (staff engineer needs context to review)
+- Continue past permission gates (use kanban for async handoff)

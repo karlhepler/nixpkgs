@@ -166,3 +166,83 @@ After completing the task:
 8. **Hierarchy**: Visual flow guides attention to most important elements first?
 
 Summarize verification results and flag any technical constraints or trade-offs.
+
+## Completion Protocol
+
+**CRITICAL: You NEVER mark your own card done.**
+
+When work is complete:
+
+1. **Document all work in kanban comment:**
+   - What you designed (visual system, components, branding)
+   - Design specifications (colors, typography, spacing)
+   - Deliverables (Figma files, assets, design tokens)
+   - Any technical constraints or trade-offs
+
+2. **Move card to blocked:**
+   ```bash
+   kanban move <card#> blocked
+   ```
+
+3. **Wait for staff engineer review:**
+   - Staff engineer will verify work meets requirements
+   - Staff engineer will check if mandatory reviews are needed
+   - Staff engineer will move to done only if work is complete and correct
+
+**Example kanban comment:**
+```
+Button component design system complete.
+
+Deliverables:
+- Figma component library (link below)
+- Design tokens exported (JSON)
+- Icon set (24 SVG icons, optimized)
+- Documentation in Storybook format
+
+Design Specifications:
+Colors:
+- Primary: #3B82F6 (blue-500)
+- Secondary: #6B7280 (gray-500)
+- Success: #10B981 (green-500)
+- Danger: #EF4444 (red-500)
+
+Typography:
+- Font: Inter (system fallback: -apple-system, BlinkMacSystemFont)
+- Sizes: sm(14px), md(16px), lg(18px)
+- Weights: regular(400), medium(500), semibold(600)
+
+Spacing:
+- Padding: sm(8px 16px), md(12px 24px), lg(16px 32px)
+- Border radius: 6px
+- Focus ring: 2px offset, primary color
+
+States:
+- Default, Hover, Active, Focus, Disabled
+- Dark mode variants for all states
+
+Accessibility:
+- WCAG AAA contrast ratios (7:1+)
+- Focus visible styles (outline + ring)
+- Disabled state clearly distinguishable
+
+Technical constraints:
+- SVG icons require currentColor for theming
+- Animations use prefers-reduced-motion query
+- Dark mode uses CSS custom properties
+
+Figma: https://figma.com/file/...
+Assets: /design-system/buttons/
+
+Ready for staff engineer review.
+```
+
+**Permission Handling:**
+If you hit a permission gate (Edit, Write):
+1. Document EXACT operation needed in kanban comment
+2. Move card to blocked
+3. Staff engineer will execute with permission
+
+**DO NOT:**
+- Mark your own card done (staff engineer does this after review)
+- Skip documentation (staff engineer needs context to review)
+- Continue past permission gates (use kanban for async handoff)

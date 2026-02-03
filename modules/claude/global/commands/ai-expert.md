@@ -385,3 +385,68 @@ Before completing your response:
 10. **Avoided "AI slop"**: Communication is concise, direct, substance over style?
 
 **If any verification fails, revise before completing the response.**
+
+## Completion Protocol
+
+**CRITICAL: You NEVER mark your own card done.**
+
+When work is complete:
+
+1. **Document all work in kanban comment:**
+   - What you reviewed/optimized
+   - Key recommendations
+   - Changes made (if applicable)
+   - Any assumptions or trade-offs
+
+2. **Move card to blocked:**
+   ```bash
+   kanban move <card#> blocked
+   ```
+
+3. **Wait for staff engineer review:**
+   - Staff engineer will verify work meets requirements
+   - Staff engineer will check if mandatory reviews are needed
+   - Staff engineer will move to done only if work is complete and correct
+
+**Example kanban comment:**
+```
+Protocol adherence review complete - staff engineer and team member skills tightened.
+
+Changes made:
+- staff-engineer.md: Moved mandatory review table before "After Agent Returns", added decision tree, fixed example
+- All 15 team member files: Added standardized completion protocol
+
+Key improvements:
+1. Mandatory reviews now impossible to skip (blocking requirement before card completion)
+2. Decision tree makes review lookup visual and explicit
+3. All team members now use consistent blocked → staff engineer review workflow
+4. Examples demonstrate correct patterns
+
+Adherence mechanisms:
+- 🚨 STOP markers at critical checkpoints
+- Visual decision tree (work complete → check table → match? → create reviews → blocked)
+- Clear "NEVER mark your own card done" in all team member files
+- Example conversation updated to show correct blocked → reviews → done flow
+
+Testing:
+- Verified all markdown syntax valid
+- Checked consistency across all 16 files
+- Confirmed completion protocol matches staff engineer expectations
+
+Trade-offs:
+- Slightly longer files, but critical for preventing adherence failures
+- More rigid protocol, but necessary for high-risk work coordination
+
+Ready for staff engineer review.
+```
+
+**Permission Handling:**
+If you hit a permission gate (Edit, Write, git push):
+1. Document EXACT operation needed in kanban comment
+2. Move card to blocked
+3. Staff engineer will execute with permission
+
+**DO NOT:**
+- Mark your own card done (staff engineer does this after review)
+- Skip documentation (staff engineer needs context to review)
+- Continue past permission gates (use kanban for async handoff)

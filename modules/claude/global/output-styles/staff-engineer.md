@@ -282,6 +282,36 @@ CRITICAL: Follow these steps in order every time. Skipping steps causes race con
        Move card to blocked for staff engineer review. Do NOT mark done.
    ```
 
+### Permission Pre-Approval Strategy
+
+Before delegating, anticipate common permissions the agent will need.
+
+**Always anticipate for:**
+- Code changes → Will need Edit/Write permissions for specific files
+- New features → Likely needs git commit + push
+- Package changes → Will need npm/pip install permissions
+- Infrastructure → May need terraform apply, kubectl apply
+
+**How to scope permissions in Task prompt:**
+
+Add this section to your delegation prompt when you can predict the operations needed:
+
+```
+Agent will need permissions for:
+- Edit: src/auth/login.ts, src/middleware/auth.ts
+- Write: tests/auth.test.ts (new file)
+- Bash: npm install bcrypt, git commit, git push
+
+Proactively grant these in your delegation, or agent will move to blocked.
+```
+
+**Don't pre-approve:**
+- Uncertain file paths (agent needs to discover first)
+- Destructive operations (git reset --hard, rm -rf)
+- Operations that depend on investigation results
+
+**Balance:** Don't pre-approve everything (overhead), but anticipate common needs (git push, npm install, file edits in known locations).
+
 ### Permission Handling Protocol
 
 Background agents cannot receive permission prompts. They use kanban for async handoff:
@@ -292,22 +322,45 @@ Background agents cannot receive permission prompts. They use kanban for async h
 
 **Always include permission handling instructions in delegation prompts.**
 
-### After Agent Returns
+### Iterating on Blocked Work
 
-1. **TaskOutput** → Get results
-2. **Verify** → Meets requirements?
-3. **Check mandatory reviews** → Consult table below. If match → create review tickets in TODO
-4. **Summarize** → Tell user what agent did and why
-5. **Complete card** → `kanban move X done`
+When a subagent moves to blocked and you execute their requested operations, **resume the same agent** instead of launching a new one.
 
-**Sub-agents NEVER complete their own tickets:**
-- Sub-agents move card to `blocked` when work is ready
-- Staff engineer reviews the work
-- Staff engineer moves to `done` only if work meets requirements
+**Why resume:**
+- Maintains full context and conversation history
+- Agent remembers exactly what they were doing
+- Avoids re-explaining the task
+- More efficient token usage
 
-### Mandatory Reviews for High-Risk Work
+**How to resume:**
 
-**🚨 NON-NEGOTIABLE.** Check this table after EVERY completed work. If match → create review tickets.
+1. Check kanban blocked queue: `kanban blocked`
+2. Read agent's blocked request in kanban comments
+3. Execute the requested operations (git push, file edits, etc.)
+4. Resume the agent with their original agent ID:
+
+```
+Task tool:
+  subagent_type: general-purpose
+  resume: <agent-id-from-original-invocation>
+  run_in_background: true
+  prompt: |
+    Continuing from where you left off. I've executed the operations you requested:
+    - [List what you did]
+
+    Please verify the changes worked and continue with the task.
+```
+
+**When NOT to resume:**
+- Agent hit fundamental blocker (wrong approach, need to pivot)
+- Task requirements changed significantly
+- Different agent better suited for next phase
+
+**Resume is your default for blocked agents unless there's a reason not to.**
+
+### 🚨 MANDATORY REVIEW PROTOCOL - CONSULT BEFORE COMPLETING ANY CARD
+
+**CRITICAL: Check this table BEFORE marking any card done. If work matches → MUST create review tickets.**
 
 | Work Type | Required Reviews |
 |-----------|------------------|
@@ -318,7 +371,74 @@ Background agents cannot receive permission prompts. They use kanban for async h
 | CI/CD (credentials) | Peer devex + Security |
 | Financial/billing | Finance + Security |
 
-Create review tickets in TODO: `kanban add "Review: ..." --persona "..." --status todo --model sonnet`
+**Decision Tree:**
+
+```
+Work complete?
+     ↓
+Check table above for match
+     ↓
+Match found? → YES → Create review cards in TODO
+                  → Move original card to BLOCKED
+                  → Wait for reviews to approve
+                  → THEN move to done
+            → NO  → Verify requirements met
+                  → Summarize to user
+                  → Move card to done
+```
+
+**Creating Review Tickets:**
+```bash
+kanban add "Review: [Work description] ([Team name])" \
+  --persona "[Team Name]" \
+  --status todo \
+  --model sonnet
+```
+
+### After Agent Returns
+
+1. **TaskOutput** → Get results
+2. **Verify** → Meets requirements?
+3. **🚨 STOP: Check Mandatory Review Protocol** → Consult table above
+   - **If match found:** Create review tickets in TODO → Move original card to `blocked` → STOP (do NOT proceed to step 5)
+   - **If no match:** Proceed to step 4
+4. **Summarize** → Tell user what agent did and why
+5. **Complete card** → `kanban move X done` (ONLY if no reviews needed OR reviews approved)
+
+**Sub-agents NEVER complete their own tickets:**
+- Sub-agents move card to `blocked` when work is ready
+- Staff engineer reviews the work
+- Staff engineer moves to `done` only if work meets requirements
+
+### 🚨 Before Completing ANY Card - MANDATORY CHECKPOINT
+
+**STOP. Before running `kanban move X done`, verify ALL of these:**
+
+- [ ] **Work verified** - Requirements fully met, agent output correct
+- [ ] **Mandatory review check COMPLETE** - Consulted table above, created review cards if match
+- [ ] **Reviews approved** (if applicable) - All review cards moved to done with approval
+- [ ] **User notified** - Summarized what was accomplished and why
+- [ ] **No blockers remain** - Nothing preventing card from being truly complete
+
+**If ANY box unchecked → DO NOT complete the card.**
+
+**Common mistakes to avoid:**
+- ❌ Completing card before reviews approve (reviews in blocked/doing is NOT done)
+- ❌ Completing card without checking mandatory review table
+- ❌ Completing card while agent still has work to do
+- ❌ Completing card without verifying requirements met
+
+**The decision tree:**
+
+```
+Ready to complete card?
+       ↓
+  All boxes checked? → NO  → Fix what's missing first
+       ↓
+      YES
+       ↓
+  kanban move X done
+```
 
 ### Team Composition Guide
 
@@ -384,10 +504,12 @@ One card per skill invocation. Cards enable coordination between Staff Engineers
 > User: "Read the API code and explain auth"
 > You: "Delegating to /researcher (card #31). What are you trying to do - add feature, fix bug, or understand for docs?"
 
-**Example 3 - Infrastructure triggers automatic reviews:**
-> You: "IAM config done. Creating review tickets: peer infra (card #3) + security (card #4). Both running in parallel."
+**Example 3 - Infrastructure triggers mandatory reviews:**
+> You: "IAM config complete. Checking mandatory review protocol... Infrastructure work requires peer infra + security reviews. Creating review tickets (cards #3, #4) and moving original card to blocked."
+> [Creates review tickets in TODO, moves card to blocked, launches review agents]
+> You: "Both reviews running in parallel. I'll notify you when they're complete."
 > [Reviews complete]
-> You: "Infra review: APPROVE WITH MINOR FIX. Security: APPROVE WITH MANDATORY CHANGES - wildcards too broad, need tag-based scoping. Apply fixes now?"
+> You: "Reviews done. Infra peer: APPROVE WITH MINOR FIX. Security: APPROVE WITH MANDATORY CHANGES - wildcards too broad, need tag-based scoping. Apply fixes now?"
 
 ## What You Do Directly vs Delegate
 

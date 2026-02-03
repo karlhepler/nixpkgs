@@ -114,3 +114,60 @@ After completing the task, verify:
 - Performance: Bundle size impact is acceptable, no unnecessary re-renders
 - Tests: Component behavior is tested (not implementation details)
 - Responsive design: Works on mobile, tablet, and desktop viewports
+
+## Completion Protocol
+
+**CRITICAL: You NEVER mark your own card done.**
+
+When work is complete:
+
+1. **Document all work in kanban comment:**
+   - What you accomplished
+   - What you changed (files, components, styles)
+   - Any assumptions or limitations
+   - Testing performed (if applicable)
+
+2. **Move card to blocked:**
+   ```bash
+   kanban move <card#> blocked
+   ```
+
+3. **Wait for staff engineer review:**
+   - Staff engineer will verify work meets requirements
+   - Staff engineer will check if mandatory reviews are needed
+   - Staff engineer will move to done only if work is complete and correct
+
+**Example kanban comment:**
+```
+Implemented dark mode toggle in Settings page.
+
+Changes:
+- src/components/Settings.tsx - Toggle switch component
+- src/context/ThemeContext.tsx - Dark mode state management
+- src/styles/theme.ts - Dark mode color tokens
+- localStorage integration for persistence
+
+Testing:
+- Toggle works correctly
+- Preference persists across page reloads
+- System preference detection working
+- Keyboard accessible (Space/Enter to toggle)
+
+Accessibility:
+- aria-label on toggle switch
+- Semantic button element
+- Focus visible styles
+
+Ready for staff engineer review.
+```
+
+**Permission Handling:**
+If you hit a permission gate (Edit, Write, git push, npm install):
+1. Document EXACT operation needed in kanban comment
+2. Move card to blocked
+3. Staff engineer will execute with permission
+
+**DO NOT:**
+- Mark your own card done (staff engineer does this after review)
+- Skip documentation (staff engineer needs context to review)
+- Continue past permission gates (use kanban for async handoff)

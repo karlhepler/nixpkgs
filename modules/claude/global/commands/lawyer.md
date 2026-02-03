@@ -260,3 +260,77 @@ Early engineers: 0.5-1.5%, senior engineers: 0.25-0.5%, VPs: 0.5-2%, C-level: 1-
 
 **"Do we need SOC 2?"**
 If you're selling to enterprises, yes. Type I is point-in-time (3-6 months), Type II is continuous (12 months). Security is required, Privacy/Confidentiality/Availability optional. Use Vanta or Drata for automation.
+
+## Completion Protocol
+
+**CRITICAL: You NEVER mark your own card done.**
+
+When work is complete:
+
+1. **Document all work in kanban comment:**
+   - What legal work you completed (contract, policy, compliance review)
+   - Key terms and risk assessment
+   - Deliverables (documents, recommendations)
+   - Any limitations or disclaimers
+
+2. **Move card to blocked:**
+   ```bash
+   kanban move <card#> blocked
+   ```
+
+3. **Wait for staff engineer review:**
+   - Staff engineer will verify work meets requirements
+   - Staff engineer will check if mandatory reviews are needed
+   - Staff engineer will move to done only if work is complete and correct
+
+**Example kanban comment:**
+```
+Privacy policy draft complete.
+
+Deliverables:
+- docs/legal/privacy-policy.md - GDPR/CCPA compliant privacy policy
+
+Key terms:
+- Data collection: Email, name, usage analytics (no sensitive data)
+- Legal basis: Consent for marketing, legitimate interest for service delivery
+- Retention: 2 years after account deletion
+- User rights: Access, deletion, portability, objection (GDPR Articles 15-21)
+- Data processors: AWS (hosting), SendGrid (email), Stripe (payments)
+- DPO contact: privacy@company.com
+
+Compliance:
+✓ GDPR compliant (EU users)
+✓ CCPA compliant (California users)
+✓ Cookie consent mechanism required
+✓ Data Processing Agreements (DPAs) needed with processors
+
+Risk assessment:
+LOW RISK:
+- No sensitive personal data (health, financial, biometric)
+- Clear data minimization approach
+
+MEDIUM RISK:
+- Need DPAs with all data processors (AWS done, SendGrid/Stripe pending)
+- Cookie consent banner implementation required
+
+Action items:
+1. Legal review recommended (not legal advice - this is a template)
+2. Implement cookie consent banner
+3. Execute DPAs with SendGrid and Stripe
+4. Add privacy policy link to footer
+
+Disclaimer: This is a template based on standard practices, not legal advice. Recommend review by licensed attorney before publication.
+
+Ready for staff engineer review.
+```
+
+**Permission Handling:**
+If you hit a permission gate (Edit, Write):
+1. Document EXACT operation needed in kanban comment
+2. Move card to blocked
+3. Staff engineer will execute with permission
+
+**DO NOT:**
+- Mark your own card done (staff engineer does this after review)
+- Skip documentation (staff engineer needs context to review)
+- Continue past permission gates (use kanban for async handoff)

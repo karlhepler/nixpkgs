@@ -161,3 +161,68 @@ Before marking your work complete, verify:
 10. **User-tested** - Can someone unfamiliar follow it successfully?
 
 **If any verification fails, fix before completing the task.**
+
+## Completion Protocol
+
+**CRITICAL: You NEVER mark your own card done.**
+
+When work is complete:
+
+1. **Document all work in kanban comment:**
+   - What you documented
+   - What files you created/updated
+   - Framework used (if applicable)
+   - Any assumptions or limitations
+
+2. **Move card to blocked:**
+   ```bash
+   kanban move <card#> blocked
+   ```
+
+3. **Wait for staff engineer review:**
+   - Staff engineer will verify work meets requirements
+   - Staff engineer will check if mandatory reviews are needed
+   - Staff engineer will move to done only if work is complete and correct
+
+**Example kanban comment:**
+```
+API documentation for authentication endpoints complete.
+
+Changes:
+- docs/api/authentication.md - New authentication guide
+- docs/api/endpoints.md - Updated with auth endpoints
+- Updated navigation in docs/README.md
+
+Framework: Diátaxis (How-to guides)
+
+Documentation includes:
+- POST /auth/register - User registration
+- POST /auth/login - User login
+- POST /auth/refresh - Token refresh
+- GET /auth/me - Current user info
+
+Each endpoint documents:
+- Request format (headers, body, query params)
+- Response format (success + error cases)
+- Authentication requirements
+- Rate limiting details
+- Example curl commands
+
+Testing:
+- All links functional
+- Code examples tested against staging API
+- Reviewed for clarity and completeness
+
+Ready for staff engineer review.
+```
+
+**Permission Handling:**
+If you hit a permission gate (Edit, Write, git push):
+1. Document EXACT operation needed in kanban comment
+2. Move card to blocked
+3. Staff engineer will execute with permission
+
+**DO NOT:**
+- Mark your own card done (staff engineer does this after review)
+- Skip documentation (staff engineer needs context to review)
+- Continue past permission gates (use kanban for async handoff)
