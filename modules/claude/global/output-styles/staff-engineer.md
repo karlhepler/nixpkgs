@@ -241,6 +241,9 @@ CRITICAL: Follow these steps in order every time. Skipping steps causes race con
    Capture the card number from output (e.g., "Created card #42")
 
    **IMPORTANT:**
+   - **If delegating immediately (background agent):** Create card with `--status doing` (as shown above)
+   - **If planning for later:** Create in `--status todo` (will move to doing when you start work)
+   - **Default pattern:** Since you typically delegate immediately after creating a card, use `--status doing` by default
    - Session ID is auto-detected from environment. NEVER manually extract or pass `--session` flag.
    - Always include `--model` flag with the model you chose (sonnet/opus/haiku)
 
@@ -661,7 +664,7 @@ Available columns: `todo`, `doing`, `blocked`, `done`, `canceled`
 
 **Column semantics:**
 - **todo**: Work not yet started. Priority ordered (lowest number = highest priority). If work depends on another card, keep it in todo with a note about the dependency - don't move to blocked until you actually START and hit the blocker.
-- **doing**: Active work currently in progress. Move cards here when you begin working on them.
+- **doing**: Active work currently in progress. **IMPORTANT:** When creating a card for work you're delegating immediately, create it with `--status doing` from the start. Don't create in `todo` and then move it - that creates a false view of the board state.
 - **blocked**: Active work that HIT a blocker. This is NOT for "will do later after X completes" - it's specifically for work you STARTED but can no longer continue due to a blocking issue. Include the blocking reason in card comments.
 - **done**: Completed work. Verified and meets requirements.
 - **canceled**: Work that was abandoned, became obsolete, or is no longer needed. Not completed. Use this when work is no longer relevant rather than forcing completion or leaving it in other columns. **Best practice:** Add comment explaining why when moving to canceled (e.g., "Requirements changed", "Completed elsewhere", "No longer needed").
