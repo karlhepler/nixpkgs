@@ -281,3 +281,54 @@ This skill is informed by industry-leading research and practices:
 - [Boosting Developer Productivity: Inside the Dev Loop & Key Metrics](https://www.getambassador.io/blog/developer-productivity-inner-dev-loop-quantitative-metrics)
 - [Developer onboarding: Tools to make the process fast and fun](https://garden.io/blog/developer-onboarding)
 - [How to accelerate developer onboarding (and why it matters)](https://about.gitlab.com/the-source/platform/how-to-accelerate-developer-onboarding-and-why-it-matters/)
+
+## Completion Protocol
+
+**CRITICAL: You NEVER mark your own card done.**
+
+When work is complete:
+
+1. **Document all work in kanban comment:**
+   - What you accomplished
+   - What you changed (CI/CD, tooling, workflows)
+   - Any assumptions or limitations
+   - Testing/validation performed
+
+2. **Move card to blocked:**
+   ```bash
+   kanban move <card#> blocked
+   ```
+
+3. **Wait for staff engineer review:**
+   - Staff engineer will verify work meets requirements
+   - Staff engineer will check if mandatory reviews are needed (CI/CD requires DevEx peer + Security)
+   - Staff engineer will move to done only if work is complete and correct
+
+**Example kanban comment:**
+```
+Fixed GitHub Actions workflow PR number extraction bug.
+
+Changes:
+- .github/workflows/test.yml - Fixed inputs.pr-number reference
+- Tested workflow trigger on PR #123
+
+Testing:
+- Workflow runs successfully on test PR
+- PR number correctly extracted from event payload
+- All checks pass
+
+Note: CI/CD changes require DevEx peer + Security reviews per mandatory review protocol.
+
+Ready for staff engineer review.
+```
+
+**Permission Handling:**
+If you hit a permission gate (Edit, Write, git push):
+1. Document EXACT operation needed in kanban comment
+2. Move card to blocked
+3. Staff engineer will execute with permission
+
+**DO NOT:**
+- Mark your own card done (staff engineer does this after review)
+- Skip documentation (staff engineer needs context to review)
+- Continue past permission gates (use kanban for async handoff)

@@ -312,3 +312,63 @@ When implementing SRE solutions:
 6. **Verification**: Confirm all success criteria are met before completion
 
 Remember: You're not done until you've verified success criteria and documented failure modes.
+
+## Completion Protocol
+
+**CRITICAL: You NEVER mark your own card done.**
+
+When work is complete:
+
+1. **Document all work in kanban comment:**
+   - What you accomplished (SLOs, monitoring, alerts, incident response)
+   - What you changed (dashboards, alerts, runbooks)
+   - SLI/SLO definitions and thresholds
+   - Testing performed
+
+2. **Move card to blocked:**
+   ```bash
+   kanban move <card#> blocked
+   ```
+
+3. **Wait for staff engineer review:**
+   - Staff engineer will verify work meets requirements
+   - Staff engineer will check if mandatory reviews are needed
+   - Staff engineer will move to done only if work is complete and correct
+
+**Example kanban comment:**
+```
+Implemented SLO monitoring for API service.
+
+Changes:
+- monitoring/slos.yaml - Defined 3 SLOs (availability, latency, error rate)
+- dashboards/api-slo.json - Grafana dashboard with SLO burn rate
+- alerts/slo-alerts.yaml - Multi-window burn rate alerts
+
+SLOs Defined:
+1. Availability: 99.9% uptime (43m downtime/month)
+2. Latency: 95th percentile <200ms
+3. Error Rate: <0.1% of requests
+
+Testing:
+- Dashboards deployed to staging Grafana
+- Alerts tested with synthetic errors (fired correctly)
+- Runbook documented: docs/runbooks/api-slo-violation.md
+
+Error Budget:
+- 43 minutes/month downtime budget
+- Alert fires at 2% budget burn rate (critical)
+- Warning at 5% budget remaining
+
+Ready for staff engineer review.
+```
+
+**Permission Handling:**
+If you hit a permission gate (Edit, Write, git push, kubectl apply):
+1. Document EXACT operation needed in kanban comment
+2. Move card to blocked
+3. Staff engineer will execute with permission
+
+**DO NOT:**
+- Mark your own card done (staff engineer does this after review)
+- Skip documentation (staff engineer needs context to review)
+- Continue past permission gates (use kanban for async handoff)

@@ -109,3 +109,59 @@ After completing the task:
 6. **Tests**: Are critical paths covered by tests?
 
 Summarize verification results and any known limitations.
+
+## Completion Protocol
+
+**CRITICAL: You NEVER mark your own card done.**
+
+When work is complete:
+
+1. **Document all work in kanban comment:**
+   - What you accomplished
+   - What you changed (files, configurations, deployments)
+   - Any assumptions or limitations
+   - Testing performed (if applicable)
+
+2. **Move card to blocked:**
+   ```bash
+   kanban move <card#> blocked
+   ```
+
+3. **Wait for staff engineer review:**
+   - Staff engineer will verify work meets requirements
+   - Staff engineer will check if mandatory reviews are needed
+   - Staff engineer will move to done only if work is complete and correct
+
+**Example kanban comment:**
+```
+Implemented user authentication API endpoints.
+
+Changes:
+- src/api/auth.ts - POST /auth/login and /auth/register endpoints
+- src/middleware/auth.ts - JWT validation middleware
+- src/models/user.ts - User model with bcrypt password hashing
+- Database migration for users table
+
+Testing:
+- All endpoints tested with Postman
+- Password hashing verified (bcrypt rounds=12)
+- JWT tokens expire after 24h
+- Invalid credentials return 401
+
+Security notes:
+- Passwords never logged or returned in responses
+- Rate limiting needed (recommend 5 requests/min per IP)
+
+Ready for staff engineer review.
+```
+
+**Permission Handling:**
+If you hit a permission gate (Edit, Write, git push, npm install):
+1. Document EXACT operation needed in kanban comment
+2. Move card to blocked
+3. Staff engineer will execute with permission
+
+**DO NOT:**
+- Mark your own card done (staff engineer does this after review)
+- Skip documentation (staff engineer needs context to review)
+- Continue past permission gates (use kanban for async handoff)

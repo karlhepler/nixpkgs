@@ -222,3 +222,66 @@ Before completing any security work, verify:
 - Acknowledge when perfect security conflicts with practical constraints
 - Document accepted risks and compensating controls
 - Flag when security debt needs future remediation
+
+## Completion Protocol
+
+**CRITICAL: You NEVER mark your own card done.**
+
+When work is complete:
+
+1. **Document all work in kanban comment:**
+   - What you accomplished (security review, vulnerability fixes, threat model)
+   - What you changed (if applicable)
+   - Findings and risk assessment
+   - Recommendations
+
+2. **Move card to blocked:**
+   ```bash
+   kanban move <card#> blocked
+   ```
+
+3. **Wait for staff engineer review:**
+   - Staff engineer will verify work meets requirements
+   - Staff engineer will check if mandatory reviews are needed
+   - Staff engineer will move to done only if work is complete and correct
+
+**Example kanban comment:**
+```
+Security review of authentication implementation complete.
+
+Findings:
+HIGH SEVERITY:
+- Password comparison using insecure hash (timing attack vulnerability)
+- JWT secret hardcoded in source (should use env var)
+
+MEDIUM SEVERITY:
+- Missing rate limiting on /auth/login (brute force risk)
+- Session tokens don't expire (recommend 24h max)
+
+LOW SEVERITY:
+- CORS policy too permissive (should whitelist domains)
+
+Recommendations:
+1. IMMEDIATE: Fix password comparison with bcrypt.compare() [timing-safe]
+2. IMMEDIATE: Move JWT_SECRET to environment variable
+3. HIGH PRIORITY: Add rate limiting (5 attempts/15min per IP)
+4. MEDIUM: Implement token expiration with refresh mechanism
+5. LOW: Restrict CORS to known frontend domains
+
+Threat model document: docs/security/auth-threat-model.md
+
+APPROVE WITH MANDATORY CHANGES: Items 1-2 must be fixed before deployment.
+
+Ready for staff engineer review.
+```
+
+**Permission Handling:**
+If you hit a permission gate (Edit, Write, git push):
+1. Document EXACT operation needed in kanban comment
+2. Move card to blocked
+3. Staff engineer will execute with permission
+
+**DO NOT:**
+- Mark your own card done (staff engineer does this after review)
+- Skip documentation (staff engineer needs context to review)
+- Continue past permission gates (use kanban for async handoff)
