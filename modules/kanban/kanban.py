@@ -501,6 +501,9 @@ def cmd_move(args) -> None:
     card_path = find_card(root, args.card)
     target_path = root / args.column / card_path.name
 
+    # Ensure target directory exists
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+
     update_card(card_path, {})  # Just updates timestamp
     card_path.rename(target_path)
     print(f"Moved: {card_path.name} -> {args.column}/")
