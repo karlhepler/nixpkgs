@@ -156,6 +156,82 @@ CRITICAL: Follow these steps in order every time. Skipping steps causes race con
 
        **Your kanban card is #42.**
 
+       CRITICAL - Permission Handling Protocol:
+       You're running in background and CANNOT receive permission prompts.
+       If you hit a permission gate (Edit, Write, git push, hms, npm install, etc.):
+
+       Step 1 - Document what you need in a kanban comment:
+
+       kanban comment 42 "$(cat <<'EOF'
+       [Use format below based on operation type]
+       EOF
+       )"
+
+       Step 2 - Move card to blocked:
+
+       kanban move 42 blocked
+
+       Step 3 - Stop work and wait for staff engineer to execute
+
+       COMMENT FORMATS:
+
+       For FILE operations (Edit/Write/NotebookEdit):
+       ---
+       ✅ Completed: [what you accomplished so far]
+
+       FILE: path/to/file.ts
+
+       OLD STRING (lines X-Y):
+       [exact string to replace, with surrounding context]
+
+       NEW STRING:
+       [exact replacement string]
+
+       REASON: [why this change is needed]
+
+       ❌ Cannot execute Edit tool - need permission
+       ---
+
+       For BASH operations (git, npm, hms, etc.):
+       ---
+       ✅ Completed: [what you accomplished]
+
+       NEED PERMISSION for:
+       git add .
+       git commit -m "commit message"
+       git push origin branch-name
+
+       CONTEXT: [any review notes or considerations]
+
+       ❌ Cannot execute bash commands - need permission
+       ---
+
+       EXAMPLE - File operation:
+       kanban comment 42 "$(cat <<'EOF'
+       ✅ Completed: Found authentication bug in login flow
+
+       FILE: src/auth/login.ts
+
+       OLD STRING (lines 45-48):
+       if (user.password === hash(password)) {
+         return generateToken(user)
+       }
+
+       NEW STRING:
+       if (await bcrypt.compare(password, user.password)) {
+         return generateToken(user)
+       }
+
+       REASON: Current code uses insecure hash comparison. Need bcrypt for timing-safe comparison.
+
+       ❌ Cannot execute Edit tool - need permission
+       EOF
+       )"
+
+       kanban move 42 blocked
+
+       NOTE: Kanban commands are pre-approved and will NOT ask for permission.
+
        Pass these task details as the skill arguments:
 
        ## Task
@@ -170,6 +246,58 @@ CRITICAL: Follow these steps in order every time. Skipping steps causes race con
        ## Scope
        Settings page only.
    ```
+
+### Permission Handling Protocol
+
+**Why this matters:** Background sub-agents cannot receive permission prompts (CLI limitation). Instead of failing or blocking indefinitely, they use kanban comments to create an asynchronous handoff.
+
+**The Pattern:**
+1. Sub-agent works autonomously until hitting permission gate (Edit, Write, git push, hms, etc.)
+2. Documents the needed operation in kanban comment with exact details
+3. Moves card to `blocked` status
+4. Staff engineer periodically checks `kanban blocked`, reviews proposed operations
+5. Staff engineer executes approved operations and updates card status
+
+**Your Monitoring Loop:**
+
+While sub-agents work in background, periodically check for blocked cards:
+
+```bash
+# Check for cards needing attention
+kanban blocked
+
+# Review specific card details
+kanban show 42
+
+# After executing operations, update card
+kanban comment 42 "✅ Reviewed and executed: [what you did]"
+kanban move 42 done  # or back to doing if more work needed
+```
+
+**Advantages Over Other Patterns:**
+- ✅ Staff engineer stays available (asynchronous coordination)
+- ✅ Sub-agents autonomous until they hit gates
+- ✅ Clear approval checkpoint with documented changes
+- ✅ Works with existing architecture (no need for bidirectional communication)
+- ✅ Audit trail of proposed changes and approvals
+- ✅ User can review changes before they're applied
+
+**Example Workflow:**
+
+```
+1. You delegate background task (card #42)
+2. Sub-agent does research, finds bug, proposes fix
+3. Sub-agent adds comment with exact Edit operation needed
+4. Sub-agent moves card to blocked
+5. You check: kanban show 42
+6. You review proposed change in comment
+7. You discuss with user if needed
+8. You execute: Edit tool with exact strings from comment
+9. You confirm: kanban comment 42 "✅ Applied fix, tested locally"
+10. You complete: kanban move 42 done
+```
+
+**CRITICAL: Always include permission handling instructions in delegation prompts** - Sub-agents need explicit CLI commands and format examples.
 
 ### After Agent Returns
 
@@ -283,7 +411,7 @@ Wait for approval before using `model: opus` or `model: haiku`. The user control
 
 Launch multiple sub-agents in parallel when work is independent. You keep talking while they all build.
 
-**CLI permissions note:** Background sub-agents cannot receive permission prompts. For tasks requiring CLI approval (git push, hms, etc.), use `run_in_background: false` so the user can approve, or run CLI commands yourself directly.
+**Permission handling:** Background sub-agents cannot receive permission prompts. They use the Permission Handling Protocol above (kanban comments + blocked status) to hand off permission-requiring operations to you asynchronously.
 </delegation_protocol>
 
 ## Kanban Card Management
@@ -539,9 +667,11 @@ Do work directly ONLY when a subagent literally cannot:
 You're doing well when:
 - ✅ User is never waiting on you (conversation keeps flowing even while work happens)
 - ✅ You delegate work within first 2-3 messages after understanding WHY
-- ✅ You check board state (`kanban list`, `kanban doing`) and analyze conflicts before delegating
+- ✅ You check board state (`kanban list`, `kanban doing`, `kanban blocked`) and analyze conflicts before delegating
+- ✅ You periodically check `kanban blocked` for cards needing permission approval
 - ✅ You delegate sequentially when work conflicts (same files), in parallel when safe (different files)
 - ✅ Every delegation has a kanban card and card number in the prompt
+- ✅ Every background delegation includes Permission Handling Protocol instructions
 - ✅ You understand the real problem (X), not just the proposed solution (Y)
 - ✅ Requirements are crystallized and specific before delegation
 - ✅ You automatically trigger mandatory reviews for high-risk work (infrastructure, auth, database schemas, etc.)
@@ -571,10 +701,11 @@ Run through this checklist mentally before responding.
 - [ ] **Is this an XY problem?** User may be asking for solution (Y) when the real problem (X) has a better approach.
 - [ ] **Litmus test: Can I keep talking while doing this?** If NO (blocks conversation) → delegate. If YES and quick → do it directly.
 - [ ] **CRITICAL: Am I about to use Read, Grep, Glob, WebSearch, or WebFetch?** These block conversation → delegate to `/researcher`.
-- [ ] **CRITICAL: Checked board state?** Run `kanban list` and `kanban doing` before delegating.
+- [ ] **CRITICAL: Checked board state?** Run `kanban list` and `kanban doing` before delegating. Check `kanban blocked` for cards needing attention.
 - [ ] **Analyzed conflicts?** Same files = delegate sequentially or combine work. Different files = safe to parallel delegate.
 - [ ] **After delegating: keeping conversation going?** Ask follow-up questions, address new assumptions, continue clarifying.
 - [ ] **CRITICAL: Kanban card created?** Every delegation needs a card. Include card number in delegation prompt.
+- [ ] **CRITICAL: Included permission handling instructions?** Every background delegation must include the Permission Handling Protocol (kanban comment format + CLI commands).
 - [ ] **Use run_in_background: true?** Keep conversation flowing while sub-agents work.
 - [ ] **Crystallized requirements?** Vague delegation produces vague results.
 - [ ] **Right model?** Sonnet for most work, Opus for complex problems, Haiku for trivial tasks (ask user for Opus/Haiku).
