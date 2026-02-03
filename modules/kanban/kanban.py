@@ -1236,6 +1236,10 @@ def watch_and_run(args, command_func) -> None:
 
 
 def main() -> None:
+    # Parent parser for common flags (allows --watch in any position)
+    parent_parser = argparse.ArgumentParser(add_help=False)
+    parent_parser.add_argument("--watch", action="store_true", help="Auto-refresh output when .kanban/ files change")
+
     parser = argparse.ArgumentParser(
         description="Kanban CLI - File-based kanban board for agent coordination",
         epilog="""
@@ -1260,17 +1264,16 @@ PICKING NEXT WORK:
 
 WATCH MODE:
   Add --watch to any command to auto-refresh on file changes
-  Example: kanban list --watch
+  Example: kanban list --watch  OR  kanban --watch list
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    , parents=[parent_parser])
     parser.add_argument("--root", help="Kanban root directory (or set KANBAN_ROOT)")
-    parser.add_argument("--watch", action="store_true", help="Auto-refresh output when .kanban/ files change")
 
     subparsers = parser.add_subparsers(dest="command", help="Commands")
 
     # init
-    p_init = subparsers.add_parser("init", help="Create kanban board structure")
+    p_init = subparsers.add_parser("init", parents=[parent_parser], help="Create kanban board structure")
     p_init.add_argument("path", nargs="?", default=None, help="Board path (default: auto-computed from cwd)")
 
     # add (with position requirement)
@@ -1298,44 +1301,44 @@ Empty columns default to priority 1000 (baseline for first card).
     p_add.add_argument("--before", help="Insert before specified card (by number or name)")
 
     # delete
-    p_delete = subparsers.add_parser("delete", help="Delete a card")
+    p_delete = subparsers.add_parser("delete", parents=[parent_parser], help="Delete a card")
     p_delete.add_argument("card", help="Card number or name")
 
     # edit
-    p_edit = subparsers.add_parser("edit", help="Edit a card's content or metadata")
+    p_edit = subparsers.add_parser("edit", parents=[parent_parser], help="Edit a card's content or metadata")
     p_edit.add_argument("card", help="Card number or name")
     p_edit.add_argument("--content", "-c", help="New card body content (use '-' for stdin)")
     p_edit.add_argument("--persona", help="Update persona")
     p_edit.add_argument("--append", "-a", action="store_true", help="Append to content instead of replacing")
 
     # move
-    p_move = subparsers.add_parser("move", help="Move card to column")
+    p_move = subparsers.add_parser("move", parents=[parent_parser], help="Move card to column")
     p_move.add_argument("card", help="Card number or name")
     p_move.add_argument("column", help="Target column")
 
     # up
-    p_up = subparsers.add_parser("up", help="Move card up in priority")
+    p_up = subparsers.add_parser("up", parents=[parent_parser], help="Move card up in priority")
     p_up.add_argument("card", help="Card number or name")
 
     # down
-    p_down = subparsers.add_parser("down", help="Move card down in priority")
+    p_down = subparsers.add_parser("down", parents=[parent_parser], help="Move card down in priority")
     p_down.add_argument("card", help="Card number or name")
 
     # top
-    p_top = subparsers.add_parser("top", help="Move card to top of column")
+    p_top = subparsers.add_parser("top", parents=[parent_parser], help="Move card to top of column")
     p_top.add_argument("card", help="Card number or name")
 
     # bottom
-    p_bottom = subparsers.add_parser("bottom", help="Move card to bottom of column")
+    p_bottom = subparsers.add_parser("bottom", parents=[parent_parser], help="Move card to bottom of column")
     p_bottom.add_argument("card", help="Card number or name")
 
     # comment
-    p_comment = subparsers.add_parser("comment", help="Add comment to card")
+    p_comment = subparsers.add_parser("comment", parents=[parent_parser], help="Add comment to card")
     p_comment.add_argument("card", help="Card number or name")
     p_comment.add_argument("message", help="Comment message")
 
     # history
-    p_history = subparsers.add_parser("history", help="Show completed cards")
+    p_history = subparsers.add_parser("history", parents=[parent_parser], help="Show completed cards")
     p_history.add_argument("--since", help="Filter by date (today, yesterday, week, month, or ISO date)")
     p_history.add_argument("--until", help="Filter until date (ISO format)")
     p_history.add_argument("--include-canceled", action="store_true", help="Include canceled cards in history")
@@ -1343,13 +1346,13 @@ Empty columns default to priority 1000 (baseline for first card).
     p_history.add_argument("--mine", action="store_true", help="Show only current session's cards")
 
     # list (with ls alias)
-    p_list = subparsers.add_parser("list", help="Show board overview (default: all sessions grouped)")
+    p_list = subparsers.add_parser("list", parents=[parent_parser], help="Show board overview (default: all sessions grouped)")
     p_list.add_argument("--show-done", action="store_true", help="Include done column in output")
     p_list.add_argument("--show-canceled", action="store_true", help="Include canceled column in output")
     p_list.add_argument("--show-all", action="store_true", help="Include both done and canceled columns in output")
     p_list.add_argument("--session", help="Filter by session ID")
     p_list.add_argument("--mine", action="store_true", help="Show only current session's cards")
-    p_ls = subparsers.add_parser("ls", help="Show board overview (alias for list)")
+    p_ls = subparsers.add_parser("ls", parents=[parent_parser], help="Show board overview (alias for list)")
     p_ls.add_argument("--show-done", action="store_true", help="Include done column in output")
     p_ls.add_argument("--show-canceled", action="store_true", help="Include canceled column in output")
     p_ls.add_argument("--show-all", action="store_true", help="Include both done and canceled columns in output")
@@ -1357,7 +1360,7 @@ Empty columns default to priority 1000 (baseline for first card).
     p_ls.add_argument("--mine", action="store_true", help="Show only current session's cards")
 
     # show
-    p_show = subparsers.add_parser("show", help="Display card contents")
+    p_show = subparsers.add_parser("show", parents=[parent_parser], help="Display card contents")
     p_show.add_argument("card", help="Card number or name")
 
     # Column view commands (kanban <column>)
@@ -1393,7 +1396,7 @@ BULK REASSIGNMENT:
     p_assign.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt (bulk operations)")
 
     # clear
-    p_clear = subparsers.add_parser("clear", help="Delete all cards from all columns (or specific columns if provided)")
+    p_clear = subparsers.add_parser("clear", parents=[parent_parser], help="Delete all cards from all columns (or specific columns if provided)")
     p_clear.add_argument("columns", nargs="*", help=f"Column(s) to clear ({', '.join(COLUMNS)}). If omitted, clears all columns.")
     p_clear.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt")
 
