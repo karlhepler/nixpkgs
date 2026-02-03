@@ -252,6 +252,22 @@ in {
             "Bash(gh gist view *)"
             "Bash(gh gist list *)"
 
+            # Category B - GitHub API Read-Only Commands
+            # Note: gh api defaults to GET when no method specified
+            "Bash(gh api -X GET *)"
+            "Bash(gh api --method GET *)"
+            "Bash(gh api -XGET *)"
+            "Bash(gh api --method=GET *)"
+            # Allow common read-only API patterns (default method is GET)
+            "Bash(gh api /repos/*)"
+            "Bash(gh api /orgs/*)"
+            "Bash(gh api /users/*)"
+            "Bash(gh api /user/*)"
+            "Bash(gh api /gists/*)"
+            "Bash(gh api /search/*)"
+            "Bash(gh api /rate_limit*)"
+            "Bash(gh api /meta*)"
+
             # Category B - kubectl Read-Only Commands
             "Bash(kubectl get *)"
             "Bash(kubectl describe *)"
@@ -265,7 +281,13 @@ in {
             "Bash(kubectl config view *)"
             "Bash(kubectl config get-contexts *)"
             "Bash(kubectl config current-context *)"
+            "Bash(kubectl config get-clusters *)"
+            "Bash(kubectl config get-users *)"
             "Bash(kubectl diff *)"
+            "Bash(kubectl auth can-i *)"
+            "Bash(kubectl rollout status *)"
+            "Bash(kubectl rollout history *)"
+            "Bash(kubectl wait *)"
 
             # Category B - Other Tools
             "Bash(kubectx)"
@@ -284,6 +306,47 @@ in {
             "Bash(tmux display-message *)"
             "Bash(tmux show-options *)"
             "Bash(tmux show-environment *)"
+          ];
+
+          # Block kubectl write/destructive commands (admin permissions - never auto-approve)
+          block = [
+            "Bash(kubectl apply *)"
+            "Bash(kubectl create *)"
+            "Bash(kubectl delete *)"
+            "Bash(kubectl edit *)"
+            "Bash(kubectl patch *)"
+            "Bash(kubectl replace *)"
+            "Bash(kubectl scale *)"
+            "Bash(kubectl set *)"
+            "Bash(kubectl expose *)"
+            "Bash(kubectl run *)"
+            "Bash(kubectl exec *)"
+            "Bash(kubectl cp *)"
+            "Bash(kubectl drain *)"
+            "Bash(kubectl cordon *)"
+            "Bash(kubectl uncordon *)"
+            "Bash(kubectl taint *)"
+            "Bash(kubectl label *)"
+            "Bash(kubectl annotate *)"
+            "Bash(kubectl rollout restart *)"
+            "Bash(kubectl rollout undo *)"
+            "Bash(kubectl rollout resume *)"
+            "Bash(kubectl rollout pause *)"
+            "Bash(kubectl autoscale *)"
+            "Bash(kubectl debug *)"
+            "Bash(kubectl attach *)"
+            "Bash(kubectl port-forward *)"
+            "Bash(kubectl proxy *)"
+            "Bash(kubectl config set *)"
+            "Bash(kubectl config set-context *)"
+            "Bash(kubectl config set-cluster *)"
+            "Bash(kubectl config set-credentials *)"
+            "Bash(kubectl config use-context *)"
+            "Bash(kubectl config delete-context *)"
+            "Bash(kubectl config delete-cluster *)"
+            "Bash(kubectl config unset *)"
+            "Bash(kubectl certificate approve *)"
+            "Bash(kubectl certificate deny *)"
           ];
         };
         hooks = {
