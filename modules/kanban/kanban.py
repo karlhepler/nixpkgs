@@ -41,11 +41,12 @@ import os
 import re
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from threading import Event
 
 COLUMNS = ["todo", "doing", "blocked", "done", "canceled"]
-WORK_COLUMNS = ["blocked", "doing", "todo"]  # Priority order for next command
 ARCHIVE_DAYS_THRESHOLD = int(os.environ.get("KANBAN_ARCHIVE_DAYS", "30"))
 
 
@@ -563,57 +564,6 @@ def cmd_bottom(args) -> None:
     new_priority = validate_priority(new_priority)
     update_card(card_path, {"priority": new_priority})
     print(f"Moved to bottom: {card_path.name} (priority: {new_priority})")
-
-
-def cmd_next(args) -> None:
-    """Get the next card to work on (right-to-left priority, skip done).
-
-    By default, filters to current session + sessionless cards to prevent
-    grabbing work assigned to other agents.
-    """
-    root = get_root(args.root)
-    persona_filter = args.persona
-    skip = args.skip or 0
-
-    # Search columns right-to-left: blocked -> doing -> todo
-    found_cards = []
-    for col in WORK_COLUMNS:
-        cards = find_cards_in_column(root, col)
-        for card in cards:
-            if persona_filter:
-                if get_persona(card) == persona_filter:
-                    found_cards.append((col, card))
-            else:
-                found_cards.append((col, card))
-
-    # Filter by session (default: current session + sessionless)
-    # This prevents claiming cards assigned to other agents
-    if hasattr(args, 'all_sessions') and args.all_sessions:
-        # Show all sessions - no filtering
-        pass
-    else:
-        # Default: filter to current session + sessionless cards
-        current_session = get_current_session_id()
-        if current_session:
-            found_cards = [(col, card) for col, card in found_cards
-                           if get_session(card) in (current_session, None)]
-
-    if not found_cards:
-        if persona_filter:
-            print(f"No cards found for persona '{persona_filter}'")
-        else:
-            print("No cards to work on")
-        sys.exit(0)
-
-    if skip >= len(found_cards):
-        print(f"No more cards (skip={skip}, found={len(found_cards)})")
-        sys.exit(0)
-
-    col, card = found_cards[skip]
-    print(f"=== NEXT CARD ({col}) ===")
-    print(f"Card: {card.name}")
-    print()
-    print(card.read_text())
 
 
 def cmd_comment(args) -> None:
@@ -1207,6 +1157,84 @@ def cmd_clear(args) -> None:
         print(f"Cleared {deleted} cards from kanban board")
 
 
+def watch_and_run(args, command_func) -> None:
+    """Watch .kanban/ directory and re-run command on changes.
+
+    Features:
+    - Monitors .kanban/ directory for file changes (create, modify, delete)
+    - Debounces rapid changes (max 1 refresh per second)
+    - Clear screen and re-execute command on changes
+    - Clean Ctrl+C exit
+
+    Args:
+        args: Parsed command-line arguments
+        command_func: Command function to execute (e.g., cmd_list)
+    """
+    try:
+        from watchdog.observers import Observer
+        from watchdog.events import FileSystemEventHandler
+    except ImportError:
+        print("Error: watchdog library not available. Install with: pip install watchdog", file=sys.stderr)
+        sys.exit(1)
+
+    root = get_root(args.root)
+
+    # Event to signal when a refresh is needed
+    refresh_event = Event()
+    last_refresh = [time.time()]  # Use list for mutable reference in closure
+
+    class DebounceHandler(FileSystemEventHandler):
+        """Handler that debounces file system events."""
+
+        def on_any_event(self, event):
+            # Ignore directory events and non-.md files
+            if event.is_directory:
+                return
+            if not event.src_path.endswith('.md'):
+                return
+
+            # Debounce: only trigger if more than 1 second since last refresh
+            now = time.time()
+            if now - last_refresh[0] >= 1.0:
+                last_refresh[0] = now
+                refresh_event.set()
+
+    # Set up observer
+    observer = Observer()
+    handler = DebounceHandler()
+    observer.schedule(handler, str(root), recursive=True)
+    observer.start()
+
+    print(f"Watching {root} for changes... (Press Ctrl+C to exit)")
+    print()
+
+    try:
+        # Initial run
+        command_func(args)
+
+        # Watch loop
+        while True:
+            # Wait for refresh event or timeout
+            if refresh_event.wait(timeout=0.5):
+                # Clear screen (cross-platform)
+                os.system('cls' if os.name == 'nt' else 'clear')
+
+                # Re-run command
+                try:
+                    command_func(args)
+                except Exception as e:
+                    print(f"Error running command: {e}", file=sys.stderr)
+
+                # Reset event
+                refresh_event.clear()
+
+    except KeyboardInterrupt:
+        print("\nStopping watch mode...")
+    finally:
+        observer.stop()
+        observer.join()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Kanban CLI - File-based kanban board for agent coordination",
@@ -1229,10 +1257,15 @@ PICKING NEXT WORK:
   1. Run 'kanban list' to see full board
   2. Filter to your session if in multi-agent scenario
   3. Work cards in priority order (lowest number first)
+
+WATCH MODE:
+  Add --watch to any command to auto-refresh on file changes
+  Example: kanban list --watch
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("--root", help="Kanban root directory (or set KANBAN_ROOT)")
+    parser.add_argument("--watch", action="store_true", help="Auto-refresh output when .kanban/ files change")
 
     subparsers = parser.add_subparsers(dest="command", help="Commands")
 
@@ -1295,12 +1328,6 @@ Empty columns default to priority 1000 (baseline for first card).
     # bottom
     p_bottom = subparsers.add_parser("bottom", help="Move card to bottom of column")
     p_bottom.add_argument("card", help="Card number or name")
-
-    # next
-    p_next = subparsers.add_parser("next", help="Get next card to work on (default: current session only)")
-    p_next.add_argument("--persona", help="Filter by persona")
-    p_next.add_argument("--skip", type=int, default=0, help="Skip N cards (for blocked cards)")
-    p_next.add_argument("--all-sessions", action="store_true", help="Include cards from all sessions (default: current session + sessionless)")
 
     # comment
     p_comment = subparsers.add_parser("comment", help="Add comment to card")
@@ -1386,7 +1413,6 @@ BULK REASSIGNMENT:
         "down": cmd_down,
         "top": cmd_top,
         "bottom": cmd_bottom,
-        "next": cmd_next,
         "comment": cmd_comment,
         "history": cmd_history,
         "list": cmd_list,
@@ -1401,7 +1427,13 @@ BULK REASSIGNMENT:
         "clear": cmd_clear,
     }
 
-    commands[args.command](args)
+    command_func = commands[args.command]
+
+    # Execute in watch mode if --watch flag is set
+    if getattr(args, 'watch', False):
+        watch_and_run(args, command_func)
+    else:
+        command_func(args)
 
 
 if __name__ == "__main__":

@@ -46,7 +46,6 @@ This repository contains Nix Home Manager configuration for managing development
 - `kanban list`: Show all cards in todo/doing/blocked columns
 - `kanban show <card#>`: Show full card details
 - `kanban move <card#> <column>`: Move card to todo/doing/blocked/done
-- `kanban next`: Get next card to work on
 - `kanban todo`, `kanban doing`, `kanban blocked`, `kanban done`: Filter by column
 - `kanban comment <card#> "text"`: Add comment to card
 - `kanban delete <card#>`: Delete a card
@@ -226,7 +225,8 @@ This repository includes integrated Claude Code settings:
 - Global preferences and guidelines in `modules/claude/global/CLAUDE.md`
 - User-level skills in `modules/claude/global/commands/`:
   - Engineering: `swe-backend`, `swe-frontend`, `swe-fullstack`, `swe-devex`, `swe-infra`, `swe-security`, `swe-sre`
-  - Support: `researcher`, `facilitator`, `scribe`
+  - Design: `ux-designer`, `visual-designer`
+  - Support: `researcher`, `scribe`, `ai-expert`
   - Workflow: `review-pr-comments`
   - Business: `finance`, `lawyer`, `marketing`
 - Notification and completion hooks configured in `modules/claude/default.nix`
