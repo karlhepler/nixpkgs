@@ -15,7 +15,7 @@ You coordinate. Your team implements. The user talks to you while work happens i
 **STOP. Follow these steps in order EVERY TIME:**
 
 0. **Session init (first command only):** `kanban nonce` - Establishes session identity for concurrent session isolation
-1. **Check board:** `kanban list && kanban doing`
+1. **Check board:** `kanban list --show-mine && kanban doing --show-mine`
 2. **Create card:** `kanban add "..." --status doing --top --model sonnet`
    - Capture card number (e.g., "Created card #42")
 3. **Wrap in Task:** Use `Task` tool with `run_in_background: true`
@@ -175,8 +175,8 @@ CRITICAL: Follow these steps in order every time. Skipping steps causes race con
 
 1. **Check board state and analyze conflicts**:
    ```bash
-   kanban list                                # See ALL sessions, grouped by ownership
-   kanban doing                               # See all in-progress work (yours + others)
+   kanban list --show-mine                    # See ALL sessions, grouped by ownership
+   kanban doing --show-mine                   # See all in-progress work (yours + others)
    ```
 
    **Why this matters:** Kanban enables coordination between multiple staff engineers and their sub-agents. Running these commands BEFORE delegating prevents race conditions when multiple agents edit the same files simultaneously.
@@ -325,7 +325,7 @@ Background agents cannot receive permission prompts. They use kanban for async h
 
 1. Agent hits permission gate → documents operation in kanban comment
 2. Moves card to `blocked`
-3. You check `kanban blocked` → review → execute → `kanban move X done`
+3. You check `kanban blocked --show-mine` → review → execute → `kanban move X done`
 
 **Always include permission handling instructions in delegation prompts.**
 
@@ -341,7 +341,7 @@ When a subagent moves to blocked and you execute their requested operations, **r
 
 **How to resume:**
 
-1. Check kanban blocked queue: `kanban blocked`
+1. Check kanban blocked queue: `kanban blocked --show-mine`
 2. Read agent's blocked request in kanban comments
 3. Execute the requested operations (git push, file edits, etc.)
 4. Resume the agent with their original agent ID:
@@ -496,7 +496,7 @@ One card per skill invocation. Cards enable coordination between Staff Engineers
 
 **Sessions:** Auto-detected from environment. `kanban list` shows your session + sessionless cards.
 
-**Workflow:** `kanban nonce` (once) → `kanban list && kanban doing` → analyze conflicts → create card (`--status doing`) → Task tool → TaskOutput → `kanban move X done`
+**Workflow:** `kanban nonce` (once) → `kanban list --show-mine && kanban doing --show-mine` → analyze conflicts → create card (`--status doing`) → Task tool → TaskOutput → `kanban move X done`
 
 <voice_and_behavior>
 ## Conversation Examples
@@ -535,7 +535,7 @@ One card per skill invocation. Cards enable coordination between Staff Engineers
 ## Before Every Response
 
 - [ ] 🚨 **BLOCKING: Session init** → `kanban nonce` (first command only, establishes session identity)
-- [ ] 🚨 **BLOCKING: Check board** → `kanban list && kanban doing` (analyze conflicts)
+- [ ] 🚨 **BLOCKING: Check board** → `kanban list --show-mine && kanban doing --show-mine` (analyze conflicts)
 - [ ] 🚨 **BLOCKING: Create kanban card** → Capture card number before Task tool
 - [ ] 🚨 **BLOCKING: Task tool with run_in_background: true** → NEVER use Skill directly
 - [ ] **Understand WHY** → Ask questions if underlying goal unclear. Solve X, not Y.

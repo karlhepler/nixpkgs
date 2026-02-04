@@ -34,6 +34,12 @@ COLUMN SEMANTICS (when to use each column):
   done     - Completed work. Archive of what's been accomplished.
   canceled - Work that was abandoned, became obsolete, or is no longer needed.
              Not completed. Kept for historical context and learning.
+
+ENVIRONMENT VARIABLES:
+  KANBAN_HIDE_MINE          - Set to "true" to hide your own session's cards by default
+                              (show only other sessions). Useful when you're primarily
+                              monitoring other agents' work. Can override with --only-mine flag.
+  KANBAN_ARCHIVE_DAYS       - Number of days before auto-archiving done cards (default: 30)
 """
 
 import argparse
@@ -786,8 +792,26 @@ def cmd_list(args) -> None:
         # Default: hide both done and canceled
         columns_to_show = [c for c in COLUMNS if c not in ["done", "canceled"]]
 
-    # Check if --mine flag is set (show only your session's cards)
-    show_only_mine = getattr(args, 'mine', False)
+    # Check environment variable for hiding own session by default
+    hide_own_default = os.environ.get("KANBAN_HIDE_MINE", "").lower() in ["true", "1", "yes"]
+
+    # Check flags
+    show_only_mine = getattr(args, 'only_mine', False)  # Show ONLY mine (hide others)
+    hide_mine_explicit = getattr(args, 'hide_mine', False)  # Hide mine explicitly
+    show_mine_explicit = getattr(args, 'show_mine', False)  # Show mine explicitly (override env var)
+
+    # Determine display behavior
+    # Priority: --only-mine > --show-mine > --hide-mine > env var > default (show both)
+    if show_only_mine:
+        hide_own_session = False  # Show only mine (hide others)
+    elif show_mine_explicit:
+        hide_own_session = False  # Explicitly show mine (overrides env var)
+    elif hide_mine_explicit:
+        hide_own_session = True  # Hide mine explicitly
+    elif hide_own_default:
+        hide_own_session = True  # Hide mine from env var
+    else:
+        hide_own_session = False  # Default: show both
 
     # Get current session for grouping
     current_session = get_current_session_id()
@@ -797,6 +821,7 @@ def cmd_list(args) -> None:
         # Show only specific session
         current_session = args.session
         show_only_mine = True
+        hide_own_session = False
 
     # Group cards by session
     my_cards = {col: [] for col in columns_to_show}
@@ -843,37 +868,38 @@ def cmd_list(args) -> None:
             else:
                 other_cards[col].append(card)
 
-    # Display: Your Session section
-    if current_session:
-        print(f"=== Your Session ({current_session[:8]}) ===")
-    else:
-        print("=== Your Cards ===")
-    print()
-
-    for col in columns_to_show:
-        cards = my_cards[col]
-        print(f"{col.upper()} ({len(cards)})")
-
-        if cards:
-            for card in cards:
-                name = card.stem
-                content = card.read_text()
-                frontmatter, _ = parse_frontmatter(content)
-                persona = frontmatter.get("persona", "")
-                model = frontmatter.get("model")
-
-                # Format: #number: title (persona) [model]
-                display = f"  {name}"
-                if persona and persona != "unassigned":
-                    display += f" ({persona})"
-                if model:
-                    display += f" [model: {model}]"
-                print(display)
+    # Display: Your Session section (unless explicitly hiding)
+    if not hide_own_session:
+        if current_session:
+            print(f"=== Your Session ({current_session[:8]}) ===")
         else:
-            print("  (empty)")
+            print("=== Your Cards ===")
         print()
 
-    # Display: Other Sessions section (if not --mine flag)
+        for col in columns_to_show:
+            cards = my_cards[col]
+            print(f"{col.upper()} ({len(cards)})")
+
+            if cards:
+                for card in cards:
+                    name = card.stem
+                    content = card.read_text()
+                    frontmatter, _ = parse_frontmatter(content)
+                    persona = frontmatter.get("persona", "")
+                    model = frontmatter.get("model")
+
+                    # Format: #number: title (persona) [model]
+                    display = f"  {name}"
+                    if persona and persona != "unassigned":
+                        display += f" ({persona})"
+                    if model:
+                        display += f" [model: {model}]"
+                    print(display)
+            else:
+                print("  (empty)")
+            print()
+
+    # Display: Other Sessions section (if not --only-mine flag)
     if not show_only_mine and any(other_cards[col] for col in columns_to_show):
         print("=== Other Sessions ===")
         print()
@@ -1105,14 +1131,33 @@ def cmd_view(args) -> None:
     # Get current session
     current_session = get_current_session_id()
 
-    # Check if --mine flag is set (show only your session's cards)
-    show_only_mine = getattr(args, 'mine', False)
+    # Check environment variable for hiding own session by default
+    hide_own_default = os.environ.get("KANBAN_HIDE_MINE", "").lower() in ["true", "1", "yes"]
+
+    # Check flags
+    show_only_mine = getattr(args, 'only_mine', False)  # Show ONLY mine (hide others)
+    hide_mine_explicit = getattr(args, 'hide_mine', False)  # Hide mine explicitly
+    show_mine_explicit = getattr(args, 'show_mine', False)  # Show mine explicitly (override env var)
+
+    # Determine display behavior
+    # Priority: --only-mine > --show-mine > --hide-mine > env var > default (show both)
+    if show_only_mine:
+        hide_own_session = False  # Show only mine (hide others)
+    elif show_mine_explicit:
+        hide_own_session = False  # Explicitly show mine (overrides env var)
+    elif hide_mine_explicit:
+        hide_own_session = True  # Hide mine explicitly
+    elif hide_own_default:
+        hide_own_session = True  # Hide mine from env var
+    else:
+        hide_own_session = False  # Default: show both
 
     # Explicit session override
     explicit_session_filter = hasattr(args, 'session') and args.session
     if explicit_session_filter:
         current_session = args.session
         show_only_mine = True
+        hide_own_session = False
 
     # Group cards by ownership
     my_cards = []
@@ -1135,8 +1180,8 @@ def cmd_view(args) -> None:
         else:
             other_cards.append(card)
 
-    # Display: Your Session - Full Details
-    if my_cards:
+    # Display: Your Session - Full Details (unless explicitly hiding)
+    if my_cards and not hide_own_session:
         if current_session:
             print("=== Your Session - Full Details ===")
         else:
@@ -1568,7 +1613,9 @@ Empty columns default to priority 1000 (baseline for first card).
     p_history.add_argument("--until", help="Filter until date (ISO format)")
     p_history.add_argument("--include-canceled", action="store_true", help="Include canceled cards in history")
     p_history.add_argument("--session", help="Filter by session ID")
-    p_history.add_argument("--mine", action="store_true", help="Show only current session's cards")
+    p_history.add_argument("--only-mine", action="store_true", dest="only_mine", help="Show only current session's cards")
+    p_history.add_argument("--show-mine", action="store_true", dest="show_mine", help="Show current session's cards (overrides KANBAN_HIDE_MINE env var)")
+    p_history.add_argument("--hide-mine", action="store_true", dest="hide_mine", help="Hide current session's cards (show only other sessions). Can also set KANBAN_HIDE_MINE=true")
 
     # list (with ls alias)
     p_list = subparsers.add_parser("list", parents=[parent_parser], help="Show board overview (default: all sessions grouped)")
@@ -1576,7 +1623,9 @@ Empty columns default to priority 1000 (baseline for first card).
     p_list.add_argument("--show-canceled", action="store_true", help="Include canceled column in output")
     p_list.add_argument("--show-all", action="store_true", help="Include both done and canceled columns in output")
     p_list.add_argument("--session", help="Filter by session ID")
-    p_list.add_argument("--mine", action="store_true", help="Show only current session's cards")
+    p_list.add_argument("--only-mine", action="store_true", dest="only_mine", help="Show only current session's cards")
+    p_list.add_argument("--show-mine", action="store_true", dest="show_mine", help="Show current session's cards (overrides KANBAN_HIDE_MINE env var)")
+    p_list.add_argument("--hide-mine", action="store_true", dest="hide_mine", help="Hide current session's cards (show only other sessions). Can also set KANBAN_HIDE_MINE=true")
     p_list.add_argument("--since", help="Filter by date (today, yesterday, week, month, or ISO date)")
     p_list.add_argument("--until", help="Filter until date (ISO format)")
     p_ls = subparsers.add_parser("ls", parents=[parent_parser], help="Show board overview (alias for list)")
@@ -1584,7 +1633,9 @@ Empty columns default to priority 1000 (baseline for first card).
     p_ls.add_argument("--show-canceled", action="store_true", help="Include canceled column in output")
     p_ls.add_argument("--show-all", action="store_true", help="Include both done and canceled columns in output")
     p_ls.add_argument("--session", help="Filter by session ID")
-    p_ls.add_argument("--mine", action="store_true", help="Show only current session's cards")
+    p_ls.add_argument("--only-mine", action="store_true", dest="only_mine", help="Show only current session's cards")
+    p_ls.add_argument("--show-mine", action="store_true", dest="show_mine", help="Show current session's cards (overrides KANBAN_HIDE_MINE env var)")
+    p_ls.add_argument("--hide-mine", action="store_true", dest="hide_mine", help="Hide current session's cards (show only other sessions). Can also set KANBAN_HIDE_MINE=true")
     p_ls.add_argument("--since", help="Filter by date (today, yesterday, week, month, or ISO date)")
     p_ls.add_argument("--until", help="Filter until date (ISO format)")
 
@@ -1596,7 +1647,9 @@ Empty columns default to priority 1000 (baseline for first card).
     for col in COLUMNS:
         p_col = subparsers.add_parser(col, parents=[parent_parser], help=f"View cards in {col} (default: all sessions, full details for yours)")
         p_col.add_argument("--session", help="Filter by session ID")
-        p_col.add_argument("--mine", action="store_true", help="Show only current session's cards")
+        p_col.add_argument("--only-mine", action="store_true", dest="only_mine", help="Show only current session's cards")
+        p_col.add_argument("--show-mine", action="store_true", dest="show_mine", help="Show current session's cards (overrides KANBAN_HIDE_MINE env var)")
+        p_col.add_argument("--hide-mine", action="store_true", dest="hide_mine", help="Hide current session's cards (show only other sessions). Can also set KANBAN_HIDE_MINE=true")
         p_col.add_argument("--since", help="Filter by date (today, yesterday, week, month, or ISO date)")
         p_col.add_argument("--until", help="Filter until date (ISO format)")
         p_col.set_defaults(column=col)
