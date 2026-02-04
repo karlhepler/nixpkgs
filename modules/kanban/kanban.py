@@ -894,32 +894,130 @@ def get_session(card_path: Path) -> str | None:
     return frontmatter.get("session")
 
 
-def get_current_session_id() -> str | None:
-    """Get Claude Code session ID from history file.
+def get_encoded_project_path() -> str:
+    """Get the encoded project path format Claude uses.
 
-    This ID persists across 'claude --continue' invocations, ensuring
-    kanban cards remain associated with the correct conversation even
-    after the process restarts.
+    Claude encodes paths by replacing '/' with '-' and '.' with '-'.
+    Example: /Users/foo/.config/bar -> -Users-foo--config-bar
+    """
+    cwd = Path.cwd()
+    return str(cwd).replace('/', '-').replace('.', '-')
+
+
+def find_claude_process() -> int | None:
+    """Walk up the process tree to find the Claude Code process.
+
+    When kanban runs, it may be invoked through intermediate shells:
+    kanban -> zsh -> claude
+
+    This function walks up the process ancestry until it finds a process
+    whose command contains 'claude' (but not 'python' to avoid false matches).
+
+    Returns:
+        PID of the Claude process, or None if not found
+    """
+    try:
+        pid = os.getpid()
+
+        for _ in range(10):  # max depth to prevent infinite loop
+            result = subprocess.run(
+                ['ps', '-o', 'ppid=,command=', '-p', str(pid)],
+                capture_output=True,
+                text=True
+            )
+            if result.returncode != 0:
+                break
+
+            parts = result.stdout.strip().split(None, 1)
+            if len(parts) < 2:
+                break
+
+            ppid_str, cmd = parts[0], parts[1].lower()
+
+            # Check if this is the Claude process
+            if 'claude' in cmd and 'python' not in cmd:
+                return int(ppid_str)
+
+            # Move up the tree
+            pid = int(ppid_str)
+            if pid <= 1:  # Reached init/launchd
+                break
+
+    except (ValueError, OSError):
+        pass
+
+    return None
+
+
+def get_current_session_id() -> str | None:
+    """Get Claude Code session ID by correlating process start time with temp directory creation.
+
+    This approach is more robust than reading history.jsonl because it doesn't have race conditions
+    when multiple Claude sessions run concurrently in the same directory.
+
+    The algorithm:
+    1. Walk up process tree to find Claude process
+    2. Get Claude's start time via `ps -o lstart`
+    3. Find temp directory in /private/tmp/claude-501/{ENCODED_PROJECT}/ with matching creation time
+    4. Extract UUID from directory name
 
     Returns:
         Session ID string (UUID) if detected, None otherwise
     """
-    history_file = Path.home() / '.claude' / 'history.jsonl'
-    if not history_file.exists():
-        return None
-
     try:
-        # Read last line (most recent session entry)
-        last_line = None
-        with open(history_file, 'r') as f:
-            for line in f:
-                if line.strip():
-                    last_line = line
+        # 1. Find the Claude process by walking up the process tree
+        claude_pid = find_claude_process()
+        if claude_pid is None:
+            return None
 
-        if last_line:
-            data = json.loads(last_line)
-            return data.get('sessionId')
-    except (json.JSONDecodeError, OSError, KeyError):
+        # 2. Get Claude's start time
+        result = subprocess.run(
+            ['ps', '-o', 'lstart=', '-p', str(claude_pid)],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+
+        claude_start = result.stdout.strip()
+        if not claude_start:
+            return None
+
+        # Parse format like "Wed Feb  4 00:59:32 2026"
+        # Note: There can be extra spaces between month and day for single-digit days
+        claude_start_dt = datetime.strptime(claude_start, "%a %b %d %H:%M:%S %Y")
+
+        # 3. Find temp directory with matching creation time
+        project_path = get_encoded_project_path()
+        temp_base = Path(f"/private/tmp/claude-501/{project_path}")
+
+        if not temp_base.exists():
+            return None
+
+        for session_dir in temp_base.iterdir():
+            if session_dir.name == 'tasks' or not session_dir.is_dir():
+                continue
+
+            # Get directory creation time using GetFileInfo (macOS)
+            result = subprocess.run(
+                ['GetFileInfo', '-m', str(session_dir)],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+
+            dir_time = result.stdout.strip()
+            if not dir_time:
+                continue
+
+            # Parse format like "02/04/2026 00:59:32"
+            dir_dt = datetime.strptime(dir_time, "%m/%d/%Y %H:%M:%S")
+
+            # Match to the second
+            if dir_dt == claude_start_dt:
+                return session_dir.name  # This is the UUID
+
+    except (subprocess.CalledProcessError, FileNotFoundError, ValueError, OSError):
+        # Fallback: Any error in the process correlation approach, return None
         pass
 
     return None
