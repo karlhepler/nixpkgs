@@ -337,10 +337,10 @@ def has_merge_conflicts(pr_number: int) -> bool:
 
 
 def get_pr_info(pr_number: int) -> dict:
-    """Get PR title, branch, etc."""
+    """Get PR title, branch, state, etc."""
     code, stdout, _ = run_gh([
         "pr", "view", str(pr_number),
-        "--json", "title,headRefName,baseRefName,body,url"
+        "--json", "title,headRefName,baseRefName,body,url,state"
     ])
     if code != 0:
         return {}
@@ -592,16 +592,28 @@ def main_loop_iteration(
     """
     log(f"━━━ Cycle {cycle}/{MAX_CYCLES} ━━━")
 
-    # 1. Wait for checks to complete
+    # 1. Check if PR is already merged
+    pr_info = get_pr_info(pr_number)
+    pr_state = pr_info.get("state", "").upper()
+
+    if pr_state == "MERGED":
+        log("✅ PR is already merged!")
+        send_notification(
+            "Smithers Complete",
+            f"PR #{pr_number} is already merged",
+            "Glass"
+        )
+        sys.exit(0)
+
+    # 2. Wait for checks to complete
     checks = wait_for_checks(pr_number)
 
-    # 2. Gather intelligence
+    # 3. Gather intelligence
     failed_checks = get_failed_checks(checks)
     bot_comments = get_bot_comments(owner, repo, pr_number)
     conflicts = has_merge_conflicts(pr_number)
-    pr_info = get_pr_info(pr_number)
 
-    # 3. Report status
+    # 4. Report status
     total_bot = (
         len(bot_comments.get("issue_comments", [])) +
         len(bot_comments.get("review_comments", [])) +
@@ -613,7 +625,7 @@ def main_loop_iteration(
         f"{total_bot} bot comments | {conflict_str}"
     )
 
-    # 4. Check if work needed
+    # 5. Check if work needed
     if not work_needed(failed_checks, bot_comments, conflicts):
         log("✅ PR is completely ready to merge!")
         log(f"Completed in {cycle} cycle(s)")
@@ -625,7 +637,7 @@ def main_loop_iteration(
         )
         sys.exit(0)
 
-    # 5. Handle final cycle - show errors but don't invoke Ralph
+    # 6. Handle final cycle - show errors but don't invoke Ralph
     if cycle == MAX_CYCLES:
         log("⚠️ Final cycle reached with unresolved issues")
         log(f"\nFailed checks: {len(failed_checks)}")
@@ -664,12 +676,12 @@ def main_loop_iteration(
         )
         sys.exit(1)
 
-    # 6. Calculate work iteration based on Ralph invocations (not smithers cycles)
+    # 7. Calculate work iteration based on Ralph invocations (not smithers cycles)
     # Ralph is invoked up to MAX_RALPH_INVOCATIONS times
     work_iteration = ralph_invocation_count + 1
     total_iterations = MAX_RALPH_INVOCATIONS
 
-    # 7. Generate prompt and invoke Ralph
+    # 8. Generate prompt and invoke Ralph
     log("📝 Generating prompt for Ralph...")
     prompt = generate_prompt(
         pr_url, pr_info, failed_checks, bot_comments, conflicts,
@@ -702,9 +714,18 @@ def main_loop_iteration(
             start_new_session=True  # Create new process group
         )
         try:
-            result = process.wait()
+            result = process.wait(timeout=3600)  # 60-minute timeout
             if result != 0:
                 log(f"⚠️ Ralph exited with code {result}")
+        except subprocess.TimeoutExpired:
+            log("⚠️ Ralph timed out after 60 minutes, killing process tree...")
+            kill_process_tree(process.pid)
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                pass  # Already killed
+            log("✓ Ralph terminated due to timeout")
+            # Don't raise - continue to next cycle for potential recovery
         except KeyboardInterrupt:
             log("⚠️ Received Ctrl+C, killing Ralph and all subprocesses...")
             # Use recursive tree killer since killpg() doesn't work
