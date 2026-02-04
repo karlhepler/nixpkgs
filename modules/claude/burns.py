@@ -7,6 +7,7 @@ Usage:
     burns path/to/file.md    # Prompt from file (uses -P flag)
 """
 
+import hashlib
 import os
 import signal
 import subprocess
@@ -111,9 +112,14 @@ def main():
         # It's a prompt string - use -p flag
         cmd.extend(["-p", arg])
 
+    # Prepare environment with persistent session ID
+    env = os.environ.copy()
+    cwd_hash = hashlib.sha256(os.getcwd().encode()).hexdigest()[:8]
+    env["KANBAN_SESSION"] = f"burns-{cwd_hash}"
+
     # Run Ralph as subprocess (not exec) so we can handle Ctrl+C
     try:
-        process = subprocess.Popen(cmd)
+        process = subprocess.Popen(cmd, env=env)
         exit_code = process.wait()
         sys.exit(exit_code)
     except KeyboardInterrupt:

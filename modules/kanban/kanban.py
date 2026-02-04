@@ -981,12 +981,21 @@ def find_claude_pid() -> int | None:
 
 
 def cmd_nonce(args) -> None:
-    """Output a unique nonce for session detection.
+    """Output session identifier for session detection.
 
-    Run this command first in a new Claude session. The nonce gets logged
+    If KANBAN_SESSION env var is set (by smithers/burns), output that value.
+    Otherwise, generate a unique nonce for the current Claude session.
+
+    Run this command first in a new session. The output gets logged
     to the session file, allowing subsequent kanban commands to identify
-    which session they belong to by searching for the most recent nonce.
+    which session they belong to.
     """
+    # If session is pre-set (smithers/burns), output that
+    if session_id := os.environ.get('KANBAN_SESSION'):
+        print(session_id)
+        return
+
+    # Otherwise generate a new nonce for Claude session
     import uuid
     import time
 
@@ -996,22 +1005,28 @@ def cmd_nonce(args) -> None:
 
 
 def get_current_session_id() -> str | None:
-    """Get session ID - Claude session via nonce, or username for terminal.
+    """Get session ID - env var > Claude nonce > username for terminal.
 
     Detection logic:
-    1. Check if running inside a Claude process (process tree)
-    2. If inside Claude: search for KANBAN_NONCE to identify the session
-    3. If NOT inside Claude (terminal): use username as session ID
+    1. Check KANBAN_SESSION env var (for smithers/burns persistent sessions)
+    2. Check if running inside a Claude process (process tree)
+    3. If inside Claude: search for KANBAN_NONCE to identify the session
+    4. If NOT inside Claude (terminal): use username as session ID
 
     This ensures:
+    - smithers/burns maintain persistent sessions across Ralph invocations
     - Concurrent Claude sessions are isolated (each must run 'kanban nonce')
     - Terminal usage gets username as session ID
     - A terminal won't accidentally pick up a Claude session's nonce
 
     Returns:
-        Session ID string (UUID for Claude, username for terminal)
+        Session ID string (persistent for smithers/burns, UUID for Claude, username for terminal)
     """
-    # First: are we inside a Claude process?
+    # First: Check for explicit session ID from environment (smithers/burns)
+    if session_id := os.environ.get('KANBAN_SESSION'):
+        return session_id
+
+    # Second: are we inside a Claude process?
     claude_pid = find_claude_pid()
 
     if claude_pid is None:
