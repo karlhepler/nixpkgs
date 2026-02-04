@@ -12,8 +12,17 @@ Usage:
     smithers          # Infer PR from current branch
     smithers 123      # Use PR #123
     smithers <url>    # Use specific PR URL
+    smithers --max-ralph-iterations N 123  # Custom Ralph iterations
+    smithers --max-iterations N 123        # Custom watch cycles
+
+Options:
+    --max-ralph-iterations N    Max Ralph invocations (default: 3)
+                                Can also set via SMITHERS_MAX_RALPH_ITERATIONS env var
+    --max-iterations N          Max watch loop cycles (default: 4)
+                                Can also set via SMITHERS_MAX_ITERATIONS env var
 """
 
+import argparse
 import json
 import os
 import signal
@@ -25,8 +34,8 @@ from datetime import datetime
 
 # Constants
 POLL_INTERVAL = 10  # seconds
-MAX_CYCLES = 4  # 4 CI checks: 3 with Ralph invocations + 1 final check
-MAX_RALPH_INVOCATIONS = 3
+DEFAULT_MAX_CYCLES = 4  # 4 CI checks: 3 with Ralph invocations + 1 final check
+DEFAULT_MAX_RALPH_INVOCATIONS = 3
 TERMINAL_STATES = {
     "pass", "fail", "skipping", "cancelled",
     "success", "failure", "skipped", "neutral", "stale",
@@ -575,18 +584,60 @@ def wait_for_checks(pr_number: int) -> list:
 def main():
     """Main entry point."""
     # Parse arguments
-    pr_arg = sys.argv[1] if len(sys.argv) > 1 else None
-    pr_url = get_pr_url(pr_arg)
+    parser = argparse.ArgumentParser(
+        description="Watch and manage a GitHub PR",
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "pr",
+        nargs="?",
+        default=None,
+        help="PR number, URL, or omit to infer from current branch"
+    )
+    parser.add_argument(
+        "--max-ralph-iterations",
+        type=int,
+        default=None,
+        help=f"Max Ralph invocations (default: {DEFAULT_MAX_RALPH_INVOCATIONS}, or SMITHERS_MAX_RALPH_ITERATIONS env var)"
+    )
+    parser.add_argument(
+        "--max-iterations",
+        type=int,
+        default=None,
+        help=f"Max watch loop cycles (default: {DEFAULT_MAX_CYCLES}, or SMITHERS_MAX_ITERATIONS env var)"
+    )
+
+    args = parser.parse_args()
+
+    # Determine max iterations: CLI flag > env var > default
+    max_ralph_invocations = args.max_ralph_iterations
+    if max_ralph_invocations is None:
+        max_ralph_invocations = int(os.environ.get("SMITHERS_MAX_RALPH_ITERATIONS", DEFAULT_MAX_RALPH_INVOCATIONS))
+
+    max_cycles = args.max_iterations
+    if max_cycles is None:
+        max_cycles = int(os.environ.get("SMITHERS_MAX_ITERATIONS", DEFAULT_MAX_CYCLES))
+
+    # Validate positive integers
+    if max_ralph_invocations < 1:
+        print("Error: max-ralph-iterations must be a positive integer", file=sys.stderr)
+        sys.exit(1)
+    if max_cycles < 1:
+        print("Error: max-iterations must be a positive integer", file=sys.stderr)
+        sys.exit(1)
+
+    pr_url = get_pr_url(args.pr)
     owner, repo, pr_number = parse_pr_url(pr_url)
 
     log(f"🔍 Watching PR #{pr_number}: {pr_url}")
-    log(f"Poll interval: {POLL_INTERVAL}s | Max cycles: {MAX_CYCLES}")
+    log(f"Poll interval: {POLL_INTERVAL}s | Max cycles: {max_cycles}")
 
     ralph_invocation_count = 0
     try:
-        for cycle in range(1, MAX_CYCLES + 1):
+        for cycle in range(1, max_cycles + 1):
             ralph_invoked = main_loop_iteration(
-                cycle, ralph_invocation_count, pr_number, pr_url, owner, repo
+                cycle, ralph_invocation_count, pr_number, pr_url, owner, repo,
+                max_ralph_invocations, max_cycles
             )
             if ralph_invoked:
                 ralph_invocation_count += 1
@@ -595,7 +646,8 @@ def main():
         if has_unaddressed_bot_comments(owner, repo, pr_number):
             log("📝 Unaddressed bot comments detected - extending by ONE cycle")
             ralph_invoked = main_loop_iteration(
-                MAX_CYCLES + 1, ralph_invocation_count, pr_number, pr_url, owner, repo
+                max_cycles + 1, ralph_invocation_count, pr_number, pr_url, owner, repo,
+                max_ralph_invocations, max_cycles + 1
             )
             if ralph_invoked:
                 ralph_invocation_count += 1
@@ -608,10 +660,10 @@ def main():
         )
         return 130  # Standard exit code for SIGINT
 
-    log(f"⚠️ Reached max cycles ({MAX_CYCLES}) without PR being ready")
+    log(f"⚠️ Reached max cycles ({max_cycles}) without PR being ready")
     send_notification(
         "Smithers Max Cycles",
-        f"PR #{pr_number} reached {MAX_CYCLES} cycles without being ready",
+        f"PR #{pr_number} reached {max_cycles} cycles without being ready",
         "Sosumi"
     )
     return 1
@@ -623,13 +675,15 @@ def main_loop_iteration(
     pr_number: int,
     pr_url: str,
     owner: str,
-    repo: str
+    repo: str,
+    max_ralph_invocations: int,
+    max_cycles: int
 ) -> bool:
     """Single iteration of the main watch loop.
 
     Returns True if Ralph was invoked, False otherwise.
     """
-    log(f"━━━ Cycle {cycle}/{MAX_CYCLES} ━━━")
+    log(f"━━━ Cycle {cycle}/{max_cycles} ━━━")
 
     # 1. Check if PR is already merged
     pr_info = get_pr_info(pr_number)
@@ -691,7 +745,7 @@ def main_loop_iteration(
         sys.exit(0)
 
     # 6. Handle final cycle - show errors but don't invoke Ralph
-    if cycle == MAX_CYCLES:
+    if cycle == max_cycles:
         log("⚠️ Final cycle reached with unresolved issues")
         log(f"\nFailed checks: {len(failed_checks)}")
 
@@ -721,18 +775,18 @@ def main_loop_iteration(
         if conflicts:
             log("\n  ❌ Merge conflicts detected")
 
-        log(f"\n❌ Could not resolve all issues after {MAX_RALPH_INVOCATIONS} Ralph invocation(s)")
+        log(f"\n❌ Could not resolve all issues after {max_ralph_invocations} Ralph invocation(s)")
         send_notification(
             "Smithers Max Iterations",
-            f"PR #{pr_number} has unresolved issues after {MAX_RALPH_INVOCATIONS} attempts",
+            f"PR #{pr_number} has unresolved issues after {max_ralph_invocations} attempts",
             "Sosumi"
         )
         sys.exit(1)
 
     # 7. Calculate work iteration based on Ralph invocations (not smithers cycles)
-    # Ralph is invoked up to MAX_RALPH_INVOCATIONS times
+    # Ralph is invoked up to max_ralph_invocations times
     work_iteration = ralph_invocation_count + 1
-    total_iterations = MAX_RALPH_INVOCATIONS
+    total_iterations = max_ralph_invocations
 
     # 8. Generate prompt and invoke Ralph
     log("📝 Generating prompt for Ralph...")
@@ -754,7 +808,7 @@ def main_loop_iteration(
 
     # Prepare environment with Ralph configuration
     env = os.environ.copy()
-    env["RALPH_MAX_ITERATIONS"] = str(MAX_RALPH_INVOCATIONS)
+    env["BURNS_MAX_RALPH_ITERATIONS"] = str(max_ralph_invocations)
     env["KANBAN_SESSION"] = f"smithers-pr-{pr_number}"
 
     log(f"🚀 Invoking Ralph (iteration {work_iteration}/{total_iterations}): burns {prompt_file}")
