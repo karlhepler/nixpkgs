@@ -17,7 +17,6 @@ Options:
 """
 
 import argparse
-import hashlib
 import os
 import signal
 import subprocess
@@ -218,10 +217,8 @@ def main():
         "-p", full_prompt,  # Always use -p with constructed prompt
     ]
 
-    # Prepare environment with persistent session ID
+    # Prepare environment
     env = os.environ.copy()
-    cwd_hash = hashlib.sha256(os.getcwd().encode()).hexdigest()[:8]
-    env["KANBAN_SESSION"] = f"burns-{cwd_hash}"
 
     # Run Ralph as subprocess (not exec) so we can handle Ctrl+C
     try:

@@ -350,6 +350,54 @@ def has_unaddressed_bot_comments(owner: str, repo: str, pr_number: int) -> bool:
     return False
 
 
+def count_actionable_bot_comments(bot_comments: dict) -> int:
+    """Count actionable bot comments (excludes informational bots).
+
+    Filters out informational bots like:
+    - linear-app[bot] (PR linkbacks)
+    - terraform-bot, github-actions[bot] (CI status notifications)
+    - argocd-bot (deployment diffs)
+
+    Returns count of bot comments that likely need human action/response.
+    """
+    # Informational bots that don't require action
+    informational_bots = {
+        "linear-app[bot]",
+        "linear-app",
+        "terraform-bot",
+        "github-actions[bot]",
+        "github-actions",
+        "argocd-bot",
+        "argocd",
+        "codecov[bot]",
+        "codecov",
+        "dependabot[bot]",
+        "dependabot",
+    }
+
+    actionable_count = 0
+
+    # Check issue comments
+    for comment in bot_comments.get("issue_comments", []):
+        bot_name = comment.get("user", {}).get("login", "").lower()
+        if bot_name not in informational_bots:
+            actionable_count += 1
+
+    # Check inline review comments
+    for comment in bot_comments.get("review_comments", []):
+        bot_name = comment.get("user", {}).get("login", "").lower()
+        if bot_name not in informational_bots:
+            actionable_count += 1
+
+    # Check reviews
+    for review in bot_comments.get("reviews", []):
+        bot_name = review.get("user", {}).get("login", "").lower()
+        if bot_name not in informational_bots:
+            actionable_count += 1
+
+    return actionable_count
+
+
 def has_merge_conflicts(pr_number: int) -> bool:
     """Check if PR has merge conflicts."""
     code, stdout, _ = run_gh([
@@ -565,7 +613,7 @@ This is iteration {work_iteration} of {total_iterations}. You have {remaining} m
 
 Fix the issues found in this PR, then exit. The CLI will re-check after you're done.
 
-**IMPORTANT:** Use kanban to track your work. Create cards for each issue you're fixing.
+**IMPORTANT:** Use Ralph's built-in task system to track your work. Create tasks for each issue you're fixing.
 
 ## 🚨 CRITICAL SAFETY CONSTRAINTS
 
@@ -609,7 +657,7 @@ Before ANY destructive operation:
 2. **Check permissions**: Does this require elevated access?
 3. **Use dry-run**: Try `--dry-run`, `terraform plan`, `git diff` first
 4. **Ask yourself**: "Could this break production or leak data?"
-5. **If unsure**: STOP and document in kanban comment. DO NOT proceed.
+5. **If unsure**: STOP and document the blocker in a task comment. DO NOT proceed.
 
 ### When to Exit Early
 
@@ -619,7 +667,7 @@ You have explicit permission to STOP and exit if:
 - Operation scope unclear or risky
 - Any safety constraint would be violated
 
-**Better to exit early than cause damage.** Document the blocker in kanban and exit.""")
+**Better to exit early than cause damage.** Document the blocker in your task system and exit.""")
 
     # Failed checks section
     if failed_checks:
@@ -636,7 +684,8 @@ You have explicit permission to STOP and exit if:
    - Extract run-id from the workflow link (e.g., github.com/.../runs/12345 → run-id is 12345)
    - Then exit - the CLI will check again and the rerun will likely pass""")
 
-    # Bot comments section
+    # Bot comments section - only show actionable comments
+    actionable_count = count_actionable_bot_comments(bot_comments)
     total_bot_comments = (
         len(bot_comments.get("issue_comments", [])) +
         len(bot_comments.get("review_comments", [])) +
@@ -644,7 +693,7 @@ You have explicit permission to STOP and exit if:
     )
 
     if total_bot_comments > 0:
-        sections.append(f"\n## Bot Comments ({total_bot_comments} total)\n")
+        sections.append(f"\n## Bot Comments ({actionable_count} actionable, {total_bot_comments} total)\n")
 
         if bot_comments.get("issue_comments"):
             sections.append("### PR Conversation Comments")
@@ -734,8 +783,8 @@ You MUST complete ALL of the following before exiting:
 
 ## How to Work
 
-- **Use kanban** - Create cards for each issue, track progress
-- **Delegate to sub-agents** - Use Staff Engineer patterns for investigation/fixes
+- **Use Ralph's task system** - Create tasks for each issue, track progress with `ralph tools task`
+- **Delegate to sub-agents** - Use Ralph Coordinator patterns for investigation/fixes
 - **Be thorough** - Don't skip issues or make partial fixes
 
 ## What NOT to Do
@@ -936,15 +985,11 @@ def main_loop_iteration(
     conflicts = has_merge_conflicts(pr_number)
 
     # 4. Report status
-    total_bot = (
-        len(bot_comments.get("issue_comments", [])) +
-        len(bot_comments.get("review_comments", [])) +
-        len(bot_comments.get("reviews", []))
-    )
+    actionable_bot = count_actionable_bot_comments(bot_comments)
     conflict_str = "conflicts" if conflicts else "no conflicts"
     log(
         f"Status: {len(failed_checks)} failed checks | "
-        f"{total_bot} bot comments | {conflict_str}"
+        f"{actionable_bot} actionable bot comments | {conflict_str}"
     )
 
     # 4.5. Early exit if nothing is actionable yet
@@ -957,7 +1002,7 @@ def main_loop_iteration(
         # Only exit early if NO actionable work exists
         # Bot comments with pending checks = can work on comments while waiting
         # Failed checks or conflicts = must wait for terminal state first
-        if all_pending and not failed_checks and not conflicts and total_bot == 0:
+        if all_pending and not failed_checks and not conflicts and actionable_bot == 0:
             log("⏳ No actionable work yet. All workflows pending. Continuing watch loop...")
             return False  # Don't invoke Ralph, CLI continues polling
 
@@ -1038,7 +1083,6 @@ def main_loop_iteration(
     # Prepare environment with Ralph configuration
     env = os.environ.copy()
     env["BURNS_MAX_RALPH_ITERATIONS"] = str(max_ralph_invocations)
-    env["KANBAN_SESSION"] = f"smithers-pr-{pr_number}"
 
     log(f"🚀 Invoking Ralph (iteration {work_iteration}/{total_iterations}): burns {prompt_file}")
     try:
