@@ -933,9 +933,18 @@ def cmd_show(args) -> None:
     root = get_root(args.root)
     card_path = find_card(root, args.card)
 
-    print(f"=== {card_path.name} ===")
-    print()
-    print(card_path.read_text())
+    output = f"=== {card_path.name} ===\n\n{card_path.read_text()}"
+
+    # Pipe through bat with markdown highlighting
+    try:
+        proc = subprocess.Popen(
+            ["bat", "--language", "md", "--style", "plain", "--paging", "never"],
+            stdin=subprocess.PIPE,
+            text=True
+        )
+        proc.communicate(input=output)
+    except (FileNotFoundError, BrokenPipeError):
+        print(output)
 
 
 def get_session(card_path: Path) -> str | None:
