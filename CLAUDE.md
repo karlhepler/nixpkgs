@@ -75,7 +75,7 @@ This repository (`~/.config/nixpkgs`) is the **single source of truth** for syst
 - `q "question"`: Quick Claude question (haiku model - fastest)
 - `qq "question"`: Claude question (sonnet model - balanced)
 - `qqq "question"`: Complex Claude question (opus model - most capable)
-- `burns "prompt"` or `burns file.md`: Run Ralph Orchestrator with Staff Engineer output style
+- `burns "prompt"` or `burns file.md`: Run Ralph Orchestrator with Ralph Coordinator output style
 - `smithers` or `smithers <PR>`: Autonomous PR watcher (monitors checks, fixes issues, handles bot comments)
 - `prc`: PR comment management tool (list, reply, resolve, collapse)
 

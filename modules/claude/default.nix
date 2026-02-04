@@ -7,20 +7,20 @@ let
   # Common hook library functions (inlined at build time)
   hookCommon = builtins.readFile ./claude-hook-common.bash;
 
-  # Staff Engineer output style content (stripped of YAML frontmatter)
+  # Ralph Coordinator output style content (stripped of YAML frontmatter)
   staffEngineerContent = let
-    raw = builtins.readFile ./global/output-styles/staff-engineer.md;
+    raw = builtins.readFile ./global/output-styles/ralph-coordinator.md;
     # Split on "---" and take everything after the second occurrence
     parts = lib.splitString "---" raw;
     # parts[0] = "", parts[1] = frontmatter, parts[2...] = content
     contentParts = lib.drop 2 parts;
   in lib.concatStringsSep "---" contentParts;
 
-  # Generate Ralph hat YAML with embedded Staff Engineer instructions
+  # Generate Ralph hat YAML with embedded Ralph Coordinator instructions
   staffEngineerHatYaml = pkgs.writeText "staff-engineer-hat.yml" ''
-    # Ralph Hat Configuration: Staff Engineer
+    # Ralph Hat Configuration: Ralph Coordinator
     # Generated from Home Manager - do not edit directly
-    # Source: modules/claude/global/output-styles/staff-engineer.md
+    # Source: modules/claude/global/output-styles/ralph-coordinator.md
     #
     # Usage:
     #   cp $(staff-engineer-hat) ralph.yml
@@ -35,9 +35,9 @@ let
       backend: "claude"
 
     hats:
-      staff-engineer:
-        name: "Staff Engineer"
-        description: "Wise, curious team lead who delegates to specialist skills"
+      ralph-coordinator:
+        name: "Ralph Coordinator"
+        description: "Sequential coordinator who executes work directly via Skill tool"
         triggers: ["loop.start", "work.review_needed", "task.blocked"]
         publishes: ["research.needed", "implementation.needed", "work.approved", "LOOP_COMPLETE"]
         default_publishes: "work.approved"
@@ -45,7 +45,7 @@ let
     ${lib.concatMapStringsSep "\n" (line: "      ${line}") (lib.splitString "\n" staffEngineerContent)}
   '';
 
-  # Burns Python CLI (Ralph with Staff Engineer hat)
+  # Burns Python CLI (Ralph with Ralph Coordinator output style)
   burnsScript = pkgs.writers.writePython3Bin "burns" {
     flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
   } (builtins.replaceStrings
@@ -143,7 +143,7 @@ in {
 
     burns = burnsScript // {
       meta = {
-        description = "Run Ralph Orchestrator with Staff Engineer hat (accepts prompt string or file path)";
+        description = "Run Ralph Orchestrator with Ralph Coordinator output style (accepts prompt string or file path)";
         mainProgram = "burns";
         homepage = "${builtins.toString ./.}/burns.py";
       };
