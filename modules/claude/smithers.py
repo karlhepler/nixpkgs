@@ -296,7 +296,9 @@ def generate_prompt(
     pr_info: dict,
     failed_checks: list,
     bot_comments: dict,
-    has_conflicts: bool
+    has_conflicts: bool,
+    work_iteration: int,
+    total_iterations: int
 ) -> str:
     """Generate a focused prompt for Ralph based on what issues were found."""
     sections = []
@@ -306,11 +308,16 @@ def generate_prompt(
     head = pr_info.get("headRefName", "Unknown")
     base = pr_info.get("baseRefName", "Unknown")
 
+    remaining = total_iterations - work_iteration
     sections.append(f"""# PR Watch Task
 
 **PR:** {pr_url}
 **Title:** {title}
 **Branch:** {head} → {base}
+
+## Iteration Context
+
+This is iteration {work_iteration} of {total_iterations}. You have {remaining} more attempt(s) after this one.
 
 ## Your Mission
 
@@ -541,10 +548,16 @@ def main_loop_iteration(cycle: int, pr_number: int, pr_url: str, owner: str, rep
         )
         sys.exit(0)
 
-    # 5. Generate prompt and invoke Ralph
+    # 5. Calculate work iteration (1-indexed, max 3)
+    # With MAX_CYCLES=4, we have 3 work cycles + 1 final verification
+    work_iteration = min(cycle, MAX_CYCLES - 1)
+    total_iterations = MAX_CYCLES - 1
+
+    # 6. Generate prompt and invoke Ralph
     log("📝 Generating prompt for Ralph...")
     prompt = generate_prompt(
-        pr_url, pr_info, failed_checks, bot_comments, conflicts
+        pr_url, pr_info, failed_checks, bot_comments, conflicts,
+        work_iteration, total_iterations
     )
 
     # Write to temp file
@@ -558,16 +571,6 @@ def main_loop_iteration(cycle: int, pr_number: int, pr_url: str, owner: str, rep
         f.write(prompt)
         prompt_file = f.name
 
-    # Calculate work iteration (1-indexed, max 3)
-    # With MAX_CYCLES=4, we have 3 work cycles + 1 final verification
-    work_iteration = min(cycle, MAX_CYCLES - 1)
-    total_iterations = MAX_CYCLES - 1
-
-    # Prepare environment with iteration context for Ralph
-    env = os.environ.copy()
-    env["SMITHERS_ITERATION"] = str(work_iteration)
-    env["SMITHERS_TOTAL"] = str(total_iterations)
-
     log(f"🚀 Invoking Ralph (iteration {work_iteration}/{total_iterations}): burns {prompt_file}")
     try:
         # Run burns with the prompt file
@@ -575,7 +578,6 @@ def main_loop_iteration(cycle: int, pr_number: int, pr_url: str, owner: str, rep
         # This ensures all child processes (Ralph and its subprocesses) get signals
         process = subprocess.Popen(
             ["burns", prompt_file],
-            env=env,
             start_new_session=True  # Create new process group
         )
         try:
