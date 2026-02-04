@@ -220,6 +220,64 @@ def get_failed_checks(checks: list) -> list:
     return failed
 
 
+def get_workflow_failure_details(owner: str, repo: str, check: dict) -> dict:
+    """Fetch workflow run details and failure information for a failed check.
+
+    Returns dict with:
+    - link: URL to the workflow run
+    - conclusion: Overall conclusion (failure, etc)
+    - failures: List of failed job steps with messages
+    """
+    result = {
+        "link": check.get("link", ""),
+        "conclusion": check.get("bucket", "unknown"),
+        "failures": []
+    }
+
+    # Extract run ID from the link URL
+    # Format: https://github.com/owner/repo/actions/runs/12345/...
+    link = check.get("link", "")
+    if not link or "/actions/runs/" not in link:
+        return result
+
+    try:
+        parts = link.split("/actions/runs/")
+        if len(parts) < 2:
+            return result
+        run_id = parts[1].split("/")[0]
+
+        # Fetch job details for this run
+        code, stdout, _ = run_gh([
+            "api", f"repos/{owner}/{repo}/actions/runs/{run_id}/jobs",
+            "--jq", ".jobs[] | select(.conclusion == \"failure\") | {name: .name, steps: [.steps[] | select(.conclusion == \"failure\") | {name: .name, conclusion: .conclusion}]}"
+        ])
+
+        if code == 0 and stdout.strip():
+            # Parse each failed job (one JSON object per line)
+            for line in stdout.strip().split("\n"):
+                if not line.strip():
+                    continue
+                try:
+                    job_data = json.loads(line)
+                    job_name = job_data.get("name", "Unknown Job")
+                    failed_steps = job_data.get("steps", [])
+
+                    if failed_steps:
+                        step_names = [s.get("name", "Unknown") for s in failed_steps]
+                        result["failures"].append({
+                            "job": job_name,
+                            "steps": step_names
+                        })
+                except json.JSONDecodeError:
+                    continue
+
+    except Exception:
+        # If we fail to parse or fetch, just return what we have
+        pass
+
+    return result
+
+
 def get_bot_comments(owner: str, repo: str, pr_number: int) -> dict:
     """Get all bot comments from the PR."""
     comments = {"issue_comments": [], "review_comments": [], "reviews": []}
@@ -567,11 +625,34 @@ def main_loop_iteration(
     # 5. Handle final cycle - show errors but don't invoke Ralph
     if cycle == MAX_CYCLES:
         log("⚠️ Final cycle reached with unresolved issues")
-        log(f"Failed checks: {len(failed_checks)}")
+        log(f"\nFailed checks: {len(failed_checks)}")
+
+        # Show detailed failure information for each failed check
         for check in failed_checks:
-            log(f"  - {check['name']}: {check.get('conclusion', 'unknown')}")
+            check_name = check.get("name", "Unknown")
+            log(f"\n  ❌ {check_name}")
+
+            # Fetch detailed failure information
+            details = get_workflow_failure_details(owner, repo, check)
+            link = details.get("link")
+            if link:
+                log(f"     Link: {link}")
+
+            failures = details.get("failures", [])
+            if failures:
+                log("     Failed jobs/steps:")
+                for failure in failures:
+                    job = failure.get("job", "Unknown")
+                    steps = failure.get("steps", [])
+                    log(f"       • {job}")
+                    for step in steps:
+                        log(f"         - {step}")
+            else:
+                log("     No detailed failure information available")
+
         if conflicts:
-            log("  - Merge conflicts detected")
+            log("\n  ❌ Merge conflicts detected")
+
         log(f"\n❌ Could not resolve all issues after {MAX_RALPH_INVOCATIONS} Ralph invocation(s)")
         send_notification(
             "Smithers Max Iterations",
