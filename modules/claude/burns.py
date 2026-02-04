@@ -3,11 +3,14 @@
 Burns: Run Ralph Orchestrator with Ralph Coordinator output style
 
 Usage:
-    burns "prompt string"    # Inline prompt (uses -p flag)
-    burns path/to/file.md    # Prompt from file (uses -P flag)
-    burns --max-ralph-iterations N "prompt"  # Custom max iterations
+    burns "prompt string"                      # Inline prompt, will create PR
+    burns path/to/file.md                      # Prompt from file, will create PR
+    burns --pr 123 "prompt"                    # PR already exists (e.g., from smithers)
+    burns --pr https://github.com/... "prompt" # PR URL provided
+    burns --max-ralph-iterations N "prompt"    # Custom max iterations
 
 Options:
+    --pr NUMBER_OR_URL          Pull request already exists (skips PR creation requirement)
     --max-ralph-iterations N    Max iterations for Ralph (default: 3)
                                 Can also set via BURNS_MAX_RALPH_ITERATIONS env var
                                 Priority: CLI flag > env var > default
@@ -87,6 +90,55 @@ def kill_process_tree(pid):
     time.sleep(0.1)
 
 
+def sanitize_for_prompt(text: str, max_length: int = 2000) -> str:
+    """Sanitize external content before injecting into LLM prompts.
+
+    Prevents prompt injection attacks by:
+    - Removing ANSI escape codes
+    - HTML-escaping special characters
+    - Neutralizing override keywords
+    - Truncating safely to prevent context overflow
+
+    Args:
+        text: Raw text from external sources (user input, file content, etc.)
+        max_length: Maximum length after sanitization
+
+    Returns:
+        Sanitized text safe for prompt injection
+    """
+    import re
+    import html
+
+    if not text or not isinstance(text, str):
+        return ""
+
+    # Strip ANSI escape codes (color codes, control sequences)
+    text = re.sub(r'\x1b\[[0-9;]*m', '', text)
+    text = re.sub(r'\x1b\][0-9;]*\x07', '', text)
+
+    # HTML-escape to neutralize markup injection
+    text = html.escape(text)
+
+    # Neutralize common prompt injection keywords by adding whitespace breaks
+    # This prevents "IGNORE ALL PREVIOUS INSTRUCTIONS" style attacks
+    override_keywords = [
+        'IGNORE', 'OVERRIDE', 'SYSTEM', 'ADMIN', 'ROOT', 'SUDO',
+        'DISREGARD', 'FORGET', 'BYPASS', 'DISABLE', 'ENABLE',
+        'PREVIOUS INSTRUCTIONS', 'ALL CONSTRAINTS', 'SAFETY'
+    ]
+
+    for keyword in override_keywords:
+        # Case-insensitive replacement with zero-width spaces to break keyword matching
+        pattern = re.compile(re.escape(keyword), re.IGNORECASE)
+        text = pattern.sub(lambda m: '\u200b'.join(m.group(0)), text)
+
+    # Truncate safely - avoid cutting mid-word
+    if len(text) > max_length:
+        text = text[:max_length].rsplit(' ', 1)[0] + '... [truncated]'
+
+    return text
+
+
 def main():
     """Main entry point."""
     # Validate Nix substitution occurred (check if hat file exists)
@@ -112,6 +164,12 @@ def main():
         default=None,
         help=f"Max iterations for Ralph (default: {DEFAULT_MAX_ITERATIONS}). Override with BURNS_MAX_RALPH_ITERATIONS env var"
     )
+    parser.add_argument(
+        "--pr",
+        type=str,
+        default=None,
+        help="PR number or URL if pull request already exists (e.g., '123' or 'https://github.com/owner/repo/pull/123')"
+    )
 
     args = parser.parse_args()
 
@@ -133,21 +191,32 @@ def main():
         print("Error: max-ralph-iterations must be a positive integer", file=sys.stderr)
         sys.exit(1)
 
-    # Build ralph command
+    # Build the full prompt (from file or string)
+    if os.path.isfile(args.prompt):
+        # Read prompt from file
+        with open(args.prompt, 'r') as f:
+            full_prompt = f.read()
+    else:
+        # Use prompt string directly
+        full_prompt = args.prompt
+
+    # Append PR context to prompt (sanitize user input)
+    if args.pr:
+        # PR exists - append context (sanitize PR identifier)
+        pr_safe = sanitize_for_prompt(args.pr, max_length=200)
+        full_prompt += f"\n\n---\n\n## Pull Request Context\n\n**Pull request already exists:** {pr_safe}\n\nYou do NOT need to create a pull request. The PR already exists and is being watched."
+    else:
+        # No PR - require creation before exit
+        full_prompt += "\n\n---\n\n## Pull Request Requirement\n\n**No pull request exists yet for this branch.**\n\nBefore you can exit, you MUST:\n1. Ensure all changes are committed\n2. Create a pull request using `gh pr create`\n3. Verify the PR was created successfully\n\nYou cannot complete this work without creating a PR."
+
+    # Build ralph command with constructed prompt
     cmd = [
         "ralph", "run",
         "-a",  # Auto-approve
         "-c", STAFF_ENGINEER_HAT,
         "--max-iterations", str(max_iterations),
+        "-p", full_prompt,  # Always use -p with constructed prompt
     ]
-
-    # Check if argument is a file path
-    if os.path.isfile(args.prompt):
-        # It's a file - use -P flag
-        cmd.extend(["-P", args.prompt])
-    else:
-        # It's a prompt string - use -p flag
-        cmd.extend(["-p", args.prompt])
 
     # Prepare environment with persistent session ID
     env = os.environ.copy()

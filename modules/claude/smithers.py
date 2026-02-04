@@ -382,6 +382,157 @@ def get_pr_info(pr_number: int) -> dict:
         return {}
 
 
+def audit_ralph_execution() -> None:
+    """Audit Ralph's execution for prohibited command patterns.
+
+    Post-execution security check that scans recent git commits for dangerous
+    command patterns. Alerts user if prohibited operations detected.
+
+    This provides defense-in-depth alongside:
+    - Input sanitization (prevents prompt injection)
+    - Prompt constraints (guides Ralph behavior)
+    """
+    import re
+
+    # Prohibited command patterns (same as in safety constraints)
+    prohibited_patterns = [
+        r'kubectl\s+(apply|create|patch|delete|scale|exec|port-forward)',
+        r'helm\s+(install|upgrade|uninstall)',
+        r'terraform\s+(apply|destroy)',
+        r'pulumi\s+(up|destroy)',
+        r'aws\s+.*\s+(terminate|delete|modify)',
+        r'gcloud\s+.*\s+(delete|update)',
+        r'az\s+.*\s+(delete|update)',
+        r'git\s+push\s+(-f|--force)',
+        r'git\s+reset\s+--hard',
+        r'sudo\s+',
+        r'DROP\s+(DATABASE|TABLE)',
+        r'DELETE\s+FROM\s+\w+\s*;',  # DELETE without WHERE
+        r'TRUNCATE\s+TABLE',
+    ]
+
+    # Sensitive file patterns (detect credentials/secrets in commits)
+    sensitive_file_patterns = [
+        r'\.env',
+        r'credentials\.json',
+        r'secrets\.yaml',
+        r'database\.yml',
+        r'\.aws/credentials',
+        r'\.kube/config',
+        r'\.ssh/id_',
+        r'[A-Z_]+_API_KEY\s*=',  # API_KEY=xxx patterns
+        r'password\s*=\s*["\'][^"\']+["\']',  # password="xxx" patterns
+    ]
+
+    try:
+        # Get commits from last 30 minutes (Ralph's execution window)
+        result = subprocess.run(
+            ["git", "log", "--since=30 minutes ago", "--format=%H|%s", "--"],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+
+        if result.returncode != 0:
+            return  # Git command failed, skip audit
+
+        commits = result.stdout.strip().split('\n') if result.stdout.strip() else []
+        violations = []
+
+        for commit_line in commits:
+            if not commit_line:
+                continue
+
+            commit_hash, commit_msg = commit_line.split('|', 1)
+
+            # Check commit message for prohibited patterns
+            for pattern in prohibited_patterns:
+                if re.search(pattern, commit_msg, re.IGNORECASE):
+                    violations.append(f"  ⚠️  {commit_hash[:7]}: {commit_msg[:80]}")
+                    break
+
+            # Check commit diff for prohibited patterns and sensitive files
+            diff_result = subprocess.run(
+                ["git", "show", "--format=", "--patch", "--name-only", commit_hash],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+
+            if diff_result.returncode == 0:
+                # Check for prohibited commands
+                for pattern in prohibited_patterns:
+                    if re.search(pattern, diff_result.stdout, re.IGNORECASE):
+                        violations.append(f"  ⚠️  {commit_hash[:7]}: Found prohibited command pattern in diff")
+                        break
+
+                # Check for sensitive files
+                for pattern in sensitive_file_patterns:
+                    if re.search(pattern, diff_result.stdout, re.IGNORECASE):
+                        violations.append(f"  🔐 {commit_hash[:7]}: Potential sensitive file/credential detected")
+                        break
+
+        if violations:
+            log("\n🚨 SECURITY ALERT: Prohibited command patterns detected in commits:")
+            for violation in violations:
+                log(violation)
+            log("\n⚠️  Please review these commits carefully. They may violate safety constraints.")
+            log("    Run: git log --since=30 minutes ago --patch\n")
+
+    except Exception as e:
+        # Don't fail the whole process if audit fails
+        log(f"⚠️  Post-execution audit failed: {e}")
+
+
+def sanitize_for_prompt(text: str, max_length: int = 2000) -> str:
+    """Sanitize external content before injecting into LLM prompts.
+
+    Prevents prompt injection attacks by:
+    - Removing ANSI escape codes
+    - HTML-escaping special characters
+    - Neutralizing override keywords
+    - Truncating safely to prevent context overflow
+
+    Args:
+        text: Raw text from external sources (PR titles, bot comments, etc.)
+        max_length: Maximum length after sanitization
+
+    Returns:
+        Sanitized text safe for prompt injection
+    """
+    import re
+    import html
+
+    if not text or not isinstance(text, str):
+        return ""
+
+    # Strip ANSI escape codes (color codes, control sequences)
+    text = re.sub(r'\x1b\[[0-9;]*m', '', text)
+    text = re.sub(r'\x1b\][0-9;]*\x07', '', text)
+
+    # HTML-escape to neutralize markup injection
+    text = html.escape(text)
+
+    # Neutralize common prompt injection keywords by adding whitespace breaks
+    # This prevents "IGNORE ALL PREVIOUS INSTRUCTIONS" style attacks
+    override_keywords = [
+        'IGNORE', 'OVERRIDE', 'SYSTEM', 'ADMIN', 'ROOT', 'SUDO',
+        'DISREGARD', 'FORGET', 'BYPASS', 'DISABLE', 'ENABLE',
+        'PREVIOUS INSTRUCTIONS', 'ALL CONSTRAINTS', 'SAFETY'
+    ]
+
+    for keyword in override_keywords:
+        # Case-insensitive replacement with zero-width spaces to break keyword matching
+        pattern = re.compile(re.escape(keyword), re.IGNORECASE)
+        text = pattern.sub(lambda m: '\u200b'.join(m.group(0)), text)
+
+    # Truncate safely - avoid cutting mid-word
+    if len(text) > max_length:
+        text = text[:max_length].rsplit(' ', 1)[0] + '... [truncated]'
+
+    return text
+
+
 def generate_prompt(
     pr_url: str,
     pr_info: dict,
@@ -394,10 +545,10 @@ def generate_prompt(
     """Generate a focused prompt for Ralph based on what issues were found."""
     sections = []
 
-    # Header
-    title = pr_info.get("title", "Unknown")
-    head = pr_info.get("headRefName", "Unknown")
-    base = pr_info.get("baseRefName", "Unknown")
+    # Header - sanitize all external content
+    title = sanitize_for_prompt(pr_info.get("title", "Unknown"), max_length=200)
+    head = sanitize_for_prompt(pr_info.get("headRefName", "Unknown"), max_length=100)
+    base = sanitize_for_prompt(pr_info.get("baseRefName", "Unknown"), max_length=100)
 
     remaining = total_iterations - work_iteration
     sections.append(f"""# PR Watch Task
@@ -414,13 +565,67 @@ This is iteration {work_iteration} of {total_iterations}. You have {remaining} m
 
 Fix the issues found in this PR, then exit. The CLI will re-check after you're done.
 
-**IMPORTANT:** Use kanban to track your work. Create cards for each issue you're fixing.""")
+**IMPORTANT:** Use kanban to track your work. Create cards for each issue you're fixing.
+
+## 🚨 CRITICAL SAFETY CONSTRAINTS
+
+**You are running autonomously with elevated permissions. You MUST NEVER perform these operations:**
+
+### Cluster & Infrastructure (PROHIBITED)
+- ❌ Kubernetes: `kubectl apply/create/patch/delete/scale/exec/port-forward`
+- ❌ Helm: `helm install/upgrade/uninstall`
+- ❌ Terraform/IaC: `terraform apply/destroy`, `pulumi up/destroy`
+- ❌ Cloud providers: EC2 terminate, RDS delete, S3 delete, autoscaling changes
+- ✅ ALLOWED: Read-only operations (`kubectl get/describe/logs`, `terraform plan`)
+
+### Secrets & IAM (PROHIBITED)
+- ❌ Secrets: `aws secretsmanager put`, `vault write`, `kubectl create secret`
+- ❌ IAM/RBAC: Role modifications, permission grants, access key changes
+- ❌ Credentials: ANY operations on `~/.aws`, `~/.kube`, `~/.ssh`
+- ❌ Sensitive files: NEVER read/commit `.env*`, `*.env`, `credentials.json`, `secrets.yaml`, `database.yml`, API keys
+- ⚠️ If you need config: Use non-sensitive examples, NOT real credentials
+- ✅ ALLOWED: Read non-sensitive configuration (package.json, tsconfig.json, etc.)
+
+### Databases (PROHIBITED)
+- ❌ Schema changes: `DROP/ALTER/TRUNCATE/CREATE TABLE`
+- ❌ Bulk operations: `DELETE FROM` or `UPDATE` without WHERE clause
+- ✅ ALLOWED: `SELECT` queries, `SHOW/DESCRIBE` commands
+
+### Git Operations (RESTRICTED)
+- ❌ Force operations: `git push --force`, `git reset --hard`, `git clean -fd`
+- ❌ Write outside git root: File operations must be within `$(git rev-parse --show-toplevel)`
+- ✅ ALLOWED: Normal commits/pushes within current branch
+
+### System Operations (PROHIBITED)
+- ❌ Privilege escalation: `sudo`, privileged containers, `ssh` access
+- ❌ Network operations: `iptables`, firewall changes, DNS modifications
+- ❌ System modifications: `/etc`, `/usr`, `/var/lib` changes
+- ❌ Process manipulation: `kill`, `systemctl` (except git/development processes)
+
+### Pre-Flight Safety Pattern
+
+Before ANY destructive operation:
+1. **Verify scope**: Does this stay within the git repository?
+2. **Check permissions**: Does this require elevated access?
+3. **Use dry-run**: Try `--dry-run`, `terraform plan`, `git diff` first
+4. **Ask yourself**: "Could this break production or leak data?"
+5. **If unsure**: STOP and document in kanban comment. DO NOT proceed.
+
+### When to Exit Early
+
+You have explicit permission to STOP and exit if:
+- Required operation needs cluster/infrastructure writes
+- Task requires modifying secrets or IAM
+- Operation scope unclear or risky
+- Any safety constraint would be violated
+
+**Better to exit early than cause damage.** Document the blocker in kanban and exit.""")
 
     # Failed checks section
     if failed_checks:
         sections.append("\n## Failed Checks\n")
         for check in failed_checks:
-            name = check.get("name", "Unknown")
+            name = sanitize_for_prompt(check.get("name", "Unknown"), max_length=150)
             link = check.get("link", "")
             sections.append(f"- **{name}**: [View logs]({link})")
         sections.append("""
@@ -444,8 +649,8 @@ Fix the issues found in this PR, then exit. The CLI will re-check after you're d
         if bot_comments.get("issue_comments"):
             sections.append("### PR Conversation Comments")
             for comment in bot_comments["issue_comments"]:
-                user = comment.get("user", {}).get("login", "Unknown")
-                body = comment.get("body", "")[:500]
+                user = sanitize_for_prompt(comment.get("user", {}).get("login", "Unknown"), max_length=50)
+                body = sanitize_for_prompt(comment.get("body", ""), max_length=500)
                 url = comment.get("html_url", "")
                 sections.append(
                     f"\n**{user}** ([link]({url})):\n```\n{body}\n```"
@@ -454,9 +659,9 @@ Fix the issues found in this PR, then exit. The CLI will re-check after you're d
         if bot_comments.get("review_comments"):
             sections.append("\n### Inline Code Review Comments")
             for comment in bot_comments["review_comments"]:
-                user = comment.get("user", {}).get("login", "Unknown")
-                body = comment.get("body", "")[:500]
-                path = comment.get("path", "")
+                user = sanitize_for_prompt(comment.get("user", {}).get("login", "Unknown"), max_length=50)
+                body = sanitize_for_prompt(comment.get("body", ""), max_length=500)
+                path = sanitize_for_prompt(comment.get("path", ""), max_length=200)
                 url = comment.get("html_url", "")
                 sections.append(
                     f"\n**{user}** on `{path}` ([link]({url})):\n```\n{body}\n```"
@@ -465,9 +670,10 @@ Fix the issues found in this PR, then exit. The CLI will re-check after you're d
         if bot_comments.get("reviews"):
             sections.append("\n### Reviews")
             for review in bot_comments["reviews"]:
-                user = review.get("user", {}).get("login", "Unknown")
-                body = review.get("body", "")[:500] if review.get("body") else "(no body)"
-                state = review.get("state", "")
+                user = sanitize_for_prompt(review.get("user", {}).get("login", "Unknown"), max_length=50)
+                body_raw = review.get("body", "") if review.get("body") else "(no body)"
+                body = sanitize_for_prompt(body_raw, max_length=500)
+                state = sanitize_for_prompt(review.get("state", ""), max_length=20)
                 url = review.get("html_url", "")
                 sections.append(
                     f"\n**{user}** ({state}) ([link]({url})):\n```\n{body}\n```"
@@ -544,13 +750,19 @@ You MUST complete ALL of the following before exiting:
     return "\n".join(sections)
 
 
-def work_needed(failed_checks: list, bot_comments: dict, has_conflicts: bool) -> bool:
-    """Determine if there's work for Ralph to do."""
-    # Only invoke Ralph for failed checks or merge conflicts
-    # Bot comments are informational and don't require automated fixes
+def work_needed(failed_checks: list, has_conflicts: bool, owner: str, repo: str, pr_number: int) -> bool:
+    """Determine if there's work for Ralph to do.
+
+    Invokes Ralph when:
+    - CI checks failed
+    - Merge conflicts exist
+    - Unaddressed inline bot comments exist
+    """
     if failed_checks:
         return True
     if has_conflicts:
+        return True
+    if has_unaddressed_bot_comments(owner, repo, pr_number):
         return True
     return False
 
@@ -750,7 +962,7 @@ def main_loop_iteration(
             return False  # Don't invoke Ralph, CLI continues polling
 
     # 5. Check if work needed
-    if not work_needed(failed_checks, bot_comments, conflicts):
+    if not work_needed(failed_checks, conflicts, owner, repo, pr_number):
         log("✅ PR is completely ready to merge!")
         log(f"Completed in {cycle} cycle(s)")
         # Send macOS notification
@@ -871,6 +1083,10 @@ def main_loop_iteration(
             pass
 
     log("Ralph finished, re-checking PR status...")
+
+    # Post-execution security audit
+    audit_ralph_execution()
+
     # Small delay before re-checking to let GitHub update
     time.sleep(5)
     return True  # Indicate Ralph was invoked
