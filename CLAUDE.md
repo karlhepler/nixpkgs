@@ -77,6 +77,7 @@ This repository (`~/.config/nixpkgs`) is the **single source of truth** for syst
 - `qqq "question"`: Complex Claude question (opus model - most capable)
 - `burns "prompt"` or `burns file.md`: Run Ralph Orchestrator with Staff Engineer output style
 - `smithers` or `smithers <PR>`: Autonomous PR watcher (monitors checks, fixes issues, handles bot comments)
+- `prc`: PR comment management tool (list, reply, resolve, collapse)
 
 ### Kanban CLI (Agent Coordination)
 - `kanban init`: Create kanban board structure
@@ -88,6 +89,11 @@ This repository (`~/.config/nixpkgs`) is the **single source of truth** for syst
 - `kanban comment <card#> "text"`: Add comment to card
 - `kanban delete <card#>`: Delete a card
 - See `kanban --help` for full command list
+
+**Session Management:**
+- `KANBAN_SESSION=custom-id`: Override session detection for kanban operations
+- burns and smithers automatically set KANBAN_SESSION for persistent tracking
+- Example: `KANBAN_SESSION=my-task kanban add "task"`
 
 ## Critical Requirements
 

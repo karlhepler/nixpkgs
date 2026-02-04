@@ -369,8 +369,11 @@ def normalize_comments(raw_data: Dict) -> List[Dict]:
     return comments
 
 
-def apply_filters(comments: List[Dict], args: argparse.Namespace) -> List[Dict]:
-    """Apply filters based on command-line arguments."""
+def apply_filters(comments: List[Dict], args: argparse.Namespace) -> Tuple[Optional[List[Dict]], Optional[Dict]]:
+    """
+    Apply filters based on command-line arguments.
+    Returns (filtered_list, error_dict) - error_dict is None on success.
+    """
     filtered = comments
 
     # Filter by author
@@ -382,9 +385,12 @@ def apply_filters(comments: List[Dict], args: argparse.Namespace) -> List[Dict]:
         try:
             pattern = re.compile(args.author_pattern)
             filtered = [c for c in filtered if pattern.search(c["author"])]
-        except re.error:
-            # Invalid regex - return error
-            return []
+        except re.error as e:
+            # Invalid regex - return error dict like other error cases
+            return None, error_response(
+                f"Invalid regex pattern: {args.author_pattern}. Error: {str(e)}",
+                "INVALID_REGEX"
+            )
 
     # Filter bots only
     if hasattr(args, "bots_only") and args.bots_only:
@@ -401,7 +407,7 @@ def apply_filters(comments: List[Dict], args: argparse.Namespace) -> List[Dict]:
     if hasattr(args, "unresolved") and args.unresolved:
         filtered = [c for c in filtered if c.get("is_resolved") is False]
 
-    return filtered
+    return filtered, None
 
 
 def cmd_list(args: argparse.Namespace) -> Dict:
@@ -421,7 +427,9 @@ def cmd_list(args: argparse.Namespace) -> Dict:
     comments = normalize_comments(raw_data)
 
     # Apply filters
-    filtered = apply_filters(comments, args)
+    filtered, error = apply_filters(comments, args)
+    if error:
+        return error
 
     return {
         "comments": filtered,
@@ -681,7 +689,9 @@ def cmd_collapse(args: argparse.Namespace) -> Dict:
     comments = normalize_comments(raw_data)
 
     # Apply filters to determine which comments to collapse
-    filtered = apply_filters(comments, args)
+    filtered, error = apply_filters(comments, args)
+    if error:
+        return error
 
     if not filtered:
         return {

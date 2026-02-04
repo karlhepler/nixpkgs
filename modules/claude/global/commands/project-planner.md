@@ -259,6 +259,67 @@ DELIVERABLES + ASSUMPTIONS → WHAT → WHY
 
 ---
 
+## Complete Example: Test Infrastructure Improvement
+
+**Stated request:** "We want to implement Bazel for our build system."
+
+### Section 1: WHY - Who For? Why Doing This?
+
+Developers waste 3 hours every day waiting for slow tests (45 minutes locally) and debugging flaky test failures. This means they can't ship features fast enough. Users are waiting for important features while developers fix false alarms. We need to unblock developers so users get what they need faster.
+
+### Section 2: WHAT - Exactly What We're Trying to Do
+
+Make tests run in under 5 minutes locally and mark flaky tests so developers aren't blocked by false failures.
+
+### Section 3: SUCCESS MEASURES - How We Know It Worked
+
+| Success Measure | Baseline | Target | Means of Verification |
+|-----------------|----------|--------|----------------------|
+| Local test runtime | 45 min | <5 min | CI logs (avg 7 days) + developer survey |
+| Time blocked by flaky tests | 3 hrs/day/dev | <30 min/day/dev | Jira ticket time-in-status analysis + weekly survey |
+| Developer satisfaction | 2.1/5 | >4/5 | Quarterly developer survey (existing Q) |
+
+### Section 4: ASSUMPTIONS - What We Can't Control
+
+| Assumption | Risk Level |
+|------------|------------|
+| Developers will adopt local test workflow | Medium |
+| Existing test suite can be parallelized without major refactoring | Low |
+
+**Note:** Initial assumption "We can get analytics data" was converted to deliverable "Analytics instrumentation" (team has full control).
+
+### Section 5: DELIVERABLES - What We'll Build
+
+1. **Fast Local Test Execution System**
+   - Run full test suite in <5 minutes locally
+   - Automatic test parallelization (run tests in parallel)
+   - Intelligent test selection (only run tests affected by changes)
+
+2. **Flaky Test Detection and Quarantine**
+   - Auto-detect flaky tests (inconsistent pass/fail on same code)
+   - Mark flaky tests clearly in CI output (visual indicator)
+   - Quarantine system (run flaky tests but don't block merges)
+
+3. **Developer Enablement Materials**
+   - Written guide for local test workflow (setup + usage)
+   - Loom video walkthrough (5 min, screen recording)
+   - Migration helper script (automates setup for developers)
+
+**Note:** Original request was "implement Bazel" but Five Whys revealed real need was faster tests. Bazel is one solution, but test parallelization achieves same outcome with less risk and complexity (existing tooling, not full build system migration).
+
+### Section 6: CAUSAL RELATIONSHIP CHECK
+
+✓ YES
+
+**Validation:**
+- **DELIVERABLES + ASSUMPTIONS → WHAT:** Fast local tests + flaky detection + enablement materials + (developers adopt + tests parallelize) → tests run <5min locally + flaky tests don't block work
+- **WHAT → WHY:** Faster tests + no false failures → developers unblocked → ship features faster → users get what they need
+- **SUCCESS MEASURES verify WHAT:** Runtime measure verifies "<5 min", blocked time verifies "don't block work", satisfaction verifies overall impact
+
+**Key insight from causal check:** Added "Developer Enablement Materials" deliverable after recognizing that "developers adopt" assumption had Medium risk. Enablement materials reduce this risk by making adoption easier (guides, videos, migration script).
+
+---
+
 ## Your Workflow
 
 1. **Understand the request** - What's the stated ask?
