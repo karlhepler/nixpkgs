@@ -388,14 +388,29 @@ def cmd_add(args) -> None:
     root = get_root(args.root)
     target_column = args.status
 
-    # STEP 1: Read ALL existing cards in target column
-    # This is the "insertion sort" step - we need to know the full list
-    # to understand where the new card should be inserted
-    column_cards = find_cards_in_column(root, target_column)
-    is_empty_column = len(column_cards) == 0
+    # Get current session for filtering
+    current_session = get_current_session_id()
 
-    # Show current column state for user guidance (helps them decide position)
-    todo = get_todo_context(root) if target_column == "todo" else []
+    # STEP 1: Read ALL existing cards in target column
+    # Priority calculations need ALL cards (priorities are global)
+    column_cards = find_cards_in_column(root, target_column)
+
+    # Filter to MY cards for "is empty for me" check (session-aware)
+    def is_my_card(card: Path) -> bool:
+        card_session = get_session(card)
+        if current_session:
+            return card_session == current_session or card_session is None
+        return True  # No session detected - all cards are "mine"
+
+    my_column_cards = [c for c in column_cards if is_my_card(c)]
+    is_empty_column = len(my_column_cards) == 0
+
+    # Show current column state for user guidance (session-filtered)
+    todo = []
+    if target_column == "todo":
+        for card in my_column_cards:
+            priority = get_priority(card)
+            todo.append((priority, card.stem, card))
 
     # STEP 2: Determine priority based on position flags
     # This is the core "insertion sort" logic - we're figuring out where
@@ -914,24 +929,71 @@ def get_encoded_project_path() -> str:
     return str(cwd).replace('/', '-').replace('.', '-')
 
 
+def find_claude_pid() -> int | None:
+    """Walk up the process tree to find the Claude Code process PID."""
+    try:
+        pid = os.getpid()
+        for _ in range(10):
+            result = subprocess.run(
+                ['ps', '-o', 'ppid=,command=', '-p', str(pid)],
+                capture_output=True, text=True
+            )
+            if result.returncode != 0:
+                break
+            parts = result.stdout.strip().split(None, 1)
+            if len(parts) < 2:
+                break
+            ppid_str, cmd = parts[0], parts[1].lower()
+            if 'claude' in cmd and 'python' not in cmd:
+                return int(ppid_str)
+            pid = int(ppid_str)
+            if pid <= 1:
+                break
+    except (ValueError, OSError):
+        pass
+    return None
+
+
+def cmd_nonce(args) -> None:
+    """Output a unique nonce for session detection.
+
+    Run this command first in a new Claude session. The nonce gets logged
+    to the session file, allowing subsequent kanban commands to identify
+    which session they belong to by searching for the most recent nonce.
+    """
+    import uuid
+    import time
+
+    # Nonce includes timestamp for recency detection
+    nonce = f"KANBAN_NONCE_{uuid.uuid4().hex}_{int(time.time() * 1000)}"
+    print(nonce)
+
+
 def get_current_session_id() -> str | None:
-    """Get Claude Code session ID from the actively-written session file.
+    """Get session ID - Claude session via nonce, or username for terminal.
 
-    When Claude calls a tool (like kanban), it writes to the session JSONL file
-    BEFORE the tool executes. So we find the session file that was modified
-    within the last few seconds - that's our active session.
+    Detection logic:
+    1. Check if running inside a Claude process (process tree)
+    2. If inside Claude: search for KANBAN_NONCE to identify the session
+    3. If NOT inside Claude (terminal): use username as session ID
 
-    This approach:
-    - Works for concurrent sessions in the SAME directory (the key requirement)
-    - Only fails if two sessions call tools at the exact same moment (true race)
-    - Falls back to most recent file if no recent activity (handles edge cases)
+    This ensures:
+    - Concurrent Claude sessions are isolated (each must run 'kanban nonce')
+    - Terminal usage gets username as session ID
+    - A terminal won't accidentally pick up a Claude session's nonce
 
     Returns:
-        Session ID string (UUID) if detected, None otherwise
+        Session ID string (UUID for Claude, username for terminal)
     """
-    try:
-        import time
+    # First: are we inside a Claude process?
+    claude_pid = find_claude_pid()
 
+    if claude_pid is None:
+        # Not inside Claude - use username for terminal usage
+        return os.environ.get('USER') or os.getlogin()
+
+    # Inside Claude - search for nonce
+    try:
         project_path = get_encoded_project_path()
         projects_dir = Path.home() / '.claude' / 'projects' / project_path
 
@@ -942,31 +1004,37 @@ def get_current_session_id() -> str | None:
         if not session_files:
             return None
 
-        now = time.time()
-        threshold_seconds = 10  # File must be modified within last 10 seconds
+        best_match: tuple[int, str] | None = None  # (timestamp, session_id)
 
-        # Find files modified within threshold
-        recent_files = [
-            (f, now - f.stat().st_mtime)
-            for f in session_files
-            if (now - f.stat().st_mtime) < threshold_seconds
-        ]
+        for session_file in session_files:
+            # Search for KANBAN_NONCE patterns
+            result = subprocess.run(
+                ['rg', '-o', r'KANBAN_NONCE_[a-f0-9]+_[0-9]+', str(session_file)],
+                capture_output=True,
+                text=True
+            )
 
-        if len(recent_files) == 1:
-            # Exactly one recently modified file - that's our session
-            return recent_files[0][0].stem
+            if result.returncode != 0 or not result.stdout.strip():
+                continue
 
-        if len(recent_files) > 1:
-            # Multiple recent files - pick the most recent (best effort for true race)
-            recent_files.sort(key=lambda x: x[1])  # Sort by age ascending
-            return recent_files[0][0].stem
+            # Get all nonces and find the most recent one
+            nonces = result.stdout.strip().split('\n')
+            for nonce in nonces:
+                try:
+                    # Extract timestamp from nonce: KANBAN_NONCE_{uuid}_{timestamp}
+                    timestamp = int(nonce.split('_')[-1])
+                    if best_match is None or timestamp > best_match[0]:
+                        best_match = (timestamp, session_file.stem)
+                except (ValueError, IndexError):
+                    continue
 
-        # No recent files - fall back to most recently modified overall
-        # This handles cases where Claude hasn't written recently
-        most_recent = max(session_files, key=lambda f: f.stat().st_mtime)
-        return most_recent.stem
+        if best_match:
+            return best_match[1]
 
-    except (OSError, ValueError):
+        # Inside Claude but no nonce found - session hasn't run 'kanban nonce' yet
+        return None
+
+    except (OSError, ValueError, subprocess.SubprocessError):
         return None
 
 
@@ -1533,6 +1601,13 @@ Empty columns default to priority 1000 (baseline for first card).
         p_col.add_argument("--until", help="Filter until date (ISO format)")
         p_col.set_defaults(column=col)
 
+    # nonce - for session detection
+    p_nonce = subparsers.add_parser(
+        "nonce",
+        parents=[parent_parser],
+        help="Output a unique nonce for session detection (run first in new Claude sessions)"
+    )
+
     # assign
     p_assign = subparsers.add_parser(
         "assign",
@@ -1592,6 +1667,7 @@ BULK REASSIGNMENT:
         "canceled": cmd_view,
         "assign": cmd_assign,
         "clear": cmd_clear,
+        "nonce": cmd_nonce,
     }
 
     command_func = commands[args.command]
