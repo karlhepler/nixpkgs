@@ -464,6 +464,14 @@ Fix the issues found in this PR, then exit. The CLI will re-check after you're d
                 )
 
         sections.append("""
+**Recommended Tool:** Use `prc` CLI for efficient comment management:
+- List unanswered bot comments: `prc list --bots-only --max-replies 0`
+- Reply to specific comment: `prc reply <comment-id> "your message"`
+- Resolve discussion thread: `prc resolve <thread-id>`
+- See full workflow: `/manage-pr-comments` skill
+
+All operations use GraphQL and output machine-readable JSON.
+
 **Action:** Evaluate each bot comment. For actionable feedback:
 1. Fix the issue in code
 2. Commit and push
@@ -656,6 +664,20 @@ def main_loop_iteration(
         f"{total_bot} bot comments | {conflict_str}"
     )
 
+    # 4.5. Early exit if nothing is actionable yet
+    # Safety check: If checks exist but all are pending, and no other actionable work
+    # This handles edge cases where wait_for_checks might return early
+    if checks:
+        pending_checks = [c for c in checks if not check_is_terminal(c)]
+        all_pending = len(pending_checks) == len(checks)
+
+        # Only exit early if NO actionable work exists
+        # Bot comments with pending checks = can work on comments while waiting
+        # Failed checks or conflicts = must wait for terminal state first
+        if all_pending and not failed_checks and not conflicts and total_bot == 0:
+            log("⏳ No actionable work yet. All workflows pending. Continuing watch loop...")
+            return False  # Don't invoke Ralph, CLI continues polling
+
     # 5. Check if work needed
     if not work_needed(failed_checks, bot_comments, conflicts):
         log("✅ PR is completely ready to merge!")
@@ -733,6 +755,7 @@ def main_loop_iteration(
     # Prepare environment with Ralph configuration
     env = os.environ.copy()
     env["RALPH_MAX_ITERATIONS"] = str(MAX_RALPH_INVOCATIONS)
+    env["KANBAN_SESSION"] = f"smithers-pr-{pr_number}"
 
     log(f"🚀 Invoking Ralph (iteration {work_iteration}/{total_iterations}): burns {prompt_file}")
     try:
