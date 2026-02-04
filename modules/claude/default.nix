@@ -58,6 +58,11 @@ let
     flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
   } (builtins.readFile ./smithers.py);
 
+  # PR Comments Python CLI (comprehensive comment management)
+  prCommentsScript = pkgs.writers.writePython3Bin "pr-comments" {
+    flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
+  } (builtins.readFile ./pr-comments.py);
+
 in {
   # ============================================================================
   # Claude Code Configuration & Shell Applications
@@ -149,6 +154,14 @@ in {
         description = "Token-efficient PR watcher (polls CI, invokes Ralph only when work needed)";
         mainProgram = "smithers";
         homepage = "${builtins.toString ./.}/smithers.py";
+      };
+    };
+
+    pr-comments = prCommentsScript // {
+      meta = {
+        description = "Comprehensive PR comment management (fetch, filter, reply, resolve, collapse)";
+        mainProgram = "pr-comments";
+        homepage = "${builtins.toString ./.}/pr-comments.py";
       };
     };
   };
