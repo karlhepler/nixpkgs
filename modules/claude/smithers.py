@@ -318,6 +318,28 @@ def get_bot_comments(owner: str, repo: str, pr_number: int) -> dict:
     return comments
 
 
+def has_unaddressed_bot_comments(owner: str, repo: str, pr_number: int) -> bool:
+    """Check if there are unaddressed bot comments (with zero replies).
+
+    Only checks review_comments (inline) and reviews.
+    Returns True if any bot comment exists with no replies.
+    """
+    # Check inline review comments for replies
+    code, stdout, _ = run_gh([
+        "api", f"repos/{owner}/{repo}/pulls/{pr_number}/comments",
+        "--jq", '[.[] | select(.user.login | test("\\\\[bot\\\\]|bot$"; "i")) | select(.in_reply_to_id == null or .in_reply_to_id == 0)]'
+    ])
+    if code == 0 and stdout.strip() and stdout.strip() != "[]":
+        try:
+            comments = json.loads(stdout)
+            if len(comments) > 0:
+                return True
+        except json.JSONDecodeError:
+            pass
+
+    return False
+
+
 def has_merge_conflicts(pr_number: int) -> bool:
     """Check if PR has merge conflicts."""
     code, stdout, _ = run_gh([
@@ -557,6 +579,15 @@ def main():
         for cycle in range(1, MAX_CYCLES + 1):
             ralph_invoked = main_loop_iteration(
                 cycle, ralph_invocation_count, pr_number, pr_url, owner, repo
+            )
+            if ralph_invoked:
+                ralph_invocation_count += 1
+
+        # Check for cycle extension if unaddressed bot comments exist
+        if has_unaddressed_bot_comments(owner, repo, pr_number):
+            log("📝 Unaddressed bot comments detected - extending by ONE cycle")
+            ralph_invoked = main_loop_iteration(
+                MAX_CYCLES + 1, ralph_invocation_count, pr_number, pr_url, owner, repo
             )
             if ralph_invoked:
                 ralph_invocation_count += 1
