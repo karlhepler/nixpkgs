@@ -25,7 +25,8 @@ from datetime import datetime
 
 # Constants
 POLL_INTERVAL = 10  # seconds
-MAX_CYCLES = 4
+MAX_CYCLES = 4  # 4 CI checks: 3 with Ralph invocations + 1 final check
+MAX_RALPH_INVOCATIONS = 3
 TERMINAL_STATES = {
     "pass", "fail", "skipping", "cancelled",
     "success", "failure", "skipped", "neutral", "stale",
@@ -490,9 +491,14 @@ def main():
     log(f"🔍 Watching PR #{pr_number}: {pr_url}")
     log(f"Poll interval: {POLL_INTERVAL}s | Max cycles: {MAX_CYCLES}")
 
+    ralph_invocation_count = 0
     try:
         for cycle in range(1, MAX_CYCLES + 1):
-            main_loop_iteration(cycle, pr_number, pr_url, owner, repo)
+            ralph_invoked = main_loop_iteration(
+                cycle, ralph_invocation_count, pr_number, pr_url, owner, repo
+            )
+            if ralph_invoked:
+                ralph_invocation_count += 1
     except KeyboardInterrupt:
         log("\n⚠️ Interrupted by user")
         send_notification(
@@ -511,8 +517,18 @@ def main():
     return 1
 
 
-def main_loop_iteration(cycle: int, pr_number: int, pr_url: str, owner: str, repo: str):
-    """Single iteration of the main watch loop."""
+def main_loop_iteration(
+    cycle: int,
+    ralph_invocation_count: int,
+    pr_number: int,
+    pr_url: str,
+    owner: str,
+    repo: str
+) -> bool:
+    """Single iteration of the main watch loop.
+
+    Returns True if Ralph was invoked, False otherwise.
+    """
     log(f"━━━ Cycle {cycle}/{MAX_CYCLES} ━━━")
 
     # 1. Wait for checks to complete
@@ -548,12 +564,28 @@ def main_loop_iteration(cycle: int, pr_number: int, pr_url: str, owner: str, rep
         )
         sys.exit(0)
 
-    # 5. Calculate work iteration (1-indexed, max 3)
-    # With MAX_CYCLES=4, we have 3 work cycles + 1 final verification
-    work_iteration = min(cycle, MAX_CYCLES - 1)
-    total_iterations = MAX_CYCLES - 1
+    # 5. Handle final cycle - show errors but don't invoke Ralph
+    if cycle == MAX_CYCLES:
+        log("⚠️ Final cycle reached with unresolved issues")
+        log(f"Failed checks: {len(failed_checks)}")
+        for check in failed_checks:
+            log(f"  - {check['name']}: {check.get('conclusion', 'unknown')}")
+        if conflicts:
+            log("  - Merge conflicts detected")
+        log(f"\n❌ Could not resolve all issues after {MAX_RALPH_INVOCATIONS} Ralph invocation(s)")
+        send_notification(
+            "Smithers Max Iterations",
+            f"PR #{pr_number} has unresolved issues after {MAX_RALPH_INVOCATIONS} attempts",
+            "Sosumi"
+        )
+        sys.exit(1)
 
-    # 6. Generate prompt and invoke Ralph
+    # 6. Calculate work iteration based on Ralph invocations (not smithers cycles)
+    # Ralph is invoked up to MAX_RALPH_INVOCATIONS times
+    work_iteration = ralph_invocation_count + 1
+    total_iterations = MAX_RALPH_INVOCATIONS
+
+    # 7. Generate prompt and invoke Ralph
     log("📝 Generating prompt for Ralph...")
     prompt = generate_prompt(
         pr_url, pr_info, failed_checks, bot_comments, conflicts,
@@ -606,6 +638,7 @@ def main_loop_iteration(cycle: int, pr_number: int, pr_url: str, owner: str, rep
     log("Ralph finished, re-checking PR status...")
     # Small delay before re-checking to let GitHub update
     time.sleep(5)
+    return True  # Indicate Ralph was invoked
 
 
 if __name__ == "__main__":
