@@ -16,10 +16,11 @@ Usage:
     smithers --max-iterations N 123        # Custom watch cycles
 
 Options:
-    --max-ralph-iterations N    Max Ralph invocations (default: 3)
+    --max-ralph-iterations N    How many times to ask Ralph to fix issues (default: 3)
                                 Can also set via SMITHERS_MAX_RALPH_ITERATIONS env var
-    --max-iterations N          Max watch loop cycles (default: 4)
+    --max-iterations N          How many CI check cycles to monitor (default: 4)
                                 Can also set via SMITHERS_MAX_ITERATIONS env var
+    Priority: CLI flag > env var > default
 """
 
 import argparse
@@ -598,13 +599,13 @@ def main():
         "--max-ralph-iterations",
         type=int,
         default=None,
-        help=f"Max Ralph invocations (default: {DEFAULT_MAX_RALPH_INVOCATIONS}, or SMITHERS_MAX_RALPH_ITERATIONS env var)"
+        help=f"Max Ralph invocations (default: {DEFAULT_MAX_RALPH_INVOCATIONS}). Override with SMITHERS_MAX_RALPH_ITERATIONS env var"
     )
     parser.add_argument(
         "--max-iterations",
         type=int,
         default=None,
-        help=f"Max watch loop cycles (default: {DEFAULT_MAX_CYCLES}, or SMITHERS_MAX_ITERATIONS env var)"
+        help=f"Max watch loop cycles (default: {DEFAULT_MAX_CYCLES}). Override with SMITHERS_MAX_ITERATIONS env var"
     )
 
     args = parser.parse_args()
@@ -612,11 +613,27 @@ def main():
     # Determine max iterations: CLI flag > env var > default
     max_ralph_invocations = args.max_ralph_iterations
     if max_ralph_invocations is None:
-        max_ralph_invocations = int(os.environ.get("SMITHERS_MAX_RALPH_ITERATIONS", DEFAULT_MAX_RALPH_INVOCATIONS))
+        try:
+            max_ralph_invocations = int(os.environ.get("SMITHERS_MAX_RALPH_ITERATIONS", DEFAULT_MAX_RALPH_INVOCATIONS))
+        except ValueError:
+            print(
+                f"Error: SMITHERS_MAX_RALPH_ITERATIONS environment variable must be a valid integer. "
+                f"Got: '{os.environ.get('SMITHERS_MAX_RALPH_ITERATIONS')}'",
+                file=sys.stderr
+            )
+            sys.exit(1)
 
     max_cycles = args.max_iterations
     if max_cycles is None:
-        max_cycles = int(os.environ.get("SMITHERS_MAX_ITERATIONS", DEFAULT_MAX_CYCLES))
+        try:
+            max_cycles = int(os.environ.get("SMITHERS_MAX_ITERATIONS", DEFAULT_MAX_CYCLES))
+        except ValueError:
+            print(
+                f"Error: SMITHERS_MAX_ITERATIONS environment variable must be a valid integer. "
+                f"Got: '{os.environ.get('SMITHERS_MAX_ITERATIONS')}'",
+                file=sys.stderr
+            )
+            sys.exit(1)
 
     # Validate positive integers
     if max_ralph_invocations < 1:

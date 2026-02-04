@@ -10,6 +10,7 @@ Usage:
 Options:
     --max-ralph-iterations N    Max iterations for Ralph (default: 3)
                                 Can also set via BURNS_MAX_RALPH_ITERATIONS env var
+                                Priority: CLI flag > env var > default
 """
 
 import argparse
@@ -109,7 +110,7 @@ def main():
         "--max-ralph-iterations",
         type=int,
         default=None,
-        help=f"Max iterations for Ralph (default: {DEFAULT_MAX_ITERATIONS}, or BURNS_MAX_RALPH_ITERATIONS env var)"
+        help=f"Max iterations for Ralph (default: {DEFAULT_MAX_ITERATIONS}). Override with BURNS_MAX_RALPH_ITERATIONS env var"
     )
 
     args = parser.parse_args()
@@ -117,7 +118,15 @@ def main():
     # Determine max iterations: CLI flag > env var > default
     max_iterations = args.max_ralph_iterations
     if max_iterations is None:
-        max_iterations = int(os.environ.get("BURNS_MAX_RALPH_ITERATIONS", DEFAULT_MAX_ITERATIONS))
+        try:
+            max_iterations = int(os.environ.get("BURNS_MAX_RALPH_ITERATIONS", DEFAULT_MAX_ITERATIONS))
+        except ValueError:
+            print(
+                f"Error: BURNS_MAX_RALPH_ITERATIONS environment variable must be a valid integer. "
+                f"Got: '{os.environ.get('BURNS_MAX_RALPH_ITERATIONS')}'",
+                file=sys.stderr
+            )
+            sys.exit(1)
 
     # Validate positive integer
     if max_iterations < 1:
