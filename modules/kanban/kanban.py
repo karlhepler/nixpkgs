@@ -1033,8 +1033,11 @@ def get_current_session_id() -> str | None:
         # Not inside Claude - use username for terminal usage
         return os.environ.get('USER') or os.getlogin()
 
-    # Inside Claude - search for nonce
+    # Inside Claude - generate unique nonce and search for it
     try:
+        import uuid
+        import time
+
         project_path = get_encoded_project_path()
         projects_dir = Path.home() / '.claude' / 'projects' / project_path
 
@@ -1045,37 +1048,43 @@ def get_current_session_id() -> str | None:
         if not session_files:
             return None
 
-        best_match: tuple[int, str] | None = None  # (timestamp, session_id)
+        # Generate unique nonce ID for this invocation
+        my_nonce_id = uuid.uuid4().hex
+        nonce = f"KANBAN_NONCE_{my_nonce_id}_{int(time.time() * 1000)}"
+        print(nonce, flush=True)
 
-        for session_file in session_files:
-            # Search for KANBAN_NONCE patterns
-            result = subprocess.run(
-                ['rg', '-o', r'KANBAN_NONCE_[a-f0-9]+_[0-9]+', str(session_file)],
-                capture_output=True,
-                text=True
-            )
+        # Wait for Claude to write the nonce with exponential backoff
+        delays_ms = [100, 200, 400, 800, 1000]  # milliseconds
+        elapsed_ms = 0
+        max_wait_ms = 3000
 
-            if result.returncode != 0 or not result.stdout.strip():
-                continue
+        for delay_ms in delays_ms:
+            if elapsed_ms >= max_wait_ms:
+                break
 
-            # Get all nonces and find the most recent one
-            nonces = result.stdout.strip().split('\n')
-            for nonce in nonces:
-                try:
-                    # Extract timestamp from nonce: KANBAN_NONCE_{uuid}_{timestamp}
-                    timestamp = int(nonce.split('_')[-1])
-                    if best_match is None or timestamp > best_match[0]:
-                        best_match = (timestamp, session_file.stem)
-                except (ValueError, IndexError):
-                    continue
+            time.sleep(delay_ms / 1000)
+            elapsed_ms += delay_ms
 
-        if best_match:
-            return best_match[1]
+            # Search for MY specific nonce UUID across all session files
+            for session_file in session_files:
+                result = subprocess.run(
+                    ['rg', '-F', f'KANBAN_NONCE_{my_nonce_id}_', str(session_file)],
+                    capture_output=True,
+                    text=True
+                )
 
-        # Inside Claude but no nonce found - session hasn't run 'kanban nonce' yet
+                if result.returncode == 0 and result.stdout.strip():
+                    # Found our nonce in this session file
+                    if elapsed_ms > 500:
+                        print(f"Warning: Nonce detection took {elapsed_ms}ms", file=sys.stderr)
+                    return session_file.stem
+
+        # Timeout - nonce not found after retries
+        print(f"Error: Nonce {my_nonce_id} not found after {elapsed_ms}ms", file=sys.stderr)
         return None
 
-    except (OSError, ValueError, subprocess.SubprocessError):
+    except (OSError, ValueError, subprocess.SubprocessError) as e:
+        print(f"Error detecting session: {e}", file=sys.stderr)
         return None
 
 
