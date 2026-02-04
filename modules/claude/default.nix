@@ -58,10 +58,10 @@ let
     flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
   } (builtins.readFile ./smithers.py);
 
-  # PR Comments Python CLI (comprehensive comment management)
-  prCommentsScript = pkgs.writers.writePython3Bin "pr-comments" {
+  # PRC Python CLI (PR comment management using GraphQL)
+  prcScript = pkgs.writers.writePython3Bin "prc" {
     flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
-  } (builtins.readFile ./pr-comments.py);
+  } (builtins.readFile ./prc.py);
 
 in {
   # ============================================================================
@@ -157,11 +157,11 @@ in {
       };
     };
 
-    pr-comments = prCommentsScript // {
+    prc = prcScript // {
       meta = {
-        description = "Comprehensive PR comment management (fetch, filter, reply, resolve, collapse)";
-        mainProgram = "pr-comments";
-        homepage = "${builtins.toString ./.}/pr-comments.py";
+        description = "PR comment management using GraphQL (list, reply, resolve, collapse)";
+        mainProgram = "prc";
+        homepage = "${builtins.toString ./.}/prc.py";
       };
     };
   };
