@@ -935,10 +935,10 @@ def cmd_show(args) -> None:
 
     output = f"=== {card_path.name} ===\n\n{card_path.read_text()}"
 
-    # Pipe through bat with markdown highlighting
+    # Pipe through bat with markdown highlighting, line numbers, and paging
     try:
         proc = subprocess.Popen(
-            ["bat", "--language", "md", "--style", "plain", "--paging", "never"],
+            ["bat", "--language", "md", "--style", "numbers"],
             stdin=subprocess.PIPE,
             text=True
         )
