@@ -5,8 +5,14 @@ Burns: Run Ralph Orchestrator with Staff Engineer hat
 Usage:
     burns "prompt string"    # Inline prompt (uses -p flag)
     burns path/to/file.md    # Prompt from file (uses -P flag)
+    burns --max-ralph-iterations N "prompt"  # Custom max iterations
+
+Options:
+    --max-ralph-iterations N    Max iterations for Ralph (default: 3)
+                                Can also set via BURNS_MAX_RALPH_ITERATIONS env var
 """
 
+import argparse
 import hashlib
 import os
 import signal
@@ -16,7 +22,7 @@ import time
 
 # Path to Staff Engineer hat YAML (substituted by Nix at build time)
 STAFF_ENGINEER_HAT = "STAFF_ENGINEER_HAT_YAML"
-MAX_ITERATIONS = 3
+DEFAULT_MAX_ITERATIONS = 3
 
 
 def get_all_descendants(pid):
@@ -90,27 +96,49 @@ def main():
         )
         sys.exit(1)
 
-    if len(sys.argv) < 2:
-        print("Error: burns requires one argument (prompt string or file path)")
-        sys.exit(1)
+    # Parse arguments
+    parser = argparse.ArgumentParser(
+        description="Run Ralph Orchestrator with Staff Engineer hat",
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "prompt",
+        help="Prompt string or path to prompt file"
+    )
+    parser.add_argument(
+        "--max-ralph-iterations",
+        type=int,
+        default=None,
+        help=f"Max iterations for Ralph (default: {DEFAULT_MAX_ITERATIONS}, or BURNS_MAX_RALPH_ITERATIONS env var)"
+    )
 
-    arg = sys.argv[1]
+    args = parser.parse_args()
+
+    # Determine max iterations: CLI flag > env var > default
+    max_iterations = args.max_ralph_iterations
+    if max_iterations is None:
+        max_iterations = int(os.environ.get("BURNS_MAX_RALPH_ITERATIONS", DEFAULT_MAX_ITERATIONS))
+
+    # Validate positive integer
+    if max_iterations < 1:
+        print("Error: max-ralph-iterations must be a positive integer", file=sys.stderr)
+        sys.exit(1)
 
     # Build ralph command
     cmd = [
         "ralph", "run",
         "-a",  # Auto-approve
         "-c", STAFF_ENGINEER_HAT,
-        "--max-iterations", str(MAX_ITERATIONS),
+        "--max-iterations", str(max_iterations),
     ]
 
     # Check if argument is a file path
-    if os.path.isfile(arg):
+    if os.path.isfile(args.prompt):
         # It's a file - use -P flag
-        cmd.extend(["-P", arg])
+        cmd.extend(["-P", args.prompt])
     else:
         # It's a prompt string - use -p flag
-        cmd.extend(["-p", arg])
+        cmd.extend(["-p", args.prompt])
 
     # Prepare environment with persistent session ID
     env = os.environ.copy()
