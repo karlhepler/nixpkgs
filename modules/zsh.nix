@@ -30,6 +30,9 @@ in {
       export LC_ALL="en_US.UTF-8"
       export LC_CTYPE="en_US.UTF-8"
 
+      # Kanban CLI: Hide own session by default (show only other sessions)
+      export KANBAN_HIDE_MINE=true
+
       # Initialize zoxide for all zsh contexts
       eval "$(${pkgs.zoxide}/bin/zoxide init --cmd cd zsh)"
     '';
