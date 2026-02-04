@@ -24,7 +24,7 @@ import sys
 import time
 
 # Path to Ralph Coordinator hat YAML (substituted by Nix at build time)
-STAFF_ENGINEER_HAT = "STAFF_ENGINEER_HAT_YAML"
+RALPH_COORDINATOR_HAT = "RALPH_COORDINATOR_HAT_YAML"
 DEFAULT_MAX_ITERATIONS = 10
 
 
@@ -141,9 +141,9 @@ def sanitize_for_prompt(text: str, max_length: int = 2000) -> str:
 def main():
     """Main entry point."""
     # Validate Nix substitution occurred (check if hat file exists)
-    if not os.path.isfile(STAFF_ENGINEER_HAT):
+    if not os.path.isfile(RALPH_COORDINATOR_HAT):
         print(
-            f"Error: Ralph Coordinator hat not found at: {STAFF_ENGINEER_HAT}",
+            f"Error: Ralph Coordinator hat not found at: {RALPH_COORDINATOR_HAT}",
             file=sys.stderr
         )
         sys.exit(1)
@@ -212,7 +212,7 @@ def main():
     cmd = [
         "ralph", "run",
         "-a",  # Auto-approve
-        "-c", STAFF_ENGINEER_HAT,
+        "-c", RALPH_COORDINATOR_HAT,
         "--max-iterations", str(max_iterations),
         "-p", full_prompt,  # Always use -p with constructed prompt
     ]

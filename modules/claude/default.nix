@@ -8,7 +8,7 @@ let
   hookCommon = builtins.readFile ./claude-hook-common.bash;
 
   # Ralph Coordinator output style content (stripped of YAML frontmatter)
-  staffEngineerContent = let
+  ralphCoordinatorContent = let
     raw = builtins.readFile ./global/output-styles/ralph-coordinator.md;
     # Split on "---" and take everything after the second occurrence
     parts = lib.splitString "---" raw;
@@ -17,14 +17,14 @@ let
   in lib.concatStringsSep "---" contentParts;
 
   # Generate Ralph hat YAML with embedded Ralph Coordinator instructions
-  staffEngineerHatYaml = pkgs.writeText "staff-engineer-hat.yml" ''
+  ralphCoordinatorHatYaml = pkgs.writeText "ralph-coordinator-hat.yml" ''
     # Ralph Hat Configuration: Ralph Coordinator
     # Generated from Home Manager - do not edit directly
     # Source: modules/claude/global/output-styles/ralph-coordinator.md
     #
     # Usage:
-    #   cp $(staff-engineer-hat) ralph.yml
-    #   ralph run --config $(staff-engineer-hat)
+    #   cp $(ralph-coordinator-hat) ralph.yml
+    #   ralph run --config $(ralph-coordinator-hat)
 
     event_loop:
       prompt_file: "PROMPT.md"
@@ -42,15 +42,15 @@ let
         publishes: ["research.needed", "implementation.needed", "work.approved", "LOOP_COMPLETE"]
         default_publishes: "work.approved"
         instructions: |
-    ${lib.concatMapStringsSep "\n" (line: "      ${line}") (lib.splitString "\n" staffEngineerContent)}
+    ${lib.concatMapStringsSep "\n" (line: "      ${line}") (lib.splitString "\n" ralphCoordinatorContent)}
   '';
 
   # Burns Python CLI (Ralph with Ralph Coordinator output style)
   burnsScript = pkgs.writers.writePython3Bin "burns" {
     flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
   } (builtins.replaceStrings
-    ["STAFF_ENGINEER_HAT_YAML"]
-    ["${staffEngineerHatYaml}"]
+    ["RALPH_COORDINATOR_HAT_YAML"]
+    ["${ralphCoordinatorHatYaml}"]
     (builtins.readFile ./burns.py));
 
   # Smithers Python CLI (token-efficient PR watcher)
@@ -141,6 +141,16 @@ in {
       sourceFile = "default.nix";
     };
 
+    staff = shellApp {
+      name = "staff";
+      runtimeInputs = [ ];
+      text = ''
+        exec claude --output-style "Staff Engineer" "$@"
+      '';
+      description = "Launch Claude Code with Staff Engineer output style";
+      sourceFile = "default.nix";
+    };
+
     burns = burnsScript // {
       meta = {
         description = "Run Ralph Orchestrator with Ralph Coordinator output style (accepts prompt string or file path)";
@@ -174,8 +184,8 @@ in {
     # Dependencies: Requires shellapps for hook commands
     claudeSettings = let
       settingsContent = {
-        # Default output style for all Claude Code sessions
-        outputStyle = "Staff Engineer";
+        # No default output style - contexts choose explicitly
+        # Use `staff` command to launch Claude with Staff Engineer output style
 
         # Auto-approve read-only commands (subagents can't prompt for approval)
         # Research: /private/tmp/claude-501/-Users-karlhepler--config-nixpkgs/tasks/ac5f27d.output
