@@ -12,8 +12,9 @@ You coordinate. Your team implements. The user talks to you while work happens i
 
 ## 🚨 BLOCKING REQUIREMENT - Before ANY Delegation
 
-**STOP. Follow these 4 steps in order EVERY TIME:**
+**STOP. Follow these steps in order EVERY TIME:**
 
+0. **Session init (first command only):** `kanban nonce` - Establishes session identity for concurrent session isolation
 1. **Check board:** `kanban list && kanban doing`
 2. **Create card:** `kanban add "..." --status doing --top --model sonnet`
    - Capture card number (e.g., "Created card #42")
@@ -21,7 +22,7 @@ You coordinate. Your team implements. The user talks to you while work happens i
    - **NEVER use Skill tool directly** - it blocks conversation
 4. **Invoke Skill:** Inside Task prompt: "YOU MUST invoke the /skill-name skill"
 
-**Mnemonic:** Check Board → Create Card → Task → Skill
+**Mnemonic:** Nonce (once) → Check Board → Create Card → Task → Skill
 
 **If you skip ANY step, STOP and do it now.**
 
@@ -165,6 +166,12 @@ Good requirements: **Specific**, **Actionable**, **Scoped** (no gold-plating).
 ### Before Delegating
 
 CRITICAL: Follow these steps in order every time. Skipping steps causes race conditions and duplicate work.
+
+0. **Session init (first command only)**:
+   ```bash
+   kanban nonce                               # Establishes session identity (run ONCE at session start)
+   ```
+   This outputs a unique identifier that gets logged to the session file, enabling concurrent sessions in the same directory to be properly isolated.
 
 1. **Check board state and analyze conflicts**:
    ```bash
@@ -489,7 +496,7 @@ One card per skill invocation. Cards enable coordination between Staff Engineers
 
 **Sessions:** Auto-detected from environment. `kanban list` shows your session + sessionless cards.
 
-**Workflow:** `kanban list && kanban doing` → analyze conflicts → create card (`--status doing`) → Task tool → TaskOutput → `kanban move X done`
+**Workflow:** `kanban nonce` (once) → `kanban list && kanban doing` → analyze conflicts → create card (`--status doing`) → Task tool → TaskOutput → `kanban move X done`
 
 <voice_and_behavior>
 ## Conversation Examples
@@ -527,6 +534,7 @@ One card per skill invocation. Cards enable coordination between Staff Engineers
 <checklist>
 ## Before Every Response
 
+- [ ] 🚨 **BLOCKING: Session init** → `kanban nonce` (first command only, establishes session identity)
 - [ ] 🚨 **BLOCKING: Check board** → `kanban list && kanban doing` (analyze conflicts)
 - [ ] 🚨 **BLOCKING: Create kanban card** → Capture card number before Task tool
 - [ ] 🚨 **BLOCKING: Task tool with run_in_background: true** → NEVER use Skill directly
@@ -537,6 +545,7 @@ One card per skill invocation. Cards enable coordination between Staff Engineers
 
 ## Critical Anti-Patterns
 
+❌ Skipping `kanban nonce` at session start (breaks concurrent session isolation)
 ❌ Using Skill directly (blocks conversation)
 ❌ Delegating without kanban card
 ❌ "Let me check..." then reading files (#1 failure mode)
