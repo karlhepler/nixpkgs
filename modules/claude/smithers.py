@@ -289,76 +289,48 @@ def get_workflow_failure_details(owner: str, repo: str, check: dict) -> dict:
 
 
 def get_bot_comments(owner: str, repo: str, pr_number: int) -> dict:
-    """Get all bot comments from the PR."""
-    comments = {"issue_comments": [], "review_comments": [], "reviews": []}
+    """Get inline bot comments with zero replies from the PR using prc CLI."""
+    # Use prc list to get inline bot comments with no replies (prevents duplicate handling)
+    result = subprocess.run(
+        ["prc", "list", str(pr_number), "--bots-only", "--inline-only", "--max-replies", "0"],
+        capture_output=True,
+        text=True,
+        check=False
+    )
 
-    # Issue comments (PR conversation)
-    code, stdout, _ = run_gh([
-        "api", f"repos/{owner}/{repo}/issues/{pr_number}/comments",
-        "--jq", '[.[] | select(.user.login | test("\\\\[bot\\\\]|bot$"; "i"))]'
-    ])
-    if code == 0 and stdout.strip():
-        try:
-            comments["issue_comments"] = json.loads(stdout)
-        except json.JSONDecodeError:
-            pass
+    if result.returncode != 0:
+        return {"comments": [], "error": result.stderr}
 
-    # Inline review comments
-    code, stdout, _ = run_gh([
-        "api", f"repos/{owner}/{repo}/pulls/{pr_number}/comments",
-        "--jq", '[.[] | select(.user.login | test("\\\\[bot\\\\]|bot$"; "i"))]'
-    ])
-    if code == 0 and stdout.strip():
-        try:
-            comments["review_comments"] = json.loads(stdout)
-        except json.JSONDecodeError:
-            pass
+    try:
+        data = json.loads(result.stdout)
+        if "error" in data:
+            return {"comments": [], "error": data["error"]}
 
-    # Reviews
-    code, stdout, _ = run_gh([
-        "api", f"repos/{owner}/{repo}/pulls/{pr_number}/reviews",
-        "--jq", '[.[] | select(.user.login | test("\\\\[bot\\\\]|bot$"; "i"))]'
-    ])
-    if code == 0 and stdout.strip():
-        try:
-            comments["reviews"] = json.loads(stdout)
-        except json.JSONDecodeError:
-            pass
-
-    return comments
+        return data  # prc returns {"comments": [...], "rate_limit": {...}}
+    except json.JSONDecodeError:
+        return {"comments": [], "error": "Failed to parse prc output"}
 
 
 def has_unaddressed_bot_comments(owner: str, repo: str, pr_number: int) -> bool:
-    """Check if there are unaddressed bot comments (with zero replies).
+    """Check if there are unaddressed bot comments (unresolved threads without smithers replies).
 
-    Only checks review_comments (inline) and reviews.
-    Returns True if any bot comment exists with no replies.
+    Uses prc to check for actionable bot comments.
     """
-    # Check inline review comments for replies
-    code, stdout, _ = run_gh([
-        "api", f"repos/{owner}/{repo}/pulls/{pr_number}/comments",
-        "--jq", '[.[] | select(.user.login | test("\\\\[bot\\\\]|bot$"; "i")) | select(.in_reply_to_id == null or .in_reply_to_id == 0)]'
-    ])
-    if code == 0 and stdout.strip() and stdout.strip() != "[]":
-        try:
-            comments = json.loads(stdout)
-            if len(comments) > 0:
-                return True
-        except json.JSONDecodeError:
-            pass
-
-    return False
+    bot_comments = get_bot_comments(owner, repo, pr_number)
+    return count_actionable_bot_comments(bot_comments) > 0
 
 
 def count_actionable_bot_comments(bot_comments: dict) -> int:
-    """Count actionable bot comments (excludes informational bots).
+    """Count actionable inline bot comments with zero replies.
 
-    Filters out informational bots like:
-    - linear-app[bot] (PR linkbacks)
-    - terraform-bot, github-actions[bot] (CI status notifications)
-    - argocd-bot (deployment diffs)
+    Uses prc with --max-replies 0 to only get threads with no replies.
+    This automatically excludes threads where anyone (including smithers) has replied.
 
-    Returns count of bot comments that likely need human action/response.
+    Filters out:
+    - Informational bots (linear-app, terraform-bot, github-actions, argocd, codecov, dependabot)
+    - Already resolved review threads
+
+    Returns count of inline bot comments that need action/response.
     """
     # Informational bots that don't require action
     informational_bots = {
@@ -375,25 +347,23 @@ def count_actionable_bot_comments(bot_comments: dict) -> int:
         "dependabot",
     }
 
+    comments = bot_comments.get("comments", [])
     actionable_count = 0
 
-    # Check issue comments
-    for comment in bot_comments.get("issue_comments", []):
-        bot_name = comment.get("user", {}).get("login", "").lower()
-        if bot_name not in informational_bots:
-            actionable_count += 1
+    for comment in comments:
+        author = comment.get("author", "").lower()
 
-    # Check inline review comments
-    for comment in bot_comments.get("review_comments", []):
-        bot_name = comment.get("user", {}).get("login", "").lower()
-        if bot_name not in informational_bots:
-            actionable_count += 1
+        # Skip informational bots
+        if author in informational_bots:
+            continue
 
-    # Check reviews
-    for review in bot_comments.get("reviews", []):
-        bot_name = review.get("user", {}).get("login", "").lower()
-        if bot_name not in informational_bots:
-            actionable_count += 1
+        # Skip resolved threads
+        if comment.get("is_resolved") is True:
+            continue
+
+        # prc --max-replies 0 already filtered out threads with replies
+        # and --inline-only filtered out PR-level comments
+        actionable_count += 1
 
     return actionable_count
 
@@ -684,63 +654,57 @@ You have explicit permission to STOP and exit if:
    - Extract run-id from the workflow link (e.g., github.com/.../runs/12345 → run-id is 12345)
    - Then exit - the CLI will check again and the rerun will likely pass""")
 
-    # Bot comments section - only show actionable comments
+    # Bot comments section - only show actionable inline comments
     actionable_count = count_actionable_bot_comments(bot_comments)
-    total_bot_comments = (
-        len(bot_comments.get("issue_comments", [])) +
-        len(bot_comments.get("review_comments", [])) +
-        len(bot_comments.get("reviews", []))
-    )
+    all_comments = bot_comments.get("comments", [])
+
+    # Filter for original thread comments only (not replies)
+    thread_comments = [c for c in all_comments if c.get("in_reply_to_id") is None]
+    total_bot_comments = len(thread_comments)
 
     if total_bot_comments > 0:
-        sections.append(f"\n## Bot Comments ({actionable_count} actionable, {total_bot_comments} total)\n")
+        sections.append(f"\n## Inline Bot Comments ({actionable_count} actionable, {total_bot_comments} total)\n")
 
-        if bot_comments.get("issue_comments"):
-            sections.append("### PR Conversation Comments")
-            for comment in bot_comments["issue_comments"]:
-                user = sanitize_for_prompt(comment.get("user", {}).get("login", "Unknown"), max_length=50)
-                body = sanitize_for_prompt(comment.get("body", ""), max_length=500)
-                url = comment.get("html_url", "")
-                sections.append(
-                    f"\n**{user}** ([link]({url})):\n```\n{body}\n```"
-                )
+        for comment in thread_comments:
+            user = sanitize_for_prompt(comment.get("author", "Unknown"), max_length=50)
+            body = sanitize_for_prompt(comment.get("body", ""), max_length=500)
+            url = comment.get("url", "")
+            path = sanitize_for_prompt(comment.get("path", ""), max_length=200)
+            line = comment.get("line")
+            thread_id = comment.get("thread_id", "")
+            is_resolved = comment.get("is_resolved", False)
+            reply_count = comment.get("reply_count", 0)
 
-        if bot_comments.get("review_comments"):
-            sections.append("\n### Inline Code Review Comments")
-            for comment in bot_comments["review_comments"]:
-                user = sanitize_for_prompt(comment.get("user", {}).get("login", "Unknown"), max_length=50)
-                body = sanitize_for_prompt(comment.get("body", ""), max_length=500)
-                path = sanitize_for_prompt(comment.get("path", ""), max_length=200)
-                url = comment.get("html_url", "")
-                sections.append(
-                    f"\n**{user}** on `{path}` ([link]({url})):\n```\n{body}\n```"
-                )
+            resolved_str = " [RESOLVED]" if is_resolved else ""
+            sections.append(
+                f"\n**{user}** on `{path}:{line}` (thread: `{thread_id}`){resolved_str} ([link]({url})):\n```\n{body}\n```"
+            )
 
-        if bot_comments.get("reviews"):
-            sections.append("\n### Reviews")
-            for review in bot_comments["reviews"]:
-                user = sanitize_for_prompt(review.get("user", {}).get("login", "Unknown"), max_length=50)
-                body_raw = review.get("body", "") if review.get("body") else "(no body)"
-                body = sanitize_for_prompt(body_raw, max_length=500)
-                state = sanitize_for_prompt(review.get("state", ""), max_length=20)
-                url = review.get("html_url", "")
-                sections.append(
-                    f"\n**{user}** ({state}) ([link]({url})):\n```\n{body}\n```"
-                )
+            # Show reply count if there are replies
+            if reply_count > 0:
+                sections.append(f"  ↳ {reply_count} reply/replies")
 
         sections.append("""
 **Recommended Tool:** Use `prc` CLI for efficient comment management:
-- List unanswered bot comments: `prc list --bots-only --max-replies 0`
+- List unanswered bot comments: `prc list --bots-only --inline-only --max-replies 0`
 - Reply to specific comment: `prc reply <comment-id> "your message"`
 - Resolve discussion thread: `prc resolve <thread-id>`
 - See full workflow: `/manage-pr-comments` skill
 
 All operations use GraphQL and output machine-readable JSON.
 
-**Action:** Evaluate each bot comment. For actionable feedback:
+**Action:** For EACH bot comment you must:
 1. Fix the issue in code
-2. Commit and push
-3. Reply to the comment thread explaining what you did""")
+2. Commit and push the fix
+3. Reply to the comment thread: `prc reply <comment-id> "Fixed in commit <sha>: <explanation>"`
+4. **MANDATORY:** Resolve the thread: `prc resolve <thread-id>`
+
+**CRITICAL - Why Resolution Matters:**
+- Smithers ONLY shows threads with ZERO replies
+- Once you reply, the thread has 1+ replies
+- If you DON'T resolve, smithers will show it again (but can't reply since it has replies)
+- Resolution signals "this is handled, don't show it anymore"
+- **Always resolve after replying** unless the thread requires further discussion (rare)""")
 
     # Merge conflicts section
     if has_conflicts:

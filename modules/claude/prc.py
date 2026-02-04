@@ -396,6 +396,10 @@ def apply_filters(comments: List[Dict], args: argparse.Namespace) -> Tuple[Optio
     if hasattr(args, "bots_only") and args.bots_only:
         filtered = [c for c in filtered if c["is_bot"]]
 
+    # Filter inline only (exclude PR-level comments)
+    if hasattr(args, "inline_only") and args.inline_only:
+        filtered = [c for c in filtered if c["type"] == "inline"]
+
     # Filter by reply count
     if hasattr(args, "max_replies") and args.max_replies is not None:
         filtered = [c for c in filtered if c["reply_count"] <= args.max_replies]
@@ -785,6 +789,7 @@ def main():
     list_parser.add_argument("--author", help="Filter by specific author username")
     list_parser.add_argument("--author-pattern", help="Filter by author regex pattern")
     list_parser.add_argument("--bots-only", action="store_true", help="Only bot comments")
+    list_parser.add_argument("--inline-only", action="store_true", help="Only inline review comments (not PR-level)")
     list_parser.add_argument("--max-replies", type=int, help="Maximum reply count")
     list_parser.add_argument("--resolved", action="store_true", help="Only resolved comments")
     list_parser.add_argument("--unresolved", action="store_true", help="Only unresolved comments")
