@@ -25,7 +25,7 @@ from datetime import datetime
 
 # Constants
 POLL_INTERVAL = 10  # seconds
-MAX_CYCLES = 100
+MAX_CYCLES = 4
 TERMINAL_STATES = {
     "pass", "fail", "skipping", "cancelled",
     "success", "failure", "skipped", "neutral", "stale",
@@ -558,13 +558,24 @@ def main_loop_iteration(cycle: int, pr_number: int, pr_url: str, owner: str, rep
         f.write(prompt)
         prompt_file = f.name
 
-    log(f"🚀 Invoking Ralph (burns {prompt_file})")
+    # Calculate work iteration (1-indexed, max 3)
+    # With MAX_CYCLES=4, we have 3 work cycles + 1 final verification
+    work_iteration = min(cycle, MAX_CYCLES - 1)
+    total_iterations = MAX_CYCLES - 1
+
+    # Prepare environment with iteration context for Ralph
+    env = os.environ.copy()
+    env["SMITHERS_ITERATION"] = str(work_iteration)
+    env["SMITHERS_TOTAL"] = str(total_iterations)
+
+    log(f"🚀 Invoking Ralph (iteration {work_iteration}/{total_iterations}): burns {prompt_file}")
     try:
         # Run burns with the prompt file
         # Use Popen with process group for proper signal handling
         # This ensures all child processes (Ralph and its subprocesses) get signals
         process = subprocess.Popen(
             ["burns", prompt_file],
+            env=env,
             start_new_session=True  # Create new process group
         )
         try:
