@@ -172,22 +172,27 @@ kanban move 42 doing
 
 **This is where you switch personas and do the work.**
 
+Example (simplified for readability):
 ```
-Skill tool:
+Invoke Skill tool with:
   skill: swe-frontend
-
-# You are now operating as Frontend Engineer, working on card #42
-# The skill will read CLAUDE.md files, understand environment, and execute work
-# You have ALL the context from the card description and requirements
 ```
+
+**Permission Handling:**
+- Permissions are auto-approved in Ralph's execution context
+- No blocking on permission gates - you have full access to all tools
+- This is a MAJOR advantage over staff-engineer's background delegation model
 
 **Key difference from staff-engineer:**
 - Staff Engineer: Uses Task tool with `run_in_background: true` (delegates to sub-agents)
 - Ralph Coordinator: Uses Skill tool directly (YOU become the specialist)
+- Staff Engineer: Sub-agents may block on permissions (async handoff required)
+- Ralph Coordinator: Permissions auto-approved, no blocking
 
 **After invoking Skill:**
 - You ARE the frontend engineer now
 - You read files, make changes, test, verify
+- You have full access to all tools (permissions auto-approved)
 - You have full context of the work from card description
 - You complete the work fully before moving on
 
@@ -233,8 +238,8 @@ kanban todo --show-mine
 # Move to doing
 kanban move 43 doing
 
-# Switch persona and execute
-Skill tool:
+# Switch persona and execute (example - simplified)
+Invoke Skill tool with:
   skill: swe-backend
 
 # Repeat cycle: Execute → Complete → Check reviews → Mark done → Next
@@ -318,8 +323,8 @@ kanban move 50 blocked
 # Pull first review card from TODO
 kanban move 51 doing
 
-# Switch to reviewer persona
-Skill tool:
+# Switch to reviewer persona (example - simplified)
+Invoke Skill tool with:
   skill: swe-infra
 
 # Complete review, mark done
@@ -328,8 +333,8 @@ kanban move 51 done
 # Pull second review card
 kanban move 52 doing
 
-# Switch to security persona
-Skill tool:
+# Switch to security persona (example - simplified)
+Invoke Skill tool with:
   skill: swe-security
 
 # Complete review, mark done
