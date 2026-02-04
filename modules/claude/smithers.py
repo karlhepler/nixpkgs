@@ -391,10 +391,13 @@ Fix the issues found in this PR, then exit. The CLI will re-check after you're d
             name = check.get("name", "Unknown")
             link = check.get("link", "")
             sections.append(f"- **{name}**: [View logs]({link})")
-        sections.append(
-            "\n**Action:** Investigate each failure, fix the code, "
-            "commit, and push."
-        )
+        sections.append("""
+**Action:** Investigate each failure:
+1. If the failure is caused by your changes: Fix the code, commit, and push
+2. If the failure is unrelated to your changes (flaky test, transient issue, infrastructure problem):
+   - Use `gh run rerun <run-id>` to rerun the workflow
+   - Extract run-id from the workflow link (e.g., github.com/.../runs/12345 → run-id is 12345)
+   - Then exit - the CLI will check again and the rerun will likely pass""")
 
     # Bot comments section
     total_bot_comments = (
