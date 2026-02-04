@@ -603,6 +603,10 @@ def main_loop_iteration(
         f.write(prompt)
         prompt_file = f.name
 
+    # Prepare environment with Ralph configuration
+    env = os.environ.copy()
+    env["RALPH_MAX_ITERATIONS"] = str(MAX_RALPH_INVOCATIONS)
+
     log(f"🚀 Invoking Ralph (iteration {work_iteration}/{total_iterations}): burns {prompt_file}")
     try:
         # Run burns with the prompt file
@@ -610,6 +614,7 @@ def main_loop_iteration(
         # This ensures all child processes (Ralph and its subprocesses) get signals
         process = subprocess.Popen(
             ["burns", prompt_file],
+            env=env,
             start_new_session=True  # Create new process group
         )
         try:
