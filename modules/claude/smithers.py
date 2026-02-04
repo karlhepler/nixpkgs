@@ -613,7 +613,7 @@ def main_loop_iteration(
         # Use Popen with process group for proper signal handling
         # This ensures all child processes (Ralph and its subprocesses) get signals
         process = subprocess.Popen(
-            ["burns", "--max-iterations", str(MAX_RALPH_INVOCATIONS), prompt_file],
+            ["burns", prompt_file],
             env=env,
             start_new_session=True  # Create new process group
         )
