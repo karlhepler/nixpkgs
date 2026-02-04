@@ -15,7 +15,7 @@ import time
 
 # Path to Staff Engineer hat YAML (substituted by Nix at build time)
 STAFF_ENGINEER_HAT = "STAFF_ENGINEER_HAT_YAML"
-MAX_ITERATIONS = 100
+MAX_ITERATIONS = 3
 
 
 def get_all_descendants(pid):
