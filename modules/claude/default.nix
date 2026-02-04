@@ -145,7 +145,7 @@ in {
       name = "staff";
       runtimeInputs = [ ];
       text = ''
-        exec claude --output-style "Staff Engineer" "$@"
+        exec claude --append-system-prompt "$(cat ~/.claude/output-styles/staff-engineer.md)" "$@"
       '';
       description = "Launch Claude Code with Staff Engineer output style";
       sourceFile = "default.nix";
@@ -427,7 +427,7 @@ EOF
       $DRY_RUN_CMD cp -rf ${claudeGlobalDir}/* ~/.claude/
 
       # Make copied files writable (Nix store files are read-only by default)
-      $DRY_RUN_CMD chmod -R u+w ~/.claude/commands ~/.claude/output-styles
+      $DRY_RUN_CMD chmod -R u+w ~/.claude/commands ~/.claude/output-styles ~/.claude/docs
 
       # Add generated TOOLS.md (force overwrite read-only file from previous build)
       $DRY_RUN_CMD cp -f ${toolsMarkdown} ~/.claude/TOOLS.md
