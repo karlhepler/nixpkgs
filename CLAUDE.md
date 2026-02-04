@@ -1,12 +1,50 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code when working with code in this repository.
 
-## Repository Overview
+Nix Home Manager configuration managing development environments with flakes. Creates reproducible system configurations (zsh, Neovim, terminal, git, dev tools).
 
-This repository contains Nix Home Manager configuration for managing development environments using the Nix package manager with flakes. It creates reproducible and declarative system configurations including shell setups (zsh), text editors (Neovim), terminal emulators, git configuration, and developer tools.
+**Critical**: This repository MUST be installed at `~/.config/nixpkgs`.
 
-**Critical Requirement**: This repository MUST be installed at `~/.config/nixpkgs` - other locations will cause errors.
+## 🚨 SOURCE OF TRUTH PRINCIPLE 🚨
+
+**CRITICAL: When working in this repository, NEVER edit files outside of this repository.**
+
+This repository (`~/.config/nixpkgs`) is the **single source of truth** for system configuration. All work must be done here. The `hms` command deploys this configuration to your system.
+
+### What This Means
+
+**✅ CORRECT workflow:**
+1. Edit files in `~/.config/nixpkgs/` (the source)
+2. Add new files to git: `git add <file>`
+3. Run `hms` to deploy changes
+4. Nix automatically copies/symlinks files to correct locations
+
+**❌ WRONG workflow:**
+- ❌ Manually editing `~/.claude/commands/skill.md`
+- ❌ Manually copying files to `~/.claude/`
+- ❌ Directly modifying files in `~/.nix-profile/`
+- ❌ Editing anything in user directories that hms manages
+
+**Why:** Files outside this repo are **managed by Nix**. Manual edits will be:
+- Overwritten on the next `hms` run
+- Lost when switching generations
+- Not version controlled
+- Not reproducible
+
+**Rule:** If you're working in `~/.config/nixpkgs`, assume **everything** outside this directory is read-only and managed by hms.
+
+**Exception:** The only files you should edit outside this repo are:
+- Active development code in OTHER repositories (not this one)
+- Temporary scratch files in `/tmp/` or scratchpad
+
+### Common Mistakes to Avoid
+
+1. **Skill not deploying?** → Add to git, then run hms (don't copy manually)
+2. **Command not available?** → Add shellapp to `default.nix`, run hms (don't create symlinks)
+3. **Config not applying?** → Edit in source, run hms (don't edit deployed files)
+
+**Remember:** This repository controls your computer. Work in the source, deploy with hms.
 
 ## Quick Commands
 
@@ -51,435 +89,98 @@ This repository contains Nix Home Manager configuration for managing development
 - `kanban delete <card#>`: Delete a card
 - See `kanban --help` for full command list
 
-## Nix Development Commands
-
-- `nix run nixpkgs#nix-prefetch-github -- owner repo --rev main`: Get hash for GitHub packages
-- `nix flake update`: Update flake dependencies
-- `nix flake check`: Validate Nix syntax and configuration
-- `nix flake metadata`: Show flake metadata
-- `nix search nixpkgs <package>`: Search for available packages
-
-## Configuration Structure
-
-This repository uses a **domain-centric module architecture** where related functionality is co-located:
-
-### Core Files
-- `flake.nix`: Defines inputs/outputs, manages nixpkgs (25.11 stable) and nixpkgs-unstable
-  - Version controlled in one place: Update `nixpkgs.url`, `home-manager.url`, and `releaseVersion` together
-  - System locked to `aarch64-darwin` (macOS ARM)
-- `home.nix`: Main entry point that imports all modules and aggregates shellapps
-- `user.nix`: User-specific identity (name, email, username, homeDirectory) - gitignored after sync
-- `overconfig.nix`: Machine-specific customizations (gitignored after sync, manages its own git-ignore behavior)
-
-### Module Architecture
-
-**Complex Modules** (directories with default.nix):
-- `modules/system/` - System-level shellapp (hms) + bash script
-- `modules/git/` - Git configuration + 13 git shellapps + bash scripts (commit, pull, push, save, git-branches, git-kill, git-trunk, git-sync, git-resume, git-tmp, groot, workout, workout-delete)
-- `modules/claude/` - Claude Code configuration with:
-  - 9 claude shellapps (notification-hook, complete-hook, csharp-format-hook, claude-ask, q, qq, qqq, burns, smithers)
-  - Mixed implementation: hooks in bash, burns and smithers in Python
-  - `global/` directory containing Claude Code settings, output styles, and skills (mirrors ~/.claude/ structure)
-- `modules/kanban/` - File-based kanban board CLI (Python) for agent coordination
-- `modules/neovim/` - Neovim editor configuration + 30+ plugins + LSP servers
-- `modules/tmux/` - Tmux terminal multiplexer + 3 internal shellapps (random-emoji, random-session-name, random-session-icon)
-
-**Simple Modules** (single .nix files):
-- `modules/theme.nix` - Tokyo Night Storm color theme + font configuration (cross-cutting concern)
-- `modules/packages.nix` - Package declarations + simple program configs (fzf, neovide, starship, zoxide, nix-index)
-  - Most packages from stable `pkgs` (25.11)
-  - Cutting-edge packages from `unstable` channel (like neovide)
-  - Packages organized by category: Core Tools, Shell Enhancement, Development, Languages, etc.
-- `modules/zsh.nix` - Zsh shell configuration + precompileZshCompletions activation hook
-- `modules/direnv.nix` - Direnv configuration + generateDirenvHook activation hook (performance optimization)
-- `modules/alacritty.nix` - Alacritty terminal emulator with theme integration
-- `modules/tmux.nix` - Tmux terminal multiplexer with plugins and theme integration
-
-### Other Directories
-- `neovim/` - Neovim configuration files (vimrc, lspconfig.lua, lsp/, plugins/)
-- `modules/claude/global/` - Global Claude Code settings and skills (mirrors ~/.claude/ structure)
-  - `CLAUDE.md` - Global guidelines for Claude Code
-  - `output-styles/` - Custom output styles (4qs-facilitator, staff-engineer)
-  - `commands/` - User-level skills and commands (try-again, review-pr-comments)
-
-## Shellapp Pattern
-
-This repository uses a **hybrid shellapp pattern** for managing custom bash scripts:
-
-1. **Definition**: Shellapps are defined in each module's `default.nix` via `_module.args.{domain}Shellapps = rec { ... };`
-2. **Aggregation**: home.nix dynamically merges all shellapps using `//` operator
-3. **Distribution**: Aggregated shellapps passed to all modules via `_module.args`
-4. **Package Integration**: All shellapps exposed to system via `modules/packages.nix`
-
-**The shellApp Helper** (`modules/lib/shellApp.nix`):
-- Creates shell applications with metadata (description, mainProgram, source file location)
-- Automatically tracks source file locations for documentation generation
-- Provides runtime dependency injection via `runtimeInputs`
-- Generates TOOLS.md via `modules/claude/generate-tools-md.nix` during activation
-
-**Adding New Shellapps**:
-- Add bash script to appropriate module directory (e.g., `modules/git/new-script.bash`)
-- Add shellapp definition to that module's `_module.args.{domain}Shellapps` rec block
-- Automatically available system-wide (no changes needed in home.nix)
-
-**Recursive Dependencies**: Use `rec` pattern in module shellapp definitions for intra-module dependencies (e.g., `save` depends on `commit` + `push` in git module)
-
-**Shell Wrapper Pattern**: Some commands require shell wrappers for directory changes:
-- `workout`: Wrapper in `modules/zsh.nix` evaluates cd commands from the script
-- The script outputs shell commands to stdout, wrapper `eval`s them
-- Enables changing parent shell's directory (impossible from subprocess)
-
-## Home Manager Activation Process
-
-When running `hms`, these activation hooks run automatically:
-1. **gitIgnoreUserChanges** (in home.nix): Makes git ignore user.nix changes
-2. **gitIgnoreOverconfigChanges** (in home.nix): Makes git ignore overconfig.nix changes
-3. **claudeSettings** (modules/claude/): Symlinks Claude Code settings with configured hooks
-4. **claudeGlobal** (modules/claude/): Deploys all Claude Code configuration:
-   - Copies global settings (CLAUDE.md, output-styles/)
-   - Generates TOOLS.md from package metadata
-   - Deploys skills to ~/.claude/commands/
-5. **claudeMcp** (modules/claude/): Conditionally configures Context7 MCP integration (only if CONTEXT7_API_KEY is set in overconfig.nix)
-6. **precompileZshCompletions** (modules/zsh.nix): Compiles zsh completions for faster shell startup
-7. **generateDirenvHook** (modules/direnv.nix): Creates static direnv hook for performance
-
-In addition to Home Manager activation hooks, `hms` also installs and updates external tools:
-- **Claude Code**: Installs via `curl -fsSL https://claude.ai/install.sh | bash` (if not present) or updates via `claude update`
-- **Ralph Orchestrator**: Installs/updates via npm global package `@ralph-orchestrator/ralph-cli`
-
-Note: Application management is handled natively by home-manager 25.11+. Apps are automatically available in ~/Applications/Home Manager Apps for Spotlight/Alfred indexing.
-
-## Theme System
-
-Centralized theme configuration in `modules/theme.nix` provides:
-- Tokyo Night Storm colors (variant = "storm")
-- Font configuration (SauceCodePro Nerd Font Mono, size 20)
-- Used by: Alacritty, Tmux, Neovim, Neovide
-
-Theme is imported in home.nix and passed to all modules via `_module.args`.
-
-## User Configuration
-
-**user.nix File Management:**
-- Contains user identity information used across all modules
-- Made "invisible" to git using `git update-index --assume-unchanged`
-- The `hms` command handles visibility automatically:
-  1. Validates user.nix exists and has no placeholder values
-  2. Makes file visible: `git update-index --no-assume-unchanged user.nix`
-  3. Backs up to `~/.backup/.config/nixpkgs/user.YYYYMMDD-HHMMSS.nix`
-  4. Runs home-manager switch
-  5. Configures local git for this repo using user.nix values
-  6. Makes file invisible again via activation hook
-- **Automatic backups**: Created at `~/.backup/.config/nixpkgs/user.YYYYMMDD-HHMMSS.nix`
-- Symlink `user.latest.nix` points to most recent backup
-
-**Fields:**
-- `name`: Full name (used for git user.name)
-- `email`: Personal email (used for git user.email)
-- `username`: System username (used for homeConfigurations, GitHub repos)
-- `homeDirectory`: Home directory path
-
-**Editing:** Use `hmu` to edit user.nix
-
-**Work Email Override:** Still handled in overconfig.nix:
-```nix
-programs.git.settings.user.email = lib.mkForce "work@email.com";
-```
-
-## Important Git Handling
-
-**overconfig.nix File Management:**
-- Designed for per-machine customizations and secrets
-- Made "invisible" to git using `git update-index --assume-unchanged`
-- The `hms` command handles visibility automatically:
-  1. Makes file visible: `git update-index --no-assume-unchanged overconfig.nix`
-  2. Runs home-manager switch
-  3. Makes file invisible again via `gitIgnoreOverconfigChanges` activation hook in home.nix
-- **Automatic backups**: Created at `~/.backup/.config/nixpkgs/overconfig.YYYYMMDD-HHMMSS.nix`
-- Symlink `overconfig.latest.nix` points to most recent backup
-
-**Local Git Configuration for This Repository:**
-
-CRITICAL: `user.nix` values are automatically configured as local git settings by `hms`.
-
-The `hms` command automatically runs:
-```bash
-git config --local user.name "<name from user.nix>"
-git config --local user.email "<email from user.nix>"
-```
-
-This ensures commits to THIS repository always use personal credentials from user.nix,
-even on work machines where overconfig.nix overrides global git config.
-
-Verify with:
-```bash
-git config --local --get user.email
-# Should output your personal email from user.nix
-```
-
-**Why**: This is a personal repository that should always use personal git credentials, even on work machines where global config is overridden for work projects.
-
-## Claude Code Configuration
-
-This repository includes integrated Claude Code settings:
-- Global preferences and guidelines in `modules/claude/global/CLAUDE.md`
-- User-level skills in `modules/claude/global/commands/`:
-  - Engineering: `swe-backend`, `swe-frontend`, `swe-fullstack`, `swe-devex`, `swe-infra`, `swe-security`, `swe-sre`
-  - Design: `ux-designer`, `visual-designer`
-  - Support: `researcher`, `scribe`, `ai-expert`
-  - Workflow: `review-pr-comments`
-  - Business: `finance`, `lawyer`, `marketing`
-- Notification and completion hooks configured in `modules/claude/default.nix`
-- Settings and skills automatically deployed to `~/.claude/` on `hms`
-- Runtime state managed through `.claude/` directory (gitignored)
-
-**Adding New Skills:**
-1. Create `modules/claude/global/commands/your-skill.md` with frontmatter:
-   ```markdown
-   ---
-   description: Trigger conditions for when Claude should use this skill
-   ---
-   ```
-2. Run `hms` to deploy
-3. Skill automatically discovered by Claude Code in `~/.claude/commands/`
-
-**MCP (Model Context Protocol) Configuration:**
-
-Context7 MCP integration is automatically configured when `CONTEXT7_API_KEY` is set in `overconfig.nix`:
-- The activation hook merges MCP config into `~/.claude.json` (preserves Claude's metadata)
-- Uses `$CONTEXT7_API_KEY` environment variable reference for runtime access
-- Configuration is merged, not overwritten - Claude Code can still manage its own metadata
-- The MCP server uses `npx -y @upstash/context7-mcp` for on-demand execution
-
-To disable: Remove `CONTEXT7_API_KEY` from `overconfig.nix` and run `hms`
-
-## Common Development Workflows
-
-### Making Configuration Changes
-1. Edit configuration files (`hme`, `hmu`, or `hmo`)
-2. Apply changes: `hms` (backups created automatically)
-3. Check activation hook output for any errors
-4. Verify changes work as expected
-
-### Adding a New Package
-1. Add package to `modules/packages.nix` under appropriate category
-2. For language servers: Add to LSP section and update Neovim LSP config if needed
-3. Apply changes: `hms`
-4. Verify package is available: `which <package-name>`
-
-### Adding a New Shellapp
-1. Create bash script in appropriate module directory
-2. Add shellapp definition to module's `_module.args.{domain}Shellapps`
-3. Apply changes: `hms`
-4. New command automatically available system-wide
-5. Documentation auto-generated in `~/.claude/TOOLS.md`
-
-### Working with Worktrees
-1. Navigate to any git repository
-2. Run `workout feature-branch` to create/navigate to worktree
-3. Work in isolated directory: `~/worktrees/org/repo/feature-branch/`
-4. Use `workout -` to toggle back to previous location
-5. Run `workout` (no args) to browse and manage all worktrees interactively
-
-### Updating Nix Dependencies
-1. Update flake inputs: `nix flake update`
-2. Apply changes: `hms`
-3. Test that everything still works
-4. Commit flake.lock changes
-
-### GitHub Package Updates
-For packages using `rev = "main"` with fixed hash:
-1. Get latest hash: `nix run nixpkgs#nix-prefetch-github -- owner repo --rev main`
-2. Update hash in the appropriate module file
-3. Apply changes: `hms`
-
-## Architecture Principles
-
-1. **Domain-Centric Organization**: Everything about a domain lives together (config + scripts + shellapps)
-2. **Co-location**: Bash scripts physically near their shellapp definitions
-3. **Complexity Threshold**: Only extract to own module if sufficiently complex (40+ lines OR important activation hooks)
-4. **YAGNI**: Simple things stay simple (single .nix files), complex things get directories
-5. **DRY**: Centralized theme eliminates duplication across terminal, editor, multiplexer
-
-## Environment Variables
-
-Configured in `modules/zsh.nix`:
-- `PATH`: Includes `~/.local/bin`, `~/.nix-profile/bin`, Go bin, npm bin, Rancher Desktop bin
-- `LANG`, `LC_ALL`, `LC_CTYPE`: Set to `en_US.UTF-8`
-- `ZSH_AUTOSUGGEST_USE_ASYNC`: `true` (performance)
-- `ZSH_AUTOSUGGEST_BUFFER_MAX_SIZE`: `20` (performance)
-- `WORKTREE_ROOT`: Defaults to `~/worktrees` (can be overridden for custom worktree location)
-
 ## Critical Requirements
 
 1. **Repository Location**: MUST be installed at `~/.config/nixpkgs`
-2. **Use hms Command**: Always use `hms` for syncing to ensure proper git handling of overconfig.nix
+2. **Use hms Command**: Always use `hms` for syncing to ensure proper git handling
 3. **Backup Synchronization**: Sync `~/.backup` folder with cloud storage for machine-specific configuration safety
-4. **--expunge Flag**: Claude Code must never use the `--expunge` flag with `hms` (users may use it manually, but Claude Code must not)
+4. **--expunge Flag**: Claude Code must never use the `--expunge` flag with `hms`
 5. **macOS ARM Only**: This configuration is locked to `aarch64-darwin` (Apple Silicon Macs)
-6. **NEVER USE HOMEBREW**: Do NOT suggest, recommend, or implement Homebrew for ANY purpose. This is a Nix-based configuration. All packages MUST be managed through Nix (nixpkgs or nixpkgs-unstable). The user has explicitly rejected Homebrew.
+6. **NEVER USE HOMEBREW**: Do NOT suggest, recommend, or implement Homebrew. All packages MUST be managed through Nix (nixpkgs or nixpkgs-unstable).
 
-## Adding New Modules
+## Configuration Structure
 
-**For modules WITH scripts** (complex):
-1. Create `modules/{domain}/` directory
-2. Create `modules/{domain}/default.nix` with:
-   - `_module.args.{domain}Shellapps = rec { ... };` for shellapp definitions
-   - Program configuration (e.g., `programs.{tool} = { ... };`)
-   - Activation hooks if needed
-3. Add bash scripts to same directory
-4. Add `// (config._module.args.{domain}Shellapps or {})` to shellapp aggregation in home.nix
-5. Add `./modules/{domain}` to imports in home.nix
+Domain-centric module architecture - related functionality co-located.
 
-**For modules WITHOUT scripts** (simple):
-1. Create `modules/{name}.nix` file
-2. Add program configuration directly
-3. Add `./modules/{name}.nix` to imports in home.nix
+**Core files:** flake.nix (inputs/outputs), home.nix (entry point), user.nix (identity), overconfig.nix (machine-specific).
 
-## Performance Optimizations
+For detailed architecture, see README.md and source files in modules/.
 
-This config includes several shell performance optimizations:
-- **Precompiled zsh completions**: `.zcompdump.zwc` compiled via activation hook
-- **Static direnv hook**: Generated once, sourced on shell start (no dynamic generation)
-- **Async zsh autosuggestions**: `ZSH_AUTOSUGGEST_USE_ASYNC=true`
-- **Fast compinit**: Skips security checks with `compinit -C`
-- **Completion caching**: Completions precompiled at configuration time, not runtime
+## Development Workflows
 
-## Tmux Integration
+**Add new package:**
+1. Add to `modules/packages.nix` under appropriate category
+2. For LSP servers: Also update Neovim LSP config
+3. Run `hms` to apply
+4. Verify: `which <package-name>`
 
-**Session Management**:
-- Random emoji icons for sessions via `random-emoji` shellapp
-- Random session names from Simpsons words via `random-session-name`
-- Tokyo Night Storm theme integration
+**Add new shellapp:**
+1. Create bash script in appropriate module directory (e.g., `modules/git/new-script.bash`)
+2. Add shellapp definition to module's `_module.args.{domain}Shellapps` rec block
+3. Add to git: `git add modules/git/new-script.bash`
+4. Run `hms` to deploy
+5. Command automatically available system-wide
+6. Documentation auto-generated in `~/.claude/TOOLS.md`
 
-**Window Attention System**:
-- Bell-based visual alerts when commands complete in background windows
-- Claude Code notification hook triggers tmux bells
-- Active window clears attention flag automatically
-- Inactive windows change color when attention needed
+**Add Claude Code skill:**
+1. Create `modules/claude/global/commands/your-skill.md` with frontmatter
+2. Add to git: `git add modules/claude/global/commands/your-skill.md`
+3. Run `hms` to deploy
+4. Skill automatically discovered in `~/.claude/commands/`
 
-**Theme Features**:
-- Powerline separators for clean visual hierarchy
-- Dynamic window icons (active vs inactive vs zoomed)
-- Prefix indicator (yellow when prefix key pressed)
-- Synchronized pane indicator (✵ when panes synced)
+**Update Nix dependencies:**
+1. `nix flake update` (updates flake.lock)
+2. `hms` to apply
+3. Test everything works
+4. Commit flake.lock changes
 
-## Editors and Terminal
+## File Management
 
-- **Primary Editor**: Neovim (vim/vi aliases enabled)
-- **GUI Editor**: Neovide (unstable channel, for double-clicking files in macOS UI)
-- **Terminal**: Alacritty (configured with Tokyo Night Storm theme)
-- **Font**: SauceCodePro Nerd Font Mono, size 20
-- **Color Scheme**: Tokyo Night Storm (consistent across tmux, Alacritty, Neovim)
+**user.nix:**
+- Edit with `hmu`
+- Contains: name, email, username, homeDirectory
+- Auto-backed up to `~/.backup/.config/nixpkgs/user.YYYYMMDD-HHMMSS.nix`
+- Local git config for this repo uses these values
 
-## Neovim Integration
+**overconfig.nix:**
+- Edit with `hmo`
+- Machine-specific customizations and secrets
+- Auto-backed up to `~/.backup/.config/nixpkgs/overconfig.YYYYMMDD-HHMMSS.nix`
+- Example: `programs.git.settings.user.email = lib.mkForce "work@email.com";`
 
-Key integrations:
-- **LSP**: Configured for TypeScript, Bash, C#, Nix, Go, Python, Haskell
-- **claude-tmux-neovim**: Special plugin for Claude Code integration (keybindings for sending selections)
-- **FZF Integration**: `<C-p>` for file search, `<C-b>` for LSP symbols
-- **Copilot**: GitHub Copilot enabled
-- **Treesitter**: Parsers for bash, C#, gdscript, go, helm, lua, markdown, nix, python, rust, starlark, typescript, yaml
+Both files made git-invisible by `hms` after first run. Backups linked via `*.latest.nix` symlinks.
 
-## Zsh Keybindings
+## Claude Code Integration
 
-**Vi Mode**:
-- `jk` - Enter vi command mode from insert mode
+**Configuration deployment:**
+- Global settings: `modules/claude/global/CLAUDE.md` → `~/.claude/CLAUDE.md`
+- Skills: `modules/claude/global/commands/*.md` → `~/.claude/commands/`
+- Hooks: notification-hook, complete-hook, csharp-format-hook (configured in `modules/claude/default.nix`)
+- Commands: `~/.claude/TOOLS.md` auto-generated from shellapp metadata
 
-**Line Navigation**:
-- `^A` - Beginning of line (insert mode)
-- `^E` - End of line (insert mode)
-- `^X^E` - Edit command in Neovim (both insert and command mode)
+**MCP integration:**
+- Context7 MCP auto-configured if `CONTEXT7_API_KEY` set in overconfig.nix
+- Config merged into `~/.claude.json` (preserves Claude's metadata)
+- To disable: Remove `CONTEXT7_API_KEY`, run `hms`
 
-**Special Commands**:
-- `^J` - Super newline (adds 5 newlines and executes)
-- `^D` - Exit with confirmation (defaults to No, requires explicit y/Y)
+**Available skills:**
+- Engineering: swe-backend, swe-frontend, swe-fullstack, swe-devex, swe-infra, swe-security, swe-sre
+- Design: ux-designer, visual-designer
+- Support: researcher, scribe, ai-expert
+- Workflow: review-pr-comments
+- Business: finance, lawyer, marketing
 
-## Git Aliases
+## Reference Documentation
 
-Configured in `modules/git/default.nix`:
-- `git who` - Enhanced blame with whitespace/move detection (`-w -C -C -C`)
-- `git difft` - Use difftastic for diff output
-- `git logt` - Use difftastic for log with patches
-- `git showt` - Use difftastic for show command
+**User setup:** See README.md for installation and daily usage procedures.
 
-## Claude Code Hooks
+**Command reference:** See `~/.claude/TOOLS.md` (auto-generated from shellapp metadata on `hms`).
 
-Configured in `modules/claude/default.nix`, automatically deployed to `~/.claude/settings.json`:
+**Nix development:**
+- `nix run nixpkgs#nix-prefetch-github -- owner repo --rev main`: Get hash for GitHub packages
+- `nix flake update`: Update dependencies
+- `nix flake check`: Validate syntax
+- `nix flake metadata`: Show flake info
+- `nix search nixpkgs <package>`: Search packages
 
-**Notification Hook**:
-- Triggered on: Every notification event
-- Purpose: Desktop notifications with tmux integration
-- Script: `claude-notification-hook.bash`
-
-**Complete Hook**:
-- Triggered on: Session stop/completion
-- Purpose: Post-completion actions
-- Script: `claude-complete-hook.bash`
-
-**C# Format Hook**:
-- Triggered on: After Edit/MultiEdit/Write tool use
-- Purpose: Auto-format C# files with csharpier
-- Script: `claude-csharp-format-hook.bash`
-- Requires: `csharpier` package (included in packages.nix)
-
-## Ralph Orchestrator Integration
-
-This repository includes Ralph Orchestrator integration with the Staff Engineer output style:
-
-**burns Command** (Python):
-- **Purpose:** Run Ralph with Staff Engineer persona for general tasks
-- **Usage:**
-  - `burns "inline prompt string"` - Uses `-p` flag for inline prompts
-  - `burns path/to/file.md` - Uses `-P` flag for file-based prompts
-- **Behavior:** Intelligently detects whether argument is a file path or prompt string
-- **Source:** `modules/claude/burns.py`
-
-**smithers Command** (Python, Token-Efficient):
-- **Purpose:** Autonomous PR watcher that ensures PRs are completely ready to merge
-- **Usage:**
-  - `smithers` - Infer PR from current branch
-  - `smithers 123` - Watch PR #123
-  - `smithers <url>` - Watch specific PR URL
-- **Token-Efficient Architecture:**
-  1. **CLI polls CI checks** (cheap - just GitHub API, no tokens burned)
-  2. **Waits for all checks to reach terminal state** (10-second poll interval)
-  3. **Gathers intelligence** - failed checks, bot comments, merge conflicts
-  4. **Only invokes Ralph when work is needed** - generates focused prompt with specific issues
-  5. **Ralph fixes issues using kanban** - then exits
-  6. **CLI loops** - re-checks PR status after Ralph finishes
-  7. **Exits when PR is green** - all checks pass, no actionable bot comments, no conflicts
-- **Features:**
-  - Monitors all PR checks until they pass
-  - Investigates and fixes check failures (Ralph spawns sub-agents)
-  - Critically evaluates ALL bot comments (any user with `[bot]` in username)
-  - Fixes merge conflicts if present
-  - Max 100 cycles to prevent runaway loops
-- **Source:** `modules/claude/smithers.py`
-
-Both commands use the Staff Engineer output style configured in `modules/claude/global/output-styles/staff-engineer.md`
-
-## Kanban CLI for Agent Coordination
-
-The `kanban` command provides a file-based kanban board system designed for multi-agent coordination:
-
-**Architecture:**
-- Cards are markdown files stored in column folders (todo/, doing/, blocked/, done/)
-- Numbered globally for easy reference (#1, #2, etc.)
-- Enables subagents to coordinate by reading/writing to shared filesystem
-- Auto-allowed in Claude Code settings (subagents don't need permission prompts)
-
-**Typical Workflow:**
-1. Initialize board: `kanban init` (creates column structure)
-2. Add tasks: `kanban add "Implement feature X" --persona "Developer"`
-3. Claim work: `kanban move 1 doing`
-4. Track progress: `kanban list` shows all active cards
-5. Add updates: `kanban comment 1 "Completed testing"`
-6. Complete: `kanban move 1 done`
-
-**Session Isolation:**
-- Cards can be scoped to specific sessions using `--session <id>`
-- Useful when multiple Claude sessions coordinate on same board
-- Filter by session: `kanban doing --session <id>`
-
-**Source:** Python CLI in `modules/kanban/kanban.py`, deployed system-wide via Home Manager
+**Implementation details:** See source files in `modules/` directories for specific configurations (theme, LSP, activation hooks, etc).
