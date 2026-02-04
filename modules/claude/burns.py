@@ -11,7 +11,7 @@ Usage:
 
 Options:
     --pr NUMBER_OR_URL          Pull request already exists (skips PR creation requirement)
-    --max-ralph-iterations N    Max iterations for Ralph (default: 3)
+    --max-ralph-iterations N    Max iterations for Ralph (default: 10)
                                 Can also set via BURNS_MAX_RALPH_ITERATIONS env var
                                 Priority: CLI flag > env var > default
 """
@@ -25,7 +25,7 @@ import time
 
 # Path to Ralph Coordinator hat YAML (substituted by Nix at build time)
 STAFF_ENGINEER_HAT = "STAFF_ENGINEER_HAT_YAML"
-DEFAULT_MAX_ITERATIONS = 3
+DEFAULT_MAX_ITERATIONS = 10
 
 
 def get_all_descendants(pid):
