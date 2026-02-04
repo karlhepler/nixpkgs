@@ -470,8 +470,18 @@ def cmd_add(args) -> None:
         f"persona: {args.persona or 'unassigned'}",
         f"priority: {priority}",
     ]
-    if args.session:
+
+    # Determine session: explicit > auto-detect > none (if --no-session)
+    if hasattr(args, 'no_session') and args.no_session:
+        pass  # Explicitly sessionless - don't add session field
+    elif args.session:
         frontmatter_lines.append(f"session: {args.session}")
+    else:
+        # Auto-detect current session
+        current_session = get_current_session_id()
+        if current_session:
+            frontmatter_lines.append(f"session: {current_session}")
+
     if args.model:
         frontmatter_lines.append(f"model: {args.model}")
     frontmatter_lines.extend([
@@ -904,123 +914,60 @@ def get_encoded_project_path() -> str:
     return str(cwd).replace('/', '-').replace('.', '-')
 
 
-def find_claude_process() -> int | None:
-    """Walk up the process tree to find the Claude Code process.
-
-    When kanban runs, it may be invoked through intermediate shells:
-    kanban -> zsh -> claude
-
-    This function walks up the process ancestry until it finds a process
-    whose command contains 'claude' (but not 'python' to avoid false matches).
-
-    Returns:
-        PID of the Claude process, or None if not found
-    """
-    try:
-        pid = os.getpid()
-
-        for _ in range(10):  # max depth to prevent infinite loop
-            result = subprocess.run(
-                ['ps', '-o', 'ppid=,command=', '-p', str(pid)],
-                capture_output=True,
-                text=True
-            )
-            if result.returncode != 0:
-                break
-
-            parts = result.stdout.strip().split(None, 1)
-            if len(parts) < 2:
-                break
-
-            ppid_str, cmd = parts[0], parts[1].lower()
-
-            # Check if this is the Claude process
-            if 'claude' in cmd and 'python' not in cmd:
-                return int(ppid_str)
-
-            # Move up the tree
-            pid = int(ppid_str)
-            if pid <= 1:  # Reached init/launchd
-                break
-
-    except (ValueError, OSError):
-        pass
-
-    return None
-
-
 def get_current_session_id() -> str | None:
-    """Get Claude Code session ID by correlating process start time with temp directory creation.
+    """Get Claude Code session ID from the actively-written session file.
 
-    This approach is more robust than reading history.jsonl because it doesn't have race conditions
-    when multiple Claude sessions run concurrently in the same directory.
+    When Claude calls a tool (like kanban), it writes to the session JSONL file
+    BEFORE the tool executes. So we find the session file that was modified
+    within the last few seconds - that's our active session.
 
-    The algorithm:
-    1. Walk up process tree to find Claude process
-    2. Get Claude's start time via `ps -o lstart`
-    3. Find temp directory in /private/tmp/claude-501/{ENCODED_PROJECT}/ with matching creation time
-    4. Extract UUID from directory name
+    This approach:
+    - Works for concurrent sessions in the SAME directory (the key requirement)
+    - Only fails if two sessions call tools at the exact same moment (true race)
+    - Falls back to most recent file if no recent activity (handles edge cases)
 
     Returns:
         Session ID string (UUID) if detected, None otherwise
     """
     try:
-        # 1. Find the Claude process by walking up the process tree
-        claude_pid = find_claude_process()
-        if claude_pid is None:
-            return None
+        import time
 
-        # 2. Get Claude's start time
-        result = subprocess.run(
-            ['ps', '-o', 'lstart=', '-p', str(claude_pid)],
-            capture_output=True,
-            text=True,
-            check=True
-        )
-
-        claude_start = result.stdout.strip()
-        if not claude_start:
-            return None
-
-        # Parse format like "Wed Feb  4 00:59:32 2026"
-        # Note: There can be extra spaces between month and day for single-digit days
-        claude_start_dt = datetime.strptime(claude_start, "%a %b %d %H:%M:%S %Y")
-
-        # 3. Find temp directory with matching creation time
         project_path = get_encoded_project_path()
-        temp_base = Path(f"/private/tmp/claude-501/{project_path}")
+        projects_dir = Path.home() / '.claude' / 'projects' / project_path
 
-        if not temp_base.exists():
+        if not projects_dir.exists():
             return None
 
-        for session_dir in temp_base.iterdir():
-            if session_dir.name == 'tasks' or not session_dir.is_dir():
-                continue
+        session_files = list(projects_dir.glob('*.jsonl'))
+        if not session_files:
+            return None
 
-            # Get directory creation time using GetFileInfo (macOS)
-            result = subprocess.run(
-                ['GetFileInfo', '-m', str(session_dir)],
-                capture_output=True,
-                text=True,
-                check=True
-            )
+        now = time.time()
+        threshold_seconds = 10  # File must be modified within last 10 seconds
 
-            dir_time = result.stdout.strip()
-            if not dir_time:
-                continue
+        # Find files modified within threshold
+        recent_files = [
+            (f, now - f.stat().st_mtime)
+            for f in session_files
+            if (now - f.stat().st_mtime) < threshold_seconds
+        ]
 
-            # Parse format like "02/04/2026 00:59:32"
-            dir_dt = datetime.strptime(dir_time, "%m/%d/%Y %H:%M:%S")
+        if len(recent_files) == 1:
+            # Exactly one recently modified file - that's our session
+            return recent_files[0][0].stem
 
-            # Match to the second
-            if dir_dt == claude_start_dt:
-                return session_dir.name  # This is the UUID
+        if len(recent_files) > 1:
+            # Multiple recent files - pick the most recent (best effort for true race)
+            recent_files.sort(key=lambda x: x[1])  # Sort by age ascending
+            return recent_files[0][0].stem
 
-    except (subprocess.CalledProcessError, FileNotFoundError, ValueError, OSError):
-        # Fallback: Any error in the process correlation approach, return None
-        pass
+        # No recent files - fall back to most recently modified overall
+        # This handles cases where Claude hasn't written recently
+        most_recent = max(session_files, key=lambda f: f.stat().st_mtime)
+        return most_recent.stem
 
-    return None
+    except (OSError, ValueError):
+        return None
 
 
 def cmd_view(args) -> None:
@@ -1502,7 +1449,8 @@ Empty columns default to priority 1000 (baseline for first card).
     p_add.add_argument("--persona", help="Persona for the card")
     p_add.add_argument("--content", "-c", help="Card body content (e.g., task description)")
     p_add.add_argument("--status", choices=COLUMNS, default="todo", help="Starting column (default: todo)")
-    p_add.add_argument("--session", help="Session ID for the card")
+    p_add.add_argument("--session", help="Session ID for the card (auto-detected if not specified)")
+    p_add.add_argument("--no-session", action="store_true", help="Create card without session (visible to all)")
     p_add.add_argument("--model", choices=["sonnet", "opus", "haiku"], help="AI model used for this card (sonnet, opus, haiku)")
     p_add.add_argument("--top", action="store_true", help="Insert at top (highest priority, lowest number)")
     p_add.add_argument("--bottom", action="store_true", help="Insert at bottom (lowest priority, highest number)")
