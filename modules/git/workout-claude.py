@@ -3,9 +3,9 @@
 
 This is a WRAPPER around the existing workout command that adds:
 - Batch creation: Process multiple branches at once via JSON input
-- Prompt injection: Pass per-worktree prompts to Claude Code instances
+- Prompt injection: Pass per-worktree prompts to Claude command instances
 - TMUX automation: Create detached windows for each worktree
-- Claude integration: Launch staff with custom prompts in each window
+- Claude integration: Launch specified command with custom prompts in each window
 
 CRITICAL: This script CALLS the existing workout command.
 It does NOT duplicate workout's logic.
@@ -17,8 +17,8 @@ Input Format (JSON via stdin):
     ]
 
 Example Usage:
-    echo '[{"worktree": "fix-auth", "prompt": "Look up Linear AUTH-123"}]' | workout-claude
-    cat worktrees.json | workout-claude
+    echo '[{"worktree": "fix-auth", "prompt": "Look up Linear AUTH-123"}]' | workout-claude staff
+    cat worktrees.json | workout-claude burns
 """
 
 import json
@@ -29,33 +29,36 @@ from typing import List, Dict, Optional
 
 def show_help() -> None:
     """Display help message"""
-    help_text = """workout-claude - Batch worktree creation with TMUX windows and prompt injection
+    help_text = """workout-claude - Batch worktree creation with TMUX windows and Claude command prompt injection
 
 USAGE:
-  echo '[{...}]' | workout-claude
-  cat file.json | workout-claude
+  echo '[{...}]' | workout-claude <command>
+  cat file.json | workout-claude <command>
   workout-claude -h, --help
+
+ARGUMENTS:
+  <command>    Claude command to launch in each worktree (e.g., staff, burns)
 
 INPUT FORMAT (JSON via stdin):
   [
-    {"worktree": "branch-name", "prompt": "Context for Claude Code"},
+    {"worktree": "branch-name", "prompt": "Context for Claude command"},
     {"worktree": "another-branch", "prompt": "Different context"}
   ]
 
   Each object MUST have:
     - worktree: Branch name (karlhepler/ prefix auto-added if missing)
-    - prompt: Context string to pass to Claude Code as positional argument
+    - prompt: Context string to pass to Claude command as positional argument
 
 DESCRIPTION:
   Creates multiple git worktrees with dedicated TMUX windows and
-  Claude Code instances. Each Claude instance receives a custom prompt
+  Claude command instances. Each Claude instance receives a custom prompt
   for context-aware parallel development workflows.
 
   This is a wrapper around the existing 'workout' command that adds:
   - JSON input processing for batch operations
-  - Per-worktree prompt injection to Claude Code
+  - Per-worktree prompt injection to Claude commands
   - Detached TMUX window creation per worktree
-  - Automatic 'staff' (Claude Code) launch with prompts
+  - Automatic Claude command launch with prompts
 
 FEATURES:
   - JSON input: Structured worktree + prompt definitions
@@ -67,11 +70,11 @@ FEATURES:
   - Prompt passthrough: Each Claude instance gets its specific context
 
 EXAMPLES:
-  # Single worktree with prompt
-  echo '[{"worktree": "fix-auth", "prompt": "Linear AUTH-123: Fix OAuth flow"}]' | workout-claude
+  # Single worktree with staff command
+  echo '[{"worktree": "fix-auth", "prompt": "Linear AUTH-123: Fix OAuth flow"}]' | workout-claude staff
 
-  # Multiple worktrees with different prompts
-  cat << 'EOF' | workout-claude
+  # Multiple worktrees with burns command
+  cat << 'EOF' | workout-claude burns
   [
     {"worktree": "feature-x", "prompt": "Implement feature X from Linear FE-123"},
     {"worktree": "bug-456", "prompt": "Fix bug 456 - see Linear BUG-456"},
@@ -80,14 +83,14 @@ EXAMPLES:
   EOF
 
   # From file
-  cat worktrees.json | workout-claude
+  cat worktrees.json | workout-claude staff
 
 WHAT HAPPENS:
   For each JSON object:
   1. Validates worktree and prompt fields exist
   2. Calls existing 'workout' command to create worktree
   3. Creates TMUX window in detached mode
-  4. Launches 'staff "prompt"' in the window (Claude Code with context)
+  4. Launches '<command> "prompt"' in the window (Claude command with context)
   5. Prepends worktree orientation context to prompt
   6. Reports success/failure
 
@@ -95,7 +98,7 @@ REQUIREMENTS:
   - git: Repository management
   - tmux: Window management
   - workout: Base worktree command (automatically available)
-  - staff: Claude Code command (optional, warning if missing)
+  - <command>: Specified Claude command (optional, warning if missing)
   - python3: JSON processing
 
 NOTES:
@@ -103,14 +106,13 @@ NOTES:
   - TMUX windows are created in background (detached)
   - Window names use branch suffix only (no karlhepler/ prefix)
   - Worktrees organized in ~/worktrees/org/repo/branch/
-  - Prompts passed as positional argument: 'staff "prompt"'
+  - Prompts passed as positional argument: '<command> "prompt"'
   - Context automatically prepended to orient Claude to correct worktree
   - Invalid JSON or missing fields will cause immediate error
 
 SEE ALSO:
   workout --help    Original worktree command
   tmux list-windows View all TMUX windows
-  staff --help      Claude Code wrapper command
 """
     print(help_text, file=sys.stderr)
 
@@ -153,7 +155,7 @@ def validate_json_input(data: any) -> List[Dict[str, str]]:
         if not item["worktree"].strip():
             raise ValueError(f"Item {i} field 'worktree' cannot be empty")
 
-        # prompt can be empty string (valid use case - just launch staff with no custom prompt)
+        # prompt can be empty string (valid use case - just launch command with no custom prompt)
 
         validated.append({
             "worktree": item["worktree"].strip(),
@@ -214,8 +216,11 @@ def run_command(cmd: List[str], capture_output: bool = True) -> Optional[subproc
         return None
 
 
-def check_prerequisites() -> bool:
+def check_prerequisites(command: str) -> bool:
     """Check if required commands are available
+
+    Args:
+        command: Claude command to check (e.g., 'staff', 'burns')
 
     Returns:
         True if all required commands exist, False otherwise
@@ -246,19 +251,20 @@ def check_prerequisites() -> bool:
         print("This wrapper requires the base workout command", file=sys.stderr)
         return False
 
-    # Check staff (warning only)
-    result = run_command(["which", "staff"])
+    # Check specified command (warning only)
+    result = run_command(["which", command])
     if not result or result.returncode != 0:
-        print("Warning: 'staff' command not found - TMUX windows will be created but staff won't launch", file=sys.stderr)
+        print(f"Warning: '{command}' command not found - TMUX windows will be created but {command} won't launch", file=sys.stderr)
 
     return True
 
 
-def create_worktree_with_prompt(worktree_def: Dict[str, str]) -> bool:
-    """Create worktree and launch Claude with prompt
+def create_worktree_with_prompt(worktree_def: Dict[str, str], command: str) -> bool:
+    """Create worktree and launch Claude command with prompt
 
     Args:
         worktree_def: Dict with 'worktree' and 'prompt' keys
+        command: Claude command to launch (e.g., 'staff', 'burns')
 
     Returns:
         True if successful, False otherwise
@@ -308,13 +314,13 @@ def create_worktree_with_prompt(worktree_def: Dict[str, str]) -> bool:
 
     print(f"  ✓ Created TMUX window: {branch_suffix}", file=sys.stderr)
 
-    # Check if staff command is available
-    staff_result = run_command(["which", "staff"])
-    if not staff_result or staff_result.returncode != 0:
-        return True  # Success - worktree and window created, staff just not available
+    # Check if command is available
+    command_result = run_command(["which", command])
+    if not command_result or command_result.returncode != 0:
+        return True  # Success - worktree and window created, command just not available
 
-    # Launch staff with prompt in the window
-    # Use staff "prompt" for interactive mode with prompt auto-execution
+    # Launch command with prompt in the window
+    # Use command "prompt" for interactive mode with prompt auto-execution
     if prompt:
         # Prepend worktree context to orient the receiving Claude
         context_prefix = (
@@ -326,22 +332,22 @@ def create_worktree_with_prompt(worktree_def: Dict[str, str]) -> bool:
 
         # Escape double quotes in prompt for shell command
         escaped_prompt = full_prompt.replace('"', '\\"')
-        staff_cmd = f'staff "{escaped_prompt}"'
+        claude_cmd = f'{command} "{escaped_prompt}"'
     else:
-        # No prompt - just launch staff interactively
-        staff_cmd = "staff"
+        # No prompt - just launch command interactively
+        claude_cmd = command
 
     run_command([
         "tmux", "send-keys",
         "-t", branch_suffix,
-        staff_cmd,
+        claude_cmd,
         "Enter"
     ], capture_output=False)
 
     if prompt:
-        print("  ✓ Launched staff with custom prompt in window", file=sys.stderr)
+        print(f"  ✓ Launched {command} with custom prompt in window", file=sys.stderr)
     else:
-        print("  ✓ Launched staff in window", file=sys.stderr)
+        print(f"  ✓ Launched {command} in window", file=sys.stderr)
 
     return True
 
@@ -353,16 +359,27 @@ def main():
         show_help()
         sys.exit(0)
 
+    # Check for command argument
+    if len(sys.argv) < 2:
+        print("Error: Missing required command argument", file=sys.stderr)
+        print("Usage: echo '[{...}]' | workout-claude <command>", file=sys.stderr)
+        print("       cat file.json | workout-claude <command>", file=sys.stderr)
+        print("Example: echo '[{...}]' | workout-claude staff", file=sys.stderr)
+        print("Run 'workout-claude --help' for full documentation", file=sys.stderr)
+        sys.exit(1)
+
+    command = sys.argv[1]
+
     # Check for non-stdin invocation (error)
     if sys.stdin.isatty():
         print("Error: workout-claude requires JSON input via stdin", file=sys.stderr)
-        print("Usage: echo '[{...}]' | workout-claude", file=sys.stderr)
-        print("       cat file.json | workout-claude", file=sys.stderr)
+        print(f"Usage: echo '[{{...}}]' | workout-claude {command}", file=sys.stderr)
+        print(f"       cat file.json | workout-claude {command}", file=sys.stderr)
         print("Run 'workout-claude --help' for full documentation", file=sys.stderr)
         sys.exit(1)
 
     # Check prerequisites
-    if not check_prerequisites():
+    if not check_prerequisites(command):
         sys.exit(1)
 
     # Read and parse JSON from stdin
@@ -388,7 +405,7 @@ def main():
     failed = []
 
     for worktree_def in worktree_defs:
-        if create_worktree_with_prompt(worktree_def):
+        if create_worktree_with_prompt(worktree_def, command):
             branch_suffix = normalize_branch_name(worktree_def["worktree"])[0]
             created.append(branch_suffix)
         else:

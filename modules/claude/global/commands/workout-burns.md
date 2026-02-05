@@ -1,34 +1,34 @@
 ---
-description: Create git worktrees with TMUX windows and Claude Code instances for parallel development. Use when user wants to test features in isolation, work on multiple branches simultaneously, or needs dedicated Claude sessions per worktree.
+description: Create git worktrees with TMUX windows and burns (Ralph Orchestrator) instances for parallel development. Use when user wants to test features in isolation, work on multiple branches simultaneously, or needs dedicated burns Ralph sessions per worktree.
 ---
 
-# Workout - Batch Worktree Creation with TMUX
+# Workout Burns - Batch Worktree Creation with TMUX and Burns
 
-**Purpose:** Automate creation of multiple git worktrees with dedicated TMUX windows and Claude Code instances for parallel development workflows.
+**Purpose:** Automate creation of multiple git worktrees with dedicated TMUX windows and burns (Ralph Orchestrator) instances for parallel development workflows.
 
 ## When to Use
 
 Activate this skill when the user asks to:
 - Create multiple worktrees at once
-- Set up parallel development environments
-- Test multiple features in isolation
-- Work on multiple branches simultaneously
-- Set up worktrees with Claude instances
+- Set up parallel development environments with burns
+- Test multiple features in isolation with Ralph Orchestrator
+- Work on multiple branches simultaneously with autonomous agents
+- Set up worktrees with burns instances
 
 **Example user requests:**
-- "Create worktrees for feature-x, feature-y, and feature-z"
-- "Set up parallel environments for branches A, B, and C"
-- "I need to test these three features in isolation"
-- "Create worktrees with Claude for bug-123, bug-456"
+- "Create worktrees for feature-x, feature-y, and feature-z with burns"
+- "Set up parallel environments with Ralph Orchestrator for branches A, B, and C"
+- "I need to test these three features in isolation with burns"
+- "Create worktrees with burns for bug-123, bug-456"
 
-## How Workout Works
+## How This Skill Works
 
-The `workout` command creates git worktrees organized in `~/worktrees/org/repo/branch/` structure. When given multiple branch names:
+This skill uses `workout-claude burns`, which processes JSON input to create multiple worktrees with burns (Ralph Orchestrator) instances. Under the hood, `workout-claude` calls the standalone `workout` command for each worktree, then adds TMUX automation:
 
 1. **Auto-prefixes branches** with `karlhepler/` (strips first if already present)
-2. **Creates worktrees** for each branch (creates branch if doesn't exist)
+2. **Creates worktrees** for each branch using `workout` command (creates branch if doesn't exist)
 3. **Creates TMUX windows** in detached mode (no focus switch)
-4. **Launches `staff`** (Claude Code) in each window
+4. **Launches `burns`** (Ralph Orchestrator) in each window with custom prompts
 5. **Reports summary** of created/failed worktrees
 
 **Key features:**
@@ -75,7 +75,7 @@ I'll create worktrees for these branches:
 Each will have:
 - Dedicated worktree in ~/worktrees/org/repo/branch/
 - TMUX window named by branch suffix (authentication, payment, notifications)
-- Claude Code instance (staff) running in each window
+- Burns (Ralph Orchestrator) instance running in each window
 
 Ready to proceed? (yes/no)
 ```
@@ -86,10 +86,12 @@ Ready to proceed? (yes/no)
 
 **CRITICAL: workout-claude ONLY accepts JSON input via stdin.**
 
+Use `workout-claude burns` to create worktrees with burns (Ralph Orchestrator) instances.
+
 ### JSON Input Format (Required)
 
 ```bash
-echo '[{"worktree": "branch", "prompt": "context"}]' | workout-claude
+echo '[{"worktree": "branch", "prompt": "context"}]' | workout-claude burns
 ```
 
 **Example:**
@@ -97,13 +99,13 @@ echo '[{"worktree": "branch", "prompt": "context"}]' | workout-claude
 echo '[
   {"worktree": "fix-auth", "prompt": "Look up Linear AUTH-123 and fix OAuth flow"},
   {"worktree": "bug-456", "prompt": "Fix null pointer in user profile - Linear BUG-456"}
-]' | workout-claude
+]' | workout-claude burns
 ```
 
 **JSON format requirements:**
 - Array of objects (MUST be valid JSON array)
 - Each object MUST have `worktree` (branch name) and `prompt` (context string)
-- `prompt` can be empty string `""` to launch staff interactively without initial prompt
+- `prompt` can be empty string `""` to launch burns interactively without initial prompt
 - Branch names auto-prefixed with `karlhepler/` (strips first if present)
 
 **The command will:**
@@ -111,14 +113,14 @@ echo '[
 - Auto-prefix each branch with `karlhepler/`
 - Create worktrees if they don't exist
 - Create TMUX windows in detached mode
-- Launch `staff "prompt"` in each window (passes prompt as positional argument to Claude)
-- Prepend worktree context to prompt (orients Claude to correct directory)
+- Launch `burns "prompt"` in each window (passes prompt as positional argument to Ralph Orchestrator)
+- Prepend worktree context to prompt (orients Ralph to correct directory)
 - Report summary of created/failed worktrees
 
-**When to use workout-claude:**
-- Parent Claude has context (Linear tickets, user requests) to pass to child Claudes
+**When to use workout-claude burns:**
+- Parent Claude has context (Linear tickets, user requests) to pass to burns instances
 - Each worktree needs different context/instructions
-- You want to eliminate repeating context across Claude sessions
+- You want to eliminate repeating context across Ralph sessions
 - You're coordinating parallel work with specific per-task details
 
 **If user wants simple worktree creation without prompts:**
@@ -135,9 +137,9 @@ After successful execution:
    - `~/worktrees/org/repo/karlhepler/notifications/`
 
 2. **TMUX windows** (detached, running in background):
-   - Window: `authentication` (with staff running)
-   - Window: `payment` (with staff running)
-   - Window: `notifications` (with staff running)
+   - Window: `authentication` (with burns running)
+   - Window: `payment` (with burns running)
+   - Window: `notifications` (with burns running)
 
 3. **How to access:**
    - `tmux list-windows` - See all windows
@@ -146,12 +148,12 @@ After successful execution:
 
 ## Error Handling
 
-The workout command is error-resilient:
+The `workout-claude burns` command is error-resilient:
 
 - **Existing worktrees:** Reuses them (idempotent)
 - **Invalid branch names:** Skips and continues with others
 - **TMUX failures:** Reports warning but continues
-- **Missing staff command:** Warning only, windows still created
+- **Missing burns command:** Warning only, windows still created
 
 **Summary report shows:**
 - ✓ Successfully created worktrees
@@ -171,7 +173,7 @@ The workout command is error-resilient:
 - karlhepler/payment-processing
 - karlhepler/email-notifications
 
-Each will have a dedicated worktree, TMUX window, and Claude Code instance.
+Each will have a dedicated worktree, TMUX window, and burns (Ralph Orchestrator) instance.
 
 Ready to proceed?"
 
@@ -182,12 +184,12 @@ echo '[
   {"worktree": "user-authentication", "prompt": ""},
   {"worktree": "payment-processing", "prompt": ""},
   {"worktree": "email-notifications", "prompt": ""}
-]' | workout-claude
+]' | workout-claude burns
 ```
 
 **Then explain:**
 
-"Created 3 worktrees with TMUX windows and Claude instances:
+"Created 3 worktrees with TMUX windows and burns instances:
 - `user-authentication` - Ready to work on authentication feature
 - `payment-processing` - Ready to work on payment feature
 - `email-notifications` - Ready to work on notification feature
@@ -214,7 +216,7 @@ Or use `tmux list-windows` to see all windows."
 - karlhepler/bug-456-null-check - Null pointer fix (Linear BUG-456)
 - karlhepler/refactor-api-789 - API error handling refactor (Linear REF-789)
 
-Each Claude instance will receive the ticket context automatically.
+Each burns instance will receive the ticket context automatically.
 
 Ready to proceed?"
 
@@ -234,17 +236,17 @@ echo '[
     "worktree": "refactor-api-789",
     "prompt": "Refactor the API module to use consistent error handling patterns. Review tech debt ticket REF-789. Focus on maintainability."
   }
-]' | workout-claude
+]' | workout-claude burns
 ```
 
 **Then explain:**
 
-"Created 3 worktrees with TMUX windows and context-aware Claude instances:
-- `fix-auth-123` - Claude knows to look up AUTH-123 and fix OAuth
-- `bug-456-null-check` - Claude knows to fix null pointer per BUG-456
-- `refactor-api-789` - Claude knows to refactor API errors per REF-789
+"Created 3 worktrees with TMUX windows and context-aware burns instances:
+- `fix-auth-123` - Burns knows to look up AUTH-123 and fix OAuth
+- `bug-456-null-check` - Burns knows to fix null pointer per BUG-456
+- `refactor-api-789` - Burns knows to refactor API errors per REF-789
 
-Each Claude instance has the specific context and can start work immediately without you repeating the requirements.
+Each burns instance has the specific context and can start work immediately without you repeating the requirements.
 
 Switch to any window with:
 - `tmux select-window -t fix-auth-123`
@@ -255,7 +257,7 @@ Or use `tmux list-windows` to see all windows."
 
 ## Single Worktree Mode
 
-For single worktree creation (no TMUX batch mode):
+For single worktree creation (no TMUX batch mode), use the standalone `workout` command directly:
 
 ```bash
 # Current branch
@@ -280,7 +282,7 @@ workout -
 
 **CRITICAL: ALL branches MUST use `karlhepler/` prefix.**
 
-The workout command handles this automatically:
+Both `workout-claude` and the standalone `workout` command handle this automatically:
 - Input: `feature-x` → Creates: `karlhepler/feature-x`
 - Input: `karlhepler/feature-x` → Creates: `karlhepler/feature-x` (no double-prefix)
 
@@ -302,7 +304,7 @@ The workout command handles this automatically:
 
 - **Detached mode** means windows are created in background (no focus switch)
 - **Window names** use branch suffix only (no `karlhepler/` prefix)
-- **Staff command** is the Claude Code interactive session
+- **burns command** is the Ralph Orchestrator with Ralph Coordinator output style
 - **Worktree structure** is `~/worktrees/org/repo/branch/`
 - **Idempotent** means safe to run multiple times with same branches
 - **Error resilient** means skips failures and continues with others
