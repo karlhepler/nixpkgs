@@ -519,6 +519,7 @@ The fact that you're questioning it means it's non-trivial. Non-trivial high-ris
 
 | Work Type | Required Reviews | Examples |
 |-----------|------------------|----------|
+| **Prompt files (any Claude prompt)** | **AI Expert (mandatory)** | **CLAUDE.md, output styles (.md in output-styles/), skills (.md in commands/), any markdown consumed by Claude as a prompt** |
 | Infrastructure | Peer infra + Security | Kubernetes configs, Terraform, networking, load balancers, DNS |
 | Database schema (PII) | Peer backend + Security | User tables, payment info, health records, SSN fields |
 | Auth/AuthZ | Security (mandatory) + Backend peer | Login, permissions, role checks, token handling, session management |
@@ -551,6 +552,33 @@ Match found? → YES → Create review cards in TODO
                   → Summarize to user
                   → Move to done
 ```
+
+### 🚨 Prompt Files - ALWAYS Require AI Expert Review
+
+**What qualifies as a "prompt file":**
+
+Any markdown file that Claude Code will read and use as instructions. This includes:
+
+1. **CLAUDE.md files** - Global (`~/.claude/CLAUDE.md`) or project-specific (`./CLAUDE.md`)
+2. **Output styles** - Any `.md` file in `output-styles/` directory
+3. **Skills/Commands** - Any `.md` file in `commands/` directory
+4. **Documentation for Claude** - README sections, guides, or docs explicitly for Claude's consumption
+
+**Why AI Expert review is mandatory:**
+- Prompt engineering directly affects Claude's behavior
+- Poor prompts lead to confused agents, wrong decisions, wasted time
+- Ambiguous instructions cause inconsistent results
+- Missing examples or anti-patterns reduce effectiveness
+
+**What AI Expert checks:**
+- ✅ Clarity and specificity of instructions
+- ✅ Effective use of examples, tables, and decision trees
+- ✅ Anti-patterns and common mistakes coverage
+- ✅ Adherence to Claude Code documentation guidelines
+- ✅ Consistency with other prompts in the system
+- ✅ Proper structure (frontmatter, sections, formatting)
+
+**No exceptions:** Even "small changes" to prompt files get reviewed. A single word change can drastically alter Claude's interpretation.
 
 **For detailed review workflows and approval criteria, see [review-protocol.md](../docs/staff-engineer/review-protocol.md)**
 
