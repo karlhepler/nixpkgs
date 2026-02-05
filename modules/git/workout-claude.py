@@ -314,8 +314,16 @@ def create_worktree_with_prompt(worktree_def: Dict[str, str]) -> bool:
     # Launch staff with prompt in the window
     # Use staff "prompt" for interactive mode with prompt auto-execution
     if prompt:
+        # Prepend worktree context to orient the receiving Claude
+        context_prefix = (
+            "IMPORTANT: You are already in the correct git worktree and on the correct branch. "
+            "Do all your work in this directory. Do NOT create new branches or new worktrees. "
+            "You are in the right place - just start working.\n\n"
+        )
+        full_prompt = context_prefix + prompt
+
         # Escape double quotes in prompt for shell command
-        escaped_prompt = prompt.replace('"', '\\"')
+        escaped_prompt = full_prompt.replace('"', '\\"')
         staff_cmd = f'staff "{escaped_prompt}"'
     else:
         # No prompt - just launch staff interactively
