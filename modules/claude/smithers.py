@@ -517,16 +517,16 @@ def format_status_card(
     # Build card
     card_width = 60
     card = []
-    card.append("╭" + "─" * (card_width - 2) + "╮")
-    card.append(f"│ {status_emoji} {status_message}".ljust(card_width - 1) + "│")
-    card.append("├" + "─" * (card_width - 2) + "┤")
-    card.append(f"│ #{pr_number}: {title}".ljust(card_width - 1) + "│")
-    card.append(f"│ 🔗 {pr_url}".ljust(card_width - 1) + "│")
-    card.append("├" + "─" * (card_width - 2) + "┤")
-    card.append(f"│ Status: {pr_status} • {approval_str} • {commit_count} commit{'s' if commit_count != 1 else ''}".ljust(card_width - 1) + "│")
-    card.append(f"│ Branch: {branch_str}".ljust(card_width - 1) + "│")
-    card.append(f"│ Completed in {cycles} cycle{'s' if cycles != 1 else ''} ({elapsed_str})".ljust(card_width - 1) + "│")
-    card.append("╰" + "─" * (card_width - 2) + "╯")
+    card.append("╭" + "─" * (card_width - 1))
+    card.append(f"│ {status_emoji} {status_message}".ljust(card_width))
+    card.append("├" + "─" * (card_width - 1))
+    card.append(f"│ #{pr_number}: {title}".ljust(card_width))
+    card.append(f"│ 🔗 {pr_url}".ljust(card_width))
+    card.append("├" + "─" * (card_width - 1))
+    card.append(f"│ Status: {pr_status} • {approval_str} • {commit_count} commit{'s' if commit_count != 1 else ''}".ljust(card_width))
+    card.append(f"│ Branch: {branch_str}".ljust(card_width))
+    card.append(f"│ Completed in {cycles} cycle{'s' if cycles != 1 else ''} ({elapsed_str})".ljust(card_width))
+    card.append("╰" + "─" * (card_width - 1))
 
     result = "\n".join(card)
 
