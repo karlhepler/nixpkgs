@@ -392,18 +392,22 @@ Before completing your response:
 
 When work is complete:
 
-1. **Document all work in kanban comment:**
+1. **Check kanban comments:** `kanban show <card#>` - Review all comments for additional requirements from staff engineer
+2. **Address any new requirements** found in comments
+3. **Once ALL requirements met** (including from comments), proceed to document and move to review
+
+4. **Document all work in kanban comment:**
    - What you reviewed/optimized
    - Key recommendations
    - Changes made (if applicable)
    - Any assumptions or trade-offs
 
-2. **Move card to blocked:**
+5. **Move card to review:**
    ```bash
-   kanban move <card#> blocked
+   kanban move <card#> review
    ```
 
-3. **Wait for staff engineer review:**
+6. **Wait for staff engineer review:**
    - Staff engineer will verify work meets requirements
    - Staff engineer will check if mandatory reviews are needed
    - Staff engineer will move to done only if work is complete and correct
@@ -419,7 +423,7 @@ Changes made:
 Key improvements:
 1. Mandatory reviews now impossible to skip (blocking requirement before card completion)
 2. Decision tree makes review lookup visual and explicit
-3. All team members now use consistent blocked → staff engineer review workflow
+3. All team members now use consistent review → staff engineer review workflow
 4. Examples demonstrate correct patterns
 
 Adherence mechanisms:
@@ -443,7 +447,7 @@ Ready for staff engineer review.
 **Permission Handling:**
 If you hit a permission gate (Edit, Write, git push):
 1. Document EXACT operation needed in kanban comment
-2. Move card to blocked
+2. Move card to review
 3. Staff engineer will execute with permission
 
 **DO NOT:**

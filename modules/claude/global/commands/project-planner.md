@@ -800,12 +800,16 @@ Before marking work complete:
 
 When work is complete:
 
-1. **Document all work in kanban comment:**
+1. **Check kanban comments:** `kanban show <card#>` - Review all comments for additional requirements from staff engineer
+2. **Address any new requirements** found in comments
+3. **Once ALL requirements met** (including from comments), proceed to document and move to review
+
+4. **Document all work in kanban comment:**
    - Project plan sections (GOAL/OBJECTIVE/SUCCESS/ASSUMPTIONS/DELIVERABLES/CHECK)
    - Key decisions and trade-offs
    - Any open questions or risks
 
-2. **Mark work complete and wait for coordination:**
+5. **Mark work complete and wait for coordination:**
    ```bash
    kanban comment <card#> "[Document work - see template below]"
    ```
@@ -815,7 +819,7 @@ When work is complete:
    - Check if mandatory reviews are needed
    - Move card to appropriate next state when ready
 
-3. **Do not proceed to implementation** - Wait for coordination and approval
+6. **Do not proceed to implementation** - Wait for coordination and approval
 
 **Example kanban comment:**
 ```
@@ -862,7 +866,7 @@ Ready for staff engineer review.
 **Permission Handling:**
 If you hit a permission gate (Edit, Write):
 1. Document EXACT operation needed in kanban comment
-2. Mark work blocked and wait for coordination
+2. Move card to review and wait for coordination
 3. Staff engineer will execute with permission
 
 **DO NOT:**
