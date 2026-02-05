@@ -102,9 +102,9 @@ in {
     };
     workout = shellApp {
       name = "workout";
-      runtimeInputs = [ pkgs.git pkgs.coreutils pkgs.gnused pkgs.fzf ];
+      runtimeInputs = [ pkgs.git pkgs.coreutils pkgs.gnused pkgs.fzf pkgs.tmux ];
       text = builtins.readFile ./workout.bash;
-      description = "Create and navigate git worktrees organized by org/repo/branch";
+      description = "Create and navigate git worktrees organized by org/repo/branch. Supports batch creation with TMUX windows.";
       sourceFile = "workout.bash";
     };
     workout-delete = shellApp {
@@ -113,6 +113,13 @@ in {
       text = builtins.readFile ./workout-delete.bash;
       description = "Delete a git worktree";
       sourceFile = "workout-delete.bash";
+    };
+    workout-claude = shellApp {
+      name = "workout-claude";
+      runtimeInputs = [ pkgs.git pkgs.tmux pkgs.coreutils workout ];
+      text = builtins.readFile ./workout-claude.bash;
+      description = "Create git worktrees with TMUX windows and Claude Code instances";
+      sourceFile = "workout-claude.bash";
     };
   };
 

@@ -528,6 +528,69 @@ run_fzf_selector() {
   echo "cd '$selected_path'"
 }
 
+# Process a single branch - creates worktree and returns path
+# Arguments: branch_name
+# Returns: 0 on success, 1 on error
+# Outputs: worktree path on success, error message on failure (to stderr)
+process_branch() {
+  local branch_input="$1"
+
+  # Strip karlhepler/ prefix if present, then re-add it
+  local branch_suffix="${branch_input#karlhepler/}"
+  local branch_name="karlhepler/${branch_suffix}"
+
+  # Check if branch needs to be created
+  local create_new=false
+  if ! git show-ref --verify --quiet "refs/heads/$branch_name"; then
+    create_new=true
+  fi
+
+  # Get remote URL and extract org/repo
+  local remote_url
+  remote_url="$(git remote get-url origin 2>/dev/null)" || {
+    echo "Error: Not in a git repository" >&2
+    return 1
+  }
+
+  # Extract org/repo from URL
+  local org_repo
+  org_repo="$(echo "$remote_url" | sed -E 's#.*[:/]([^/]+/[^/]+)\.git$#\1#')"
+
+  if [ -z "$org_repo" ]; then
+    echo "Error: Could not extract org/repo from remote URL: $remote_url" >&2
+    return 1
+  fi
+
+  # Security: Reject path traversal attempts
+  if [[ "$org_repo" == *".."* ]]; then
+    echo "Error: Invalid org/repo path detected (contains '..'): $org_repo" >&2
+    return 1
+  fi
+
+  # Build worktree path
+  local worktree_root="${WORKTREE_ROOT:-$HOME/worktrees}"
+  local worktree_path="$worktree_root/$org_repo/$branch_name"
+
+  # Check if worktree already exists
+  if [ -d "$worktree_path" ]; then
+    echo "$worktree_path"
+    return 0
+  fi
+
+  # Create parent directory
+  mkdir -p "$(dirname "$worktree_path")"
+
+  # Create the worktree
+  if [ "$create_new" = true ]; then
+    timeout 30s git worktree add -b "$branch_name" "$worktree_path" 2>&1 >&2 || return 1
+  else
+    timeout 30s git worktree add "$worktree_path" "$branch_name" 2>&1 >&2 || return 1
+  fi
+
+  echo "$worktree_path"
+  return 0
+}
+
 # Parse arguments
 branch_name=""
 create_new=false
@@ -538,7 +601,7 @@ if [ $# -eq 0 ]; then
   exit $?
 fi
 
-# One arg: check special cases
+# Check for special single-arg cases first
 if [ $# -eq 1 ]; then
   case "$1" in
     -h|--help)
@@ -577,6 +640,119 @@ if [ $# -eq 1 ]; then
       run_fzf_selector
       exit $?
       ;;
+  esac
+fi
+
+# Check if we're doing batch creation (multiple branches)
+if [ $# -gt 1 ] || { [ $# -eq 1 ] && [[ "$1" != "." ]]; }; then
+  # Batch mode: create multiple worktrees with TMUX windows
+
+  # Check if we're in a git repo
+  if ! git rev-parse --git-dir >/dev/null 2>&1; then
+    echo "Error: Not in a git repository" >&2
+    exit 1
+  fi
+
+  # Check if tmux is available
+  if ! command -v tmux >/dev/null 2>&1; then
+    echo "Error: tmux is required for batch worktree creation" >&2
+    exit 1
+  fi
+
+  # Check if staff command is available
+  if ! command -v staff >/dev/null 2>&1; then
+    echo "Warning: 'staff' command not found - TMUX windows will be created but staff won't launch" >&2
+  fi
+
+  # Arrays to track results
+  declare -a created=()
+  declare -a failed=()
+
+  # Process each branch
+  for branch_input in "$@"; do
+    # Skip special arguments in batch mode
+    if [[ "$branch_input" == "-" || "$branch_input" == "/" || "$branch_input" == "-h" || "$branch_input" == "--help" ]]; then
+      echo "Warning: Skipping special argument '$branch_input' in batch mode" >&2
+      continue
+    fi
+
+    # Strip karlhepler/ prefix if present for display
+    branch_suffix="${branch_input#karlhepler/}"
+
+    echo "Processing: $branch_suffix..." >&2
+
+    # Process the branch
+    if worktree_path=$(process_branch "$branch_input"); then
+      # Success - create TMUX window
+      echo "  ✓ Created worktree: $worktree_path" >&2
+
+      # Create detached TMUX window
+      if tmux new-window -d -c "$worktree_path" -n "$branch_suffix" 2>/dev/null; then
+        echo "  ✓ Created TMUX window: $branch_suffix" >&2
+
+        # Launch staff in the window if available
+        if command -v staff >/dev/null 2>&1; then
+          tmux send-keys -t "$branch_suffix" "staff" Enter
+          echo "  ✓ Launched staff in window" >&2
+        fi
+
+        created+=("$branch_suffix")
+      else
+        echo "  ⚠ Failed to create TMUX window (worktree created successfully)" >&2
+        created+=("$branch_suffix")
+      fi
+    else
+      # Failed
+      echo "  ✗ Failed to create worktree" >&2
+      failed+=("$branch_suffix")
+    fi
+    echo >&2
+  done
+
+  # Print summary
+  echo "═══════════════════════════════════════════════════════════════" >&2
+  echo "BATCH WORKTREE CREATION SUMMARY" >&2
+  echo "═══════════════════════════════════════════════════════════════" >&2
+  echo >&2
+
+  if [ ${#created[@]} -gt 0 ]; then
+    echo "✓ Successfully created (${#created[@]}):" >&2
+    for branch in "${created[@]}"; do
+      echo "  - $branch" >&2
+    done
+    echo >&2
+  fi
+
+  if [ ${#failed[@]} -gt 0 ]; then
+    echo "✗ Failed (${#failed[@]}):" >&2
+    for branch in "${failed[@]}"; do
+      echo "  - $branch" >&2
+    done
+    echo >&2
+  fi
+
+  echo "Use 'tmux list-windows' to see all windows" >&2
+  echo "Use 'tmux select-window -t <name>' to switch to a window" >&2
+
+  # Exit with error if any failed
+  if [ ${#failed[@]} -gt 0 ]; then
+    exit 1
+  fi
+
+  exit 0
+fi
+
+# Single branch mode (original behavior)
+if [ $# -eq 1 ]; then
+  case "$1" in
+    .)
+      # Use current branch
+      branch_name="$(git rev-parse --abbrev-ref HEAD)"
+      if [ "$branch_name" = "HEAD" ]; then
+        echo "Error: Not on a branch (detached HEAD state)" >&2
+        exit 1
+      fi
+      ;;
     *)
       # Regular branch name
       branch_name="$1"
@@ -585,11 +761,6 @@ if [ $# -eq 1 ]; then
       fi
       ;;
   esac
-else
-  # Too many args
-  echo "Error: Too many arguments" >&2
-  show_help >&2
-  exit 1
 fi
 
 # Get remote URL and extract org/repo
