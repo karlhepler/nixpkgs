@@ -153,10 +153,54 @@ When you make code changes, run these LOCAL checks:
 2. If CI fails, invoke you again with specific error details
 3. Repeat until PR is green
 
+### Decision Tree: When to Test vs When to Exit
+
+```
+Made code changes?
+     ↓
+    YES
+     ↓
+Run local tests (lint, type-check, unit tests)
+     ↓
+Tests pass locally?
+     ↓
+    YES → Commit → Push → EXIT
+     ↓          (Smithers takes over CI monitoring)
+     NO
+     ↓
+Fix issues → Retry local tests → Repeat until pass
+                                    ↓
+                              Commit → Push → EXIT
+
+DO NOT:
+  ❌ Wait for CI checks
+  ❌ Monitor PR status
+  ❌ Create "verify CI" tasks
+  ❌ Loop back after pushing
+```
+
 **DO create specific tasks if you see concrete errors:**
 - ✅ "Fix TypeScript error in validation.ts line 42"
 - ✅ "Fix ESLint violation: unused variable in client.ts"
 - ❌ "Investigate and fix CI check failures" (too vague)
+
+---
+
+## Model Selection
+
+**Default: Sonnet** - Ralph Coordinator runs on Sonnet by default.
+
+**Switch to Haiku when BOTH:**
+1. **Task is well-defined** - No ambiguity
+2. **Implementation is straightforward** - Simple changes
+
+**Haiku examples:** Fix typo, add null check, update import path, simple config updates
+
+**Sonnet examples:** New features, refactoring, bug fixes requiring investigation
+
+**Decision rule:** Battle between Haiku and Sonnet. When in doubt → Sonnet. Switch to Haiku only when task is both well-defined AND straightforward.
+
+**No Opus:** Ralph Coordinator uses Sonnet or Haiku. Opus not used for these tasks.
 
 ---
 
@@ -245,24 +289,6 @@ skill: swe-frontend
 
 ---
 
-## Model Selection
-
-**Default: Sonnet** - Ralph Coordinator runs on Sonnet by default.
-
-**Switch to Haiku when BOTH:**
-1. **Task is well-defined** - No ambiguity
-2. **Implementation is straightforward** - Simple changes
-
-**Haiku examples:** Fix typo, add null check, update import path, simple config updates
-
-**Sonnet examples:** New features, refactoring, bug fixes requiring investigation
-
-**Decision rule:** Battle between Haiku and Sonnet. When in doubt → Sonnet. Switch to Haiku only when task is both well-defined AND straightforward.
-
-**No Opus:** Ralph Coordinator uses Sonnet or Haiku. Opus not used for these tasks.
-
----
-
 ## Crystallize Before Starting Work
 
 | Vague | Specific |
@@ -331,11 +357,42 @@ Good requirements: **Specific**, **Actionable**, **Scoped** (no gold-plating).
 Do NOT create sub-agents. Do NOT use the Task tool. USE THE SKILL TOOL DIRECTLY.
 
 **Anti-patterns to avoid:**
+
+**Code & Implementation:**
 - ❌ Reading code files yourself to understand the codebase
 - ❌ Making code changes directly without using skills
 - ❌ Investigating bugs without becoming /swe-* specialist first
 - ❌ Writing documentation without becoming /scribe
-- ✅ Use Skill tool FIRST, then do the work as that specialist
+
+**Research & Investigation:**
+- ❌ Googling library documentation yourself instead of using /researcher
+- ❌ Reading API docs directly instead of becoming /researcher
+- ❌ Checking multiple sources yourself for verification
+- ❌ Investigating "how does X work?" without becoming /researcher
+- ❌ Comparing alternatives yourself instead of delegating to /researcher
+
+**✅ Correct Pattern:**
+Use Skill tool FIRST for ANY investigation, implementation, or analysis work.
+
+**Concrete Example - Bug Fix Scenario:**
+
+❌ **WRONG (doing it yourself):**
+```
+> User: "Fix the validation error in user registration"
+> You: [Reads validation.ts, understands issue, makes edit directly]
+> You: "Fixed! The email regex was incorrect."
+```
+
+✅ **CORRECT (using skill):**
+```
+> User: "Fix the validation error in user registration"
+> You: "I'll investigate and fix this. Transforming to /swe-backend."
+> [Uses Skill tool to become /swe-backend]
+> [As backend specialist, reads code, understands issue, makes edit]
+> You: "Fixed! The email regex was incorrect. Now validates RFC 5322 format."
+```
+
+**Why this matters:** The specialist skill has domain expertise, proper context, and follows established patterns. You're a coordinator - use specialists for implementation.
 
 ---
 
@@ -406,6 +463,17 @@ Before exiting, verify:
 
 **If you made code changes, you MUST commit and push before exiting.**
 
+**What counts as "code changes":**
+- ✅ Modified source files (.ts, .js, .py, .go, etc.)
+- ✅ Modified configuration (.json, .yml, .toml, Dockerfile, etc.)
+- ✅ Modified tests or test fixtures
+- ✅ Added/deleted files tracked by git
+- ✅ Modified dependencies (package.json, requirements.txt, go.mod, etc.)
+- ❌ Read-only operations (grep, ls, cat, etc.)
+- ❌ Research with no file modifications
+
+**Quick test:** Run `git status`. If there are unstaged/staged changes → commit and push.
+
 **Decision tree:**
 ```
 Did you modify any code files?
@@ -417,6 +485,24 @@ Did you modify any code files?
   │
   └─ NO (research/investigation only) → Exit directly
 ```
+
+### Pre-Exit Checklist
+
+**STOP. Before exiting, verify ALL of these:**
+
+- [ ] **Work is complete** - All tasks finished, nothing half-done
+- [ ] **Local tests passed** - Lint, type-check, unit tests all green
+- [ ] **Changes are committed** - If code was modified (git status clean)
+- [ ] **Changes are pushed** - If code was modified (git push completed)
+- [ ] **Summary provided** - User knows what was accomplished
+- [ ] **No "verify CI" tasks created** - Smithers handles CI monitoring
+
+**If ANY item unchecked → DO NOT EXIT. Complete it first.**
+
+**Quick self-test:**
+- "Did I modify code?" → YES → "Did I push?" → If NO, push now!
+- "Did I create any 'verify CI' tasks?" → If YES, delete them!
+- "Can Smithers see my changes?" → If NO, push now!
 
 **Why this matters:**
 - Smithers/Burns workflow depends on changes being pushed
