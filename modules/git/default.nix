@@ -4,6 +4,11 @@ let
   # Import shared shellApp helper
   shellApp = import ../lib/shellApp.nix { inherit pkgs lib; moduleDir = ./.; };
 
+  # workout-claude Python CLI (batch worktree creation with prompt injection)
+  workoutClaudeScript = pkgs.writers.writePython3Bin "workout-claude" {
+    flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
+  } (builtins.readFile ./workout-claude.py);
+
 in {
   # ============================================================================
   # Git Configuration & Shell Applications
@@ -114,12 +119,12 @@ in {
       description = "Delete a git worktree";
       sourceFile = "workout-delete.bash";
     };
-    workout-claude = shellApp {
-      name = "workout-claude";
-      runtimeInputs = [ pkgs.git pkgs.tmux pkgs.coreutils workout ];
-      text = builtins.readFile ./workout-claude.bash;
-      description = "Create git worktrees with TMUX windows and Claude Code instances";
-      sourceFile = "workout-claude.bash";
+    workout-claude = workoutClaudeScript // {
+      meta = {
+        description = "Batch worktree creation with JSON input and per-worktree Claude Code prompt injection";
+        mainProgram = "workout-claude";
+        homepage = "${builtins.toString ./.}/workout-claude.py";
+      };
     };
   };
 
