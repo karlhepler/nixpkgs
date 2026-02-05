@@ -32,6 +32,7 @@ import sys
 import tempfile
 import time
 from datetime import datetime
+from wcwidth import wcswidth
 
 # Constants
 POLL_INTERVAL = 10  # seconds
@@ -450,6 +451,27 @@ def truncate_title(title: str, max_length: int = 60) -> str:
     return title[:max_length - 3] + "..."
 
 
+def ljust_display(text: str, width: int) -> str:
+    """
+    Left-justify text by display width, not character count.
+
+    Handles emoji and CJK characters that display as 2 terminal columns
+    but count as 1 character in Python strings.
+
+    Args:
+        text: The text to pad
+        width: The desired display width in terminal columns
+
+    Returns:
+        The text padded with spaces to the specified display width
+    """
+    display_len = wcswidth(text)
+    if display_len < 0:  # Control characters or invalid
+        display_len = len(text)
+    padding = width - display_len
+    return text + ' ' * padding if padding > 0 else text
+
+
 def format_status_card(
     status_emoji: str,
     status_message: str,
@@ -517,16 +539,16 @@ def format_status_card(
     # Build card
     card_width = 60
     card = []
-    card.append("╭" + "─" * (card_width - 1))
-    card.append(f"│ {status_emoji} {status_message}".ljust(card_width))
-    card.append("├" + "─" * (card_width - 1))
-    card.append(f"│ #{pr_number}: {title}".ljust(card_width))
-    card.append(f"│ 🔗 {pr_url}".ljust(card_width))
-    card.append("├" + "─" * (card_width - 1))
-    card.append(f"│ Status: {pr_status} • {approval_str} • {commit_count} commit{'s' if commit_count != 1 else ''}".ljust(card_width))
-    card.append(f"│ Branch: {branch_str}".ljust(card_width))
-    card.append(f"│ Completed in {cycles} cycle{'s' if cycles != 1 else ''} ({elapsed_str})".ljust(card_width))
-    card.append("╰" + "─" * (card_width - 1))
+    card.append("╭" + "─" * (card_width - 2) + "╮")
+    card.append(ljust_display(f"│ {status_emoji} {status_message}", card_width - 1) + "│")
+    card.append("├" + "─" * (card_width - 2) + "┤")
+    card.append(ljust_display(f"│ #{pr_number}: {title}", card_width - 1) + "│")
+    card.append(ljust_display(f"│ 🔗 {pr_url}", card_width - 1) + "│")
+    card.append("├" + "─" * (card_width - 2) + "┤")
+    card.append(ljust_display(f"│ Status: {pr_status} • {approval_str} • {commit_count} commit{'s' if commit_count != 1 else ''}", card_width - 1) + "│")
+    card.append(ljust_display(f"│ Branch: {branch_str}", card_width - 1) + "│")
+    card.append(ljust_display(f"│ Completed in {cycles} cycle{'s' if cycles != 1 else ''} ({elapsed_str})", card_width - 1) + "│")
+    card.append("╰" + "─" * (card_width - 2) + "╯")
 
     result = "\n".join(card)
 
