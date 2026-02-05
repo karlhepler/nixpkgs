@@ -63,7 +63,6 @@ _kanban() {
         'delete:Delete a card'
         'edit:Edit card content or metadata'
         'comment:Add comment to card'
-        'next:Get next card to work on'
         'up:Move card up in priority'
         'down:Move card down in priority'
         'top:Move card to top of column'
@@ -74,6 +73,7 @@ _kanban() {
         'blocked:View cards in blocked column'
         'done:View cards in done column'
         'canceled:View cards in canceled column'
+        'nonce:Output session identifier for session detection'
         'assign:Change or remove session ownership'
         'clear:Delete all cards from columns'
       )
@@ -83,39 +83,51 @@ _kanban() {
       case $line[1] in
         init)
           _arguments \
-            '1:path:_directories'
+            '1:path:_directories' \
+            '--watch[Auto-refresh on changes]'
           ;;
         add)
           _arguments \
             '1:title:' \
             '--persona[Persona for the card]:persona:' \
             '--content[Card body content]:content:' \
+            '-c[Card body content]:content:' \
             '--status[Starting column]:column:(todo doing blocked done canceled)' \
             '--session[Session ID]:session:' \
+            '--no-session[Create card without session]' \
+            '--model[AI model]:model:(sonnet opus haiku)' \
             '--top[Insert at top]' \
             '--bottom[Insert at bottom]' \
             '--after[Insert after card]:card:_kanban_cards' \
-            '--before[Insert before card]:card:_kanban_cards'
+            '--before[Insert before card]:card:_kanban_cards' \
+            '--watch[Auto-refresh on changes]'
           ;;
-        delete|show|edit|up|down|top|bottom)
+        delete|show|up|down|top|bottom)
           _arguments \
-            '1:card:_kanban_cards'
+            '1:card:_kanban_cards' \
+            '--watch[Auto-refresh on changes]'
+          ;;
+        edit)
+          _arguments \
+            '1:card:_kanban_cards' \
+            '--content[New card body content]:content:' \
+            '-c[New card body content]:content:' \
+            '--persona[Update persona]:persona:' \
+            '--append[Append to content]' \
+            '-a[Append to content]' \
+            '--watch[Auto-refresh on changes]'
           ;;
         move)
           _arguments \
             '1:card:_kanban_cards' \
-            '2:column:(todo doing blocked done canceled)'
+            '2:column:(todo doing blocked done canceled)' \
+            '--watch[Auto-refresh on changes]'
           ;;
         comment)
           _arguments \
             '1:card:_kanban_cards' \
-            '2:message:'
-          ;;
-        next)
-          _arguments \
-            '--persona[Filter by persona]:persona:' \
-            '--skip[Skip N cards]:number:' \
-            '--all-sessions[Include all sessions]'
+            '2:message:' \
+            '--watch[Auto-refresh on changes]'
           ;;
         history)
           _arguments \
@@ -123,7 +135,10 @@ _kanban() {
             '--until[Filter until date]:date:' \
             '--include-canceled[Include canceled cards]' \
             '--session[Filter by session]:session:' \
-            '--mine[Show only current session]'
+            '--only-mine[Show only current session]' \
+            '--show-mine[Show current session (override KANBAN_HIDE_MINE)]' \
+            '--hide-mine[Hide current session]' \
+            '--watch[Auto-refresh on changes]'
           ;;
         list|ls)
           _arguments \
@@ -131,12 +146,26 @@ _kanban() {
             '--show-canceled[Include canceled column]' \
             '--show-all[Include done and canceled columns]' \
             '--session[Filter by session]:session:' \
-            '--mine[Show only current session]'
+            '--only-mine[Show only current session]' \
+            '--show-mine[Show current session (override KANBAN_HIDE_MINE)]' \
+            '--hide-mine[Hide current session]' \
+            '--since[Filter by date]:date:(today yesterday week month)' \
+            '--until[Filter until date]:date:' \
+            '--watch[Auto-refresh on changes]'
           ;;
         todo|doing|blocked|done|canceled)
           _arguments \
             '--session[Filter by session]:session:' \
-            '--mine[Show only current session]'
+            '--only-mine[Show only current session]' \
+            '--show-mine[Show current session (override KANBAN_HIDE_MINE)]' \
+            '--hide-mine[Hide current session]' \
+            '--since[Filter by date]:date:(today yesterday week month)' \
+            '--until[Filter until date]:date:' \
+            '--watch[Auto-refresh on changes]'
+          ;;
+        nonce)
+          _arguments \
+            '--watch[Auto-refresh on changes]'
           ;;
         assign)
           _arguments \
@@ -146,13 +175,15 @@ _kanban() {
             '--from[Bulk reassignment source]:session:' \
             '--to[Bulk reassignment target]:session:' \
             '--yes[Skip confirmation]' \
-            '-y[Skip confirmation]'
+            '-y[Skip confirmation]' \
+            '--watch[Auto-refresh on changes]'
           ;;
         clear)
           _arguments \
             '*:columns:(todo doing blocked done canceled)' \
             '--yes[Skip confirmation]' \
-            '-y[Skip confirmation]'
+            '-y[Skip confirmation]' \
+            '--watch[Auto-refresh on changes]'
           ;;
       esac
       ;;
