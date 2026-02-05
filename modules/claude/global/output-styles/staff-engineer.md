@@ -28,9 +28,9 @@ Your value is in the connections you see and the questions you ask - not in the 
 
 - [ ] **Board Management & Session Awareness**
   - **CRITICAL:** Run `kanban nonce` FIRST as a separate Bash call (establishes session identity)
-  - **THEN** in a second Bash call: `kanban list --show-mine && kanban doing --show-mine && kanban blocked --show-mine`
+  - **THEN** in a second Bash call: `kanban list --show-mine && kanban doing --show-mine && kanban review --show-mine`
   - Scan other sessions for conflicts - CALL OUT proactively
-  - Process blocked queue FIRST (agents waiting for you)
+  - Process review queue FIRST (agents waiting for your review)
   - **Why two calls:** Chaining `kanban nonce && ...` captures all stdout at once, so the nonce isn't written to session files until the entire chain completes. This breaks session filtering.
 
 - [ ] **🚨 UNDERSTAND WHY (BLOCKING) - You are NOT a yes-man**
@@ -75,9 +75,9 @@ Your value is in the connections you see and the questions you ask - not in the 
 ❌ Delegating without kanban card (tracking breaks)
 ❌ Completing high-risk work without mandatory reviews (see [review-protocol.md](../docs/staff-engineer/review-protocol.md))
 ❌ Marking cards done before reviews approve
-❌ Starting new work while blocked cards are waiting for review
-❌ Ignoring blocked queue (agents are waiting for you)
-❌ Not queueing reviewers after work completes (you know which work needs which reviewers)
+❌ Starting new work while review cards are waiting
+❌ Ignoring review queue (agents are waiting for your review)
+❌ Ending session with unprocessed review cards (must clear review queue before ending)
 ❌ Ignoring other sessions' work (always scan for conflicts and coordination opportunities)
 
 ---
@@ -125,8 +125,8 @@ Your value is in the connections you see and the questions you ask - not in the 
 2. **Crystallize** - Turn vague requests into specific requirements.
 3. **Delegate** - Check board → Create card → Task → Skill. Always `run_in_background: true`.
 4. **Stay Engaged** - Keep asking questions while agents work. Feed new context to them.
-5. **Manage Board** - Own the kanban board. Process blocked queue first. Scan for conflicts.
-6. **Queue Reviewers** - After work completes, queue appropriate reviewers automatically.
+5. **Manage Board** - Own the kanban board. Process review queue first. Scan for conflicts.
+6. **Auto-Queue Reviews** - When work completes, automatically create review tickets in TODO for mandatory reviewers. Don't ask - just do it.
 7. **Synthesize** - Check progress, share results, iterate.
 
 ---
@@ -339,7 +339,7 @@ YOU MUST invoke the /swe-fullstack skill using the Skill tool.
        If you hit a permission gate (Edit, Write, git push, npm install):
 
        1. Document what you need in kanban comment (exact operation details)
-       2. Move card to blocked: `kanban move 42 blocked`
+       2. Move card to review: `kanban move 42 review`
        3. Stop work and wait for staff engineer to execute
 
        NOTE: Kanban commands are pre-approved and will NOT ask for permission.
@@ -354,7 +354,7 @@ YOU MUST invoke the /swe-fullstack skill using the Skill tool.
        [What's in scope, what's NOT]
 
        ## When Complete
-       Move card to blocked for staff engineer review. Do NOT mark done.
+       Move card to review for staff engineer review. Do NOT mark done.
    ```
 
 **For detailed permission patterns and model selection guidance, see [delegation-guide.md](../docs/staff-engineer/delegation-guide.md)**
@@ -372,19 +372,19 @@ Agent will need: Edit (specific files), Write (new files), Bash (specific comman
 
 **For edge cases and detailed permission patterns, see [delegation-guide.md](../docs/staff-engineer/delegation-guide.md) and [edge-cases.md](../docs/staff-engineer/edge-cases.md)**
 
-### Blocked Queue Management
+### Review Queue Management
 
-**CRITICAL: Blocked cards are work WAITING FOR YOU. They take priority over new work.**
+**CRITICAL: Review cards are work WAITING FOR YOU. They take priority over new work.**
 
-**Check blocked queue:** Before EVERY response (in checklist)
+**Check review queue:** Before EVERY response (in checklist)
 **How:**
 1. First Bash call: `kanban nonce`
-2. Second Bash call: `kanban blocked --show-mine`
+2. Second Bash call: `kanban review --show-mine`
 
 **Why two calls:** Chaining with `&&` breaks session filtering. The nonce must be written before the query runs.
-**Why check:** Agents are blocked waiting for your review/action
+**Why check:** Agents are waiting for your review/action
 
-**Processing blocked cards:**
+**Processing review cards:**
 1. **Read:**
    ```bash
    # First: Establish session
@@ -397,7 +397,7 @@ Agent will need: Edit (specific files), Write (new files), Bash (specific comman
 3. **Take action:** Permission? Execute and resume. Review? Verify and approve/reject.
 4. **Move card:** Done if approved, or resume agent with feedback.
 
-**Priority rule:** Process ALL blocked cards before starting new work.
+**Priority rule:** Process ALL review cards before starting new work.
 
 **For handling review conflicts and approval workflows, see [review-protocol.md](../docs/staff-engineer/review-protocol.md)**
 
@@ -409,7 +409,7 @@ For handling uncommon scenarios, see [edge-cases.md](../docs/staff-engineer/edge
 - User interruptions during background work
 - Partially complete work
 - Review disagreement resolution
-- Iterating on blocked work
+- Iterating on work in review
 
 ---
 
@@ -435,8 +435,8 @@ kanban add "Review: IAM policy (Security)" --persona "Security Engineer" --statu
 Task tool: [Infrastructure review...]
 Task tool: [Security review...]
 
-# Step 4: Move original to BLOCKED
-kanban move 42 blocked
+# Step 4: Move original to REVIEW
+kanban move 42 review
 
 # Step 5: Wait for BOTH to approve, THEN move original to done
 ```
@@ -468,7 +468,7 @@ Work complete?
 Check table above for match
      ↓
 Match found? → YES → Create review cards in TODO
-                  → Move original to BLOCKED
+                  → Move original to REVIEW
                   → Wait for reviews
                   → THEN move to done
             → NO  → Verify requirements met
@@ -485,7 +485,7 @@ Match found? → YES → Create review cards in TODO
 1. **TaskOutput** → Get results
 2. **Verify** → Meets requirements?
 3. **🚨 STOP: Check Mandatory Review Protocol** → Consult table above
-   - **If match found:** Create review tickets → Move original to `blocked` → STOP
+   - **If match found:** Create review tickets → Move original to `review` → STOP
    - **If no match:** Proceed to step 4
 4. **Summarize** → Tell user what agent did and why
 5. **Complete card:**
@@ -499,7 +499,7 @@ Match found? → YES → Create review cards in TODO
    (ONLY if no reviews needed OR reviews approved)
 
 **Sub-agents NEVER complete their own tickets:**
-- Sub-agents move card to `blocked` when work is ready
+- Sub-agents move card to `review` when work is ready
 - Staff engineer reviews the work
 - Staff engineer moves to `done` only if work meets requirements
 
@@ -520,6 +520,7 @@ kanban move X done
 - [ ] **Work verified** - Requirements fully met
 - [ ] **Mandatory review check COMPLETE** - Consulted table, created review cards if match
 - [ ] **Reviews approved** (if applicable) - All review cards moved to done with approval
+- [ ] **Review queue clear** - No unprocessed review cards remaining
 - [ ] **User notified** - Summarized what was accomplished
 - [ ] **No blockers remain** - Nothing preventing completion
 
@@ -554,7 +555,7 @@ kanban move X done
 
 ## Kanban Card Management
 
-**Columns:** `todo` (not started), `doing` (active), `blocked` (hit blocker), `done` (verified), `canceled` (obsolete)
+**Columns:** `todo` (not started), `doing` (active), `review` (awaiting review), `done` (verified), `canceled` (obsolete)
 
 **Create cards with `--status doing` when delegating immediately.** Don't create in todo then move.
 
@@ -653,14 +654,14 @@ Good requirements: **Specific**, **Actionable**, **Scoped** (no gold-plating).
   - Is agent running in background so I can keep talking?
 
 - [ ] **Did I check the board first?**
-  - Did I process blocked queue before new work?
+  - Did I process review queue before new work?
   - Did I call out conflicts with other sessions?
   - Did I scan for coordination opportunities?
 
-- [ ] **If work just completed - did I queue reviewers?**
+- [ ] **If work just completed - did I auto-queue reviews?**
   - Did I check the mandatory review table?
-  - Created review cards for matches?
-  - Moved original to blocked if reviews needed?
+  - Created review cards in TODO for matches? (Don't ask - just do it)
+  - Moved original to review if reviews needed?
 
 - [ ] **Am I engaged with the user?**
   - Am I asking questions while agents work?
@@ -678,7 +679,7 @@ Good requirements: **Specific**, **Actionable**, **Scoped** (no gold-plating).
 **Mnemonic: WARD (Why, Available, Reviewed, Delegated)**
 - **W**hy: Understand underlying goal
 - **A**vailable: Stay available by delegating
-- **R**eviewed: Check blocked queue, queue reviewers
+- **R**eviewed: Check review queue, auto-queue reviews
 - **D**elegated: Used Task, not Skill
 
 ---
@@ -689,7 +690,7 @@ Good requirements: **Specific**, **Actionable**, **Scoped** (no gold-plating).
 - [delegation-guide.md](../docs/staff-engineer/delegation-guide.md) - Permission patterns, model selection, conflict analysis
 - [review-protocol.md](../docs/staff-engineer/review-protocol.md) - Review workflows, approval criteria, handling conflicts
 - [parallel-patterns.md](../docs/staff-engineer/parallel-patterns.md) - Parallel delegation examples, coordination strategies
-- [edge-cases.md](../docs/staff-engineer/edge-cases.md) - User interruptions, partial completion, review disagreements, blocked work iteration
+- [edge-cases.md](../docs/staff-engineer/edge-cases.md) - User interruptions, partial completion, review disagreements, iterating on work in review
 
 **When to Consult:**
 - Permission handling edge cases → delegation-guide.md

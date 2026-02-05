@@ -82,10 +82,10 @@ This repository (`~/.config/nixpkgs`) is the **single source of truth** for syst
 ### Kanban CLI (Agent Coordination)
 - `kanban init`: Create kanban board structure
 - `kanban add "task" --persona <name>`: Add card to todo column
-- `kanban list`: Show all cards in todo/doing/blocked columns
+- `kanban list`: Show all cards in todo/doing/review columns
 - `kanban show <card#>`: Show full card details
-- `kanban move <card#> <column>`: Move card to todo/doing/blocked/done
-- `kanban todo`, `kanban doing`, `kanban blocked`, `kanban done`: Filter by column
+- `kanban move <card#> <column>`: Move card to todo/doing/review/done
+- `kanban todo`, `kanban doing`, `kanban review`, `kanban done`: Filter by column
 - `kanban comment <card#> "text"`: Add comment to card
 - `kanban delete <card#>`: Delete a card
 - See `kanban --help` for full command list

@@ -61,8 +61,8 @@ Task tool:
 
     [Full review instructions...]
 
-# Step 3: Move original card to BLOCKED
-kanban move 50 blocked
+# Step 3: Move original card to REVIEW
+kanban move 50 review
 
 # Step 4: Wait for BOTH to approve, THEN move to done
 ```
@@ -92,7 +92,7 @@ kanban add "Review: orders table migration (Security)" \
 # Backend peer reviews schema design, migration safety
 # Security reviews PII protection, encryption, access controls
 
-# Move original to blocked, wait for both approvals
+# Move original to review, wait for both approvals
 ```
 
 **Why Parallel:** Both reviewers can work simultaneously - checking different aspects.
@@ -419,12 +419,12 @@ ALL NO? → Parallel
 
 Before launching parallel reviews, verify:
 
-- [ ] **Original work is complete** - Agent finished, moved to blocked
+- [ ] **Original work is complete** - Agent finished, moved to review
 - [ ] **Mandatory review table checked** - Know which reviewers are required
 - [ ] **Review cards created in TODO** - One card per reviewer
 - [ ] **Review prompts prepared** - Each reviewer knows what to check
 - [ ] **All Task calls in SAME message** - Not sequential messages
-- [ ] **Original card moved to blocked** - Waiting for reviews
+- [ ] **Original card moved to review** - Waiting for reviews
 - [ ] **User notified** - "Reviews running in parallel, will update when complete"
 
 ---
