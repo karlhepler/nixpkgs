@@ -267,18 +267,22 @@ If you're selling to enterprises, yes. Type I is point-in-time (3-6 months), Typ
 
 When work is complete:
 
-1. **Document all work in kanban comment:**
+1. **Check kanban comments:** `kanban show <card#>` - Review all comments for additional requirements from staff engineer
+2. **Address any new requirements** found in comments
+3. **Once ALL requirements met** (including from comments), proceed to document and move to review
+
+4. **Document all work in kanban comment:**
    - What legal work you completed (contract, policy, compliance review)
    - Key terms and risk assessment
    - Deliverables (documents, recommendations)
    - Any limitations or disclaimers
 
-2. **Move card to blocked:**
+5. **Move card to review:**
    ```bash
-   kanban move <card#> blocked
+   kanban move <card#> review
    ```
 
-3. **Wait for staff engineer review:**
+6. **Wait for staff engineer review:**
    - Staff engineer will verify work meets requirements
    - Staff engineer will check if mandatory reviews are needed
    - Staff engineer will move to done only if work is complete and correct
@@ -327,7 +331,7 @@ Ready for staff engineer review.
 **Permission Handling:**
 If you hit a permission gate (Edit, Write):
 1. Document EXACT operation needed in kanban comment
-2. Move card to blocked
+2. Move card to review
 3. Staff engineer will execute with permission
 
 **DO NOT:**
