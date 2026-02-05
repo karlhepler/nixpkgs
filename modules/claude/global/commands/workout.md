@@ -84,25 +84,9 @@ Ready to proceed? (yes/no)
 
 ## Invocation
 
-workout-claude now supports **two modes**:
+**CRITICAL: workout-claude ONLY accepts JSON input via stdin.**
 
-### Mode 1: Simple Branch Names (No Context)
-
-Use when Claude instances don't need specific prompts:
-
-```bash
-workout-claude feature-1 feature-2 feature-3
-```
-
-**Example:**
-```bash
-# User confirms: "yes, create those worktrees"
-workout-claude authentication payment notifications
-```
-
-### Mode 2: JSON Input with Prompts (Context Injection)
-
-Use when each Claude instance needs specific context (Linear tickets, task details, etc.):
+### JSON Input Format (Required)
 
 ```bash
 echo '[{"worktree": "branch", "prompt": "context"}]' | workout-claude
@@ -117,23 +101,29 @@ echo '[
 ```
 
 **JSON format requirements:**
-- Array of objects
+- Array of objects (MUST be valid JSON array)
 - Each object MUST have `worktree` (branch name) and `prompt` (context string)
-- `prompt` can be empty string (just launches staff interactively)
+- `prompt` can be empty string `""` to launch staff interactively without initial prompt
 - Branch names auto-prefixed with `karlhepler/` (strips first if present)
 
 **The command will:**
+- Parse JSON input from stdin (fails immediately if invalid JSON or missing fields)
 - Auto-prefix each branch with `karlhepler/`
 - Create worktrees if they don't exist
 - Create TMUX windows in detached mode
-- Launch staff with `-p "prompt"` in each window (passes context to Claude)
+- Launch `staff "prompt"` in each window (passes prompt as positional argument to Claude)
+- Prepend worktree context to prompt (orients Claude to correct directory)
 - Report summary of created/failed worktrees
 
-**When to use JSON mode:**
+**When to use workout-claude:**
 - Parent Claude has context (Linear tickets, user requests) to pass to child Claudes
 - Each worktree needs different context/instructions
 - You want to eliminate repeating context across Claude sessions
 - You're coordinating parallel work with specific per-task details
+
+**If user wants simple worktree creation without prompts:**
+- For multiple worktrees without context, build JSON with empty prompts: `[{"worktree": "branch1", "prompt": ""}, {"worktree": "branch2", "prompt": ""}]`
+- For single worktree, use `workout` command directly (not `workout-claude`)
 
 ## What the User Gets
 
@@ -169,7 +159,7 @@ The workout command is error-resilient:
 
 ## Example Usage
 
-### Example 1: Simple Mode (No Context)
+### Example 1: Multiple Worktrees Without Specific Context
 
 **User request:**
 "I need to work on three features: user authentication, payment processing, and email notifications. Set up worktrees with Claude for each."
@@ -188,7 +178,11 @@ Ready to proceed?"
 **After user confirms "yes":**
 
 ```bash
-workout-claude user-authentication payment-processing email-notifications
+echo '[
+  {"worktree": "user-authentication", "prompt": ""},
+  {"worktree": "payment-processing", "prompt": ""},
+  {"worktree": "email-notifications", "prompt": ""}
+]' | workout-claude
 ```
 
 **Then explain:**
@@ -205,7 +199,7 @@ Switch to any window with:
 
 Or use `tmux list-windows` to see all windows."
 
-### Example 2: JSON Mode with Context (Prompt Injection)
+### Example 2: Multiple Worktrees With Specific Context (Prompt Injection)
 
 **User request:**
 "I have three Linear tickets to work on. Create worktrees and pass the ticket context to each Claude instance:
