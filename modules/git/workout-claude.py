@@ -44,7 +44,7 @@ INPUT FORMAT (JSON via stdin):
 
   Each object MUST have:
     - worktree: Branch name (karlhepler/ prefix auto-added if missing)
-    - prompt: Context string to pass to Claude Code via staff -p flag
+    - prompt: Context string to pass to Claude Code as positional argument
 
 DESCRIPTION:
   Creates multiple git worktrees with dedicated TMUX windows and
@@ -87,8 +87,9 @@ WHAT HAPPENS:
   1. Validates worktree and prompt fields exist
   2. Calls existing 'workout' command to create worktree
   3. Creates TMUX window in detached mode
-  4. Launches 'staff -p "prompt"' in the window (Claude Code with context)
-  5. Reports success/failure
+  4. Launches 'staff "prompt"' in the window (Claude Code with context)
+  5. Prepends worktree orientation context to prompt
+  6. Reports success/failure
 
 REQUIREMENTS:
   - git: Repository management
@@ -102,7 +103,8 @@ NOTES:
   - TMUX windows are created in background (detached)
   - Window names use branch suffix only (no karlhepler/ prefix)
   - Worktrees organized in ~/worktrees/org/repo/branch/
-  - Prompts passed via 'staff -p "prompt"' (non-interactive mode)
+  - Prompts passed as positional argument: 'staff "prompt"'
+  - Context automatically prepended to orient Claude to correct worktree
   - Invalid JSON or missing fields will cause immediate error
 
 SEE ALSO:
