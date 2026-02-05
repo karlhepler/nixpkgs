@@ -84,7 +84,11 @@ Ready to proceed? (yes/no)
 
 ## Invocation
 
-After user confirmation, invoke workout-claude with all branch names:
+workout-claude now supports **two modes**:
+
+### Mode 1: Simple Branch Names (No Context)
+
+Use when Claude instances don't need specific prompts:
 
 ```bash
 workout-claude feature-1 feature-2 feature-3
@@ -96,12 +100,40 @@ workout-claude feature-1 feature-2 feature-3
 workout-claude authentication payment notifications
 ```
 
+### Mode 2: JSON Input with Prompts (Context Injection)
+
+Use when each Claude instance needs specific context (Linear tickets, task details, etc.):
+
+```bash
+echo '[{"worktree": "branch", "prompt": "context"}]' | workout-claude
+```
+
+**Example:**
+```bash
+echo '[
+  {"worktree": "fix-auth", "prompt": "Look up Linear AUTH-123 and fix OAuth flow"},
+  {"worktree": "bug-456", "prompt": "Fix null pointer in user profile - Linear BUG-456"}
+]' | workout-claude
+```
+
+**JSON format requirements:**
+- Array of objects
+- Each object MUST have `worktree` (branch name) and `prompt` (context string)
+- `prompt` can be empty string (just launches staff interactively)
+- Branch names auto-prefixed with `karlhepler/` (strips first if present)
+
 **The command will:**
 - Auto-prefix each branch with `karlhepler/`
 - Create worktrees if they don't exist
 - Create TMUX windows in detached mode
-- Launch staff in each window
+- Launch staff with `-p "prompt"` in each window (passes context to Claude)
 - Report summary of created/failed worktrees
+
+**When to use JSON mode:**
+- Parent Claude has context (Linear tickets, user requests) to pass to child Claudes
+- Each worktree needs different context/instructions
+- You want to eliminate repeating context across Claude sessions
+- You're coordinating parallel work with specific per-task details
 
 ## What the User Gets
 
@@ -137,6 +169,8 @@ The workout command is error-resilient:
 
 ## Example Usage
 
+### Example 1: Simple Mode (No Context)
+
 **User request:**
 "I need to work on three features: user authentication, payment processing, and email notifications. Set up worktrees with Claude for each."
 
@@ -154,7 +188,7 @@ Ready to proceed?"
 **After user confirms "yes":**
 
 ```bash
-workout user-authentication payment-processing email-notifications
+workout-claude user-authentication payment-processing email-notifications
 ```
 
 **Then explain:**
@@ -168,6 +202,60 @@ Switch to any window with:
 - `tmux select-window -t user-authentication`
 - `tmux select-window -t payment-processing`
 - `tmux select-window -t email-notifications`
+
+Or use `tmux list-windows` to see all windows."
+
+### Example 2: JSON Mode with Context (Prompt Injection)
+
+**User request:**
+"I have three Linear tickets to work on. Create worktrees and pass the ticket context to each Claude instance:
+- AUTH-123: Fix OAuth flow
+- BUG-456: Null pointer in user profile
+- REF-789: Refactor API error handling"
+
+**Your response:**
+
+"I'll create worktrees with custom prompts for each ticket:
+- karlhepler/fix-auth-123 - OAuth flow fix (Linear AUTH-123)
+- karlhepler/bug-456-null-check - Null pointer fix (Linear BUG-456)
+- karlhepler/refactor-api-789 - API error handling refactor (Linear REF-789)
+
+Each Claude instance will receive the ticket context automatically.
+
+Ready to proceed?"
+
+**After user confirms "yes":**
+
+```bash
+echo '[
+  {
+    "worktree": "fix-auth-123",
+    "prompt": "Look up Linear ticket AUTH-123 and implement the OAuth flow fix. Check existing authentication patterns in the codebase first."
+  },
+  {
+    "worktree": "bug-456-null-check",
+    "prompt": "Fix null pointer exception in user profile handler. See Linear BUG-456 for details. Add defensive null checks and update tests."
+  },
+  {
+    "worktree": "refactor-api-789",
+    "prompt": "Refactor the API module to use consistent error handling patterns. Review tech debt ticket REF-789. Focus on maintainability."
+  }
+]' | workout-claude
+```
+
+**Then explain:**
+
+"Created 3 worktrees with TMUX windows and context-aware Claude instances:
+- `fix-auth-123` - Claude knows to look up AUTH-123 and fix OAuth
+- `bug-456-null-check` - Claude knows to fix null pointer per BUG-456
+- `refactor-api-789` - Claude knows to refactor API errors per REF-789
+
+Each Claude instance has the specific context and can start work immediately without you repeating the requirements.
+
+Switch to any window with:
+- `tmux select-window -t fix-auth-123`
+- `tmux select-window -t bug-456-null-check`
+- `tmux select-window -t refactor-api-789`
 
 Or use `tmux list-windows` to see all windows."
 

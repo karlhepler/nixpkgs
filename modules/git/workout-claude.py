@@ -270,7 +270,7 @@ def create_worktree_with_prompt(worktree_def: Dict[str, str]) -> bool:
     result = run_command(["workout", full_branch_name])
 
     if not result or result.returncode != 0:
-        print(f"  ✗ Failed to create worktree", file=sys.stderr)
+        print("  ✗ Failed to create worktree", file=sys.stderr)
         if result and result.stderr:
             # Show error messages (excluding the cd line)
             for line in result.stderr.split('\n'):
@@ -287,7 +287,7 @@ def create_worktree_with_prompt(worktree_def: Dict[str, str]) -> bool:
             break
 
     if not worktree_path:
-        print(f"  ⚠ Could not determine worktree path from workout output", file=sys.stderr)
+        print("  ⚠ Could not determine worktree path from workout output", file=sys.stderr)
         return False
 
     print(f"  ✓ Created worktree: {worktree_path}", file=sys.stderr)
@@ -301,7 +301,7 @@ def create_worktree_with_prompt(worktree_def: Dict[str, str]) -> bool:
     ])
 
     if not tmux_result or tmux_result.returncode != 0:
-        print(f"  ⚠ Failed to create TMUX window (worktree created successfully)", file=sys.stderr)
+        print("  ⚠ Failed to create TMUX window (worktree created successfully)", file=sys.stderr)
         return True  # Worktree creation succeeded, just TMUX failed
 
     print(f"  ✓ Created TMUX window: {branch_suffix}", file=sys.stderr)
@@ -312,11 +312,11 @@ def create_worktree_with_prompt(worktree_def: Dict[str, str]) -> bool:
         return True  # Success - worktree and window created, staff just not available
 
     # Launch staff with prompt in the window
-    # Use staff -p "prompt" for non-interactive mode with prompt injection
+    # Use staff "prompt" for interactive mode with prompt auto-execution
     if prompt:
         # Escape double quotes in prompt for shell command
         escaped_prompt = prompt.replace('"', '\\"')
-        staff_cmd = f'staff -p "{escaped_prompt}"'
+        staff_cmd = f'staff "{escaped_prompt}"'
     else:
         # No prompt - just launch staff interactively
         staff_cmd = "staff"
@@ -329,9 +329,9 @@ def create_worktree_with_prompt(worktree_def: Dict[str, str]) -> bool:
     ], capture_output=False)
 
     if prompt:
-        print(f"  ✓ Launched staff with custom prompt in window", file=sys.stderr)
+        print("  ✓ Launched staff with custom prompt in window", file=sys.stderr)
     else:
-        print(f"  ✓ Launched staff in window", file=sys.stderr)
+        print("  ✓ Launched staff in window", file=sys.stderr)
 
     return True
 
