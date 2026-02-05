@@ -796,26 +796,45 @@ def cmd_list(args) -> None:
             print(f"Error: Invalid date format '{args.until}'", file=sys.stderr)
             sys.exit(1)
 
-    # Filter columns based on --show-done, --show-canceled, and --show-all flags
-    show_done = getattr(args, 'show_done', False)
-    show_canceled = getattr(args, 'show_canceled', False)
-    show_all = getattr(args, 'show_all', False)
+    # Parse and validate --column flag (if specified, overrides other column filters)
+    explicit_columns = getattr(args, 'column', None)
+    if explicit_columns:
+        # Parse column list - handle multiple invocations and comma-separated values
+        columns_to_show = []
+        for col_arg in explicit_columns:
+            # Split by comma to support --column todo,doing
+            for col in col_arg.split(','):
+                col = col.strip()
+                if col not in COLUMNS:
+                    print(f"Error: Invalid column name '{col}'", file=sys.stderr)
+                    print(f"Valid columns: {', '.join(COLUMNS)}", file=sys.stderr)
+                    sys.exit(1)
+                if col not in columns_to_show:
+                    columns_to_show.append(col)
 
-    if show_all:
-        # Show everything (done + canceled + active columns)
-        columns_to_show = COLUMNS
-    elif show_done and show_canceled:
-        # Show done and canceled (all columns)
-        columns_to_show = COLUMNS
-    elif show_done:
-        # Show done but not canceled
-        columns_to_show = [c for c in COLUMNS if c != "canceled"]
-    elif show_canceled:
-        # Show canceled but not done
-        columns_to_show = [c for c in COLUMNS if c != "done"]
+        # Preserve order from COLUMNS constant for consistency
+        columns_to_show = [c for c in COLUMNS if c in columns_to_show]
     else:
-        # Default: hide both done and canceled
-        columns_to_show = [c for c in COLUMNS if c not in ["done", "canceled"]]
+        # Filter columns based on --show-done, --show-canceled, and --show-all flags
+        show_done = getattr(args, 'show_done', False)
+        show_canceled = getattr(args, 'show_canceled', False)
+        show_all = getattr(args, 'show_all', False)
+
+        if show_all:
+            # Show everything (done + canceled + active columns)
+            columns_to_show = COLUMNS
+        elif show_done and show_canceled:
+            # Show done and canceled (all columns)
+            columns_to_show = COLUMNS
+        elif show_done:
+            # Show done but not canceled
+            columns_to_show = [c for c in COLUMNS if c != "canceled"]
+        elif show_canceled:
+            # Show canceled but not done
+            columns_to_show = [c for c in COLUMNS if c != "done"]
+        else:
+            # Default: hide both done and canceled
+            columns_to_show = [c for c in COLUMNS if c not in ["done", "canceled"]]
 
     # Check environment variable for hiding own session by default
     hide_own_default = os.environ.get("KANBAN_HIDE_MINE", "").lower() in ["true", "1", "yes"]
@@ -1718,6 +1737,7 @@ Empty columns default to priority 1000 (baseline for first card).
 
     # list (with ls alias)
     p_list = subparsers.add_parser("list", parents=[parent_parser], help="Show board overview (default: shows todo, doing, review columns; hides done, canceled)")
+    p_list.add_argument("--column", action="append", help="Filter to specific column(s). Can be specified multiple times or as comma-separated list (e.g., --column todo,doing). Valid: todo, doing, review, done, canceled")
     p_list.add_argument("--show-done", action="store_true", help="Include done column in output")
     p_list.add_argument("--show-canceled", action="store_true", help="Include canceled column in output")
     p_list.add_argument("--show-all", action="store_true", help="Include both done and canceled columns in output")
@@ -1728,6 +1748,7 @@ Empty columns default to priority 1000 (baseline for first card).
     p_list.add_argument("--since", help="Filter by date (today, yesterday, week, month, or ISO 8601 format: YYYY-MM-DDTHH:MM:SSZ)")
     p_list.add_argument("--until", help="Filter until date (ISO 8601 format: YYYY-MM-DDTHH:MM:SSZ)")
     p_ls = subparsers.add_parser("ls", parents=[parent_parser], help="Show board overview (alias for list)")
+    p_ls.add_argument("--column", action="append", help="Filter to specific column(s). Can be specified multiple times or as comma-separated list (e.g., --column todo,doing). Valid: todo, doing, review, done, canceled")
     p_ls.add_argument("--show-done", action="store_true", help="Include done column in output")
     p_ls.add_argument("--show-canceled", action="store_true", help="Include canceled column in output")
     p_ls.add_argument("--show-all", action="store_true", help="Include both done and canceled columns in output")
