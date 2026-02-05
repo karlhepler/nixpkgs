@@ -35,7 +35,7 @@ from datetime import datetime
 from wcwidth import wcswidth
 
 # Constants
-POLL_INTERVAL = 10  # seconds
+POLL_INTERVAL = 30  # seconds
 DEFAULT_MAX_CYCLES = 4  # 4 CI checks: 3 with Ralph invocations + 1 final check
 DEFAULT_MAX_RALPH_INVOCATIONS = 3
 TERMINAL_STATES = {
@@ -444,11 +444,41 @@ def format_elapsed_time(seconds: float) -> str:
     return f"{minutes}m {remaining_seconds}s"
 
 
-def truncate_title(title: str, max_length: int = 60) -> str:
-    """Truncate title to max length with ellipsis."""
-    if len(title) <= max_length:
+def truncate_title(title: str, max_width: int = 60) -> str:
+    """Truncate title to max display width with ellipsis.
+
+    Args:
+        title: The title string to truncate
+        max_width: Maximum display width in terminal columns
+
+    Returns:
+        Title truncated to fit within max_width, with ellipsis if needed
+    """
+    display_width = wcswidth(title)
+    if display_width < 0:  # Control characters or invalid
+        display_width = len(title)
+
+    if display_width <= max_width:
         return title
-    return title[:max_length - 3] + "..."
+
+    # Binary search to find the right truncation point
+    # We need to account for the ellipsis (3 characters = 3 display width)
+    target_width = max_width - 3
+    left, right = 0, len(title)
+
+    while left < right:
+        mid = (left + right + 1) // 2
+        test_str = title[:mid]
+        test_width = wcswidth(test_str)
+        if test_width < 0:
+            test_width = mid
+
+        if test_width <= target_width:
+            left = mid
+        else:
+            right = mid - 1
+
+    return title[:left] + "..."
 
 
 def ljust_display(text: str, width: int) -> str:
@@ -488,7 +518,7 @@ def format_status_card(
     """Format a rich card-like status display for smithers completion.
 
     Args:
-        status_emoji: Emoji for the header (e.g., "✅", "⚠️", "❌")
+        status_emoji: Emoji for the header (e.g., "✅", "🟡", "❌")
         status_message: Status message for the header
         pr_number: PR number
         pr_url: Full PR URL
@@ -504,7 +534,7 @@ def format_status_card(
         Formatted card string with all relevant PR status information
     """
     # Extract PR metadata
-    title = truncate_title(pr_info.get("title", "Unknown PR"))
+    raw_title = pr_info.get("title", "Unknown PR")
     is_draft = pr_info.get("isDraft", False)
     commit_count = pr_info.get("commit_count", 0)
     is_approved = pr_info.get("is_approved", False)
@@ -525,29 +555,52 @@ def format_status_card(
     if is_approved:
         approval_str = "✓ Approved"
     else:
-        approval_str = "⚠ Not approved"
+        approval_str = "🟡 Not approved"
 
     # Format branch status
     if behind_by > 0:
-        branch_str = f"⚠️ {behind_by} commit{'s' if behind_by != 1 else ''} behind {base_branch}"
+        branch_str = f"🟡 {behind_by} commit{'s' if behind_by != 1 else ''} behind {base_branch}"
     else:
         branch_str = f"✓ Up to date with {base_branch}"
 
     # Format elapsed time
     elapsed_str = format_elapsed_time(elapsed_seconds)
 
-    # Build card
-    card_width = 60
+    # Calculate minimum card width based on URL length
+    # Link line format: "│ 🔗 {url} │"
+    # 🔗 emoji has display width of 2
+    link_emoji_width = 2
+    url_display_width = wcswidth(pr_url)
+    if url_display_width < 0:
+        url_display_width = len(pr_url)
+    # Minimum width = left border (2) + emoji (2) + space (1) + url + right padding (1) + right border (1)
+    min_width_for_link = 2 + link_emoji_width + 1 + url_display_width + 1 + 1
+
+    # Use larger of: default 60 or minimum width needed for link
+    card_width = max(60, min_width_for_link)
+
+    # Now truncate title to fit within card width
+    # Title line format: "│ #{number}: {title} │"
+    title_prefix = f"#{pr_number}: "
+    title_prefix_width = wcswidth(title_prefix)
+    if title_prefix_width < 0:
+        title_prefix_width = len(title_prefix)
+    # Available width = card_width - left border (2) - right padding (1) - right border (1) - prefix
+    available_title_width = card_width - 2 - 1 - 1 - title_prefix_width
+    title = truncate_title(raw_title, available_title_width)
+
+    # Build card with guaranteed right padding
+    # ljust_display pads to (card_width - 2) to ensure 1 space before right border
     card = []
     card.append("╭" + "─" * (card_width - 2) + "╮")
-    card.append(ljust_display(f"│ {status_emoji} {status_message}", card_width - 1) + "│")
+    card.append(ljust_display(f"│ {status_emoji} {status_message}", card_width - 2) + " │")
     card.append("├" + "─" * (card_width - 2) + "┤")
-    card.append(ljust_display(f"│ #{pr_number}: {title}", card_width - 1) + "│")
-    card.append(ljust_display(f"│ 🔗 {pr_url}", card_width - 1) + "│")
+    card.append(ljust_display(f"│ {title_prefix}{title}", card_width - 2) + " │")
+    card.append(ljust_display(f"│ 🔗 {pr_url}", card_width - 2) + " │")
     card.append("├" + "─" * (card_width - 2) + "┤")
-    card.append(ljust_display(f"│ Status: {pr_status} • {approval_str} • {commit_count} commit{'s' if commit_count != 1 else ''}", card_width - 1) + "│")
-    card.append(ljust_display(f"│ Branch: {branch_str}", card_width - 1) + "│")
-    card.append(ljust_display(f"│ Completed in {cycles} cycle{'s' if cycles != 1 else ''} ({elapsed_str})", card_width - 1) + "│")
+    card.append(ljust_display(f"│ Status: {pr_status} • {approval_str} • {commit_count} commit{'s' if commit_count != 1 else ''}", card_width - 2) + " │")
+    card.append(ljust_display(f"│ Branch: {branch_str}", card_width - 2) + " │")
+    card.append(ljust_display(f"│ Completed in {cycles} cycle{'s' if cycles != 1 else ''} ({elapsed_str})", card_width - 2) + " │")
     card.append("╰" + "─" * (card_width - 2) + "╯")
 
     result = "\n".join(card)
@@ -652,7 +705,7 @@ def audit_ralph_execution() -> None:
             # Check commit message for prohibited patterns
             for pattern in prohibited_patterns:
                 if re.search(pattern, commit_msg, re.IGNORECASE):
-                    violations.append(f"  ⚠️  {commit_hash[:7]}: {commit_msg[:80]}")
+                    violations.append(f"  🟡  {commit_hash[:7]}: {commit_msg[:80]}")
                     break
 
             # Check commit diff for prohibited patterns and sensitive files
@@ -667,7 +720,7 @@ def audit_ralph_execution() -> None:
                 # Check for prohibited commands
                 for pattern in prohibited_patterns:
                     if re.search(pattern, diff_result.stdout, re.IGNORECASE):
-                        violations.append(f"  ⚠️  {commit_hash[:7]}: Found prohibited command pattern in diff")
+                        violations.append(f"  🟡  {commit_hash[:7]}: Found prohibited command pattern in diff")
                         break
 
                 # Check for sensitive files
@@ -680,12 +733,12 @@ def audit_ralph_execution() -> None:
             log("\n🚨 SECURITY ALERT: Prohibited command patterns detected in commits:")
             for violation in violations:
                 log(violation)
-            log("\n⚠️  Please review these commits carefully. They may violate safety constraints.")
+            log("\n🟡  Please review these commits carefully. They may violate safety constraints.")
             log("    Run: git log --since=30 minutes ago --patch\n")
 
     except Exception as e:
         # Don't fail the whole process if audit fails
-        log(f"⚠️  Post-execution audit failed: {e}")
+        log(f"🟡  Post-execution audit failed: {e}")
 
 
 def sanitize_for_prompt(text: str, max_length: int = 2000) -> str:
@@ -787,7 +840,7 @@ Fix the issues found in this PR, then exit. The CLI will re-check after you're d
 - ❌ IAM/RBAC: Role modifications, permission grants, access key changes
 - ❌ Credentials: ANY operations on `~/.aws`, `~/.kube`, `~/.ssh`
 - ❌ Sensitive files: NEVER read/commit `.env*`, `*.env`, `credentials.json`, `secrets.yaml`, `database.yml`, API keys
-- ⚠️ If you need config: Use non-sensitive examples, NOT real credentials
+- 🟡 If you need config: Use non-sensitive examples, NOT real credentials
 - ✅ ALLOWED: Read non-sensitive configuration (package.json, tsconfig.json, etc.)
 
 ### Databases (PROHIBITED)
@@ -1096,7 +1149,7 @@ def main():
 
         # Display status card
         print("\n" + format_status_card(
-            "⚠️", "Interrupted by User",
+            "🟡", "Interrupted by User",
             pr_number, pr_url, pr_info, owner, repo,
             current_cycle, elapsed, checks, bot_comments
         ))
@@ -1119,7 +1172,7 @@ def main():
 
     # Display status card for max cycles
     print("\n" + format_status_card(
-        "⚠️", "Max Cycles Reached",
+        "🟡", "Max Cycles Reached",
         pr_number, pr_url, pr_info, owner, repo,
         max_cycles, elapsed, checks, bot_comments
     ))
@@ -1224,7 +1277,7 @@ def main_loop_iteration(
     if cycle == max_cycles:
         elapsed = time.time() - start_time
 
-        log("⚠️ Final cycle reached with unresolved issues")
+        log("🟡 Final cycle reached with unresolved issues")
 
         # Show detailed failure information for each failed check
         if failed_checks:
@@ -1308,9 +1361,9 @@ def main_loop_iteration(
         try:
             result = process.wait(timeout=3600)  # 60-minute timeout
             if result != 0:
-                log(f"⚠️ Ralph exited with code {result}")
+                log(f"🟡 Ralph exited with code {result}")
         except subprocess.TimeoutExpired:
-            log("⚠️ Ralph timed out after 60 minutes, killing process tree...")
+            log("🟡 Ralph timed out after 60 minutes, killing process tree...")
             kill_process_tree(process.pid)
             try:
                 process.wait(timeout=2)
@@ -1319,7 +1372,7 @@ def main_loop_iteration(
             log("✓ Ralph terminated due to timeout")
             # Don't raise - continue to next cycle for potential recovery
         except KeyboardInterrupt:
-            log("⚠️ Received Ctrl+C, killing Ralph and all subprocesses...")
+            log("🟡 Received Ctrl+C, killing Ralph and all subprocesses...")
             # Use recursive tree killer since killpg() doesn't work
             # (processes escape via setsid() but maintain PPID relationship)
             kill_process_tree(process.pid)
