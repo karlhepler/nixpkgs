@@ -45,6 +45,11 @@ let
     ${lib.concatMapStringsSep "\n" (line: "      ${line}") (lib.splitString "\n" ralphCoordinatorContent)}
   '';
 
+  # Python environment for smithers with required packages
+  smithersPython = pkgs.python3.withPackages (ps: with ps; [
+    wcwidth  # Unicode display width calculation for terminal formatting
+  ]);
+
   # Burns Python CLI (Ralph with Ralph Coordinator output style)
   burnsScript = pkgs.writers.writePython3Bin "burns" {
     flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
@@ -54,9 +59,10 @@ let
     (builtins.readFile ./burns.py));
 
   # Smithers Python CLI (token-efficient PR watcher)
-  smithersScript = pkgs.writers.writePython3Bin "smithers" {
-    flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
-  } (builtins.readFile ./smithers.py);
+  smithersScript = pkgs.writeScriptBin "smithers" ''
+    #!${smithersPython}/bin/python3
+    ${builtins.readFile ./smithers.py}
+  '';
 
   # PRC Python CLI (PR comment management using GraphQL)
   prcScript = pkgs.writers.writePython3Bin "prc" {
