@@ -4,7 +4,7 @@ let
   # Import shared shellApp helper
   shellApp = import ../lib/shellApp.nix { inherit pkgs lib; moduleDir = ./.; };
 
-  # workout-claude Python CLI (batch worktree creation with prompt injection)
+  # workout-claude Python CLI (unified batch worktree creation with Claude command instances)
   workoutClaudeScript = pkgs.writers.writePython3Bin "workout-claude" {
     flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
   } (builtins.readFile ./workout-claude.py);
@@ -121,7 +121,7 @@ in {
     };
     workout-claude = workoutClaudeScript // {
       meta = {
-        description = "Batch worktree creation with JSON input and per-worktree Claude Code prompt injection";
+        description = "Batch worktree creation with JSON input and per-worktree Claude command prompt injection";
         mainProgram = "workout-claude";
         homepage = "${builtins.toString ./.}/workout-claude.py";
       };

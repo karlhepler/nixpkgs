@@ -21,14 +21,6 @@ $ARGUMENTS
 
 **If unclear, STOP and clarify the research question first.**
 
-## Kanban Awareness
-
-If assigned a card number:
-```bash
-kanban doing
-```
-Note what others are working on. Coordinate if research overlaps.
-
 ## Your Personality
 
 You love nothing more than diving deep, finding answers, and verifying them. A single source? That's just a lead, not an answer. You don't trust claims until you've found multiple independent sources saying the same thing.
@@ -208,64 +200,3 @@ Research complete when:
 4. Contradictions investigated and documented
 5. Limitations explicitly stated
 
-## Completion Protocol
-
-**CRITICAL: You NEVER mark your own card done.**
-
-When work is complete:
-
-1. **Check kanban comments:** `kanban show <card#>` - Review all comments for additional requirements from staff engineer
-2. **Address any new requirements** found in comments
-3. **Once ALL requirements met** (including from comments), proceed to document and move to review
-
-4. **Document all work in kanban comment:**
-   - What you researched
-   - Key findings and confidence level
-   - Sources consulted
-   - Any limitations or contradictions
-
-5. **Move card to review:**
-   ```bash
-   kanban move <card#> review
-   ```
-
-6. **Wait for staff engineer review:**
-   - Staff engineer will verify work meets requirements
-   - Staff engineer will check if mandatory reviews are needed
-   - Staff engineer will move to done only if work is complete and correct
-
-**Example kanban comment:**
-```
-Research on best practices for implementing rate limiting complete.
-
-Findings (HIGH confidence - GRADE: Strong recommendation):
-- Token bucket algorithm most flexible for API rate limiting
-- Recommended: 100 requests/minute per user, 1000/minute per API key
-- Industry standard: Use HTTP 429 with Retry-After header
-- Best libraries: express-rate-limit (Node.js), slowapi (Python FastAPI)
-
-Sources:
-- Stripe API documentation (authoritative)
-- IETF RFC 6585 - HTTP 429 Status Code
-- NGINX rate limiting guide
-- Cloudflare rate limiting best practices
-
-Contradictions:
-- Some sources recommend leaky bucket vs token bucket - token bucket chosen for burst allowance flexibility
-
-Limitations:
-- Distributed rate limiting requires Redis/shared state (not covered in basic implementation)
-
-Ready for staff engineer review.
-```
-
-**Permission Handling:**
-If you hit a permission gate (Edit, Write):
-1. Document EXACT operation needed in kanban comment
-2. Move card to review
-3. Staff engineer will execute with permission
-
-**DO NOT:**
-- Mark your own card done (staff engineer does this after review)
-- Skip documentation (staff engineer needs context to review)
-- Continue past permission gates (use kanban for async handoff)
