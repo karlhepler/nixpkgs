@@ -649,15 +649,30 @@ def cmd_history(args) -> None:
             if archive_dir.is_dir():
                 done_cards.extend(archive_dir.glob("*.md"))
 
-    # Filter by session if requested
+    # Get current session for filtering
+    current_session = get_current_session_id()
+
+    # Check environment variable for hiding own session by default
+    hide_own_default = os.environ.get("KANBAN_HIDE_MINE", "").lower() in ["true", "1", "yes"]
+
+    # Check flags
+    show_only_mine = getattr(args, 'only_mine', False)  # Show ONLY mine (hide others)
+    hide_mine_explicit = getattr(args, 'hide_mine', False)  # Hide mine explicitly
+    show_mine_explicit = getattr(args, 'show_mine', False)  # Show mine explicitly (override env var)
+
+    # Determine display behavior
+    # Priority: --only-mine > --show-mine > --hide-mine > explicit --session > env var > default (show all)
     if hasattr(args, 'session') and args.session:
-        # Explicit session filter
+        # Explicit session filter - show only that session
         done_cards = [c for c in done_cards if get_session(c) == args.session]
-    elif hasattr(args, 'mine') and args.mine:
-        # Show only current session's cards
-        current_session = get_current_session_id()
+    elif show_only_mine:
+        # Show only current session's cards (and sessionless)
         if current_session:
             done_cards = [c for c in done_cards if get_session(c) in (current_session, None)]
+    elif hide_mine_explicit or (hide_own_default and not show_mine_explicit):
+        # Hide current session's cards (show only other sessions)
+        if current_session:
+            done_cards = [c for c in done_cards if get_session(c) not in (current_session, None)]
     # Default: show all sessions (history is reference material)
 
     if not done_cards:
@@ -670,9 +685,13 @@ def cmd_history(args) -> None:
 
     if args.since:
         if args.since == "today":
-            since = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            # Midnight in local time, converted to UTC
+            local_midnight = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            since = local_midnight.astimezone(timezone.utc)
         elif args.since == "yesterday":
-            since = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+            # Midnight yesterday in local time, converted to UTC
+            local_midnight = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+            since = local_midnight.astimezone(timezone.utc)
         elif args.since == "week":
             since = datetime.now(timezone.utc) - timedelta(days=7)
         elif args.since == "month":
@@ -750,9 +769,13 @@ def cmd_list(args) -> None:
 
     if hasattr(args, 'since') and args.since:
         if args.since == "today":
-            since = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            # Midnight in local time, converted to UTC
+            local_midnight = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            since = local_midnight.astimezone(timezone.utc)
         elif args.since == "yesterday":
-            since = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+            # Midnight yesterday in local time, converted to UTC
+            local_midnight = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+            since = local_midnight.astimezone(timezone.utc)
         elif args.since == "week":
             since = datetime.now(timezone.utc) - timedelta(days=7)
         elif args.since == "month":
@@ -1042,11 +1065,9 @@ def get_current_session_id() -> str | None:
         # Not inside Claude - use username for terminal usage
         return os.environ.get('USER') or os.getlogin()
 
-    # Inside Claude - generate unique nonce and search for it
+    # Inside Claude - search for existing KANBAN_NONCE in session files
+    # User must run 'kanban nonce' first to establish session identity
     try:
-        import uuid
-        import time
-
         project_path = get_encoded_project_path()
         projects_dir = Path.home() / '.claude' / 'projects' / project_path
 
@@ -1057,39 +1078,34 @@ def get_current_session_id() -> str | None:
         if not session_files:
             return None
 
-        # Generate unique nonce ID for this invocation
-        my_nonce_id = uuid.uuid4().hex
-        nonce = f"KANBAN_NONCE_{my_nonce_id}_{int(time.time() * 1000)}"
-        print(nonce, flush=True)
+        # Search for ANY KANBAN_NONCE pattern across all session files
+        # Pattern: KANBAN_NONCE_<uuid>_<timestamp>
+        best_match = None  # (timestamp, session_file_stem)
 
-        # Wait for Claude to write the nonce with exponential backoff
-        delays_ms = [100, 200, 400, 800, 1000]  # milliseconds
-        elapsed_ms = 0
-        max_wait_ms = 3000
+        for session_file in session_files:
+            result = subprocess.run(
+                ['rg', '-o', r'KANBAN_NONCE_[a-f0-9]+_[0-9]+', str(session_file)],
+                capture_output=True,
+                text=True
+            )
 
-        for delay_ms in delays_ms:
-            if elapsed_ms >= max_wait_ms:
-                break
+            if result.returncode == 0 and result.stdout.strip():
+                # Found nonce(s) in this session file - get the most recent
+                for line in result.stdout.strip().split('\n'):
+                    # Extract timestamp from nonce (last part after final _)
+                    parts = line.split('_')
+                    if len(parts) >= 3:
+                        try:
+                            timestamp = int(parts[-1])
+                            if best_match is None or timestamp > best_match[0]:
+                                best_match = (timestamp, session_file.stem)
+                        except ValueError:
+                            continue
 
-            time.sleep(delay_ms / 1000)
-            elapsed_ms += delay_ms
+        if best_match:
+            return best_match[1]
 
-            # Search for MY specific nonce UUID across all session files
-            for session_file in session_files:
-                result = subprocess.run(
-                    ['rg', '-F', f'KANBAN_NONCE_{my_nonce_id}_', str(session_file)],
-                    capture_output=True,
-                    text=True
-                )
-
-                if result.returncode == 0 and result.stdout.strip():
-                    # Found our nonce in this session file
-                    if elapsed_ms > 500:
-                        print(f"Warning: Nonce detection took {elapsed_ms}ms", file=sys.stderr)
-                    return session_file.stem
-
-        # Timeout - nonce not found after retries
-        print(f"Error: Nonce {my_nonce_id} not found after {elapsed_ms}ms", file=sys.stderr)
+        # No nonce found - user needs to run 'kanban nonce' first
         return None
 
     except (OSError, ValueError, subprocess.SubprocessError) as e:
@@ -1114,9 +1130,13 @@ def cmd_view(args) -> None:
 
     if hasattr(args, 'since') and args.since:
         if args.since == "today":
-            since = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            # Midnight in local time, converted to UTC
+            local_midnight = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            since = local_midnight.astimezone(timezone.utc)
         elif args.since == "yesterday":
-            since = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+            # Midnight yesterday in local time, converted to UTC
+            local_midnight = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+            since = local_midnight.astimezone(timezone.utc)
         elif args.since == "week":
             since = datetime.now(timezone.utc) - timedelta(days=7)
         elif args.since == "month":
@@ -1220,6 +1240,7 @@ def cmd_view(args) -> None:
         else:
             print("=== Your Cards - Full Details ===")
         print()
+        sys.stdout.flush()  # Ensure header prints before bat output
 
         # Build output for your cards
         lines = []
@@ -1242,28 +1263,60 @@ def cmd_view(args) -> None:
         except (FileNotFoundError, BrokenPipeError):
             print(output)
 
-    # Display: Other Sessions - Summaries Only
+    # Display: Other Sessions - Abbreviated Content (for coordination)
     if other_cards and not show_only_mine:
         print()
-        print("=== Other Sessions - Summaries Only ===")
+        print("=== Other Sessions - Abbreviated Content ===")
         print()
+        sys.stdout.flush()  # Ensure header prints before bat output
 
-        for card in other_cards:
+        # Build output for other sessions' cards
+        lines = []
+        for i, card in enumerate(other_cards):
             content = card.read_text()
-            frontmatter, _ = parse_frontmatter(content)
+            frontmatter, body = parse_frontmatter(content)
             persona = frontmatter.get("persona", "")
             session = frontmatter.get("session", "")
             model = frontmatter.get("model")
 
-            # Format: #number: title (persona) [model] [session]
-            display = f"  {card.stem}"
+            # Extract actual body after frontmatter delimiters
+            body_parts = body.split("---", 2)
+            actual_body = body_parts[2].strip() if len(body_parts) >= 3 else body.strip()
+
+            # Stop before Activity section (comments)
+            if "\n## Activity\n" in actual_body:
+                abbreviated = actual_body.split("\n## Activity\n")[0].strip()
+            elif "\n## Activity" in actual_body:
+                abbreviated = actual_body.split("\n## Activity")[0].strip()
+            else:
+                abbreviated = actual_body
+
+            # Build header with metadata
+            if i > 0:
+                lines.append("\n" + "-" * 40 + "\n")
+            header = f"**{card.stem}**"
             if persona and persona != "unassigned":
-                display += f" ({persona})"
+                header += f" ({persona})"
             if model:
-                display += f" [model: {model}]"
+                header += f" [model: {model}]"
             if session:
-                display += f" [session: {session[:8]}]"
-            print(display)
+                header += f" [session: {session[:8]}]"
+            lines.append(header)
+            lines.append("")
+            lines.append(abbreviated)
+
+        output = "\n".join(lines)
+
+        # Pipe through bat with markdown highlighting
+        try:
+            proc = subprocess.Popen(
+                ["bat", "--language", "md", "--style", "plain"],
+                stdin=subprocess.PIPE,
+                text=True
+            )
+            proc.communicate(input=output)
+        except (FileNotFoundError, BrokenPipeError):
+            print(output)
 
 
 def cmd_edit(args) -> None:
@@ -1565,6 +1618,17 @@ PICKING NEXT WORK:
 WATCH MODE:
   Add --watch to any command to auto-refresh on file changes
   Example: kanban list --watch  OR  kanban --watch list
+
+ENVIRONMENT VARIABLES:
+  KANBAN_ROOT          Override board location (default: auto-detect from git root or cwd)
+  KANBAN_SESSION       Override session ID (used by smithers/burns for persistent tracking)
+  KANBAN_HIDE_MINE     Hide own session's cards by default (set to 'true', '1', or 'yes')
+  KANBAN_ARCHIVE_DAYS  Days before archiving done/canceled cards (default: 30)
+
+SESSIONS:
+  Sessions track which Claude instance owns a card. This enables multi-agent coordination
+  by allowing different Claude sessions to work on the same board without interfering.
+  Use --session flags to filter or assign cards to specific sessions.
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -1592,7 +1656,7 @@ Empty columns default to priority 1000 (baseline for first card).
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
     p_add.add_argument("title", help="Card title")
-    p_add.add_argument("--persona", help="Persona for the card")
+    p_add.add_argument("--persona", help="Persona for the card (default: unassigned)")
     p_add.add_argument("--content", "-c", help="Card body content (e.g., task description)")
     p_add.add_argument("--status", choices=COLUMNS, default="todo", help="Starting column (default: todo)")
     p_add.add_argument("--session", help="Session ID for the card (auto-detected if not specified)")
@@ -1604,87 +1668,87 @@ Empty columns default to priority 1000 (baseline for first card).
     p_add.add_argument("--before", help="Insert before specified card (by number or name)")
 
     # delete
-    p_delete = subparsers.add_parser("delete", parents=[parent_parser], help="Delete a card")
-    p_delete.add_argument("card", help="Card number or name")
+    p_delete = subparsers.add_parser("delete", parents=[parent_parser], help="Delete a card (WARNING: Permanently deletes card)")
+    p_delete.add_argument("card", help="Card number (e.g., 23) or filename pattern")
 
     # edit
     p_edit = subparsers.add_parser("edit", parents=[parent_parser], help="Edit a card's content or metadata")
-    p_edit.add_argument("card", help="Card number or name")
+    p_edit.add_argument("card", help="Card number (e.g., 23) or filename pattern")
     p_edit.add_argument("--content", "-c", help="New card body content (use '-' for stdin)")
     p_edit.add_argument("--persona", help="Update persona")
     p_edit.add_argument("--append", "-a", action="store_true", help="Append to content instead of replacing")
 
     # move
     p_move = subparsers.add_parser("move", parents=[parent_parser], help="Move card to column")
-    p_move.add_argument("card", help="Card number or name")
-    p_move.add_argument("column", help="Target column")
+    p_move.add_argument("card", help="Card number (e.g., 23) or filename pattern")
+    p_move.add_argument("column", help="Target column (valid: todo, doing, blocked, done, canceled)")
 
     # up
-    p_up = subparsers.add_parser("up", parents=[parent_parser], help="Move card up in priority")
-    p_up.add_argument("card", help="Card number or name")
+    p_up = subparsers.add_parser("up", parents=[parent_parser], help="Move card up in priority (decreases priority by 10)")
+    p_up.add_argument("card", help="Card number (e.g., 23) or filename pattern")
 
     # down
-    p_down = subparsers.add_parser("down", parents=[parent_parser], help="Move card down in priority")
-    p_down.add_argument("card", help="Card number or name")
+    p_down = subparsers.add_parser("down", parents=[parent_parser], help="Move card down in priority (increases priority by 10)")
+    p_down.add_argument("card", help="Card number (e.g., 23) or filename pattern")
 
     # top
-    p_top = subparsers.add_parser("top", parents=[parent_parser], help="Move card to top of column")
-    p_top.add_argument("card", help="Card number or name")
+    p_top = subparsers.add_parser("top", parents=[parent_parser], help="Move card to top of column (highest priority, lowest number)")
+    p_top.add_argument("card", help="Card number (e.g., 23) or filename pattern")
 
     # bottom
-    p_bottom = subparsers.add_parser("bottom", parents=[parent_parser], help="Move card to bottom of column")
-    p_bottom.add_argument("card", help="Card number or name")
+    p_bottom = subparsers.add_parser("bottom", parents=[parent_parser], help="Move card to bottom of column (lowest priority, highest number)")
+    p_bottom.add_argument("card", help="Card number (e.g., 23) or filename pattern")
 
     # comment
     p_comment = subparsers.add_parser("comment", parents=[parent_parser], help="Add comment to card")
-    p_comment.add_argument("card", help="Card number or name")
+    p_comment.add_argument("card", help="Card number (e.g., 23) or filename pattern")
     p_comment.add_argument("message", help="Comment message")
 
     # history
     p_history = subparsers.add_parser("history", parents=[parent_parser], help="Show completed cards")
-    p_history.add_argument("--since", help="Filter by date (today, yesterday, week, month, or ISO date)")
-    p_history.add_argument("--until", help="Filter until date (ISO format)")
+    p_history.add_argument("--since", help="Filter by date (today, yesterday, week, month, or ISO 8601 format: YYYY-MM-DDTHH:MM:SSZ). Default: all time")
+    p_history.add_argument("--until", help="Filter until date (ISO 8601 format: YYYY-MM-DDTHH:MM:SSZ)")
     p_history.add_argument("--include-canceled", action="store_true", help="Include canceled cards in history")
-    p_history.add_argument("--session", help="Filter by session ID")
+    p_history.add_argument("--session", help="Filter by session ID (sessions track which Claude instance owns a card)")
     p_history.add_argument("--only-mine", action="store_true", dest="only_mine", help="Show only current session's cards")
     p_history.add_argument("--show-mine", action="store_true", dest="show_mine", help="Show current session's cards (overrides KANBAN_HIDE_MINE env var)")
     p_history.add_argument("--hide-mine", action="store_true", dest="hide_mine", help="Hide current session's cards (show only other sessions). Can also set KANBAN_HIDE_MINE=true")
 
     # list (with ls alias)
-    p_list = subparsers.add_parser("list", parents=[parent_parser], help="Show board overview (default: all sessions grouped)")
+    p_list = subparsers.add_parser("list", parents=[parent_parser], help="Show board overview (default: shows todo, doing, blocked columns; hides done, canceled)")
     p_list.add_argument("--show-done", action="store_true", help="Include done column in output")
     p_list.add_argument("--show-canceled", action="store_true", help="Include canceled column in output")
     p_list.add_argument("--show-all", action="store_true", help="Include both done and canceled columns in output")
-    p_list.add_argument("--session", help="Filter by session ID")
+    p_list.add_argument("--session", help="Filter by session ID (sessions track which Claude instance owns a card)")
     p_list.add_argument("--only-mine", action="store_true", dest="only_mine", help="Show only current session's cards")
     p_list.add_argument("--show-mine", action="store_true", dest="show_mine", help="Show current session's cards (overrides KANBAN_HIDE_MINE env var)")
     p_list.add_argument("--hide-mine", action="store_true", dest="hide_mine", help="Hide current session's cards (show only other sessions). Can also set KANBAN_HIDE_MINE=true")
-    p_list.add_argument("--since", help="Filter by date (today, yesterday, week, month, or ISO date)")
-    p_list.add_argument("--until", help="Filter until date (ISO format)")
+    p_list.add_argument("--since", help="Filter by date (today, yesterday, week, month, or ISO 8601 format: YYYY-MM-DDTHH:MM:SSZ)")
+    p_list.add_argument("--until", help="Filter until date (ISO 8601 format: YYYY-MM-DDTHH:MM:SSZ)")
     p_ls = subparsers.add_parser("ls", parents=[parent_parser], help="Show board overview (alias for list)")
     p_ls.add_argument("--show-done", action="store_true", help="Include done column in output")
     p_ls.add_argument("--show-canceled", action="store_true", help="Include canceled column in output")
     p_ls.add_argument("--show-all", action="store_true", help="Include both done and canceled columns in output")
-    p_ls.add_argument("--session", help="Filter by session ID")
+    p_ls.add_argument("--session", help="Filter by session ID (sessions track which Claude instance owns a card)")
     p_ls.add_argument("--only-mine", action="store_true", dest="only_mine", help="Show only current session's cards")
     p_ls.add_argument("--show-mine", action="store_true", dest="show_mine", help="Show current session's cards (overrides KANBAN_HIDE_MINE env var)")
     p_ls.add_argument("--hide-mine", action="store_true", dest="hide_mine", help="Hide current session's cards (show only other sessions). Can also set KANBAN_HIDE_MINE=true")
-    p_ls.add_argument("--since", help="Filter by date (today, yesterday, week, month, or ISO date)")
-    p_ls.add_argument("--until", help="Filter until date (ISO format)")
+    p_ls.add_argument("--since", help="Filter by date (today, yesterday, week, month, or ISO 8601 format: YYYY-MM-DDTHH:MM:SSZ)")
+    p_ls.add_argument("--until", help="Filter until date (ISO 8601 format: YYYY-MM-DDTHH:MM:SSZ)")
 
     # show
     p_show = subparsers.add_parser("show", parents=[parent_parser], help="Display card contents")
-    p_show.add_argument("card", help="Card number or name")
+    p_show.add_argument("card", help="Card number (e.g., 23) or filename pattern")
 
     # Column view commands (kanban <column>)
     for col in COLUMNS:
         p_col = subparsers.add_parser(col, parents=[parent_parser], help=f"View cards in {col} (default: all sessions, full details for yours)")
-        p_col.add_argument("--session", help="Filter by session ID")
+        p_col.add_argument("--session", help="Filter by session ID (sessions track which Claude instance owns a card)")
         p_col.add_argument("--only-mine", action="store_true", dest="only_mine", help="Show only current session's cards")
         p_col.add_argument("--show-mine", action="store_true", dest="show_mine", help="Show current session's cards (overrides KANBAN_HIDE_MINE env var)")
         p_col.add_argument("--hide-mine", action="store_true", dest="hide_mine", help="Hide current session's cards (show only other sessions). Can also set KANBAN_HIDE_MINE=true")
-        p_col.add_argument("--since", help="Filter by date (today, yesterday, week, month, or ISO date)")
-        p_col.add_argument("--until", help="Filter until date (ISO format)")
+        p_col.add_argument("--since", help="Filter by date (today, yesterday, week, month, or ISO 8601 format: YYYY-MM-DDTHH:MM:SSZ)")
+        p_col.add_argument("--until", help="Filter until date (ISO 8601 format: YYYY-MM-DDTHH:MM:SSZ)")
         p_col.set_defaults(column=col)
 
     # nonce - for session detection
