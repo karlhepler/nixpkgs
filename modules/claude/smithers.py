@@ -390,14 +390,178 @@ def get_pr_info(pr_number: int) -> dict:
     """Get PR title, branch, state, etc."""
     code, stdout, _ = run_gh([
         "pr", "view", str(pr_number),
-        "--json", "title,headRefName,baseRefName,body,url,state"
+        "--json", "title,headRefName,baseRefName,body,url,state,isDraft,reviewDecision,commits"
     ])
     if code != 0:
         return {}
     try:
-        return json.loads(stdout)
+        data = json.loads(stdout)
+        # Count commits and approvals
+        commits = data.get("commits", [])
+        data["commit_count"] = len(commits)
+
+        # Parse reviewDecision for approval count
+        review_decision = data.get("reviewDecision", "")
+        # reviewDecision values: APPROVED, CHANGES_REQUESTED, REVIEW_REQUIRED
+        data["is_approved"] = review_decision == "APPROVED"
+
+        return data
     except json.JSONDecodeError:
         return {}
+
+
+def get_branch_comparison(owner: str, repo: str, base: str, head: str) -> dict:
+    """Get branch comparison to determine if PR is behind base branch."""
+    try:
+        code, stdout, _ = run_gh([
+            "api", f"repos/{owner}/{repo}/compare/{base}...{head}",
+            "--jq", "{ahead_by: .ahead_by, behind_by: .behind_by, status: .status}"
+        ])
+        if code == 0 and stdout.strip():
+            return json.loads(stdout)
+    except (json.JSONDecodeError, Exception):
+        pass
+    return {"ahead_by": 0, "behind_by": 0, "status": "unknown"}
+
+
+def get_cancelled_checks(checks: list) -> list:
+    """Get checks that were cancelled."""
+    cancelled = []
+    for check in checks:
+        bucket = check.get("bucket", "").lower()
+        if bucket in ["cancel", "cancelled", "skipping"]:
+            cancelled.append(check)
+    return cancelled
+
+
+def format_elapsed_time(seconds: float) -> str:
+    """Format elapsed time as 'Xm Ys' or 'Xs'."""
+    if seconds < 60:
+        return f"{int(seconds)}s"
+    minutes = int(seconds // 60)
+    remaining_seconds = int(seconds % 60)
+    return f"{minutes}m {remaining_seconds}s"
+
+
+def truncate_title(title: str, max_length: int = 60) -> str:
+    """Truncate title to max length with ellipsis."""
+    if len(title) <= max_length:
+        return title
+    return title[:max_length - 3] + "..."
+
+
+def format_status_card(
+    status_emoji: str,
+    status_message: str,
+    pr_number: int,
+    pr_url: str,
+    pr_info: dict,
+    owner: str,
+    repo: str,
+    cycles: int,
+    elapsed_seconds: float,
+    checks: list = None,
+    bot_comments: dict = None
+) -> str:
+    """Format a rich card-like status display for smithers completion.
+
+    Args:
+        status_emoji: Emoji for the header (e.g., "✅", "⚠️", "❌")
+        status_message: Status message for the header
+        pr_number: PR number
+        pr_url: Full PR URL
+        pr_info: PR metadata from get_pr_info()
+        owner: Repository owner
+        repo: Repository name
+        cycles: Number of cycles completed
+        elapsed_seconds: Total elapsed time in seconds
+        checks: List of check results (optional)
+        bot_comments: Bot comment data from get_bot_comments() (optional)
+
+    Returns:
+        Formatted card string with all relevant PR status information
+    """
+    # Extract PR metadata
+    title = truncate_title(pr_info.get("title", "Unknown PR"))
+    is_draft = pr_info.get("isDraft", False)
+    commit_count = pr_info.get("commit_count", 0)
+    is_approved = pr_info.get("is_approved", False)
+    base_branch = pr_info.get("baseRefName", "main")
+    head_branch = pr_info.get("headRefName", "unknown")
+
+    # Get branch comparison
+    comparison = get_branch_comparison(owner, repo, base_branch, head_branch)
+    behind_by = comparison.get("behind_by", 0)
+
+    # Determine PR status
+    if is_draft:
+        pr_status = "Draft"
+    else:
+        pr_status = "Ready"
+
+    # Format approval status
+    if is_approved:
+        approval_str = "✓ Approved"
+    else:
+        approval_str = "⚠ Not approved"
+
+    # Format branch status
+    if behind_by > 0:
+        branch_str = f"⚠️ {behind_by} commit{'s' if behind_by != 1 else ''} behind {base_branch}"
+    else:
+        branch_str = f"✓ Up to date with {base_branch}"
+
+    # Format elapsed time
+    elapsed_str = format_elapsed_time(elapsed_seconds)
+
+    # Build card
+    card_width = 60
+    card = []
+    card.append("╭" + "─" * (card_width - 2) + "╮")
+    card.append(f"│ {status_emoji} {status_message}".ljust(card_width - 1) + "│")
+    card.append("├" + "─" * (card_width - 2) + "┤")
+    card.append(f"│ #{pr_number}: {title}".ljust(card_width - 1) + "│")
+    card.append(f"│ 🔗 {pr_url}".ljust(card_width - 1) + "│")
+    card.append("├" + "─" * (card_width - 2) + "┤")
+    card.append(f"│ Status: {pr_status} • {approval_str} • {commit_count} commit{'s' if commit_count != 1 else ''}".ljust(card_width - 1) + "│")
+    card.append(f"│ Branch: {branch_str}".ljust(card_width - 1) + "│")
+    card.append(f"│ Completed in {cycles} cycle{'s' if cycles != 1 else ''} ({elapsed_str})".ljust(card_width - 1) + "│")
+    card.append("╰" + "─" * (card_width - 2) + "╯")
+
+    result = "\n".join(card)
+
+    # Add failed checks section if present
+    if checks:
+        failed_checks = get_failed_checks(checks)
+        if failed_checks:
+            result += f"\n\nFailed Checks ({len(failed_checks)}):"
+            for check in failed_checks:
+                name = check.get("name", "Unknown")
+                link = check.get("link", "")
+                result += f"\n  ❌ {name.ljust(20)} → {link}"
+
+        # Add cancelled checks section if present
+        cancelled_checks = get_cancelled_checks(checks)
+        if cancelled_checks:
+            result += f"\n\nCancelled Checks ({len(cancelled_checks)}):"
+            for check in cancelled_checks:
+                name = check.get("name", "Unknown")
+                link = check.get("link", "")
+                result += f"\n  ⚪ {name.ljust(20)} → {link}"
+
+    # Add bot comments section if present
+    if bot_comments:
+        actionable_count = count_actionable_bot_comments(bot_comments)
+        if actionable_count > 0:
+            comments = bot_comments.get("comments", [])
+            result += f"\n\nBot Comments ({actionable_count} unresolved):"
+            for comment in comments[:3]:  # Show first 3
+                author = comment.get("author", "Unknown")
+                result += f"\n  • {author}"
+            if actionable_count > 3:
+                result += f"\n  • ... and {actionable_count - 3} more"
+
+    return result
 
 
 def audit_ralph_execution() -> None:
@@ -809,6 +973,8 @@ def wait_for_checks(pr_number: int) -> list:
 
 def main():
     """Main entry point."""
+    start_time = time.time()  # Track elapsed time
+
     # Parse arguments
     parser = argparse.ArgumentParser(
         description="Watch and manage a GitHub PR",
@@ -875,11 +1041,13 @@ def main():
     log(f"Poll interval: {POLL_INTERVAL}s | Max cycles: {max_cycles}")
 
     ralph_invocation_count = 0
+    current_cycle = 0  # Track which cycle we're on
     try:
         for cycle in range(1, max_cycles + 1):
+            current_cycle = cycle
             ralph_invoked = main_loop_iteration(
                 cycle, ralph_invocation_count, pr_number, pr_url, owner, repo,
-                max_ralph_invocations, max_cycles
+                max_ralph_invocations, max_cycles, start_time
             )
             if ralph_invoked:
                 ralph_invocation_count += 1
@@ -887,14 +1055,30 @@ def main():
         # Check for cycle extension if unaddressed bot comments exist
         if has_unaddressed_bot_comments(owner, repo, pr_number):
             log("📝 Unaddressed bot comments detected - extending by ONE cycle")
+            current_cycle = max_cycles + 1
             ralph_invoked = main_loop_iteration(
                 max_cycles + 1, ralph_invocation_count, pr_number, pr_url, owner, repo,
-                max_ralph_invocations, max_cycles + 1
+                max_ralph_invocations, max_cycles + 1, start_time
             )
             if ralph_invoked:
                 ralph_invocation_count += 1
     except KeyboardInterrupt:
-        log("\n⚠️ Interrupted by user")
+        # Calculate elapsed time
+        elapsed = time.time() - start_time
+
+        # Get PR info and checks for card display
+        pr_info = get_pr_info(pr_number)
+        status = get_check_status(pr_number)
+        checks = status.get("checks", [])
+        bot_comments = get_bot_comments(owner, repo, pr_number)
+
+        # Display status card
+        print("\n" + format_status_card(
+            "⚠️", "Interrupted by User",
+            pr_number, pr_url, pr_info, owner, repo,
+            current_cycle, elapsed, checks, bot_comments
+        ))
+
         send_notification(
             "Smithers Interrupted",
             f"PR #{pr_number} watch interrupted by user",
@@ -902,7 +1086,22 @@ def main():
         )
         return 130  # Standard exit code for SIGINT
 
-    log(f"⚠️ Reached max cycles ({max_cycles}) without PR being ready")
+    # Calculate elapsed time for max cycles exit
+    elapsed = time.time() - start_time
+
+    # Get final PR info and checks
+    pr_info = get_pr_info(pr_number)
+    status = get_check_status(pr_number)
+    checks = status.get("checks", [])
+    bot_comments = get_bot_comments(owner, repo, pr_number)
+
+    # Display status card for max cycles
+    print("\n" + format_status_card(
+        "⚠️", "Max Cycles Reached",
+        pr_number, pr_url, pr_info, owner, repo,
+        max_cycles, elapsed, checks, bot_comments
+    ))
+
     send_notification(
         "Smithers Max Cycles",
         f"PR #{pr_number} reached {max_cycles} cycles without being ready",
@@ -919,7 +1118,8 @@ def main_loop_iteration(
     owner: str,
     repo: str,
     max_ralph_invocations: int,
-    max_cycles: int
+    max_cycles: int,
+    start_time: float
 ) -> bool:
     """Single iteration of the main watch loop.
 
@@ -932,7 +1132,17 @@ def main_loop_iteration(
     pr_state = pr_info.get("state", "").upper()
 
     if pr_state == "MERGED":
-        log("✅ PR is already merged!")
+        elapsed = time.time() - start_time
+        status = get_check_status(pr_number)
+        checks = status.get("checks", [])
+        bot_comments = get_bot_comments(owner, repo, pr_number)
+
+        print("\n" + format_status_card(
+            "✅", "PR Already Merged",
+            pr_number, pr_url, pr_info, owner, repo,
+            cycle, elapsed, checks, bot_comments
+        ))
+
         send_notification(
             "Smithers Complete",
             f"PR #{pr_number} is already merged",
@@ -972,8 +1182,14 @@ def main_loop_iteration(
 
     # 5. Check if work needed
     if not work_needed(failed_checks, conflicts, owner, repo, pr_number):
-        log("✅ PR is completely ready to merge!")
-        log(f"Completed in {cycle} cycle(s)")
+        elapsed = time.time() - start_time
+
+        print("\n" + format_status_card(
+            "✅", "PR Ready to Merge",
+            pr_number, pr_url, pr_info, owner, repo,
+            cycle, elapsed, checks, bot_comments
+        ))
+
         # Send macOS notification
         send_notification(
             "Smithers Complete",
@@ -984,36 +1200,45 @@ def main_loop_iteration(
 
     # 6. Handle final cycle - show errors but don't invoke Ralph
     if cycle == max_cycles:
+        elapsed = time.time() - start_time
+
         log("⚠️ Final cycle reached with unresolved issues")
-        log(f"\nFailed checks: {len(failed_checks)}")
 
         # Show detailed failure information for each failed check
-        for check in failed_checks:
-            check_name = check.get("name", "Unknown")
-            log(f"\n  ❌ {check_name}")
+        if failed_checks:
+            log(f"\nFailed checks: {len(failed_checks)}")
+            for check in failed_checks:
+                check_name = check.get("name", "Unknown")
+                log(f"\n  ❌ {check_name}")
 
-            # Fetch detailed failure information
-            details = get_workflow_failure_details(owner, repo, check)
-            link = details.get("link")
-            if link:
-                log(f"     Link: {link}")
+                # Fetch detailed failure information
+                details = get_workflow_failure_details(owner, repo, check)
+                link = details.get("link")
+                if link:
+                    log(f"     Link: {link}")
 
-            failures = details.get("failures", [])
-            if failures:
-                log("     Failed jobs/steps:")
-                for failure in failures:
-                    job = failure.get("job", "Unknown")
-                    steps = failure.get("steps", [])
-                    log(f"       • {job}")
-                    for step in steps:
-                        log(f"         - {step}")
-            else:
-                log("     No detailed failure information available")
+                failures = details.get("failures", [])
+                if failures:
+                    log("     Failed jobs/steps:")
+                    for failure in failures:
+                        job = failure.get("job", "Unknown")
+                        steps = failure.get("steps", [])
+                        log(f"       • {job}")
+                        for step in steps:
+                            log(f"         - {step}")
+                else:
+                    log("     No detailed failure information available")
 
         if conflicts:
             log("\n  ❌ Merge conflicts detected")
 
-        log(f"\n❌ Could not resolve all issues after {max_ralph_invocations} Ralph invocation(s)")
+        # Display status card
+        print("\n" + format_status_card(
+            "❌", "Max Ralph Invocations Reached",
+            pr_number, pr_url, pr_info, owner, repo,
+            cycle, elapsed, checks, bot_comments
+        ))
+
         send_notification(
             "Smithers Max Iterations",
             f"PR #{pr_number} has unresolved issues after {max_ralph_invocations} attempts",
