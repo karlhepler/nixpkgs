@@ -47,7 +47,7 @@ Detailed guidance for mandatory reviews, review workflows, and approval criteria
 **Setup:**
 ```bash
 # Original work complete (Card #42: "Update IAM policy for S3 access")
-# Agent moved card to blocked
+# Agent moved card to review
 
 # Staff Engineer: Check mandatory review table
 # Match found: Infrastructure → Infra peer + Security required
@@ -114,7 +114,7 @@ Staff Engineer: Security concerns override. Explore alternative approaches:
 **Setup:**
 ```bash
 # Card #50: "Add customer_email column to orders table"
-# Agent completed migration, moved to blocked
+# Agent completed migration, moved to review
 
 # Staff Engineer: Check mandatory review table
 # Match: Database schema (PII) → Peer backend + Security
@@ -140,7 +140,7 @@ Backend Peer (Card #51): APPROVE WITH MINOR FIX - Add index on email for lookups
 Security (Card #52): CHANGES REQUIRED - Email must be encrypted at rest (use pgcrypto or application-level encryption)
 
 Staff Engineer: Addresses security concern, requests re-review
-Agent: Implements encryption, updates migration, moves to blocked again
+Agent: Implements encryption, updates migration, moves to review again
 Staff Engineer: Creates second security review (Card #55)
 Security (Card #55): APPROVE - Encryption implemented correctly, key management secure
 Staff Engineer: Moves Card #50 to done
@@ -153,7 +153,7 @@ Staff Engineer: Moves Card #50 to done
 **Setup:**
 ```bash
 # Card #60: "Implement JWT authentication"
-# Agent completed implementation, moved to blocked
+# Agent completed implementation, moved to review
 
 # Staff Engineer: Check mandatory review table
 # Match: Auth/AuthZ → Security (MANDATORY) + Backend peer
@@ -183,7 +183,7 @@ Security (Card #61): CHANGES REQUIRED (BLOCKING)
 Backend Peer (Card #62): APPROVE WITH SUGGESTION - Add rate limiting to prevent brute force
 
 Staff Engineer: Security issues are BLOCKING. Cannot ship until fixed.
-Agent: Fixes critical issues, moves to blocked for re-review
+Agent: Fixes critical issues, moves to review for re-review
 Security (Card #65): APPROVE - Critical vulnerabilities fixed, ready to ship
 Staff Engineer: Moves Card #60 to done
 ```

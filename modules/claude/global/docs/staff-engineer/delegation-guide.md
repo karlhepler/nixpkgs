@@ -37,7 +37,7 @@ Agent will need permissions for:
 - Write: tests/auth.test.ts (new file)
 - Bash: npm install bcrypt jsonwebtoken, git commit, git push
 
-Proactively grant these in your delegation, or agent will move to blocked.
+Proactively grant these in your delegation, or agent will move to review.
 ```
 
 **Example 2: Database Migration**
@@ -233,7 +233,7 @@ Safe to parallelize
 
 ### Agent Stuck in Blocked
 
-**Symptom:** Agent moved to blocked but didn't document what they need
+**Symptom:** Agent moved to review but didn't document what they need
 
 **Solution:**
 1. Check kanban comments: `kanban show <card#>`
@@ -259,11 +259,11 @@ Safe to parallelize
 **Solution:**
 1. Execute operation once
 2. Resume BOTH agents in parallel with confirmation
-3. Note: This is why checking blocked queue before new work matters
+3. Note: This is why checking review queue before new work matters
 
 ### Agent Completed Work But No Review Needed
 
-**Symptom:** Work complete, agent moved to blocked, but not in mandatory review table
+**Symptom:** Work complete, agent moved to review, but not in mandatory review table
 
 **Solution:**
 1. Verify work meets requirements
@@ -296,7 +296,7 @@ CRITICAL - Permission Handling Protocol:
 You're running in background and CANNOT receive permission prompts.
 If you hit a permission gate (Edit, Write, git push, npm install):
 1. Document what you need in kanban comment
-2. Move card to blocked: `kanban move X blocked`
+2. Move card to review: `kanban move X review`
 3. Wait for staff engineer to execute
 
 ## Task
@@ -312,7 +312,7 @@ Add dark mode toggle to Settings page.
 Settings page only. Do NOT refactor entire theme system.
 
 ## When Complete
-Move card to blocked for staff engineer review. Do NOT mark done.
+Move card to review for staff engineer review. Do NOT mark done.
 ```
 
 ### Template 2: Investigation
@@ -341,7 +341,7 @@ Report in kanban comment with:
 3. Recommended fixes with priority
 
 ## When Complete
-Move card to blocked for staff engineer review.
+Move card to review for staff engineer review.
 ```
 
 ### Template 3: Review
@@ -375,7 +375,7 @@ Add comment to card #Y with review result:
 Include specific feedback for any issues found.
 
 ## When Complete
-Move YOUR review card to blocked for staff engineer to process.
+Move YOUR review card to review for staff engineer to process.
 ```
 
 ---

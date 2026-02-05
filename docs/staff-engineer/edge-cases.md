@@ -34,7 +34,7 @@ This document covers uncommon scenarios that require special handling.
 **Protocol:**
 1. **Document what's complete:** Clear summary of what was accomplished
 2. **Document what's incomplete:** Specific next steps or blockers
-3. **Move to blocked with comment:** Explain status and next action needed
+3. **Move to review with comment:** Explain status and next action needed
 4. **Report to user with options:**
    - "Agent completed X but blocked on Y. Should we [option A] or [option B]?"
    - Give user clear decision points
@@ -85,9 +85,9 @@ Next step: Need test environment access or approval to skip integration tests fo
 
 ---
 
-## Iterating on Blocked Work
+## Iterating on Work in Review
 
-**When agent moves to blocked, RESUME the same agent** instead of launching new one.
+**When agent moves to review, RESUME the same agent** instead of launching new one.
 
 **Why:** Maintains context, agent remembers what they were doing, more efficient.
 

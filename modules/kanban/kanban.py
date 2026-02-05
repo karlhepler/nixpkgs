@@ -28,9 +28,8 @@ PICKING NEXT WORK:
 COLUMN SEMANTICS (when to use each column):
   todo     - Things that need to be done next, in priority order. Not yet started.
   doing    - Things currently being worked on. Active work in progress.
-  blocked  - Things that started but are now blocked waiting for something
-             (external dependency, user input, another card, etc.). Not just
-             'queued for later' - must have a specific blocking reason.
+  review   - Work completed and awaiting review. Staff engineer will verify
+             requirements are met before moving to done.
   done     - Completed work. Archive of what's been accomplished.
   canceled - Work that was abandoned, became obsolete, or is no longer needed.
              Not completed. Kept for historical context and learning.
@@ -53,7 +52,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from threading import Event
 
-COLUMNS = ["todo", "doing", "blocked", "done", "canceled"]
+COLUMNS = ["todo", "doing", "review", "done", "canceled"]
 ARCHIVE_DAYS_THRESHOLD = int(os.environ.get("KANBAN_ARCHIVE_DAYS", "30"))
 
 
@@ -71,28 +70,31 @@ def get_git_root() -> Path | None:
         return None
 
 
-def migrate_waiting_to_blocked(root: Path) -> None:
-    """Migrate legacy 'waiting' directory to 'blocked' if it exists."""
-    waiting_dir = root / "waiting"
-    blocked_dir = root / "blocked"
+def migrate_legacy_columns_to_review(root: Path) -> None:
+    """Migrate legacy 'waiting' and 'blocked' directories to 'review' if they exist."""
+    review_dir = root / "review"
 
-    if waiting_dir.exists() and not blocked_dir.exists():
-        waiting_dir.rename(blocked_dir)
-        print(f"Migrated: {waiting_dir} -> {blocked_dir}", file=sys.stderr)
-    elif waiting_dir.exists() and blocked_dir.exists():
-        # Both exist - merge waiting into blocked
-        for card in waiting_dir.glob("*.md"):
-            target = blocked_dir / card.name
-            if not target.exists():
-                card.rename(target)
-            else:
-                print(f"Warning: Skipping {card.name} (already exists in blocked/)", file=sys.stderr)
-        # Remove empty waiting directory
-        try:
-            waiting_dir.rmdir()
-            print("Merged and removed legacy 'waiting' directory", file=sys.stderr)
-        except OSError:
-            print("Warning: Could not remove 'waiting' directory (not empty)", file=sys.stderr)
+    # Migrate from both legacy column names
+    for legacy_name in ["waiting", "blocked"]:
+        legacy_dir = root / legacy_name
+
+        if legacy_dir.exists() and not review_dir.exists():
+            legacy_dir.rename(review_dir)
+            print(f"Migrated: {legacy_dir} -> {review_dir}", file=sys.stderr)
+        elif legacy_dir.exists() and review_dir.exists():
+            # Both exist - merge legacy into review
+            for card in legacy_dir.glob("*.md"):
+                target = review_dir / card.name
+                if not target.exists():
+                    card.rename(target)
+                else:
+                    print(f"Warning: Skipping {card.name} (already exists in review/)", file=sys.stderr)
+            # Remove empty legacy directory
+            try:
+                legacy_dir.rmdir()
+                print(f"Merged and removed legacy '{legacy_name}' directory", file=sys.stderr)
+            except OSError:
+                print(f"Warning: Could not remove '{legacy_name}' directory (not empty)", file=sys.stderr)
 
 
 def auto_archive_old_cards(root: Path, days_threshold: int = ARCHIVE_DAYS_THRESHOLD) -> None:
@@ -158,9 +160,9 @@ def get_root(args_root: str | None, auto_init: bool = True) -> Path:
         base_dir = get_git_root() or Path.cwd()
         root = base_dir / ".kanban"
 
-    # Auto-migrate legacy 'waiting' directory to 'blocked'
+    # Auto-migrate legacy 'waiting' and 'blocked' directories to 'review'
     if root.exists():
-        migrate_waiting_to_blocked(root)
+        migrate_legacy_columns_to_review(root)
 
     # Auto-initialize if needed
     if auto_init and not root.exists():
@@ -1681,7 +1683,7 @@ Empty columns default to priority 1000 (baseline for first card).
     # move
     p_move = subparsers.add_parser("move", parents=[parent_parser], help="Move card to column")
     p_move.add_argument("card", help="Card number (e.g., 23) or filename pattern")
-    p_move.add_argument("column", help="Target column (valid: todo, doing, blocked, done, canceled)")
+    p_move.add_argument("column", help="Target column (valid: todo, doing, review, done, canceled)")
 
     # up
     p_up = subparsers.add_parser("up", parents=[parent_parser], help="Move card up in priority (decreases priority by 10)")
@@ -1715,7 +1717,7 @@ Empty columns default to priority 1000 (baseline for first card).
     p_history.add_argument("--hide-mine", action="store_true", dest="hide_mine", help="Hide current session's cards (show only other sessions). Can also set KANBAN_HIDE_MINE=true")
 
     # list (with ls alias)
-    p_list = subparsers.add_parser("list", parents=[parent_parser], help="Show board overview (default: shows todo, doing, blocked columns; hides done, canceled)")
+    p_list = subparsers.add_parser("list", parents=[parent_parser], help="Show board overview (default: shows todo, doing, review columns; hides done, canceled)")
     p_list.add_argument("--show-done", action="store_true", help="Include done column in output")
     p_list.add_argument("--show-canceled", action="store_true", help="Include canceled column in output")
     p_list.add_argument("--show-all", action="store_true", help="Include both done and canceled columns in output")
@@ -1812,7 +1814,7 @@ BULK REASSIGNMENT:
         "show": cmd_show,
         "todo": cmd_view,
         "doing": cmd_view,
-        "blocked": cmd_view,
+        "review": cmd_view,
         "done": cmd_view,
         "canceled": cmd_view,
         "assign": cmd_assign,
