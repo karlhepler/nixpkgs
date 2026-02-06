@@ -151,7 +151,7 @@ in {
       name = "staff";
       runtimeInputs = [ ];
       text = ''
-        exec claude --append-system-prompt "$(cat ~/.claude/output-styles/staff-engineer.md)" "$@"
+        exec claude --system-prompt "$(cat ~/.claude/output-styles/staff-engineer.md)" "$@"
       '';
       description = "Launch Claude Code with Staff Engineer output style";
       sourceFile = "default.nix";
