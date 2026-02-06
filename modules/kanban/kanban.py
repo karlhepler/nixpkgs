@@ -1528,23 +1528,26 @@ def watch_and_run(args, command_func) -> None:
 
     # Event to signal when a refresh is needed
     refresh_event = Event()
-    last_refresh = [time.time()]  # Use list for mutable reference in closure
 
     class DebounceHandler(FileSystemEventHandler):
         """Handler that debounces file system events."""
 
         def on_any_event(self, event):
-            # Ignore directory events and non-.md files
+            # Ignore directory events
             if event.is_directory:
                 return
-            if not event.src_path.endswith('.md'):
+
+            # Only react to .md file changes
+            # For moved events, check both src_path and dest_path
+            is_md_event = event.src_path.endswith('.md')
+            if hasattr(event, 'dest_path'):
+                is_md_event = is_md_event or event.dest_path.endswith('.md')
+
+            if not is_md_event:
                 return
 
-            # Debounce: only trigger if more than 1 second since last refresh
-            now = time.time()
-            if now - last_refresh[0] >= 1.0:
-                last_refresh[0] = now
-                refresh_event.set()
+            # Always set refresh event for valid .md events (trailing-edge debounce)
+            refresh_event.set()
 
     # Set up observer
     observer = Observer()
@@ -1563,6 +1566,11 @@ def watch_and_run(args, command_func) -> None:
         while True:
             # Wait for refresh event or timeout
             if refresh_event.wait(timeout=0.5):
+                # Let filesystem events settle before rendering
+                refresh_event.clear()
+                time.sleep(0.5)
+                refresh_event.clear()  # Discard events during settle period
+
                 # Clear screen using ANSI escape sequences (more reliable than os.system)
                 print('\033[2J\033[H', end='', flush=True)
 
@@ -1571,9 +1579,6 @@ def watch_and_run(args, command_func) -> None:
                     command_func(args)
                 except Exception as e:
                     print(f"Error running command: {e}", file=sys.stderr)
-
-                # Reset event
-                refresh_event.clear()
 
     except KeyboardInterrupt:
         print("\nStopping watch mode...")
