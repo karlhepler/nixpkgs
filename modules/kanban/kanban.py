@@ -1312,6 +1312,19 @@ def cmd_edit(args) -> None:
     if args.persona:
         frontmatter["persona"] = args.persona
 
+    # Update model if provided
+    if hasattr(args, 'model') and args.model:
+        frontmatter["model"] = args.model
+
+    # Update priority if provided
+    if hasattr(args, 'priority') and args.priority is not None:
+        priority = validate_priority(args.priority)
+        frontmatter["priority"] = priority
+
+    # Update session if provided
+    if hasattr(args, 'session_update') and args.session_update:
+        frontmatter["session"] = args.session_update
+
     # Handle content update
     if args.content is not None:
         # Get new content from stdin or argument
@@ -1657,6 +1670,9 @@ Empty columns default to priority 1000 (baseline for first card).
     p_edit.add_argument("card", help="Card number (e.g., 23) or filename pattern")
     p_edit.add_argument("--content", "-c", help="New card body content (use '-' for stdin)")
     p_edit.add_argument("--persona", help="Update persona")
+    p_edit.add_argument("--model", choices=["sonnet", "opus", "haiku"], help="Update AI model (sonnet, opus, haiku)")
+    p_edit.add_argument("--priority", type=int, help="Update priority (must be >= 0)")
+    p_edit.add_argument("--session", dest="session_update", help="Update session ID")
     p_edit.add_argument("--append", "-a", action="store_true", help="Append to content instead of replacing")
 
     # move
