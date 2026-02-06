@@ -1024,7 +1024,7 @@ def find_claude_pid() -> int | None:
                 break
             ppid_str, cmd = parts[0], parts[1].lower()
             if 'claude' in cmd and 'python' not in cmd:
-                return int(ppid_str)
+                return pid
             pid = int(ppid_str)
             if pid <= 1:
                 break
@@ -1056,6 +1056,29 @@ def cmd_nonce(args) -> None:
     nonce = f"KANBAN_NONCE_{uuid.uuid4().hex}_{int(time.time() * 1000)}"
     print(nonce)
 
+    # Store nonce in PID-keyed temp file for concurrent session isolation
+    claude_pid = find_claude_pid()
+    if claude_pid is not None:
+        nonces_dir = Path('/tmp/kanban-nonces')
+        nonces_dir.mkdir(exist_ok=True)
+
+        # Write our nonce to PID-keyed file
+        nonce_file = nonces_dir / str(claude_pid)
+        nonce_file.write_text(nonce)
+
+        # Clean up stale PID files (PIDs that no longer exist)
+        for pid_file in nonces_dir.glob('*'):
+            try:
+                stale_pid = int(pid_file.name)
+                os.kill(stale_pid, 0)
+            except (ValueError, ProcessLookupError):
+                try:
+                    pid_file.unlink()
+                except OSError:
+                    pass
+            except PermissionError:
+                pass  # Process exists but we can't signal it — not stale
+
 
 def get_current_session_id() -> str | None:
     """Get session ID - env var > Claude nonce > username for terminal.
@@ -1086,7 +1109,30 @@ def get_current_session_id() -> str | None:
         # Not inside Claude - use username for terminal usage
         return os.environ.get('USER') or os.getlogin()
 
-    # Inside Claude - search for existing KANBAN_NONCE in session files
+    # Inside Claude - check PID-keyed nonce file first (concurrent session isolation)
+    try:
+        nonce_file = Path('/tmp/kanban-nonces') / str(claude_pid)
+        if nonce_file.exists():
+            our_nonce = nonce_file.read_text().strip()
+
+            # Search for this specific nonce in session files
+            project_path = get_encoded_project_path()
+            projects_dir = Path.home() / '.claude' / 'projects' / project_path
+
+            if projects_dir.exists():
+                session_files = list(projects_dir.glob('*.jsonl'))
+                for session_file in session_files:
+                    result = subprocess.run(
+                        ['rg', '-F', our_nonce, str(session_file)],
+                        capture_output=True,
+                        text=True
+                    )
+                    if result.returncode == 0:
+                        return session_file.stem
+    except (OSError, ValueError, subprocess.SubprocessError):
+        pass
+
+    # Fall back to global nonce search (legacy: sessions that haven't run nonce yet)
     # User must run 'kanban nonce' first to establish session identity
     try:
         project_path = get_encoded_project_path()

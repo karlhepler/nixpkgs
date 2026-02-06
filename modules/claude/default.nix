@@ -104,6 +104,15 @@ in {
       description = "Hook for automatic C# code formatting with csharpier";
       sourceFile = "claude-csharp-format-hook.bash";
     };
+    claude-session-start-hook = shellApp {
+      name = "claude-session-start-hook";
+      runtimeInputs = [ ];
+      text = ''
+        echo "[kanban] Session established. Run \`kanban nonce\` if using kanban-based coordination."
+      '';
+      description = "Hook for Claude Code session start - reminds to establish kanban session identity";
+      sourceFile = "default.nix";
+    };
 
     # Claude question assistants
     claude-ask = shellApp {
@@ -396,6 +405,12 @@ in {
             hooks = [{
               type = "command";
               command = "${shellapps.claude-csharp-format-hook}/bin/claude-csharp-format-hook";
+            }];
+          }];
+          SessionStart = [{
+            hooks = [{
+              type = "command";
+              command = "${shellapps.claude-session-start-hook}/bin/claude-session-start-hook";
             }];
           }];
         };
