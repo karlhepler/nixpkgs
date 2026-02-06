@@ -1135,7 +1135,7 @@ def get_current_session_id() -> str | None:
 
 
 def cmd_view(args) -> None:
-    """View cards in a column with two-tiered display: full details for your session, summaries for others."""
+    """View cards in a column with compact display. Use 'kanban show <card#>' for full details."""
     root = get_root(args.root)
     column = args.column
 
@@ -1254,90 +1254,50 @@ def cmd_view(args) -> None:
         else:
             other_cards.append(card)
 
-    # Display: Your Session - Full Details (unless explicitly hiding)
+    # Display: Your Session - Compact (unless explicitly hiding)
     if my_cards and not hide_own_session:
         if current_session:
-            print("=== Your Session - Full Details ===")
+            print(f"=== Your Session ({current_session[:8]}) ===")
         else:
-            print("=== Your Cards - Full Details ===")
+            print("=== Your Cards ===")
         print()
-        sys.stdout.flush()  # Ensure header prints before bat output
 
-        # Build output for your cards
-        lines = []
-        for i, card in enumerate(my_cards):
-            if i > 0:
-                lines.append("\n" + "=" * 60 + "\n")
-            lines.append(f"Card {card.name}")
-            lines.append("")
-            lines.append(card.read_text())
-        output = "\n".join(lines)
+        for card in my_cards:
+            content = card.read_text()
+            frontmatter, _ = parse_frontmatter(content)
+            persona = frontmatter.get("persona", "")
+            model = frontmatter.get("model")
 
-        # Pipe through bat with markdown highlighting
-        try:
-            proc = subprocess.Popen(
-                ["bat", "--language", "md", "--style", "plain"],
-                stdin=subprocess.PIPE,
-                text=True
-            )
-            proc.communicate(input=output)
-        except (FileNotFoundError, BrokenPipeError):
-            print(output)
+            display = f"  {card.stem}"
+            if persona and persona != "unassigned":
+                display += f" ({persona})"
+            if model:
+                display += f" [model: {model}]"
+            print(display)
+        print()
 
-    # Display: Other Sessions - Abbreviated Content (for coordination)
+    # Display: Other Sessions - Compact (for coordination)
     if other_cards and not show_only_mine:
         print()
-        print("=== Other Sessions - Abbreviated Content ===")
+        print("=== Other Sessions ===")
         print()
-        sys.stdout.flush()  # Ensure header prints before bat output
 
-        # Build output for other sessions' cards
-        lines = []
-        for i, card in enumerate(other_cards):
+        for card in other_cards:
             content = card.read_text()
-            frontmatter, body = parse_frontmatter(content)
+            frontmatter, _ = parse_frontmatter(content)
             persona = frontmatter.get("persona", "")
             session = frontmatter.get("session", "")
             model = frontmatter.get("model")
 
-            # Extract actual body after frontmatter delimiters
-            body_parts = body.split("---", 2)
-            actual_body = body_parts[2].strip() if len(body_parts) >= 3 else body.strip()
-
-            # Stop before Activity section (comments)
-            if "\n## Activity\n" in actual_body:
-                abbreviated = actual_body.split("\n## Activity\n")[0].strip()
-            elif "\n## Activity" in actual_body:
-                abbreviated = actual_body.split("\n## Activity")[0].strip()
-            else:
-                abbreviated = actual_body
-
-            # Build header with metadata
-            if i > 0:
-                lines.append("\n" + "-" * 40 + "\n")
-            header = f"**{card.stem}**"
+            display = f"  {card.stem}"
             if persona and persona != "unassigned":
-                header += f" ({persona})"
+                display += f" ({persona})"
             if model:
-                header += f" [model: {model}]"
+                display += f" [model: {model}]"
             if session:
-                header += f" [session: {session[:8]}]"
-            lines.append(header)
-            lines.append("")
-            lines.append(abbreviated)
-
-        output = "\n".join(lines)
-
-        # Pipe through bat with markdown highlighting
-        try:
-            proc = subprocess.Popen(
-                ["bat", "--language", "md", "--style", "plain"],
-                stdin=subprocess.PIPE,
-                text=True
-            )
-            proc.communicate(input=output)
-        except (FileNotFoundError, BrokenPipeError):
-            print(output)
+                display += f" [session: {session[:8]}]"
+            print(display)
+        print()
 
 
 def cmd_edit(args) -> None:
