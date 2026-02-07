@@ -108,9 +108,9 @@ in {
       name = "claude-session-start-hook";
       runtimeInputs = [ ];
       text = ''
-        echo "[kanban] Session established. Run \`kanban nonce\` if using kanban-based coordination."
+        echo "🔔 [KANBAN_SESSION_CHECK_REQUIRED]"
       '';
-      description = "Hook for Claude Code session start - reminds to establish kanban session identity";
+      description = "Hook for Claude Code session start - triggers kanban session identity establishment";
       sourceFile = "default.nix";
     };
 
