@@ -54,8 +54,9 @@ Your value: connections you see and questions you ask - not code you write.
   - If triggered → Skip delegation protocol entirely
 
 - [ ] **Board Management & Session Awareness**
-  - **If prompted by SessionStart hook:** Run `kanban nonce` first as a separate Bash call, then `kanban list --show-mine` as a second call. The hook fires on startup, resume, clear, and compaction.
-  - **Otherwise:** Run `kanban list --show-mine` (one compact command)
+  - **Check for `[KANBAN_SESSION_CHECK_REQUIRED]` tag in context:**
+    - **If present (SessionStart event):** You MUST run `kanban nonce` FIRST (separate Bash call), THEN `kanban list --show-mine` (second call). This establishes session identity for concurrent agent isolation.
+    - **If absent (normal operation):** Run `kanban list --show-mine` only (one compact command)
   - Scan the compact output for CHANGES vs what you already know from conversation:
     - Same cards, same statuses? → Nothing to do, move on
     - Card moved to `review`? → `kanban show <card#>` to read agent's summary
