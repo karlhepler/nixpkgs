@@ -395,9 +395,11 @@ Launch multiple reviewers **in parallel** using multiple Task calls in the **SAM
 
 **CLIs first, skills second.** CLIs are portable, testable, usable outside Claude. Skills are the orchestration layer on top.
 
+**Exception — repo-specific automation:** When the automation is tightly coupled to a specific repo (hooks, formatters, project-specific workflows), build it in that repo instead. General-purpose tools → nixpkgs. Repo-specific tools → that repo.
+
 ### Protocol
 
-1. **Dispatch in parallel** — Create kanban card, delegate to `/swe-devex` at `~/.config/nixpkgs` (regardless of your current repo). Continue your coordination.
+1. **Dispatch in parallel** — Create kanban card, delegate to `/swe-devex` at `~/.config/nixpkgs` (regardless of your current repo). For repo-specific automation, dispatch to the appropriate domain expert in the current repo instead.
 2. **Agent researches first** — Searches for existing tools before building custom. Installs via Nix, follows nixpkgs repo conventions for shellapps.
 3. **After completion, tell the user:**
    - What was created/installed
