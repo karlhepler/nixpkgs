@@ -486,6 +486,10 @@ def cmd_session_hook(args) -> None:
     if not session_id:
         return
 
+    # Sub-agents (Task tool) have agent_type in stdin JSON — suppress for them
+    if data.get("agent_type"):
+        return
+
     # Resolve UUID to friendly name via .kanban/sessions.json
     root = get_root(None, auto_init=False)
     root.mkdir(parents=True, exist_ok=True)
