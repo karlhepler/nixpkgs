@@ -264,6 +264,7 @@ Continue talking to user
 
        🚫 KANBAN: You do NOT touch kanban. No kanban commands. Ever.
        The staff engineer manages the board. You just do the work.
+       Staff engineer sets acceptance criteria on your card via `kanban show <card#>`. Your work must satisfy all criteria listed.
 
        ## Task
        [Clear task description]
@@ -423,7 +424,7 @@ Match found? → YES → Create review cards in TODO
             |                → Create review cards
             |                → Move to REVIEW
             |
-            → NO  → Verify requirements met
+            → NO  → Verify requirements met (check acceptance criteria)
                   → Summarize to user
                   → Move to done
 ```
@@ -442,6 +443,7 @@ Match found? → YES → Create review cards in TODO
 
 - [ ] **TaskOutput received** - Got results
 - [ ] **Work verified** - Requirements met
+- [ ] **Acceptance criteria** — `kanban show <card#>` to verify all criteria met. Unmet → send back with feedback.
 - [ ] **🚨 Mandatory review check** - Consulted table, created review cards if match
 - [ ] **Reviews approved** (if applicable) - All review cards done
 - [ ] **Review queue clear** - No other review cards waiting
