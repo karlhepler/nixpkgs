@@ -18,13 +18,27 @@ import argparse
 import json
 import os
 import re
+import select
 import subprocess
 import sys
+import termios
+import threading
 import time
+import tty
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from threading import Event
+
+@dataclass
+class WatchState:
+    show_intent: bool = False
+    show_tree: bool = False
+    session_filter: str = ""
+    card_filter: str = ""
+    input_mode: str = ""       # "" | "session" | "card"
+    input_buffer: str = ""
 
 COLUMNS = ["todo", "doing", "review", "done", "canceled"]
 ARCHIVE_DAYS_THRESHOLD = int(os.environ.get("KANBAN_ARCHIVE_DAYS", "30"))
@@ -521,6 +535,7 @@ def make_card(
     model: str | None = None,
     session: str | None = None,
     priority: int = 1000,
+    criteria: list[str] | None = None,
 ) -> dict:
     """Build a new card dict."""
     now = now_iso()
@@ -537,6 +552,11 @@ def make_card(
         "updated": now,
         "activity": [{"timestamp": now, "message": "Created"}],
     }
+
+    # Add acceptance criteria if provided
+    if criteria:
+        card["criteria"] = [{"text": c, "met": False} for c in criteria]
+
     return card
 
 
@@ -571,6 +591,11 @@ def cmd_do(args) -> None:
         print("Error: JSON must include 'action' field", file=sys.stderr)
         sys.exit(1)
 
+    # Parse criteria from JSON (as list of strings) or from --criteria flags
+    criteria_from_json = data.get("criteria", [])
+    criteria_from_args = getattr(args, "criteria", None) or []
+    criteria = criteria_from_args if criteria_from_args else criteria_from_json
+
     session = args.session if hasattr(args, "session") and args.session else get_current_session_id()
     card = make_card(
         action=data["action"],
@@ -580,6 +605,7 @@ def cmd_do(args) -> None:
         persona=args.persona or data.get("persona", "unassigned"),
         model=args.model or data.get("model"),
         session=session,
+        criteria=criteria,
     )
 
     num = create_card_in_column(root, "doing", card, top=args.top)
@@ -637,6 +663,9 @@ def cmd_add(args) -> None:
     else:
         body_content = ""
 
+    # Get criteria from --criteria flags
+    criteria = getattr(args, "criteria", None) or []
+
     card = make_card(
         action=args.title,
         intent=body_content,
@@ -644,6 +673,7 @@ def cmd_add(args) -> None:
         model=args.model,
         session=session,
         priority=priority,
+        criteria=criteria,
     )
 
     num = next_number(root)
@@ -681,6 +711,7 @@ def cmd_show(args) -> None:
     output = json.dumps(card, indent=2)
     header = f"=== Card #{card_number(card_path)} ({col}) ===\n\n"
 
+    # Display JSON first
     try:
         proc = subprocess.Popen(
             ["bat", "--language", "json", "--style", "plain"],
@@ -689,6 +720,16 @@ def cmd_show(args) -> None:
         proc.communicate(input=header + output)
     except (FileNotFoundError, BrokenPipeError):
         print(header + output)
+
+    # Display acceptance criteria if present
+    criteria = card.get("criteria", [])
+    if criteria:
+        print()
+        print("Acceptance Criteria:")
+        for i, criterion in enumerate(criteria, start=1):
+            checkbox = "✅" if criterion.get("met", False) else "⬜"
+            text = criterion.get("text", "")
+            print(f"  {checkbox} {i}. {text}")
 
 
 def cmd_delete(args) -> None:
@@ -860,6 +901,93 @@ def cmd_assign(args) -> None:
     print(f"Reassigned #{card_number(card_path)}: {old_session or 'sessionless'} -> {new_session}")
 
 
+def cmd_criteria(args) -> None:
+    """Add acceptance criterion to a card."""
+    root = get_root(args.root)
+    card_path = find_card(root, args.card)
+    card = read_card(card_path)
+
+    # Initialize criteria list if it doesn't exist (backwards compatibility)
+    if "criteria" not in card:
+        card["criteria"] = []
+
+    # Append new criterion
+    card["criteria"].append({"text": args.text, "met": False})
+    card["updated"] = now_iso()
+    write_card(card_path, card)
+    print(f"Added criterion to #{card_number(card_path)}: {args.text}")
+
+
+def cmd_check(args) -> None:
+    """Mark acceptance criterion as met."""
+    root = get_root(args.root)
+    card_path = find_card(root, args.card)
+    card = read_card(card_path)
+
+    criteria = card.get("criteria", [])
+    if not criteria:
+        print(f"Error: Card #{card_number(card_path)} has no acceptance criteria", file=sys.stderr)
+        sys.exit(1)
+
+    # Find criterion by 1-based index or text prefix match
+    criterion_idx = None
+    if args.criterion.isdigit():
+        idx = int(args.criterion) - 1  # Convert to 0-based
+        if 0 <= idx < len(criteria):
+            criterion_idx = idx
+    else:
+        # Text prefix match (case insensitive)
+        search_text = args.criterion.lower()
+        for i, c in enumerate(criteria):
+            if c.get("text", "").lower().startswith(search_text):
+                criterion_idx = i
+                break
+
+    if criterion_idx is None:
+        print(f"Error: No criterion found matching '{args.criterion}'", file=sys.stderr)
+        sys.exit(1)
+
+    criteria[criterion_idx]["met"] = True
+    card["updated"] = now_iso()
+    write_card(card_path, card)
+    print(f"✅ Checked: {criteria[criterion_idx]['text']}")
+
+
+def cmd_uncheck(args) -> None:
+    """Mark acceptance criterion as unmet."""
+    root = get_root(args.root)
+    card_path = find_card(root, args.card)
+    card = read_card(card_path)
+
+    criteria = card.get("criteria", [])
+    if not criteria:
+        print(f"Error: Card #{card_number(card_path)} has no acceptance criteria", file=sys.stderr)
+        sys.exit(1)
+
+    # Find criterion by 1-based index or text prefix match
+    criterion_idx = None
+    if args.criterion.isdigit():
+        idx = int(args.criterion) - 1  # Convert to 0-based
+        if 0 <= idx < len(criteria):
+            criterion_idx = idx
+    else:
+        # Text prefix match (case insensitive)
+        search_text = args.criterion.lower()
+        for i, c in enumerate(criteria):
+            if c.get("text", "").lower().startswith(search_text):
+                criterion_idx = i
+                break
+
+    if criterion_idx is None:
+        print(f"Error: No criterion found matching '{args.criterion}'", file=sys.stderr)
+        sys.exit(1)
+
+    criteria[criterion_idx]["met"] = False
+    card["updated"] = now_iso()
+    write_card(card_path, card)
+    print(f"⬜ Unchecked: {criteria[criterion_idx]['text']}")
+
+
 def cmd_clear(args) -> None:
     """Trash all JSON cards from columns (moves to system trash, not permanent delete)."""
     root = get_root(args.root)
@@ -906,16 +1034,55 @@ def cmd_clear(args) -> None:
 # List and view commands
 # =============================================================================
 
-def format_card_line(card: dict, num: str, show_session: bool = False, show_tree: bool = False) -> str:
+def format_card_line(card: dict, num: str, show_session: bool = False, show_tree: bool = False, show_intent: bool = False) -> str:
     """Format a single card for list/view output."""
     session = card.get("session", "")
     session_tag = f"[{session[:8]}] " if session else ""
     line = f"  #{num} {session_tag}{card['action']}"
 
+    # Add AC summary when show_intent is enabled and criteria exist
+    if show_intent:
+        criteria = card.get("criteria", [])
+        if criteria:
+            met_count = sum(1 for c in criteria if c.get("met", False))
+            total_count = len(criteria)
+            green = "\033[32m"
+            yellow = "\033[33m"
+            dim = "\033[2m"
+            reset = "\033[0m"
+            if met_count == total_count:
+                ac_tag = f" {green}[{met_count}/{total_count} AC]{reset}"
+            elif met_count > 0:
+                ac_tag = f" {yellow}[{met_count}/{total_count} AC]{reset}"
+            else:
+                ac_tag = f" {dim}[{met_count}/{total_count} AC]{reset}"
+            line += ac_tag
+
     if show_tree:
         tree = build_file_tree(card.get("readFiles", []), card.get("writeFiles", []))
         if tree:
             line += "\n" + tree
+
+    if show_intent and card.get("intent"):
+        dim = "\033[2m"
+        reset = "\033[0m"
+        intent_text = card["intent"]
+        # Split into lines at 80 chars, show up to 3 lines
+        intent_lines = []
+        while intent_text and len(intent_lines) < 3:
+            if len(intent_text) <= 80:
+                intent_lines.append(intent_text)
+                break
+            # Find a good break point (space) before 80 chars
+            break_point = intent_text.rfind(' ', 0, 80)
+            if break_point == -1:
+                break_point = 80
+            intent_lines.append(intent_text[:break_point])
+            intent_text = intent_text[break_point:].lstrip()
+
+        for intent_line in intent_lines:
+            line += f"\n    {dim}{intent_line}{reset}"
+
     return line
 
 
@@ -923,6 +1090,19 @@ def cmd_list(args) -> None:
     """Show board overview with compact format."""
     root = get_root(args.root)
     is_claude = hasattr(args, "session") and bool(args.session)
+
+    # Check for watch state
+    watch_state = getattr(args, '_watch_state', None)
+    if watch_state:
+        show_tree = watch_state.show_tree
+        show_intent = watch_state.show_intent
+        session_filter = watch_state.session_filter
+        card_filter = watch_state.card_filter
+    else:
+        show_tree = is_claude
+        show_intent = False
+        session_filter = ""
+        card_filter = ""
 
     # Column filtering
     explicit_columns = getattr(args, "column", None)
@@ -972,6 +1152,15 @@ def cmd_list(args) -> None:
             if not card_in_date_range(card, since, until):
                 continue
             num = card_number(card_path)
+
+            # Apply watch filters
+            if card_filter and not num.startswith(card_filter):
+                continue
+            if session_filter:
+                card_session = card.get("session", "")
+                if not card_session.lower().startswith(session_filter.lower()):
+                    continue
+
             if is_my_card(card, current_session):
                 my_cards[col].append((num, card))
             else:
@@ -993,7 +1182,7 @@ def cmd_list(args) -> None:
             print(f"{col.upper()} ({len(cards)})")
             if cards:
                 for num, card in cards:
-                    print(format_card_line(card, num, show_tree=is_claude))
+                    print(format_card_line(card, num, show_tree=show_tree, show_intent=show_intent))
             else:
                 print("  (empty)")
             print()
@@ -1006,7 +1195,7 @@ def cmd_list(args) -> None:
             if cards:
                 print(f"{col.upper()} ({len(cards)})")
                 for num, card in cards:
-                    print(format_card_line(card, num, show_session=True, show_tree=is_claude))
+                    print(format_card_line(card, num, show_session=True, show_tree=show_tree, show_intent=show_intent))
                 print()
 
 
@@ -1026,6 +1215,19 @@ def cmd_view(args) -> None:
     current_session, hide_own, show_only_mine = resolve_session_filters(args)
     is_claude = hasattr(args, "session") and bool(args.session)
 
+    # Check for watch state
+    watch_state = getattr(args, '_watch_state', None)
+    if watch_state:
+        show_tree = watch_state.show_tree
+        show_intent = watch_state.show_intent
+        session_filter = watch_state.session_filter
+        card_filter = watch_state.card_filter
+    else:
+        show_tree = is_claude
+        show_intent = False
+        session_filter = ""
+        card_filter = ""
+
     my_list = []
     other_list = []
 
@@ -1037,6 +1239,15 @@ def cmd_view(args) -> None:
         if not card_in_date_range(card, since, until):
             continue
         num = card_number(card_path)
+
+        # Apply watch filters
+        if card_filter and not num.startswith(card_filter):
+            continue
+        if session_filter:
+            card_session = card.get("session", "")
+            if not card_session.lower().startswith(session_filter.lower()):
+                continue
+
         if is_my_card(card, current_session):
             my_list.append((num, card))
         else:
@@ -1049,14 +1260,14 @@ def cmd_view(args) -> None:
             print("=== Your Cards ===")
         print()
         for num, card in my_list:
-            print(format_card_line(card, num, show_tree=is_claude))
+            print(format_card_line(card, num, show_tree=show_tree, show_intent=show_intent))
         print()
 
     if other_list and not show_only_mine:
         print("=== Other Sessions ===")
         print()
         for num, card in other_list:
-            print(format_card_line(card, num, show_session=True, show_tree=is_claude))
+            print(format_card_line(card, num, show_session=True, show_tree=show_tree, show_intent=show_intent))
         print()
 
 
@@ -1119,6 +1330,16 @@ def cmd_done_dual(args) -> None:
         root = get_root(args.root)
         card_path = find_card(root, args.card_or_none)
         card = read_card(card_path)
+
+        # Check for unmet acceptance criteria
+        criteria = card.get("criteria", [])
+        if criteria:
+            unmet = [c for c in criteria if not c.get("met", False)]
+            if unmet:
+                print(f"⚠️  Warning: {len(unmet)} of {len(criteria)} acceptance criteria are unmet:", file=sys.stderr)
+                for i, criterion in enumerate(criteria, start=1):
+                    if not criterion.get("met", False):
+                        print(f"  ⬜ {i}. {criterion.get('text', '')}", file=sys.stderr)
 
         # Append completion message to activity
         message = args.message if hasattr(args, "message") and args.message else "Completed"
@@ -1220,6 +1441,119 @@ def cmd_history(args) -> None:
 # Watch mode (reused from v1)
 # =============================================================================
 
+def _handle_normal_mode(state: WatchState, ch: str, refresh_event: Event, stop_event: Event) -> None:
+    """Handle keypresses in normal mode."""
+    if ch == '?':
+        state.show_intent = not state.show_intent
+        refresh_event.set()
+    elif ch == 'f':
+        state.show_tree = not state.show_tree
+        refresh_event.set()
+    elif ch == '/':
+        state.input_mode = "session"
+        state.input_buffer = ""
+        refresh_event.set()
+    elif ch == '#':
+        state.input_mode = "card"
+        state.input_buffer = ""
+        refresh_event.set()
+    elif ch == 'q':
+        stop_event.set()
+        refresh_event.set()
+
+
+def _handle_input_mode(state: WatchState, ch: str, refresh_event: Event) -> None:
+    """Handle keypresses in input mode."""
+    if ch == '\x1b':  # Escape
+        # Clear filter based on current mode before clearing mode
+        if state.input_mode == "session":
+            state.session_filter = ""
+        elif state.input_mode == "card":
+            state.card_filter = ""
+        state.input_mode = ""
+        state.input_buffer = ""
+        refresh_event.set()
+    elif ch == '\r' or ch == '\n':  # Enter
+        state.input_mode = ""
+        refresh_event.set()
+    elif ch == '\x7f' or ch == '\x08':  # Backspace/Delete
+        if state.input_buffer:
+            state.input_buffer = state.input_buffer[:-1]
+            # Live filter update
+            if state.input_mode == "session":
+                state.session_filter = state.input_buffer
+            elif state.input_mode == "card":
+                state.card_filter = state.input_buffer
+            refresh_event.set()
+    elif ch.isprintable():
+        state.input_buffer += ch
+        # Live filter update
+        if state.input_mode == "session":
+            state.session_filter = state.input_buffer
+        elif state.input_mode == "card":
+            state.card_filter = state.input_buffer
+        refresh_event.set()
+
+
+def _input_thread(state: WatchState, refresh_event: Event, stop_event: Event) -> None:
+    """Background thread for reading keyboard input."""
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        tty.setcbreak(fd)
+        while not stop_event.is_set():
+            # Check for input with timeout
+            ready, _, _ = select.select([sys.stdin], [], [], 0.1)
+            if ready:
+                ch = sys.stdin.read(1)
+                if state.input_mode:
+                    _handle_input_mode(state, ch, refresh_event)
+                else:
+                    _handle_normal_mode(state, ch, refresh_event, stop_event)
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+
+def _print_status_bar(state: WatchState) -> None:
+    """Print status bar showing active toggles, filters, and input prompts."""
+    dim = "\033[2m"
+    reset = "\033[0m"
+
+    if state.input_mode == "session":
+        prompt = f"{dim}session: {state.input_buffer}_{reset}"
+        print(prompt)
+    elif state.input_mode == "card":
+        prompt = f"{dim}card#: {state.input_buffer}_{reset}"
+        print(prompt)
+    else:
+        # Show hints and active filters
+        hints = f"{dim}[?]intent [f]tree [/]session [#]card [q]quit{reset}"
+        active_filters = []
+        if state.show_intent:
+            active_filters.append("intent:on")
+        if state.show_tree:
+            active_filters.append("tree:on")
+        if state.session_filter:
+            active_filters.append(f"session:{state.session_filter}")
+        if state.card_filter:
+            active_filters.append(f"card:{state.card_filter}")
+
+        if active_filters:
+            filters_str = f"{dim} | {' | '.join(active_filters)}{reset}"
+            print(hints + filters_str)
+        else:
+            print(hints)
+
+
+def _render_watch(args, command_func, state: WatchState, is_interactive: bool) -> None:
+    """Render the watch view with optional status bar."""
+    args._watch_state = state
+    command_func(args)
+    if is_interactive:
+        print()
+        _print_status_bar(state)
+
+
 def watch_and_run(args, command_func) -> None:
     """Watch .kanban/ directory and re-run command on changes."""
     try:
@@ -1231,6 +1565,9 @@ def watch_and_run(args, command_func) -> None:
 
     root = get_root(args.root)
     refresh_event = Event()
+    stop_event = Event()
+    state = WatchState()
+    is_interactive = sys.stdin.isatty()
 
     class DebounceHandler(FileSystemEventHandler):
         def on_any_event(self, event):
@@ -1246,26 +1583,48 @@ def watch_and_run(args, command_func) -> None:
     observer.schedule(DebounceHandler(), str(root), recursive=True)
     observer.start()
 
-    print(f"Watching {root} for changes... (Ctrl+C to exit)")
-    print()
+    # Start input thread if interactive
+    input_thread = None
+    if is_interactive:
+        input_thread = threading.Thread(
+            target=_input_thread,
+            args=(state, refresh_event, stop_event),
+            daemon=True
+        )
+        input_thread.start()
+
+    if is_interactive:
+        print(f"Watching {root} for changes... (Press ? for help)")
+        print()
+    else:
+        print(f"Watching {root} for changes... (Ctrl+C to exit)")
+        print()
 
     try:
-        command_func(args)
-        while True:
+        _render_watch(args, command_func, state, is_interactive)
+        while not stop_event.is_set():
             if refresh_event.wait(timeout=0.5):
                 refresh_event.clear()
-                time.sleep(0.5)
+                time.sleep(0.1)  # Small debounce
                 refresh_event.clear()
                 print("\033[2J\033[H", end="", flush=True)
                 try:
-                    command_func(args)
+                    _render_watch(args, command_func, state, is_interactive)
                 except Exception as e:
                     print(f"Error: {e}", file=sys.stderr)
+                    if is_interactive:
+                        print()
+                        _print_status_bar(state)
     except KeyboardInterrupt:
         print("\nStopping watch mode...")
     finally:
+        stop_event.set()
         observer.stop()
         observer.join()
+        if input_thread:
+            input_thread.join(timeout=1)
+        # Safety net to restore terminal
+        os.system('stty sane 2>/dev/null')
 
 
 # =============================================================================
@@ -1310,6 +1669,7 @@ def main() -> None:
     p_do.add_argument("--model", choices=["sonnet", "opus", "haiku"], help="AI model")
     p_do.add_argument("--session", help="Session ID")
     p_do.add_argument("--top", action="store_true", help="Insert at top")
+    p_do.add_argument("--criteria", action="append", help="Acceptance criterion (repeatable)")
 
     # --- add ---
     p_add = subparsers.add_parser("add", parents=[parent_parser], help="Add card (position required for non-empty)")
@@ -1324,6 +1684,7 @@ def main() -> None:
     p_add.add_argument("--bottom", action="store_true", help="Insert at bottom")
     p_add.add_argument("--after", help="Insert after card")
     p_add.add_argument("--before", help="Insert before card")
+    p_add.add_argument("--criteria", action="append", help="Acceptance criterion (repeatable)")
 
     # --- move ---
     p_move = subparsers.add_parser("move", parents=[parent_parser], help="Move card to column")
@@ -1337,6 +1698,24 @@ def main() -> None:
     # --- delete ---
     p_delete = subparsers.add_parser("delete", parents=[parent_parser], help="Delete a card")
     p_delete.add_argument("card", help="Card number")
+
+    # --- criteria ---
+    p_criteria = subparsers.add_parser("criteria", parents=[parent_parser], help="Add acceptance criterion to card")
+    p_criteria.add_argument("card", help="Card number")
+    p_criteria.add_argument("text", help="Criterion text")
+    p_criteria.add_argument("--session", help="Session ID (for consistency)")
+
+    # --- check ---
+    p_check = subparsers.add_parser("check", parents=[parent_parser], help="Mark criterion as met")
+    p_check.add_argument("card", help="Card number")
+    p_check.add_argument("criterion", help="Criterion index (1-based) or text prefix")
+    p_check.add_argument("--session", help="Session ID (for consistency)")
+
+    # --- uncheck ---
+    p_uncheck = subparsers.add_parser("uncheck", parents=[parent_parser], help="Mark criterion as unmet")
+    p_uncheck.add_argument("card", help="Card number")
+    p_uncheck.add_argument("criterion", help="Criterion index (1-based) or text prefix")
+    p_uncheck.add_argument("--session", help="Session ID (for consistency)")
 
     # --- edit ---
     p_edit = subparsers.add_parser("edit", parents=[parent_parser], help="Edit card metadata")
@@ -1422,6 +1801,9 @@ def main() -> None:
         "move": cmd_move,
         "show": cmd_show,
         "delete": cmd_delete,
+        "criteria": cmd_criteria,
+        "check": cmd_check,
+        "uncheck": cmd_uncheck,
         "edit": cmd_edit,
         "up": cmd_up,
         "down": cmd_down,
