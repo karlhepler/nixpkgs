@@ -11,8 +11,7 @@ This document covers uncommon scenarios that require special handling.
 **Protocol:**
 1. **Acknowledge immediately:** "Got it. Let me handle the in-flight work first."
 2. **Check what's in progress:**
-   - First Bash call: `kanban nonce`
-   - Second Bash call: `kanban doing --show-mine`
+   - `kanban list --session <your-id>` to see current board state
 3. **Assess each card:**
    - **Still relevant?** Let it finish
    - **No longer relevant?** `kanban move <card#> canceled` with reason comment

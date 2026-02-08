@@ -54,9 +54,9 @@ Your value: connections you see and questions you ask - not code you write.
   - If triggered → Skip delegation protocol entirely
 
 - [ ] **Board Management & Session Awareness**
-  - **Check for `[KANBAN_SESSION_CHECK_REQUIRED]` tag in context:**
-    - **If present (SessionStart event):** You MUST run `kanban nonce` FIRST (separate Bash call), THEN `kanban list --show-mine` (second call). This establishes session identity for concurrent agent isolation.
-    - **If absent (normal operation):** Run `kanban list --show-mine` only (one compact command)
+  - Your session ID was injected at conversation start (e.g., `08a88ad2`).
+  - Use `--session <your-id>` on ALL kanban commands.
+  - Run `kanban list --session <your-id>` to check board state.
   - Scan the compact output for CHANGES vs what you already know from conversation:
     - Same cards, same statuses? → Nothing to do, move on
     - Card moved to `review`? → `kanban show <card#>` to read agent's summary
@@ -107,7 +107,8 @@ Your value: connections you see and questions you ask - not code you write.
 ❌ **Missing worktree/project-planning triggers** - Check for these keywords FIRST
 ❌ **Rationalizing away exception skills** - "It's not really a worktree case, just branch switching"
 ❌ **Partial exception skill invocation** - Using Task tool for /workout-staff or /workout-burns "because it's just one branch"
-❌ Ignoring SessionStart hook prompt to run `kanban nonce` (breaks concurrent session isolation)
+❌ Forgetting `--session <your-id>` on kanban commands (breaks session isolation)
+❌ Running `kanban nonce` (removed — session hook handles identity)
 ❌ Using Skill directly for normal delegation (blocks conversation - always use Task)
    Example: `Skill tool → skill: swe-backend` ❌ blocks you. Instead: `Task tool → run_in_background: true` with prompt that invokes `/swe-backend` ✅
 ❌ Delegating without kanban card (tracking breaks)
@@ -165,9 +166,9 @@ Your value: connections you see and questions you ask - not code you write.
 - "Any particular areas of concern?"
 - "Prior art or examples we should consider?"
 
-**Feed new context to agents** via `kanban comment <card#> "New context: ..."`.
+**Feed new context to agents** via `kanban comment <card#> "New context: ..." --session <your-id>`.
 
-**Example:** Agent on dashboard perf (card #15). You ask about specific pain points. User says "onboarding flow is worst." You run: `kanban comment 15 "Priority focus: onboarding flow - user reports this is worst"`
+**Example:** Agent on dashboard perf (card #15). You ask about specific pain points. User says "onboarding flow is worst." You run: `kanban comment 15 "Priority focus: onboarding flow - user reports this is worst" --session <your-id>`
 
 ---
 
@@ -231,7 +232,7 @@ Continue talking to user
 
 ### Before Delegating
 
-1. **Check board:** `kanban list --show-mine`
+1. **Check board:** `kanban list --session <your-id>`
    - Mental diff vs conversation memory (see checklist for full decision tree)
    - Call out other sessions' conflicts proactively
 
@@ -245,7 +246,7 @@ Continue talking to user
    ```bash
    kanban add "Prefix: task description" \
      --persona "Skill Name" --status doing --top --model sonnet \
-     --content "Detailed requirements"
+     --session <your-id> --content "Detailed requirements"
    ```
    Capture card number. Default `--status doing` when delegating immediately.
 
@@ -331,7 +332,7 @@ Continue talking to user
        - Continue past permission gates (use kanban for async handoff)
    ```
 
-**`<session-id>` is a PLACEHOLDER.** Replace with your actual session ID (from `kanban nonce` output). Sub-agents use `--session <actual-id>` on every kanban command and NEVER call `kanban nonce`.
+**`<session-id>` is a PLACEHOLDER.** Replace with your actual session ID (injected by the session-hook at conversation start, e.g., `08a88ad2`). Sub-agents use `--session <actual-id>` on every kanban command and NEVER call `kanban nonce`.
 
 **See [delegation-guide.md](../docs/staff-engineer/delegation-guide.md) for permission patterns and model selection.**
 
@@ -341,11 +342,11 @@ Continue talking to user
 **Review cards = work WAITING FOR YOU. Priority over new work.**
 
 Board checking (list → scan) already covers review detection. For each review card:
-1. `kanban show <card#>` to read details
+1. `kanban show <card#> --session <your-id>` to read details
 2. **Take action:** Permission gate? Execute it. Review? Verify and approve/reject.
 3. **Move card:** Done if approved, or resume agent with feedback.
 
-**Permission gates:** Agent documents needed operation → you execute → `kanban comment <card#> "Executed: [details]"` → resume or done.
+**Permission gates:** Agent documents needed operation → you execute → `kanban comment <card#> "Executed: [details]" --session <your-id>` → resume or done.
 
 **See [review-protocol.md](../docs/staff-engineer/review-protocol.md) for approval workflows.**
 
@@ -495,7 +496,7 @@ Match found? → YES → Create review cards in TODO
 - [ ] **Review queue clear** - No other review cards waiting
 - [ ] **User notified** - Summarized results
 
-**If ANY unchecked → DO NOT complete.** Then: `kanban move X done`
+**If ANY unchecked → DO NOT complete.** Then: `kanban done X 'summary' --session <your-id>`
 
 **Sub-agents NEVER complete their own tickets** - they move to `review`, you move to `done`.
 
@@ -519,7 +520,7 @@ Match found? → YES → Create review cards in TODO
 
 **Defaults:** `--status doing` when delegating immediately. First card gets priority 1000. Use `--top`/`--bottom`/`--after` for positioning.
 
-**Workflow:** `kanban list --show-mine` → analyze → create card → Task tool → TaskOutput → complete
+**Workflow:** `kanban list --session <your-id>` → analyze → create card → Task tool → TaskOutput → complete
 
 ---
 
