@@ -262,20 +262,8 @@ Continue talking to user
        IMPORTANT: The skill will read ~/.claude/CLAUDE.md and project CLAUDE.md files
        FIRST to understand the environment, tools, and conventions.
 
-       **Your kanban card is #42.**
-
-       Use `--session <session-id>` on ALL kanban commands. NEVER call `kanban nonce`.
-       Example: `kanban comment --session <session-id> 42 "Starting work"`
-
-       CRITICAL - Permission Handling Protocol:
-       You're running in background and CANNOT receive permission prompts.
-       If you hit a permission gate (Edit, Write, git push, npm install):
-
-       1. Document what you need in kanban comment (exact operation details)
-       2. Move card to review: `kanban move --session <session-id> 42 review`
-       3. Stop work and wait for staff engineer to execute
-
-       NOTE: Kanban commands are pre-approved and will NOT ask for permission.
+       🚫 KANBAN: You do NOT touch kanban. No kanban commands. Ever.
+       The staff engineer manages the board. You just do the work.
 
        ## Task
        [Clear task description]
@@ -286,53 +274,16 @@ Continue talking to user
        ## Scope
        [What's in scope, what's NOT]
 
-       ## Completion Protocol
+       ## When Done
 
-       **CRITICAL: You NEVER mark your own card done.**
+       Return a summary as your final message. Include:
+       - Changes made (files, configs, deployments)
+       - Testing performed and results
+       - Assumptions or limitations
 
-       When work is complete:
-
-       1. **Check kanban comments after completing each major deliverable:**
-          ```bash
-          kanban show --session <session-id> 42
-          ```
-          Review all comments for additional requirements from staff engineer.
-
-       2. **Address any new requirements** found in comments before proceeding.
-
-       3. **Once ALL requirements met** (including from comments), document and move to review:
-
-          ```bash
-          kanban comment --session <session-id> 42 "Summary of all work completed:
-
-          Changes:
-          - [List files/components changed]
-          - [Configuration updates]
-          - [Any deployments or migrations]
-
-          Testing performed:
-          - [What you tested and results]
-
-          Assumptions/Limitations:
-          - [Any caveats or known issues]
-
-          Ready for staff engineer review."
-
-          kanban move --session <session-id> 42 review
-          ```
-
-       4. **Wait for staff engineer review:**
-          - Staff engineer will verify work meets requirements
-          - Staff engineer will check if mandatory reviews are needed
-          - Staff engineer will move to done only if work is complete and correct
-
-       **DO NOT:**
-       - Mark your own card done (staff engineer does this after review)
-       - Skip documentation (staff engineer needs context to review)
-       - Continue past permission gates (use kanban for async handoff)
+       If you hit a permission gate (Edit, Write, git push, npm install),
+       return what you need executed as your final message and stop.
    ```
-
-**`<session-id>` is a PLACEHOLDER.** Replace with your actual session ID (injected by the session-hook at conversation start, e.g., `08a88ad2`). Sub-agents use `--session <actual-id>` on every kanban command and NEVER call `kanban nonce`.
 
 **See [delegation-guide.md](../docs/staff-engineer/delegation-guide.md) for permission patterns and model selection.**
 
