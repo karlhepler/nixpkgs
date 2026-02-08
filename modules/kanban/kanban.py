@@ -469,15 +469,88 @@ def make_card(
     return card
 
 
-def create_card_in_column(root: Path, column: str, card: dict, top: bool = False) -> int:
-    """Write a card to a column, return its number."""
-    # Determine priority
+def create_card_in_column(
+    root: Path,
+    column: str,
+    card: dict,
+    top: bool = False,
+    bottom: bool = False,
+    after: str | None = None,
+    before: str | None = None,
+) -> int:
+    """Write a card to a column with per-session ordering, return its number."""
+    session = card.get("session")
     existing = find_cards_in_column(root, column)
-    if top and existing:
-        min_p = min(read_card(c).get("priority", 0) for c in existing)
-        card["priority"] = max(0, min_p - 10)
-    elif not existing:
-        card["priority"] = card.get("priority", 1000)
+
+    # Filter existing cards to same session
+    session_cards = []
+    for c_path in existing:
+        try:
+            c = read_card(c_path)
+            if c.get("session") == session:
+                session_cards.append((c_path, c.get("priority", 0)))
+        except (json.JSONDecodeError, OSError):
+            continue
+
+    # Determine priority based on ordering flags
+    if after:
+        # Insert after specified card (must be same session)
+        target_path = find_card(root, after)
+        target_card = read_card(target_path)
+        if target_card.get("session") != session:
+            print(f"Error: Cannot insert after card #{after} — different session", file=sys.stderr)
+            sys.exit(1)
+        target_priority = target_card.get("priority", 0)
+
+        # Find next card with same session to determine priority range
+        higher_cards = [p for p, c_priority in session_cards if c_priority > target_priority]
+        if higher_cards:
+            next_priority = min(read_card(c_path).get("priority", 0) for c_path in higher_cards)
+            card["priority"] = (target_priority + next_priority) // 2
+            if card["priority"] == target_priority:
+                card["priority"] = target_priority + 1
+        else:
+            card["priority"] = target_priority + 10
+
+    elif before:
+        # Insert before specified card (must be same session)
+        target_path = find_card(root, before)
+        target_card = read_card(target_path)
+        if target_card.get("session") != session:
+            print(f"Error: Cannot insert before card #{before} — different session", file=sys.stderr)
+            sys.exit(1)
+        target_priority = target_card.get("priority", 0)
+
+        # Find previous card with same session to determine priority range
+        lower_cards = [p for p, c_priority in session_cards if c_priority < target_priority]
+        if lower_cards:
+            prev_priority = max(read_card(c_path).get("priority", 0) for c_path in lower_cards)
+            card["priority"] = (prev_priority + target_priority) // 2
+            if card["priority"] == target_priority:
+                card["priority"] = max(0, target_priority - 1)
+        else:
+            card["priority"] = max(0, target_priority - 10)
+
+    elif top:
+        # Top of session's cards
+        if session_cards:
+            min_p = min(p for _, p in session_cards)
+            card["priority"] = max(0, min_p - 10)
+        else:
+            card["priority"] = card.get("priority", 1000)
+
+    elif bottom:
+        # Bottom of session's cards
+        if session_cards:
+            max_p = max(p for _, p in session_cards)
+            card["priority"] = max_p + 10
+        else:
+            card["priority"] = card.get("priority", 1000)
+
+    else:
+        # Default: no ordering specified
+        if not existing:
+            card["priority"] = card.get("priority", 1000)
 
     num = next_number(root)
     filepath = root / column / f"{num}.json"
@@ -524,79 +597,18 @@ def cmd_do(args) -> None:
     if criteria and not all(isinstance(c, str) for c in criteria):
         card["criteria"] = criteria
 
-    num = create_card_in_column(root, "doing", card, top=args.top)
+    num = create_card_in_column(
+        root,
+        "doing",
+        card,
+        top=getattr(args, "top", False),
+        bottom=getattr(args, "bottom", False),
+        after=getattr(args, "after", None),
+        before=getattr(args, "before", None),
+    )
     print(num)
 
 
-def cmd_add(args) -> None:
-    """Add a card to a column (default: todo)."""
-    root = get_root(args.root)
-    target_column = args.status
-
-    # Determine priority via position flags
-    column_cards = find_cards_in_column(root, target_column)
-    my_session = get_current_session_id()
-    my_column_cards = [c for c in column_cards if is_my_card(read_card(c), my_session)]
-    is_empty = len(my_column_cards) == 0
-
-    if args.top:
-        if is_empty:
-            priority = 1000
-        else:
-            min_p = min(read_card(c).get("priority", 0) for c in column_cards)
-            priority = max(0, min_p - 10)
-    elif args.bottom:
-        if is_empty:
-            priority = 1000
-        else:
-            max_p = max(read_card(c).get("priority", 0) for c in column_cards)
-            priority = max_p + 10
-    elif args.after:
-        ref = find_card(root, args.after)
-        priority = read_card(ref).get("priority", 0) + 5
-    elif args.before:
-        ref = find_card(root, args.before)
-        priority = max(0, read_card(ref).get("priority", 0) - 5)
-    elif is_empty:
-        priority = 1000
-    else:
-        # Require position for non-empty columns
-        print("Error: Position required. Use --top, --bottom, --after <card>, or --before <card>",
-              file=sys.stderr)
-        sys.exit(1)
-
-    session = get_current_session_id()
-    if hasattr(args, "no_session") and args.no_session:
-        session = None
-    elif args.session:
-        session = args.session
-
-    # Content from --content flag or stdin
-    if args.content == "-":
-        body_content = sys.stdin.read().strip()
-    elif args.content:
-        body_content = args.content
-    else:
-        body_content = ""
-
-    # Get criteria from --criteria flags
-    criteria = getattr(args, "criteria", None) or []
-
-    card = make_card(
-        action=args.title,
-        intent=body_content,
-        persona=args.persona or "unassigned",
-        model=args.model,
-        session=session,
-        priority=priority,
-        criteria=criteria,
-    )
-
-    num = next_number(root)
-    filepath = root / target_column / f"{num}.json"
-    filepath.parent.mkdir(parents=True, exist_ok=True)
-    write_card(filepath, card)
-    print(f"Created: {target_column}/{num}.json (priority: {priority})")
 
 
 def cmd_move(args) -> None:
@@ -608,13 +620,84 @@ def cmd_move(args) -> None:
 
     card_path = find_card(root, args.card)
     card = read_card(card_path)
+    num = card_number(card_path)
+
+    # Handle ordering flags for per-session priority
+    top = getattr(args, "top", False)
+    bottom = getattr(args, "bottom", False)
+    after = getattr(args, "after", None)
+    before = getattr(args, "before", None)
+
+    if top or bottom or after or before:
+        session = card.get("session")
+        existing = find_cards_in_column(root, args.column)
+
+        # Filter existing cards to same session
+        session_cards = []
+        for c_path in existing:
+            try:
+                c = read_card(c_path)
+                if c.get("session") == session:
+                    session_cards.append((c_path, c.get("priority", 0)))
+            except (json.JSONDecodeError, OSError):
+                continue
+
+        # Determine priority based on ordering flags
+        if after:
+            target_path = find_card(root, after)
+            target_card = read_card(target_path)
+            if target_card.get("session") != session:
+                print(f"Error: Cannot insert after card #{after} — different session", file=sys.stderr)
+                sys.exit(1)
+            target_priority = target_card.get("priority", 0)
+
+            higher_cards = [p for p, c_priority in session_cards if c_priority > target_priority]
+            if higher_cards:
+                next_priority = min(read_card(c_path).get("priority", 0) for c_path in higher_cards)
+                card["priority"] = (target_priority + next_priority) // 2
+                if card["priority"] == target_priority:
+                    card["priority"] = target_priority + 1
+            else:
+                card["priority"] = target_priority + 10
+
+        elif before:
+            target_path = find_card(root, before)
+            target_card = read_card(target_path)
+            if target_card.get("session") != session:
+                print(f"Error: Cannot insert before card #{before} — different session", file=sys.stderr)
+                sys.exit(1)
+            target_priority = target_card.get("priority", 0)
+
+            lower_cards = [p for p, c_priority in session_cards if c_priority < target_priority]
+            if lower_cards:
+                prev_priority = max(read_card(c_path).get("priority", 0) for c_path in lower_cards)
+                card["priority"] = (prev_priority + target_priority) // 2
+                if card["priority"] == target_priority:
+                    card["priority"] = max(0, target_priority - 1)
+            else:
+                card["priority"] = max(0, target_priority - 10)
+
+        elif top:
+            if session_cards:
+                min_p = min(p for _, p in session_cards)
+                card["priority"] = max(0, min_p - 10)
+            else:
+                card["priority"] = 1000
+
+        elif bottom:
+            if session_cards:
+                max_p = max(p for _, p in session_cards)
+                card["priority"] = max_p + 10
+            else:
+                card["priority"] = 1000
+
     card["updated"] = now_iso()
     write_card(card_path, card)
 
     target_path = root / args.column / card_path.name
     target_path.parent.mkdir(parents=True, exist_ok=True)
     card_path.rename(target_path)
-    print(f"Moved: #{card_number(card_path)} -> {args.column}/")
+    print(f"Moved: #{num} -> {args.column}/")
 
 
 def cmd_show(args) -> None:
@@ -631,7 +714,7 @@ def cmd_show(args) -> None:
         return
 
     # Default: human-friendly terminal output (simple or detail)
-    dim = "\033[2m"
+    bold = "\033[1m"
     reset = "\033[0m"
 
     # Header
@@ -646,7 +729,7 @@ def cmd_show(args) -> None:
     intent = card.get("intent", "")
     if intent:
         print()
-        print(f"{dim}  Intent{reset}")
+        print(f"{bold}  Intent{reset}")
         # Replace literal \n with actual newlines, then wrap at ~80 chars
         intent = intent.replace("\\n", "\n")
         for paragraph in intent.split("\n"):
@@ -671,7 +754,7 @@ def cmd_show(args) -> None:
     criteria = card.get("criteria", [])
     if criteria:
         print()
-        print(f"{dim}  Acceptance Criteria{reset}")
+        print(f"{bold}  Acceptance Criteria{reset}")
         for i, criterion in enumerate(criteria, start=1):
             checkbox = "✅" if criterion.get("met", False) else "⬜"
             text = criterion.get("text", "")
@@ -681,7 +764,7 @@ def cmd_show(args) -> None:
     edit_files = card.get("editFiles") or card.get("writeFiles", [])
     if edit_files:
         print()
-        print(f"{dim}  Edit Files{reset}")
+        print(f"{bold}  Edit Files{reset}")
         for f in sorted(edit_files):
             print(f"  {f}")
 
@@ -689,7 +772,7 @@ def cmd_show(args) -> None:
     read_files = card.get("readFiles", [])
     if read_files:
         print()
-        print(f"{dim}  Read Files{reset}")
+        print(f"{bold}  Read Files{reset}")
         for f in sorted(read_files):
             print(f"  {f}")
 
@@ -712,24 +795,102 @@ def cmd_show(args) -> None:
     footer_parts.append(f"Priority: {priority}")
     footer_parts.append(f"Created: {created_date}")
 
-    print(f"{dim}{' · '.join(footer_parts)}{reset}")
+    print(f"{bold}{' · '.join(footer_parts)}{reset}")
 
 
-def cmd_delete(args) -> None:
-    """Trash a card (moves to system trash, recoverable)."""
+def cmd_cancel(args) -> None:
+    """Move card to canceled column."""
     root = get_root(args.root)
     card_path = find_card(root, args.card)
-    col = card_path.parent.name
+    card = read_card(card_path)
     num = card_number(card_path)
-    try:
-        subprocess.run(["trash", str(card_path)], check=True)
-        print(f"Trashed: #{num} from {col}/")
-    except FileNotFoundError:
-        print("Error: 'trash' command not found. Install via Nix.", file=sys.stderr)
-        sys.exit(1)
-    except subprocess.CalledProcessError as e:
-        print(f"Error trashing card: {e}", file=sys.stderr)
-        sys.exit(1)
+
+    # Store cancellation reason if provided
+    reason = args.reason if hasattr(args, "reason") and args.reason else None
+    if reason:
+        card["cancelReason"] = reason
+
+    # Handle ordering flags for per-session priority
+    top = getattr(args, "top", False)
+    bottom = getattr(args, "bottom", False)
+    after = getattr(args, "after", None)
+    before = getattr(args, "before", None)
+
+    if top or bottom or after or before:
+        session = card.get("session")
+        existing = find_cards_in_column(root, "canceled")
+
+        # Filter existing cards to same session
+        session_cards = []
+        for c_path in existing:
+            try:
+                c = read_card(c_path)
+                if c.get("session") == session:
+                    session_cards.append((c_path, c.get("priority", 0)))
+            except (json.JSONDecodeError, OSError):
+                continue
+
+        # Determine priority based on ordering flags
+        if after:
+            target_path = find_card(root, after)
+            target_card = read_card(target_path)
+            if target_card.get("session") != session:
+                print(f"Error: Cannot insert after card #{after} — different session", file=sys.stderr)
+                sys.exit(1)
+            target_priority = target_card.get("priority", 0)
+
+            higher_cards = [p for p, c_priority in session_cards if c_priority > target_priority]
+            if higher_cards:
+                next_priority = min(read_card(c_path).get("priority", 0) for c_path in higher_cards)
+                card["priority"] = (target_priority + next_priority) // 2
+                if card["priority"] == target_priority:
+                    card["priority"] = target_priority + 1
+            else:
+                card["priority"] = target_priority + 10
+
+        elif before:
+            target_path = find_card(root, before)
+            target_card = read_card(target_path)
+            if target_card.get("session") != session:
+                print(f"Error: Cannot insert before card #{before} — different session", file=sys.stderr)
+                sys.exit(1)
+            target_priority = target_card.get("priority", 0)
+
+            lower_cards = [p for p, c_priority in session_cards if c_priority < target_priority]
+            if lower_cards:
+                prev_priority = max(read_card(c_path).get("priority", 0) for c_path in lower_cards)
+                card["priority"] = (prev_priority + target_priority) // 2
+                if card["priority"] == target_priority:
+                    card["priority"] = max(0, target_priority - 1)
+            else:
+                card["priority"] = max(0, target_priority - 10)
+
+        elif top:
+            if session_cards:
+                min_p = min(p for _, p in session_cards)
+                card["priority"] = max(0, min_p - 10)
+            else:
+                card["priority"] = 1000
+
+        elif bottom:
+            if session_cards:
+                max_p = max(p for _, p in session_cards)
+                card["priority"] = max_p + 10
+            else:
+                card["priority"] = 1000
+
+    card["updated"] = now_iso()
+    write_card(card_path, card)
+
+    target_path = root / "canceled" / card_path.name
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    card_path.rename(target_path)
+
+    # Output with reason if provided
+    if reason:
+        print(f"Canceled: #{num} — {reason}")
+    else:
+        print(f"Canceled: #{num}")
 
 
 def cmd_edit(args) -> None:
@@ -1481,17 +1642,39 @@ def cmd_todo_dual(args) -> None:
         if "action" not in data:
             print("Error: JSON must include 'action' field", file=sys.stderr)
             sys.exit(1)
+
+        # Parse criteria from JSON (as list of strings or objects) or from --criteria flags
+        # Support both "criteria" and "ac" (shorthand) in JSON input
+        criteria_from_json = data.get("criteria") or data.get("ac", [])
+        criteria_from_args = getattr(args, "criteria", None) or []
+        criteria = criteria_from_args if criteria_from_args else criteria_from_json
+
         session = args.session if hasattr(args, "session") and args.session else get_current_session_id()
+
         card = make_card(
             action=data["action"],
             intent=data.get("intent", ""),
             read_files=data.get("readFiles", []),
             edit_files=data.get("editFiles", []),
-            persona=data.get("persona", "unassigned"),
-            model=data.get("model"),
+            persona=getattr(args, "persona", None) or data.get("persona", "unassigned"),
+            model=getattr(args, "model", None) or data.get("model"),
             session=session,
+            criteria=criteria if all(isinstance(c, str) for c in criteria) else None,
         )
-        num = create_card_in_column(root, "todo", card, top=getattr(args, "top", False))
+
+        # If criteria came as full objects (with text/met), use them directly
+        if criteria and not all(isinstance(c, str) for c in criteria):
+            card["criteria"] = criteria
+
+        num = create_card_in_column(
+            root,
+            "todo",
+            card,
+            top=getattr(args, "top", False),
+            bottom=getattr(args, "bottom", False),
+            after=getattr(args, "after", None),
+            before=getattr(args, "before", None),
+        )
         print(num)
     else:
         # View todo column
@@ -1860,37 +2043,34 @@ def main() -> None:
     p_do.add_argument("--persona", help="Override persona")
     p_do.add_argument("--model", choices=["sonnet", "opus", "haiku"], help="AI model")
     p_do.add_argument("--session", help="Session ID")
-    p_do.add_argument("--top", action="store_true", help="Insert at top")
+    p_do.add_argument("--top", action="store_true", help="Insert at top of session's cards")
+    p_do.add_argument("--bottom", action="store_true", help="Insert at bottom of session's cards")
+    p_do.add_argument("--after", metavar="CARD", help="Insert after card (same session only)")
+    p_do.add_argument("--before", metavar="CARD", help="Insert before card (same session only)")
     p_do.add_argument("--criteria", action="append", help="Acceptance criterion (repeatable)")
-
-    # --- add ---
-    p_add = subparsers.add_parser("add", parents=[parent_parser], help="Add card (position required for non-empty)")
-    p_add.add_argument("title", help="Card action/title")
-    p_add.add_argument("--persona", help="Persona")
-    p_add.add_argument("--content", "-c", help="Card intent/body")
-    p_add.add_argument("--status", choices=COLUMNS, default="todo", help="Column (default: todo)")
-    p_add.add_argument("--session", help="Session ID")
-    p_add.add_argument("--no-session", action="store_true", help="No session")
-    p_add.add_argument("--model", choices=["sonnet", "opus", "haiku"], help="AI model")
-    p_add.add_argument("--top", action="store_true", help="Insert at top")
-    p_add.add_argument("--bottom", action="store_true", help="Insert at bottom")
-    p_add.add_argument("--after", help="Insert after card")
-    p_add.add_argument("--before", help="Insert before card")
-    p_add.add_argument("--criteria", action="append", help="Acceptance criterion (repeatable)")
 
     # --- move ---
     p_move = subparsers.add_parser("move", parents=[parent_parser], help="Move card to column")
     p_move.add_argument("card", help="Card number")
     p_move.add_argument("column", help="Target column")
+    p_move.add_argument("--top", action="store_true", help="Move to top of session's cards")
+    p_move.add_argument("--bottom", action="store_true", help="Move to bottom of session's cards")
+    p_move.add_argument("--after", metavar="CARD", help="Move after card (same session only)")
+    p_move.add_argument("--before", metavar="CARD", help="Move before card (same session only)")
 
     # --- show ---
     p_show = subparsers.add_parser("show", parents=[parent_parser], help="Display card contents")
     p_show.add_argument("card", help="Card number")
     p_show.add_argument("--output-style", choices=["simple", "xml", "detail"], help="Output style: xml (structured XML for machine parsing)")
 
-    # --- delete ---
-    p_delete = subparsers.add_parser("delete", parents=[parent_parser], help="Delete a card")
-    p_delete.add_argument("card", help="Card number")
+    # --- cancel ---
+    p_cancel = subparsers.add_parser("cancel", parents=[parent_parser], help="Move card to canceled column")
+    p_cancel.add_argument("card", help="Card number")
+    p_cancel.add_argument("reason", nargs="?", default=None, help="Optional cancellation reason")
+    p_cancel.add_argument("--top", action="store_true", help="Move to top of session's cards")
+    p_cancel.add_argument("--bottom", action="store_true", help="Move to bottom of session's cards")
+    p_cancel.add_argument("--after", metavar="CARD", help="Move after card (same session only)")
+    p_cancel.add_argument("--before", metavar="CARD", help="Move before card (same session only)")
 
     # --- criteria ---
     p_criteria = subparsers.add_parser("criteria", parents=[parent_parser], help="Add acceptance criterion to card")
@@ -1959,7 +2139,13 @@ def main() -> None:
     # --- Dual-behavior: todo, review, done ---
     p_todo = subparsers.add_parser("todo", parents=[parent_parser], help="View todo or create card in todo")
     p_todo.add_argument("json_data", nargs="?", default=None, help="JSON to create card")
-    p_todo.add_argument("--top", action="store_true", help="Insert at top")
+    p_todo.add_argument("--persona", help="Override persona")
+    p_todo.add_argument("--model", choices=["sonnet", "opus", "haiku"], help="AI model")
+    p_todo.add_argument("--criteria", action="append", help="Acceptance criterion (repeatable)")
+    p_todo.add_argument("--top", action="store_true", help="Insert at top of session's cards")
+    p_todo.add_argument("--bottom", action="store_true", help="Insert at bottom of session's cards")
+    p_todo.add_argument("--after", metavar="CARD", help="Insert after card (same session only)")
+    p_todo.add_argument("--before", metavar="CARD", help="Insert before card (same session only)")
     p_todo.add_argument("--output-style", choices=["simple", "xml", "detail"], default="simple", help="Output style: simple (title only), xml (structured XML), detail (everything)")
     add_session_flags(p_todo)
     add_date_flags(p_todo)
@@ -1995,10 +2181,9 @@ def main() -> None:
         "init": cmd_init,
         "session-hook": cmd_session_hook,
         "do": cmd_do,
-        "add": cmd_add,
         "move": cmd_move,
         "show": cmd_show,
-        "delete": cmd_delete,
+        "cancel": cmd_cancel,
         "criteria": cmd_criteria,
         "check": cmd_check,
         "uncheck": cmd_uncheck,

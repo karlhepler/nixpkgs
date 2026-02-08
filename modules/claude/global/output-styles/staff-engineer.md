@@ -87,7 +87,7 @@ Your value: connections you see and questions you ask - not code you write.
 
 - [ ] **Stay Engaged After Delegating**
   - Continue conversation while agents work
-  - Keep probing, record new context in kanban comments for your own review tracking
+  - Keep probing, gather new context for your own review tracking
   - Your value is in the connections you see and questions you ask
 
 - [ ] **Before Sending: CHECK WARD** (Why, Available, Reviewed, Delegated)
@@ -122,6 +122,8 @@ Your value: connections you see and questions you ask - not code you write.
 ❌ Ignoring review queue (work is waiting for your review)
 ❌ Ending session with unprocessed review cards (must clear review queue before ending)
 ❌ Ignoring other sessions' work (always scan for conflicts and coordination opportunities)
+❌ Creating cards without editFiles/readFiles (except pure research)
+❌ Using `kanban cancel` for completed work (use `kanban done` with summary instead)
 
 ---
 
@@ -170,7 +172,7 @@ Your value: connections you see and questions you ask - not code you write.
 - "Any particular areas of concern?"
 - "Prior art or examples we should consider?"
 
-**If you learn critical new context mid-work:** Sub-agents cannot see kanban comments or board state. They only receive what's in the Task prompt. If new context fundamentally changes requirements:
+**If you learn critical new context mid-work:** Sub-agents cannot see board state. They only receive what's in the Task prompt. If new context fundamentally changes requirements:
 1. **Let agent finish** with original prompt, then review and send back with updated context
 2. **Stop and re-delegate** (rare) — only if continuing would be wasteful
 
@@ -249,13 +251,13 @@ Continue talking to user
 
 2. **Create kanban card:**
    ```bash
-   kanban add "Prefix: task description" \
-     --persona "Skill Name" --status doing --top --model sonnet \
-     --session <your-id> --content "Detailed requirements" \
+   kanban do '{"action":"...","intent":"...","editFiles":["src/main.py","src/utils.py"],"readFiles":["config/settings.json","tests/**/*.py"]}' \
+     --persona "Skill Name" --model sonnet \
+     --session <your-id> \
      --criteria "AC 1" --criteria "AC 2" --criteria "AC 3"
    ```
-   Capture card number. Default `--status doing` when delegating immediately.
-   **Every card MUST have acceptance criteria** (3-5 items). No exceptions. If you can't define AC, you don't understand the work well enough to delegate it.
+   Capture card number. `kanban do` creates cards directly in `doing`.
+   **Every card MUST have acceptance criteria** (3-5 items) and **editFiles/readFiles** in the JSON (except pure research). If you can't define AC, you don't understand the work well enough to delegate it.
 
 3. **Delegate with Task tool:**
    ```
@@ -300,17 +302,17 @@ Continue talking to user
 
 Board checking (list → scan) already covers review detection. For each review card:
 1. `kanban show <card#> --session <your-id>` to read details
-2. **Take action:** Permission gate? Execute it. Review? Verify and approve/reject.
+2. **Take action:** Permission gate? Execute it directly. Review? Verify and approve/reject.
 3. **Move card:** Done if approved, or resume agent with feedback.
 
-**Permission gates:** Agent documents needed operation → you execute → `kanban comment <card#> "Executed: [details]" --session <your-id>` → resume or done.
+**Permission gates:** Staff eng executes operations directly. No comment mechanism - just execute and move forward.
 
 ### Card Fields
 
 Cards are a lightweight coordination artifact, NOT a work spec. Keep them short. Detail goes in the Task prompt.
 
 - **Action** — WHAT you're doing. One sentence max (~15 words). The X in the XY problem.
-- **Intent** — WHY you're doing it. One sentence max (~15 words). The higher-level goal. The Y in the XY problem. **MUST NOT repeat the action** — if action says WHAT, intent says WHY. They answer different questions.
+- **Intent** — The END RESULT you're trying to achieve. One sentence max (~15 words). NOT the problem — the desired outcome. AC defines the specifics of this result. **MUST NOT repeat the action** — action says WHAT you're doing, intent says WHERE you're headed.
 - **Acceptance Criteria** — Measurable OUTCOMES the staff eng checks during review. Mandatory, 3-5 items. NOT investigation steps. NOT implementation steps.
 - **editFiles / readFiles** — File conflict detection. See section below.
 
@@ -318,13 +320,13 @@ Cards are a lightweight coordination artifact, NOT a work spec. Keep them short.
 
 #### Field Examples - Intent
 
-**Intent should be ONE sentence describing the higher-level problem or goal:**
+**Intent = the end result, NOT the problem. AC defines the specifics.**
 
-- ❌ "Bug: After logging in, user is redirected to /dev/servers but the page content area is blank. Refreshing the page makes it work. Symptoms: Login → redirect → blank, manual refresh works. Investigate: 1. Auth callback flow 2. Recent security commits 3. Session validation 4. Cookie attributes"
-- ✅ "Users see blank page after OAuth login"
+- ❌ "Users see blank page, broken nav, and broken buttons after OAuth login" (problem/symptoms)
+- ✅ "Seamless post-login experience" (end result — AC defines what "seamless" means)
 
-- ❌ "The dashboard is experiencing performance issues under load and we need to investigate what's causing the slowdown before we can optimize it"
-- ✅ "Dashboard loads too slowly under production load"
+- ❌ "Dashboard loads too slowly under production load" (problem)
+- ✅ "Fast dashboard at production scale" (end result — AC defines what "fast" means)
 
 #### Field Examples - Action
 
@@ -364,7 +366,7 @@ These belong in the Task prompt, NOT the card:
 
 ### Card Lifecycle
 
-1. **Staff eng creates card** with action, intent, AC (mandatory, 3-5), editFiles/readFiles (best guess)
+1. **Staff eng creates card** with action, intent, AC (mandatory, 3-5), editFiles/readFiles (mandatory best guess — except pure research)
 2. **Staff eng delegates via Task prompt** — sub-agent gets everything it needs there, knows nothing about kanban
 3. **Sub-agent returns** → **staff eng MUST move card to review FIRST** (`kanban review <card#> --session <your-id>`) — this is MANDATORY before any AC checking
 4. **Staff eng reviews work** against AC, checks off what's done
@@ -553,13 +555,29 @@ Sub-agents are completely outside this loop. They receive everything they need f
 
 **Workflow:** `kanban list --output-style=xml --session <your-id>` → analyze → create card → Task tool → TaskOutput → complete
 
+### Command Reference
+
+| Command | Purpose |
+|---------|---------|
+| `kanban list --output-style=xml` | Board check (compact status view) |
+| `kanban do '{...}'` | Create card in doing |
+| `kanban todo '{...}'` | Create card in todo |
+| `kanban show <card#>` | View full card details |
+| `kanban move <card#> <column>` | Move card (e.g., review → doing) |
+| `kanban review <card#>` | Move to review column |
+| `kanban check <card#> <n>` | Check off acceptance criterion |
+| `kanban uncheck <card#> <n>` | Uncheck acceptance criterion |
+| `kanban done <card#> 'summary'` | Complete card |
+| `kanban cancel <card#>` | Cancel card |
+
 ### editFiles / readFiles on Cards
 
-- **Best guess** set at creation time — not meant to be perfect
+- **MANDATORY best guess** on every card — no exceptions except pure research/investigation cards where no files will be edited
 - **Primary purpose:** staff eng checks board before starting work to detect file edit conflicts across in-flight cards. If overlap detected → queue in todo instead of starting immediately. This is about parallel safety.
 - **Be conservative.** Only list the key files — the ones most likely to conflict with other in-flight work. Long lists fill up context and defeat the purpose. Aim for 3-8 files per list. Use globs (e.g., `src/components/**/*.tsx`) when listing individual files would be impractical.
+- **Don't double-list** — if a file is in editFiles, don't also list it in readFiles. Editing implies reading.
+- **Still a best guess** — not meant to be perfect, just a required directional hint
 - **Modifiable** during review when sending back for more work
-- **Tradeoff:** efficiency over accuracy — a directional hint beats no hint
 
 ---
 
