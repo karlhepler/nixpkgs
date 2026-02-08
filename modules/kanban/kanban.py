@@ -640,23 +640,25 @@ def cmd_show(args) -> None:
     if intent:
         print()
         print(f"{dim}  Intent{reset}")
-        # Wrap at ~80 chars
-        words = intent.split()
-        lines = []
-        current_line = ""
-        for word in words:
-            if current_line and len(current_line) + len(word) + 1 > 80:
-                lines.append(current_line)
-                current_line = word
-            else:
-                if current_line:
-                    current_line += " " + word
-                else:
+        # Replace literal \n with actual newlines, then wrap at ~80 chars
+        intent = intent.replace("\\n", "\n")
+        for paragraph in intent.split("\n"):
+            words = paragraph.split()
+            lines = []
+            current_line = ""
+            for word in words:
+                if current_line and len(current_line) + len(word) + 1 > 80:
+                    lines.append(current_line)
                     current_line = word
-        if current_line:
-            lines.append(current_line)
-        for line in lines:
-            print(f"  {line}")
+                else:
+                    if current_line:
+                        current_line += " " + word
+                    else:
+                        current_line = word
+            if current_line:
+                lines.append(current_line)
+            for line in lines:
+                print(f"  {line}")
 
     # Acceptance criteria section
     criteria = card.get("criteria", [])
@@ -1256,19 +1258,100 @@ def cmd_list(args) -> None:
             else:
                 other_cards[col].append((num, card))
 
-    # XML output: group by column, no session sections
+    # XML output: compact format with mine/others session delineation
     if output_style == "xml":
-        print("<board>")
-        for col in columns_to_show:
-            cards = all_cards_by_column[col]
-            if cards:  # Only show columns with cards
-                print(f"<{col}>")
-                for num, card in cards:
-                    card_xml = format_card_xml(card, num, col, include_details=False)
-                    # Indent the card XML
-                    for line in card_xml.split("\n"):
-                        print(f"  {line}")
-                print(f"</{col}>")
+        esc = html.escape
+
+        # Get session for delineation
+        session_arg = getattr(args, "session", None)
+
+        # Build session attribute for board tag
+        session_attr = f' session="{esc(session_arg)}"' if session_arg else ""
+        print(f"<board{session_attr}>")
+
+        # Determine which cards are mine vs others
+        if session_arg:
+            # Split cards by session ownership
+            mine_cards = []
+            others_cards = []
+            for col in columns_to_show:
+                for num, card in all_cards_by_column[col]:
+                    card_session = card.get("session")
+                    if card_session == session_arg:
+                        mine_cards.append((num, card, col))
+                    else:
+                        others_cards.append((num, card, col))
+
+            # Output <mine> section
+            if mine_cards:
+                print("<mine>")
+                for num, card, col in mine_cards:
+                    action = esc(card.get("action", ""))
+                    edit_files = card.get("editFiles") or card.get("writeFiles", [])
+                    read_files = card.get("readFiles", [])
+
+                    parts = [f'<c n="{esc(num)}" s="{esc(col)}">']
+                    parts.append(f"<a>{action}</a>")
+                    if edit_files:
+                        edit_str = esc(",".join(sorted(edit_files)))
+                        parts.append(f"<e>{edit_str}</e>")
+                    if read_files:
+                        read_str = esc(",".join(sorted(read_files)))
+                        parts.append(f"<r>{read_str}</r>")
+                    parts.append("</c>")
+                    print("".join(parts))
+                print("</mine>")
+
+            # Output <others> section
+            if others_cards:
+                print("<others>")
+                for num, card, col in others_cards:
+                    card_session = card.get("session", "")
+                    action = esc(card.get("action", ""))
+                    edit_files = card.get("editFiles") or card.get("writeFiles", [])
+                    read_files = card.get("readFiles", [])
+
+                    ses_attr = f' ses="{esc(card_session)}"' if card_session else ""
+                    parts = [f'<c n="{esc(num)}"{ses_attr} s="{esc(col)}">']
+                    parts.append(f"<a>{action}</a>")
+                    if edit_files:
+                        edit_str = esc(",".join(sorted(edit_files)))
+                        parts.append(f"<e>{edit_str}</e>")
+                    if read_files:
+                        read_str = esc(",".join(sorted(read_files)))
+                        parts.append(f"<r>{read_str}</r>")
+                    parts.append("</c>")
+                    print("".join(parts))
+                print("</others>")
+        else:
+            # No session arg - treat all as mine
+            has_cards = False
+            for col in columns_to_show:
+                cards = all_cards_by_column[col]
+                if cards:
+                    has_cards = True
+                    break
+
+            if has_cards:
+                print("<mine>")
+                for col in columns_to_show:
+                    for num, card in all_cards_by_column[col]:
+                        action = esc(card.get("action", ""))
+                        edit_files = card.get("editFiles") or card.get("writeFiles", [])
+                        read_files = card.get("readFiles", [])
+
+                        parts = [f'<c n="{esc(num)}" s="{esc(col)}">']
+                        parts.append(f"<a>{action}</a>")
+                        if edit_files:
+                            edit_str = esc(",".join(sorted(edit_files)))
+                            parts.append(f"<e>{edit_str}</e>")
+                        if read_files:
+                            read_str = esc(",".join(sorted(read_files)))
+                            parts.append(f"<r>{read_str}</r>")
+                        parts.append("</c>")
+                        print("".join(parts))
+                print("</mine>")
+
         print("</board>")
         return
 
