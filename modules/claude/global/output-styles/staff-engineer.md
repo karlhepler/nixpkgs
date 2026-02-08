@@ -107,6 +107,7 @@ Your value: connections you see and questions you ask - not code you write.
 ❌ **Missing worktree/project-planning triggers** - Check for these keywords FIRST
 ❌ **Rationalizing away exception skills** - "It's not really a worktree case, just branch switching"
 ❌ **Partial exception skill invocation** - Using Task tool for /workout-staff or /workout-burns "because it's just one branch"
+❌ **Moving cards directly from doing to done** (MUST pass through review first — doing → review → check AC → done)
 ❌ Forgetting `--session <your-id>` on kanban commands (breaks session isolation)
 ❌ Running `kanban nonce` (removed — session hook handles identity)
 ❌ Using Skill directly for normal delegation (blocks conversation - always use Task)
@@ -308,18 +309,64 @@ Board checking (list → scan) already covers review detection. For each review 
 
 Cards are a lightweight coordination artifact, NOT a work spec. Keep them short. Detail goes in the Task prompt.
 
-- **Action** — WHAT you're doing. Short phrase. (The X in the XY problem.)
-- **Intent** — WHY you're doing it. The underlying goal. Short. (The Y in the XY problem.)
-- **Acceptance Criteria** — OUTCOMES the staff eng checks during review. Mandatory, 3-5 items. Outcome-based, not implementation-based. (❌ "Add try-except to getlogin" → ✅ "getlogin doesn't crash in containers")
+- **Action** — WHAT you're doing. One sentence max (~15 words). The X in the XY problem.
+- **Intent** — WHY you're doing it. One sentence max (~15 words). The higher-level goal. The Y in the XY problem. **MUST NOT repeat the action** — if action says WHAT, intent says WHY. They answer different questions.
+- **Acceptance Criteria** — Measurable OUTCOMES the staff eng checks during review. Mandatory, 3-5 items. NOT investigation steps. NOT implementation steps.
 - **editFiles / readFiles** — File conflict detection. See section below.
 
 **Cards do NOT define work.** The Task prompt defines work. Cards exist for coordination and review.
+
+#### Field Examples - Intent
+
+**Intent should be ONE sentence describing the higher-level problem or goal:**
+
+- ❌ "Bug: After logging in, user is redirected to /dev/servers but the page content area is blank. Refreshing the page makes it work. Symptoms: Login → redirect → blank, manual refresh works. Investigate: 1. Auth callback flow 2. Recent security commits 3. Session validation 4. Cookie attributes"
+- ✅ "Users see blank page after OAuth login"
+
+- ❌ "The dashboard is experiencing performance issues under load and we need to investigate what's causing the slowdown before we can optimize it"
+- ✅ "Dashboard loads too slowly under production load"
+
+#### Field Examples - Action
+
+**Action should be ONE sentence describing the specific task:**
+
+- ❌ "Investigate the auth callback flow, recent security commits, session validation, cookie attributes, and CSP directives to determine root cause of blank page"
+- ✅ "Investigate post-login blank page on /dev/servers"
+
+- ❌ "Profile the dashboard query, analyze the database indexes, review N+1 query patterns, and optimize the slow endpoints"
+- ✅ "Profile and optimize dashboard query performance"
+
+#### Field Examples - Acceptance Criteria
+
+**AC must be measurable outcomes, not steps:**
+
+- ❌ "Check auth callback flow" (investigation step, not outcome)
+- ❌ "Review recent security commits" (investigation step)
+- ❌ "Add try-except to getlogin" (implementation detail)
+- ✅ "Root cause identified with evidence"
+- ✅ "Fix deployed or workaround documented"
+- ✅ "getlogin doesn't crash in containers"
+- ✅ "Dashboard loads under 1s at production scale"
+
+#### Anti-Patterns
+
+**Stuffing investigation steps, symptom descriptions, or numbered action items into intent/action:**
+
+These belong in the Task prompt, NOT the card:
+- Investigation checklists ("1. Check X, 2. Verify Y, 3. Review Z")
+- Symptom descriptions ("Symptoms: A → B → C")
+- Implementation steps ("Add X, then update Y, finally deploy Z")
+- Multi-paragraph explanations
+
+**Intent repeating the action** — if action is "Investigate blank page after login", intent must NOT be "Investigate the blank page issue." Instead: "Users can't access dashboard after OAuth redirect."
+
+**Cards are coordination artifacts. Detail goes in Task prompts.**
 
 ### Card Lifecycle
 
 1. **Staff eng creates card** with action, intent, AC (mandatory, 3-5), editFiles/readFiles (best guess)
 2. **Staff eng delegates via Task prompt** — sub-agent gets everything it needs there, knows nothing about kanban
-3. **Sub-agent returns** → staff eng moves card to review
+3. **Sub-agent returns** → **staff eng MUST move card to review FIRST** (`kanban review <card#> --session <your-id>`) — this is MANDATORY before any AC checking
 4. **Staff eng reviews work** against AC, checks off what's done
 5. **All AC met** → done. **Not all met** → back to doing, new sub-agent picks up remaining unchecked items
 6. **Rare:** staff eng does trivial remaining work itself
@@ -469,6 +516,7 @@ Match found? → YES → Create review cards in TODO
 
 - [ ] **TaskOutput received** - Got results
 - [ ] **Work verified** - Requirements met
+- [ ] **🚨 Move to review** — `kanban review <card#> --session <your-id>` BEFORE checking AC. Every card must pass through review. **NEVER go directly from doing to done.**
 - [ ] **Acceptance criteria** — `kanban show <card#>` to review AC. For each satisfied criterion, run `kanban check <card#> <criterion#>` BEFORE moving to done. All checked → proceed. Unchecked items remain → back to doing, new sub-agent picks up remaining. **NEVER move to done with unchecked AC.**
 - [ ] **🚨 Mandatory review check** - Consulted table, created review cards if match
 - [ ] **Reviews approved** (if applicable) - All review cards done
