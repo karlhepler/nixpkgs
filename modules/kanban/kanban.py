@@ -33,8 +33,7 @@ from threading import Event
 
 @dataclass
 class WatchState:
-    show_intent: bool = False
-    show_tree: bool = False
+    output_style: str = "simple"  # "simple" | "files" | "detail"
     session_filter: str = ""
     card_filter: str = ""
     input_mode: str = ""       # "" | "session" | "card"
@@ -300,7 +299,7 @@ def get_session_from_path(path: Path) -> str | None:
 # File tree renderer
 # =============================================================================
 
-def build_file_tree(read_files: list[str], write_files: list[str]) -> str:
+def build_file_tree(read_files: list[str], edit_files: list[str]) -> str:
     """Build a visual file tree with access mode indicators.
 
     Returns a tree like:
@@ -310,7 +309,7 @@ def build_file_tree(read_files: list[str], write_files: list[str]) -> str:
       └── api
           └── dashboard.ts (r)
     """
-    if not read_files and not write_files:
+    if not read_files and not edit_files:
         return ""
 
     # Track access mode per file (strip trailing slashes, filter invalid)
@@ -318,7 +317,7 @@ def build_file_tree(read_files: list[str], write_files: list[str]) -> str:
     for f in read_files:
         if f and isinstance(f, str):
             modes[f.rstrip("/")].add("r")
-    for f in write_files:
+    for f in edit_files:
         if f and isinstance(f, str):
             modes[f.rstrip("/")].add("w")
 
@@ -530,7 +529,7 @@ def make_card(
     action: str,
     intent: str = "",
     read_files: list[str] | None = None,
-    write_files: list[str] | None = None,
+    edit_files: list[str] | None = None,
     persona: str = "unassigned",
     model: str | None = None,
     session: str | None = None,
@@ -543,7 +542,7 @@ def make_card(
         "action": action,
         "intent": intent,
         "readFiles": read_files or [],
-        "writeFiles": write_files or [],
+        "editFiles": edit_files or [],
         "persona": persona,
         "model": model,
         "session": session,
@@ -601,7 +600,7 @@ def cmd_do(args) -> None:
         action=data["action"],
         intent=data.get("intent", ""),
         read_files=data.get("readFiles", []),
-        write_files=data.get("writeFiles", []),
+        edit_files=data.get("editFiles", []),
         persona=args.persona or data.get("persona", "unassigned"),
         model=args.model or data.get("model"),
         session=session,
@@ -1034,38 +1033,37 @@ def cmd_clear(args) -> None:
 # List and view commands
 # =============================================================================
 
-def format_card_line(card: dict, num: str, show_session: bool = False, show_tree: bool = False, show_intent: bool = False) -> str:
-    """Format a single card for list/view output."""
+def format_card_line(card: dict, num: str, show_session: bool = False, output_style: str = "simple", is_first_card: bool = True) -> str:
+    """Format a single card for list/view output.
+
+    Args:
+        card: Card dictionary
+        num: Card number string
+        show_session: Whether to show session prefix (for other sessions)
+        output_style: "simple" (title only), "files" (title+files), or "detail" (everything)
+        is_first_card: Whether this is the first card (for spacing)
+    """
+    dim = "\033[2m"
+    reset = "\033[0m"
+
+    # Add blank line before card if not simple style and not first card
+    prefix = ""
+    if output_style != "simple" and not is_first_card:
+        prefix = "\n"
+
     session = card.get("session", "")
     session_tag = f"[{session[:8]}] " if session else ""
-    line = f"  #{num} {session_tag}{card['action']}"
+    line = f"{prefix}  #{num} {session_tag}{card['action']}"
 
-    # Add AC summary when show_intent is enabled and criteria exist
-    if show_intent:
-        criteria = card.get("criteria", [])
-        if criteria:
-            met_count = sum(1 for c in criteria if c.get("met", False))
-            total_count = len(criteria)
-            green = "\033[32m"
-            yellow = "\033[33m"
-            dim = "\033[2m"
-            reset = "\033[0m"
-            if met_count == total_count:
-                ac_tag = f" {green}[{met_count}/{total_count} AC]{reset}"
-            elif met_count > 0:
-                ac_tag = f" {yellow}[{met_count}/{total_count} AC]{reset}"
-            else:
-                ac_tag = f" {dim}[{met_count}/{total_count} AC]{reset}"
-            line += ac_tag
+    # Simple style: title only
+    if output_style == "simple":
+        return line
 
-    if show_tree:
-        tree = build_file_tree(card.get("readFiles", []), card.get("writeFiles", []))
-        if tree:
-            line += "\n" + tree
+    # Build detail sections based on style
+    sections = []
 
-    if show_intent and card.get("intent"):
-        dim = "\033[2m"
-        reset = "\033[0m"
+    # Intent section (only in "detail" style)
+    if output_style == "detail" and card.get("intent"):
         intent_text = card["intent"]
         # Split into lines at 80 chars, show up to 3 lines
         intent_lines = []
@@ -1073,15 +1071,52 @@ def format_card_line(card: dict, num: str, show_session: bool = False, show_tree
             if len(intent_text) <= 80:
                 intent_lines.append(intent_text)
                 break
-            # Find a good break point (space) before 80 chars
             break_point = intent_text.rfind(' ', 0, 80)
             if break_point == -1:
                 break_point = 80
             intent_lines.append(intent_text[:break_point])
             intent_text = intent_text[break_point:].lstrip()
 
+        intent_section = f"{dim}    Intent\n"
         for intent_line in intent_lines:
-            line += f"\n    {dim}{intent_line}{reset}"
+            intent_section += f"    {intent_line}\n"
+        intent_section = intent_section.rstrip("\n") + reset
+        sections.append(intent_section)
+
+    # Acceptance Criteria section (only in "detail" style)
+    if output_style == "detail":
+        criteria = card.get("criteria", [])
+        if criteria:
+            criteria_section = f"{dim}    Acceptance Criteria\n"
+            for i, criterion in enumerate(criteria, start=1):
+                checkbox = "✅" if criterion.get("met", False) else "⬜"
+                text = criterion.get("text", "")
+                criteria_section += f"    {checkbox} {i}. {text}\n"
+            criteria_section = criteria_section.rstrip("\n") + reset
+            sections.append(criteria_section)
+
+    # Edit Files section (show in "files" and "detail" styles)
+    if output_style in ("files", "detail"):
+        edit_files = card.get("editFiles", [])
+        if edit_files:
+            files_section = f"{dim}    Edit Files\n"
+            for f in sorted(edit_files):
+                files_section += f"    {f}\n"
+            files_section = files_section.rstrip("\n") + reset
+            sections.append(files_section)
+
+        # Read Files section (show in "files" and "detail" styles)
+        read_files = card.get("readFiles", [])
+        if read_files:
+            files_section = f"{dim}    Read Files\n"
+            for f in sorted(read_files):
+                files_section += f"    {f}\n"
+            files_section = files_section.rstrip("\n") + reset
+            sections.append(files_section)
+
+    # Join all sections with blank lines
+    if sections:
+        line += "\n\n" + "\n\n".join(sections)
 
     return line
 
@@ -1089,18 +1124,15 @@ def format_card_line(card: dict, num: str, show_session: bool = False, show_tree
 def cmd_list(args) -> None:
     """Show board overview with compact format."""
     root = get_root(args.root)
-    is_claude = hasattr(args, "session") and bool(args.session)
 
-    # Check for watch state
+    # Check for watch state or args
     watch_state = getattr(args, '_watch_state', None)
     if watch_state:
-        show_tree = watch_state.show_tree
-        show_intent = watch_state.show_intent
+        output_style = watch_state.output_style
         session_filter = watch_state.session_filter
         card_filter = watch_state.card_filter
     else:
-        show_tree = is_claude
-        show_intent = False
+        output_style = getattr(args, "output_style", "simple")
         session_filter = ""
         card_filter = ""
 
@@ -1181,8 +1213,8 @@ def cmd_list(args) -> None:
             cards = my_cards[col]
             print(f"{col.upper()} ({len(cards)})")
             if cards:
-                for num, card in cards:
-                    print(format_card_line(card, num, show_tree=show_tree, show_intent=show_intent))
+                for i, (num, card) in enumerate(cards):
+                    print(format_card_line(card, num, output_style=output_style, is_first_card=(i == 0)))
             else:
                 print("  (empty)")
             print()
@@ -1194,8 +1226,8 @@ def cmd_list(args) -> None:
             cards = other_cards[col]
             if cards:
                 print(f"{col.upper()} ({len(cards)})")
-                for num, card in cards:
-                    print(format_card_line(card, num, show_session=True, show_tree=show_tree, show_intent=show_intent))
+                for i, (num, card) in enumerate(cards):
+                    print(format_card_line(card, num, show_session=True, output_style=output_style, is_first_card=(i == 0)))
                 print()
 
 
@@ -1213,18 +1245,15 @@ def cmd_view(args) -> None:
     until = parse_date_filter(args.until) if getattr(args, "until", None) else None
 
     current_session, hide_own, show_only_mine = resolve_session_filters(args)
-    is_claude = hasattr(args, "session") and bool(args.session)
 
-    # Check for watch state
+    # Check for watch state or args
     watch_state = getattr(args, '_watch_state', None)
     if watch_state:
-        show_tree = watch_state.show_tree
-        show_intent = watch_state.show_intent
+        output_style = watch_state.output_style
         session_filter = watch_state.session_filter
         card_filter = watch_state.card_filter
     else:
-        show_tree = is_claude
-        show_intent = False
+        output_style = getattr(args, "output_style", "simple")
         session_filter = ""
         card_filter = ""
 
@@ -1259,15 +1288,15 @@ def cmd_view(args) -> None:
         else:
             print("=== Your Cards ===")
         print()
-        for num, card in my_list:
-            print(format_card_line(card, num, show_tree=show_tree, show_intent=show_intent))
+        for i, (num, card) in enumerate(my_list):
+            print(format_card_line(card, num, output_style=output_style, is_first_card=(i == 0)))
         print()
 
     if other_list and not show_only_mine:
         print("=== Other Sessions ===")
         print()
-        for num, card in other_list:
-            print(format_card_line(card, num, show_session=True, show_tree=show_tree, show_intent=show_intent))
+        for i, (num, card) in enumerate(other_list):
+            print(format_card_line(card, num, show_session=True, output_style=output_style, is_first_card=(i == 0)))
         print()
 
 
@@ -1293,7 +1322,7 @@ def cmd_todo_dual(args) -> None:
             action=data["action"],
             intent=data.get("intent", ""),
             read_files=data.get("readFiles", []),
-            write_files=data.get("writeFiles", []),
+            edit_files=data.get("editFiles", []),
             persona=data.get("persona", "unassigned"),
             model=data.get("model"),
             session=session,
@@ -1444,10 +1473,11 @@ def cmd_history(args) -> None:
 def _handle_normal_mode(state: WatchState, ch: str, refresh_event: Event, stop_event: Event) -> None:
     """Handle keypresses in normal mode."""
     if ch == '?':
-        state.show_intent = not state.show_intent
-        refresh_event.set()
-    elif ch == 'f':
-        state.show_tree = not state.show_tree
+        # Toggle between simple and detail
+        if state.output_style == "simple":
+            state.output_style = "detail"
+        else:
+            state.output_style = "simple"
         refresh_event.set()
     elif ch == '/':
         state.input_mode = "session"
@@ -1527,12 +1557,10 @@ def _print_status_bar(state: WatchState) -> None:
         print(prompt)
     else:
         # Show hints and active filters
-        hints = f"{dim}[?]intent [f]tree [/]session [#]card [q]quit{reset}"
+        hints = f"{dim}[?]detail [/]session [#]card [q]quit{reset}"
         active_filters = []
-        if state.show_intent:
-            active_filters.append("intent:on")
-        if state.show_tree:
-            active_filters.append("tree:on")
+        if state.output_style != "simple":
+            active_filters.append(f"style:{state.output_style}")
         if state.session_filter:
             active_filters.append(f"session:{state.session_filter}")
         if state.card_filter:
@@ -1664,7 +1692,7 @@ def main() -> None:
 
     # --- do ---
     p_do = subparsers.add_parser("do", parents=[parent_parser], help="Create card in doing from JSON")
-    p_do.add_argument("json_data", help="JSON object with action, intent, readFiles, writeFiles")
+    p_do.add_argument("json_data", help="JSON object with action, intent, readFiles, editFiles")
     p_do.add_argument("--persona", help="Override persona")
     p_do.add_argument("--model", choices=["sonnet", "opus", "haiku"], help="AI model")
     p_do.add_argument("--session", help="Session ID")
@@ -1745,6 +1773,7 @@ def main() -> None:
         p_list.add_argument("--show-done", action="store_true", help="Include done")
         p_list.add_argument("--show-canceled", action="store_true", help="Include canceled")
         p_list.add_argument("--show-all", action="store_true", help="Include done + canceled")
+        p_list.add_argument("--output-style", choices=["simple", "files", "detail"], default="simple", help="Output style: simple (title only), files (title+files), detail (everything)")
         add_session_flags(p_list)
         add_date_flags(p_list)
 
