@@ -80,17 +80,16 @@ This repository (`~/.config/nixpkgs`) is the **single source of truth** for syst
 - `prc`: PR comment management tool (list, reply, resolve, collapse)
 
 ### Kanban CLI (Agent Coordination)
-- `kanban init`: Create kanban board structure
-- `kanban add "task" --persona <name>`: Add card to todo column
+- `kanban list --output-style=xml`: Board check (compact XML view for staff engineers)
 - `kanban do '{"action":"...","intent":"..."}'`: Create card directly in doing
-- `kanban list`: Show board overview (todo/doing/review)
+- `kanban todo '{"action":"...","intent":"..."}'`: Create card in todo
 - `kanban show <card#>`: Show full card details (JSON)
-- `kanban move <card#> <column>`: Move card between columns
-- `kanban todo`, `kanban doing`, `kanban review`, `kanban done`: View/act on columns
-- `kanban delete <card#>`: Delete a card
-- `kanban assign <card#> --session <id>`: Reassign session ownership
-- `kanban history`: Show completed/archived cards
-- See `kanban --help` for full command list
+- `kanban move <card#> <column>`: Move card between columns (e.g., review → doing)
+- `kanban review <card#>`: Move card to review column
+- `kanban check <card#> <n>`: Check off acceptance criterion
+- `kanban uncheck <card#> <n>`: Uncheck acceptance criterion
+- `kanban done <card#> 'summary'`: Complete card with summary
+- `kanban cancel <card#>`: Cancel card
 
 **Session Management:**
 - Session identity injected automatically via SessionStart hook (friendly names like `swift-falcon`)
