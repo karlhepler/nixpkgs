@@ -15,6 +15,7 @@ ENVIRONMENT VARIABLES:
 """
 
 import argparse
+import html
 import json
 import os
 import re
@@ -619,55 +620,7 @@ def cmd_show(args) -> None:
 
     # Claude XML output style
     if getattr(args, "output_style", None) == "xml":
-        session = card.get("session", "")
-        priority = card.get("priority", 0)
-        action = card.get("action", "")
-        intent = card.get("intent", "")
-
-        xml_parts = [f'<card num="{num}" session="{session}" status="{col}" priority="{priority}">']
-        xml_parts.append(f"  <action>{action}</action>")
-
-        if intent:
-            xml_parts.append(f"  <intent>{intent}</intent>")
-
-        # Acceptance criteria
-        criteria = card.get("criteria", [])
-        if criteria:
-            xml_parts.append("  <acceptance-criteria>")
-            for criterion in criteria:
-                met = "true" if criterion.get("met", False) else "false"
-                text = criterion.get("text", "")
-                xml_parts.append(f'    <criterion met="{met}">{text}</criterion>')
-            xml_parts.append("  </acceptance-criteria>")
-
-        # Edit files
-        edit_files = card.get("editFiles") or card.get("writeFiles", [])
-        if edit_files:
-            xml_parts.append("  <edit-files>")
-            for f in sorted(edit_files):
-                xml_parts.append(f"    <file>{f}</file>")
-            xml_parts.append("  </edit-files>")
-
-        # Read files
-        read_files = card.get("readFiles", [])
-        if read_files:
-            xml_parts.append("  <read-files>")
-            for f in sorted(read_files):
-                xml_parts.append(f"    <file>{f}</file>")
-            xml_parts.append("  </read-files>")
-
-        # Activity log
-        activity = card.get("activity", [])
-        if activity:
-            xml_parts.append("  <activity>")
-            for event in activity:
-                timestamp = event.get("timestamp", "")
-                message = event.get("message", "")
-                xml_parts.append(f'    <event timestamp="{timestamp}">{message}</event>')
-            xml_parts.append("  </activity>")
-
-        xml_parts.append("</card>")
-        print("\n".join(xml_parts))
+        print(format_card_xml(card, num, col, include_details=True))
         return
 
     # Default: human-friendly terminal output (simple or detail)
@@ -940,7 +893,7 @@ def cmd_criteria(args) -> None:
 
 
 def cmd_check(args) -> None:
-    """Mark acceptance criterion as met."""
+    """Mark acceptance criterion(s) as met."""
     root = get_root(args.root)
     card_path = find_card(root, args.card)
     card = read_card(card_path)
@@ -950,28 +903,30 @@ def cmd_check(args) -> None:
         print(f"Error: Card #{card_number(card_path)} has no acceptance criteria", file=sys.stderr)
         sys.exit(1)
 
-    # Find criterion by 1-based index or text prefix match
-    criterion_idx = None
-    if args.criterion.isdigit():
-        idx = int(args.criterion) - 1  # Convert to 0-based
-        if 0 <= idx < len(criteria):
-            criterion_idx = idx
-    else:
-        # Text prefix match (case insensitive)
-        search_text = args.criterion.lower()
-        for i, c in enumerate(criteria):
-            if c.get("text", "").lower().startswith(search_text):
-                criterion_idx = i
-                break
+    for criterion_arg in args.criterion:
+        # Find criterion by 1-based index or text prefix match
+        criterion_idx = None
+        if criterion_arg.isdigit():
+            idx = int(criterion_arg) - 1  # Convert to 0-based
+            if 0 <= idx < len(criteria):
+                criterion_idx = idx
+        else:
+            # Text prefix match (case insensitive)
+            search_text = criterion_arg.lower()
+            for i, c in enumerate(criteria):
+                if c.get("text", "").lower().startswith(search_text):
+                    criterion_idx = i
+                    break
 
-    if criterion_idx is None:
-        print(f"Error: No criterion found matching '{args.criterion}'", file=sys.stderr)
-        sys.exit(1)
+        if criterion_idx is None:
+            print(f"Error: No criterion found matching '{criterion_arg}'", file=sys.stderr)
+            sys.exit(1)
 
-    criteria[criterion_idx]["met"] = True
+        criteria[criterion_idx]["met"] = True
+        print(f"✅ Checked: {criteria[criterion_idx]['text']}")
+
     card["updated"] = now_iso()
     write_card(card_path, card)
-    print(f"✅ Checked: {criteria[criterion_idx]['text']}")
 
 
 def cmd_uncheck(args) -> None:
@@ -1055,6 +1010,77 @@ def cmd_clear(args) -> None:
 # List and view commands
 # =============================================================================
 
+def format_card_xml(card: dict, num: str, col: str, include_details: bool = False) -> str:
+    """Format a single card as XML.
+
+    Args:
+        card: Card dictionary
+        num: Card number string
+        col: Column/status name
+        include_details: Include intent, AC, and activity (for show command)
+    """
+    esc = html.escape
+    session = card.get("session", "")
+    action = card.get("action", "")
+    priority = card.get("priority", 0)
+
+    # Card opening tag with attributes
+    if include_details:
+        xml_parts = [f'<card num="{esc(num)}" session="{esc(session)}" status="{esc(col)}" priority="{priority}">']
+    else:
+        xml_parts = [f'<card num="{esc(num)}" session="{esc(session)}" status="{esc(col)}">']
+
+    # Action (always included as child element)
+    xml_parts.append(f"  <action>{esc(action)}</action>")
+
+    # Intent (only in show/details mode)
+    if include_details:
+        intent = card.get("intent", "")
+        if intent:
+            xml_parts.append(f"  <intent>{esc(intent)}</intent>")
+
+    # Acceptance criteria (only in show/details mode)
+    if include_details:
+        criteria = card.get("criteria", [])
+        if criteria:
+            xml_parts.append("  <acceptance-criteria>")
+            for criterion in criteria:
+                met = "true" if criterion.get("met", False) else "false"
+                text = esc(criterion.get("text", ""))
+                xml_parts.append(f'    <ac met="{met}">{text}</ac>')
+            xml_parts.append("  </acceptance-criteria>")
+
+    # Edit files
+    edit_files = card.get("editFiles") or card.get("writeFiles", [])
+    if edit_files:
+        xml_parts.append("  <edit-files>")
+        for f in sorted(edit_files):
+            xml_parts.append(f"    <f>{esc(f)}</f>")
+        xml_parts.append("  </edit-files>")
+
+    # Read files
+    read_files = card.get("readFiles", [])
+    if read_files:
+        xml_parts.append("  <read-files>")
+        for f in sorted(read_files):
+            xml_parts.append(f"    <f>{esc(f)}</f>")
+        xml_parts.append("  </read-files>")
+
+    # Activity (only in show/details mode)
+    if include_details:
+        activity = card.get("activity", [])
+        if activity:
+            xml_parts.append("  <activity>")
+            for event in activity:
+                timestamp = esc(event.get("timestamp", ""))
+                message = esc(event.get("message", ""))
+                xml_parts.append(f'    <event ts="{timestamp}">{message}</event>')
+            xml_parts.append("  </activity>")
+
+    xml_parts.append("</card>")
+    return "\n".join(xml_parts)
+
+
 def format_card_line(card: dict, num: str, show_session: bool = False, output_style: str = "simple", is_first_card: bool = True) -> str:
     """Format a single card for list/view output.
 
@@ -1065,28 +1091,8 @@ def format_card_line(card: dict, num: str, show_session: bool = False, output_st
         output_style: "simple" (title only), "xml" (XML format), or "detail" (everything)
         is_first_card: Whether this is the first card (for spacing)
     """
-    # Claude style: XML output (no ANSI codes)
-    if output_style == "xml":
-        session = card.get("session", "")
-        action = card.get("action", "")
-        xml_parts = [f'<card num="{num}" session="{session}" action="{action}">']
-
-        edit_files = card.get("editFiles") or card.get("writeFiles", [])
-        if edit_files:
-            xml_parts.append("  <edit-files>")
-            for f in sorted(edit_files):
-                xml_parts.append(f"    <file>{f}</file>")
-            xml_parts.append("  </edit-files>")
-
-        read_files = card.get("readFiles", [])
-        if read_files:
-            xml_parts.append("  <read-files>")
-            for f in sorted(read_files):
-                xml_parts.append(f"    <file>{f}</file>")
-            xml_parts.append("  </read-files>")
-
-        xml_parts.append("</card>")
-        return "\n".join(xml_parts)
+    # Note: XML output for list is now handled in cmd_list directly
+    # This function only handles simple and detail styles
 
     # Non-claude styles use ANSI codes
     dim = "\033[2m"
@@ -1217,7 +1223,9 @@ def cmd_list(args) -> None:
     # Session filters
     current_session, hide_own, show_only_mine = resolve_session_filters(args)
 
-    # Gather cards grouped by session ownership
+    # Gather cards grouped by column (flat, no session grouping for XML)
+    all_cards_by_column: dict[str, list[tuple[str, dict]]] = {col: [] for col in columns_to_show}
+    # Also track by session for non-XML rendering
     my_cards: dict[str, list[tuple[str, dict]]] = {col: [] for col in columns_to_show}
     other_cards: dict[str, list[tuple[str, dict]]] = {col: [] for col in columns_to_show}
 
@@ -1239,12 +1247,32 @@ def cmd_list(args) -> None:
                 if not card_session.lower().startswith(session_filter.lower()):
                     continue
 
+            # Add to flat list for XML
+            all_cards_by_column[col].append((num, card))
+
+            # Also add to session-grouped lists for non-XML
             if is_my_card(card, current_session):
                 my_cards[col].append((num, card))
             else:
                 other_cards[col].append((num, card))
 
-    # Print
+    # XML output: group by column, no session sections
+    if output_style == "xml":
+        print("<board>")
+        for col in columns_to_show:
+            cards = all_cards_by_column[col]
+            if cards:  # Only show columns with cards
+                print(f"<{col}>")
+                for num, card in cards:
+                    card_xml = format_card_xml(card, num, col, include_details=False)
+                    # Indent the card XML
+                    for line in card_xml.split("\n"):
+                        print(f"  {line}")
+                print(f"</{col}>")
+        print("</board>")
+        return
+
+    # Non-XML output: session-grouped display
     print(f"KANBAN BOARD: {root}")
     print()
 
@@ -1768,7 +1796,7 @@ def main() -> None:
     # --- show ---
     p_show = subparsers.add_parser("show", parents=[parent_parser], help="Display card contents")
     p_show.add_argument("card", help="Card number")
-    p_show.add_argument("--output-style", choices=["simple", "xml", "detail"], help="Output style: simple (JSON, default), claude (XML), detail (N/A for show)")
+    p_show.add_argument("--output-style", choices=["simple", "xml", "detail"], help="Output style: xml (structured XML for machine parsing)")
 
     # --- delete ---
     p_delete = subparsers.add_parser("delete", parents=[parent_parser], help="Delete a card")
@@ -1783,7 +1811,7 @@ def main() -> None:
     # --- check ---
     p_check = subparsers.add_parser("check", parents=[parent_parser], help="Mark criterion as met")
     p_check.add_argument("card", help="Card number")
-    p_check.add_argument("criterion", help="Criterion index (1-based) or text prefix")
+    p_check.add_argument("criterion", nargs="+", help="Criterion index(es) (1-based) or text prefix(es)")
     p_check.add_argument("--session", help="Session ID (for consistency)")
 
     # --- uncheck ---
@@ -1820,7 +1848,7 @@ def main() -> None:
         p_list.add_argument("--show-done", action="store_true", help="Include done")
         p_list.add_argument("--show-canceled", action="store_true", help="Include canceled")
         p_list.add_argument("--show-all", action="store_true", help="Include done + canceled")
-        p_list.add_argument("--output-style", choices=["simple", "xml", "detail"], default="simple", help="Output style: simple (title only), claude (XML), detail (everything)")
+        p_list.add_argument("--output-style", choices=["simple", "xml", "detail"], default="simple", help="Output style: simple (title only), xml (structured XML), detail (everything)")
         add_session_flags(p_list)
         add_date_flags(p_list)
 
@@ -1842,27 +1870,27 @@ def main() -> None:
     p_todo = subparsers.add_parser("todo", parents=[parent_parser], help="View todo or create card in todo")
     p_todo.add_argument("json_data", nargs="?", default=None, help="JSON to create card")
     p_todo.add_argument("--top", action="store_true", help="Insert at top")
-    p_todo.add_argument("--output-style", choices=["simple", "xml", "detail"], default="simple", help="Output style: simple (title only), claude (XML), detail (everything)")
+    p_todo.add_argument("--output-style", choices=["simple", "xml", "detail"], default="simple", help="Output style: simple (title only), xml (structured XML), detail (everything)")
     add_session_flags(p_todo)
     add_date_flags(p_todo)
 
     p_review = subparsers.add_parser("review", parents=[parent_parser], help="View review or move card to review")
     p_review.add_argument("card_or_none", nargs="?", default=None, help="Card number to move to review")
-    p_review.add_argument("--output-style", choices=["simple", "xml", "detail"], default="simple", help="Output style: simple (title only), claude (XML), detail (everything)")
+    p_review.add_argument("--output-style", choices=["simple", "xml", "detail"], default="simple", help="Output style: simple (title only), xml (structured XML), detail (everything)")
     add_session_flags(p_review)
     add_date_flags(p_review)
 
     p_done = subparsers.add_parser("done", parents=[parent_parser], help="View done or move card to done")
     p_done.add_argument("card_or_none", nargs="?", default=None, help="Card number to move to done")
     p_done.add_argument("message", nargs="?", default=None, help="Completion message")
-    p_done.add_argument("--output-style", choices=["simple", "xml", "detail"], default="simple", help="Output style: simple (title only), claude (XML), detail (everything)")
+    p_done.add_argument("--output-style", choices=["simple", "xml", "detail"], default="simple", help="Output style: simple (title only), xml (structured XML), detail (everything)")
     add_session_flags(p_done)
     add_date_flags(p_done)
 
     # --- Pure view: doing, canceled ---
     for col in ["doing", "canceled"]:
         p_col = subparsers.add_parser(col, parents=[parent_parser], help=f"View {col} column")
-        p_col.add_argument("--output-style", choices=["simple", "xml", "detail"], default="simple", help="Output style: simple (title only), claude (XML), detail (everything)")
+        p_col.add_argument("--output-style", choices=["simple", "xml", "detail"], default="simple", help="Output style: simple (title only), xml (structured XML), detail (everything)")
         add_session_flags(p_col)
         add_date_flags(p_col)
         p_col.set_defaults(column=col)
