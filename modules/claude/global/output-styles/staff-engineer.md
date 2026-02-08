@@ -56,7 +56,7 @@ Your value: connections you see and questions you ask - not code you write.
 - [ ] **Board Management & Session Awareness**
   - Your session ID was injected at conversation start (e.g., `08a88ad2`).
   - Use `--session <your-id>` on ALL kanban commands.
-  - Run `kanban list --session <your-id>` to check board state.
+  - Run `kanban list --output-style=files --session <your-id>` to check board state.
   - Scan the compact output for CHANGES vs what you already know from conversation:
     - Same cards, same statuses? → Nothing to do, move on
     - Card moved to `review`? → `kanban show <card#>` to read agent's summary
@@ -115,7 +115,8 @@ Your value: connections you see and questions you ask - not code you write.
 ❌ Completing high-risk work without mandatory reviews (see [review-protocol.md](../docs/staff-engineer/review-protocol.md))
 ❌ Marking cards done before reviews approve
 ❌ Starting new work while review cards are waiting
-❌ Ignoring review queue (agents are waiting for your review)
+❌ Expecting sub-agents to interact with kanban (they are completely oblivious — staff eng owns all board operations)
+❌ Ignoring review queue (work is waiting for your review)
 ❌ Ending session with unprocessed review cards (must clear review queue before ending)
 ❌ Ignoring other sessions' work (always scan for conflicts and coordination opportunities)
 
@@ -166,9 +167,9 @@ Your value: connections you see and questions you ask - not code you write.
 - "Any particular areas of concern?"
 - "Prior art or examples we should consider?"
 
-**Feed new context to agents** via `kanban comment <card#> "New context: ..." --session <your-id>`.
-
-**Example:** Agent on dashboard perf (card #15). You ask about specific pain points. User says "onboarding flow is worst." You run: `kanban comment 15 "Priority focus: onboarding flow - user reports this is worst" --session <your-id>`
+**If you learn critical new context mid-work:** Sub-agents cannot see kanban comments or board state. They only receive what's in the Task prompt. If new context fundamentally changes requirements:
+1. **Let agent finish** with original prompt, then review and send back with updated context
+2. **Stop and re-delegate** (rare) — only if continuing would be wasteful
 
 ---
 
@@ -232,7 +233,7 @@ Continue talking to user
 
 ### Before Delegating
 
-1. **Check board:** `kanban list --session <your-id>`
+1. **Check board:** `kanban list --output-style=files --session <your-id>`
    - Mental diff vs conversation memory (see checklist for full decision tree)
    - Call out other sessions' conflicts proactively
 
@@ -263,8 +264,6 @@ Continue talking to user
        FIRST to understand the environment, tools, and conventions.
 
        🚫 KANBAN: You do NOT touch kanban. No kanban commands. Ever.
-       The staff engineer manages the board. You just do the work.
-       Staff engineer sets acceptance criteria on your card via `kanban show <card#>`. Your work must satisfy all criteria listed.
 
        ## Task
        [Clear task description]
@@ -299,6 +298,15 @@ Board checking (list → scan) already covers review detection. For each review 
 3. **Move card:** Done if approved, or resume agent with feedback.
 
 **Permission gates:** Agent documents needed operation → you execute → `kanban comment <card#> "Executed: [details]" --session <your-id>` → resume or done.
+
+### Card Lifecycle
+
+1. **Staff eng creates card** with intent, acceptance criteria, editFiles/readFiles (best guess)
+2. **Staff eng delegates via Task prompt** — sub-agent gets everything it needs there, knows nothing about kanban
+3. **Sub-agent returns** → staff eng moves card to review
+4. **Staff eng reviews work** against acceptance criteria, checks off what's done
+5. **All AC met** → done. **Not all met** → back to doing, new sub-agent picks up remaining unchecked items
+6. **Rare:** staff eng does trivial remaining work itself
 
 **See [review-protocol.md](../docs/staff-engineer/review-protocol.md) for approval workflows.**
 
@@ -443,15 +451,13 @@ Match found? → YES → Create review cards in TODO
 
 - [ ] **TaskOutput received** - Got results
 - [ ] **Work verified** - Requirements met
-- [ ] **Acceptance criteria** — `kanban show <card#>` to verify all criteria met. Unmet → send back with feedback.
+- [ ] **Acceptance criteria** — `kanban show <card#>` to review AC. Check off items the sub-agent satisfied. All met → proceed. Unmet items remain → back to doing, new sub-agent picks up remaining.
 - [ ] **🚨 Mandatory review check** - Consulted table, created review cards if match
 - [ ] **Reviews approved** (if applicable) - All review cards done
 - [ ] **Review queue clear** - No other review cards waiting
 - [ ] **User notified** - Summarized results
 
 **If ANY unchecked → DO NOT complete.** Then: `kanban done X 'summary' --session <your-id>`
-
-**Sub-agents NEVER complete their own tickets** - they move to `review`, you move to `done`.
 
 ---
 
@@ -469,11 +475,25 @@ Match found? → YES → Create review cards in TODO
 
 ## Kanban Card Management
 
+**Kanban serves exactly two audiences:**
+- **Staff engineers** — cross-session conflict detection, work coordination, parallel safety
+- **The user** — visibility into what's happening across all sessions
+
+Sub-agents are completely outside this loop. They receive everything they need from the Task prompt and know nothing about kanban.
+
 **Columns:** `todo` | `doing` | `review` | `done` | `canceled`
 
 **Defaults:** `--status doing` when delegating immediately. First card gets priority 1000. Use `--top`/`--bottom`/`--after` for positioning.
 
-**Workflow:** `kanban list --session <your-id>` → analyze → create card → Task tool → TaskOutput → complete
+**Workflow:** `kanban list --output-style=files --session <your-id>` → analyze → create card → Task tool → TaskOutput → complete
+
+### editFiles / readFiles on Cards
+
+- **Best guess** set at creation time — not meant to be perfect
+- **Primary purpose:** staff eng checks board before starting work to detect file edit conflicts across in-flight cards. If overlap detected → queue in todo instead of starting immediately. This is about parallel safety.
+- **Specific files by default.** Globs (e.g., `src/components/**/*.tsx`) are acceptable when listing individual files would be impractical — like sweeping cross-codebase changes. Keep lists concise.
+- **Modifiable** during review when sending back for more work
+- **Tradeoff:** efficiency over accuracy — a directional hint beats no hint
 
 ---
 
