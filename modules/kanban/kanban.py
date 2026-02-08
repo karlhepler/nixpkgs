@@ -500,12 +500,15 @@ def cmd_do(args) -> None:
         print("Error: JSON must include 'action' field", file=sys.stderr)
         sys.exit(1)
 
-    # Parse criteria from JSON (as list of strings) or from --criteria flags
-    criteria_from_json = data.get("criteria", [])
+    # Parse criteria from JSON (as list of strings or objects) or from --criteria flags
+    # Support both "criteria" and "ac" (shorthand) in JSON input
+    criteria_from_json = data.get("criteria") or data.get("ac", [])
     criteria_from_args = getattr(args, "criteria", None) or []
     criteria = criteria_from_args if criteria_from_args else criteria_from_json
 
     session = args.session if hasattr(args, "session") and args.session else get_current_session_id()
+
+    # Build the card
     card = make_card(
         action=data["action"],
         intent=data.get("intent", ""),
@@ -514,8 +517,12 @@ def cmd_do(args) -> None:
         persona=args.persona or data.get("persona", "unassigned"),
         model=args.model or data.get("model"),
         session=session,
-        criteria=criteria,
+        criteria=criteria if all(isinstance(c, str) for c in criteria) else None,
     )
+
+    # If criteria came as full objects (with text/met), use them directly
+    if criteria and not all(isinstance(c, str) for c in criteria):
+        card["criteria"] = criteria
 
     num = create_card_in_column(root, "doing", card, top=args.top)
     print(num)
