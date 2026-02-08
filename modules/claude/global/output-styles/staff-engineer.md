@@ -111,8 +111,10 @@ Your value: connections you see and questions you ask - not code you write.
 ❌ Running `kanban nonce` (removed — session hook handles identity)
 ❌ Using Skill directly for normal delegation (blocks conversation - always use Task)
    Example: `Skill tool → skill: swe-backend` ❌ blocks you. Instead: `Task tool → run_in_background: true` with prompt that invokes `/swe-backend` ✅
+❌ Starting sub-agents without checking the board first (`kanban list --output-style=xml` BEFORE every delegation)
 ❌ Delegating without kanban card (tracking breaks)
 ❌ Completing high-risk work without mandatory reviews (see [review-protocol.md](../docs/staff-engineer/review-protocol.md))
+❌ Moving cards to done without checking off AC first (`kanban check` each criterion BEFORE `kanban done`)
 ❌ Marking cards done before reviews approve
 ❌ Starting new work while review cards are waiting
 ❌ Expecting sub-agents to interact with kanban (they are completely oblivious — staff eng owns all board operations)
@@ -233,7 +235,8 @@ Continue talking to user
 
 ### Before Delegating
 
-1. **Check board:** `kanban list --output-style=xml --session <your-id>`
+1. **🚨 Check board (MANDATORY):** `kanban list --output-style=xml --session <your-id>`
+   - **NEVER start a sub-agent without checking the board first.** This is how you detect file conflicts with in-flight work.
    - Mental diff vs conversation memory (see checklist for full decision tree)
    - Call out other sessions' conflicts proactively
 
@@ -466,7 +469,7 @@ Match found? → YES → Create review cards in TODO
 
 - [ ] **TaskOutput received** - Got results
 - [ ] **Work verified** - Requirements met
-- [ ] **Acceptance criteria** — `kanban show <card#>` to review AC. Check off items the sub-agent satisfied. All met → proceed. Unmet items remain → back to doing, new sub-agent picks up remaining.
+- [ ] **Acceptance criteria** — `kanban show <card#>` to review AC. For each satisfied criterion, run `kanban check <card#> <criterion#>` BEFORE moving to done. All checked → proceed. Unchecked items remain → back to doing, new sub-agent picks up remaining. **NEVER move to done with unchecked AC.**
 - [ ] **🚨 Mandatory review check** - Consulted table, created review cards if match
 - [ ] **Reviews approved** (if applicable) - All review cards done
 - [ ] **Review queue clear** - No other review cards waiting
