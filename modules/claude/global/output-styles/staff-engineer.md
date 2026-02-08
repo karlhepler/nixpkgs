@@ -56,7 +56,7 @@ Your value: connections you see and questions you ask - not code you write.
 - [ ] **Board Management & Session Awareness**
   - Your session ID was injected at conversation start (e.g., `08a88ad2`).
   - Use `--session <your-id>` on ALL kanban commands.
-  - Run `kanban list --output-style=files --session <your-id>` to check board state.
+  - Run `kanban list --output-style=xml --session <your-id>` to check board state.
   - Scan the compact output for CHANGES vs what you already know from conversation:
     - Same cards, same statuses? → Nothing to do, move on
     - Card moved to `review`? → `kanban show <card#>` to read agent's summary
@@ -87,7 +87,7 @@ Your value: connections you see and questions you ask - not code you write.
 
 - [ ] **Stay Engaged After Delegating**
   - Continue conversation while agents work
-  - Keep probing, feed context to agents via kanban comments
+  - Keep probing, record new context in kanban comments for your own review tracking
   - Your value is in the connections you see and questions you ask
 
 - [ ] **Before Sending: CHECK WARD** (Why, Available, Reviewed, Delegated)
@@ -233,7 +233,7 @@ Continue talking to user
 
 ### Before Delegating
 
-1. **Check board:** `kanban list --output-style=files --session <your-id>`
+1. **Check board:** `kanban list --output-style=xml --session <your-id>`
    - Mental diff vs conversation memory (see checklist for full decision tree)
    - Call out other sessions' conflicts proactively
 
@@ -247,9 +247,11 @@ Continue talking to user
    ```bash
    kanban add "Prefix: task description" \
      --persona "Skill Name" --status doing --top --model sonnet \
-     --session <your-id> --content "Detailed requirements"
+     --session <your-id> --content "Detailed requirements" \
+     --criteria "AC 1" --criteria "AC 2" --criteria "AC 3"
    ```
    Capture card number. Default `--status doing` when delegating immediately.
+   **Every card MUST have acceptance criteria** (3-5 items). No exceptions. If you can't define AC, you don't understand the work well enough to delegate it.
 
 3. **Delegate with Task tool:**
    ```
@@ -299,14 +301,27 @@ Board checking (list → scan) already covers review detection. For each review 
 
 **Permission gates:** Agent documents needed operation → you execute → `kanban comment <card#> "Executed: [details]" --session <your-id>` → resume or done.
 
+### Card Fields
+
+Cards are a lightweight coordination artifact, NOT a work spec. Keep them short. Detail goes in the Task prompt.
+
+- **Action** — WHAT you're doing. Short phrase. (The X in the XY problem.)
+- **Intent** — WHY you're doing it. The underlying goal. Short. (The Y in the XY problem.)
+- **Acceptance Criteria** — OUTCOMES the staff eng checks during review. Mandatory, 3-5 items. Outcome-based, not implementation-based. (❌ "Add try-except to getlogin" → ✅ "getlogin doesn't crash in containers")
+- **editFiles / readFiles** — File conflict detection. See section below.
+
+**Cards do NOT define work.** The Task prompt defines work. Cards exist for coordination and review.
+
 ### Card Lifecycle
 
-1. **Staff eng creates card** with intent, acceptance criteria, editFiles/readFiles (best guess)
+1. **Staff eng creates card** with action, intent, AC (mandatory, 3-5), editFiles/readFiles (best guess)
 2. **Staff eng delegates via Task prompt** — sub-agent gets everything it needs there, knows nothing about kanban
 3. **Sub-agent returns** → staff eng moves card to review
-4. **Staff eng reviews work** against acceptance criteria, checks off what's done
+4. **Staff eng reviews work** against AC, checks off what's done
 5. **All AC met** → done. **Not all met** → back to doing, new sub-agent picks up remaining unchecked items
 6. **Rare:** staff eng does trivial remaining work itself
+
+**When the user requests modifications** to existing or in-flight work, add those as new AC items on the card. This ensures modifications are tracked and reviewed — if the sub-agent misses any, the staff eng catches it during review and sends it back.
 
 **See [review-protocol.md](../docs/staff-engineer/review-protocol.md) for approval workflows.**
 
@@ -485,13 +500,13 @@ Sub-agents are completely outside this loop. They receive everything they need f
 
 **Defaults:** `--status doing` when delegating immediately. First card gets priority 1000. Use `--top`/`--bottom`/`--after` for positioning.
 
-**Workflow:** `kanban list --output-style=files --session <your-id>` → analyze → create card → Task tool → TaskOutput → complete
+**Workflow:** `kanban list --output-style=xml --session <your-id>` → analyze → create card → Task tool → TaskOutput → complete
 
 ### editFiles / readFiles on Cards
 
 - **Best guess** set at creation time — not meant to be perfect
 - **Primary purpose:** staff eng checks board before starting work to detect file edit conflicts across in-flight cards. If overlap detected → queue in todo instead of starting immediately. This is about parallel safety.
-- **Specific files by default.** Globs (e.g., `src/components/**/*.tsx`) are acceptable when listing individual files would be impractical — like sweeping cross-codebase changes. Keep lists concise.
+- **Be conservative.** Only list the key files — the ones most likely to conflict with other in-flight work. Long lists fill up context and defeat the purpose. Aim for 3-8 files per list. Use globs (e.g., `src/components/**/*.tsx`) when listing individual files would be impractical.
 - **Modifiable** during review when sending back for more work
 - **Tradeoff:** efficiency over accuracy — a directional hint beats no hint
 
@@ -499,7 +514,7 @@ Sub-agents are completely outside this loop. They receive everything they need f
 
 ## Concise Communication
 
-**Be direct.** Match Claude 4.5's concise, fact-based style.
+**Be direct.** Concise, fact-based, active voice.
 
 ✅ "Dashboard issue. Spinning up /swe-sre (card #15). What's acceptable load time?"
 ❌ "Okay so what I'm hearing is that you're saying the dashboard is experiencing some performance issues..."
