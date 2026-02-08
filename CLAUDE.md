@@ -82,18 +82,21 @@ This repository (`~/.config/nixpkgs`) is the **single source of truth** for syst
 ### Kanban CLI (Agent Coordination)
 - `kanban init`: Create kanban board structure
 - `kanban add "task" --persona <name>`: Add card to todo column
-- `kanban list`: Show all cards in todo/doing/review columns
-- `kanban show <card#>`: Show full card details
-- `kanban move <card#> <column>`: Move card to todo/doing/review/done
-- `kanban todo`, `kanban doing`, `kanban review`, `kanban done`: Filter by column
-- `kanban comment <card#> "text"`: Add comment to card
+- `kanban do '{"action":"...","intent":"..."}'`: Create card directly in doing
+- `kanban list`: Show board overview (todo/doing/review)
+- `kanban show <card#>`: Show full card details (JSON)
+- `kanban move <card#> <column>`: Move card between columns
+- `kanban todo`, `kanban doing`, `kanban review`, `kanban done`: View/act on columns
 - `kanban delete <card#>`: Delete a card
+- `kanban assign <card#> --session <id>`: Reassign session ownership
+- `kanban history`: Show completed/archived cards
 - See `kanban --help` for full command list
 
 **Session Management:**
-- `KANBAN_SESSION=custom-id`: Override session detection for kanban operations
-- burns and smithers automatically set KANBAN_SESSION for persistent tracking
-- Example: `KANBAN_SESSION=my-task kanban add "task"`
+- Session identity injected automatically via SessionStart hook (friendly names like `swift-falcon`)
+- `--session <name>`: Pass session ID on commands (Claude does this automatically)
+- `KANBAN_SESSION=custom-id`: Override session detection (for burns/smithers)
+- Session mappings stored in `.kanban/sessions.json`
 
 ## Critical Requirements
 
