@@ -744,15 +744,15 @@ kanban todo '[
 | `kanban todo '<JSON or JSON array>'` | Create card(s) in todo |
 | `kanban show <card#>` | View full card details |
 | `kanban start <card#> [card#...]` | Pick up card(s) from todo → doing |
-| `kanban review <card#>` | Move to review column |
+| `kanban review <card#> [card#...]` | Move card(s) to review column |
 | `kanban redo <card#>` | Send back from review → doing |
-| `kanban defer <card#>` | Park card in todo (from doing or review) |
+| `kanban defer <card#> [card#...]` | Park card(s) in todo (from doing or review) |
 | `kanban criteria add <card#> "text"` | Add acceptance criterion |
 | `kanban criteria remove <card#> <n> "reason"` | Remove criterion with reason |
-| `kanban criteria check <card#> <n>` | Check off acceptance criterion |
-| `kanban criteria uncheck <card#> <n>` | Uncheck acceptance criterion |
+| `kanban criteria check <card#> <n> [n...]` | Check off acceptance criterion(s) |
+| `kanban criteria uncheck <card#> <n> [n...]` | Uncheck acceptance criterion(s) |
 | `kanban done <card#> 'summary'` | Complete card (AC enforced) |
-| `kanban cancel <card#>` | Cancel card |
+| `kanban cancel <card#> [card#...] [--reason "text"]` | Cancel card(s) |
 
 ### editFiles / readFiles on Cards
 

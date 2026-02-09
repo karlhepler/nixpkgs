@@ -629,24 +629,27 @@ def cmd_redo(args) -> None:
 
 
 def cmd_defer(args) -> None:
-    """Move card from doing or review back to todo."""
+    """Move card(s) from doing or review back to todo."""
     root = get_root(args.root)
-    card_path = find_card(root, args.card)
-    col = card_path.parent.name
-    num = card_number(card_path)
+    card_numbers = args.card if isinstance(args.card, list) else [args.card]
 
-    if col not in ["doing", "review"]:
-        print(f"Error: Card #{num} is in '{col}', not 'doing' or 'review'. Defer only works on cards in doing or review.", file=sys.stderr)
-        sys.exit(1)
+    for card_num in card_numbers:
+        card_path = find_card(root, card_num)
+        col = card_path.parent.name
+        num = card_number(card_path)
 
-    card = read_card(card_path)
-    card["updated"] = now_iso()
-    write_card(card_path, card)
+        if col not in ["doing", "review"]:
+            print(f"Error: Card #{num} is in '{col}', not 'doing' or 'review'. Defer only works on cards in doing or review.", file=sys.stderr)
+            sys.exit(1)
 
-    target = root / "todo" / card_path.name
-    target.parent.mkdir(parents=True, exist_ok=True)
-    card_path.rename(target)
-    print(f"Deferred: #{num} — moved to todo")
+        card = read_card(card_path)
+        card["updated"] = now_iso()
+        write_card(card_path, card)
+
+        target = root / "todo" / card_path.name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        card_path.rename(target)
+        print(f"Deferred: #{num} — moved to todo")
 
 
 def cmd_start(args) -> None:
@@ -796,29 +799,33 @@ def cmd_show(args) -> None:
 
 
 def cmd_cancel(args) -> None:
-    """Move card to canceled column."""
+    """Move card(s) to canceled column."""
     root = get_root(args.root)
-    card_path = find_card(root, args.card)
-    card = read_card(card_path)
-    num = card_number(card_path)
+    card_numbers = args.card if isinstance(args.card, list) else [args.card]
 
-    # Store cancellation reason if provided
+    # Store cancellation reason if provided (applies to all cards in bulk)
     reason = args.reason if hasattr(args, "reason") and args.reason else None
-    if reason:
-        card["cancelReason"] = reason
 
-    card["updated"] = now_iso()
-    write_card(card_path, card)
+    for card_num in card_numbers:
+        card_path = find_card(root, card_num)
+        card = read_card(card_path)
+        num = card_number(card_path)
 
-    target_path = root / "canceled" / card_path.name
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    card_path.rename(target_path)
+        if reason:
+            card["cancelReason"] = reason
 
-    # Output with reason if provided
-    if reason:
-        print(f"Canceled: #{num} — {reason}")
-    else:
-        print(f"Canceled: #{num}")
+        card["updated"] = now_iso()
+        write_card(card_path, card)
+
+        target_path = root / "canceled" / card_path.name
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        card_path.rename(target_path)
+
+        # Output with reason if provided
+        if reason:
+            print(f"Canceled: #{num} — {reason}")
+        else:
+            print(f"Canceled: #{num}")
 
 
 def cmd_criteria_add(args) -> None:
@@ -916,7 +923,7 @@ def cmd_criteria_check(args) -> None:
 
 
 def cmd_criteria_uncheck(args) -> None:
-    """Mark acceptance criterion as unmet."""
+    """Mark acceptance criterion(s) as unmet."""
     root = get_root(args.root)
     card_path = find_card(root, args.card)
     card = read_card(card_path)
@@ -926,28 +933,30 @@ def cmd_criteria_uncheck(args) -> None:
         print(f"Error: Card #{card_number(card_path)} has no acceptance criteria", file=sys.stderr)
         sys.exit(1)
 
-    # Find criterion by 1-based index or text prefix match
-    criterion_idx = None
-    if str(args.n).isdigit():
-        idx = int(args.n) - 1  # Convert to 0-based
-        if 0 <= idx < len(criteria):
-            criterion_idx = idx
-    else:
-        # Text prefix match (case insensitive)
-        search_text = str(args.n).lower()
-        for i, c in enumerate(criteria):
-            if c.get("text", "").lower().startswith(search_text):
-                criterion_idx = i
-                break
+    for criterion_arg in args.n:
+        # Find criterion by 1-based index or text prefix match
+        criterion_idx = None
+        if str(criterion_arg).isdigit():
+            idx = int(criterion_arg) - 1  # Convert to 0-based
+            if 0 <= idx < len(criteria):
+                criterion_idx = idx
+        else:
+            # Text prefix match (case insensitive)
+            search_text = str(criterion_arg).lower()
+            for i, c in enumerate(criteria):
+                if c.get("text", "").lower().startswith(search_text):
+                    criterion_idx = i
+                    break
 
-    if criterion_idx is None:
-        print(f"Error: No criterion found matching '{args.n}'", file=sys.stderr)
-        sys.exit(1)
+        if criterion_idx is None:
+            print(f"Error: No criterion found matching '{criterion_arg}'", file=sys.stderr)
+            sys.exit(1)
 
-    criteria[criterion_idx]["met"] = False
+        criteria[criterion_idx]["met"] = False
+        print(f"⬜ Unchecked: {criteria[criterion_idx]['text']}")
+
     card["updated"] = now_iso()
     write_card(card_path, card)
-    print(f"⬜ Unchecked: {criteria[criterion_idx]['text']}")
 
 
 def cmd_criteria_dispatch(args) -> None:
@@ -1526,19 +1535,22 @@ def cmd_todo(args) -> None:
 
 
 def cmd_review(args) -> None:
-    """Move card to review column (pure verb - no view mode)."""
+    """Move card(s) to review column (pure verb - no view mode)."""
     root = get_root(args.root)
-    card_path = find_card(root, args.card)
-    card = read_card(card_path)
-    num = card_number(card_path)
+    card_numbers = args.card if isinstance(args.card, list) else [args.card]
 
-    card["updated"] = now_iso()
-    write_card(card_path, card)
+    for card_num in card_numbers:
+        card_path = find_card(root, card_num)
+        card = read_card(card_path)
+        num = card_number(card_path)
 
-    target = root / "review" / card_path.name
-    target.parent.mkdir(parents=True, exist_ok=True)
-    card_path.rename(target)
-    print(f"Moved: #{num} -> review/")
+        card["updated"] = now_iso()
+        write_card(card_path, card)
+
+        target = root / "review" / card_path.name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        card_path.rename(target)
+        print(f"Moved: #{num} -> review/")
 
 
 def cmd_done(args) -> None:
@@ -2105,9 +2117,9 @@ def main() -> None:
     add_session_flags(p_show)
 
     # --- cancel ---
-    p_cancel = subparsers.add_parser("cancel", parents=[parent_parser], help="Move card to canceled column")
-    p_cancel.add_argument("card", help="Card number")
-    p_cancel.add_argument("reason", nargs="?", default=None, help="Optional cancellation reason")
+    p_cancel = subparsers.add_parser("cancel", parents=[parent_parser], help="Move card(s) to canceled column")
+    p_cancel.add_argument("card", nargs="+", help="Card number(s)")
+    p_cancel.add_argument("--reason", default=None, help="Optional cancellation reason (applies to all cards)")
     add_session_flags(p_cancel)
 
     # --- redo ---
@@ -2116,8 +2128,8 @@ def main() -> None:
     add_session_flags(p_redo)
 
     # --- defer ---
-    p_defer = subparsers.add_parser("defer", parents=[parent_parser], help="Move card from doing/review back to todo")
-    p_defer.add_argument("card", help="Card number")
+    p_defer = subparsers.add_parser("defer", parents=[parent_parser], help="Move card(s) from doing/review back to todo")
+    p_defer.add_argument("card", nargs="+", help="Card number(s)")
     add_session_flags(p_defer)
 
     # --- start ---
@@ -2147,7 +2159,7 @@ def main() -> None:
 
     p_criteria_uncheck = criteria_subparsers.add_parser("uncheck", parents=[parent_parser], help="Mark criterion as unmet")
     p_criteria_uncheck.add_argument("card", help="Card number")
-    p_criteria_uncheck.add_argument("n", help="Criterion index (1-based) or text prefix")
+    p_criteria_uncheck.add_argument("n", nargs="+", help="Criterion index(es) (1-based) or text prefix(es)")
     add_session_flags(p_criteria_uncheck)
 
     # --- list / ls ---
@@ -2166,8 +2178,8 @@ def main() -> None:
     p_todo.add_argument("json_data", help="JSON object or array of objects with action, intent, readFiles, editFiles")
     add_session_flags(p_todo)
 
-    p_review = subparsers.add_parser("review", parents=[parent_parser], help="Move card to review")
-    p_review.add_argument("card", help="Card number")
+    p_review = subparsers.add_parser("review", parents=[parent_parser], help="Move card(s) to review")
+    p_review.add_argument("card", nargs="+", help="Card number(s)")
     add_session_flags(p_review)
 
     p_done = subparsers.add_parser("done", parents=[parent_parser], help="Move card to done")
