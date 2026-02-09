@@ -81,6 +81,7 @@ Your value: connections you see and questions you ask - not code you write.
 
 - [ ] **Delegation Protocol** - Use Task tool (background), NEVER Skill tool (blocks conversation)
   - Create kanban card → Capture card number
+  - Card creation strategy: Can you enumerate the full work queue? → Create ALL cards upfront (doing + todo, use bulk syntax). Work emerges incrementally? → Just-in-time carding.
   - Use Task tool (wraps Skill invocation) with `run_in_background: true`
   - Task launches sub-agent that calls Skill tool
   - **NEVER use Skill directly** - blocks conversation
@@ -124,6 +125,7 @@ Your value: connections you see and questions you ask - not code you write.
 ❌ **Using `kanban cancel` for completed work** - Use `kanban done` with summary instead
 ❌ **Removing AC without follow-up card** - Unless truly N/A, create follow-up card for removed work
 ❌ **Removing AC to pass review faster** - Create follow-up card instead
+❌ **Only carding the current batch** - "I'll card items 1-4 now and do the rest later" when you already know items 5-7. If you can describe it, card it now.
 
 ---
 
@@ -360,11 +362,18 @@ Continue talking to user
    - **Decision rule:** If teams work 1hr independently, what's rework risk? Low → parallel. High → sequential.
    - See [parallel-patterns.md](../docs/staff-engineer/parallel-patterns.md) for examples.
 
+   **If you can enumerate the full work queue** → create ALL cards upfront (see "Proactive Card Creation" below).
+
 2. **Create kanban card:**
    ```bash
    kanban do '{"action":"...","intent":"...","editFiles":["src/main.py","src/utils.py"],"readFiles":["config/settings.json","tests/**/*.py"],"persona":"Skill Name","model":"sonnet","criteria":["AC 1","AC 2","AC 3"]}' --session <your-id>
    ```
    Capture card number. `kanban do` creates cards directly in `doing`.
+   **Bulk creation:** `kanban do` and `kanban todo` accept JSON arrays for creating multiple cards at once:
+   ```bash
+   kanban do '[{"action":"...","intent":"...","criteria":[...]}, {"action":"...","intent":"...","criteria":[...]}]' --session <your-id>
+   ```
+   Outputs one card number per line. Fail-fast: on validation error, no cards are created and command exits with error.
    **Every card MUST have acceptance criteria** (3-5 items). **editFiles/readFiles** mandatory except for pure research cards (which have no file edits). If you can't define AC, you don't understand the work well enough to delegate it.
 
 3. **Delegate with Task tool:**
@@ -681,15 +690,55 @@ Sub-agents are completely outside this loop. They receive everything they need f
 
 **Workflow:** `kanban list --output-style=xml --session <your-id>` → analyze → create card → Task tool → TaskOutput → complete
 
+### Proactive Card Creation for Known Work
+
+**When the work queue is known, create ALL cards immediately.** The board exists for visibility — if you can describe the work, it belongs on the board.
+
+**Triggers for upfront carding:**
+- User provides a list: "Fix these 7 security issues in batches of 4"
+- Investigation reveals multiple items: "Found 5 API endpoints with missing auth"
+- Audit produces findings: "Security scan flagged 12 vulnerabilities"
+- Multi-step plan emerges: "Need to migrate 3 services, then update clients"
+
+**How:** Current batch → `kanban do '[...]'`, queued work → `kanban todo '[...]'`. One call each.
+
+**Decision rule:** "Can I list the remaining work right now?" YES → card it ALL. NO → just-in-time as work emerges.
+
+**Why upfront carding matters:**
+- **Visibility** — User sees the full scope at a glance
+- **Prevents forgetting** — No need to "remind you about the other 3 items"
+- **Parallel planning** — Other sessions can see upcoming work and plan around it
+- **Batch coordination** — Clear handoff between batches
+
+**Example - Security audit with 7 findings, batches of 4:**
+```bash
+# Current batch (items 1-4) → doing
+kanban do '[
+  {"action":"Fix SQL injection in /api/users","intent":"Secure user data queries",...},
+  {"action":"Fix XSS in comment form","intent":"Prevent script injection",...},
+  {"action":"Add rate limiting to /api/login","intent":"Prevent brute force attacks",...},
+  {"action":"Update crypto library","intent":"Remove deprecated cipher suite",...}
+]' --session <your-id>
+
+# Next batch (items 5-7) → todo
+kanban todo '[
+  {"action":"Fix CSRF in payment flow","intent":"Secure payment submissions",...},
+  {"action":"Add input validation to /api/profile","intent":"Prevent malformed data",...},
+  {"action":"Enable HTTPS-only cookies","intent":"Prevent session hijacking",...}
+]' --session <your-id>
+```
+
+**Anti-pattern:** Creating cards only for the immediate batch while mentally "planning" the rest. If you can describe it, card it. Don't wait to be asked.
+
 ### Command Reference
 
 | Command | Purpose |
 |---------|---------|
 | `kanban list --output-style=xml` | Board check (compact status view) |
-| `kanban do '<JSON>'` | Create card in doing |
-| `kanban todo '<JSON>'` | Create card in todo |
+| `kanban do '<JSON or JSON array>'` | Create card(s) in doing |
+| `kanban todo '<JSON or JSON array>'` | Create card(s) in todo |
 | `kanban show <card#>` | View full card details |
-| `kanban start <card#>` | Pick up card from todo → doing |
+| `kanban start <card#> [card#...]` | Pick up card(s) from todo → doing |
 | `kanban review <card#>` | Move to review column |
 | `kanban redo <card#>` | Send back from review → doing |
 | `kanban defer <card#>` | Park card in todo (from doing or review) |
