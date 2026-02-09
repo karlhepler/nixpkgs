@@ -245,13 +245,12 @@ in {
         fi
       }
 
-      # Auto-attach to last active tmux session or create new one
+      # Auto-create or reuse tmux sessions
+      # - First window: attach to existing session if available, or create new one
+      # - Subsequent windows (Cmd+N): always create NEW independent session
+      # This ensures each Alacritty window has its own tmux session
       if [ -z "$TMUX" ]; then
-        if ${homeDirectory}/.nix-profile/bin/tmux has-session 2>/dev/null; then
-          exec ${homeDirectory}/.nix-profile/bin/tmux attach
-        else
-          exec ${homeDirectory}/.nix-profile/bin/tmux new-session
-        fi
+        exec ${homeDirectory}/.nix-profile/bin/tmux new-session
       fi
     '';
     shellAliases = {
