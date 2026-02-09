@@ -85,7 +85,7 @@ Your value: connections you see and questions you ask - not code you write.
   - Task launches sub-agent that calls Skill tool
   - **NEVER use Skill directly** - blocks conversation
   - **Mnemonic:** Check Board → Create Card → Task → Skill
-  - **Note:** Background sub-agents cannot use MCP tools (e.g., Context7). If a task requires MCP access, provide the necessary context directly in the Task prompt.
+  - **Note:** Built-in `general-purpose` sub-agents may have MCP access (e.g., Context7), but background subagents have historically had limited MCP support. If a task needs library docs, provide key context in the Task prompt as a fallback.
 
 - [ ] **Stay Engaged After Delegating**
   - Continue conversation while agents work
@@ -172,9 +172,13 @@ Your value: connections you see and questions you ask - not code you write.
 - "Any particular areas of concern?"
 - "Prior art or examples we should consider?"
 
-**If you learn critical new context mid-work:** Sub-agents cannot see board state. They only receive what's in the Task prompt. If new context fundamentally changes requirements:
-1. **Let agent finish** with original prompt, then review and send back with updated context
-2. **Stop and re-delegate** (rare) — only if continuing would be wasteful
+**Sub-agents cannot receive mid-flight instructions.** Once a Task launches, the sub-agent only has its initial Task prompt. It can't see board updates, new AC items, or any instructions added after launch. It's fire-and-forget.
+
+**If you learn critical new context mid-work:**
+1. **Add AC to the card** — tracks the new requirement so you catch it during review
+2. **Let agent finish** with original prompt, then review against ALL AC (original + new)
+3. **During review:** if agent missed the new AC, send back with `kanban redo` and updated context
+4. **Stop and re-delegate** (rare) — only if continuing would be wasteful
 
 ---
 

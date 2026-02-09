@@ -32,6 +32,10 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from threading import Event
 
+# Filesystem watching (bundled via Nix Python wrapper)
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
+
 @dataclass
 class WatchState:
     output_style: str = "simple"  # "simple" | "xml" | "detail"
@@ -1022,8 +1026,8 @@ def format_card_line(card: dict, num: str, show_session: bool = False, output_st
         prefix = "\n"
 
     session = card.get("session", "")
-    session_tag = f"[{session[:8]}] " if (session and show_session) else ""
-    line = f"{prefix}  #{num} {session_tag}{card.get('action', '[NO ACTION]')}"
+    session_suffix = f" {dim}({session[:8]}){reset}" if (session and show_session) else ""
+    line = f"{prefix}  #{num} {card.get('action', '[NO ACTION]')}{session_suffix}"
 
     # Add lead time for done cards
     if column == "done":
@@ -1071,6 +1075,20 @@ def format_card_line(card: dict, num: str, show_session: bool = False, output_st
                 criteria_section += f"    {checkbox} {i}. {text}\n"
             criteria_section = criteria_section.rstrip("\n") + reset
             sections.append(criteria_section)
+
+    # Metadata section (persona, model) - show in "detail" style only
+    if output_style == "detail":
+        metadata_parts = []
+        persona = card.get("persona")
+        model = card.get("model")
+        if persona and persona != "unassigned":
+            metadata_parts.append(f"Persona: {persona}")
+        if model:
+            metadata_parts.append(f"Model: {model}")
+
+        if metadata_parts:
+            metadata_section = f"{dim}    {' · '.join(metadata_parts)}{reset}"
+            sections.append(metadata_section)
 
     # Edit Files section (show in "detail" style only - removed "xml")
     if output_style == "detail":
@@ -1621,22 +1639,70 @@ def _render_watch(args, command_func, state: WatchState, is_interactive: bool) -
         _print_status_bar(state)
 
 
-def watch_and_run_simple(args, command_func) -> None:
-    """Watch mode with simple 2-second polling (no watchdog dependency)."""
-    try:
-        while True:
-            os.system('clear')
-            command_func(args)
-            time.sleep(2)
-    except KeyboardInterrupt:
-        print("\nStopping watch mode...")
-        sys.exit(0)
-
-
 def watch_and_run(args, command_func) -> None:
     """Watch .kanban/ directory and re-run command on changes."""
-    # Use simple polling mode - no watchdog dependency
-    watch_and_run_simple(args, command_func)
+    root = get_root(args.root)
+    refresh_event = Event()
+    stop_event = Event()
+    state = WatchState()
+    is_interactive = sys.stdin.isatty()
+
+    class DebounceHandler(FileSystemEventHandler):
+        def on_any_event(self, event):
+            if event.is_directory:
+                return
+            is_json_event = event.src_path.endswith(".json")
+            if hasattr(event, "dest_path"):
+                is_json_event = is_json_event or event.dest_path.endswith(".json")
+            if is_json_event:
+                refresh_event.set()
+
+    observer = Observer()
+    observer.schedule(DebounceHandler(), str(root), recursive=True)
+    observer.start()
+
+    # Start input thread if interactive
+    input_thread = None
+    if is_interactive:
+        input_thread = threading.Thread(
+            target=_input_thread,
+            args=(state, refresh_event, stop_event),
+            daemon=True
+        )
+        input_thread.start()
+
+    if is_interactive:
+        print(f"Watching {root} for changes... (Press ? for help)")
+        print()
+    else:
+        print(f"Watching {root} for changes... (Ctrl+C to exit)")
+        print()
+
+    try:
+        _render_watch(args, command_func, state, is_interactive)
+        while not stop_event.is_set():
+            if refresh_event.wait(timeout=0.5):
+                refresh_event.clear()
+                time.sleep(0.1)  # Small debounce
+                refresh_event.clear()
+                print("\033[2J\033[H", end="", flush=True)
+                try:
+                    _render_watch(args, command_func, state, is_interactive)
+                except Exception as e:
+                    print(f"Error: {e}", file=sys.stderr)
+                    if is_interactive:
+                        print()
+                        _print_status_bar(state)
+    except KeyboardInterrupt:
+        print("\nStopping watch mode...")
+    finally:
+        stop_event.set()
+        observer.stop()
+        observer.join()
+        if input_thread:
+            input_thread.join(timeout=1)
+        # Safety net to restore terminal
+        os.system('stty sane 2>/dev/null')
 
 
 # =============================================================================
