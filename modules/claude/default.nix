@@ -447,8 +447,11 @@ EOF
       $DRY_RUN_CMD mkdir -p ~/.claude
       $DRY_RUN_CMD cp -rf ${claudeGlobalDir}/* ~/.claude/
 
+      # Ensure all subdirectories exist (in case cp didn't create them)
+      $DRY_RUN_CMD mkdir -p ~/.claude/commands ~/.claude/output-styles ~/.claude/docs ~/.claude/agents
+
       # Make copied files writable (Nix store files are read-only by default)
-      $DRY_RUN_CMD chmod -R u+w ~/.claude/commands ~/.claude/output-styles ~/.claude/docs
+      $DRY_RUN_CMD chmod -R u+w ~/.claude/commands ~/.claude/output-styles ~/.claude/docs ~/.claude/agents
 
       # Add generated TOOLS.md (force overwrite read-only file from previous build)
       $DRY_RUN_CMD cp -f ${toolsMarkdown} ~/.claude/TOOLS.md

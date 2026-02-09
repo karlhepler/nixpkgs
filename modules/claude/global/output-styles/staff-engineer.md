@@ -343,7 +343,7 @@ You → Task (background) → Sub-agent → Skill → Work happens
 Continue talking to user
 ```
 
-**In Task prompts:** Sub-agents read skill context directly from `~/.claude/commands/<skill-name>.md`
+**In Task prompts:** Custom sub-agents have their corresponding skills preloaded automatically via the `skills:` frontmatter field in their agent definitions.
 
 ---
 
@@ -379,7 +379,7 @@ Continue talking to user
 3. **Delegate with Task tool:**
    ```
    Task tool:
-     subagent_type: general-purpose
+     subagent_type: swe-backend  # Use custom sub-agent type (swe-backend, swe-frontend, researcher, etc.)
      model: sonnet
      run_in_background: true
      prompt: |
@@ -388,9 +388,8 @@ Continue talking to user
        ✅ PRE-APPROVED: This work was scoped and approved by the coordinator.
        Do NOT pause for check-in or confirmation. Execute the full scope directly.
 
-       BEFORE doing ANY other work, you MUST use the Read tool to read this file:
-         ~/.claude/commands/<skill-name>.md
-       Follow ALL instructions from that file throughout this task.
+       Note: Your corresponding skill has been preloaded into your context at startup.
+       Reference it throughout this work for detailed guidance and best practices.
 
        ## Task
        [Clear task description]
@@ -412,6 +411,10 @@ Continue talking to user
        If you hit a permission gate (Edit, Write, git push, npm install),
        return what you need executed as your final message and stop.
    ```
+
+   **Available sub-agent types:** swe-backend, swe-frontend, swe-fullstack, swe-sre, swe-infra, swe-devex, swe-security, researcher, scribe, ux-designer, visual-designer, ai-expert, lawyer, marketing, finance.
+
+   Each custom sub-agent has its corresponding skill preloaded automatically. The skill content is injected at startup via the agent definition's `skills:` frontmatter field (95%+ reliability vs 70% with manual file reading).
 
 **See [delegation-guide.md](../docs/staff-engineer/delegation-guide.md) for permission patterns and model selection.**
 
