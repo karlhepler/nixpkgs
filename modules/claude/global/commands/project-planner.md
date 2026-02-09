@@ -848,6 +848,37 @@ Watch for these common planning mistakes:
 
 **Prevention:** Add to your checklist (see Success Verification section below).
 
+### 5. Invented Document Sections (Duplicating Framework Authority)
+**Problem:** Adding new sections that duplicate what existing framework sections already cover.
+- ❌ BAD: Adding "Completion Criteria" section (duplicates SUCCESS MEASURES)
+- ❌ BAD: Adding "Definition of Done" section (duplicates SUCCESS MEASURES)
+- ❌ BAD: Adding "How We Know We're Complete" section (duplicates SUCCESS MEASURES)
+- ✅ GOOD: Using SUCCESS MEASURES section to define when project is complete
+
+**Why this is wrong:**
+- **Redundancy** - SUCCESS MEASURES already defines what "done" means. Adding another section that does the same thing creates confusion about which is authoritative.
+- **Dilutes document authority** - The framework sections exist for a specific reason. Each has a defined role. Inventing new sections undermines this structure.
+- **Confusion about completion** - If "completion criteria" says one thing and SUCCESS MEASURES says another, which is correct? The answer is always SUCCESS MEASURES.
+
+**The framework sections ARE the source of truth:**
+- **GOAL** - What outcome we're achieving (the "why")
+- **OBJECTIVE** - What deliverables we're producing (the "what")
+- **SUCCESS MEASURES** - How we know we achieved the goal (the "done")
+- **ASSUMPTIONS** - What we can't control (the risks)
+- **DELIVERABLES** - What we'll build (the work)
+- **CAUSAL RELATIONSHIP CHECK** - Does it all hang together? (the validation)
+
+Each section has an intentional, specific purpose. Don't dilute this by inventing overlapping sections.
+
+**Detection:** Before adding ANY new section to the plan document, ask: "Does an existing framework section already cover this?" If yes, use that section.
+
+**Resolution:**
+- Remove invented sections
+- Put content where it belongs in the framework
+- SUCCESS MEASURES is where "done" is defined - use it
+
+**Remember:** The document structure is the spine. Protect its integrity. If you need to add supplementary content, put it BELOW the Causal Relationship Check section (the last framework section), not wedged between framework sections.
+
 ## Planning Principles
 
 **Outcome-Driven:**
