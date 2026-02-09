@@ -2077,21 +2077,23 @@ def main() -> None:
     # --- init ---
     p_init = subparsers.add_parser("init", parents=[parent_parser], help="Create kanban board structure")
     p_init.add_argument("path", nargs="?", default=None, help="Board path")
+    add_session_flags(p_init)
 
     # --- session-hook ---
-    subparsers.add_parser("session-hook", parents=[parent_parser], help="Handle SessionStart hook (reads JSON from stdin)")
+    p_session_hook = subparsers.add_parser("session-hook", parents=[parent_parser], help="Handle SessionStart hook (reads JSON from stdin)")
+    add_session_flags(p_session_hook)
 
     # --- do ---
     p_do = subparsers.add_parser("do", parents=[parent_parser], help="Create card in doing from JSON")
     p_do.add_argument("json_data", help="JSON object with action, intent, readFiles, editFiles")
     p_do.add_argument("--persona", help="Override persona")
     p_do.add_argument("--model", choices=["sonnet", "opus", "haiku"], help="AI model")
-    p_do.add_argument("--session", help="Session ID")
     p_do.add_argument("--top", action="store_true", help="Insert at top of session's cards")
     p_do.add_argument("--bottom", action="store_true", help="Insert at bottom of session's cards")
     p_do.add_argument("--after", metavar="CARD", help="Insert after card (same session only)")
     p_do.add_argument("--before", metavar="CARD", help="Insert before card (same session only)")
     p_do.add_argument("--criteria", action="append", help="Acceptance criterion (repeatable)")
+    add_session_flags(p_do)
 
     # --- move ---
     p_move = subparsers.add_parser("move", parents=[parent_parser], help="Move card to column")
@@ -2101,11 +2103,13 @@ def main() -> None:
     p_move.add_argument("--bottom", action="store_true", help="Move to bottom of session's cards")
     p_move.add_argument("--after", metavar="CARD", help="Move after card (same session only)")
     p_move.add_argument("--before", metavar="CARD", help="Move before card (same session only)")
+    add_session_flags(p_move)
 
     # --- show ---
     p_show = subparsers.add_parser("show", parents=[parent_parser], help="Display card contents")
     p_show.add_argument("card", help="Card number")
     p_show.add_argument("--output-style", choices=["simple", "xml", "detail"], help="Output style: xml (structured XML for machine parsing)")
+    add_session_flags(p_show)
 
     # --- cancel ---
     p_cancel = subparsers.add_parser("cancel", parents=[parent_parser], help="Move card to canceled column")
@@ -2115,25 +2119,26 @@ def main() -> None:
     p_cancel.add_argument("--bottom", action="store_true", help="Move to bottom of session's cards")
     p_cancel.add_argument("--after", metavar="CARD", help="Move after card (same session only)")
     p_cancel.add_argument("--before", metavar="CARD", help="Move before card (same session only)")
+    add_session_flags(p_cancel)
 
     # --- criteria ---
     p_criteria = subparsers.add_parser("criteria", parents=[parent_parser], help="Add or remove acceptance criterion to/from card")
     p_criteria.add_argument("card", help="Card number")
     p_criteria.add_argument("text", nargs="?", help="Criterion text when adding, or reason when removing")
     p_criteria.add_argument("--remove", type=int, metavar="N", help="Remove criterion number N (1-indexed)")
-    p_criteria.add_argument("--session", help="Session ID (for consistency)")
+    add_session_flags(p_criteria)
 
     # --- check ---
     p_check = subparsers.add_parser("check", parents=[parent_parser], help="Mark criterion as met")
     p_check.add_argument("card", help="Card number")
     p_check.add_argument("criterion", nargs="+", help="Criterion index(es) (1-based) or text prefix(es)")
-    p_check.add_argument("--session", help="Session ID (for consistency)")
+    add_session_flags(p_check)
 
     # --- uncheck ---
     p_uncheck = subparsers.add_parser("uncheck", parents=[parent_parser], help="Mark criterion as unmet")
     p_uncheck.add_argument("card", help="Card number")
     p_uncheck.add_argument("criterion", help="Criterion index (1-based) or text prefix")
-    p_uncheck.add_argument("--session", help="Session ID (for consistency)")
+    add_session_flags(p_uncheck)
 
     # --- edit ---
     p_edit = subparsers.add_parser("edit", parents=[parent_parser], help="Edit card metadata")
@@ -2141,14 +2146,15 @@ def main() -> None:
     p_edit.add_argument("--persona", help="Update persona")
     p_edit.add_argument("--model", choices=["sonnet", "opus", "haiku"], help="Update model")
     p_edit.add_argument("--priority", type=int, help="Update priority")
-    p_edit.add_argument("--session", dest="session_update", help="Update session")
     p_edit.add_argument("--action", dest="action_text", help="Update action text")
     p_edit.add_argument("--intent", dest="intent_text", help="Update intent text")
+    add_session_flags(p_edit)
 
     # --- up/down/top/bottom ---
     for name in ["up", "down", "top", "bottom"]:
         p = subparsers.add_parser(name, parents=[parent_parser], help=f"Move card {name} in priority")
         p.add_argument("card", help="Card number")
+        add_session_flags(p)
 
     # --- history ---
     p_history = subparsers.add_parser("history", parents=[parent_parser], help="Show completed cards")
@@ -2170,16 +2176,17 @@ def main() -> None:
     # --- assign ---
     p_assign = subparsers.add_parser("assign", parents=[parent_parser], help="Reassign session ownership")
     p_assign.add_argument("card", nargs="?", help="Card number")
-    p_assign.add_argument("--session", help="Assign to session")
     p_assign.add_argument("--no-session", action="store_true", help="Remove session")
     p_assign.add_argument("--from", dest="from_session", help="Bulk: source session")
     p_assign.add_argument("--to", dest="to_session", help="Bulk: target session")
     p_assign.add_argument("--yes", "-y", action="store_true", help="Skip confirmation")
+    add_session_flags(p_assign)
 
     # --- clear ---
     p_clear = subparsers.add_parser("clear", parents=[parent_parser], help="Delete all cards from columns")
     p_clear.add_argument("columns", nargs="*", help="Column(s) to clear")
     p_clear.add_argument("--yes", "-y", action="store_true", help="Skip confirmation")
+    add_session_flags(p_clear)
 
     # --- Dual-behavior: todo, review, done ---
     p_todo = subparsers.add_parser("todo", parents=[parent_parser], help="View todo or create card in todo")
