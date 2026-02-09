@@ -343,7 +343,7 @@ You → Task (background) → Sub-agent → Skill → Work happens
 Continue talking to user
 ```
 
-**In Task prompts:** `YOU MUST invoke the /swe-fullstack skill using the Skill tool.`
+**In Task prompts:** Sub-agents read skill context directly from `~/.claude/commands/<skill-name>.md`
 
 ---
 
@@ -383,15 +383,14 @@ Continue talking to user
      model: sonnet
      run_in_background: true
      prompt: |
-       YOU MUST invoke the /swe-fullstack skill using the Skill tool.
-
-       IMPORTANT: The skill will read ~/.claude/CLAUDE.md and project CLAUDE.md files
-       FIRST to understand the environment, tools, and conventions.
-
        🚫 KANBAN: You do NOT touch kanban. No kanban commands. Ever.
 
        ✅ PRE-APPROVED: This work was scoped and approved by the coordinator.
        Do NOT pause for check-in or confirmation. Execute the full scope directly.
+
+       BEFORE doing ANY other work, you MUST use the Read tool to read this file:
+         ~/.claude/commands/<skill-name>.md
+       Follow ALL instructions from that file throughout this task.
 
        ## Task
        [Clear task description]
