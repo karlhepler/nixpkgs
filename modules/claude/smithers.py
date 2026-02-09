@@ -51,6 +51,28 @@ def log(msg: str):
     print(f"[{timestamp}] {msg}", flush=True)
 
 
+def print_status(failed_checks: int, bot_comments: int, has_conflicts: bool, prc_errors: int = 0):
+    """Print formatted status line with error tracking.
+
+    Args:
+        failed_checks: Number of failed CI checks
+        bot_comments: Number of actionable bot comments
+        has_conflicts: Whether PR has merge conflicts
+        prc_errors: Number of prc errors encountered (0 if no errors)
+    """
+    conflict_str = "conflicts" if has_conflicts else "no conflicts"
+    parts = [
+        f"{failed_checks} failed checks",
+        f"{bot_comments} actionable bot comments"
+    ]
+
+    if prc_errors > 0:
+        parts.append(f"{prc_errors} prc errors")
+
+    parts.append(conflict_str)
+    log(f"Status: {' | '.join(parts)}")
+
+
 def get_all_descendants(pid):
     """Recursively find all descendant PIDs of a given process.
 
@@ -290,26 +312,96 @@ def get_workflow_failure_details(owner: str, repo: str, check: dict) -> dict:
 
 
 def get_bot_comments(owner: str, repo: str, pr_number: int) -> dict:
-    """Get inline bot comments with zero replies from the PR using prc CLI."""
-    # Use prc list to get inline bot comments with no replies (prevents duplicate handling)
-    result = subprocess.run(
-        ["prc", "list", str(pr_number), "--bots-only", "--inline-only", "--max-replies", "0"],
-        capture_output=True,
-        text=True,
-        check=False
-    )
+    """Get inline bot comments with zero replies from the PR using prc CLI.
 
-    if result.returncode != 0:
-        return {"comments": [], "error": result.stderr}
+    FILTERS APPLIED (any may cause bot comments to be missed):
 
-    try:
-        data = json.loads(result.stdout)
-        if "error" in data:
-            return {"comments": [], "error": data["error"]}
+    1. --bots-only: Only returns comments where author.__typename == "Bot" (GraphQL)
+       - Catches: GitHub Actions, CodeQL, dependabot, linear-app, terraform-bot, etc.
+       - Filters used: informational_bots list in count_actionable_bot_comments()
 
-        return data  # prc returns {"comments": [...], "rate_limit": {...}}
-    except json.JSONDecodeError:
-        return {"comments": [], "error": "Failed to parse prc output"}
+    2. --inline-only: Only returns inline code review comments (not PR-level comments)
+       - Misses: PR-level bot comments (e.g., "This PR needs...")
+       - Rationale: PR-level comments are typically informational, not actionable code feedback
+       - Example miss: Claude-Maze bot PR-level comment on PR #28686
+
+    3. --max-replies 0: Only returns threads with ZERO replies
+       - Misses: Bot comments that already have replies (even if unresolved)
+       - Rationale: Avoids duplicate work - if replied, assume addressed
+       - Edge case: Bot comment with reply but still actionable (rare)
+
+    4. Implicit: Resolved threads may be excluded by prc depending on implementation
+       - Misses: Bot comments in resolved threads
+       - Rationale: Resolved = addressed (by convention)
+
+    INVESTIGATION NOTE (Claude-Maze miss):
+    If Claude-Maze comment was missed on PR #28686, likely causes:
+    - PR-level comment (not inline) → filtered by --inline-only
+    - Already had replies → filtered by --max-replies 0
+    - In resolved thread → filtered by prc's resolution logic
+
+    TUNING RECOMMENDATIONS:
+    - To catch PR-level bot comments: Remove --inline-only, add PR-level handling in prompt
+    - To catch commented threads: Increase --max-replies to 1+, add dedup logic
+    - To catch resolved threads: Add --include-resolved flag to prc (if available)
+
+    RETRY LOGIC:
+    - Retries up to 5 times with exponential backoff (1s, 2s, 4s, 8s, 16s)
+    - Handles transient GitHub API failures gracefully
+    - Logs all retry attempts and final failures
+    """
+    max_retries = int(os.environ.get("SMITHERS_PRC_MAX_RETRIES", 5))
+    backoff_base = int(os.environ.get("SMITHERS_PRC_BACKOFF_BASE", 2))
+
+    for attempt in range(1, max_retries + 1):
+        # Use prc list to get inline bot comments with no replies (prevents duplicate handling)
+        result = subprocess.run(
+            ["prc", "list", str(pr_number), "--bots-only", "--inline-only", "--max-replies", "0"],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+
+        # Success - return immediately
+        if result.returncode == 0:
+            try:
+                data = json.loads(result.stdout)
+                if "error" in data:
+                    error = data["error"]
+                    # Retry on transient errors
+                    if attempt < max_retries:
+                        backoff = backoff_base ** (attempt - 1)
+                        log(f"prc returned error: {error}. Retrying in {backoff}s... (attempt {attempt}/{max_retries})")
+                        time.sleep(backoff)
+                        continue
+                    else:
+                        log(f"prc failed after {max_retries} attempts: {error}")
+                        return {"comments": [], "error": error, "retries_exhausted": True}
+
+                return data  # prc returns {"comments": [...], "rate_limit": {...}}
+            except json.JSONDecodeError as e:
+                error = f"Failed to parse prc output: {e}"
+                if attempt < max_retries:
+                    backoff = backoff_base ** (attempt - 1)
+                    log(f"prc JSON decode failed. Retrying in {backoff}s... (attempt {attempt}/{max_retries})")
+                    time.sleep(backoff)
+                    continue
+                else:
+                    log(f"prc failed after {max_retries} attempts: {error}")
+                    return {"comments": [], "error": error, "retries_exhausted": True}
+
+        # Non-zero return code - retry
+        error = result.stderr or "Unknown error"
+        if attempt < max_retries:
+            backoff = backoff_base ** (attempt - 1)
+            log(f"prc failed (exit {result.returncode}): {error.strip()}. Retrying in {backoff}s... (attempt {attempt}/{max_retries})")
+            time.sleep(backoff)
+        else:
+            log(f"prc failed after {max_retries} attempts (exit {result.returncode}): {error.strip()}")
+            return {"comments": [], "error": error, "retries_exhausted": True}
+
+    # Should never reach here, but return error for safety
+    return {"comments": [], "error": "Max retries reached", "retries_exhausted": True}
 
 
 def has_unaddressed_bot_comments(owner: str, repo: str, pr_number: int) -> bool:
@@ -332,7 +424,14 @@ def count_actionable_bot_comments(bot_comments: dict) -> int:
     - Already resolved review threads
 
     Returns count of inline bot comments that need action/response.
+    If prc failed, logs the error and returns 0 (not None) to prevent crashes.
     """
+    # Check for prc errors first
+    if "error" in bot_comments:
+        error_msg = bot_comments["error"]
+        log(f"🟡 prc error detected: {error_msg}")
+        return 0  # Can't count comments if prc failed
+
     # Informational bots that don't require action
     informational_bots = {
         "linear-app[bot]",
@@ -1117,23 +1216,34 @@ def main():
 
     ralph_invocation_count = 0
     current_cycle = 0  # Track which cycle we're on
+    cycle = 1
+    effective_max_cycles = max_cycles  # Can be extended by verification
+    verification_extension_used = False  # Track if we've used verification extension
     try:
-        for cycle in range(1, max_cycles + 1):
+        while cycle <= effective_max_cycles:
             current_cycle = cycle
-            ralph_invoked = main_loop_iteration(
+            ralph_invoked, should_extend = main_loop_iteration(
                 cycle, ralph_invocation_count, pr_number, pr_url, owner, repo,
-                max_ralph_invocations, max_cycles, start_time
+                max_ralph_invocations, effective_max_cycles, start_time
             )
             if ralph_invoked:
                 ralph_invocation_count += 1
 
+            # Handle verification extension (only once per smithers run)
+            if should_extend and not verification_extension_used:
+                log("📝 Verification found new work - extending by 1 cycle")
+                verification_extension_used = True
+                effective_max_cycles += 1  # Extend the limit by 1
+
+            cycle += 1
+
         # Check for cycle extension if unaddressed bot comments exist
         if has_unaddressed_bot_comments(owner, repo, pr_number):
             log("📝 Unaddressed bot comments detected - extending by ONE cycle")
-            current_cycle = max_cycles + 1
-            ralph_invoked = main_loop_iteration(
-                max_cycles + 1, ralph_invocation_count, pr_number, pr_url, owner, repo,
-                max_ralph_invocations, max_cycles + 1, start_time
+            current_cycle = effective_max_cycles + 1
+            ralph_invoked, _ = main_loop_iteration(
+                effective_max_cycles + 1, ralph_invocation_count, pr_number, pr_url, owner, repo,
+                max_ralph_invocations, effective_max_cycles + 1, start_time
             )
             if ralph_invoked:
                 ralph_invocation_count += 1
@@ -1174,12 +1284,12 @@ def main():
     print("\n" + format_status_card(
         "🟡", "Max Cycles Reached",
         pr_number, pr_url, pr_info, owner, repo,
-        max_cycles, elapsed, checks, bot_comments
+        effective_max_cycles, elapsed, checks, bot_comments
     ))
 
     send_notification(
         "Smithers Max Cycles",
-        f"PR #{pr_number} reached {max_cycles} cycles without being ready",
+        f"PR #{pr_number} reached {effective_max_cycles} cycles without being ready",
         "Sosumi"
     )
     return 1
@@ -1195,10 +1305,12 @@ def main_loop_iteration(
     max_ralph_invocations: int,
     max_cycles: int,
     start_time: float
-) -> bool:
+) -> tuple:
     """Single iteration of the main watch loop.
 
-    Returns True if Ralph was invoked, False otherwise.
+    Returns (ralph_invoked: bool, should_extend: bool) where:
+    - ralph_invoked: True if Ralph was invoked
+    - should_extend: True if verification found new work and loop should extend by 1 cycle
     """
     log(f"━━━ Cycle {cycle}/{max_cycles} ━━━")
 
@@ -1235,11 +1347,8 @@ def main_loop_iteration(
 
     # 4. Report status
     actionable_bot = count_actionable_bot_comments(bot_comments)
-    conflict_str = "conflicts" if conflicts else "no conflicts"
-    log(
-        f"Status: {len(failed_checks)} failed checks | "
-        f"{actionable_bot} actionable bot comments | {conflict_str}"
-    )
+    prc_error_count = 1 if bot_comments.get("retries_exhausted") else 0
+    print_status(len(failed_checks), actionable_bot, conflicts, prc_error_count)
 
     # 4.5. Early exit if nothing is actionable yet
     # Safety check: If checks exist but all are pending, and no other actionable work
@@ -1253,10 +1362,36 @@ def main_loop_iteration(
         # Failed checks or conflicts = must wait for terminal state first
         if all_pending and not failed_checks and not conflicts and actionable_bot == 0:
             log("⏳ No actionable work yet. All workflows pending. Continuing watch loop...")
-            return False  # Don't invoke Ralph, CLI continues polling
+            return (False, False)  # Don't invoke Ralph, CLI continues polling
 
     # 5. Check if work needed
     if not work_needed(failed_checks, conflicts, owner, repo, pr_number):
+        # VERIFICATION LOOP: Don't exit immediately - GitHub may be starting cascade workflows
+        # This prevents the race condition where:
+        # 1. Preview workflow completes
+        # 2. GitHub returns empty checks briefly (timing window)
+        # 3. Smithers exits prematurely
+        # 4. 30-60s later, cascade workflows start (too late, smithers already gone)
+        #
+        # Solution: Wait 30s and re-check to catch workflows that start after initial completion
+        log("✓ No work found. Waiting 30s for final verification...")
+        time.sleep(30)
+
+        # Re-check for new workflows and bot comments
+        log("Verifying no new work appeared...")
+        verification_checks = wait_for_checks(pr_number)
+        verification_failed = get_failed_checks(verification_checks)
+        verification_bot_comments = get_bot_comments(owner, repo, pr_number)
+        verification_conflicts = has_merge_conflicts(pr_number)
+
+        if work_needed(verification_failed, verification_conflicts, owner, repo, pr_number):
+            log("⚠️  New work detected during verification. Extending watch by 1 cycle...")
+            # Signal to main loop that verification found new work
+            # Main loop will extend effective_max_cycles by 1 to handle newly discovered work
+            # This ensures we don't hit "Max Cycles Reached" when verification legitimately finds work
+            return (False, True)  # ralph_invoked=False, should_extend=True
+
+        # Still clean after verification - safe to exit
         elapsed = time.time() - start_time
 
         print("\n" + format_status_card(
@@ -1397,7 +1532,7 @@ def main_loop_iteration(
 
     # Small delay before re-checking to let GitHub update
     time.sleep(5)
-    return True  # Indicate Ralph was invoked
+    return (True, False)  # Ralph was invoked, no extension needed
 
 
 if __name__ == "__main__":

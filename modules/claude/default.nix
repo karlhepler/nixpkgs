@@ -348,6 +348,10 @@ in {
 
           # Block kubectl write/destructive commands (admin permissions - never auto-approve)
           block = [
+            # Kanban destructive commands (always prompt for confirmation)
+            "Bash(kanban clean)"
+            "Bash(kanban clean *)"
+
             "Bash(kubectl apply *)"
             "Bash(kubectl create *)"
             "Bash(kubectl delete *)"
