@@ -47,21 +47,15 @@ Detailed guidance for mandatory reviews, review workflows, and approval criteria
 **Setup:**
 ```bash
 # Original work complete (Card #42: "Update IAM policy for S3 access")
-# Agent moved card to review
+# Agent returned with completion summary
 
 # Staff Engineer: Check mandatory review table
 # Match found: Infrastructure → Infra peer + Security required
 
 # Step 1: Create review cards in TODO
-kanban add "Review: IAM policy (Infrastructure peer)" \
-  --persona "Infrastructure Engineer" \
-  --status todo \
-  --model sonnet
+kanban todo '{"action":"Review IAM policy (Infrastructure peer)","intent":"Validate technical correctness","persona":"Infrastructure Engineer","model":"sonnet","criteria":["Valid IAM syntax","Best practices followed","Tested in non-prod"]}'
 
-kanban add "Review: IAM policy (Security)" \
-  --persona "Security Engineer" \
-  --status todo \
-  --model sonnet
+kanban todo '{"action":"Review IAM policy (Security)","intent":"Validate security posture","persona":"Security Engineer","model":"sonnet","criteria":["No overly permissive wildcards","MFA enforced","Audit logging enabled"]}'
 
 # Step 2: Launch BOTH reviewers in parallel (same message)
 ```
@@ -114,12 +108,17 @@ Staff Engineer: Security concerns override. Explore alternative approaches:
 **Setup:**
 ```bash
 # Card #50: "Add customer_email column to orders table"
-# Agent completed migration, moved to review
+# Agent completed migration and returned summary
 
 # Staff Engineer: Check mandatory review table
 # Match: Database schema (PII) → Peer backend + Security
 
-# Create review cards, launch in parallel
+# Create review cards
+kanban todo '{"action":"Review customer_email migration (Backend peer)","intent":"Validate schema design","persona":"Backend Engineer","model":"sonnet","criteria":["Schema design sound","Migration reversible","Performance acceptable"]}'
+
+kanban todo '{"action":"Review customer_email migration (Security)","intent":"Validate PII protection","persona":"Security Engineer","model":"sonnet","criteria":["PII encrypted","Access controls correct","GDPR compliant"]}'
+
+# Launch in parallel
 ```
 
 **Review Criteria - Backend Peer:**
@@ -153,10 +152,15 @@ Staff Engineer: Moves Card #50 to done
 **Setup:**
 ```bash
 # Card #60: "Implement JWT authentication"
-# Agent completed implementation, moved to review
+# Agent completed implementation and returned summary
 
 # Staff Engineer: Check mandatory review table
 # Match: Auth/AuthZ → Security (MANDATORY) + Backend peer
+
+# Create review cards
+kanban todo '{"action":"Review JWT auth (Security)","intent":"Validate authentication security","persona":"Security Engineer","model":"sonnet","criteria":["Token generation secure","Signature verified","Session management secure"]}'
+
+kanban todo '{"action":"Review JWT auth (Backend peer)","intent":"Validate code quality","persona":"Backend Engineer","model":"sonnet","criteria":["Error handling comprehensive","Tests cover edge cases","Integration sound"]}'
 
 # CRITICAL: Security review is blocking, not optional
 ```

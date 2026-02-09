@@ -22,15 +22,9 @@ Detailed examples and coordination strategies for parallel delegation.
 **Steps:**
 ```bash
 # Step 1: Create review cards in TODO
-kanban add "Review: IAM policy (Infrastructure peer)" \
-  --persona "Infrastructure Engineer" \
-  --status todo \
-  --model sonnet
+kanban todo '{"action":"Review IAM policy (Infrastructure peer)","intent":"Validate technical correctness and best practices","persona":"Infrastructure Engineer","model":"sonnet","criteria":["Technical correctness verified","Best practices followed","No resource conflicts"]}'
 
-kanban add "Review: IAM policy (Security)" \
-  --persona "Security Engineer" \
-  --status todo \
-  --model sonnet
+kanban todo '{"action":"Review IAM policy (Security)","intent":"Validate security posture","persona":"Security Engineer","model":"sonnet","criteria":["No overly permissive wildcards","MFA enforced where needed","Audit logging enabled"]}'
 
 # Step 2: Launch BOTH reviewers in SAME message (parallel)
 # First Task call (Infrastructure peer)
@@ -78,15 +72,9 @@ kanban move 50 review
 **Steps:**
 ```bash
 # Create review cards
-kanban add "Review: orders table migration (Backend peer)" \
-  --persona "Backend Engineer" \
-  --status todo \
-  --model sonnet
+kanban todo '{"action":"Review orders table migration (Backend peer)","intent":"Validate schema design and migration safety","persona":"Backend Engineer","model":"sonnet","criteria":["Schema design sound","Migration reversible","Performance acceptable"]}'
 
-kanban add "Review: orders table migration (Security)" \
-  --persona "Security Engineer" \
-  --status todo \
-  --model sonnet
+kanban todo '{"action":"Review orders table migration (Security)","intent":"Validate PII protection","persona":"Security Engineer","model":"sonnet","criteria":["PII encrypted at rest","Access controls appropriate","GDPR compliant"]}'
 
 # Launch in parallel (same message)
 # Backend peer reviews schema design, migration safety
@@ -106,15 +94,9 @@ kanban add "Review: orders table migration (Security)" \
 **Steps:**
 ```bash
 # Create review cards
-kanban add "Review: JWT auth (Security)" \
-  --persona "Security Engineer" \
-  --status todo \
-  --model sonnet
+kanban todo '{"action":"Review JWT auth (Security)","intent":"Validate authentication security","persona":"Security Engineer","model":"sonnet","criteria":["Token generation secure","Signature verification correct","Session management secure"]}'
 
-kanban add "Review: JWT auth (Backend peer)" \
-  --persona "Backend Engineer" \
-  --status todo \
-  --model sonnet
+kanban todo '{"action":"Review JWT auth (Backend peer)","intent":"Validate code quality and integration","persona":"Backend Engineer","model":"sonnet","criteria":["Code quality acceptable","Tests comprehensive","Integration sound"]}'
 
 # Launch in parallel
 # Security checks: token generation, validation, session management, attack surface
@@ -141,8 +123,9 @@ kanban add "Review: JWT auth (Backend peer)" \
 **Steps:**
 ```bash
 # Create cards
-kanban add "Dark mode toggle" --persona "Frontend Engineer" --status doing --model sonnet
-kanban add "Password reset API" --persona "Backend Engineer" --status doing --model sonnet
+kanban do '{"action":"Dark mode toggle","intent":"Theme switching functionality","editFiles":["src/components/Settings.tsx","src/context/ThemeContext.tsx"],"readFiles":["src/theme/**/*.ts"],"persona":"Frontend Engineer","model":"sonnet","criteria":["Toggle in Settings","Preference persisted","System default respected"]}'
+
+kanban do '{"action":"Password reset API","intent":"Secure password recovery","editFiles":["src/api/auth.ts","src/services/email.ts"],"readFiles":["src/models/User.ts"],"persona":"Backend Engineer","model":"sonnet","criteria":["Reset token generated securely","Email sent successfully","Password updated correctly"]}'
 
 # Launch in parallel (same message)
 Task tool:
@@ -181,8 +164,9 @@ Task tool:
 
 **Steps:**
 ```bash
-kanban add "Research caching strategies" --persona "Researcher" --status doing --model sonnet
-kanban add "Build POC for feature X" --persona "Fullstack Engineer" --status doing --model sonnet
+kanban do '{"action":"Research caching strategies","intent":"Identify optimal caching approach","persona":"Researcher","model":"sonnet","criteria":["Options documented with tradeoffs","Performance characteristics compared","Recommendation provided"]}'
+
+kanban do '{"action":"Build POC for feature X","intent":"Working prototype","editFiles":["src/poc/**/*.ts"],"readFiles":["src/models/**/*.ts"],"persona":"Fullstack Engineer","model":"sonnet","criteria":["Core functionality working","Basic tests passing","Deployment documented"]}'
 
 # Launch in parallel
 # Researcher investigates Redis, Memcached, in-memory options
@@ -210,9 +194,11 @@ kanban add "Build POC for feature X" --persona "Fullstack Engineer" --status doi
 **Steps:**
 ```bash
 # Create review cards
-kanban add "Review: Payment flow (Backend)" --persona "Backend Engineer" --status todo --model sonnet
-kanban add "Review: Payment flow (Security)" --persona "Security Engineer" --status todo --model sonnet
-kanban add "Review: Payment flow (Finance)" --persona "Finance" --status todo --model sonnet
+kanban todo '{"action":"Review payment flow (Backend)","intent":"Validate technical implementation","persona":"Backend Engineer","model":"sonnet","criteria":["Error handling comprehensive","Integration correct","Performance acceptable"]}'
+
+kanban todo '{"action":"Review payment flow (Security)","intent":"Validate security posture","persona":"Security Engineer","model":"sonnet","criteria":["PCI compliance verified","Fraud prevention in place","No credential exposure"]}'
+
+kanban todo '{"action":"Review payment flow (Finance)","intent":"Validate business logic","persona":"Finance","model":"sonnet","criteria":["Refund logic correct","Reconciliation accurate","Idempotency verified"]}'
 
 # Launch ALL THREE in parallel (same message)
 # Each reviewer focuses on their domain expertise
@@ -233,8 +219,9 @@ kanban add "Review: Payment flow (Finance)" --persona "Finance" --status todo --
 
 **Steps:**
 ```bash
-kanban add "Review: CI/CD pipeline (DevEx)" --persona "DevEx Engineer" --status todo --model sonnet
-kanban add "Review: CI/CD pipeline (Security)" --persona "Security Engineer" --status todo --model sonnet
+kanban todo '{"action":"Review CI/CD pipeline (DevEx)","intent":"Validate workflow design","persona":"DevEx Engineer","model":"sonnet","criteria":["Pipeline efficient","Testing comprehensive","Rollback strategy clear"]}'
+
+kanban todo '{"action":"Review CI/CD pipeline (Security)","intent":"Validate secret management","persona":"Security Engineer","model":"sonnet","criteria":["Secrets not exposed","Credential rotation possible","Least privilege applied"]}'
 
 # Launch in parallel
 # DevEx validates workflow efficiency and testing coverage
@@ -259,9 +246,11 @@ kanban add "Review: CI/CD pipeline (Security)" --persona "Security Engineer" --s
 **Steps:**
 ```bash
 # Create review cards
-kanban add "Review: Landing page (Marketing)" --persona "Marketing" --status todo --model sonnet
-kanban add "Review: Landing page (Visual Designer)" --persona "Visual Designer" --status todo --model sonnet
-kanban add "Review: Landing page (Frontend peer)" --persona "Frontend Engineer" --status todo --model sonnet
+kanban todo '{"action":"Review landing page (Marketing)","intent":"Validate messaging and conversion","persona":"Marketing","model":"sonnet","criteria":["Value prop clear","CTA compelling","SEO optimized"]}'
+
+kanban todo '{"action":"Review landing page (Visual Designer)","intent":"Validate design consistency","persona":"Visual Designer","model":"sonnet","criteria":["Visual hierarchy clear","Typography consistent","Accessibility verified"]}'
+
+kanban todo '{"action":"Review landing page (Frontend peer)","intent":"Validate code quality","persona":"Frontend Engineer","model":"sonnet","criteria":["Code clean","Performance acceptable","Responsive design working"]}'
 
 # Launch ALL THREE in parallel
 # Marketing checks: Clear value prop, compelling CTA, SEO considerations
@@ -355,8 +344,7 @@ Task: "Add Jest"
 
 **Check active work:**
 ```bash
-kanban list --show-mine        # See all work across sessions
-kanban doing --show-mine       # See in-progress work
+kanban list --output-style=xml --session <your-id>  # See all work in compact format
 ```
 
 **Analyze conflicts:**

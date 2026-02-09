@@ -229,19 +229,20 @@ def find_all_cards(root: Path, include_archived: bool = True) -> list[Path]:
 
 
 def find_cards_in_column(root: Path, col: str) -> list[Path]:
-    """Find all cards in a column, sorted by priority."""
+    """Find all cards in a column, sorted by card number."""
     col_path = root / col
     if not col_path.exists():
         return []
     cards = list(col_path.glob("*.json"))
 
-    def safe_priority(p: Path) -> int:
+    def safe_card_num(p: Path) -> int:
         try:
-            return read_card(p).get("priority", 0)
-        except (json.JSONDecodeError, OSError):
+            match = re.match(r"(\d+)\.json$", p.name)
+            return int(match.group(1)) if match else 0
+        except (ValueError, AttributeError):
             return 0
 
-    cards.sort(key=safe_priority)
+    cards.sort(key=safe_card_num)
     return cards
 
 
@@ -443,7 +444,6 @@ def make_card(
     persona: str = "unassigned",
     model: str | None = None,
     session: str | None = None,
-    priority: int = 1000,
     criteria: list[str] | None = None,
 ) -> dict:
     """Build a new card dict."""
@@ -456,7 +456,6 @@ def make_card(
         "persona": persona,
         "model": model,
         "session": session,
-        "priority": priority,
         "created": now,
         "updated": now,
         "activity": [{"timestamp": now, "message": "Created"}],
@@ -469,89 +468,8 @@ def make_card(
     return card
 
 
-def create_card_in_column(
-    root: Path,
-    column: str,
-    card: dict,
-    top: bool = False,
-    bottom: bool = False,
-    after: str | None = None,
-    before: str | None = None,
-) -> int:
-    """Write a card to a column with per-session ordering, return its number."""
-    session = card.get("session")
-    existing = find_cards_in_column(root, column)
-
-    # Filter existing cards to same session
-    session_cards = []
-    for c_path in existing:
-        try:
-            c = read_card(c_path)
-            if c.get("session") == session:
-                session_cards.append((c_path, c.get("priority", 0)))
-        except (json.JSONDecodeError, OSError):
-            continue
-
-    # Determine priority based on ordering flags
-    if after:
-        # Insert after specified card (must be same session)
-        target_path = find_card(root, after)
-        target_card = read_card(target_path)
-        if target_card.get("session") != session:
-            print(f"Error: Cannot insert after card #{after} — different session", file=sys.stderr)
-            sys.exit(1)
-        target_priority = target_card.get("priority", 0)
-
-        # Find next card with same session to determine priority range
-        higher_cards = [p for p, c_priority in session_cards if c_priority > target_priority]
-        if higher_cards:
-            next_priority = min(read_card(c_path).get("priority", 0) for c_path in higher_cards)
-            card["priority"] = (target_priority + next_priority) // 2
-            if card["priority"] == target_priority:
-                card["priority"] = target_priority + 1
-        else:
-            card["priority"] = target_priority + 10
-
-    elif before:
-        # Insert before specified card (must be same session)
-        target_path = find_card(root, before)
-        target_card = read_card(target_path)
-        if target_card.get("session") != session:
-            print(f"Error: Cannot insert before card #{before} — different session", file=sys.stderr)
-            sys.exit(1)
-        target_priority = target_card.get("priority", 0)
-
-        # Find previous card with same session to determine priority range
-        lower_cards = [p for p, c_priority in session_cards if c_priority < target_priority]
-        if lower_cards:
-            prev_priority = max(read_card(c_path).get("priority", 0) for c_path in lower_cards)
-            card["priority"] = (prev_priority + target_priority) // 2
-            if card["priority"] == target_priority:
-                card["priority"] = max(0, target_priority - 1)
-        else:
-            card["priority"] = max(0, target_priority - 10)
-
-    elif top:
-        # Top of session's cards
-        if session_cards:
-            min_p = min(p for _, p in session_cards)
-            card["priority"] = max(0, min_p - 10)
-        else:
-            card["priority"] = card.get("priority", 1000)
-
-    elif bottom:
-        # Bottom of session's cards
-        if session_cards:
-            max_p = max(p for _, p in session_cards)
-            card["priority"] = max_p + 10
-        else:
-            card["priority"] = card.get("priority", 1000)
-
-    else:
-        # Default: no ordering specified
-        if not existing:
-            card["priority"] = card.get("priority", 1000)
-
+def create_card_in_column(root: Path, column: str, card: dict) -> int:
+    """Write a card to a column, return its number."""
     num = next_number(root)
     filepath = root / column / f"{num}.json"
     filepath.parent.mkdir(parents=True, exist_ok=True)
@@ -573,11 +491,26 @@ def cmd_do(args) -> None:
         print("Error: JSON must include 'action' field", file=sys.stderr)
         sys.exit(1)
 
-    # Parse criteria from JSON (as list of strings or objects) or from --criteria flags
-    # Support both "criteria" and "ac" (shorthand) in JSON input
-    criteria_from_json = data.get("criteria") or data.get("ac", [])
-    criteria_from_args = getattr(args, "criteria", None) or []
-    criteria = criteria_from_args if criteria_from_args else criteria_from_json
+    # Validate action is non-empty
+    if not data.get("action", "").strip():
+        print("Error: Action field must be a non-empty string.", file=sys.stderr)
+        sys.exit(1)
+
+    # Validate model if provided
+    model = data.get("model")
+    if model and model not in ("haiku", "sonnet", "opus"):
+        print(f"Error: Invalid model '{model}'. Must be one of: haiku, sonnet, opus", file=sys.stderr)
+        sys.exit(1)
+
+    # Validate editFiles/readFiles are arrays
+    for field in ("editFiles", "readFiles"):
+        val = data.get(field)
+        if val is not None and not isinstance(val, list):
+            print(f"Error: {field} must be an array, got {type(val).__name__}", file=sys.stderr)
+            sys.exit(1)
+
+    # Parse criteria from JSON (support both "criteria" and "ac" shorthand)
+    criteria = data.get("criteria") or data.get("ac", [])
 
     session = args.session if hasattr(args, "session") and args.session else get_current_session_id()
 
@@ -587,8 +520,8 @@ def cmd_do(args) -> None:
         intent=data.get("intent", ""),
         read_files=data.get("readFiles", []),
         edit_files=data.get("editFiles", []),
-        persona=args.persona or data.get("persona", "unassigned"),
-        model=args.model or data.get("model"),
+        persona=data.get("persona", "unassigned"),
+        model=data.get("model"),
         session=session,
         criteria=criteria if all(isinstance(c, str) for c in criteria) else None,
     )
@@ -597,107 +530,85 @@ def cmd_do(args) -> None:
     if criteria and not all(isinstance(c, str) for c in criteria):
         card["criteria"] = criteria
 
-    num = create_card_in_column(
-        root,
-        "doing",
-        card,
-        top=getattr(args, "top", False),
-        bottom=getattr(args, "bottom", False),
-        after=getattr(args, "after", None),
-        before=getattr(args, "before", None),
-    )
+    # Validate criteria count after building card
+    criteria_check = card.get("criteria", [])
+    if not criteria_check:
+        print("Error: At least one acceptance criterion required. Add \"criteria\": [\"...\"] to JSON.", file=sys.stderr)
+        sys.exit(1)
+
+    # Remove readFiles entries that are already in editFiles (editing implies reading)
+    edit_files = card.get("editFiles", [])
+    read_files = card.get("readFiles", [])
+    if edit_files and read_files:
+        card["readFiles"] = [f for f in read_files if f not in edit_files]
+
+    num = create_card_in_column(root, "doing", card)
     print(num)
 
 
 
 
-def cmd_move(args) -> None:
-    """Move card to a different column."""
+def cmd_redo(args) -> None:
+    """Move card from review back to doing."""
     root = get_root(args.root)
-    if args.column not in COLUMNS:
-        print(f"Error: Invalid column '{args.column}'. Must be one of: {', '.join(COLUMNS)}", file=sys.stderr)
-        sys.exit(1)
-
     card_path = find_card(root, args.card)
-    card = read_card(card_path)
+    col = card_path.parent.name
     num = card_number(card_path)
 
-    # Handle ordering flags for per-session priority
-    top = getattr(args, "top", False)
-    bottom = getattr(args, "bottom", False)
-    after = getattr(args, "after", None)
-    before = getattr(args, "before", None)
+    if col != "review":
+        print(f"Error: Card #{num} is in '{col}', not 'review'. Redo only works on cards in review.", file=sys.stderr)
+        sys.exit(1)
 
-    if top or bottom or after or before:
-        session = card.get("session")
-        existing = find_cards_in_column(root, args.column)
-
-        # Filter existing cards to same session
-        session_cards = []
-        for c_path in existing:
-            try:
-                c = read_card(c_path)
-                if c.get("session") == session:
-                    session_cards.append((c_path, c.get("priority", 0)))
-            except (json.JSONDecodeError, OSError):
-                continue
-
-        # Determine priority based on ordering flags
-        if after:
-            target_path = find_card(root, after)
-            target_card = read_card(target_path)
-            if target_card.get("session") != session:
-                print(f"Error: Cannot insert after card #{after} — different session", file=sys.stderr)
-                sys.exit(1)
-            target_priority = target_card.get("priority", 0)
-
-            higher_cards = [p for p, c_priority in session_cards if c_priority > target_priority]
-            if higher_cards:
-                next_priority = min(read_card(c_path).get("priority", 0) for c_path in higher_cards)
-                card["priority"] = (target_priority + next_priority) // 2
-                if card["priority"] == target_priority:
-                    card["priority"] = target_priority + 1
-            else:
-                card["priority"] = target_priority + 10
-
-        elif before:
-            target_path = find_card(root, before)
-            target_card = read_card(target_path)
-            if target_card.get("session") != session:
-                print(f"Error: Cannot insert before card #{before} — different session", file=sys.stderr)
-                sys.exit(1)
-            target_priority = target_card.get("priority", 0)
-
-            lower_cards = [p for p, c_priority in session_cards if c_priority < target_priority]
-            if lower_cards:
-                prev_priority = max(read_card(c_path).get("priority", 0) for c_path in lower_cards)
-                card["priority"] = (prev_priority + target_priority) // 2
-                if card["priority"] == target_priority:
-                    card["priority"] = max(0, target_priority - 1)
-            else:
-                card["priority"] = max(0, target_priority - 10)
-
-        elif top:
-            if session_cards:
-                min_p = min(p for _, p in session_cards)
-                card["priority"] = max(0, min_p - 10)
-            else:
-                card["priority"] = 1000
-
-        elif bottom:
-            if session_cards:
-                max_p = max(p for _, p in session_cards)
-                card["priority"] = max_p + 10
-            else:
-                card["priority"] = 1000
-
+    card = read_card(card_path)
     card["updated"] = now_iso()
     write_card(card_path, card)
 
-    target_path = root / args.column / card_path.name
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    card_path.rename(target_path)
-    print(f"Moved: #{num} -> {args.column}/")
+    target = root / "doing" / card_path.name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    card_path.rename(target)
+    print(f"Redo: #{num} — moved back to doing")
+
+
+def cmd_defer(args) -> None:
+    """Move card from doing or review back to todo."""
+    root = get_root(args.root)
+    card_path = find_card(root, args.card)
+    col = card_path.parent.name
+    num = card_number(card_path)
+
+    if col not in ["doing", "review"]:
+        print(f"Error: Card #{num} is in '{col}', not 'doing' or 'review'. Defer only works on cards in doing or review.", file=sys.stderr)
+        sys.exit(1)
+
+    card = read_card(card_path)
+    card["updated"] = now_iso()
+    write_card(card_path, card)
+
+    target = root / "todo" / card_path.name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    card_path.rename(target)
+    print(f"Deferred: #{num} — moved to todo")
+
+
+def cmd_start(args) -> None:
+    """Move card from todo to doing (pick up queued work)."""
+    root = get_root(args.root)
+    card_path = find_card(root, args.card)
+    col = card_path.parent.name
+    num = card_number(card_path)
+
+    if col != "todo":
+        print(f"Error: Card #{num} is in '{col}', not 'todo'. Start only works on cards in todo.", file=sys.stderr)
+        sys.exit(1)
+
+    card = read_card(card_path)
+    card["updated"] = now_iso()
+    write_card(card_path, card)
+
+    target = root / "doing" / card_path.name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    card_path.rename(target)
+    print(f"Started: #{num} — moved to doing")
 
 
 def cmd_show(args) -> None:
@@ -715,6 +626,7 @@ def cmd_show(args) -> None:
 
     # Default: human-friendly terminal output (simple or detail)
     bold = "\033[1m"
+    dim_bold = "\033[2;1m"
     reset = "\033[0m"
 
     # Header
@@ -729,7 +641,7 @@ def cmd_show(args) -> None:
     intent = card.get("intent", "")
     if intent:
         print()
-        print(f"{bold}  Intent{reset}")
+        print(f"{dim_bold}  Intent{reset}")
         # Replace literal \n with actual newlines, then wrap at ~80 chars
         intent = intent.replace("\\n", "\n")
         for paragraph in intent.split("\n"):
@@ -754,7 +666,7 @@ def cmd_show(args) -> None:
     criteria = card.get("criteria", [])
     if criteria:
         print()
-        print(f"{bold}  Acceptance Criteria{reset}")
+        print(f"{dim_bold}  Acceptance Criteria{reset}")
         for i, criterion in enumerate(criteria, start=1):
             checkbox = "✅" if criterion.get("met", False) else "⬜"
             text = criterion.get("text", "")
@@ -764,7 +676,7 @@ def cmd_show(args) -> None:
     edit_files = card.get("editFiles") or card.get("writeFiles", [])
     if edit_files:
         print()
-        print(f"{bold}  Edit Files{reset}")
+        print(f"{dim_bold}  Edit Files{reset}")
         for f in sorted(edit_files):
             print(f"  {f}")
 
@@ -772,14 +684,15 @@ def cmd_show(args) -> None:
     read_files = card.get("readFiles", [])
     if read_files:
         print()
-        print(f"{bold}  Read Files{reset}")
+        print(f"{dim_bold}  Read Files{reset}")
         for f in sorted(read_files):
             print(f"  {f}")
 
     # Footer with metadata
     print()
     session = card.get("session", "")
-    priority = card.get("priority", 0)
+    persona = card.get("persona", "unassigned")
+    model = card.get("model")
     created = card.get("created", "")
     if created:
         try:
@@ -792,7 +705,10 @@ def cmd_show(args) -> None:
     footer_parts = []
     if session:
         footer_parts.append(f"Session: {session[:8]}")
-    footer_parts.append(f"Priority: {priority}")
+    if persona and persona != "unassigned":
+        footer_parts.append(f"Persona: {persona}")
+    if model:
+        footer_parts.append(f"Model: {model}")
     footer_parts.append(f"Created: {created_date}")
 
     print(f"{bold}{' · '.join(footer_parts)}{reset}")
@@ -810,75 +726,6 @@ def cmd_cancel(args) -> None:
     if reason:
         card["cancelReason"] = reason
 
-    # Handle ordering flags for per-session priority
-    top = getattr(args, "top", False)
-    bottom = getattr(args, "bottom", False)
-    after = getattr(args, "after", None)
-    before = getattr(args, "before", None)
-
-    if top or bottom or after or before:
-        session = card.get("session")
-        existing = find_cards_in_column(root, "canceled")
-
-        # Filter existing cards to same session
-        session_cards = []
-        for c_path in existing:
-            try:
-                c = read_card(c_path)
-                if c.get("session") == session:
-                    session_cards.append((c_path, c.get("priority", 0)))
-            except (json.JSONDecodeError, OSError):
-                continue
-
-        # Determine priority based on ordering flags
-        if after:
-            target_path = find_card(root, after)
-            target_card = read_card(target_path)
-            if target_card.get("session") != session:
-                print(f"Error: Cannot insert after card #{after} — different session", file=sys.stderr)
-                sys.exit(1)
-            target_priority = target_card.get("priority", 0)
-
-            higher_cards = [p for p, c_priority in session_cards if c_priority > target_priority]
-            if higher_cards:
-                next_priority = min(read_card(c_path).get("priority", 0) for c_path in higher_cards)
-                card["priority"] = (target_priority + next_priority) // 2
-                if card["priority"] == target_priority:
-                    card["priority"] = target_priority + 1
-            else:
-                card["priority"] = target_priority + 10
-
-        elif before:
-            target_path = find_card(root, before)
-            target_card = read_card(target_path)
-            if target_card.get("session") != session:
-                print(f"Error: Cannot insert before card #{before} — different session", file=sys.stderr)
-                sys.exit(1)
-            target_priority = target_card.get("priority", 0)
-
-            lower_cards = [p for p, c_priority in session_cards if c_priority < target_priority]
-            if lower_cards:
-                prev_priority = max(read_card(c_path).get("priority", 0) for c_path in lower_cards)
-                card["priority"] = (prev_priority + target_priority) // 2
-                if card["priority"] == target_priority:
-                    card["priority"] = max(0, target_priority - 1)
-            else:
-                card["priority"] = max(0, target_priority - 10)
-
-        elif top:
-            if session_cards:
-                min_p = min(p for _, p in session_cards)
-                card["priority"] = max(0, min_p - 10)
-            else:
-                card["priority"] = 1000
-
-        elif bottom:
-            if session_cards:
-                max_p = max(p for _, p in session_cards)
-                card["priority"] = max_p + 10
-            else:
-                card["priority"] = 1000
-
     card["updated"] = now_iso()
     write_card(card_path, card)
 
@@ -893,217 +740,64 @@ def cmd_cancel(args) -> None:
         print(f"Canceled: #{num}")
 
 
-def cmd_edit(args) -> None:
-    """Edit card metadata."""
+def cmd_criteria_add(args) -> None:
+    """Add acceptance criterion to card."""
     root = get_root(args.root)
     card_path = find_card(root, args.card)
     card = read_card(card_path)
 
-    if args.persona:
-        card["persona"] = args.persona
-    if hasattr(args, "model") and args.model:
-        card["model"] = args.model
-    if hasattr(args, "priority") and args.priority is not None:
-        if args.priority < 0:
-            print("Error: Priority must be >= 0", file=sys.stderr)
-            sys.exit(1)
-        card["priority"] = args.priority
-    if hasattr(args, "session_update") and args.session_update:
-        card["session"] = args.session_update
-    if hasattr(args, "action_text") and args.action_text:
-        card["action"] = args.action_text
-    if hasattr(args, "intent_text") and args.intent_text:
-        card["intent"] = args.intent_text
-
-    card["updated"] = now_iso()
-    write_card(card_path, card)
-    print(f"Updated: #{card_number(card_path)}")
-
-
-def cmd_up(args) -> None:
-    """Move card up in priority."""
-    root = get_root(args.root)
-    card_path = find_card(root, args.card)
-    card = read_card(card_path)
-    card["priority"] = max(0, card.get("priority", 0) - 10)
-    card["updated"] = now_iso()
-    write_card(card_path, card)
-    print(f"Moved up: #{card_number(card_path)} (priority: {card['priority']})")
-
-
-def cmd_down(args) -> None:
-    """Move card down in priority."""
-    root = get_root(args.root)
-    card_path = find_card(root, args.card)
-    card = read_card(card_path)
-    card["priority"] = card.get("priority", 0) + 10
-    card["updated"] = now_iso()
-    write_card(card_path, card)
-    print(f"Moved down: #{card_number(card_path)} (priority: {card['priority']})")
-
-
-def cmd_top(args) -> None:
-    """Move card to top of its column."""
-    root = get_root(args.root)
-    card_path = find_card(root, args.card)
-    col = card_path.parent
-    min_p = 0
-    for other in col.glob("*.json"):
-        if other != card_path:
-            min_p = min(min_p, read_card(other).get("priority", 0))
-    card = read_card(card_path)
-    card["priority"] = max(0, min_p - 10)
-    card["updated"] = now_iso()
-    write_card(card_path, card)
-    print(f"Moved to top: #{card_number(card_path)} (priority: {card['priority']})")
-
-
-def cmd_bottom(args) -> None:
-    """Move card to bottom of its column."""
-    root = get_root(args.root)
-    card_path = find_card(root, args.card)
-    col = card_path.parent
-    max_p = 0
-    for other in col.glob("*.json"):
-        if other != card_path:
-            max_p = max(max_p, read_card(other).get("priority", 0))
-    card = read_card(card_path)
-    card["priority"] = max_p + 10
-    card["updated"] = now_iso()
-    write_card(card_path, card)
-    print(f"Moved to bottom: #{card_number(card_path)} (priority: {card['priority']})")
-
-
-def cmd_assign(args) -> None:
-    """Change or remove session ownership."""
-    root = get_root(args.root)
-
-    if args.no_session and args.session:
-        print("Error: Cannot specify both --session and --no-session", file=sys.stderr)
-        sys.exit(1)
-
-    # Bulk reassignment
-    if args.from_session:
-        if not args.to_session and not args.no_session:
-            print("Error: Bulk reassignment requires --to <session> or --no-session", file=sys.stderr)
-            sys.exit(1)
-        all_cards_paths = find_all_cards(root)
-        to_reassign = []
-        for cp in all_cards_paths:
-            try:
-                c = read_card(cp)
-                if c.get("session") == args.from_session:
-                    to_reassign.append(cp)
-            except (json.JSONDecodeError, OSError):
-                continue
-        if not to_reassign:
-            print(f"No cards found with session '{args.from_session}'")
-            return
-        if not args.yes:
-            target = "no session" if args.no_session else f"session '{args.to_session}'"
-            response = input(f"Reassign {len(to_reassign)} card(s) to {target}? [y/N] ")
-            if response.lower() != "y":
-                print("Aborted")
-                return
-        for cp in to_reassign:
-            c = read_card(cp)
-            if args.no_session:
-                c.pop("session", None)
-            else:
-                c["session"] = args.to_session
-            c["updated"] = now_iso()
-            write_card(cp, c)
-        target = "sessionless" if args.no_session else args.to_session
-        print(f"Reassigned {len(to_reassign)} card(s) to {target}")
-        return
-
-    # Single card
-    if not args.card:
-        print("Error: Card number required (or use --from for bulk)", file=sys.stderr)
-        sys.exit(1)
-
-    card_path = find_card(root, args.card)
-    card = read_card(card_path)
-    old_session = card.get("session")
-
-    if args.no_session:
-        card.pop("session", None)
-        new_session = "sessionless"
-    elif args.session:
-        card["session"] = args.session
-        new_session = args.session
-    else:
-        current = get_current_session_id()
-        if not current:
-            print("Error: Could not detect session. Use --session or --no-session", file=sys.stderr)
-            sys.exit(1)
-        card["session"] = current
-        new_session = current
-
-    card["updated"] = now_iso()
-    write_card(card_path, card)
-    print(f"Reassigned #{card_number(card_path)}: {old_session or 'sessionless'} -> {new_session}")
-
-
-def cmd_criteria(args) -> None:
-    """Add or remove acceptance criterion to/from a card."""
-    root = get_root(args.root)
-    card_path = find_card(root, args.card)
-    card = read_card(card_path)
-
-    # Initialize criteria list if it doesn't exist (backwards compatibility)
+    # Initialize criteria list if it doesn't exist
     if "criteria" not in card:
         card["criteria"] = []
 
-    # Handle removal
-    if args.remove is not None:
-        criteria = card.get("criteria", [])
-
-        # Check if card has criteria
-        if not criteria:
-            print("Error: Card has no acceptance criteria to remove", file=sys.stderr)
-            sys.exit(1)
-
-        # Validate criterion number
-        criterion_idx = args.remove - 1  # Convert to 0-based
-        if criterion_idx < 0 or criterion_idx >= len(criteria):
-            print(f"Error: Invalid criterion number {args.remove}. Valid range: 1-{len(criteria)}", file=sys.stderr)
-            sys.exit(1)
-
-        # Require reason
-        if not args.text:
-            print("🛑 Reason required: kanban criteria <card> --remove <n> \"why this AC was removed\"", file=sys.stderr)
-            sys.exit(1)
-
-        # Remove criterion and log to activity
-        removed_criterion = criteria[criterion_idx]
-        removed_text = removed_criterion.get("text", "")
-
-        # Initialize activity array if needed
-        if "activity" not in card:
-            card["activity"] = []
-
-        # Log removal
-        card["activity"].append({
-            "timestamp": now_iso(),
-            "message": f"Removed AC {args.remove}: '{removed_text}' — Reason: {args.text}"
-        })
-
-        # Remove the criterion
-        criteria.pop(criterion_idx)
-
-        print(f"Removed criterion from #{card_number(card_path)}: {removed_text}")
-        print(f"Reason: {args.text}")
-    else:
-        # Add new criterion (original behavior)
-        card["criteria"].append({"text": args.text, "met": False})
-        print(f"Added criterion to #{card_number(card_path)}: {args.text}")
-
+    card["criteria"].append({"text": args.text, "met": False})
     card["updated"] = now_iso()
     write_card(card_path, card)
+    print(f"Added criterion to #{card_number(card_path)}: {args.text}")
 
 
-def cmd_check(args) -> None:
+def cmd_criteria_remove(args) -> None:
+    """Remove acceptance criterion from card."""
+    root = get_root(args.root)
+    card_path = find_card(root, args.card)
+    card = read_card(card_path)
+
+    criteria = card.get("criteria", [])
+    if not criteria:
+        print("Error: Card has no acceptance criteria to remove", file=sys.stderr)
+        sys.exit(1)
+
+    # Validate criterion number
+    criterion_idx = args.n - 1  # Convert to 0-based
+    if criterion_idx < 0 or criterion_idx >= len(criteria):
+        print(f"Error: Invalid criterion number {args.n}. Valid range: 1-{len(criteria)}", file=sys.stderr)
+        sys.exit(1)
+
+    # Check if removal would leave zero criteria
+    if len(criteria) <= 1:
+        print("Error: Cannot remove last acceptance criterion. Cards must have at least one.", file=sys.stderr)
+        sys.exit(1)
+
+    # Remove criterion and log to activity
+    removed_criterion = criteria[criterion_idx]
+    removed_text = removed_criterion.get("text", "")
+
+    if "activity" not in card:
+        card["activity"] = []
+
+    card["activity"].append({
+        "timestamp": now_iso(),
+        "message": f"Removed AC {args.n}: '{removed_text}' — Reason: {args.reason}"
+    })
+
+    criteria.pop(criterion_idx)
+    card["updated"] = now_iso()
+    write_card(card_path, card)
+    print(f"Removed criterion from #{card_number(card_path)}: {removed_text}")
+    print(f"Reason: {args.reason}")
+
+
+def cmd_criteria_check(args) -> None:
     """Mark acceptance criterion(s) as met."""
     root = get_root(args.root)
     card_path = find_card(root, args.card)
@@ -1114,16 +808,16 @@ def cmd_check(args) -> None:
         print(f"Error: Card #{card_number(card_path)} has no acceptance criteria", file=sys.stderr)
         sys.exit(1)
 
-    for criterion_arg in args.criterion:
+    for criterion_arg in args.n:
         # Find criterion by 1-based index or text prefix match
         criterion_idx = None
-        if criterion_arg.isdigit():
+        if str(criterion_arg).isdigit():
             idx = int(criterion_arg) - 1  # Convert to 0-based
             if 0 <= idx < len(criteria):
                 criterion_idx = idx
         else:
             # Text prefix match (case insensitive)
-            search_text = criterion_arg.lower()
+            search_text = str(criterion_arg).lower()
             for i, c in enumerate(criteria):
                 if c.get("text", "").lower().startswith(search_text):
                     criterion_idx = i
@@ -1140,7 +834,7 @@ def cmd_check(args) -> None:
     write_card(card_path, card)
 
 
-def cmd_uncheck(args) -> None:
+def cmd_criteria_uncheck(args) -> None:
     """Mark acceptance criterion as unmet."""
     root = get_root(args.root)
     card_path = find_card(root, args.card)
@@ -1153,20 +847,20 @@ def cmd_uncheck(args) -> None:
 
     # Find criterion by 1-based index or text prefix match
     criterion_idx = None
-    if args.criterion.isdigit():
-        idx = int(args.criterion) - 1  # Convert to 0-based
+    if str(args.n).isdigit():
+        idx = int(args.n) - 1  # Convert to 0-based
         if 0 <= idx < len(criteria):
             criterion_idx = idx
     else:
         # Text prefix match (case insensitive)
-        search_text = args.criterion.lower()
+        search_text = str(args.n).lower()
         for i, c in enumerate(criteria):
             if c.get("text", "").lower().startswith(search_text):
                 criterion_idx = i
                 break
 
     if criterion_idx is None:
-        print(f"Error: No criterion found matching '{args.criterion}'", file=sys.stderr)
+        print(f"Error: No criterion found matching '{args.n}'", file=sys.stderr)
         sys.exit(1)
 
     criteria[criterion_idx]["met"] = False
@@ -1175,45 +869,19 @@ def cmd_uncheck(args) -> None:
     print(f"⬜ Unchecked: {criteria[criterion_idx]['text']}")
 
 
-def cmd_clear(args) -> None:
-    """Trash all JSON cards from columns (moves to system trash, not permanent delete)."""
-    root = get_root(args.root)
-    columns_to_clear = args.columns if args.columns else COLUMNS
-
-    for col in columns_to_clear:
-        if col not in COLUMNS:
-            print(f"Error: Invalid column '{col}'", file=sys.stderr)
-            sys.exit(1)
-
-    # Collect all .json card files to trash
-    files_to_trash: list[Path] = []
-    for col in columns_to_clear:
-        col_path = root / col
-        if col_path.exists():
-            files_to_trash.extend(col_path.glob("*.json"))
-
-    if not files_to_trash:
-        print("No cards to clear")
-        return
-
-    if not args.yes:
-        response = input(f"Trash {len(files_to_trash)} card(s) from {', '.join(columns_to_clear)}? [y/N] ")
-        if response.lower() != "y":
-            print("Aborted")
-            return
-
-    # Use trash command (moves to system Trash, recoverable)
-    try:
-        subprocess.run(
-            ["trash"] + [str(f) for f in files_to_trash],
-            check=True,
-        )
-        print(f"Trashed {len(files_to_trash)} card(s)")
-    except FileNotFoundError:
-        print("Error: 'trash' command not found. Install via Nix.", file=sys.stderr)
-        sys.exit(1)
-    except subprocess.CalledProcessError as e:
-        print(f"Error trashing cards: {e}", file=sys.stderr)
+def cmd_criteria_dispatch(args) -> None:
+    """Dispatch to the appropriate criteria subcommand."""
+    subcommand_map = {
+        "add": cmd_criteria_add,
+        "remove": cmd_criteria_remove,
+        "check": cmd_criteria_check,
+        "uncheck": cmd_criteria_uncheck,
+    }
+    handler = subcommand_map.get(args.criteria_command)
+    if handler:
+        handler(args)
+    else:
+        print(f"Error: Unknown criteria subcommand '{args.criteria_command}'", file=sys.stderr)
         sys.exit(1)
 
 
@@ -1233,13 +901,9 @@ def format_card_xml(card: dict, num: str, col: str, include_details: bool = Fals
     esc = html.escape
     session = card.get("session", "")
     action = card.get("action", "")
-    priority = card.get("priority", 0)
 
     # Card opening tag with attributes
-    if include_details:
-        xml_parts = [f'<card num="{esc(num)}" session="{esc(session)}" status="{esc(col)}" priority="{priority}">']
-    else:
-        xml_parts = [f'<card num="{esc(num)}" session="{esc(session)}" status="{esc(col)}">']
+    xml_parts = [f'<card num="{esc(num)}" session="{esc(session)}" status="{esc(col)}">']
 
     # Action (always included as child element)
     xml_parts.append(f"  <action>{esc(action)}</action>")
@@ -1292,7 +956,49 @@ def format_card_xml(card: dict, num: str, col: str, include_details: bool = Fals
     return "\n".join(xml_parts)
 
 
-def format_card_line(card: dict, num: str, show_session: bool = False, output_style: str = "simple", is_first_card: bool = True) -> str:
+def format_lead_time(seconds: float) -> str:
+    """Format lead time in human-readable format (e.g., '2h 15m', '45m', '3d 1h')."""
+    if seconds < 60:
+        return f"{int(seconds)}s"
+
+    minutes = int(seconds / 60)
+    if minutes < 60:
+        return f"{minutes}m"
+
+    hours = minutes // 60
+    remaining_minutes = minutes % 60
+    if hours < 24:
+        if remaining_minutes > 0:
+            return f"{hours}h {remaining_minutes}m"
+        return f"{hours}h"
+
+    days = hours // 24
+    remaining_hours = hours % 24
+    if remaining_hours > 0:
+        return f"{days}d {remaining_hours}h"
+    return f"{days}d"
+
+
+def calculate_lead_time(card: dict) -> float | None:
+    """Calculate lead time in seconds for a completed card.
+
+    Returns None if timestamps are missing or invalid.
+    """
+    created_str = card.get("created")
+    updated_str = card.get("updated")
+
+    if not created_str or not updated_str:
+        return None
+
+    try:
+        created = parse_iso(created_str)
+        updated = parse_iso(updated_str)
+        return (updated - created).total_seconds()
+    except (ValueError, AttributeError):
+        return None
+
+
+def format_card_line(card: dict, num: str, show_session: bool = False, output_style: str = "simple", is_first_card: bool = True, column: str = "") -> str:
     """Format a single card for list/view output.
 
     Args:
@@ -1301,6 +1007,7 @@ def format_card_line(card: dict, num: str, show_session: bool = False, output_st
         show_session: Whether to show session prefix (for other sessions)
         output_style: "simple" (title only), "xml" (XML format), or "detail" (everything)
         is_first_card: Whether this is the first card (for spacing)
+        column: Column name (for showing lead time on done cards)
     """
     # Note: XML output for list is now handled in cmd_list directly
     # This function only handles simple and detail styles
@@ -1317,6 +1024,13 @@ def format_card_line(card: dict, num: str, show_session: bool = False, output_st
     session = card.get("session", "")
     session_tag = f"[{session[:8]}] " if (session and show_session) else ""
     line = f"{prefix}  #{num} {session_tag}{card.get('action', '[NO ACTION]')}"
+
+    # Add lead time for done cards
+    if column == "done":
+        lead_time_seconds = calculate_lead_time(card)
+        if lead_time_seconds is not None:
+            lead_time_str = format_lead_time(lead_time_seconds)
+            line += f" {dim}({lead_time_str}){reset}"
 
     # Simple style: title only
     if output_style == "simple":
@@ -1382,6 +1096,65 @@ def format_card_line(card: dict, num: str, show_session: bool = False, output_st
         line += "\n\n" + "\n\n".join(sections)
 
     return line
+
+
+def calculate_throughput_metrics(root: Path) -> dict:
+    """Calculate throughput metrics for done cards.
+
+    Returns dict with:
+        - cards_per_hour: Cards completed in last 60 minutes
+        - cards_today: Cards completed since midnight
+        - cards_all_time: Total cards in done column
+        - avg_lead_time_seconds: Average lead time in seconds (or None)
+    """
+    done_dir = root / "done"
+    if not done_dir.exists():
+        return {
+            "cards_per_hour": 0,
+            "cards_today": 0,
+            "cards_all_time": 0,
+            "avg_lead_time_seconds": None,
+        }
+
+    now = datetime.now(timezone.utc)
+    one_hour_ago = now - timedelta(hours=1)
+    today_midnight = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+
+    cards_per_hour = 0
+    cards_today = 0
+    cards_all_time = 0
+    lead_times = []
+
+    for card_file in done_dir.glob("*.json"):
+        try:
+            card = read_card(card_file)
+            cards_all_time += 1
+
+            # Get completion timestamp
+            updated_str = card.get("updated")
+            if updated_str:
+                updated = parse_iso(updated_str)
+                if updated >= one_hour_ago:
+                    cards_per_hour += 1
+                if updated >= today_midnight:
+                    cards_today += 1
+
+            # Calculate lead time
+            lead_time = calculate_lead_time(card)
+            if lead_time is not None:
+                lead_times.append(lead_time)
+
+        except (json.JSONDecodeError, OSError, ValueError):
+            continue
+
+    avg_lead_time = sum(lead_times) / len(lead_times) if lead_times else None
+
+    return {
+        "cards_per_hour": cards_per_hour,
+        "cards_today": cards_today,
+        "cards_all_time": cards_all_time,
+        "avg_lead_time_seconds": avg_lead_time,
+    }
 
 
 def cmd_list(args) -> None:
@@ -1580,7 +1353,7 @@ def cmd_list(args) -> None:
             print(f"{col.upper()} ({len(cards)})")
             if cards:
                 for i, (num, card) in enumerate(cards):
-                    print(format_card_line(card, num, output_style=output_style, is_first_card=(i == 0)))
+                    print(format_card_line(card, num, output_style=output_style, is_first_card=(i == 0), column=col))
             else:
                 print("  (empty)")
             print()
@@ -1593,268 +1366,143 @@ def cmd_list(args) -> None:
             if cards:
                 print(f"{col.upper()} ({len(cards)})")
                 for i, (num, card) in enumerate(cards):
-                    print(format_card_line(card, num, show_session=True, output_style=output_style, is_first_card=(i == 0)))
+                    print(format_card_line(card, num, show_session=True, output_style=output_style, is_first_card=(i == 0), column=col))
                 print()
 
+    # Show metrics summary (not in XML mode)
+    metrics = calculate_throughput_metrics(root)
+    dim = "\033[2m"
+    reset = "\033[0m"
 
-def cmd_view(args) -> None:
-    """View cards in a specific column."""
+    print(f"{dim}─── Metrics ───{reset}")
+    throughput_parts = [
+        f"{metrics['cards_per_hour']} cards/hr",
+        f"{metrics['cards_today']} today",
+        f"{metrics['cards_all_time']} all-time",
+    ]
+    print(f"{dim}Throughput: {' · '.join(throughput_parts)}{reset}")
+
+    if metrics['avg_lead_time_seconds'] is not None:
+        avg_lead_str = format_lead_time(metrics['avg_lead_time_seconds'])
+        print(f"{dim}Avg Lead Time: {avg_lead_str}{reset}")
+
+
+def cmd_todo(args) -> None:
+    """Create a card in todo column from JSON input (pure verb - no view mode)."""
     root = get_root(args.root)
-    column = args.column
-    cards = find_cards_in_column(root, column)
 
-    if not cards:
-        print(f"No cards in {column}")
-        return
+    try:
+        data = json.loads(args.json_data)
+    except json.JSONDecodeError as e:
+        print(f"Error: Invalid JSON: {e}", file=sys.stderr)
+        sys.exit(1)
 
-    since = parse_date_filter(args.since) if getattr(args, "since", None) else None
-    until = parse_date_filter(args.until) if getattr(args, "until", None) else None
+    if "action" not in data:
+        print("Error: JSON must include 'action' field", file=sys.stderr)
+        sys.exit(1)
 
-    current_session, hide_own, show_only_mine = resolve_session_filters(args)
+    # Validate action is non-empty
+    if not data.get("action", "").strip():
+        print("Error: Action field must be a non-empty string.", file=sys.stderr)
+        sys.exit(1)
 
-    # Check for watch state or args
-    watch_state = getattr(args, '_watch_state', None)
-    if watch_state:
-        output_style = watch_state.output_style
-        session_filter = watch_state.session_filter
-        card_filter = watch_state.card_filter
-    else:
-        output_style = getattr(args, "output_style", "simple")
-        session_filter = ""
-        card_filter = ""
+    # Validate model if provided
+    model = data.get("model")
+    if model and model not in ("haiku", "sonnet", "opus"):
+        print(f"Error: Invalid model '{model}'. Must be one of: haiku, sonnet, opus", file=sys.stderr)
+        sys.exit(1)
 
-    my_list = []
-    other_list = []
-
-    for card_path in cards:
-        try:
-            card = read_card(card_path)
-        except (json.JSONDecodeError, OSError):
-            continue
-        if not card_in_date_range(card, since, until):
-            continue
-        num = card_number(card_path)
-
-        # Apply watch filters
-        if card_filter and not num.startswith(card_filter):
-            continue
-        if session_filter:
-            card_session = card.get("session", "")
-            if not card_session.lower().startswith(session_filter.lower()):
-                continue
-
-        if is_my_card(card, current_session):
-            my_list.append((num, card))
-        else:
-            other_list.append((num, card))
-
-    if my_list and not hide_own:
-        if current_session:
-            print(f"=== Your Session ({current_session[:8]}) ===")
-        else:
-            print("=== Your Cards ===")
-        print()
-        for i, (num, card) in enumerate(my_list):
-            print(format_card_line(card, num, output_style=output_style, is_first_card=(i == 0)))
-        print()
-
-    if other_list and not show_only_mine:
-        print("=== Other Sessions ===")
-        print()
-        for i, (num, card) in enumerate(other_list):
-            print(format_card_line(card, num, show_session=True, output_style=output_style, is_first_card=(i == 0)))
-        print()
-
-
-# =============================================================================
-# Dual-behavior commands: todo, review, done
-# =============================================================================
-
-def cmd_todo_dual(args) -> None:
-    """todo with no args = view, todo '<json>' = create in todo."""
-    if hasattr(args, "json_data") and args.json_data:
-        # Create card in todo
-        root = get_root(args.root)
-        try:
-            data = json.loads(args.json_data)
-        except json.JSONDecodeError as e:
-            print(f"Error: Invalid JSON: {e}", file=sys.stderr)
-            sys.exit(1)
-        if "action" not in data:
-            print("Error: JSON must include 'action' field", file=sys.stderr)
+    # Validate editFiles/readFiles are arrays
+    for field in ("editFiles", "readFiles"):
+        val = data.get(field)
+        if val is not None and not isinstance(val, list):
+            print(f"Error: {field} must be an array, got {type(val).__name__}", file=sys.stderr)
             sys.exit(1)
 
-        # Parse criteria from JSON (as list of strings or objects) or from --criteria flags
-        # Support both "criteria" and "ac" (shorthand) in JSON input
-        criteria_from_json = data.get("criteria") or data.get("ac", [])
-        criteria_from_args = getattr(args, "criteria", None) or []
-        criteria = criteria_from_args if criteria_from_args else criteria_from_json
+    # Parse criteria from JSON (support both "criteria" and "ac" shorthand)
+    criteria = data.get("criteria") or data.get("ac", [])
 
-        session = args.session if hasattr(args, "session") and args.session else get_current_session_id()
+    session = args.session if hasattr(args, "session") and args.session else get_current_session_id()
 
-        card = make_card(
-            action=data["action"],
-            intent=data.get("intent", ""),
-            read_files=data.get("readFiles", []),
-            edit_files=data.get("editFiles", []),
-            persona=getattr(args, "persona", None) or data.get("persona", "unassigned"),
-            model=getattr(args, "model", None) or data.get("model"),
-            session=session,
-            criteria=criteria if all(isinstance(c, str) for c in criteria) else None,
-        )
+    card = make_card(
+        action=data["action"],
+        intent=data.get("intent", ""),
+        read_files=data.get("readFiles", []),
+        edit_files=data.get("editFiles", []),
+        persona=data.get("persona", "unassigned"),
+        model=data.get("model"),
+        session=session,
+        criteria=criteria if all(isinstance(c, str) for c in criteria) else None,
+    )
 
-        # If criteria came as full objects (with text/met), use them directly
-        if criteria and not all(isinstance(c, str) for c in criteria):
-            card["criteria"] = criteria
+    # If criteria came as full objects (with text/met), use them directly
+    if criteria and not all(isinstance(c, str) for c in criteria):
+        card["criteria"] = criteria
 
-        num = create_card_in_column(
-            root,
-            "todo",
-            card,
-            top=getattr(args, "top", False),
-            bottom=getattr(args, "bottom", False),
-            after=getattr(args, "after", None),
-            before=getattr(args, "before", None),
-        )
-        print(num)
-    else:
-        # View todo column
-        args.column = "todo"
-        cmd_view(args)
+    # Validate criteria count after building card
+    criteria_check = card.get("criteria", [])
+    if not criteria_check:
+        print("Error: At least one acceptance criterion required. Add \"criteria\": [\"...\"] to JSON.", file=sys.stderr)
+        sys.exit(1)
+
+    # Remove readFiles entries that are already in editFiles (editing implies reading)
+    edit_files = card.get("editFiles", [])
+    read_files = card.get("readFiles", [])
+    if edit_files and read_files:
+        card["readFiles"] = [f for f in read_files if f not in edit_files]
+
+    num = create_card_in_column(root, "todo", card)
+    print(num)
 
 
-def cmd_review_dual(args) -> None:
-    """review with no args = view, review <card#> = move card to review."""
-    if hasattr(args, "card_or_none") and args.card_or_none:
-        # Move card to review
-        root = get_root(args.root)
-        card_path = find_card(root, args.card_or_none)
-        card = read_card(card_path)
-        card["updated"] = now_iso()
-        write_card(card_path, card)
-        target = root / "review" / card_path.name
-        target.parent.mkdir(parents=True, exist_ok=True)
-        card_path.rename(target)
-        print(f"Moved: #{card_number(card_path)} -> review/")
-    else:
-        args.column = "review"
-        cmd_view(args)
-
-
-def cmd_done_dual(args) -> None:
-    """done with no args = view, done <card#> [message] = move to done + log."""
-    if hasattr(args, "card_or_none") and args.card_or_none:
-        root = get_root(args.root)
-        card_path = find_card(root, args.card_or_none)
-        card = read_card(card_path)
-
-        # Block if acceptance criteria are unmet
-        criteria = card.get("criteria", [])
-        if criteria:
-            unmet = [c for c in criteria if not c.get("met", False)]
-            if unmet:
-                card_num = card_number(card_path)
-                print(f"🛑 Cannot complete card #{card_num} — {len(unmet)} of {len(criteria)} acceptance criteria unmet:", file=sys.stderr)
-                for i, criterion in enumerate(criteria, start=1):
-                    if not criterion.get("met", False):
-                        print(f"  ⬜ {i}. {criterion.get('text', '')}", file=sys.stderr)
-                print(f"\nCheck items with: kanban check {card_num} <n>", file=sys.stderr)
-                sys.exit(1)
-
-        # Append completion message to activity
-        message = args.message if hasattr(args, "message") and args.message else "Completed"
-        card["activity"].append({
-            "timestamp": now_iso(),
-            "message": message,
-        })
-        card["updated"] = now_iso()
-        write_card(card_path, card)
-
-        target = root / "done" / card_path.name
-        target.parent.mkdir(parents=True, exist_ok=True)
-        card_path.rename(target)
-        print(f"Done: #{card_number(card_path)} — {message}")
-    else:
-        args.column = "done"
-        cmd_view(args)
-
-
-# =============================================================================
-# History command
-# =============================================================================
-
-def cmd_history(args) -> None:
-    """Show completed cards."""
+def cmd_review(args) -> None:
+    """Move card to review column (pure verb - no view mode)."""
     root = get_root(args.root)
-    done_cards = []
+    card_path = find_card(root, args.card)
+    card = read_card(card_path)
+    num = card_number(card_path)
 
-    for card_path in find_cards_in_column(root, "done"):
-        done_cards.append(card_path)
+    card["updated"] = now_iso()
+    write_card(card_path, card)
 
-    if getattr(args, "include_canceled", False):
-        for card_path in find_cards_in_column(root, "canceled"):
-            done_cards.append(card_path)
+    target = root / "review" / card_path.name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    card_path.rename(target)
+    print(f"Moved: #{num} -> review/")
 
-    # Include archived
-    archive_base = root / "archive"
-    if archive_base.exists():
-        for archive_dir in archive_base.iterdir():
-            if archive_dir.is_dir():
-                done_cards.extend(archive_dir.glob("*.json"))
 
-    since = parse_date_filter(args.since) if getattr(args, "since", None) else None
-    until = parse_date_filter(args.until) if getattr(args, "until", None) else None
+def cmd_done(args) -> None:
+    """Move card to done column (pure verb - no view mode)."""
+    root = get_root(args.root)
+    card_path = find_card(root, args.card)
+    card = read_card(card_path)
+    num = card_number(card_path)
 
-    current_session, hide_own, show_only_mine = resolve_session_filters(args)
+    # Block if acceptance criteria are unmet
+    criteria = card.get("criteria", [])
+    if criteria:
+        unmet = [c for c in criteria if not c.get("met", False)]
+        if unmet:
+            print(f"🛑 Cannot complete card #{num} — {len(unmet)} of {len(criteria)} acceptance criteria unmet:", file=sys.stderr)
+            for i, criterion in enumerate(criteria, start=1):
+                if not criterion.get("met", False):
+                    print(f"  ⬜ {i}. {criterion.get('text', '')}", file=sys.stderr)
+            print(f"\nCheck items with: kanban criteria check {num} <n>", file=sys.stderr)
+            sys.exit(1)
 
-    if not done_cards:
-        print("No completed cards")
-        return
+    # Append completion message to activity
+    message = args.message if hasattr(args, "message") and args.message else "Completed"
+    card["activity"].append({
+        "timestamp": now_iso(),
+        "message": message,
+    })
+    card["updated"] = now_iso()
+    write_card(card_path, card)
 
-    print("## Completed Cards")
-    print()
-
-    count = 0
-    for card_path in done_cards:
-        try:
-            card = read_card(card_path)
-        except (json.JSONDecodeError, OSError):
-            continue
-
-        if not card_in_date_range(card, since, until):
-            continue
-
-        card_session = card.get("session")
-        if show_only_mine:
-            if current_session and card_session not in (current_session, None):
-                continue
-        elif hide_own:
-            if current_session and card_session in (current_session, None):
-                continue
-
-        count += 1
-        num = card_number(card_path)
-        persona = card.get("persona", "")
-        model = card.get("model")
-        session = card.get("session", "")
-        updated = card.get("updated", "unknown")[:10]
-
-        location = ""
-        if card_path.parent.name not in ("done", "canceled"):
-            location = f" [archived: {card_path.parent.name}]"
-
-        display = f"  - #{num} {card.get('action', '[NO ACTION]')}"
-        if persona and persona != "unassigned":
-            display += f" ({persona})"
-        if model:
-            display += f" [{model}]"
-        if session:
-            display += f" [{session[:8]}]"
-        display += f" - {updated}{location}"
-        print(display)
-
-    print()
-    print(f"Total: {count} cards")
+    target = root / "done" / card_path.name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    card_path.rename(target)
+    print(f"Done: #{num} — {message}")
 
 
 # =============================================================================
@@ -1973,77 +1621,22 @@ def _render_watch(args, command_func, state: WatchState, is_interactive: bool) -
         _print_status_bar(state)
 
 
-def watch_and_run(args, command_func) -> None:
-    """Watch .kanban/ directory and re-run command on changes."""
+def watch_and_run_simple(args, command_func) -> None:
+    """Watch mode with simple 2-second polling (no watchdog dependency)."""
     try:
-        from watchdog.observers import Observer
-        from watchdog.events import FileSystemEventHandler
-    except ImportError:
-        print("Error: watchdog not available", file=sys.stderr)
-        sys.exit(1)
-
-    root = get_root(args.root)
-    refresh_event = Event()
-    stop_event = Event()
-    state = WatchState()
-    is_interactive = sys.stdin.isatty()
-
-    class DebounceHandler(FileSystemEventHandler):
-        def on_any_event(self, event):
-            if event.is_directory:
-                return
-            is_json_event = event.src_path.endswith(".json")
-            if hasattr(event, "dest_path"):
-                is_json_event = is_json_event or event.dest_path.endswith(".json")
-            if is_json_event:
-                refresh_event.set()
-
-    observer = Observer()
-    observer.schedule(DebounceHandler(), str(root), recursive=True)
-    observer.start()
-
-    # Start input thread if interactive
-    input_thread = None
-    if is_interactive:
-        input_thread = threading.Thread(
-            target=_input_thread,
-            args=(state, refresh_event, stop_event),
-            daemon=True
-        )
-        input_thread.start()
-
-    if is_interactive:
-        print(f"Watching {root} for changes... (Press ? for help)")
-        print()
-    else:
-        print(f"Watching {root} for changes... (Ctrl+C to exit)")
-        print()
-
-    try:
-        _render_watch(args, command_func, state, is_interactive)
-        while not stop_event.is_set():
-            if refresh_event.wait(timeout=0.5):
-                refresh_event.clear()
-                time.sleep(0.1)  # Small debounce
-                refresh_event.clear()
-                print("\033[2J\033[H", end="", flush=True)
-                try:
-                    _render_watch(args, command_func, state, is_interactive)
-                except Exception as e:
-                    print(f"Error: {e}", file=sys.stderr)
-                    if is_interactive:
-                        print()
-                        _print_status_bar(state)
+        while True:
+            os.system('clear')
+            command_func(args)
+            time.sleep(2)
     except KeyboardInterrupt:
         print("\nStopping watch mode...")
-    finally:
-        stop_event.set()
-        observer.stop()
-        observer.join()
-        if input_thread:
-            input_thread.join(timeout=1)
-        # Safety net to restore terminal
-        os.system('stty sane 2>/dev/null')
+        sys.exit(0)
+
+
+def watch_and_run(args, command_func) -> None:
+    """Watch .kanban/ directory and re-run command on changes."""
+    # Use simple polling mode - no watchdog dependency
+    watch_and_run_simple(args, command_func)
 
 
 # =============================================================================
@@ -2086,24 +1679,7 @@ def main() -> None:
     # --- do ---
     p_do = subparsers.add_parser("do", parents=[parent_parser], help="Create card in doing from JSON")
     p_do.add_argument("json_data", help="JSON object with action, intent, readFiles, editFiles")
-    p_do.add_argument("--persona", help="Override persona")
-    p_do.add_argument("--model", choices=["sonnet", "opus", "haiku"], help="AI model")
-    p_do.add_argument("--top", action="store_true", help="Insert at top of session's cards")
-    p_do.add_argument("--bottom", action="store_true", help="Insert at bottom of session's cards")
-    p_do.add_argument("--after", metavar="CARD", help="Insert after card (same session only)")
-    p_do.add_argument("--before", metavar="CARD", help="Insert before card (same session only)")
-    p_do.add_argument("--criteria", action="append", help="Acceptance criterion (repeatable)")
     add_session_flags(p_do)
-
-    # --- move ---
-    p_move = subparsers.add_parser("move", parents=[parent_parser], help="Move card to column")
-    p_move.add_argument("card", help="Card number")
-    p_move.add_argument("column", help="Target column")
-    p_move.add_argument("--top", action="store_true", help="Move to top of session's cards")
-    p_move.add_argument("--bottom", action="store_true", help="Move to bottom of session's cards")
-    p_move.add_argument("--after", metavar="CARD", help="Move after card (same session only)")
-    p_move.add_argument("--before", metavar="CARD", help="Move before card (same session only)")
-    add_session_flags(p_move)
 
     # --- show ---
     p_show = subparsers.add_parser("show", parents=[parent_parser], help="Display card contents")
@@ -2115,52 +1691,47 @@ def main() -> None:
     p_cancel = subparsers.add_parser("cancel", parents=[parent_parser], help="Move card to canceled column")
     p_cancel.add_argument("card", help="Card number")
     p_cancel.add_argument("reason", nargs="?", default=None, help="Optional cancellation reason")
-    p_cancel.add_argument("--top", action="store_true", help="Move to top of session's cards")
-    p_cancel.add_argument("--bottom", action="store_true", help="Move to bottom of session's cards")
-    p_cancel.add_argument("--after", metavar="CARD", help="Move after card (same session only)")
-    p_cancel.add_argument("--before", metavar="CARD", help="Move before card (same session only)")
     add_session_flags(p_cancel)
 
-    # --- criteria ---
-    p_criteria = subparsers.add_parser("criteria", parents=[parent_parser], help="Add or remove acceptance criterion to/from card")
-    p_criteria.add_argument("card", help="Card number")
-    p_criteria.add_argument("text", nargs="?", help="Criterion text when adding, or reason when removing")
-    p_criteria.add_argument("--remove", type=int, metavar="N", help="Remove criterion number N (1-indexed)")
-    add_session_flags(p_criteria)
+    # --- redo ---
+    p_redo = subparsers.add_parser("redo", parents=[parent_parser], help="Move card from review back to doing")
+    p_redo.add_argument("card", help="Card number")
+    add_session_flags(p_redo)
 
-    # --- check ---
-    p_check = subparsers.add_parser("check", parents=[parent_parser], help="Mark criterion as met")
-    p_check.add_argument("card", help="Card number")
-    p_check.add_argument("criterion", nargs="+", help="Criterion index(es) (1-based) or text prefix(es)")
-    add_session_flags(p_check)
+    # --- defer ---
+    p_defer = subparsers.add_parser("defer", parents=[parent_parser], help="Move card from doing/review back to todo")
+    p_defer.add_argument("card", help="Card number")
+    add_session_flags(p_defer)
 
-    # --- uncheck ---
-    p_uncheck = subparsers.add_parser("uncheck", parents=[parent_parser], help="Mark criterion as unmet")
-    p_uncheck.add_argument("card", help="Card number")
-    p_uncheck.add_argument("criterion", help="Criterion index (1-based) or text prefix")
-    add_session_flags(p_uncheck)
+    # --- start ---
+    p_start = subparsers.add_parser("start", parents=[parent_parser], help="Move card from todo to doing")
+    p_start.add_argument("card", help="Card number")
+    add_session_flags(p_start)
 
-    # --- edit ---
-    p_edit = subparsers.add_parser("edit", parents=[parent_parser], help="Edit card metadata")
-    p_edit.add_argument("card", help="Card number")
-    p_edit.add_argument("--persona", help="Update persona")
-    p_edit.add_argument("--model", choices=["sonnet", "opus", "haiku"], help="Update model")
-    p_edit.add_argument("--priority", type=int, help="Update priority")
-    p_edit.add_argument("--action", dest="action_text", help="Update action text")
-    p_edit.add_argument("--intent", dest="intent_text", help="Update intent text")
-    add_session_flags(p_edit)
+    # --- criteria (with subcommands) ---
+    p_criteria = subparsers.add_parser("criteria", parents=[parent_parser], help="Manage acceptance criteria", aliases=["ac"])
+    criteria_subparsers = p_criteria.add_subparsers(dest="criteria_command", help="Criteria subcommands")
 
-    # --- up/down/top/bottom ---
-    for name in ["up", "down", "top", "bottom"]:
-        p = subparsers.add_parser(name, parents=[parent_parser], help=f"Move card {name} in priority")
-        p.add_argument("card", help="Card number")
-        add_session_flags(p)
+    p_criteria_add = criteria_subparsers.add_parser("add", parents=[parent_parser], help="Add acceptance criterion")
+    p_criteria_add.add_argument("card", help="Card number")
+    p_criteria_add.add_argument("text", help="Criterion text")
+    add_session_flags(p_criteria_add)
 
-    # --- history ---
-    p_history = subparsers.add_parser("history", parents=[parent_parser], help="Show completed cards")
-    p_history.add_argument("--include-canceled", action="store_true", help="Include canceled cards")
-    add_session_flags(p_history)
-    add_date_flags(p_history)
+    p_criteria_remove = criteria_subparsers.add_parser("remove", parents=[parent_parser], help="Remove acceptance criterion")
+    p_criteria_remove.add_argument("card", help="Card number")
+    p_criteria_remove.add_argument("n", type=int, help="Criterion number (1-indexed)")
+    p_criteria_remove.add_argument("reason", help="Reason for removal")
+    add_session_flags(p_criteria_remove)
+
+    p_criteria_check = criteria_subparsers.add_parser("check", parents=[parent_parser], help="Mark criterion as met")
+    p_criteria_check.add_argument("card", help="Card number")
+    p_criteria_check.add_argument("n", nargs="+", help="Criterion index(es) (1-based) or text prefix(es)")
+    add_session_flags(p_criteria_check)
+
+    p_criteria_uncheck = criteria_subparsers.add_parser("uncheck", parents=[parent_parser], help="Mark criterion as unmet")
+    p_criteria_uncheck.add_argument("card", help="Card number")
+    p_criteria_uncheck.add_argument("n", help="Criterion index (1-based) or text prefix")
+    add_session_flags(p_criteria_uncheck)
 
     # --- list / ls ---
     for alias in ["list", "ls"]:
@@ -2173,55 +1744,19 @@ def main() -> None:
         add_session_flags(p_list)
         add_date_flags(p_list)
 
-    # --- assign ---
-    p_assign = subparsers.add_parser("assign", parents=[parent_parser], help="Reassign session ownership")
-    p_assign.add_argument("card", nargs="?", help="Card number")
-    p_assign.add_argument("--no-session", action="store_true", help="Remove session")
-    p_assign.add_argument("--from", dest="from_session", help="Bulk: source session")
-    p_assign.add_argument("--to", dest="to_session", help="Bulk: target session")
-    p_assign.add_argument("--yes", "-y", action="store_true", help="Skip confirmation")
-    add_session_flags(p_assign)
-
-    # --- clear ---
-    p_clear = subparsers.add_parser("clear", parents=[parent_parser], help="Delete all cards from columns")
-    p_clear.add_argument("columns", nargs="*", help="Column(s) to clear")
-    p_clear.add_argument("--yes", "-y", action="store_true", help="Skip confirmation")
-    add_session_flags(p_clear)
-
-    # --- Dual-behavior: todo, review, done ---
-    p_todo = subparsers.add_parser("todo", parents=[parent_parser], help="View todo or create card in todo")
-    p_todo.add_argument("json_data", nargs="?", default=None, help="JSON to create card")
-    p_todo.add_argument("--persona", help="Override persona")
-    p_todo.add_argument("--model", choices=["sonnet", "opus", "haiku"], help="AI model")
-    p_todo.add_argument("--criteria", action="append", help="Acceptance criterion (repeatable)")
-    p_todo.add_argument("--top", action="store_true", help="Insert at top of session's cards")
-    p_todo.add_argument("--bottom", action="store_true", help="Insert at bottom of session's cards")
-    p_todo.add_argument("--after", metavar="CARD", help="Insert after card (same session only)")
-    p_todo.add_argument("--before", metavar="CARD", help="Insert before card (same session only)")
-    p_todo.add_argument("--output-style", choices=["simple", "xml", "detail"], default="simple", help="Output style: simple (title only), xml (structured XML), detail (everything)")
+    # --- Pure verbs: todo, review, done ---
+    p_todo = subparsers.add_parser("todo", parents=[parent_parser], help="Create card in todo from JSON")
+    p_todo.add_argument("json_data", help="JSON object with action, intent, readFiles, editFiles")
     add_session_flags(p_todo)
-    add_date_flags(p_todo)
 
-    p_review = subparsers.add_parser("review", parents=[parent_parser], help="View review or move card to review")
-    p_review.add_argument("card_or_none", nargs="?", default=None, help="Card number to move to review")
-    p_review.add_argument("--output-style", choices=["simple", "xml", "detail"], default="simple", help="Output style: simple (title only), xml (structured XML), detail (everything)")
+    p_review = subparsers.add_parser("review", parents=[parent_parser], help="Move card to review")
+    p_review.add_argument("card", help="Card number")
     add_session_flags(p_review)
-    add_date_flags(p_review)
 
-    p_done = subparsers.add_parser("done", parents=[parent_parser], help="View done or move card to done")
-    p_done.add_argument("card_or_none", nargs="?", default=None, help="Card number to move to done")
+    p_done = subparsers.add_parser("done", parents=[parent_parser], help="Move card to done")
+    p_done.add_argument("card", help="Card number")
     p_done.add_argument("message", nargs="?", default=None, help="Completion message")
-    p_done.add_argument("--output-style", choices=["simple", "xml", "detail"], default="simple", help="Output style: simple (title only), xml (structured XML), detail (everything)")
     add_session_flags(p_done)
-    add_date_flags(p_done)
-
-    # --- Pure view: doing, canceled ---
-    for col in ["doing", "canceled"]:
-        p_col = subparsers.add_parser(col, parents=[parent_parser], help=f"View {col} column")
-        p_col.add_argument("--output-style", choices=["simple", "xml", "detail"], default="simple", help="Output style: simple (title only), xml (structured XML), detail (everything)")
-        add_session_flags(p_col)
-        add_date_flags(p_col)
-        p_col.set_defaults(column=col)
 
     args = parser.parse_args()
 
@@ -2233,27 +1768,18 @@ def main() -> None:
         "init": cmd_init,
         "session-hook": cmd_session_hook,
         "do": cmd_do,
-        "move": cmd_move,
-        "show": cmd_show,
+        "todo": cmd_todo,
+        "review": cmd_review,
+        "done": cmd_done,
         "cancel": cmd_cancel,
-        "criteria": cmd_criteria,
-        "check": cmd_check,
-        "uncheck": cmd_uncheck,
-        "edit": cmd_edit,
-        "up": cmd_up,
-        "down": cmd_down,
-        "top": cmd_top,
-        "bottom": cmd_bottom,
-        "assign": cmd_assign,
-        "clear": cmd_clear,
+        "redo": cmd_redo,
+        "defer": cmd_defer,
+        "start": cmd_start,
         "list": cmd_list,
         "ls": cmd_list,
-        "history": cmd_history,
-        "todo": cmd_todo_dual,
-        "review": cmd_review_dual,
-        "done": cmd_done_dual,
-        "doing": cmd_view,
-        "canceled": cmd_view,
+        "show": cmd_show,
+        "criteria": cmd_criteria_dispatch,
+        "ac": cmd_criteria_dispatch,
     }
 
     command_func = commands[args.command]

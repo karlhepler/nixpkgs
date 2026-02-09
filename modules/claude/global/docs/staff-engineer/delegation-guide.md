@@ -290,14 +290,10 @@ Safe to parallelize
 ```
 YOU MUST invoke the /swe-frontend skill using the Skill tool.
 
-**Your kanban card is #X.**
+IMPORTANT: The skill will read ~/.claude/CLAUDE.md and project CLAUDE.md files
+FIRST to understand the environment, tools, and conventions.
 
-CRITICAL - Permission Handling Protocol:
-You're running in background and CANNOT receive permission prompts.
-If you hit a permission gate (Edit, Write, git push, npm install):
-1. Document what you need in kanban comment
-2. Move card to review: `kanban move X review`
-3. Wait for staff engineer to execute
+🚫 KANBAN: You do NOT touch kanban. No kanban commands. Ever.
 
 ## Task
 Add dark mode toggle to Settings page.
@@ -311,8 +307,17 @@ Add dark mode toggle to Settings page.
 ## Scope
 Settings page only. Do NOT refactor entire theme system.
 
-## When Complete
-Move card to review for staff engineer review. Do NOT mark done.
+## When Done
+
+Return a summary as your final message. Include:
+- Changes made (files, configs, deployments)
+- Testing performed and results
+- Assumptions or limitations
+
+If you hit a permission gate (Edit, Write, git push, npm install),
+return what you need executed as your final message and stop.
+
+Background sub-agents cannot use MCP tools. Provide necessary context in the Task prompt.
 ```
 
 ### Template 2: Investigation
@@ -320,7 +325,10 @@ Move card to review for staff engineer review. Do NOT mark done.
 ```
 YOU MUST invoke the /researcher skill using the Skill tool.
 
-**Your kanban card is #X.**
+IMPORTANT: The skill will read ~/.claude/CLAUDE.md and project CLAUDE.md files
+FIRST to understand the environment, tools, and conventions.
+
+🚫 KANBAN: You do NOT touch kanban. No kanban commands. Ever.
 
 ## Task
 Investigate authentication flow and identify security issues.
@@ -334,14 +342,17 @@ Investigate authentication flow and identify security issues.
 ## Scope
 Authentication system only. Do NOT investigate authorization/RBAC yet.
 
-## Deliverable
-Report in kanban comment with:
+## When Done
+
+Return a summary as your final message with:
 1. Current implementation summary
 2. Security issues found (High/Medium/Low)
 3. Recommended fixes with priority
 
-## When Complete
-Move card to review for staff engineer review.
+If you hit a permission gate (Edit, Write, git push, npm install),
+return what you need executed as your final message and stop.
+
+Background sub-agents cannot use MCP tools. Provide necessary context in the Task prompt.
 ```
 
 ### Template 3: Review
@@ -349,7 +360,10 @@ Move card to review for staff engineer review.
 ```
 YOU MUST invoke the /swe-security skill using the Skill tool.
 
-**Your kanban card is #X (REVIEW).**
+IMPORTANT: The skill will read ~/.claude/CLAUDE.md and project CLAUDE.md files
+FIRST to understand the environment, tools, and conventions.
+
+🚫 KANBAN: You do NOT touch kanban. No kanban commands. Ever.
 
 ## Task
 Security review of IAM policy changes (Card #Y).
@@ -366,16 +380,19 @@ Security review of IAM policy changes (Card #Y).
 - No privilege escalation paths
 - Audit logging enabled
 
-## Deliverable
-Add comment to card #Y with review result:
+## When Done
+
+Return a summary as your final message with review result:
 - APPROVE (no issues)
 - APPROVE WITH SUGGESTIONS (minor improvements)
 - CHANGES REQUIRED (must fix before approval)
 
 Include specific feedback for any issues found.
 
-## When Complete
-Move YOUR review card to review for staff engineer to process.
+If you hit a permission gate (Edit, Write, git push, npm install),
+return what you need executed as your final message and stop.
+
+Background sub-agents cannot use MCP tools. Provide necessary context in the Task prompt.
 ```
 
 ---

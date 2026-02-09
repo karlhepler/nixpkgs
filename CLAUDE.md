@@ -80,16 +80,30 @@ This repository (`~/.config/nixpkgs`) is the **single source of truth** for syst
 - `prc`: PR comment management tool (list, reply, resolve, collapse)
 
 ### Kanban CLI (Agent Coordination)
-- `kanban list --output-style=xml`: Board check (compact XML view for staff engineers)
+
+**Card Creation:**
 - `kanban do '{"action":"...","intent":"..."}'`: Create card directly in doing
 - `kanban todo '{"action":"...","intent":"..."}'`: Create card in todo
-- `kanban show <card#>`: Show full card details (JSON)
-- `kanban move <card#> <column>`: Move card between columns (e.g., review → doing)
+
+**Card Transitions:**
+- `kanban start <card#>`: Move card from todo to doing
 - `kanban review <card#>`: Move card to review column
-- `kanban check <card#> <n>`: Check off acceptance criterion
-- `kanban uncheck <card#> <n>`: Uncheck acceptance criterion
+- `kanban redo <card#>`: Move card from review back to doing
+- `kanban defer <card#>`: Move card from doing/review to todo
 - `kanban done <card#> 'summary'`: Complete card with summary
 - `kanban cancel <card#>`: Cancel card
+
+**Card Details:**
+- `kanban show <card#>`: Show full card details
+
+**Acceptance Criteria (also aliased as `kanban ac`):**
+- `kanban criteria add <card#> "text"`: Add acceptance criterion
+- `kanban criteria remove <card#> <n> "reason"`: Remove criterion (with required reason)
+- `kanban criteria check <card#> <n>`: Check off criterion
+- `kanban criteria uncheck <card#> <n>`: Uncheck criterion
+
+**Board View:**
+- `kanban list --output-style=xml`: Board check (compact XML view for staff engineers)
 
 **Session Management:**
 - Session identity injected automatically via SessionStart hook (friendly names like `swift-falcon`)
