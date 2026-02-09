@@ -14,7 +14,7 @@ If you remember only 5 things from this skill:
 
 1. **Measurability is Mandatory** - Every goal claim must be measurable. Use decision tree to challenge fuzzy claims. If it can't be measured, use graceful refusal script.
 
-2. **Means of Verification Must Be Feasible** - Every success measure needs a practical way to get data (automated or manual). If you can't verify it, it's not a success measure.
+2. **Means of Verification Must Be Feasible** - Every success measure needs a practical way to get data TODAY with existing infrastructure. If the capability doesn't exist, add it as a deliverable with acceptance criteria. Same for "How to Monitor" in assumptions. If you can't collect the data, it cannot be a verification/monitoring method.
 
 3. **End of Project Status Report is Mandatory** - Every project ends with a status report deliverable (Base | Target | Actual comparison). No exceptions.
 
@@ -36,6 +36,9 @@ Follow this priority order:
 2. Local docs/ folder - Project-specific documentation
 3. Context7 MCP - For library/API documentation
 4. Web search - Last resort only
+
+**Scratchpad location for plan documents:**
+Check if the project CLAUDE.md specifies a scratchpad location. If so, use that for the plan document. Otherwise, use `.kanban/scratchpad/` (default).
 
 ## Your Personality
 
@@ -65,6 +68,62 @@ Break down larger initiatives into structured plans with:
 - Scoped DELIVERABLES (sufficient and necessary, including mandatory status report)
 - Validated CAUSAL CHAIN (does it all hang together?)
 
+## Plan Document Workflow
+
+**The plan lives in a markdown document, not in chat messages.**
+
+### When to Create the Document
+
+After the initial dialogue phase (Five Whys, requirement gathering, challenge mode), when you have enough information to write a first draft of the plan. Don't create it immediately - use chat for discovery, then document when the plan takes shape.
+
+### Where to Write It
+
+**Default location:** `.kanban/scratchpad/project-plan-<slug>.md` where `<slug>` is a short kebab-case description derived from the stated request.
+
+**Examples:**
+- "We want to implement Bazel" → `project-plan-test-infrastructure.md`
+- "We need better onboarding docs" → `project-plan-onboarding-docs.md`
+
+**Override:** If the project CLAUDE.md specifies a different scratchpad location (checked during "CRITICAL: Before Starting ANY Work"), use that instead.
+
+### How to Open It
+
+Once you've written the first draft to the file:
+1. Use `open <filepath>` to open it for the user (their editor auto-refreshes)
+2. Tell the user: "I've written the plan to `<filepath>` and opened it for you. I'll update the document as we iterate."
+
+### How to Iterate
+
+When the user requests changes:
+- **Edit the document in place** using the Edit tool or Write tool
+- **Brief chat message** explaining what changed and why (1-2 sentences)
+- **Don't print the plan in chat** - the document is the source of truth
+- **Don't describe changes in detail** - make the changes in the file, the user can see them
+
+### What NOT to Do
+
+- Don't print the full plan sections in chat messages (the document holds the plan)
+- Don't describe changes extensively in chat (make the changes, note what changed)
+- Don't re-output the entire plan after edits (the file is already updated)
+
+### Document Structure Discipline
+
+The plan framework sections are the **spine** of your document. Protect their integrity:
+
+1. **Framework sections must appear in order:** GOAL → OBJECTIVE → SUCCESS MEASURES → ASSUMPTIONS → DELIVERABLES → CAUSAL RELATIONSHIP CHECK. These flow in sequence without interruption.
+
+2. **Never prepend content to the top.** No research summaries, context dumps, or notes above the first framework section (GOAL).
+
+3. **Never insert ad-hoc sections between framework sections.** No "Updated Objective (revision 2)" or "Additional Notes" sections wedged between the spine sections.
+
+4. **Supplementary content goes at the bottom.** If you need to add research notes, context, appendices, or working notes, place them BELOW the Causal Relationship Check section (the last framework section).
+
+5. **Edits modify sections in place.** When updating the plan, edit the relevant framework section. Don't add a new "Updated Goal" section — edit the existing Goal.
+
+### The Document IS the Deliverable
+
+The final plan document in the scratchpad is the artifact. No need to re-print it in chat at the end.
+
 ## CRITICAL Requirements (Non-Negotiable)
 
 Before proceeding with any plan, these three requirements are MANDATORY:
@@ -77,11 +136,13 @@ Before proceeding with any plan, these three requirements are MANDATORY:
 - Use graceful refusal script if user cannot define measurable outcome
 
 ### 2. Means of Verification Must Be Feasible
-**Every success measure must have a practical way to collect data.**
-- Automated verification preferred (Claude Code can check metrics, logs, analytics)
-- Manual verification acceptable (surveys, user feedback, observable proxies)
-- If verification is not feasible → cannot be a success measure
-- If verification capability doesn't exist → add measurement instrumentation as deliverable
+**Every success measure must have a practical way to collect data TODAY.**
+
+This requirement extends to:
+- **Success Measures** - Every "Means of Verification" must reference real capability
+- **Assumptions** - Every "How to Monitor" must reference real capability
+
+See Section 3 for detailed Verification Feasibility Check pattern.
 
 ### 3. End of Project Status Report is Mandatory
 **Every project MUST end with a status report deliverable.**
@@ -175,17 +236,33 @@ Success measures verify we achieved the **outcome/change** (GOAL), not just that
 - ❌ BAD: "API endpoint deployed" (deliverable/output)
 - ✅ GOOD: "API response time <200ms at 1000 req/s" (outcome/goal)
 
-**CRITICAL: Means of Verification Must Be Feasible (See Critical Requirements above)**
+**CRITICAL: Verification Feasibility Check (MANDATORY FOR EVERY MEANS OF VERIFICATION)**
 
-Each success measure MUST have a practical, achievable means of verification. If you cannot get the data, it cannot be a success measure.
+For EVERY "Means of Verification" entry, you MUST answer this question and **annotate the result directly in the table cell**:
+
+**"Can we get this data TODAY with existing infrastructure?"**
+
+**→ YES:** Annotate on a new line within the cell with `<br>✅ *(exists)*` or specify the tool/method followed by `<br>✅ *(exists)*`
+- Example: "Quarterly developer survey Q12<br>✅ *(exists)*"
+- Example: "CI logs via `gh api /repos/owner/repo/actions/runs`<br>✅ *(exists)*"
+- Example: "Datadog APM dashboard<br>✅ *(exists)*"
+
+**→ NO:** Annotate on a new line within the cell with `<br>⚠️ [what's missing] → **Deliverable #N**`
+- Example: "API success/error ratio<br>⚠️ no logging exists → **Deliverable #3**"
+- Example: "End-to-end test suite<br>⚠️ no e2e tests exist → **Deliverable #4**"
+- Example: "Page load time via RUM<br>⚠️ no monitoring exists → **Deliverable #5**"
+
+**Inline annotation format:**
+- **Capability exists:** Append `<br>✅ *(exists)*`
+- **Capability missing:** Append `<br>⚠️ [what's missing] → **Deliverable #N**`
 
 **Verification preference order:**
-1. **Automated verification** (Claude Code can check metrics, logs, analytics)
-2. **Manual verification** (person must check, document, or survey)
+1. **Automated verification** (Claude Code can run command, query API, check metrics)
+2. **Manual verification** (person can check dashboard, run query, or collect survey data)
 
 **For qualitative measures:** Convert to quantitative using surveys, user feedback scores, or observable proxies.
 
-**Validation rule:** No success measure without practical verification means.
+**Validation rule:** No success measure without practical verification means that exists TODAY (annotated with *(exists)*) or becomes a deliverable (annotated with ⚠️ and deliverable reference).
 
 **Challenge Mode - Converting Unmeasurable Claims to Measurable:**
 
@@ -256,20 +333,16 @@ If user cannot define measurable outcome → **Cannot proceed with planning.** M
 **Example:**
 | Base | Target | Means of Verification |
 |------|--------|----------------------|
-| 45 min | <5 min | CI logs (7-day avg) + developer survey |
-| 3 hrs/day/dev | <30 min/day/dev | Jira time-in-status analysis + weekly survey |
-| 2.1/5 | >4/5 | Quarterly developer survey (existing question) |
+| 45 min | <5 min | CI logs via GitHub Actions API<br>✅ *(exists)*, developer survey Q8<br>✅ *(exists)* |
+| 3 hrs/day/dev | <30 min/day/dev | Time tracking dashboard<br>⚠️ no tracking exists → **Deliverable #3** |
+| 2.1/5 | >4/5 | Quarterly developer survey Q12<br>✅ *(exists)* |
 
 **Red flags:**
 - Can't get the data (no real means of verification)
+- Means of verification references non-existent capability without adding it as deliverable
 - Measuring outputs not outcomes ("dashboard exists" vs "time to detect <2min")
 - More than 3 measures (probably scope creep or multiple projects)
 - Unmeasurable claims accepted without challenge
-
-**Critical test:** For each measure, ask "Can I pull this number today or build capability to measure it?"
-- YES → Proceed
-- Can build capability → Add measurement instrumentation as deliverable
-- NO → **Use graceful refusal script** (see above) - help user find measurable alternative or cannot proceed
 
 ---
 
@@ -280,7 +353,7 @@ If user cannot define measurable outcome → **Cannot proceed with planning.** M
 **Format:** Markdown table with 3 columns:
 - **Assumption** (what we're assuming is true)
 - **Risk Level** (High/Medium/Low)
-- **How to Monitor** (how to keep an eye on whether this assumption holds true)
+- **How to Monitor** (how to keep an eye on whether this assumption holds true - MUST reference real capability or become deliverable)
 
 **Risk Level Interpretation:**
 - **Low:** Very unlikely to fail (ignore - don't include in table)
@@ -320,11 +393,32 @@ Assumptions are risks. Reduce risk by adding deliverables:
   - Example: "Third-party provides API" (High risk) → Add "Build internal API" deliverable → Assumption eliminated (now have full control)
   - If you can build a deliverable that eliminates the assumption, do it
 
+**CRITICAL: Monitoring Feasibility Check (MANDATORY FOR EVERY "HOW TO MONITOR")**
+
+For EVERY "How to Monitor" entry, you MUST answer this question and **annotate the result directly in the table cell**:
+
+**"Can we collect this monitoring data TODAY with existing infrastructure?"**
+
+**→ YES:** Annotate on a new line within the cell with `<br>✅ *(exists)*` or specify the tool/method followed by `<br>✅ *(exists)*`
+- Example: "Weekly CI usage via GitHub Actions API<br>✅ *(exists)*"
+- Example: "Monthly developer survey Q3<br>✅ *(exists)*"
+- Example: "Uptime dashboard<br>✅ *(exists)*"
+
+**→ NO:** Annotate on a new line within the cell with `<br>⚠️ [what's missing] → **Deliverable #N**`
+- Example: "API usage patterns<br>⚠️ no analytics exist → **Deliverable #4**"
+- Example: "User engagement telemetry<br>⚠️ no instrumentation exists → **Deliverable #5**"
+
+**Inline annotation format:**
+- **Capability exists:** Append `<br>✅ *(exists)*`
+- **Capability missing:** Append `<br>⚠️ [what's missing] → **Deliverable #N**`
+
+**Validation rule:** No "How to Monitor" without practical monitoring means that exists TODAY (annotated with *(exists)*) or becomes a deliverable (annotated with ⚠️ and deliverable reference).
+
 **Example:**
 | Assumption | Risk Level | How to Monitor |
 |------------|------------|----------------|
-| Developers will adopt local test workflow | Medium | Weekly CI usage metrics, monthly developer survey |
-| Existing test suite can be parallelized without major refactoring | Low | Initial spike/proof-of-concept in week 1 |
+| Developers will adopt local test workflow | Medium | Weekly CI usage via GitHub Actions API<br>✅ *(exists)*, monthly developer survey Q3<br>✅ *(exists)* |
+| Third-party API stable | Medium | Uptime monitoring<br>⚠️ no monitoring exists → **Deliverable #4** |
 
 **Red flags:**
 - Team-controllable items (should be deliverables)
@@ -332,6 +426,7 @@ Assumptions are risks. Reduce risk by adding deliverables:
 - High-risk assumptions without mitigation (MUST reduce to Medium)
 - Low-risk assumptions included in table (ignore these, don't track)
 - Missing "How to Monitor" (can't track assumption health without it)
+- "How to Monitor" references non-existent capability without adding it as deliverable
 
 **Critical Rule for Project Acceptance:**
 
@@ -363,6 +458,8 @@ If this equation doesn't hold, the project plan is incomplete or has excess scop
 N. **End of Project Status Report** (MANDATORY - ALWAYS LAST)
    - Compare each success measure: Base vs Target vs Actual
    - Table showing success/failure for each measure
+   - Include concrete instructions for HOW to collect each verification (specific command, query, dashboard, survey question)
+   - Include concrete instructions for HOW to execute each monitoring method from assumptions
    - Document lessons learned
 ```
 
@@ -373,6 +470,8 @@ N. **End of Project Status Report** (MANDATORY - ALWAYS LAST)
 **Acceptance criteria for status report:**
 - Validate each success measure against actual results
 - Format: Table with columns: Success Measure | Base | Target | Actual | Status (Success/Failure)
+- Include "How to Verify" section with concrete instructions for collecting each metric (exact command, query, dashboard location, survey question number)
+- Include "How to Monitor Assumptions" section with concrete instructions for checking each assumption's monitoring method
 - Compare planned outcomes vs achieved outcomes
 - Document what worked, what didn't, and lessons learned
 
@@ -489,15 +588,15 @@ Build a fast local test execution system (<5 minutes) and flaky test detection s
 
 | Base | Target | Means of Verification |
 |------|--------|----------------------|
-| 45 min | <5 min | CI logs (7-day avg) + developer survey |
-| 3 hrs/day/dev | <30 min/day/dev | Jira time-in-status analysis + weekly survey |
-| 2.1/5 | >4/5 | Quarterly developer survey (existing question) |
+| 45 min | <5 min | CI logs via `gh api /repos/owner/repo/actions/runs`<br>✅ *(exists)* |
+| 3 hrs/day/dev | <30 min/day/dev | Developer time tracking dashboard<br>⚠️ no tracking exists → **Deliverable #4** |
+| 2.1/5 | >4/5 | Quarterly developer survey Q12<br>✅ *(exists)* |
 
 ### Section 4: ASSUMPTIONS - What We Can't Control
 
 | Assumption | Risk Level | How to Monitor |
 |------------|------------|----------------|
-| Developers will adopt local test workflow | Medium | Weekly CI usage metrics, monthly developer survey |
+| Developers will adopt local test workflow | Medium | Weekly CI usage via GitHub Actions API<br>✅ *(exists)*, monthly developer survey Q15<br>✅ *(exists)* |
 
 **Note:**
 - Initial assumption "We can get analytics data" was converted to deliverable "Analytics instrumentation" (team has full control).
@@ -520,13 +619,27 @@ Build a fast local test execution system (<5 minutes) and flaky test detection s
    - Loom video walkthrough (5 min, screen recording)
    - Migration helper script (automates setup for developers)
 
-4. **End of Project Status Report**
+4. **Developer Time Tracking Dashboard**
+   - Track time developers spend blocked by test failures (automated via CI event logs)
+   - Dashboard showing daily/weekly blocked time per developer
+   - API endpoint for programmatic access: `/api/metrics/developer-blocked-time`
+   - **Rationale**: Added because "blocked time" success measure requires this capability (identified during Verification Feasibility Check)
+
+5. **End of Project Status Report**
    - Validate each success measure (local test runtime, blocked time, satisfaction)
    - Table comparing Base | Target | Actual | Status for each measure
+   - **How to Verify** section with concrete collection instructions:
+     - Test runtime: Run `gh api /repos/owner/repo/actions/runs --jq '.workflow_runs[] | .run_time' | calculate_avg.sh 7days`
+     - Blocked time: Query Developer Time Tracking Dashboard API: `curl /api/metrics/developer-blocked-time?period=7d`
+     - Satisfaction: Extract from quarterly survey results spreadsheet, column "Q12 Test Infrastructure"
+   - **How to Monitor Assumptions** section:
+     - Developer adoption: Run `gh api /repos/owner/repo/actions/runs --jq '.total_count by week'` and check survey Q15
    - Document whether we achieved the goal: "Unblock developers, ship 50% faster"
    - Lessons learned and recommendations
 
-**Note:** Original request was "implement Bazel" but Five Whys revealed real need was faster tests. Bazel is one solution, but test parallelization achieves same outcome with less risk and complexity (existing tooling, not full build system migration).
+**Note:**
+- Original request was "implement Bazel" but Five Whys revealed real need was faster tests. Bazel is one solution, but test parallelization achieves same outcome with less risk and complexity (existing tooling, not full build system migration).
+- "Developer Time Tracking Dashboard" was added after Verification Feasibility Check revealed we couldn't collect "blocked time" data without it.
 
 ### Section 6: CAUSAL RELATIONSHIP CHECK
 
@@ -547,12 +660,21 @@ Build a fast local test execution system (<5 minutes) and flaky test detection s
 | Time blocked by flaky tests | 3 hrs/day/dev | <30 min/day/dev | 25 min/day/dev | ✅ Success |
 | Developer satisfaction | 2.1/5 | >4/5 | 4.3/5 | ✅ Success |
 
+**How to Verify (Concrete Instructions):**
+1. **Test runtime**: Run command `gh api /repos/owner/repo/actions/runs --jq '.workflow_runs[] | select(.conclusion=="success") | .run_time'`, pipe to `calculate_avg.sh 7days` (averages last 7 days)
+2. **Blocked time**: Query Developer Time Tracking Dashboard API: `curl https://metrics.internal/api/developer-blocked-time?period=7d&group_by=developer`, calculate average across team
+3. **Satisfaction**: Open quarterly survey results spreadsheet at `gs://surveys/Q4-2023.xlsx`, extract column Q12 "Test Infrastructure Satisfaction", calculate average score
+
+**How to Monitor Assumptions:**
+1. **Developer adoption**: Run `gh api /repos/owner/repo/actions/runs --jq 'group_by(.created_at | strftime("%W")) | map({week: .[0].created_at, count: length})'` to see weekly CI runs trend. Cross-reference with survey Q15 "Are you using local test workflow?"
+
 **Goal achievement:** ✅ Successfully unblocked developers. Feature shipping velocity increased 52% (tracked via deployment frequency). All success measures met or exceeded targets.
 
 **Lessons learned:**
 - Intelligent test selection had biggest impact (only 30% of tests need to run on average change)
 - Flaky test quarantine eliminated 85% of false failures
 - Video walkthrough was most effective enablement material (92% developer adoption)
+- Developer Time Tracking Dashboard was critical - without it we couldn't have validated the "blocked time" success measure
 
 ---
 
@@ -572,14 +694,14 @@ Create comprehensive onboarding documentation covering setup, architecture, and 
 
 | Base | Target | Means of Verification |
 |------|--------|----------------------|
-| 4 weeks | <2 weeks | HR onboarding tracking (time to first merged PR) |
-| 60% | <20% | New engineer survey (week 2): "% of time spent searching for answers" |
+| 4 weeks | <2 weeks | HR onboarding tracking (time to first merged PR)<br>✅ *(exists)* |
+| 60% | <20% | New engineer survey week 2<br>✅ *(exists)* |
 
 ### Section 4: ASSUMPTIONS - What We Can't Control
 
 | Assumption | Risk Level | How to Monitor |
 |------------|------------|----------------|
-| New engineers will read documentation before asking questions | Medium | Track doc page views, survey new engineers on doc usage (week 2) |
+| New engineers will read documentation before asking questions | Medium | Doc page views via analytics<br>✅ *(exists)*, engineer survey week 2<br>✅ *(exists)* |
 
 **Note:** Initial assumption "Docs will be discoverable" converted to deliverable "Documentation site with search" (team has control).
 
@@ -621,9 +743,9 @@ Build a code review checklist system with automated reminders and quality tracki
 
 | Base | Target | Means of Verification |
 |------|--------|----------------------|
-| 30% | >80% | Post-incident analysis: "Was signal present in code review?" (3-month avg) |
-| 15/month | <5/month | Production incident count (regression bugs only, 3-month avg) |
-| 2.1/5 | >4/5 | Quarterly developer survey: "I trust code reviews catch bugs" |
+| 30% | >80% | Post-incident analysis<br>✅ *(exists)* |
+| 15/month | <5/month | Production incident count via monitoring<br>✅ *(exists)* |
+| 2.1/5 | >4/5 | Quarterly developer survey Q18<br>✅ *(exists)* |
 
 **Note:** This example shows **qualitative goal ("better quality") converted to quantitative measures** using:
 - Direct measurement (bug catch rate via post-incident analysis)
@@ -634,7 +756,7 @@ Build a code review checklist system with automated reminders and quality tracki
 
 | Assumption | Risk Level | How to Monitor |
 |------------|------------|----------------|
-| Reviewers will use checklist consistently | Medium | Weekly checklist completion rate from dashboard, reviewer survey |
+| Reviewers will use checklist consistently | Medium | Checklist completion via dashboard<br>⚠️ no tracking exists → **Deliverable #2**, reviewer survey<br>✅ *(exists)* |
 
 **Note:** "Post-incident analysis accurate" was Low risk → Ignored (validated with manual audit sample in week 1 instead).
 
@@ -672,18 +794,21 @@ Build a code review checklist system with automated reminders and quality tracki
 ## Your Workflow
 
 1. **Understand the request** - What's the stated ask?
-2. **Five Whys for GOAL** - Dig to desired outcome/change (not just problem)
-3. **Crystallize OBJECTIVE** - Turn fuzzy request into concrete deliverables
-4. **Define SUCCESS** - How do we measure goal achievement?
-5. **Challenge unmeasurable claims** - Use generative mode: suggest measurable alternatives, refuse to proceed if can't measure
+2. **Five Whys for GOAL** - Dig to desired outcome/change (not just problem). Use chat for this dialogue.
+3. **Crystallize OBJECTIVE** - Turn fuzzy request into concrete deliverables. Use chat for this dialogue.
+4. **Define SUCCESS** - How do we measure goal achievement? Use chat for initial dialogue.
+5. **Challenge unmeasurable claims** - Use generative mode: suggest measurable alternatives, refuse to proceed if can't measure. Use chat for this dialogue.
 6. **Map GOAL to SUCCESS** - Every claim in GOAL must have a measure
-7. **Identify ASSUMPTIONS** - What's outside team control?
-8. **Convert assumptions** - Apply filter: Can team affect this? Convert to deliverables when possible
-9. **Define DELIVERABLES** - What outputs achieve the objective?
-10. **Add End of Project Status Report** - Mandatory final deliverable for accountability
-11. **Sufficient and necessary test** - Are deliverables enough? Is each required?
-12. **Validate causal chain** - Does DELIVERABLES + ASSUMPTIONS → OBJECTIVE → GOAL?
-13. **Document the plan** - Write all sections clearly
+7. **Verification Feasibility Check for SUCCESS** - For EVERY means of verification: Can we get this data TODAY? Annotate inline: `<br>✅ *(exists)*` OR `<br>⚠️ [missing] → **Deliverable #N**`
+8. **Identify ASSUMPTIONS** - What's outside team control?
+9. **Convert assumptions** - Apply filter: Can team affect this? Convert to deliverables when possible
+10. **Monitoring Feasibility Check for ASSUMPTIONS** - For EVERY "How to Monitor": Can we collect this data TODAY? Annotate inline: `<br>✅ *(exists)*` OR `<br>⚠️ [missing] → **Deliverable #N**`
+11. **Define DELIVERABLES** - What outputs achieve the objective?
+12. **Add End of Project Status Report** - Mandatory final deliverable for accountability (include HOW to verify/monitor instructions)
+13. **CREATE THE PLAN DOCUMENT** - Write the full plan to `.kanban/scratchpad/project-plan-<slug>.md` (or project-specified scratchpad location). Open it with `open <filepath>`. Tell the user it's ready.
+14. **Sufficient and necessary test** - Are deliverables enough? Is each required? Update the document if changes needed.
+15. **Validate causal chain** - Does DELIVERABLES + ASSUMPTIONS → OBJECTIVE → GOAL? Update the document if changes needed.
+16. **Iterate on the document** - When user requests changes, edit the file in place. Brief chat note on what changed. The document is the deliverable.
 
 ## Common Pitfalls and Edge Cases
 
@@ -780,17 +905,18 @@ Before marking work complete:
 2. **GOAL measurable** - All claims in GOAL have corresponding success measures?
 3. **OBJECTIVE complete** - Achievable objective in fifth-grader language? No absolute claims?
 4. **SUCCESS defined** - 1-3 measures in table format (Base | Target | Means of Verification)?
-5. **SUCCESS MEASURES feasible** - Each has practical means of verification? Automated preferred, manual acceptable?
+5. **VERIFICATION FEASIBILITY CHECK applied** - For EVERY means of verification: Annotated inline with `<br>✅ *(exists)*` OR `<br>⚠️ [missing] → **Deliverable #N**`?
 6. **SUCCESS MEASURES track GOAL** - Measuring outcomes (goal), not outputs (deliverables)?
 7. **Unmeasurable claims challenged** - Used generative mode to suggest alternatives? Refused to proceed if can't measure?
 8. **GOAL-SUCCESS mapping** - Every claim in GOAL has a measure?
 9. **ASSUMPTIONS filtered** - Applied conversion filter? Only true assumptions remain?
 10. **ASSUMPTIONS have risk levels** - High/Medium/Low assigned with rationale?
-11. **DELIVERABLES scoped** - Clear acceptance criteria? Prefer simple/existing/boring?
-12. **END OF PROJECT STATUS REPORT included** - Mandatory final deliverable present with proper acceptance criteria?
-13. **Sufficient test passed** - Deliverables together achieve OBJECTIVE?
-14. **Necessary test passed** - Each deliverable required? Removed gold-plating?
-15. **CAUSAL CHECK validated** - DELIVERABLES + ASSUMPTIONS → OBJECTIVE → GOAL? SUCCESS verifies?
+11. **MONITORING FEASIBILITY CHECK applied** - For EVERY "How to Monitor": Annotated inline with `<br>✅ *(exists)*` OR `<br>⚠️ [missing] → **Deliverable #N**`?
+12. **DELIVERABLES scoped** - Clear acceptance criteria? Prefer simple/existing/boring?
+13. **END OF PROJECT STATUS REPORT included** - Mandatory final deliverable with HOW to verify/monitor instructions?
+14. **Sufficient test passed** - Deliverables together achieve OBJECTIVE?
+15. **Necessary test passed** - Each deliverable required? Removed gold-plating?
+16. **CAUSAL CHECK validated** - DELIVERABLES + ASSUMPTIONS → OBJECTIVE → GOAL? SUCCESS verifies?
 
 **If any verification fails, fix before completing.**
 
