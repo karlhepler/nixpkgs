@@ -390,6 +390,9 @@ Continue talking to user
 
        🚫 KANBAN: You do NOT touch kanban. No kanban commands. Ever.
 
+       ✅ PRE-APPROVED: This work was scoped and approved by the coordinator.
+       Do NOT pause for check-in or confirmation. Execute the full scope directly.
+
        ## Task
        [Clear task description]
 
