@@ -75,6 +75,52 @@ _NOUNS = [
 # Utility functions (reused from v1)
 # =============================================================================
 
+def use_pager(content: str) -> None:
+    """Display content through a pager (bat, less, or stdout).
+
+    Uses bat for syntax highlighting when output is to a terminal.
+    Falls back to less or direct print if bat is unavailable.
+    Skips pager if output is piped (e.g., to grep).
+    """
+    import shutil
+
+    # If output is piped, print directly
+    if not sys.stdout.isatty():
+        print(content, end="")
+        return
+
+    # Try bat first (with plain style for clean output)
+    if shutil.which('bat'):
+        try:
+            proc = subprocess.Popen(
+                ['bat', '--paging=auto', '--style=plain', '--language=markdown'],
+                stdin=subprocess.PIPE,
+                stdout=sys.stdout
+            )
+            proc.communicate(content.encode())
+            return
+        except (subprocess.SubprocessError, OSError):
+            # Fall through to less
+            pass
+
+    # Try less with color support
+    if shutil.which('less'):
+        try:
+            proc = subprocess.Popen(
+                ['less', '-R'],
+                stdin=subprocess.PIPE,
+                stdout=sys.stdout
+            )
+            proc.communicate(content.encode())
+            return
+        except (subprocess.SubprocessError, OSError):
+            # Fall through to direct print
+            pass
+
+    # Fallback: print directly
+    print(content, end="")
+
+
 def get_git_root() -> Path | None:
     """Find the git repository root, or None if not in a git repo."""
     try:
@@ -677,24 +723,26 @@ def cmd_show(args) -> None:
         print(format_card_xml(card, num, col, include_details=True))
         return
 
-    # Default: human-friendly terminal output (simple or detail)
+    # Build human-friendly terminal output (simple or detail)
     bold = "\033[1m"
     dim_bold = "\033[2;1m"
     reset = "\033[0m"
 
+    output_lines = []
+
     # Header
-    print(f"=== Card #{num} ({col}) ===")
-    print()
+    output_lines.append(f"=== Card #{num} ({col}) ===")
+    output_lines.append("")
 
     # Action (main title)
     action = card.get("action", "[NO ACTION]")
-    print(action)
+    output_lines.append(action)
 
     # Intent section
     intent = card.get("intent", "")
     if intent:
-        print()
-        print(f"{dim_bold}  Intent{reset}")
+        output_lines.append("")
+        output_lines.append(f"{dim_bold}  Intent{reset}")
         # Replace literal \n with actual newlines, then wrap at ~80 chars
         intent = intent.replace("\\n", "\n")
         for paragraph in intent.split("\n"):
@@ -713,36 +761,36 @@ def cmd_show(args) -> None:
             if current_line:
                 lines.append(current_line)
             for line in lines:
-                print(f"  {line}")
+                output_lines.append(f"  {line}")
 
     # Acceptance criteria section
     criteria = card.get("criteria", [])
     if criteria:
-        print()
-        print(f"{dim_bold}  Acceptance Criteria{reset}")
+        output_lines.append("")
+        output_lines.append(f"{dim_bold}  Acceptance Criteria{reset}")
         for i, criterion in enumerate(criteria, start=1):
             checkbox = "✅" if criterion.get("met", False) else "⬜"
             text = criterion.get("text", "")
-            print(f"  {checkbox} {i}. {text}")
+            output_lines.append(f"  {checkbox} {i}. {text}")
 
     # Edit files section
     edit_files = card.get("editFiles") or card.get("writeFiles", [])
     if edit_files:
-        print()
-        print(f"{dim_bold}  Edit Files{reset}")
+        output_lines.append("")
+        output_lines.append(f"{dim_bold}  Edit Files{reset}")
         for f in sorted(edit_files):
-            print(f"  {f}")
+            output_lines.append(f"  {f}")
 
     # Read files section
     read_files = card.get("readFiles", [])
     if read_files:
-        print()
-        print(f"{dim_bold}  Read Files{reset}")
+        output_lines.append("")
+        output_lines.append(f"{dim_bold}  Read Files{reset}")
         for f in sorted(read_files):
-            print(f"  {f}")
+            output_lines.append(f"  {f}")
 
     # Footer with metadata
-    print()
+    output_lines.append("")
     session = card.get("session", "")
     persona = card.get("persona", "unassigned")
     model = card.get("model")
@@ -764,7 +812,10 @@ def cmd_show(args) -> None:
         footer_parts.append(f"Model: {model}")
     footer_parts.append(f"Created: {created_date}")
 
-    print(f"{bold}{' · '.join(footer_parts)}{reset}")
+    output_lines.append(f"{bold}{' · '.join(footer_parts)}{reset}")
+
+    # Send through pager
+    use_pager("\n".join(output_lines) + "\n")
 
 
 def cmd_cancel(args) -> None:
@@ -1761,6 +1812,12 @@ def cmd_report(args) -> None:
             print("No completed cards found in the specified date range.")
             return
 
+        # Build output as string for paging
+        bold = "\033[1m"
+        dim = "\033[2m"
+        reset = "\033[0m"
+        output_lines = []
+
         # Print header
         date_range_str = ""
         if from_date or to_date:
@@ -1771,9 +1828,9 @@ def cmd_report(args) -> None:
                 parts.append(f"to {to_date.strftime('%Y-%m-%d')}")
             date_range_str = f" ({' '.join(parts)})"
 
-        print(f"STATUS REPORT{date_range_str}")
-        print(f"Completed Cards: {len(done_cards)}")
-        print()
+        output_lines.append(f"STATUS REPORT{date_range_str}")
+        output_lines.append(f"Completed Cards: {len(done_cards)}")
+        output_lines.append("")
 
         # Print cards
         for updated, num, card in done_cards:
@@ -1783,13 +1840,10 @@ def cmd_report(args) -> None:
             completion_date = updated.strftime("%Y-%m-%d")
 
             # Card header with date
-            dim = "\033[2m"
-            reset = "\033[0m"
-            print(f"#{num} {dim}({completion_date}){reset}")
+            output_lines.append(f"#{num} {dim}({completion_date}){reset}")
 
-            # Intent if present (reordered to first)
+            # Intent if present (reordered to first) with bold label
             if intent:
-                print(f"  Intent: ", end="")
                 # Wrap intent at ~80 chars
                 intent_lines = []
                 remaining = intent.replace("\\n", "\n")
@@ -1807,16 +1861,15 @@ def cmd_report(args) -> None:
 
                 for i, line in enumerate(intent_lines):
                     if i == 0:
-                        print(line)
+                        output_lines.append(f"  {bold}Intent:{reset} {line}")
                     else:
-                        print(f"    {line}")
+                        output_lines.append(f"    {line}")
 
-            # Action (reordered to second)
-            print(f"  Action: {action}")
+            # Action (reordered to second) with bold label
+            output_lines.append(f"  {bold}Action:{reset} {action}")
 
-            # Completion comment if present (reordered to third)
+            # Completion comment if present (reordered to third) with bold label
             if comment:
-                print(f"  Summary: ", end="")
                 # Wrap comment at ~80 chars
                 comment_lines = []
                 remaining = comment.replace("\\n", "\n")
@@ -1834,11 +1887,14 @@ def cmd_report(args) -> None:
 
                 for i, line in enumerate(comment_lines):
                     if i == 0:
-                        print(line)
+                        output_lines.append(f"  {bold}Summary:{reset} {line}")
                     else:
-                        print(f"    {line}")
+                        output_lines.append(f"    {line}")
 
-            print()
+            output_lines.append("")
+
+        # Send through pager
+        use_pager("\n".join(output_lines))
 
 
 # =============================================================================
