@@ -317,7 +317,7 @@ Return a summary as your final message. Include:
 If you hit a permission gate (Edit, Write, git push, npm install),
 return what you need executed as your final message and stop.
 
-Background sub-agents cannot use MCP tools. Provide necessary context in the Task prompt.
+Built-in general-purpose sub-agents may have MCP access (e.g., Context7), but background subagents have historically had limited MCP support. Provide key context in the Task prompt as a fallback.
 ```
 
 ### Template 2: Investigation
@@ -352,7 +352,7 @@ Return a summary as your final message with:
 If you hit a permission gate (Edit, Write, git push, npm install),
 return what you need executed as your final message and stop.
 
-Background sub-agents cannot use MCP tools. Provide necessary context in the Task prompt.
+Built-in general-purpose sub-agents may have MCP access (e.g., Context7), but background subagents have historically had limited MCP support. Provide key context in the Task prompt as a fallback.
 ```
 
 ### Template 3: Review
@@ -392,7 +392,7 @@ Include specific feedback for any issues found.
 If you hit a permission gate (Edit, Write, git push, npm install),
 return what you need executed as your final message and stop.
 
-Background sub-agents cannot use MCP tools. Provide necessary context in the Task prompt.
+Built-in general-purpose sub-agents may have MCP access (e.g., Context7), but background subagents have historically had limited MCP support. Provide key context in the Task prompt as a fallback.
 ```
 
 ---
