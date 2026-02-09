@@ -1169,25 +1169,24 @@ def calculate_throughput_metrics(root: Path) -> dict:
     """Calculate throughput metrics for done cards.
 
     Returns dict with:
-        - cards_per_hour: Cards completed in last 60 minutes
-        - cards_today: Cards completed since midnight
+        - cards_per_hour: Hourly throughput rate based on today's cards (float)
+        - cards_today: Cards completed since midnight today
         - cards_all_time: Total cards in done column
         - avg_lead_time_seconds: Average lead time in seconds (or None)
     """
     done_dir = root / "done"
     if not done_dir.exists():
         return {
-            "cards_per_hour": 0,
+            "cards_per_hour": 0.0,
             "cards_today": 0,
             "cards_all_time": 0,
             "avg_lead_time_seconds": None,
         }
 
     now = datetime.now(timezone.utc)
-    one_hour_ago = now - timedelta(hours=1)
     today_midnight = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+    hours_elapsed_today = (now - today_midnight).total_seconds() / 3600.0
 
-    cards_per_hour = 0
     cards_today = 0
     cards_all_time = 0
     lead_times = []
@@ -1201,8 +1200,6 @@ def calculate_throughput_metrics(root: Path) -> dict:
             updated_str = card.get("updated")
             if updated_str:
                 updated = parse_iso(updated_str)
-                if updated >= one_hour_ago:
-                    cards_per_hour += 1
                 if updated >= today_midnight:
                     cards_today += 1
 
@@ -1213,6 +1210,10 @@ def calculate_throughput_metrics(root: Path) -> dict:
 
         except (json.JSONDecodeError, OSError, ValueError):
             continue
+
+    # Calculate hourly throughput rate based on today's progress
+    # Avoid division by zero for very early morning (use minimum 1 hour)
+    cards_per_hour = cards_today / max(hours_elapsed_today, 1.0)
 
     avg_lead_time = sum(lead_times) / len(lead_times) if lead_times else None
 
@@ -1442,8 +1443,10 @@ def cmd_list(args) -> None:
     reset = "\033[0m"
 
     print(f"{dim}─── Metrics ───{reset}")
+    # Format cards_per_hour with 1 decimal place
+    cards_per_hour_str = f"{metrics['cards_per_hour']:.1f}"
     throughput_parts = [
-        f"{metrics['cards_per_hour']} cards/hr",
+        f"{cards_per_hour_str} cards/hr",
         f"{metrics['cards_today']} today",
         f"{metrics['cards_all_time']} all-time",
     ]
@@ -1542,6 +1545,291 @@ def cmd_done(args) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     card_path.rename(target)
     print(f"Done: #{num} — {message}")
+
+
+def cmd_clean(args) -> None:
+    """Delete cards with user confirmation (optionally including scratchpad).
+
+    Modes:
+    - kanban clean: Delete all cards from all columns (not scratchpad)
+    - kanban clean --expunge: Delete all cards AND scratchpad contents
+    - kanban clean <column>: Delete cards only from specified column
+    """
+    root = get_root(args.root, auto_init=False)
+    if not root.exists():
+        print("No kanban board found.")
+        return
+
+    # Parse arguments
+    column = getattr(args, "column", None)
+    expunge = getattr(args, "expunge", False)
+
+    # Validate: --expunge only works with full clean
+    if expunge and column:
+        print("Error: --expunge flag cannot be used with column-specific clean", file=sys.stderr)
+        sys.exit(1)
+
+    # Validate column name if provided
+    if column and column not in COLUMNS:
+        print(f"Error: Invalid column '{column}'. Valid columns: {', '.join(COLUMNS)}", file=sys.stderr)
+        sys.exit(1)
+
+    # Count cards to be deleted
+    columns_to_clean = [column] if column else COLUMNS
+    total_cards = 0
+    for col in columns_to_clean:
+        col_path = root / col
+        if col_path.exists():
+            total_cards += len(list(col_path.glob("*.json")))
+
+    # Count scratchpad files if expunge
+    scratchpad_count = 0
+    if expunge:
+        scratchpad_path = root / "scratchpad"
+        if scratchpad_path.exists():
+            scratchpad_count = sum(1 for _ in scratchpad_path.rglob("*") if _.is_file())
+
+    # Nothing to delete
+    if total_cards == 0 and scratchpad_count == 0:
+        if column:
+            print(f"No cards found in '{column}' column.")
+        else:
+            print("No cards found.")
+        return
+
+    # Show what will be deleted and prompt for confirmation
+    if expunge:
+        print(f"⚠️  WARNING: This will delete {total_cards} cards from all columns AND scratchpad contents ({scratchpad_count} files).")
+        print("Are you sure? (yes/no)")
+    elif column:
+        print(f"This will delete {total_cards} cards from the '{column}' column. Are you sure? (yes/no)")
+    else:
+        print(f"This will delete {total_cards} cards from all columns. Are you sure? (yes/no)")
+
+    # Read user confirmation
+    try:
+        response = input().strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print("\nCanceled.")
+        sys.exit(1)
+
+    if response not in ["yes", "y"]:
+        print("Canceled.")
+        sys.exit(1)
+
+    # Delete cards
+    deleted_count = 0
+    for col in columns_to_clean:
+        col_path = root / col
+        if col_path.exists():
+            for card_file in col_path.glob("*.json"):
+                card_file.unlink()
+                deleted_count += 1
+
+    # Delete scratchpad if expunge
+    scratchpad_deleted = 0
+    if expunge:
+        scratchpad_path = root / "scratchpad"
+        if scratchpad_path.exists():
+            import shutil
+            for item in scratchpad_path.iterdir():
+                if item.is_file():
+                    item.unlink()
+                    scratchpad_deleted += 1
+                elif item.is_dir():
+                    shutil.rmtree(item)
+                    # Count as one deletion per directory
+                    scratchpad_deleted += 1
+
+    # Report results
+    if expunge:
+        print(f"Deleted {deleted_count} cards and {scratchpad_deleted} scratchpad items.")
+    elif column:
+        print(f"Deleted {deleted_count} cards from '{column}' column.")
+    else:
+        print(f"Deleted {deleted_count} cards.")
+
+
+def cmd_report(args) -> None:
+    """Generate status report from completed cards.
+
+    Shows intent, action, and completion comment from done cards, with optional date filtering.
+    Includes all sessions by default, sorted newest first.
+    """
+    root = get_root(args.root)
+
+    # Parse date filters (optional)
+    from_date = None
+    to_date = None
+
+    if getattr(args, "from_date", None):
+        try:
+            # Parse YYYY-MM-DD format to start of day UTC
+            from_date = datetime.strptime(args.from_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        except ValueError:
+            print(f"Error: Invalid --from date format '{args.from_date}'. Use YYYY-MM-DD.", file=sys.stderr)
+            sys.exit(1)
+
+    if getattr(args, "to_date", None):
+        try:
+            # Parse YYYY-MM-DD format to end of day UTC
+            to_date = datetime.strptime(args.to_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59, tzinfo=timezone.utc)
+        except ValueError:
+            print(f"Error: Invalid --to date format '{args.to_date}'. Use YYYY-MM-DD.", file=sys.stderr)
+            sys.exit(1)
+
+    # Gather completed cards from done column
+    done_cards = []
+    done_dir = root / "done"
+
+    if not done_dir.exists():
+        # No completed cards - output empty result
+        if getattr(args, "output_style", None) == "xml":
+            print("<status-report>")
+            print("</status-report>")
+        else:
+            print("No completed cards found.")
+        return
+
+    for card_path in done_dir.glob("*.json"):
+        try:
+            card = read_card(card_path)
+
+            # Filter by completion date (updated timestamp)
+            updated_str = card.get("updated")
+            if updated_str:
+                try:
+                    updated = parse_iso(updated_str)
+
+                    # Apply date filters
+                    if from_date and updated < from_date:
+                        continue
+                    if to_date and updated > to_date:
+                        continue
+
+                    done_cards.append((updated, card_number(card_path), card))
+                except ValueError:
+                    # Skip cards with invalid timestamps
+                    continue
+            else:
+                # Skip cards without updated timestamp
+                continue
+
+        except (json.JSONDecodeError, OSError):
+            # Skip malformed cards
+            continue
+
+    # Sort newest first (reverse chronological)
+    done_cards.sort(key=lambda x: x[0], reverse=True)
+
+    # Helper function to extract completion comment from activity
+    def get_completion_comment(card: dict) -> str | None:
+        """Extract completion comment from activity array.
+
+        Returns the last activity message that isn't 'Created', or None if not found.
+        """
+        activity = card.get("activity", [])
+        if len(activity) > 1:
+            # Return the last activity message (which is the completion message)
+            return activity[-1].get("message")
+        return None
+
+    # Output based on style
+    output_style = getattr(args, "output_style", "human")
+
+    if output_style == "xml":
+        # XML format for Claude Code consumption
+        esc = html.escape
+        print("<status-report>")
+        for updated, num, card in done_cards:
+            action = card.get("action", "")
+            intent = card.get("intent", "")
+            comment = get_completion_comment(card)
+            completion_date = updated.strftime("%Y-%m-%d")
+
+            print(f'  <card num="{esc(num)}" completed="{esc(completion_date)}">')
+            print(f"    <action>{esc(action)}</action>")
+            if intent:
+                print(f"    <intent>{esc(intent)}</intent>")
+            if comment:
+                print(f"    <comment>{esc(comment)}</comment>")
+            print("  </card>")
+        print("</status-report>")
+    else:
+        # Human-readable format
+        if not done_cards:
+            print("No completed cards found in the specified date range.")
+            return
+
+        # Print header
+        date_range_str = ""
+        if from_date or to_date:
+            parts = []
+            if from_date:
+                parts.append(f"from {from_date.strftime('%Y-%m-%d')}")
+            if to_date:
+                parts.append(f"to {to_date.strftime('%Y-%m-%d')}")
+            date_range_str = f" ({' '.join(parts)})"
+
+        print(f"STATUS REPORT{date_range_str}")
+        print(f"Completed Cards: {len(done_cards)}")
+        print()
+
+        # Print cards
+        for updated, num, card in done_cards:
+            action = card.get("action", "[NO ACTION]")
+            intent = card.get("intent", "")
+            comment = get_completion_comment(card)
+            completion_date = updated.strftime("%Y-%m-%d")
+
+            # Card header with date
+            dim = "\033[2m"
+            reset = "\033[0m"
+            print(f"#{num} {dim}({completion_date}){reset}")
+            print(f"  {action}")
+
+            # Intent if present
+            if intent:
+                # Wrap intent at ~80 chars
+                intent_lines = []
+                remaining = intent.replace("\\n", "\n")
+                for paragraph in remaining.split("\n"):
+                    words = paragraph.split()
+                    current_line = ""
+                    for word in words:
+                        if current_line and len(current_line) + len(word) + 1 > 76:
+                            intent_lines.append(current_line)
+                            current_line = word
+                        else:
+                            current_line = (current_line + " " + word) if current_line else word
+                    if current_line:
+                        intent_lines.append(current_line)
+
+                for line in intent_lines:
+                    print(f"  {dim}{line}{reset}")
+
+            # Completion comment if present
+            if comment:
+                # Wrap comment at ~80 chars
+                comment_lines = []
+                remaining = comment.replace("\\n", "\n")
+                for paragraph in remaining.split("\n"):
+                    words = paragraph.split()
+                    current_line = ""
+                    for word in words:
+                        if current_line and len(current_line) + len(word) + 1 > 76:
+                            comment_lines.append(current_line)
+                            current_line = word
+                        else:
+                            current_line = (current_line + " " + word) if current_line else word
+                    if current_line:
+                        comment_lines.append(current_line)
+
+                print()
+                for line in comment_lines:
+                    print(f"  {line}")
+
+            print()
 
 
 # =============================================================================
@@ -1845,6 +2133,17 @@ def main() -> None:
     p_done.add_argument("message", nargs="?", default=None, help="Completion message")
     add_session_flags(p_done)
 
+    # --- report ---
+    p_report = subparsers.add_parser("report", parents=[parent_parser], help="Generate reporting from completed cards")
+    p_report.add_argument("--from", dest="from_date", help="Start date (YYYY-MM-DD, inclusive)")
+    p_report.add_argument("--to", dest="to_date", help="End date (YYYY-MM-DD, inclusive)")
+    p_report.add_argument("--output-style", choices=["human", "xml"], default="human", help="Output format: human (default, readable), xml (structured for parsing)")
+
+    # --- clean ---
+    p_clean = subparsers.add_parser("clean", parents=[parent_parser], help="Delete cards with user confirmation")
+    p_clean.add_argument("column", nargs="?", default=None, help="Column to clean (doing, todo, review, done, canceled)")
+    p_clean.add_argument("--expunge", action="store_true", help="Also delete scratchpad contents (only with full clean)")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -1865,6 +2164,8 @@ def main() -> None:
         "list": cmd_list,
         "ls": cmd_list,
         "show": cmd_show,
+        "report": cmd_report,
+        "clean": cmd_clean,
         "criteria": cmd_criteria_dispatch,
         "ac": cmd_criteria_dispatch,
     }
