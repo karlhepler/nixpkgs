@@ -1046,7 +1046,7 @@ def cmd_assign(args) -> None:
 
 
 def cmd_criteria(args) -> None:
-    """Add acceptance criterion to a card."""
+    """Add or remove acceptance criterion to/from a card."""
     root = get_root(args.root)
     card_path = find_card(root, args.card)
     card = read_card(card_path)
@@ -1055,11 +1055,52 @@ def cmd_criteria(args) -> None:
     if "criteria" not in card:
         card["criteria"] = []
 
-    # Append new criterion
-    card["criteria"].append({"text": args.text, "met": False})
+    # Handle removal
+    if args.remove is not None:
+        criteria = card.get("criteria", [])
+
+        # Check if card has criteria
+        if not criteria:
+            print("Error: Card has no acceptance criteria to remove", file=sys.stderr)
+            sys.exit(1)
+
+        # Validate criterion number
+        criterion_idx = args.remove - 1  # Convert to 0-based
+        if criterion_idx < 0 or criterion_idx >= len(criteria):
+            print(f"Error: Invalid criterion number {args.remove}. Valid range: 1-{len(criteria)}", file=sys.stderr)
+            sys.exit(1)
+
+        # Require reason
+        if not args.text:
+            print("🛑 Reason required: kanban criteria <card> --remove <n> \"why this AC was removed\"", file=sys.stderr)
+            sys.exit(1)
+
+        # Remove criterion and log to activity
+        removed_criterion = criteria[criterion_idx]
+        removed_text = removed_criterion.get("text", "")
+
+        # Initialize activity array if needed
+        if "activity" not in card:
+            card["activity"] = []
+
+        # Log removal
+        card["activity"].append({
+            "timestamp": now_iso(),
+            "message": f"Removed AC {args.remove}: '{removed_text}' — Reason: {args.text}"
+        })
+
+        # Remove the criterion
+        criteria.pop(criterion_idx)
+
+        print(f"Removed criterion from #{card_number(card_path)}: {removed_text}")
+        print(f"Reason: {args.text}")
+    else:
+        # Add new criterion (original behavior)
+        card["criteria"].append({"text": args.text, "met": False})
+        print(f"Added criterion to #{card_number(card_path)}: {args.text}")
+
     card["updated"] = now_iso()
     write_card(card_path, card)
-    print(f"Added criterion to #{card_number(card_path)}: {args.text}")
 
 
 def cmd_check(args) -> None:
@@ -1707,15 +1748,18 @@ def cmd_done_dual(args) -> None:
         card_path = find_card(root, args.card_or_none)
         card = read_card(card_path)
 
-        # Check for unmet acceptance criteria
+        # Block if acceptance criteria are unmet
         criteria = card.get("criteria", [])
         if criteria:
             unmet = [c for c in criteria if not c.get("met", False)]
             if unmet:
-                print(f"🟡 Warning: {len(unmet)} of {len(criteria)} acceptance criteria are unmet:", file=sys.stderr)
+                card_num = card_number(card_path)
+                print(f"🛑 Cannot complete card #{card_num} — {len(unmet)} of {len(criteria)} acceptance criteria unmet:", file=sys.stderr)
                 for i, criterion in enumerate(criteria, start=1):
                     if not criterion.get("met", False):
                         print(f"  ⬜ {i}. {criterion.get('text', '')}", file=sys.stderr)
+                print(f"\nCheck items with: kanban check {card_num} <n>", file=sys.stderr)
+                sys.exit(1)
 
         # Append completion message to activity
         message = args.message if hasattr(args, "message") and args.message else "Completed"
@@ -2073,9 +2117,10 @@ def main() -> None:
     p_cancel.add_argument("--before", metavar="CARD", help="Move before card (same session only)")
 
     # --- criteria ---
-    p_criteria = subparsers.add_parser("criteria", parents=[parent_parser], help="Add acceptance criterion to card")
+    p_criteria = subparsers.add_parser("criteria", parents=[parent_parser], help="Add or remove acceptance criterion to/from card")
     p_criteria.add_argument("card", help="Card number")
-    p_criteria.add_argument("text", help="Criterion text")
+    p_criteria.add_argument("text", nargs="?", help="Criterion text when adding, or reason when removing")
+    p_criteria.add_argument("--remove", type=int, metavar="N", help="Remove criterion number N (1-indexed)")
     p_criteria.add_argument("--session", help="Session ID (for consistency)")
 
     # --- check ---
