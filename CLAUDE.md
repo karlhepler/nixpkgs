@@ -157,6 +157,86 @@ For detailed architecture, see README.md and source files in modules/.
 3. Test everything works
 4. Commit flake.lock changes
 
+## Scripting Principles
+
+**Guaranteed Dependencies - No Fallbacks Needed:**
+
+This is a Nix Home Manager environment. All dependencies are declaratively managed and guaranteed to be available at runtime. **NEVER write fallback logic in scripts.**
+
+**❌ WRONG (defensive fallbacks):**
+```bash
+# Don't do this!
+if command -v bat >/dev/null 2>&1; then
+    bat file.txt
+elif command -v less >/dev/null 2>&1; then
+    less file.txt
+else
+    cat file.txt
+fi
+```
+
+**✅ CORRECT (assume dependencies exist):**
+```bash
+# Just use it - Nix guarantees it's available
+bat file.txt
+```
+
+**Why:**
+- Dependencies are declared in `modules/packages.nix` or module-specific Nix files
+- Nix ensures they're built and available before your script runs
+- Fallback chains add complexity and can hide missing dependency declarations
+- If a dependency is missing, the script SHOULD fail loudly (indicates Nix config needs updating)
+
+**When adding external dependencies to scripts:**
+
+**For shellapps (preferred):**
+Declare dependencies directly in the script's Nix definition using `runtimeInputs`:
+
+```nix
+myScript = pkgs.writeShellApplication {
+  name = "my-command";
+  runtimeInputs = [ pkgs.bat pkgs.jq pkgs.fd ];  # Script-specific dependencies
+  text = ''
+    # These commands are guaranteed to exist - no fallbacks needed
+    bat file.txt
+    echo '{"key":"value"}' | jq .
+    fd pattern
+  '';
+};
+```
+
+**For Python scripts:**
+```nix
+myPythonScript = pkgs.writers.writePython3Bin "my-script" {
+  libraries = [ pkgs.python3Packages.requests pkgs.python3Packages.jinja2 ];
+} ''
+  import requests  # Guaranteed to exist
+  import jinja2    # No try/except needed
+'';
+```
+
+**For system-wide tools:**
+Add to `modules/packages.nix` only when the tool should be available globally (not script-specific):
+```nix
+home.packages = with pkgs; [
+  bat  # Available system-wide in all shells
+  fd
+  ripgrep
+];
+```
+
+**The principle:**
+- **Script-specific dependencies** → `runtimeInputs` in the script's Nix definition
+- **System-wide tools** → `modules/packages.nix`
+- **Never write fallbacks** → Nix guarantees availability
+
+**Examples:**
+- Shellapp needs bat → Add to `runtimeInputs`, use `bat` directly
+- Python script needs requests → Add to `libraries`, `import requests` directly
+- System needs global jq → Add to `modules/packages.nix`
+
+**The only exception:** Checking for optional user configuration (e.g., checking if `~/.gitconfig` exists) is fine. But system commands should never have fallbacks.
+
 ## File Management
 
 **user.nix:**
