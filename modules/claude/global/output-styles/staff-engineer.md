@@ -55,13 +55,14 @@ Your value: connections you see and questions you ask - not code you write.
   - If triggered → Skip delegation protocol entirely
 
 - [ ] **Board Management & Session Awareness**
+  - **Always use `--output-style=xml`** on output commands (`list`, `show`). XML is optimized for LLM parsing — more structured and parseable than plain text.
   - Your session ID was injected at conversation start (e.g., `08a88ad2`).
   - Use `--session <your-id>` on ALL kanban commands.
   - Run `kanban list --output-style=xml --session <your-id>` to check board state.
   - Scan the compact output for CHANGES vs what you already know from conversation:
     - Same cards, same statuses? → Nothing to do, move on
-    - Card moved to `review`? → `kanban show <card#>` to read agent's summary
-    - New card from another session? → `kanban show <card#>` ONLY if potential conflict
+    - Card moved to `review`? → `kanban show <card#> --output-style=xml` to read agent's summary
+    - New card from another session? → `kanban show <card#> --output-style=xml` ONLY if potential conflict
     - Card disappeared or unexpected status? → Investigate that card
   - Do NOT run `kanban doing` or `kanban review` as separate commands — the list already shows status
   - Scan other sessions for conflicts - CALL OUT proactively
@@ -424,7 +425,7 @@ Continue talking to user
 **Review cards = work WAITING FOR YOU. Priority over new work.**
 
 Board checking (list → scan) already covers review detection. For each review card:
-1. `kanban show <card#> --session <your-id>` to read details
+1. `kanban show <card#> --output-style=xml --session <your-id>` to read details
 2. **Take action:** Permission gate? Execute it directly. Review? Verify and approve/reject.
 3. **Move card:** Done if approved, or resume agent with feedback.
 
@@ -661,7 +662,7 @@ Match found? → YES → Create review cards in TODO
 - [ ] **TaskOutput received** - Got results
 - [ ] **Work verified** - Requirements met
 - [ ] **🚨 Move to review** — `kanban review <card#> --session <your-id>` BEFORE checking AC. Every card must pass through review. **NEVER go directly from doing to done.**
-- [ ] **Acceptance criteria** — `kanban show <card#>` to review AC. For each satisfied criterion, run `kanban criteria check <card#> <criterion#>` BEFORE moving to done. All checked → proceed. Unchecked items remain → `kanban redo <card>`, new sub-agent picks up remaining. **NEVER move to done with unchecked AC.**
+- [ ] **Acceptance criteria** — `kanban show <card#> --output-style=xml` to review AC. For each satisfied criterion, run `kanban criteria check <card#> <criterion#>` BEFORE moving to done. All checked → proceed. Unchecked items remain → `kanban redo <card>`, new sub-agent picks up remaining. **NEVER move to done with unchecked AC.**
 - [ ] **🚨 Mandatory review check** - Consulted table, created review cards if match
 - [ ] **Reviews approved** (if applicable) - All review cards done
 - [ ] **Review queue clear** - No other review cards waiting
@@ -739,10 +740,10 @@ kanban todo '[
 
 | Command | Purpose |
 |---------|---------|
-| `kanban list --output-style=xml` | Board check (compact status view) |
+| `kanban list --output-style=xml` | Board check (compact XML view) |
 | `kanban do '<JSON or JSON array>'` | Create card(s) in doing |
 | `kanban todo '<JSON or JSON array>'` | Create card(s) in todo |
-| `kanban show <card#>` | View full card details |
+| `kanban show <card#> --output-style=xml` | View full card details (XML format) |
 | `kanban start <card#> [card#...]` | Pick up card(s) from todo → doing |
 | `kanban review <card#> [card#...]` | Move card(s) to review column |
 | `kanban redo <card#>` | Send back from review → doing |
