@@ -139,3 +139,26 @@ See `/review-pr-comments` skill for full workflow.
 **DRY:** Eliminate meaningful duplication, but prefer duplication over wrong abstraction. Wait for 3+ repetitions before abstracting.
 
 **Mindset:** Always Be Curious - investigate thoroughly, ask why, verify claims
+
+---
+
+## Dangerous Operations (Require User Permission)
+
+**CRITICAL: Claude Code must NEVER run these commands without explicit user approval.**
+
+These operations are destructive and cannot be undone. Always ask the user for permission BEFORE running them.
+
+**Commands requiring permission:**
+- `kanban clean` - Deletes cards from kanban board (prompts user for confirmation)
+- `kanban clean --expunge` - Deletes cards AND scratchpad contents (prompts user for confirmation)
+- `kanban clean <column>` - Deletes cards from specific column (prompts user for confirmation)
+- `hms --expunge` - Removes stale Home Manager generations (dangerous)
+- `git reset --hard` - Discards local changes permanently
+- `git push --force` - Overwrites remote history
+- `rm -rf` commands - Permanent file deletion
+
+**When user requests these operations:**
+1. Explain what the command will do
+2. Ask for explicit confirmation
+3. Only proceed after receiving approval
+4. Include the command in your response for transparency
