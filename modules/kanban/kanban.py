@@ -1748,9 +1748,9 @@ def cmd_report(args) -> None:
             completion_date = updated.strftime("%Y-%m-%d")
 
             print(f'  <card num="{esc(num)}" completed="{esc(completion_date)}">')
-            print(f"    <action>{esc(action)}</action>")
             if intent:
                 print(f"    <intent>{esc(intent)}</intent>")
+            print(f"    <action>{esc(action)}</action>")
             if comment:
                 print(f"    <comment>{esc(comment)}</comment>")
             print("  </card>")
@@ -1786,10 +1786,10 @@ def cmd_report(args) -> None:
             dim = "\033[2m"
             reset = "\033[0m"
             print(f"#{num} {dim}({completion_date}){reset}")
-            print(f"  {action}")
 
-            # Intent if present
+            # Intent if present (reordered to first)
             if intent:
+                print(f"  Intent: ", end="")
                 # Wrap intent at ~80 chars
                 intent_lines = []
                 remaining = intent.replace("\\n", "\n")
@@ -1805,11 +1805,18 @@ def cmd_report(args) -> None:
                     if current_line:
                         intent_lines.append(current_line)
 
-                for line in intent_lines:
-                    print(f"  {dim}{line}{reset}")
+                for i, line in enumerate(intent_lines):
+                    if i == 0:
+                        print(line)
+                    else:
+                        print(f"    {line}")
 
-            # Completion comment if present
+            # Action (reordered to second)
+            print(f"  Action: {action}")
+
+            # Completion comment if present (reordered to third)
             if comment:
+                print(f"  Summary: ", end="")
                 # Wrap comment at ~80 chars
                 comment_lines = []
                 remaining = comment.replace("\\n", "\n")
@@ -1825,9 +1832,11 @@ def cmd_report(args) -> None:
                     if current_line:
                         comment_lines.append(current_line)
 
-                print()
-                for line in comment_lines:
-                    print(f"  {line}")
+                for i, line in enumerate(comment_lines):
+                    if i == 0:
+                        print(line)
+                    else:
+                        print(f"    {line}")
 
             print()
 
