@@ -120,7 +120,7 @@ This repository (`~/.config/nixpkgs`) is the **single source of truth** for syst
 - `kanban cancel <card#>`: Cancel card
 
 **Card Details:**
-- `kanban show <card#>`: Show full card details
+- `kanban show <card#> --output-style=xml`: Show full card details (XML format)
 
 **Acceptance Criteria (also aliased as `kanban ac`):**
 - `kanban criteria add <card#> "text"`: Add acceptance criterion
