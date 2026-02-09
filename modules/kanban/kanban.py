@@ -76,49 +76,26 @@ _NOUNS = [
 # =============================================================================
 
 def use_pager(content: str) -> None:
-    """Display content through a pager (bat, less, or stdout).
+    """Display content through bat pager with syntax highlighting.
 
     Uses bat for syntax highlighting when output is to a terminal.
-    Falls back to less or direct print if bat is unavailable.
     Skips pager if output is piped (e.g., to grep).
-    """
-    import shutil
 
-    # If output is piped, print directly
+    Bat is guaranteed to be available via Nix - no fallback needed.
+    """
+    # If output is piped, print directly (bat also detects this, but we short-circuit for efficiency)
     if not sys.stdout.isatty():
         print(content, end="")
         return
 
-    # Try bat first (with plain style for clean output)
-    if shutil.which('bat'):
-        try:
-            proc = subprocess.Popen(
-                ['bat', '--paging=auto', '--style=plain', '--language=markdown'],
-                stdin=subprocess.PIPE,
-                stdout=sys.stdout
-            )
-            proc.communicate(content.encode())
-            return
-        except (subprocess.SubprocessError, OSError):
-            # Fall through to less
-            pass
-
-    # Try less with color support
-    if shutil.which('less'):
-        try:
-            proc = subprocess.Popen(
-                ['less', '-R'],
-                stdin=subprocess.PIPE,
-                stdout=sys.stdout
-            )
-            proc.communicate(content.encode())
-            return
-        except (subprocess.SubprocessError, OSError):
-            # Fall through to direct print
-            pass
-
-    # Fallback: print directly
-    print(content, end="")
+    # Use bat with plain style for clean output
+    # Bat is guaranteed to exist via Nix packages
+    proc = subprocess.Popen(
+        ['bat', '--paging=auto', '--style=plain', '--language=markdown'],
+        stdin=subprocess.PIPE,
+        stdout=sys.stdout
+    )
+    proc.communicate(content.encode())
 
 
 def get_git_root() -> Path | None:
