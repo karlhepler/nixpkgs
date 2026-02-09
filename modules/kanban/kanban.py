@@ -481,16 +481,11 @@ def create_card_in_column(root: Path, column: str, card: dict) -> int:
     return num
 
 
-def cmd_do(args) -> None:
-    """Create a card directly in the doing column from JSON input."""
-    root = get_root(args.root)
+def validate_and_build_card(data: dict, session: str | None) -> dict:
+    """Validate card data and build card dict.
 
-    try:
-        data = json.loads(args.json_data)
-    except json.JSONDecodeError as e:
-        print(f"Error: Invalid JSON: {e}", file=sys.stderr)
-        sys.exit(1)
-
+    Raises SystemExit on validation failure.
+    """
     if "action" not in data:
         print("Error: JSON must include 'action' field", file=sys.stderr)
         sys.exit(1)
@@ -515,8 +510,6 @@ def cmd_do(args) -> None:
 
     # Parse criteria from JSON (support both "criteria" and "ac" shorthand)
     criteria = data.get("criteria") or data.get("ac", [])
-
-    session = args.session if hasattr(args, "session") and args.session else get_current_session_id()
 
     # Build the card
     card = make_card(
@@ -546,8 +539,47 @@ def cmd_do(args) -> None:
     if edit_files and read_files:
         card["readFiles"] = [f for f in read_files if f not in edit_files]
 
-    num = create_card_in_column(root, "doing", card)
-    print(num)
+    return card
+
+
+def cmd_do(args) -> None:
+    """Create card(s) directly in the doing column from JSON input.
+
+    Accepts either a single JSON object or an array of objects for bulk creation.
+    """
+    root = get_root(args.root)
+
+    try:
+        data = json.loads(args.json_data)
+    except json.JSONDecodeError as e:
+        print(f"Error: Invalid JSON: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    session = args.session if hasattr(args, "session") and args.session else get_current_session_id()
+
+    # Detect array vs object
+    if isinstance(data, list):
+        # Bulk creation: validate all cards first (fail fast)
+        cards = []
+        for i, card_data in enumerate(data):
+            if not isinstance(card_data, dict):
+                print(f"Error: Array element {i} must be a JSON object, got {type(card_data).__name__}", file=sys.stderr)
+                sys.exit(1)
+            card = validate_and_build_card(card_data, session)
+            cards.append(card)
+
+        # All validation passed — create all cards
+        for card in cards:
+            num = create_card_in_column(root, "doing", card)
+            print(num)
+    elif isinstance(data, dict):
+        # Single card creation (existing behavior)
+        card = validate_and_build_card(data, session)
+        num = create_card_in_column(root, "doing", card)
+        print(num)
+    else:
+        print(f"Error: JSON must be an object or array, got {type(data).__name__}", file=sys.stderr)
+        sys.exit(1)
 
 
 
@@ -595,24 +627,41 @@ def cmd_defer(args) -> None:
 
 
 def cmd_start(args) -> None:
-    """Move card from todo to doing (pick up queued work)."""
+    """Move card(s) from todo to doing (pick up queued work)."""
     root = get_root(args.root)
-    card_path = find_card(root, args.card)
-    col = card_path.parent.name
-    num = card_number(card_path)
+    card_numbers = args.card if isinstance(args.card, list) else [args.card]
 
-    if col != "todo":
-        print(f"Error: Card #{num} is in '{col}', not 'todo'. Start only works on cards in todo.", file=sys.stderr)
+    failed = False
+    for card_num in card_numbers:
+        try:
+            card_path = find_card(root, card_num)
+            col = card_path.parent.name
+            num = card_number(card_path)
+
+            if col != "todo":
+                print(f"Error: Card #{num} is in '{col}', not 'todo'. Start only works on cards in todo.", file=sys.stderr)
+                failed = True
+                continue
+
+            card = read_card(card_path)
+            card["updated"] = now_iso()
+            write_card(card_path, card)
+
+            target = root / "doing" / card_path.name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            card_path.rename(target)
+            print(f"Started: #{num} — moved to doing")
+        except SystemExit:
+            # find_card calls sys.exit(1) if card not found
+            failed = True
+            continue
+        except (json.JSONDecodeError, OSError) as e:
+            print(f"Error: Failed to process card {card_num}: {e}", file=sys.stderr)
+            failed = True
+            continue
+
+    if failed:
         sys.exit(1)
-
-    card = read_card(card_path)
-    card["updated"] = now_iso()
-    write_card(card_path, card)
-
-    target = root / "doing" / card_path.name
-    target.parent.mkdir(parents=True, exist_ok=True)
-    card_path.rename(target)
-    print(f"Started: #{num} — moved to doing")
 
 
 def cmd_show(args) -> None:
@@ -1406,7 +1455,10 @@ def cmd_list(args) -> None:
 
 
 def cmd_todo(args) -> None:
-    """Create a card in todo column from JSON input (pure verb - no view mode)."""
+    """Create card(s) in todo column from JSON input (pure verb - no view mode).
+
+    Accepts either a single JSON object or an array of objects for bulk creation.
+    """
     root = get_root(args.root)
 
     try:
@@ -1415,62 +1467,31 @@ def cmd_todo(args) -> None:
         print(f"Error: Invalid JSON: {e}", file=sys.stderr)
         sys.exit(1)
 
-    if "action" not in data:
-        print("Error: JSON must include 'action' field", file=sys.stderr)
-        sys.exit(1)
-
-    # Validate action is non-empty
-    if not data.get("action", "").strip():
-        print("Error: Action field must be a non-empty string.", file=sys.stderr)
-        sys.exit(1)
-
-    # Validate model if provided
-    model = data.get("model")
-    if model and model not in ("haiku", "sonnet", "opus"):
-        print(f"Error: Invalid model '{model}'. Must be one of: haiku, sonnet, opus", file=sys.stderr)
-        sys.exit(1)
-
-    # Validate editFiles/readFiles are arrays
-    for field in ("editFiles", "readFiles"):
-        val = data.get(field)
-        if val is not None and not isinstance(val, list):
-            print(f"Error: {field} must be an array, got {type(val).__name__}", file=sys.stderr)
-            sys.exit(1)
-
-    # Parse criteria from JSON (support both "criteria" and "ac" shorthand)
-    criteria = data.get("criteria") or data.get("ac", [])
-
     session = args.session if hasattr(args, "session") and args.session else get_current_session_id()
 
-    card = make_card(
-        action=data["action"],
-        intent=data.get("intent", ""),
-        read_files=data.get("readFiles", []),
-        edit_files=data.get("editFiles", []),
-        persona=data.get("persona", "unassigned"),
-        model=data.get("model"),
-        session=session,
-        criteria=criteria if all(isinstance(c, str) for c in criteria) else None,
-    )
+    # Detect array vs object
+    if isinstance(data, list):
+        # Bulk creation: validate all cards first (fail fast)
+        cards = []
+        for i, card_data in enumerate(data):
+            if not isinstance(card_data, dict):
+                print(f"Error: Array element {i} must be a JSON object, got {type(card_data).__name__}", file=sys.stderr)
+                sys.exit(1)
+            card = validate_and_build_card(card_data, session)
+            cards.append(card)
 
-    # If criteria came as full objects (with text/met), use them directly
-    if criteria and not all(isinstance(c, str) for c in criteria):
-        card["criteria"] = criteria
-
-    # Validate criteria count after building card
-    criteria_check = card.get("criteria", [])
-    if not criteria_check:
-        print("Error: At least one acceptance criterion required. Add \"criteria\": [\"...\"] to JSON.", file=sys.stderr)
+        # All validation passed — create all cards
+        for card in cards:
+            num = create_card_in_column(root, "todo", card)
+            print(num)
+    elif isinstance(data, dict):
+        # Single card creation (existing behavior)
+        card = validate_and_build_card(data, session)
+        num = create_card_in_column(root, "todo", card)
+        print(num)
+    else:
+        print(f"Error: JSON must be an object or array, got {type(data).__name__}", file=sys.stderr)
         sys.exit(1)
-
-    # Remove readFiles entries that are already in editFiles (editing implies reading)
-    edit_files = card.get("editFiles", [])
-    read_files = card.get("readFiles", [])
-    if edit_files and read_files:
-        card["readFiles"] = [f for f in read_files if f not in edit_files]
-
-    num = create_card_in_column(root, "todo", card)
-    print(num)
 
 
 def cmd_review(args) -> None:
@@ -1743,8 +1764,8 @@ def main() -> None:
     add_session_flags(p_session_hook)
 
     # --- do ---
-    p_do = subparsers.add_parser("do", parents=[parent_parser], help="Create card in doing from JSON")
-    p_do.add_argument("json_data", help="JSON object with action, intent, readFiles, editFiles")
+    p_do = subparsers.add_parser("do", parents=[parent_parser], help="Create card(s) in doing from JSON")
+    p_do.add_argument("json_data", help="JSON object or array of objects with action, intent, readFiles, editFiles")
     add_session_flags(p_do)
 
     # --- show ---
@@ -1770,8 +1791,8 @@ def main() -> None:
     add_session_flags(p_defer)
 
     # --- start ---
-    p_start = subparsers.add_parser("start", parents=[parent_parser], help="Move card from todo to doing")
-    p_start.add_argument("card", help="Card number")
+    p_start = subparsers.add_parser("start", parents=[parent_parser], help="Move card(s) from todo to doing")
+    p_start.add_argument("card", nargs="+", help="Card number(s)")
     add_session_flags(p_start)
 
     # --- criteria (with subcommands) ---
@@ -1811,8 +1832,8 @@ def main() -> None:
         add_date_flags(p_list)
 
     # --- Pure verbs: todo, review, done ---
-    p_todo = subparsers.add_parser("todo", parents=[parent_parser], help="Create card in todo from JSON")
-    p_todo.add_argument("json_data", help="JSON object with action, intent, readFiles, editFiles")
+    p_todo = subparsers.add_parser("todo", parents=[parent_parser], help="Create card(s) in todo from JSON")
+    p_todo.add_argument("json_data", help="JSON object or array of objects with action, intent, readFiles, editFiles")
     add_session_flags(p_todo)
 
     p_review = subparsers.add_parser("review", parents=[parent_parser], help="Move card to review")

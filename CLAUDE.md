@@ -82,11 +82,12 @@ This repository (`~/.config/nixpkgs`) is the **single source of truth** for syst
 ### Kanban CLI (Agent Coordination)
 
 **Card Creation:**
-- `kanban do '{"action":"...","intent":"..."}'`: Create card directly in doing
-- `kanban todo '{"action":"...","intent":"..."}'`: Create card in todo
+- `kanban do '{"action":"...","intent":"..."}'`: Create card directly in doing (accepts single object or array)
+- `kanban todo '{"action":"...","intent":"..."}'`: Create card in todo (accepts single object or array)
+- When full work queue is known, create ALL cards upfront (current batch in doing, rest in todo)
 
 **Card Transitions:**
-- `kanban start <card#>`: Move card from todo to doing
+- `kanban start <card#> [card#...]`: Move card(s) from todo to doing
 - `kanban review <card#>`: Move card to review column
 - `kanban redo <card#>`: Move card from review back to doing
 - `kanban defer <card#>`: Move card from doing/review to todo
