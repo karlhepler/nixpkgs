@@ -46,6 +46,31 @@ This repository (`~/.config/nixpkgs`) is the **single source of truth** for syst
 
 **Remember:** This repository controls your computer. Work in the source, deploy with hms.
 
+## Team Member Terminology
+
+**Important:** When the user says "team member", "update a team member", "add a team member", or "remove a team member", they are referring to BOTH:
+
+1. **The skill file:** `modules/claude/global/commands/<name>.md` - Contains the skill's system prompt, expertise, and workflows
+2. **The agent definition:** `modules/claude/global/agents/<name>.md` - Custom sub-agent with the skill preloaded via `skills:` frontmatter
+
+**Adding a team member** means:
+- Create skill file in `commands/<name>.md` with skill prompt and expertise
+- Create agent definition in `agents/<name>.md` with `skills: [<name>]` frontmatter
+- Add to git: `git add modules/claude/global/{commands,agents}/<name>.md`
+- Run `hms` to deploy both files to `~/.claude/`
+- Update staff-engineer team table if needed
+
+**Updating a team member** means:
+- Edit both the skill file AND agent definition as needed
+- Run `hms` to deploy changes
+
+**Removing a team member** means:
+- Delete both `commands/<name>.md` AND `agents/<name>.md`
+- Run `hms` to remove from deployment
+- Update staff-engineer team table
+
+**Why both files:** Skills contain the detailed expertise and prompts. Agent definitions enable reliable skill injection (95%+ vs 70% reliability) by preloading the skill content into the sub-agent's context at startup.
+
 ## Quick Commands
 
 ### Configuration Management
