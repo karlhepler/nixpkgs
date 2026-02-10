@@ -14,13 +14,14 @@ RUN apt-get update && \
 # Install ralph using official installer script
 RUN curl -fsSL "https://github.com/mikeyobrien/ralph-orchestrator/releases/download/v${RALPH_VERSION}/ralph-cli-installer.sh" | sh
 
-# Install Claude Code CLI (latest version)
+# Install Claude Code CLI (latest version) - Linux binary
 # CACHE_BUST=${CACHE_BUST} forces this layer to rebuild, getting latest Claude
-RUN curl -fsSL https://claude.ai/install.sh | bash
-
-# Find the Claude binary path and create a stable symlink
-RUN CLAUDE_VERSION=$(ls /root/.local/share/claude/versions/ | sort -V | tail -1) && \
-    ln -sf /root/.local/share/claude/versions/$CLAUDE_VERSION /root/.local/bin/claude-target
+# Download Linux binary directly (installer detects macOS host incorrectly)
+RUN CLAUDE_VERSION=$(curl -fsSL "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/latest") && \
+    CLAUDE_URL="https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/${CLAUDE_VERSION}/claude-linux-aarch64" && \
+    mkdir -p /root/.local/bin && \
+    curl -fsSL "$CLAUDE_URL" -o /root/.local/bin/claude-binary && \
+    chmod +x /root/.local/bin/claude-binary
 
 # Final stage: Chainguard distroless with git
 # - No shell, no package manager (maximum security)
@@ -29,7 +30,7 @@ RUN CLAUDE_VERSION=$(ls /root/.local/share/claude/versions/ | sort -V | tail -1)
 FROM cgr.dev/chainguard/git:latest
 
 COPY --from=downloader /root/.cargo/bin/ralph /usr/local/bin/ralph
-COPY --from=downloader /root/.local/bin/claude-target /usr/local/bin/claude
+COPY --from=downloader /root/.local/bin/claude-binary /usr/local/bin/claude
 
 WORKDIR /workspace
 
