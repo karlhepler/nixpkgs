@@ -125,7 +125,7 @@ if ! command -v ralph &>/dev/null; then
 else
   # Check for updates
   CURRENT_VERSION=$(ralph --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "0.0.0")
-  LATEST_VERSION=$(curl -fsSL "https://api.github.com/repos/mikeyobrien/ralph-orchestrator/releases/latest" | grep -oP '"tag_name": "v\K[0-9]+\.[0-9]+\.[0-9]+' || echo "$CURRENT_VERSION")
+  LATEST_VERSION=$(curl -fsSL "https://api.github.com/repos/mikeyobrien/ralph-orchestrator/releases/latest" | jq -r '.tag_name // empty' | sed 's/^v//' || echo "$CURRENT_VERSION")
 
   if [ "$LATEST_VERSION" != "$CURRENT_VERSION" ] && [ "$LATEST_VERSION" != "0.0.0" ]; then
     echo "Updating Ralph Orchestrator from v$CURRENT_VERSION to v$LATEST_VERSION..."
