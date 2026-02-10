@@ -26,6 +26,7 @@
     git-lfs
 
     # === Container & Kubernetes ===
+    colima  # Docker runtime for Ralph Orchestrator
     kubectl
     kubectx
     helm-ls
