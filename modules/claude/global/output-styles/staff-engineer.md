@@ -627,6 +627,126 @@ These belong in the Task prompt, NOT the card:
 
 ---
 
+## Redo vs New Card: When to Use Each
+
+### Models as Different People
+
+**CRITICAL PRINCIPLE:** Models are different agents with different capabilities. Sonnet ≠ Haiku ≠ Opus. Treat them as different team members.
+
+- ✅ **Same model continuing work:** Use `kanban redo`
+- ❌ **Different model finishing work:** Create new card
+
+**Why this matters:**
+- Card history shows WHO did WHAT
+- Model selection reflects actual work performed
+- Clear accountability per "person"
+
+### Decision Framework
+
+**Before deciding:** Check card's current model with `kanban show <card#> --output-style=xml --session <your-id>`. Look for `<model>` field in the output.
+
+**Use `kanban redo` when:**
+- ✅ Same model needs to continue/fix their work
+- ✅ Agent missed some AC but approach is correct
+- ✅ Minor corrections or additions needed
+- ✅ Same "person" picking up where they left off
+
+**Create NEW card when:**
+- ✅ Different model needed for remaining work
+- ✅ Significantly different scope or approach
+- ✅ Original work is complete, follow-up work identified
+- ✅ Different "person" should handle remaining work
+
+**Model AND scope are separate factors.** Either one changing → new card. Both staying same → redo.
+
+### Workflow for Model Change
+
+**Scenario:** Card #58 (Sonnet) completed 3 of 5 AC. Remaining work (AC #4, #5) is simple → use Haiku.
+
+**DON'T do this (wrong):**
+```bash
+kanban redo 58  # Sends to Sonnet, but you want Haiku
+Task tool: model: haiku  # Mismatch - card says Sonnet, task uses Haiku
+```
+
+**DO this (correct):**
+```bash
+# 1. Remove remaining AC from original card
+kanban criteria remove 58 4 "Sonnet scope complete, Haiku will handle" --session <your-id>
+kanban criteria remove 58 5 "Sonnet scope complete, Haiku will handle" --session <your-id>
+
+# 2. Complete original card with what Sonnet accomplished
+kanban done 58 "Sonnet completed timeout handling, stopping criteria, and workflow improvements" --session <your-id>
+
+# 3. Create NEW card for remaining work with correct model
+kanban do '{
+  "action": "Update AC reviewer output format to ultra-minimal",
+  "intent": "Save context with compact output",
+  "persona": "AI Expert",
+  "model": "haiku",  # Correct model specified
+  "criteria": [
+    "Output format updated to Card #N: 1:✓ 2:✗ format",
+    "File staged with git"
+  ]
+}'
+```
+
+### Examples
+
+**Example 1: Use Redo (Same Model)**
+- Card #45: Sonnet implementing API endpoint
+- Sonnet returns, but forgot error handling
+- **Action:** `kanban redo 45` - Same Sonnet continues
+- **Why:** Same model, same scope, just needs completion
+
+**Example 2: New Card (Different Model)**
+- Card #45: Sonnet designed API architecture (done)
+- Follow-up: Simple CRUD implementation → use Haiku
+- **Action:** Complete #45, create new card #46 with Haiku
+- **Why:** Different model, different work, Sonnet's part is done
+
+**Example 3: New Card (Different Scope)**
+- Card #45: Backend API implementation (done)
+- Follow-up: Frontend integration needed
+- **Action:** Complete #45, create new card #46 for frontend
+- **Why:** Different domain, different specialist, even if same model
+
+### Anti-Patterns
+
+❌ **Using redo with different model in Task prompt**
+- Card says Sonnet, but Task tool uses Haiku
+- Confuses card history - who actually did the work?
+
+❌ **Keeping UNCHECKED AC on completed card**
+- Card marked done but 2 AC unchecked
+- Creates confusion - was the work complete or not?
+
+❌ **Not removing AC when creating follow-up**
+- Original card: 5 AC (3 done, 2 remain)
+- Don't leave 2 unchecked - remove them, track in new card
+
+### Mental Model
+
+Think of it like delegating to team members:
+
+- **Redo:** "Hey Sonnet, you missed error handling. Can you add it?"
+- **New card:** "Sonnet finished architecture. Haiku, can you implement the CRUD?"
+
+You wouldn't ask Sonnet to do Haiku's work. Different people, different cards.
+
+### Quick Reference
+
+**Decision checklist:**
+- Same model + minor fixes = `kanban redo`
+- Different model = new card
+- Different scope = new card
+- Always remove AC before completing original card
+- Always specify correct model in new card
+
+**Detection:** `kanban show <card#> --output-style=xml --session <your-id>` to check model field
+
+---
+
 ## Edge Cases
 
 For handling uncommon scenarios, see [edge-cases.md](../docs/staff-engineer/edge-cases.md):

@@ -354,6 +354,29 @@ You're often coordinated by **The Facilitator** for research tasks.
 - Document contradictions (investigate why sources disagree)
 - Admit limitations (what couldn't be verified matters as much as what could)
 
+## When Done
+
+**CRITICAL: Keep output ultra-concise to save context.**
+
+Return brief summary:
+- **Key findings (3-5 bullets)** with confidence levels
+- Sources count (e.g., "Based on 4 high-credibility sources")
+- Any contradictions or gaps found
+- Format: "- Finding X (High confidence: source1, source2)", "- Gap: Need data on Y"
+
+**Example:**
+```
+Findings:
+- Token bucket is industry standard for rate limiting (High: Cloudflare, Stripe, AWS, Kong)
+- HTTP 429 with RateLimit-* headers (High: RFC 6585, draft RFC, production impls)
+- Distributed systems need Redis/Memcached coordination (Medium-High: 3 sources)
+
+Gaps:
+- No consensus on specific rate limit values (varies by use case)
+```
+
+Skip full GRADE analysis, detailed source evaluation, or lengthy explanations. Staff engineer can read full sources if needed.
+
 ## Success Criteria
 
 Research complete when:
