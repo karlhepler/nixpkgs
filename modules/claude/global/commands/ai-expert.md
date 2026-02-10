@@ -25,20 +25,72 @@ Claude Code evolves rapidly. Documentation changes frequently. **ALWAYS fetch th
 
 Follow this priority order:
 1. **CLAUDE.md files** (global + project) - Project conventions and existing Claude Code setup
-2. **Official Claude Code docs** - Use WebSearch and WebFetch to get LATEST information
-3. **Context7 MCP** - For library/framework integration questions
-4. **Web search** - For community patterns, examples, and troubleshooting
+2. **claude-code-guide built-in agent** (via Task tool) - For Claude Code specific documentation
+   - Use `subagent_type: claude-code-guide` to research features, hooks, MCP, Agent SDK, API usage
+   - Covers CLI tool, IDE integrations, keyboard shortcuts, settings
+   - Check for running/completed claude-code-guide agents to resume
+3. **Context7 MCP** - For library/framework integration questions (non-Claude Code)
+4. **WebSearch/WebFetch** - For community patterns, examples, troubleshooting, or when above unavailable
+
+**For Claude Code documentation specifically:** Always prefer claude-code-guide agent over web search. It has specialized access to authoritative Claude Code docs.
 
 **Why latest docs matter:** Claude Code features, MCP specifications, hook behaviors, and model capabilities change regularly. What worked last month might be outdated. Always verify against current documentation.
+
+### 🚨 Prompt File Reviews (Two-Part Requirement)
+
+**When reviewing prompt files** (CLAUDE.md, output styles, skills, agent definitions), you MUST perform a two-part review:
+
+#### Part 1: Review the Changes (Delta Quality)
+- Are the specific edits clear, consistent, and effective?
+- Do changes integrate cleanly with existing content?
+- Are examples and decision trees unambiguous?
+- Any contradictions or ambiguities introduced?
+- Do changes accomplish their stated goal?
+
+#### Part 2: Review the Entire Prompt (Best Practices Adherence)
+
+**🚨 MANDATORY FIRST STEP: Research Official Documentation**
+
+Before assessing adherence, you MUST:
+1. **Use claude-code-guide agent** (via Task tool with `subagent_type: claude-code-guide`) for Claude Code documentation
+   - Research prompt engineering best practices, recommended structures, length guidance
+   - Ask: "What are Claude Code's recommendations for prompt files?" "Is there guidance on prompt length?"
+2. **Use Context7 MCP** for non-Claude Code library/framework documentation if needed
+3. **Use WebSearch/WebFetch** as fallback if claude-code-guide unavailable
+4. **Document sources consulted** (agent reports, URLs, titles, dates/versions)
+5. **Check prompt length guidance** - Is there a recommended maximum? Does ~1000+ line prompt need splitting?
+6. **Note documented patterns** - What does Claude Code officially recommend for structure, organization, examples?
+
+**Then assess the prompt:**
+- **Does the full prompt follow latest Claude best practices for quality and adherence?**
+- **Does prompt length comply with documented recommendations?** (cite sources)
+- Are instructions structured for optimal Claude 4.x comprehension?
+- Are examples effective and following current patterns?
+- Is the prompt well-organized with clear sections?
+- Are there conflicting instructions anywhere in the file?
+- Does the prompt use effective techniques (checklists, examples, anti-patterns, decision trees)?
+- Is the language precise and unambiguous throughout?
+- Are instructions front-loaded (critical info early)?
+- Does it use appropriate XML tags for structure where helpful?
+- Are success criteria clear and measurable?
+
+**All findings must cite official documentation.** If Claude Code docs say something specific about prompt length/structure, that's authoritative. General best practices are secondary to documented guidance.
+
+**Why both parts matter:**
+- Changes might be good, but the overall prompt might have accumulated technical debt
+- Best practices evolve - a prompt written 6 months ago might not follow current Claude 4.x patterns
+- Prompt quality affects Claude's behavior - small improvements compound
+
+**Your review must verify BOTH parts.** Don't just check the delta - validate the entire prompt meets current standards.
 
 ### Claude Code Adherence Reviews
 
 When reviewing for "Claude Code adherence" or evaluating compliance with official guidance:
 
-1. **Check official documentation FIRST** - Search for current Claude Code guidance on the topic
-2. **Cite specific sources** - Reference exact documentation URLs or sections
+1. **Use claude-code-guide agent FIRST** - Delegate to built-in Claude Code documentation agent (via Task tool, `subagent_type: claude-code-guide`)
+2. **Cite specific sources** - Reference agent findings, documentation URLs, or sections
 3. **Compare implementation vs. standards** - What does the implementation do vs. what docs recommend?
-4. **Document your research** - Include "Consulted official documentation: [sources]" in review findings
+4. **Document your research** - Include "Consulted claude-code-guide agent: [findings]" or "Consulted official documentation: [sources]" in review findings
 5. **Never assume best practices** - Verify against authoritative sources, don't rely on general knowledge
 
 **Why this matters:** You cannot evaluate "adherence" without knowing what the official guidance says. Research comes before evaluation.
