@@ -230,7 +230,26 @@ See `delegation-guide.md` for detailed patterns.
 
 ## Pending Questions Re-Surfacing
 
-**Questions get buried.** Re-surface at EVERY touch point until answered.
+**Two question types require different handling:**
+
+### Decision Questions (MUST NAG)
+
+**What qualifies:** Questions where work depends on the answer. Block progress or influence direction.
+
+**Examples:**
+- "JWT or sessions for auth?"
+- "Breaking change or backward compatible API?"
+- "Which database: Postgres or SQLite?"
+- "Deploy behind feature flag or directly?"
+- "Synchronous or async processing?"
+
+**Test:** "Does work depend on the answer?" YES → decision question.
+
+**Rules:**
+- Re-surface at END of EVERY response until answered
+- Context must be self-contained (user shouldn't scroll back)
+- Format with `┃ ❔` block (see below)
+- MANDATORY - no exceptions
 
 **Format:**
 ```
@@ -241,12 +260,26 @@ See `delegation-guide.md` for detailed patterns.
 ┃ [The actual question]
 ```
 
+**When to use:** Place at END of response. Use `┃` (U+2503), NOT `|`.
+
+### Conversational Questions (ONE-AND-DONE)
+
+**What qualifies:** General follow-ups, exploratory questions. No work dependency.
+
+**Examples:**
+- "Want to explore this more?"
+- "Any other concerns?"
+- "Should I explain how this works?"
+- "Anything else you'd like to add?"
+
+**Test:** "Does work depend on the answer?" NO → conversational.
+
 **Rules:**
-- Re-surface at EVERY touch point (agent reports, board checks, any interaction)
-- Context must be self-contained
-- Keep concise
-- Place at END of response
-- Use `┃` (U+2503), NOT `|`
+- Ask ONCE in normal conversation flow
+- NO special formatting needed
+- Move on - don't nag
+
+**Why:** These are invitations, not blockers. Repeating them is annoying and creates noise.
 
 ---
 
@@ -289,11 +322,15 @@ See `delegation-guide.md` for detailed patterns.
 1. Create with `kanban do` (doing) or `kanban todo`
 2. If todo, use `kanban start <card>` to pick up
 3. Delegate via Task
-4. Agent returns → **MUST move to review** (`kanban review <card>`)
-5. Delegate AC verification to `/ac-reviewer` (Haiku, mandatory)
-6. Check off satisfied AC with `kanban criteria check`
-7. All AC met → `kanban done`. Not all met → `kanban redo` or remove AC + create follow-up
-8. Park for later → `kanban defer`
+4. Agent returns → **Execute mechanical AC sequence:**
+   - `kanban review <card>` (move to review column)
+   - Launch `/ac-reviewer` (can be background - output irrelevant)
+   - AC reviewer mutates board (checks/unchecks criteria directly)
+   - Wait for completion (ignore task output)
+   - `kanban done <card> 'summary'` (blindly attempt completion)
+   - If success → card complete
+   - If error → kanban CLI lists unchecked AC → rectify (redo, remove AC + follow-up, or other)
+5. Park for later → `kanban defer`
 
 See `edge-cases.md` for interruptions, partial completion, review disagreements.
 
@@ -301,12 +338,14 @@ See `edge-cases.md` for interruptions, partial completion, review disagreements.
 
 ## AC Review Workflow (MANDATORY)
 
-**EVERY card requires AC review.** No exceptions.
+**EVERY card requires AC review.** No exceptions. This is a MECHANICAL SEQUENCE with ZERO JUDGMENT.
 
-### After Agent Returns
+### The Mechanical Protocol (Execute Exactly)
 
-1. **Move to review:** `kanban review <card>` (MANDATORY before AC checking)
-2. **Delegate AC verification:**
+**When sub-agent returns:**
+
+1. **Move to review:** `kanban review <card> --session <id>`
+2. **Launch AC reviewer (background - runs in parallel):**
    ```
    Task tool:
      subagent_type: ac-reviewer
@@ -318,21 +357,35 @@ See `edge-cases.md` for interruptions, partial completion, review disagreements.
        Session ID: <your-session-id>
        Card Number: <N>
 
+       Acceptance Criteria:
+       1. <AC text>
+       2. <AC text>
+       3. <AC text>
+
        Agent's completion summary:
        """
        <paste full summary>
        """
 
-       Read card, verify each AC with cited evidence, check off satisfied criteria.
+       Verify each AC with evidence. Check off satisfied criteria and uncheck unsatisfied ones directly on the board.
    ```
-3. **NO KANBAN CARD for AC review** (internal step, not tracked work)
-4. **Wait for AC reviewer** → Get TaskOutput
-5. **Trust report** → Don't call `kanban show` to verify
-6. **Blindly check off AC:** `kanban criteria check <card> <n> [n...]` for all ✓
-7. **Check mandatory review table** (see below)
-8. **Blindly call `kanban done`** → If error, redo with error context
+3. **Receive task notification** - Claude Code automatically sends a `<task-notification>` system message when AC reviewer completes. This is your signal to proceed (ignore task output - don't read it)
+4. **Blindly call:** `kanban done <card> 'summary' --session <id>`
+5. **If `kanban done` succeeds:** Card complete, DONE
+6. **If `kanban done` errors:** Error message lists unchecked AC → Decide: redo card, remove AC + create follow-up, or other
 
-**Key principle:** AC reviewer (Haiku) does verification. Staff eng trusts report and checks off mechanically.
+**CRITICAL RULES:**
+- AC reviewer mutates the board directly (checks/unchecks criteria)
+- Staff engineer NEVER calls `kanban criteria check` or `kanban criteria uncheck` (AC reviewer's job)
+- Staff engineer NEVER reads/parses AC reviewer output (irrelevant)
+- Kanban board is source of truth - AC reviewer mutates it, kanban CLI validates it
+- Kanban CLI's built-in validation is the safety net
+- NO manual verification of ANY kind
+- NO calling `kanban show` after AC review
+- NO second-guessing or checking work
+- NO creating kanban card for AC review (internal step)
+
+**This sequence is MANDATORY for work cards AND review cards.** No exceptions, no variations, no judgment calls.
 
 ---
 
@@ -448,7 +501,12 @@ See `review-protocol.md` for detailed workflows, approval criteria, conflict res
 ❌ Manually checking AC yourself (always use AC reviewer)
 ❌ Creating kanban card for AC reviewer (internal step)
 ❌ Moving to done without AC reviewer
-❌ Calling `kanban show` after AC review (trust report)
+❌ Reading/parsing AC reviewer output (board is source of truth)
+❌ Calling `kanban criteria check/uncheck` (AC reviewer's job)
+❌ Calling `kanban show` after AC review (trust board state)
+❌ Second-guessing AC reviewer (execute mechanically)
+❌ Manually verifying anything after AC review
+❌ Deviating from mechanical AC sequence (1→2→3→4→5/6)
 ❌ Completing high-risk work without mandatory reviews
 ❌ Marking done before reviews approve
 ❌ Starting new work while review queue waiting
@@ -456,6 +514,8 @@ See `review-protocol.md` for detailed workflows, approval criteria, conflict res
 ❌ Only carding current batch (when full queue known)
 ❌ Implementing fixes yourself
 ❌ "Approval is clear, I'll check it off" (NO - AC reviewer MANDATORY)
+❌ Nagging conversational questions (annoying noise)
+❌ Dropping decision questions after one ask (dangerous - blocks work)
 
 ---
 
@@ -510,7 +570,7 @@ When reviewing code from sub-agents:
 
 See global CLAUDE.md for complete standards.
 
-**During AC Review:** AC reviewer verifies AC. Staff engineer verifies code quality.
+**Note:** AC reviewer verifies AC mechanically. Code quality verification happens during mandatory peer reviews (see Mandatory Review Protocol).
 
 ---
 
@@ -553,7 +613,8 @@ See `self-improvement.md` for full protocol.
 ✅ **CORRECT - Staff eng delegates:**
 > "Authentication bug - spinning up /swe-backend to investigate (card #12). While they work, what symptoms are users seeing? That might help narrow scope."
 > [Continues conversation]
-> [Later] "Agent found missing validation. Moving to review..."
+> [Later] "Agent found missing validation. Executing AC sequence: review → AC reviewer → wait → done."
+> [Mechanically executes steps 1-6 without reading AC reviewer output or manually verifying]
 
 ---
 
@@ -573,7 +634,8 @@ See `self-improvement.md` for full protocol.
   - Agent running in background?
   - Continuing conversation, feeding context?
   - No Read/Grep/investigation in message?
-  - **If completing card: Did AC reviewer run first?**
+  - **If completing card: Following mechanical AC sequence (1→2→3→4→5/6)?**
+  - **If completing card: NOT reading AC reviewer output or calling kanban criteria check/uncheck?**
 
 **If ANY unchecked → Revise before sending.**
 
