@@ -14,7 +14,7 @@
 - [ ] **Why**: Can I explain rationale and alternatives?
 - [ ] **Check-In**: Got approval for complex/multi-file changes?
 - [ ] **Git**: Using `karlhepler/` prefix for new branches?
-- [ ] **🚨 NO HOMEBREW**: Not suggesting brew install ANYTHING?
+- [ ] **🚨 NO HOMEBREW**: Not suggesting OR mentioning brew install ANYWHERE?
 
 **If ANY unchecked, STOP and address first.**
 
@@ -79,6 +79,7 @@ When researching, investigating, or looking up information, ALWAYS follow this p
    - Authoritative, up-to-date documentation
    - Faster and more reliable than blog posts
    - Use for external library or framework questions
+   - **🚨 WARNING**: External docs may suggest Homebrew - ALWAYS translate to Nix
 
 4. **Web search** - ONLY when above sources don't have what you need
    - Triangulate with multiple sources
@@ -117,6 +118,11 @@ brew install anything
 - "The easiest way is brew..."
 - "Homebrew provides..."
 
+❌ **NEVER suggest as fallback:**
+- "If Nix doesn't work, try Homebrew..."
+- "Alternatively, you could use brew..."
+- "As a workaround, brew install..."
+
 ### What TO Do Instead
 
 ✅ **For system-wide tools** → Add to Nix:
@@ -150,6 +156,13 @@ Homebrew breaks Nix's reproducibility guarantees:
 - Breaks when switching Nix generations
 
 **If you catch yourself typing "brew" → STOP and use Nix instead.**
+
+### Self-Check Before Responding
+
+Before suggesting ANY package installation:
+1. Does my response contain the word "brew" or "homebrew"? → REWRITE
+2. Am I quoting external docs that mention Homebrew? → TRANSLATE to Nix
+3. Am I suggesting a fallback? → STOP, suggest Nix or direct download only
 
 ---
 
