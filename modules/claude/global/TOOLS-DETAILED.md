@@ -31,13 +31,9 @@ Priority: CLI flag > environment variable > default
 | `--max-ralph-iterations N` | `BURNS_MAX_RALPH_ITERATIONS` | 3 | Maximum iterations for Ralph Orchestrator |
 
 **Behavior:**
-- Automatically sets `KANBAN_SESSION` to `burns-<cwd-hash>` for persistent session tracking
 - Accepts either inline prompt strings or file paths
 - Auto-detects file vs string based on file existence
 - Handles Ctrl+C gracefully with full process tree cleanup
-
-**Environment Variables Set:**
-- `KANBAN_SESSION=burns-<cwd-hash>` - Persistent session ID based on current working directory
 
 **Exit Codes:**
 - `0` - Success
@@ -110,7 +106,6 @@ Priority: CLI flag > environment variable > default
 5. **Complete** - Exit when PR is ready to merge or max cycles reached
 
 **Behavior:**
-- Automatically sets `KANBAN_SESSION` to `smithers-pr-<number>` for persistent tracking
 - Polls CI checks every 10 seconds (configurable via `POLL_INTERVAL` constant)
 - Only invokes Ralph when actionable work exists (failed checks or merge conflicts)
 - Sends macOS notifications on completion, interruption, or max cycles reached
@@ -118,7 +113,6 @@ Priority: CLI flag > environment variable > default
 - Dynamically extends watch cycles if unaddressed bot comments exist
 
 **Environment Variables Set:**
-- `KANBAN_SESSION=smithers-pr-<number>` - Persistent session ID based on PR number
 - `BURNS_MAX_RALPH_ITERATIONS` - Passed to burns when invoking Ralph
 
 **Exit Codes:**

@@ -975,7 +975,25 @@ You have explicit permission to STOP and exit if:
 - Operation scope unclear or risky
 - Any safety constraint would be violated
 
-**Better to exit early than cause damage.** Document the blocker in your task system and exit.""")
+**Better to exit early than cause damage.** Document the blocker in your task system and exit.
+
+## 🚨 WORKING DIRECTORY RESTRICTION
+
+You are running in autonomous mode within: {os.getcwd()}
+
+**PROHIBITED OPERATIONS:**
+- ❌ Accessing files outside your working directory (no `../`, no absolute paths outside)
+- ❌ Using `cd` to change directories
+- ❌ Editing files in `~/.claude/`, `~/.config/`, or system directories
+- ❌ Operations that would affect other projects or system configuration
+
+**ENFORCEMENT:**
+- All file paths MUST be relative to your working directory
+- You will be audited post-execution
+- Violations will be logged and reported
+
+**If you need to access files outside this directory, STOP and document the blocker.**
+""")
 
     # Failed checks section
     if failed_checks:

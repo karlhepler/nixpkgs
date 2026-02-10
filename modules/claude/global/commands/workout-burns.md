@@ -1,5 +1,8 @@
 ---
+name: workout-burns
 description: Create git worktrees with TMUX windows and burns (Ralph Orchestrator) instances for parallel development. Use when user wants to test features in isolation, work on multiple branches simultaneously, or needs dedicated burns Ralph sessions per worktree.
+version: 1.0
+keep-coding-instructions: true
 ---
 
 # Workout Burns - Batch Worktree Creation with TMUX and Burns

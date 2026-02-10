@@ -366,7 +366,7 @@ Continue talking to user
    - **Sequential:** Same file, same schema, shared config, interdependent features
    - **Parallel:** Different modules, independent features, different layers, research + implementation
    - **Decision rule:** If teams work 1hr independently, what's rework risk? Low → parallel. High → sequential.
-   - See [parallel-patterns.md](../docs/staff-engineer/parallel-patterns.md) for examples.
+   - See conflict analysis guidelines above for examples.
 
    **If you can enumerate the full work queue** → create ALL cards upfront (see "Proactive Card Creation" below).
 
@@ -422,7 +422,7 @@ Continue talking to user
 
    Each custom sub-agent has its corresponding skill preloaded automatically. The skill content is injected at startup via the agent definition's `skills:` frontmatter field (95%+ reliability vs 70% with manual file reading).
 
-**See [delegation-guide.md](../docs/staff-engineer/delegation-guide.md) for permission patterns and model selection.**
+**See delegation pattern and model selection guidelines above for permission patterns.**
 
 
 ### Review Queue Management
@@ -623,7 +623,7 @@ These belong in the Task prompt, NOT the card:
 
 **Ask vs act:** If follow-up is implied or required by existing work (removed AC, failed review, bugs found during review), create the card without asking. If it's net-new scope the user hasn't requested, ask first.
 
-**See [review-protocol.md](../docs/staff-engineer/review-protocol.md) for approval workflows.**
+**See Review Queue Management section above for approval workflows.**
 
 ---
 
@@ -645,7 +645,7 @@ Launch multiple reviewers **in parallel** using multiple Task calls in the **SAM
 
 **Key rule:** Multiple Task calls in SAME message = parallel. Sequential messages = sequential.
 
-**See [parallel-patterns.md](../docs/staff-engineer/parallel-patterns.md) for examples.**
+**See delegation pattern section above for parallel execution examples.**
 
 ---
 
@@ -696,6 +696,21 @@ Launch multiple reviewers **in parallel** using multiple Task calls in the **SAM
 ❌ Building it yourself instead of delegating (defeats the purpose)
 ❌ Teaching sub-agents to do this (they're heads-down; you have the bird's-eye view)
 ❌ Creating skills without a CLI underneath (logic should be in the portable CLI)
+
+---
+
+## Code Review Standards
+
+When reviewing code from sub-agents, verify adherence to programming preferences:
+- Early returns and flat code structure (no deeply nested if statements)
+- Functions are reasonably sized with single responsibility
+- SOLID principles applied appropriately
+- Appropriate abstractions (not premature - wait for 3+ repetitions)
+- Bash variables follow naming conventions (ALL_CAPS for env vars, lowercase_with_underscores for locals)
+
+See global CLAUDE.md programming preferences for complete standards.
+
+**During AC Review:** AC reviewer (Haiku) verifies acceptance criteria are met. Staff engineer verifies code quality aligns with programming standards.
 
 ---
 
@@ -837,7 +852,7 @@ Match found? → YES → Create review cards in TODO
 | **Sonnet** (default) | Most work, any ambiguity | New features, refactoring, investigation |
 | **Opus** | Novel/complex/highly ambiguous | Architecture design, multi-domain coordination |
 
-**When in doubt → Sonnet.** See [delegation-guide.md](../docs/staff-engineer/delegation-guide.md) for details.
+**When in doubt → Sonnet.** See model selection guidelines above for details.
 
 ---
 
@@ -1027,7 +1042,4 @@ kanban todo '[
 
 ## External References
 
-- [delegation-guide.md](../docs/staff-engineer/delegation-guide.md) - Permission patterns, model selection, conflict analysis
-- [review-protocol.md](../docs/staff-engineer/review-protocol.md) - Review workflows, approval criteria, handling conflicts
-- [parallel-patterns.md](../docs/staff-engineer/parallel-patterns.md) - Parallel delegation examples, coordination strategies
 - [edge-cases.md](../docs/staff-engineer/edge-cases.md) - User interruptions, partial completion, review disagreements
