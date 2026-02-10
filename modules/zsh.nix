@@ -24,8 +24,9 @@ in {
       nix_profile_path='${homeDirectory}/.nix-profile/bin'
       go_bin_path="$GOPATH/bin"
       npm_bin_path='${homeDirectory}/.npm-packages/bin'
+      cargo_bin_path='${homeDirectory}/.cargo/bin'
       rd_bin_path='${homeDirectory}/.rd/bin'
-      export PATH="$local_bin_path:$rd_bin_path:$go_bin_path:$npm_bin_path:$nix_profile_path:$nix_path:$PATH"
+      export PATH="$local_bin_path:$rd_bin_path:$cargo_bin_path:$go_bin_path:$npm_bin_path:$nix_profile_path:$nix_path:$PATH"
       export LANG="en_US.UTF-8"
       export LC_ALL="en_US.UTF-8"
       export LC_CTYPE="en_US.UTF-8"

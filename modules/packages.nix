@@ -82,10 +82,10 @@
     # === Fonts ===
     nerd-fonts.sauce-code-pro
 
-    # === macOS Utilities ===
-    darwin.trash
-
     # === Shell Applications (from modules/) ===
+  ] ++ lib.optionals pkgs.stdenv.isDarwin [
+    # macOS-only utilities
+    pkgs.darwin.trash
   ] ++ (builtins.attrValues shellapps);
 
   # ============================================================================
