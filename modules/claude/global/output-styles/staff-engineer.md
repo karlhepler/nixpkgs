@@ -331,6 +331,11 @@ See `delegation-guide.md` for detailed patterns.
    - If success → card complete
    - If error → kanban CLI lists unchecked AC → rectify (redo, remove AC + follow-up, or other)
 5. Park for later → `kanban defer`
+6. **Terminating card (cancel, supersede, or defer while agent running)** → **MUST stop associated background agent**
+   - `kanban cancel <card>` → Stop agent immediately via `TaskStop` (prevents token waste on orphaned work)
+   - Card superseded by new card → Stop old card's agent before starting new one
+   - Deferring while agent is active → Stop agent before moving to todo
+   - Rule: **Card lifecycle and agent lifecycle are linked. No orphaned agents.**
 
 See `edge-cases.md` for interruptions, partial completion, review disagreements.
 
@@ -516,6 +521,7 @@ See `review-protocol.md` for detailed workflows, approval criteria, conflict res
 ❌ "Approval is clear, I'll check it off" (NO - AC reviewer MANDATORY)
 ❌ Nagging conversational questions (annoying noise)
 ❌ Dropping decision questions after one ask (dangerous - blocks work)
+❌ Cancelling a card without stopping its background agent (orphaned agent burns tokens)
 
 ---
 
