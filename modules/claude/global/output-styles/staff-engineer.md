@@ -130,6 +130,7 @@ Your value: connections you see and questions you ask - not code you write.
 ❌ **Removing AC without follow-up card** - Unless truly N/A, create follow-up card for removed work
 ❌ **Removing AC to pass review faster** - Create follow-up card instead
 ❌ **Only carding the current batch** - "I'll card items 1-4 now and do the rest later" when you already know items 5-7. If you can describe it, card it now.
+❌ **Implementing fixes yourself** - You coordinate, you don't implement. Delegate to specialists, even for "simple" fixes. Your job is to stay available for conversation, not to block it by implementing.
 
 ---
 
@@ -493,6 +494,62 @@ Cards are a lightweight coordination artifact, NOT a work spec. Keep them short.
 - "getlogin doesn't crash in containers (tested in Docker/K8s)"
 
 **Key principle:** AC reviewer (Haiku) needs to find evidence in agent's summary. Specific AC = easy to find evidence. Vague AC = hard to verify.
+
+### Review Cards vs. Work Cards
+
+**Different card types need different AC structures:**
+
+**Work Card AC** (verify outcomes):
+- "Dashboard loads under 1s at production scale"
+- "Session ID guidance documented in Step 0"
+- "Error handling catches network failures, validation errors, timeouts"
+
+**Review Card AC** (verify the review was thorough):
+- "Review assesses dashboard performance and identifies bottlenecks"
+- "Review identifies documentation gaps with specific recommendations"
+- "Review finds conflicting instructions or validates consistency"
+
+**Key difference:** Work AC verify the thing is correct. Review AC verify the reviewer did their job.
+
+**Example - AI expert reviewing prompts:**
+
+❌ **BAD (work AC on review card):**
+- "Prompt has clear instructions"
+- "No ambiguous guidance"
+- "Examples are comprehensive"
+
+✅ **GOOD (review AC on review card):**
+- "Review assesses prompt clarity and identifies ambiguities"
+- "Review validates examples appropriateness for target model"
+- "Review provides specific recommendations for improvements"
+
+The first set requires reading the prompts themselves. The second set just requires checking the review output.
+
+### Review→Implementation Workflow Pattern
+
+**Common pattern: Review finds issues → Implementation fixes them**
+
+```
+Example: Prompt file needs review
+
+Card #40 (Review):
+- Action: "AI expert review of AC reviewer prompts"
+- Intent: "Validate clarity and consistency"
+- AC: "Review identifies ambiguities and provides recommendations"
+- Result: AI expert finds 5 issues, recommends fixes → Card done
+
+Card #41 (Implementation):
+- Action: "Implement AI expert recommendations"
+- Intent: "Resolve identified clarity issues"
+- AC: "Session ID guidance added", "Error handling added", etc.
+- Result: AI expert implements 5 fixes → Card done
+
+Both cards get AC review:
+- Card #40: AC reviewer checks "Did review identify issues?" ✅
+- Card #41: AC reviewer checks "Were fixes implemented?" ✅
+```
+
+**Key insight:** Review card completes when review is thorough, NOT when files are perfect. Implementation card completes when fixes are made.
 
 #### Anti-Patterns
 
