@@ -4,6 +4,8 @@
 
 > **Context7 MCP:** Always use Context7 MCP when I need library/API documentation, code generation, setup or configuration steps without me having to explicitly ask.
 
+> **🚨 NEVER HOMEBREW 🚨** STOP. Do NOT suggest, install, or mention Homebrew. Ever. Use Nix (nixpkgs/nixpkgs-unstable) or direct binary downloads ONLY.
+
 ---
 
 ## Before EVERY Task
@@ -12,6 +14,7 @@
 - [ ] **Why**: Can I explain rationale and alternatives?
 - [ ] **Check-In**: Got approval for complex/multi-file changes?
 - [ ] **Git**: Using `karlhepler/` prefix for new branches?
+- [ ] **🚨 NO HOMEBREW**: Not suggesting brew install ANYTHING?
 
 **If ANY unchecked, STOP and address first.**
 
@@ -92,6 +95,61 @@ When researching, investigating, or looking up information, ALWAYS follow this p
 - Standard library first
 - Well-maintained open-source libraries
 - Build custom only when nothing else works
+
+---
+
+## 🚨 PACKAGE INSTALLATION: NEVER HOMEBREW 🚨
+
+**CRITICAL: This is a Nix-managed system. Homebrew is FORBIDDEN.**
+
+### What NOT to Do
+
+❌ **NEVER suggest:**
+```bash
+brew install colima
+brew install docker
+brew install anything
+```
+
+❌ **NEVER say:**
+- "Install via Homebrew..."
+- "You can use brew install..."
+- "The easiest way is brew..."
+- "Homebrew provides..."
+
+### What TO Do Instead
+
+✅ **For system-wide tools** → Add to Nix:
+```nix
+# modules/packages.nix
+home.packages = with pkgs; [
+  colima  # Docker runtime
+  jq      # JSON processor
+];
+```
+
+✅ **For programmatic installation** → Direct binary download:
+```bash
+# In hms.bash or activation scripts
+curl -fsSL "https://example.com/releases/latest/binary" -o "$HOME/.local/bin/tool"
+chmod +x "$HOME/.local/bin/tool"
+```
+
+✅ **For language packages** → Language-specific managers:
+```bash
+npm install -g package-name  # Node packages
+pip install package-name     # Python packages (within venvs)
+```
+
+### Why This Matters
+
+Homebrew breaks Nix's reproducibility guarantees:
+- Installs to `/opt/homebrew/` (outside Nix control)
+- Version conflicts with Nix packages
+- Not declared in configuration (invisible dependencies)
+- Breaks when switching Nix generations
+
+**If you catch yourself typing "brew" → STOP and use Nix instead.**
 
 ---
 

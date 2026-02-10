@@ -6,6 +6,22 @@ Nix Home Manager configuration managing development environments with flakes. Cr
 
 **Critical**: This repository MUST be installed at `~/.config/nixpkgs`.
 
+## 🚨 ABSOLUTE PROHIBITION: NEVER HOMEBREW 🚨
+
+**STOP. READ THIS FIRST.**
+
+This is a **Nix-managed system**. Homebrew is **ABSOLUTELY FORBIDDEN**. No exceptions.
+
+❌ Do NOT suggest `brew install` for ANYTHING
+❌ Do NOT mention Homebrew as an option
+❌ Do NOT say "you can also use Homebrew..."
+
+✅ USE: Nix packages (`modules/packages.nix`)
+✅ USE: Direct binary downloads (in `hms.bash`)
+✅ USE: Language-specific managers (npm, pip in venvs)
+
+**If you're about to type "brew" → STOP. Use Nix instead.**
+
 ## 🚨 SOURCE OF TRUTH PRINCIPLE 🚨
 
 **CRITICAL: When working in this repository, NEVER edit files outside of this repository.**
@@ -139,12 +155,12 @@ This repository (`~/.config/nixpkgs`) is the **single source of truth** for syst
 
 ## Critical Requirements
 
-1. **Repository Location**: MUST be installed at `~/.config/nixpkgs`
-2. **Use hms Command**: Always use `hms` for syncing to ensure proper git handling
-3. **Backup Synchronization**: Sync `~/.backup` folder with cloud storage for machine-specific configuration safety
-4. **--expunge Flag**: Claude Code must never use the `--expunge` flag with `hms`
-5. **macOS ARM Only**: This configuration is locked to `aarch64-darwin` (Apple Silicon Macs)
-6. **NEVER USE HOMEBREW**: Do NOT suggest, recommend, or implement Homebrew. All packages MUST be managed through Nix (nixpkgs or nixpkgs-unstable).
+1. **🚨 NEVER HOMEBREW**: Do NOT suggest, recommend, or implement Homebrew. EVER. All packages MUST be managed through Nix (nixpkgs/nixpkgs-unstable) or direct binary downloads. See prohibition above.
+2. **Repository Location**: MUST be installed at `~/.config/nixpkgs`
+3. **Use hms Command**: Always use `hms` for syncing to ensure proper git handling
+4. **Backup Synchronization**: Sync `~/.backup` folder with cloud storage for machine-specific configuration safety
+5. **--expunge Flag**: Claude Code must never use the `--expunge` flag with `hms`
+6. **macOS ARM Only**: This configuration is locked to `aarch64-darwin` (Apple Silicon Macs)
 
 ## Configuration Structure
 
@@ -157,10 +173,27 @@ For detailed architecture, see README.md and source files in modules/.
 ## Development Workflows
 
 **Add new package:**
+
+🚨 **NEVER via Homebrew** - Use Nix or direct download ONLY
+
 1. Add to `modules/packages.nix` under appropriate category
 2. For LSP servers: Also update Neovim LSP config
 3. Run `hms` to apply
 4. Verify: `which <package-name>`
+
+**Example (CORRECT):**
+```nix
+# modules/packages.nix
+home.packages = with pkgs; [
+  colima    # Docker runtime
+  ripgrep   # Fast search
+];
+```
+
+**Example (WRONG - NEVER DO THIS):**
+```bash
+brew install colima  # ❌ FORBIDDEN
+```
 
 **Add new shellapp:**
 1. Create bash script in appropriate module directory (e.g., `modules/git/new-script.bash`)
