@@ -1217,23 +1217,23 @@ def main():
     ralph_invocation_count = 0
     current_cycle = 0  # Track which cycle we're on
     cycle = 1
-    effective_max_cycles = max_cycles  # Can be extended by verification
-    verification_extension_used = False  # Track if we've used verification extension
+    effective_max_cycles = max_cycles
     try:
         while cycle <= effective_max_cycles:
             current_cycle = cycle
-            ralph_invoked, should_extend = main_loop_iteration(
+            ralph_invoked, should_restart = main_loop_iteration(
                 cycle, ralph_invocation_count, pr_number, pr_url, owner, repo,
                 max_ralph_invocations, effective_max_cycles, start_time
             )
             if ralph_invoked:
                 ralph_invocation_count += 1
 
-            # Handle verification extension (only once per smithers run)
-            if should_extend and not verification_extension_used:
-                log("📝 Verification found new work - extending by 1 cycle")
-                verification_extension_used = True
-                effective_max_cycles += 1  # Extend the limit by 1
+            # Handle verification restart - if verification found new work, completely restart
+            if should_restart:
+                log("🔄 Restarting smithers from cycle 1/4 (verification found new work)")
+                cycle = 1
+                ralph_invocation_count = 0
+                continue  # Skip cycle increment, restart from cycle 1
 
             cycle += 1
 
@@ -1308,9 +1308,9 @@ def main_loop_iteration(
 ) -> tuple:
     """Single iteration of the main watch loop.
 
-    Returns (ralph_invoked: bool, should_extend: bool) where:
+    Returns (ralph_invoked: bool, should_restart: bool) where:
     - ralph_invoked: True if Ralph was invoked
-    - should_extend: True if verification found new work and loop should extend by 1 cycle
+    - should_restart: True if verification found new work and loop should completely restart (reset to cycle 1)
     """
     log(f"━━━ Cycle {cycle}/{max_cycles} ━━━")
 
@@ -1373,9 +1373,9 @@ def main_loop_iteration(
         # 3. Smithers exits prematurely
         # 4. 30-60s later, cascade workflows start (too late, smithers already gone)
         #
-        # Solution: Wait 30s and re-check to catch workflows that start after initial completion
-        log("✓ No work found. Waiting 30s for final verification...")
-        time.sleep(30)
+        # Solution: Wait 60s and re-check to catch workflows that start after initial completion
+        log("✓ No work found. Waiting 60s for final verification...")
+        time.sleep(60)
 
         # Re-check for new workflows and bot comments
         log("Verifying no new work appeared...")
@@ -1385,11 +1385,11 @@ def main_loop_iteration(
         verification_conflicts = has_merge_conflicts(pr_number)
 
         if work_needed(verification_failed, verification_conflicts, owner, repo, pr_number):
-            log("⚠️  New work detected during verification. Extending watch by 1 cycle...")
+            log("⚠️  New work detected during verification. Restarting smithers loop from cycle 1...")
             # Signal to main loop that verification found new work
-            # Main loop will extend effective_max_cycles by 1 to handle newly discovered work
-            # This ensures we don't hit "Max Cycles Reached" when verification legitimately finds work
-            return (False, True)  # ralph_invoked=False, should_extend=True
+            # Main loop will reset cycle counter to 1 and Ralph invocation count to 0
+            # This gives smithers a full budget to handle the newly discovered work
+            return (False, True)  # ralph_invoked=False, should_restart=True
 
         # Still clean after verification - safe to exit
         elapsed = time.time() - start_time
