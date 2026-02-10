@@ -141,6 +141,7 @@ elif [ -f "$RALPH_VERSION_CACHE" ]; then
   if [ $DAYS_SINCE_CHECK -ge $PULL_INTERVAL_DAYS ]; then
     # Time to check for updates (Ralph and Claude)
     LATEST_RALPH_VERSION=$(gh api repos/mikeyobrien/ralph-orchestrator/releases/latest --jq '.tag_name' 2>/dev/null | sed 's/^v//')
+    LATEST_CLAUDE_VERSION=$(gh api repos/anthropics/claude-code/releases/latest --jq '.tag_name' 2>/dev/null | sed 's/^v//')
     SHOULD_REBUILD=false
     REBUILD_REASON=""
 
@@ -150,19 +151,23 @@ elif [ -f "$RALPH_VERSION_CACHE" ]; then
       REBUILD_REASON="Ralph v$LATEST_RALPH_VERSION available (current: v$CACHED_RALPH_VERSION)"
     fi
 
-    # Always rebuild weekly to get latest Claude (no upstream version check available)
-    # This ensures we get Claude updates even if Ralph version hasn't changed
-    if [ "$SHOULD_REBUILD" = "false" ]; then
-      SHOULD_REBUILD=true
-      REBUILD_REASON="Weekly rebuild for latest Claude (current: v$CACHED_CLAUDE_VERSION)"
+    # Check if Claude has a new version
+    if [ -n "$LATEST_CLAUDE_VERSION" ] && [ "$LATEST_CLAUDE_VERSION" != "$CACHED_CLAUDE_VERSION" ]; then
+      if [ "$SHOULD_REBUILD" = "true" ]; then
+        REBUILD_REASON="$REBUILD_REASON; Claude v$LATEST_CLAUDE_VERSION available (current: v$CACHED_CLAUDE_VERSION)"
+      else
+        SHOULD_REBUILD=true
+        REBUILD_REASON="Claude v$LATEST_CLAUDE_VERSION available (current: v$CACHED_CLAUDE_VERSION)"
+      fi
     fi
 
     if [ "$SHOULD_REBUILD" = "true" ]; then
       echo "$REBUILD_REASON" >&2
       build_ralph_image "${LATEST_RALPH_VERSION:-$CACHED_RALPH_VERSION}" || echo "Warning: Update failed, using cached versions" >&2
     else
-      # No update needed, touch cache to reset timer
+      # No updates available, touch cache to reset timer
       touch "$RALPH_VERSION_CACHE"
+      echo "No updates available (Ralph: v$CACHED_RALPH_VERSION, Claude: v$CACHED_CLAUDE_VERSION)" >&2
     fi
   fi
 else
