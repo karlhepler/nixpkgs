@@ -201,34 +201,39 @@ If you somehow reached this step without checking any criteria yet:
 - Prepare your summary for Step 5
 - Do NOT do a big batch check here - that defeats the purpose
 
-### Step 5: Report Results (MINIMAL OUTPUT)
+### Step 5: Report Results (ULTRA-MINIMAL OUTPUT)
 
-**Keep it SHORT.** Staff engineer doesn't need paragraphs - just the status.
+**CRITICAL: Keep output ULTRA-MINIMAL to save context.**
 
 **Format:**
 ```
-Card #<N> AC review complete.
-Checked: AC #1, #2, #3
-Not met: [none or list which AC failed and why in ONE line each]
+Card #<N>: 1:✓ 2:✓ 3:✗ 4:✓ 5:✓
 ```
+
+**Rules:**
+- Just the card number and AC status
+- Use ✓ for satisfied, ✗ for not satisfied
+- NO evidence, NO reasons, NO explanations
+- One line only
 
 **Examples:**
 
 All criteria met:
 ```
-Card #15 AC review complete.
-Checked: AC #1, #2, #3
-All criteria satisfied.
+Card #15: 1:✓ 2:✓ 3:✓
 ```
 
 Some criteria not met:
 ```
-Card #20 AC review complete.
-Checked: AC #1, #3
-Not met: AC #2 (no evidence of rate limiting in summary)
+Card #20: 1:✓ 2:✗ 3:✓ 4:✓ 5:✗
 ```
 
-**That's it.** The checking is what matters, not verbose explanation. Evidence verification happens in your internal thinking, not in your output.
+Mixed results:
+```
+Card #25: 1:✓ 2:✓ 3:✗ 4:✗ 5:✓ 6:✓
+```
+
+**Why ultra-minimal:** Staff engineer just needs to know which AC to check off in kanban. They can verify details themselves if needed. Saving context is more important than verbose evidence.
 
 ## Evidence Requirements
 
@@ -307,12 +312,8 @@ If AC asks for multiple things and only some are done, **leave it unchecked**:
 
 **Example output:**
 ```
-Card #25 AC review complete.
-Checked: AC #1, #2
-Not met: AC #3 (validation only covers email - missing phone and zip)
+Card #25: 1:✓ 2:✓ 3:✗
 ```
-
-Stay within the ONE-LINE format for each unmet criterion.
 
 ## Verification Strategies by Card Type
 
@@ -385,9 +386,7 @@ Some cards have both types of AC. Apply the appropriate strategy per criterion.
 ### Scenario 1: Work Card - All AC Met
 
 ```
-Card #15 (type: work) AC review complete.
-Checked: AC #1, #2, #3
-All criteria satisfied.
+Card #15: 1:✓ 2:✓ 3:✓
 ```
 
 **Evidence approach:** Verified changes in files (primary), confirmed by agent summary (secondary).
@@ -395,9 +394,7 @@ All criteria satisfied.
 ### Scenario 2: Review Card - All AC Met
 
 ```
-Card #20 (type: review) AC review complete.
-Checked: AC #1, #2, #3
-All criteria satisfied.
+Card #20: 1:✓ 2:✓ 3:✓
 ```
 
 **Evidence approach:** Summary contained complete findings (primary evidence).
@@ -405,9 +402,7 @@ All criteria satisfied.
 ### Scenario 3: Partial Completion (Work Card)
 
 ```
-Card #25 (type: work) AC review complete.
-Checked: AC #1, #3
-Not met: AC #2 (error handling not found in payment.js)
+Card #25: 1:✓ 2:✗ 3:✓
 ```
 
 **Evidence approach:** File reads showed incomplete implementation.
@@ -415,21 +410,17 @@ Not met: AC #2 (error handling not found in payment.js)
 ### Scenario 4: Partial Completion (Review Card)
 
 ```
-Card #30 (type: review) AC review complete.
-Checked: AC #1, #3
-Not met: AC #2 (recommendations missing from summary - only risks identified)
+Card #30: 1:✓ 2:✗ 3:✓
 ```
 
 **Evidence approach:** Summary lacked required information.
 
 ### Scenario 5: Ambiguous Evidence
 
-If evidence is unclear, **err on the side of leaving unchecked** and explain in ONE line:
+If evidence is unclear, leave it unchecked:
 
 ```
-Card #35 (type: work) AC review complete.
-Checked: AC #2, #3
-Not met: AC #1 (summary says "improved performance" but no metrics - need specific timing)
+Card #35: 1:✗ 2:✓ 3:✓
 ```
 
 ## Important Reminders
