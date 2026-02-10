@@ -8,6 +8,7 @@ set -eou pipefail
 # Image configuration
 RALPH_IMAGE="ralph-orchestrator:latest"
 RALPH_VERSION_CACHE="$HOME/.local/share/ralph/version"
+CLAUDE_VERSION_CACHE="$HOME/.local/share/ralph/claude-version"
 RALPH_DOCKERFILE="$HOME/.local/share/ralph/Dockerfile"
 PULL_INTERVAL_DAYS=7
 
@@ -101,13 +102,19 @@ build_ralph_image() {
   if docker build \
     --build-arg RALPH_VERSION="$version" \
     --build-arg RALPH_ARCH="$RALPH_ARCH" \
+    --build-arg CACHE_BUST="$(date +%s)" \
     -t "$RALPH_IMAGE" \
     "$BUILD_DIR" >/dev/null 2>&1; then
 
-    # Cache version on success
+    # Cache Ralph version on success
     mkdir -p "$(dirname "$RALPH_VERSION_CACHE")"
     echo "$version" > "$RALPH_VERSION_CACHE"
-    echo "Ralph image v$version built successfully" >&2
+
+    # Detect and cache Claude version from built image
+    CLAUDE_VERSION=$(docker run --rm "$RALPH_IMAGE" /usr/local/bin/claude --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
+    echo "$CLAUDE_VERSION" > "$CLAUDE_VERSION_CACHE"
+
+    echo "Ralph image v$version built successfully (Claude v$CLAUDE_VERSION)" >&2
     return 0
   else
     echo "Warning: Ralph image build failed" >&2
@@ -125,18 +132,34 @@ if ! docker image inspect "$RALPH_IMAGE" >/dev/null 2>&1; then
   }
 elif [ -f "$RALPH_VERSION_CACHE" ]; then
   # Image exists - check if we should update (weekly)
-  CACHED_VERSION=$(cat "$RALPH_VERSION_CACHE")
+  CACHED_RALPH_VERSION=$(cat "$RALPH_VERSION_CACHE")
+  CACHED_CLAUDE_VERSION=$(cat "$CLAUDE_VERSION_CACHE" 2>/dev/null || echo "unknown")
   LAST_CHECK=$(stat -c %Y "$RALPH_VERSION_CACHE" 2>/dev/null || echo 0)
   NOW=$(date +%s)
   DAYS_SINCE_CHECK=$(( (NOW - LAST_CHECK) / 86400 ))
 
   if [ $DAYS_SINCE_CHECK -ge $PULL_INTERVAL_DAYS ]; then
-    # Time to check for updates
-    LATEST_VERSION=$(gh api repos/mikeyobrien/ralph-orchestrator/releases/latest --jq '.tag_name' 2>/dev/null | sed 's/^v//')
+    # Time to check for updates (Ralph and Claude)
+    LATEST_RALPH_VERSION=$(gh api repos/mikeyobrien/ralph-orchestrator/releases/latest --jq '.tag_name' 2>/dev/null | sed 's/^v//')
+    SHOULD_REBUILD=false
+    REBUILD_REASON=""
 
-    if [ -n "$LATEST_VERSION" ] && [ "$LATEST_VERSION" != "$CACHED_VERSION" ]; then
-      echo "New Ralph version available: v$LATEST_VERSION (current: v$CACHED_VERSION)" >&2
-      build_ralph_image "$LATEST_VERSION" || echo "Warning: Update failed, using cached version v$CACHED_VERSION" >&2
+    # Check if Ralph has a new version
+    if [ -n "$LATEST_RALPH_VERSION" ] && [ "$LATEST_RALPH_VERSION" != "$CACHED_RALPH_VERSION" ]; then
+      SHOULD_REBUILD=true
+      REBUILD_REASON="Ralph v$LATEST_RALPH_VERSION available (current: v$CACHED_RALPH_VERSION)"
+    fi
+
+    # Always rebuild weekly to get latest Claude (no upstream version check available)
+    # This ensures we get Claude updates even if Ralph version hasn't changed
+    if [ "$SHOULD_REBUILD" = "false" ]; then
+      SHOULD_REBUILD=true
+      REBUILD_REASON="Weekly rebuild for latest Claude (current: v$CACHED_CLAUDE_VERSION)"
+    fi
+
+    if [ "$SHOULD_REBUILD" = "true" ]; then
+      echo "$REBUILD_REASON" >&2
+      build_ralph_image "${LATEST_RALPH_VERSION:-$CACHED_RALPH_VERSION}" || echo "Warning: Update failed, using cached versions" >&2
     else
       # No update needed, touch cache to reset timer
       touch "$RALPH_VERSION_CACHE"
@@ -146,6 +169,21 @@ else
   # Image exists but no version cache - create it
   mkdir -p "$(dirname "$RALPH_VERSION_CACHE")"
   echo "2.5.0" > "$RALPH_VERSION_CACHE"
+fi
+
+# Preflight check: Verify Docker can mount /nix/store
+# This is required for Ralph to access Nix tools (gh, jq, etc.)
+if ! docker run --rm -v /nix/store:/nix/store:ro alpine test -d /nix/store >/dev/null 2>&1; then
+  echo "Error: Docker cannot mount /nix/store for file sharing" >&2
+  echo "" >&2
+  echo "Ralph needs access to /nix/store to use system tools (gh, claude, jq, etc.)" >&2
+  echo "" >&2
+  echo "Please configure your Docker runtime to allow /nix file sharing:" >&2
+  echo "  - Docker Desktop: Settings → Resources → File Sharing → Add '/nix'" >&2
+  echo "  - OrbStack: Should work by default (this error is unexpected)" >&2
+  echo "  - Colima: Should work by default (this error is unexpected)" >&2
+  echo "" >&2
+  exit 1
 fi
 
 # Get current working directory and git root
@@ -172,9 +210,16 @@ done
 # - --pids-limit: Limit to 512 processes
 # - --network=host: Use host network (for gh CLI, git operations)
 #
-# Volume mounts:
-# - Git repo root: Mount as /workspace (read-write for commits/pushes)
-# - HOME: Mount ~/.config/git (XDG git config), ~/.ssh, ~/.config/gh for git/gh operations
+# Volume mounts (read-only unless specified):
+# - Git repo root: /workspace (read-write for commits/pushes)
+# - Nix store: /nix/store (binaries from Nix packages: gh, jq, fd, rg, etc.)
+# - Nix profiles: ~/.nix-profile, /nix/var/nix/profiles/default (symlinks to find Nix binaries)
+# - Claude: ~/.claude (skills, CLAUDE.md, hooks, config)
+# - Git config: ~/.config/git (XDG git config)
+# - SSH keys: ~/.ssh (for git operations)
+# - GitHub CLI: ~/.config/gh (for gh authentication)
+#
+# Note: Claude CLI and Ralph are installed in the container image, not mounted from host
 exec docker run --rm -i \
   --user "$(id -u):$(id -g)" \
   --cap-drop=ALL \
@@ -186,9 +231,15 @@ exec docker run --rm -i \
   --pids-limit=512 \
   --network=host \
   -v "$GIT_ROOT:/workspace:rw" \
+  -v /nix/store:/nix/store:ro \
+  -v "$HOME/.nix-profile:/root/.nix-profile:ro" \
+  -v /nix/var/nix/profiles/default:/nix/var/nix/profiles/default:ro \
+  -v "$HOME/.claude:/root/.claude:ro" \
   -v "$HOME/.config/git:/root/.config/git:ro" \
   -v "$HOME/.ssh:/root/.ssh:ro" \
   -v "$HOME/.config/gh:/root/.config/gh:ro" \
+  -e HOME="/root" \
+  -e PATH="/root/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin" \
   -w /workspace \
   "${ENV_VARS[@]}" \
   "$RALPH_IMAGE" \
