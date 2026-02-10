@@ -1,5 +1,8 @@
 ---
+name: workout-staff
 description: Create git worktrees with TMUX windows and staff (Claude Code) instances for parallel development. Use when user wants to test features in isolation, work on multiple branches simultaneously, or needs dedicated staff Claude sessions per worktree.
+version: 1.0
+keep-coding-instructions: true
 ---
 
 # Workout Staff - Batch Worktree Creation with TMUX and Staff

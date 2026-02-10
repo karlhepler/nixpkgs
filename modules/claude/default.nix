@@ -205,6 +205,50 @@ in {
         # Auto-approve read-only commands (subagents can't prompt for approval)
         # Research: /private/tmp/claude-501/-Users-karlhepler--config-nixpkgs/tasks/ac5f27d.output
         # Total: ~100 command patterns across categories
+
+        # ============================================================================
+        # Permission Pattern Syntax
+        # ============================================================================
+        #
+        # Claude Code uses pattern matching to control which commands can be executed.
+        # Patterns use the format: Tool(pattern) where Tool is the tool name and
+        # pattern matches against the command and its arguments.
+        #
+        # Pattern Syntax:
+        #   Tool(command)           - Exact command match (no arguments)
+        #   Tool(command *)         - Command with any arguments
+        #   Tool(command -flag *)   - Specific flag with any arguments
+        #   Tool(*)                 - Any command for this tool (use sparingly)
+        #
+        # Wildcard Rules:
+        #   *  - Matches any characters (including spaces, paths, parameters)
+        #   ** - Not used (single * is sufficient)
+        #
+        # Common Examples:
+        #   Bash(git status)          - Only "git status" with no arguments
+        #   Bash(git status *)        - "git status" with any arguments
+        #   Bash(git *)               - Any git command
+        #   Bash(kanban *)            - Any kanban command
+        #   Bash(gh api /repos/*)     - gh api for any repo path
+        #   Read(*)                   - Read any file (no restrictions)
+        #   Edit(*.md)                - Edit only markdown files (extension match)
+        #
+        # Security Notes:
+        #   - Be specific: Use "command *" instead of "*" when possible
+        #   - Test patterns: Overly broad patterns can allow unintended commands
+        #   - Block list overrides: Blocked patterns take precedence over allowed
+        #
+        # Pattern Matching Behavior:
+        #   - Patterns are matched in order (first match wins)
+        #   - Block list is checked before allow list
+        #   - If no pattern matches, command is denied by default
+        #
+        # Debugging:
+        #   - If a command is unexpectedly blocked, check both allow and block lists
+        #   - Add specific patterns before broad wildcards for fine-grained control
+        #
+        # ============================================================================
+
         permissions = {
           allow = [
             # Kanban CLI (agent coordination)
@@ -345,6 +389,20 @@ in {
             "Bash(tmux show-options *)"
             "Bash(tmux show-environment *)"
           ];
+
+          # ============================================================================
+          # Permission Block List
+          # ============================================================================
+          #
+          # Commands in the block list are explicitly denied, even if they match an
+          # allow pattern. Block list takes precedence over allow list.
+          #
+          # Use blocking for:
+          #   - Dangerous operations (rm -rf, destructive git commands)
+          #   - Commands that should require explicit user approval
+          #   - Operations that bypass intended workflows
+          #
+          # ============================================================================
 
           # Block kubectl write/destructive commands (admin permissions - never auto-approve)
           block = [

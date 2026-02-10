@@ -90,6 +90,128 @@ When researching, investigating, or looking up information, ALWAYS follow this p
 
 ---
 
+## Glossary
+
+**Agent:** A Claude Code instance executing work (the AI itself)
+
+**Sub-agent:** A background agent spawned via Task tool to handle delegated work
+
+**Skill:** A specialized capability loaded via Skill tool (markdown file in `~/.claude/commands/`)
+
+**Session ID:** 8-character hex identifier for Claude session (e.g., `08a88ad2`). Automatically injected at startup. Use with `--session` flag on kanban commands.
+
+**Card:** Kanban board work item with action (what), intent (why), and acceptance criteria (definition of done)
+
+**Work Card:** Card where AC verifies file changes (implementations, fixes, modifications)
+
+**Review Card:** Card where AC verifies information returned (analysis, findings, recommendations)
+
+## Skill Invocation
+
+When skills are invoked, the `$ARGUMENTS` placeholder (commonly seen at line 8-9 of skill files) is replaced at runtime with the specific task prompt provided by the coordinator.
+
+**Example:**
+```
+## Your Task
+
+$ARGUMENTS
+
+*This placeholder is replaced with your specific instructions when the skill is invoked.*
+```
+
+Skills receive the full task context through this mechanism, so they have all necessary information to complete their work.
+
+---
+
+## Model Selection
+
+Choose the right Claude model for the task based on complexity and ambiguity:
+
+| Model | When to Use | Cost | Speed | Capability | Examples |
+|-------|-------------|------|-------|------------|----------|
+| **Haiku** | Well-defined AND straightforward | $ | Fastest | Basic | Fix typo, add null check, update import, run simple command |
+| **Sonnet** | Most work, any ambiguity | $$ | Medium | Strong | New features, refactoring, investigation, multi-step tasks |
+| **Opus** | Novel/complex/highly ambiguous | $$$ | Slowest | Best | Architecture design, multi-domain coordination, complex debugging |
+
+### Decision Rules
+
+**Use Haiku when BOTH are true:**
+- ✅ Requirements are crystal clear (no interpretation needed)
+- ✅ Implementation is straightforward (no design decisions)
+
+**Use Sonnet (default) when:**
+- Any ambiguity in requirements OR implementation
+- Multi-step tasks that require planning
+- Code that requires understanding context
+- Investigation or analysis work
+- **When in doubt** → Always choose Sonnet
+
+**Use Opus when:**
+- Novel problems without established patterns
+- Multiple valid approaches requiring architectural decisions
+- High-stakes work requiring maximum capability
+- Complex debugging across multiple systems
+
+### Common Mistakes
+
+❌ **"It's a small change, use Haiku"** - Size ≠ complexity. One-line IAM policy can grant root access.
+❌ **"We need it fast, use Haiku"** - Rework from wrong approach takes longer than Sonnet.
+❌ **"Save costs, use Haiku"** - Failed work costs more than the model difference.
+
+### Examples
+
+**Haiku:**
+- Fix typo in README
+- Add single null check to function
+- Update import statement
+- Simple git command (`git status`)
+
+**Sonnet:**
+- Add new API endpoint with validation
+- Refactor authentication flow
+- Investigate performance bottleneck
+- Write tests for complex logic
+
+**Opus:**
+- Design new authentication architecture
+- Coordinate work across frontend, backend, and infrastructure
+- Debug subtle race condition in distributed system
+- Evaluate multiple architectural approaches
+
+### For Coordinators (Staff Engineer, Ralph)
+
+When delegating work via Task tool:
+- Specify `model: haiku` only when requirements are unambiguous AND implementation is trivial
+- Use `model: sonnet` as default (safer choice)
+- Use `model: opus` for architectural or highly complex work
+- If unsure between Haiku and Sonnet → Choose Sonnet
+
+---
+
+## MCP Integration
+
+**Context7 MCP** - Authoritative documentation lookup for libraries and frameworks.
+
+**How to use:**
+- For library/framework docs: "Use Context7 MCP to lookup React Server Components best practices"
+- For API references: "Use Context7 MCP to lookup NextJS 15 app router API"
+
+**When it fails:**
+- Fall back to WebSearch for official documentation
+- Prefer official docs over blog posts/tutorials
+- Always verify information from multiple sources
+
+**Configuration:**
+- Automatically enabled if `CONTEXT7_API_KEY` set in `overconfig.nix`
+- Check status: Context7 will be available if configured, no manual setup needed
+- To disable: Remove `CONTEXT7_API_KEY` from overconfig.nix, run `hms`
+
+**Available via:**
+- `mcp__context7__resolve-library-id` - Find library ID
+- `mcp__context7__query-docs` - Query documentation
+
+---
+
 ## Technology Selection
 
 **Prefer boring, battle-tested solutions.** Search for existing solutions before building custom.
@@ -199,7 +321,9 @@ See `/review-pr-comments` skill for full workflow.
 
 ## Programming Preferences
 
-**Design:** SOLID, Clean Architecture, composition over inheritance, early returns
+**Design:** SOLID, Clean Architecture, composition over inheritance, early returns, avoid deeply nested if statements (use guard clauses for flat code structure)
+
+**Function Quality:** Keep functions reasonably sized - not tiny, but not huge. Single responsibility per function. Extract helpers when logic gets complex.
 
 **Simplicity:** YAGNI (don't build until needed), KISS (simplest solution that works)
 
@@ -208,6 +332,14 @@ See `/review-pr-comments` skill for full workflow.
 **12 Factor App:** Follow [12factor.net](https://12factor.net) methodology for building robust, scalable applications
 
 **DRY:** Eliminate meaningful duplication, but prefer duplication over wrong abstraction. Wait for 3+ repetitions before abstracting.
+
+**Bash/Shell Conventions:**
+- Environment variables: ALL_CAPS_WITH_UNDERSCORES (e.g., `KANBAN_SESSION`, `CONTEXT7_API_KEY`)
+- Script-local variables: lowercase_with_underscores (e.g., `card_number`, `output_file`)
+- **Error handling:** Use `set -euo pipefail` at script start for fail-fast behavior
+  - `-e`: Exit immediately if any command returns non-zero status
+  - `-u`: Treat unset variables as errors
+  - `-o pipefail`: Pipeline fails if any command in the pipeline fails (not just the last one)
 
 **Mindset:** Always Be Curious - investigate thoroughly, ask why, verify claims
 

@@ -208,6 +208,30 @@ def main():
         # No PR - require creation before exit
         full_prompt += "\n\n---\n\n## Pull Request Requirement\n\n**No pull request exists yet for this branch.**\n\nBefore you can exit, you MUST:\n1. Ensure all changes are committed\n2. Create a pull request using `gh pr create`\n3. Verify the PR was created successfully\n\nYou cannot complete this work without creating a PR."
 
+    # Add working directory restriction (defense-in-depth security)
+    working_dir = os.getcwd()
+    full_prompt += f"""
+
+---
+
+## 🚨 WORKING DIRECTORY RESTRICTION
+
+You are running in autonomous mode within: {working_dir}
+
+**PROHIBITED OPERATIONS:**
+- ❌ Accessing files outside {working_dir} (no `../`, no absolute paths outside working dir)
+- ❌ Using `cd` to change directories
+- ❌ Editing files in `~/.claude/`, `~/.config/`, or system directories
+- ❌ Operations that would affect other projects or system configuration
+
+**ENFORCEMENT:**
+- All file paths MUST be relative to {working_dir}
+- You will be audited post-execution
+- Violations will be logged and reported
+
+**If you need to access files outside this directory, STOP and document the blocker.**
+"""
+
     # Build ralph command with constructed prompt
     cmd = [
         "ralph", "run",
