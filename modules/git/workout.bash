@@ -1,10 +1,12 @@
 # Create and navigate to git worktrees in ~/worktrees/ (or $WORKTREE_ROOT)
 # - Creates worktree organized by org/repo/branch structure
 # - Reuses existing worktree if already created (idempotent)
-# - With no args: shows help
+# - With no args: opens interactive browser
 # - With `.`: creates worktree for current branch
 # - With `-`: toggles to previous worktree location (persists across sessions)
 # - With `/`: opens interactive fzf browser to view and manage worktrees
+# - With `clean`: deletes worktrees older than 30 days (with confirmation)
+# - With `clean --expunge`: deletes ALL worktrees (with confirmation)
 # - With `-h` or `--help`: shows help
 # - With branch name: creates/uses worktree for that branch (creates branch if needed)
 #
@@ -38,6 +40,8 @@ show_help() {
   echo "  workout .                  Create worktree for current branch"
   echo "  workout -                  Toggle to previous worktree"
   echo "  workout <branch>           Create worktree for branch"
+  echo "  workout clean              Delete worktrees with merged branches"
+  echo "  workout clean --expunge    Delete ALL worktrees (dangerous!)"
   echo "  workout -h, --help         Show this help"
   echo
   echo "DESCRIPTION:"
@@ -62,6 +66,14 @@ show_help() {
   echo "            If branch doesn't exist, creates it from current HEAD"
   echo "            Reuses existing worktree if already created (idempotent)"
   echo
+  echo "  clean     Delete worktrees older than 30 days (with confirmation)"
+  echo "            Lists all matching worktrees and prompts before deletion"
+  echo "            Uses trash command for safe deletion + git worktree prune"
+  echo
+  echo "  clean --expunge  Delete ALL worktrees (dangerous!)"
+  echo "            Removes all worktrees regardless of age"
+  echo "            Primary repo and current worktree are preserved"
+  echo
   echo "EXAMPLES:"
   echo "  # Create worktree for current branch"
   echo "  workout ."
@@ -82,6 +94,28 @@ show_help() {
   echo "  workout feature/xyz        # Work on feature"
   echo "  workout main               # Quick check of main"
   echo "  workout -                  # Back to feature/xyz"
+  echo
+  echo "  # Cleanup: delete merged worktrees"
+  echo "  workout clean              # Delete worktrees with merged branches"
+  echo "  workout clean --expunge    # Delete ALL worktrees (careful!)"
+  echo
+  echo "CLEANUP COMMANDS:"
+  echo "  workout clean"
+  echo "    Deletes worktrees with branches merged into the default branch"
+  echo "    - Detects default branch automatically (main/master/develop)"
+  echo "    - Checks if each worktree's branch is merged"
+  echo "    - Lists all merged branches with merge status"
+  echo "    - Prompts for confirmation before deletion"
+  echo "    - Excludes primary repo and current worktree (safe)"
+  echo "    - Uses trash command for safe deletion"
+  echo "    - Runs 'git worktree prune' to clean up metadata"
+  echo
+  echo "  workout clean --expunge"
+  echo "    Deletes ALL worktrees regardless of merge status (DANGEROUS!)"
+  echo "    - Lists all worktrees that will be deleted"
+  echo "    - Requires 'yes' confirmation (not just 'y')"
+  echo "    - Excludes primary repo and current worktree (safe)"
+  echo "    - Use this for major cleanup or when switching projects"
   echo
   echo "INTERACTIVE BROWSER:"
   echo "  Running 'workout' with no arguments launches an interactive browser using fzf:"
@@ -458,6 +492,217 @@ preview_worktree() {
   fi
 }
 
+# Detect the default branch (main/master/develop)
+detect_default_branch() {
+  # Try to get from origin/HEAD first
+  local default_branch
+  default_branch="$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')"
+
+  if [ -n "$default_branch" ]; then
+    echo "$default_branch"
+    return 0
+  fi
+
+  # Fallback: check for common branch names
+  if git rev-parse --verify main >/dev/null 2>&1; then
+    echo "main"
+    return 0
+  elif git rev-parse --verify master >/dev/null 2>&1; then
+    echo "master"
+    return 0
+  elif git rev-parse --verify develop >/dev/null 2>&1; then
+    echo "develop"
+    return 0
+  fi
+
+  # Could not detect default branch
+  return 1
+}
+
+# Check if a branch is merged into the default branch
+# Arguments: worktree_path default_branch
+is_branch_merged() {
+  local worktree_path="$1"
+  local default_branch="$2"
+
+  # Get the branch name for this worktree
+  local branch
+  branch="$(git -C "$worktree_path" branch --show-current 2>/dev/null)"
+
+  # Skip if detached HEAD or can't determine branch
+  if [ -z "$branch" ]; then
+    return 1
+  fi
+
+  # Check if this branch is merged into default branch
+  if git branch --merged "$default_branch" 2>/dev/null | grep -q "^[*+ ] $branch\$"; then
+    return 0
+  fi
+
+  return 1
+}
+
+# Clean worktrees (delete merged or all worktrees)
+# Arguments: [--expunge]
+clean_worktrees() {
+  local expunge=false
+  if [ "${1:-}" = "--expunge" ]; then
+    expunge=true
+  fi
+
+  # Check if we're in a git repo
+  if ! git rev-parse --git-dir >/dev/null 2>&1; then
+    echo "Error: Not in a git repository" >&2
+    return 1
+  fi
+
+  # Get git root directory (primary repo) to exclude from deletion
+  local git_root
+  git_root="$(git worktree list --porcelain | awk '/^worktree / {print substr($0, 10); exit}')"
+
+  # Get current directory to exclude from deletion
+  local current_dir="$PWD"
+
+  # Detect default branch (only needed for non-expunge mode)
+  local default_branch=""
+  if [ "$expunge" = false ]; then
+    if ! default_branch="$(detect_default_branch)"; then
+      echo "Error: Could not detect default branch" >&2
+      echo "Try running: git remote set-head origin --auto" >&2
+      return 1
+    fi
+  fi
+
+  # Collect worktrees to delete
+  local -a worktrees_to_delete=()
+  local -a worktree_info=()
+
+  # Parse worktree list and filter based on mode
+  while IFS='|' read -r path branch head; do
+    # Skip primary repo (git root)
+    [ "$path" = "$git_root" ] && continue
+
+    # Skip current worktree for safety
+    [ "$path" = "$current_dir" ] && continue
+
+    # Check directory exists
+    [ ! -d "$path" ] && continue
+
+    # Skip if no branch (detached HEAD)
+    if [ -z "$branch" ]; then
+      continue
+    fi
+
+    if [ "$expunge" = true ]; then
+      # Expunge mode: target ALL worktrees (no progress output)
+      worktrees_to_delete+=("$path")
+      worktree_info+=("$branch|$head|$path")
+    else
+      # Regular mode: target worktrees with merged branches
+      if is_branch_merged "$path" "$default_branch"; then
+        worktrees_to_delete+=("$path")
+        worktree_info+=("$branch|$head|$path")
+      fi
+    fi
+  done < <(git worktree list --porcelain | awk '
+    /^worktree / { path = substr($0, 10) }
+    /^branch / {
+      branch = substr($0, 8)
+      sub(/^refs\/heads\//, "", branch)
+    }
+    /^HEAD / { head = substr($0, 6) }
+    /^$/ {
+      if (path != "") {
+        printf "%s|%s|%s\n", path, branch, substr(head, 1, 8)
+        path = ""
+        branch = ""
+        head = ""
+      }
+    }
+    END {
+      if (path != "") {
+        printf "%s|%s|%s\n", path, branch, substr(head, 1, 8)
+      }
+    }
+  ')
+
+  # Check if we found any worktrees to delete
+  local count="${#worktrees_to_delete[@]}"
+
+  if [ "$count" -eq 0 ]; then
+    if [ "$expunge" = true ]; then
+      echo "No worktrees found to delete (primary repo and current worktree excluded)" >&2
+    else
+      echo "No merged branches found to clean up" >&2
+    fi
+    return 0
+  fi
+
+  # Display what will be deleted
+  echo "═══════════════════════════════════════════════════════════════" >&2
+  if [ "$expunge" = true ]; then
+    echo "  WORKOUT CLEAN --expunge: Delete ALL worktrees" >&2
+  else
+    echo "  WORKOUT CLEAN: Delete worktrees with merged branches" >&2
+  fi
+  echo "═══════════════════════════════════════════════════════════════" >&2
+  echo >&2
+  echo "Found $count worktree(s) to delete:" >&2
+  echo >&2
+
+  # Show each worktree
+  for info in "${worktree_info[@]}"; do
+    IFS='|' read -r branch head path <<< "$info"
+
+    echo "  • $branch" >&2
+  done
+
+  echo >&2
+
+  # Prompt for confirmation
+  local prompt
+  if [ "$expunge" = true ]; then
+    prompt="Delete ALL $count worktree(s)? This cannot be undone! (yes/no): "
+  else
+    prompt="Delete $count worktree(s) with merged branches? (yes/no): "
+  fi
+
+  echo -n "$prompt" >&2
+  read -r response < /dev/tty
+
+  # Only proceed if user types exactly "yes"
+  if [ "$response" != "yes" ]; then
+    echo "Cancelled - no worktrees deleted" >&2
+    return 1
+  fi
+
+  echo >&2
+
+  # Delete each worktree (silently - trash is fast)
+  local deleted_count=0
+  local failed_count=0
+
+  for path in "${worktrees_to_delete[@]}"; do
+    if trash "$path" 2>/dev/null; then
+      deleted_count=$((deleted_count + 1))
+    else
+      failed_count=$((failed_count + 1))
+    fi
+  done
+
+  # Prune git's internal worktree tracking
+  git worktree prune >&2 2>&1
+
+  echo >&2
+  echo "✓ Deleted: $deleted_count worktree(s)" >&2
+
+  if [ "$failed_count" -gt 0 ]; then
+    echo "✗ Failed: $failed_count worktree(s)" >&2
+  fi
+
+  return 0
+}
+
 # Run fzf selector for worktrees
 run_fzf_selector() {
   # Create worktree root directory if it doesn't exist
@@ -545,6 +790,11 @@ if [ $# -eq 1 ]; then
       show_help
       exit 0
       ;;
+    clean)
+      # Clean old worktrees
+      clean_worktrees
+      exit $?
+      ;;
     -)
       # Toggle to previous worktree (read from global state file)
       worktree_root="${WORKTREE_ROOT:-$HOME/worktrees}"
@@ -585,6 +835,17 @@ if [ $# -eq 1 ]; then
       fi
       ;;
   esac
+elif [ $# -eq 2 ]; then
+  # Two args: check for clean --expunge
+  if [ "$1" = "clean" ] && [ "$2" = "--expunge" ]; then
+    clean_worktrees --expunge
+    exit $?
+  else
+    # Invalid two-arg combination
+    echo "Error: Invalid arguments" >&2
+    show_help >&2
+    exit 1
+  fi
 else
   # Too many args
   echo "Error: Too many arguments" >&2
