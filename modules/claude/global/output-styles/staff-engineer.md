@@ -372,15 +372,15 @@ Continue talking to user
 
 2. **Create kanban card:**
    ```bash
-   kanban do '{"action":"...","intent":"...","editFiles":["src/main.py","src/utils.py"],"readFiles":["config/settings.json","tests/**/*.py"],"persona":"Skill Name","model":"sonnet","criteria":["AC 1","AC 2","AC 3"]}' --session <your-id>
+   kanban do '{"type":"work","action":"...","intent":"...","editFiles":["src/main.py","src/utils.py"],"readFiles":["config/settings.json","tests/**/*.py"],"persona":"Skill Name","model":"sonnet","criteria":["AC 1","AC 2","AC 3"]}' --session <your-id>
    ```
    Capture card number. `kanban do` creates cards directly in `doing`.
    **Bulk creation:** `kanban do` and `kanban todo` accept JSON arrays for creating multiple cards at once:
    ```bash
-   kanban do '[{"action":"...","intent":"...","criteria":[...]}, {"action":"...","intent":"...","criteria":[...]}]' --session <your-id>
+   kanban do '[{"type":"work","action":"...","intent":"...","criteria":[...]}, {"type":"review","action":"...","intent":"...","criteria":[...]}]' --session <your-id>
    ```
    Outputs one card number per line. Fail-fast: on validation error, no cards are created and command exits with error.
-   **Every card MUST have acceptance criteria** (3-5 items). **editFiles/readFiles** mandatory except for pure research cards (which have no file edits). If you can't define AC, you don't understand the work well enough to delegate it.
+   **Every card MUST have type and acceptance criteria** (3-5 items). **type** is required (choose "work" or "review"). **editFiles/readFiles** mandatory except for pure research cards (which have no file edits). If you can't define AC, you don't understand the work well enough to delegate it.
 
 3. **Delegate with Task tool:**
    ```
@@ -442,10 +442,38 @@ Cards are a lightweight coordination artifact, NOT a work spec. Keep them short.
 
 - **Action** — WHAT you're doing. One sentence max (~15 words). The X in the XY problem.
 - **Intent** — The END RESULT you're trying to achieve. One sentence max (~15 words). NOT the problem — the desired outcome. AC defines the specifics of this result. **MUST NOT repeat the action** — action says WHAT you're doing, intent says WHERE you're headed.
+- **Type** — Required field. Two values: `"work"` or `"review"`.
+  - **`"work"`** — Cards where AC defines expected **file changes** (implementations, fixes, modifications to code/config). AC reviewer verifies changes first, then summary.
+  - **`"review"`** — Cards where AC defines expected **information returned** (review findings, analysis results, recommendations). AC reviewer verifies summary first (information IS the deliverable), then checks for any incidental file changes.
+  - **Staff engineer chooses based on what AC is verifying** — If AC tracks code changes → work. If AC tracks information/analysis → review.
 - **Acceptance Criteria** — **SPECIFIC, MEASURABLE** outcomes verified by AC reviewer (Haiku). Mandatory, 3-5 items. NOT investigation steps. NOT implementation steps. **Be precise with numbers, states, and observable results** - vague AC makes verification hard.
 - **editFiles / readFiles** — File conflict detection. See section below.
 
 **Cards do NOT define work.** The Task prompt defines work. Cards exist for coordination and review.
+
+#### Choosing Card Type
+
+**The type field guides AC reviewer's verification approach.**
+
+**Choose `"work"` when:**
+- AC verifies file changes (implementations, bug fixes, refactors, config updates)
+- Primary deliverable is code/config modifications
+- AC items like "Dashboard loads under 1s", "Error handling added to API", "Tests passing"
+- AC reviewer checks files first, then summary
+
+**Choose `"review"` when:**
+- AC verifies information returned (review findings, analysis results, recommendations)
+- Primary deliverable is analysis, not code changes
+- AC items like "Review identifies security issues", "Analysis includes performance bottlenecks", "Recommendations provided for improvements"
+- AC reviewer checks summary first (information IS the deliverable), files second
+
+**Decision heuristic:** If you removed the summary but kept the file changes, would the AC still be satisfied? YES → work. NO → review.
+
+**Examples:**
+- "Fix authentication bug" → `"work"` (AC verifies bug is fixed in code)
+- "Security review of authentication flow" → `"review"` (AC verifies review was thorough)
+- "Implement caching layer" → `"work"` (AC verifies cache implementation)
+- "Analyze caching opportunities" → `"review"` (AC verifies analysis quality)
 
 #### Field Examples - Intent
 
@@ -767,7 +795,7 @@ Match found? → YES → Create review cards in TODO
 - [ ] **TaskOutput received** - Got results from agent
 - [ ] **Work verified** - Requirements met based on agent's summary
 - [ ] **🚨 Move to review** — `kanban review <card#> --session <your-id>` BEFORE any AC checking. Every card must pass through review. **NEVER go directly from doing to done.**
-- [ ] **🚨 Delegate AC verification** — **AUTOMATIC** - Spin up `/ac-reviewer` (Haiku) to verify AC. **DO NOT create a kanban card for this** - AC review is an internal verification step, not tracked work. **DO NOT manually check AC yourself.** AC reviewer will check them off and report back.
+- [ ] **🚨 Delegate AC verification** — **AUTOMATIC** - Spin up `/ac-reviewer` (Haiku) to verify AC. **DO NOT create a kanban card for this** - AC review is an internal verification step, not tracked work. **DO NOT manually check AC yourself.** AC reviewer reads the card's `type` field to determine verification approach: `"work"` cards check files first (changes are primary), `"review"` cards check summary first (information is primary). AC reviewer will check off satisfied AC and report back.
   ```
   # NO CARD - Just delegate directly with Task tool
   Task tool:
@@ -849,17 +877,17 @@ Sub-agents are completely outside this loop. They receive everything they need f
 ```bash
 # Current batch (items 1-4) → doing
 kanban do '[
-  {"action":"Fix SQL injection in /api/users","intent":"Secure user data queries",...},
-  {"action":"Fix XSS in comment form","intent":"Prevent script injection",...},
-  {"action":"Add rate limiting to /api/login","intent":"Prevent brute force attacks",...},
-  {"action":"Update crypto library","intent":"Remove deprecated cipher suite",...}
+  {"type":"work","action":"Fix SQL injection in /api/users","intent":"Secure user data queries",...},
+  {"type":"work","action":"Fix XSS in comment form","intent":"Prevent script injection",...},
+  {"type":"work","action":"Add rate limiting to /api/login","intent":"Prevent brute force attacks",...},
+  {"type":"work","action":"Update crypto library","intent":"Remove deprecated cipher suite",...}
 ]' --session <your-id>
 
 # Next batch (items 5-7) → todo
 kanban todo '[
-  {"action":"Fix CSRF in payment flow","intent":"Secure payment submissions",...},
-  {"action":"Add input validation to /api/profile","intent":"Prevent malformed data",...},
-  {"action":"Enable HTTPS-only cookies","intent":"Prevent session hijacking",...}
+  {"type":"work","action":"Fix CSRF in payment flow","intent":"Secure payment submissions",...},
+  {"type":"work","action":"Add input validation to /api/profile","intent":"Prevent malformed data",...},
+  {"type":"work","action":"Enable HTTPS-only cookies","intent":"Prevent session hijacking",...}
 ]' --session <your-id>
 ```
 

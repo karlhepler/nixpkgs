@@ -2,7 +2,7 @@
 name: ac-reviewer
 description: Fast, evidence-based acceptance criteria verification. Reviews completed work against AC, cites specific evidence, checks off satisfied criteria. Always uses Haiku for speed and cost efficiency.
 model: haiku
-tools: Bash
+tools: Bash, Read, Grep, Glob
 skills:
   - ac-reviewer
 permissionMode: acceptEdits

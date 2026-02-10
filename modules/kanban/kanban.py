@@ -472,12 +472,14 @@ def make_card(
     model: str | None = None,
     session: str | None = None,
     criteria: list[str] | None = None,
+    card_type: str = "work",
 ) -> dict:
     """Build a new card dict."""
     now = now_iso()
     card = {
         "action": action,
         "intent": intent,
+        "type": card_type,
         "readFiles": read_files or [],
         "editFiles": edit_files or [],
         "persona": persona,
@@ -518,6 +520,16 @@ def validate_and_build_card(data: dict, session: str | None) -> dict:
         print("Error: Action field must be a non-empty string.", file=sys.stderr)
         sys.exit(1)
 
+    # Validate type field (REQUIRED)
+    if "type" not in data:
+        print("Error: JSON must include 'type' field", file=sys.stderr)
+        sys.exit(1)
+
+    card_type = data.get("type")
+    if card_type not in ("work", "review"):
+        print(f"Error: Invalid type '{card_type}'. Must be one of: work, review", file=sys.stderr)
+        sys.exit(1)
+
     # Validate model if provided
     model = data.get("model")
     if model and model not in ("haiku", "sonnet", "opus"):
@@ -544,6 +556,7 @@ def validate_and_build_card(data: dict, session: str | None) -> dict:
         model=data.get("model"),
         session=session,
         criteria=criteria if all(isinstance(c, str) for c in criteria) else None,
+        card_type=card_type,
     )
 
     # If criteria came as full objects (with text/met), use them directly
@@ -774,6 +787,7 @@ def cmd_show(args) -> None:
     session = card.get("session", "")
     persona = card.get("persona", "unassigned")
     model = card.get("model")
+    card_type = card.get("type", "work")
     created = card.get("created", "")
     if created:
         try:
@@ -784,6 +798,7 @@ def cmd_show(args) -> None:
         created_date = "unknown"
 
     footer_parts = []
+    footer_parts.append(f"Type: {card_type}")
     if session:
         footer_parts.append(f"Session: {session[:8]}")
     if persona and persona != "unassigned":
@@ -991,9 +1006,10 @@ def format_card_xml(card: dict, num: str, col: str, include_details: bool = Fals
     esc = html.escape
     session = card.get("session", "")
     action = card.get("action", "")
+    card_type = card.get("type", "work")
 
     # Card opening tag with attributes
-    xml_parts = [f'<card num="{esc(num)}" session="{esc(session)}" status="{esc(col)}">']
+    xml_parts = [f'<card num="{esc(num)}" session="{esc(session)}" status="{esc(col)}" type="{esc(card_type)}">']
 
     # Action (always included as child element)
     xml_parts.append(f"  <action>{esc(action)}</action>")
@@ -1162,11 +1178,13 @@ def format_card_line(card: dict, num: str, show_session: bool = False, output_st
             criteria_section = criteria_section.rstrip("\n") + reset
             sections.append(criteria_section)
 
-    # Metadata section (persona, model) - show in "detail" style only
+    # Metadata section (type, persona, model) - show in "detail" style only
     if output_style == "detail":
         metadata_parts = []
+        card_type = card.get("type", "work")
         persona = card.get("persona")
         model = card.get("model")
+        metadata_parts.append(f"Type: {card_type}")
         if persona and persona != "unassigned":
             metadata_parts.append(f"Persona: {persona}")
         if model:
