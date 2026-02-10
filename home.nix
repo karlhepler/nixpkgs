@@ -14,6 +14,7 @@ in {
     ./modules/claude      # Claude hooks + 9 claude shellapps
     ./modules/neovim      # Neovim editor + 30+ plugins
     ./modules/kanban      # Kanban CLI for agent coordination
+    ./modules/ralph       # Ralph Orchestrator (containerized)
 
     # Simple modules (no scripts)
     ./modules/packages.nix   # Packages + simple programs
@@ -32,7 +33,8 @@ in {
       // (config._module.args.claudeShellapps or {})
       // (config._module.args.neovimShellapps or {})
       // (config._module.args.tmuxShellapps or {})
-      // (config._module.args.kanbanShellapps or {});
+      // (config._module.args.kanbanShellapps or {})
+      // (config._module.args.ralphShellapps or {});
 
     # Context7 API key for Claude MCP configuration
     # Set in overconfig.nix via: home.sessionVariables.CONTEXT7_API_KEY = "...";

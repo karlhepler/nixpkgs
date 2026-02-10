@@ -102,9 +102,8 @@ home-manager switch --flake ~/.config/nixpkgs
 # ============================================================================
 # Install/Update Developer Tools
 # ============================================================================
-# Claude Code and Ralph Orchestrator are installed via npm/curl (not Nix)
-# because they update frequently and have their own update mechanisms.
-# Order matters: Ralph depends on Claude Code being installed first.
+# Claude Code is installed via curl (not Nix) because it updates frequently
+# and has its own update mechanism.
 # ============================================================================
 
 # Ensure we're not running as root (safety check)
@@ -113,23 +112,10 @@ if [ "$EUID" -eq 0 ] || [ "$USER" = "root" ]; then
   exit 1
 fi
 
-# Claude Code: AI coding assistant
-if command -v claude &>/dev/null; then
-  echo "Updating Claude Code..."
-  claude update 2>/dev/null || echo "Claude Code update skipped (already up to date)"
-else
+# Claude Code: AI coding assistant (self-updates, just install if not present)
+if ! command -v claude &>/dev/null; then
   echo "Installing Claude Code..."
   curl -fsSL https://claude.ai/install.sh | bash
-fi
-
-# Ralph Orchestrator: Multi-agent orchestration framework
-# Note: npm global installs go to ~/.npm-packages (already in PATH via zsh.nix)
-if command -v ralph &>/dev/null; then
-  echo "Updating Ralph Orchestrator..."
-  npm update -g --prefix ~/.npm-packages @ralph-orchestrator/ralph-cli 2>/dev/null || echo "Ralph Orchestrator update skipped"
-else
-  echo "Installing Ralph Orchestrator..."
-  npm install -g --prefix ~/.npm-packages @ralph-orchestrator/ralph-cli
 fi
 
 # Configure local git for this repo (silent, idempotent)
