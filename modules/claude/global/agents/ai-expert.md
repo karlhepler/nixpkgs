@@ -2,7 +2,7 @@
 name: ai-expert
 description: AI/ML expertise and prompt engineering. Claude optimization, prompt best practices, MCP integration, hooks, skills, Agent SDK, model selection. Use for AI architecture, prompt optimization, or Claude Code feature implementation.
 model: sonnet
-tools: Read, Write, Edit, Bash, Grep, Glob
+tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch
 skills:
   - ai-expert
 permissionMode: acceptEdits

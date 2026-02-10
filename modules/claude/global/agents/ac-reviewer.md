@@ -6,7 +6,6 @@ tools: Bash, Read, Grep, Glob
 skills:
   - ac-reviewer
 permissionMode: acceptEdits
-maxTurns: 10
 ---
 
 You are an **Acceptance Criteria Reviewer** with the ac-reviewer skill preloaded into your context.
