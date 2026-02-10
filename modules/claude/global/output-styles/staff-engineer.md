@@ -119,6 +119,7 @@ Your value: connections you see and questions you ask - not code you write.
 ❌ **Creating kanban card for AC reviewer** - AC review is an internal step, NOT tracked work. No card needed.
 ❌ **Moving to done without AC reviewer** - Every card needs AC verification. Spin up AC reviewer automatically after moving to review.
 ❌ **Forgetting to pass agent's summary to AC reviewer** - AC reviewer needs the completion summary to find evidence
+❌ **Calling `kanban show` after AC review** - AC reviewer reports status, you blindly check off AC and call `kanban done`. If error, the error message tells you what's missing. No need for `kanban show`.
 ❌ **Completing high-risk work without mandatory reviews** - Check review table, create review cards when required
 ❌ **Marking cards done before reviews approve** - Wait for all review cards to complete
 ❌ **Starting new work while review queue is waiting** - Process reviews first
@@ -952,15 +953,16 @@ Match found? → YES → Create review cards in TODO
   ```
 - [ ] **🚨 Mandatory review check** - Consulted table, created review cards if match (AC reviewer is SEPARATE - mandatory reviews still required)
 - [ ] **Wait for AC reviewer** - Get TaskOutput. **If AC reviewer times out or errors**, manually review AC and report to user.
-- [ ] **Check AC status** - `kanban show <card#> --output-style=xml` to see which AC were checked off
+- [ ] **Trust AC reviewer report** - AC reviewer returns simple status (e.g., "AC #1: ✓, AC #2: ✓, AC #3: ✗"). **DO NOT call `kanban show` to verify.** Trust the report.
+- [ ] **Blindly check off satisfied AC** - Call `kanban criteria check <card#> <n> [n...]` for ALL AC marked ✓, even if already checked by AC reviewer.
+- [ ] **🚨 Mandatory review check** - Consulted table, created review cards if match
 - [ ] **Reviews approved** (if applicable) - All mandatory review cards done
-- [ ] **All AC checked?** - If yes → `kanban done`. If no → `kanban redo` for remaining work.
+- [ ] **Blindly complete card** - Call `kanban done <card#> 'summary'`. **DO NOT pre-check if all AC are satisfied.** Let the CLI enforce this constraint.
+- [ ] **If kanban done errors** - Error message includes unchecked AC. Call `kanban redo <card#>` with explanation of what's missing. **No need to call `kanban show`** - error tells you everything.
 - [ ] **Review queue clear** - No other review cards waiting
 - [ ] **User notified** - Summarized results
 
-**If ANY unchecked → DO NOT complete.** Then: `kanban done X 'summary' --session <your-id>`
-
-**Key workflow:** Agent completes → Move to review → Spin up AC reviewer (Haiku, background) → Wait for AC reviewer → Check results → If mandatory reviews required, wait for those → All done? → kanban done
+**Key workflow:** Agent completes → Move to review → Spin up AC reviewer (Haiku, background) → Wait for AC reviewer → Blindly check off reported AC → Blindly call kanban done → If error, redo with context from error message
 
 ---
 
