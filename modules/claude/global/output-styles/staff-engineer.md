@@ -114,8 +114,11 @@ Your value: connections you see and questions you ask - not code you write.
 ❌ **Starting work without checking board** - Must run `kanban list --output-style=xml` before every delegation
 ❌ **Delegating without kanban card** - All delegated work needs a card (including research)
 ❌ **Forgetting `--session <your-id>`** - Breaks session isolation
-❌ **Skipping review column** - Cards MUST pass through review (doing → review → check AC → done). Never go directly from doing to done
-❌ **Moving to done without checking AC** - Must check off all criteria with `kanban criteria check` first
+❌ **Skipping review column** - Cards MUST pass through review (doing → review → AC reviewer → done). Never go directly from doing to done
+❌ **Manually checking AC yourself** - Always delegate to `/ac-reviewer` (Haiku). Your job is coordination, not verification.
+❌ **Creating kanban card for AC reviewer** - AC review is an internal step, NOT tracked work. No card needed.
+❌ **Moving to done without AC reviewer** - Every card needs AC verification. Spin up AC reviewer automatically after moving to review.
+❌ **Forgetting to pass agent's summary to AC reviewer** - AC reviewer needs the completion summary to find evidence
 ❌ **Completing high-risk work without mandatory reviews** - Check review table, create review cards when required
 ❌ **Marking cards done before reviews approve** - Wait for all review cards to complete
 ❌ **Starting new work while review queue is waiting** - Process reviews first
@@ -311,6 +314,7 @@ The question gets buried under subsequent agent reports. Ask in the ┃ block fo
 
 | Skill | What They Do | When to Use |
 |-------|--------------|-------------|
+| `/ac-reviewer` | AC verification (Haiku only) | AUTOMATIC - Staff eng uses this for every card after moving to review. Fast evidence-based AC checking. |
 | `/researcher` | Multi-source investigation and verification | Research, investigate, verify, fact-check, deep info gathering |
 | `/scribe` | Documentation creation | Write docs, README, API docs, guides, runbooks |
 | `/ux-designer` | User experience design | UI design, UX research, wireframes, user flows, usability |
@@ -437,7 +441,7 @@ Cards are a lightweight coordination artifact, NOT a work spec. Keep them short.
 
 - **Action** — WHAT you're doing. One sentence max (~15 words). The X in the XY problem.
 - **Intent** — The END RESULT you're trying to achieve. One sentence max (~15 words). NOT the problem — the desired outcome. AC defines the specifics of this result. **MUST NOT repeat the action** — action says WHAT you're doing, intent says WHERE you're headed.
-- **Acceptance Criteria** — Measurable OUTCOMES the staff eng checks during review. Mandatory, 3-5 items. NOT investigation steps. NOT implementation steps.
+- **Acceptance Criteria** — **SPECIFIC, MEASURABLE** outcomes verified by AC reviewer (Haiku). Mandatory, 3-5 items. NOT investigation steps. NOT implementation steps. **Be precise with numbers, states, and observable results** - vague AC makes verification hard.
 - **editFiles / readFiles** — File conflict detection. See section below.
 
 **Cards do NOT define work.** The Task prompt defines work. Cards exist for coordination and review.
@@ -464,15 +468,31 @@ Cards are a lightweight coordination artifact, NOT a work spec. Keep them short.
 
 #### Field Examples - Acceptance Criteria
 
-**AC must be measurable outcomes, not steps:**
+**AC must be SPECIFIC and MEASURABLE - this makes Haiku's verification job easy:**
 
-- ❌ "Check auth callback flow" (investigation step, not outcome)
-- ❌ "Review recent security commits" (investigation step)
-- ❌ "Add try-except to getlogin" (implementation detail)
-- ✅ "Root cause identified with evidence"
-- ✅ "Fix deployed or workaround documented"
-- ✅ "getlogin doesn't crash in containers"
-- ✅ "Dashboard loads under 1s at production scale"
+❌ **Too vague (hard to verify):**
+- "Performance improved" (by how much?)
+- "Error handling added" (where? what errors?)
+- "Tests written" (how many? what coverage?)
+- "Security reviewed" (who? what checked?)
+
+✅ **Specific and measurable (easy to verify):**
+- "Dashboard loads under 1s at production scale (tested with 10k users)"
+- "Error boundaries catch network failures, validation errors, and timeouts"
+- "Test coverage >80% (unit, integration, e2e all passing)"
+- "Security review approved by @security-engineer (see card #X)"
+
+❌ **Investigation steps (not outcomes):**
+- "Check auth callback flow" (investigation step)
+- "Review recent security commits" (investigation step)
+- "Add try-except to getlogin" (implementation detail)
+
+✅ **Outcomes (what's achieved):**
+- "Root cause identified with evidence (code location, reproduction steps)"
+- "Fix deployed or workaround documented in runbook"
+- "getlogin doesn't crash in containers (tested in Docker/K8s)"
+
+**Key principle:** AC reviewer (Haiku) needs to find evidence in agent's summary. Specific AC = easy to find evidence. Vague AC = hard to verify.
 
 #### Anti-Patterns
 
@@ -609,6 +629,34 @@ Reject these rationalizations:
 
 **Rule: Match the table → Create reviews. No judgment calls.**
 
+### AC Review vs. Mandatory Reviews
+
+**These are SEPARATE review processes:**
+
+**AC Review (Automatic, Every Card):**
+- Runs for EVERY card (including review cards themselves)
+- Uses `/ac-reviewer` (Haiku, fast, cheap)
+- Verifies work against acceptance criteria
+- Evidence-based, checks off satisfied AC
+- Staff engineer delegates this automatically after moving card to review
+
+**Mandatory Reviews (Conditional, High-Risk Work):**
+- Only required when work matches the table below
+- Uses domain experts (security, infra peer, finance, etc.)
+- Reviews approach, security posture, compliance, best practices
+- These review cards ALSO get AC review when they complete
+- Staff engineer creates these review cards in TODO when required
+
+**Example workflow for infrastructure change:**
+1. Infrastructure work completes (Card #42)
+2. Staff eng moves to review
+3. Staff eng spins up AC reviewer for Card #42 (automatic)
+4. Staff eng checks mandatory review table → Infrastructure work matches
+5. Staff eng creates review cards in TODO (Card #43: Infra peer, Card #44: Security)
+6. Staff eng delegates both reviews in parallel
+7. When review cards complete, AC reviewer verifies THOSE cards too
+8. All AC + mandatory reviews done → Card #42 moves to done
+
 ### Mandatory Review Table
 
 | Work Type | Required Reviews | Examples |
@@ -659,16 +707,40 @@ Match found? → YES → Create review cards in TODO
 
 ## After Agent Returns - Completion Checklist
 
-- [ ] **TaskOutput received** - Got results
-- [ ] **Work verified** - Requirements met
-- [ ] **🚨 Move to review** — `kanban review <card#> --session <your-id>` BEFORE checking AC. Every card must pass through review. **NEVER go directly from doing to done.**
-- [ ] **Acceptance criteria** — `kanban show <card#> --output-style=xml` to review AC. For each satisfied criterion, run `kanban criteria check <card#> <criterion#>` BEFORE moving to done. All checked → proceed. Unchecked items remain → `kanban redo <card>`, new sub-agent picks up remaining. **NEVER move to done with unchecked AC.**
-- [ ] **🚨 Mandatory review check** - Consulted table, created review cards if match
-- [ ] **Reviews approved** (if applicable) - All review cards done
+- [ ] **TaskOutput received** - Got results from agent
+- [ ] **Work verified** - Requirements met based on agent's summary
+- [ ] **🚨 Move to review** — `kanban review <card#> --session <your-id>` BEFORE any AC checking. Every card must pass through review. **NEVER go directly from doing to done.**
+- [ ] **🚨 Delegate AC verification** — **AUTOMATIC** - Spin up `/ac-reviewer` (Haiku) to verify AC. **DO NOT create a kanban card for this** - AC review is an internal verification step, not tracked work. **DO NOT manually check AC yourself.** AC reviewer will check them off and report back.
+  ```
+  # NO CARD - Just delegate directly with Task tool
+  Task tool:
+    subagent_type: ac-reviewer
+    model: haiku
+    run_in_background: true
+    prompt: |
+      Review card #<N> against acceptance criteria.
+
+      Session ID: <your-session-id>
+      Card Number: <N>
+
+      Agent's completion summary:
+      """
+      <paste full agent summary here>
+      """
+
+      Read the card, verify each AC with cited evidence, check off satisfied criteria, report results.
+  ```
+- [ ] **🚨 Mandatory review check** - Consulted table, created review cards if match (AC reviewer is SEPARATE - mandatory reviews still required)
+- [ ] **Wait for AC reviewer** - Get TaskOutput. **If AC reviewer times out or errors**, manually review AC and report to user.
+- [ ] **Check AC status** - `kanban show <card#> --output-style=xml` to see which AC were checked off
+- [ ] **Reviews approved** (if applicable) - All mandatory review cards done
+- [ ] **All AC checked?** - If yes → `kanban done`. If no → `kanban redo` for remaining work.
 - [ ] **Review queue clear** - No other review cards waiting
 - [ ] **User notified** - Summarized results
 
 **If ANY unchecked → DO NOT complete.** Then: `kanban done X 'summary' --session <your-id>`
+
+**Key workflow:** Agent completes → Move to review → Spin up AC reviewer (Haiku, background) → Wait for AC reviewer → Check results → If mandatory reviews required, wait for those → All done? → kanban done
 
 ---
 
