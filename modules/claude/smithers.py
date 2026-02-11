@@ -809,17 +809,42 @@ Return ONLY valid JSON with this structure:
                 timeout=60  # 60s timeout for PR analysis
             )
 
+            # Save stdout/stderr to temp files for debugging
+            debug_dir = "/tmp/smithers-debug"
+            os.makedirs(debug_dir, exist_ok=True)
+            debug_file = f"{debug_dir}/haiku-output-{pr_number}.txt"
+            with open(debug_file, "w") as f:
+                f.write(f"=== Return Code: {result.returncode} ===\n\n")
+                f.write(f"=== STDOUT ===\n{result.stdout}\n\n")
+                f.write(f"=== STDERR ===\n{result.stderr}\n")
+
             if result.returncode != 0:
                 log(f"🟡 Haiku agent failed with exit code {result.returncode}")
                 if result.stderr:
                     log(f"   Error: {result.stderr.strip()}")
+                log(f"   Debug output saved to: {debug_file}")
                 return (None, None)
 
             # Parse JSON output
             try:
+                stdout_content = result.stdout.strip()
+
+                # Log if stdout is empty
+                if not stdout_content:
+                    log("🟡 Haiku agent returned empty stdout")
+                    if result.stderr:
+                        log(f"   stderr: {result.stderr.strip()}")
+                    return (None, None)
+
                 # Parse outer JSON wrapper from claude CLI
-                wrapper = json.loads(result.stdout.strip())
+                wrapper = json.loads(stdout_content)
                 result_text = wrapper.get("result", "")
+
+                # Log if result field is missing or empty
+                if not result_text:
+                    log("🟡 Haiku agent JSON missing 'result' field")
+                    log(f"   Wrapper keys: {list(wrapper.keys())}")
+                    return (None, None)
 
                 # Strip markdown code fences if present
                 result_text = result_text.strip()
@@ -844,6 +869,7 @@ Return ONLY valid JSON with this structure:
 
             except json.JSONDecodeError as e:
                 log(f"🟡 Haiku agent returned invalid JSON: {e}")
+                log(f"   First 200 chars of stdout: {result.stdout[:200]}")
                 return (None, None)
 
         finally:
