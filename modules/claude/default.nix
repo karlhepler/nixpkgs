@@ -47,7 +47,8 @@ let
 
   # Python environment for smithers with required packages
   smithersPython = pkgs.python3.withPackages (ps: with ps; [
-    wcwidth  # Unicode display width calculation for terminal formatting
+    wcwidth   # Unicode display width calculation for terminal formatting
+    requests  # HTTP requests for Slack webhook posting
   ]);
 
   # Burns Python CLI (Ralph with Ralph Coordinator output style)
