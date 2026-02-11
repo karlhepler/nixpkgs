@@ -26,6 +26,7 @@ Options:
 import argparse
 import json
 import os
+import random
 import signal
 import subprocess
 import sys
@@ -37,6 +38,7 @@ import requests
 
 # Constants
 POLL_INTERVAL = 30  # seconds
+POSITIVE_EMOJIS = ["😊", "🙏", "✨", "💯", "👍", "🎉", "🚀", "💪"]
 DEFAULT_MAX_CYCLES = 4  # 4 CI checks: 3 with Ralph invocations + 1 final check
 DEFAULT_MAX_RALPH_INVOCATIONS = 3
 TERMINAL_STATES = {
@@ -868,15 +870,18 @@ def post_to_slack_webhook(pr_url: str, pr_info: dict) -> None:
         # Generate summaries via haiku agent with gh CLI access
         why, what = generate_pr_summaries(pr_number, pr_url, title)
 
+        # Pick random emoji for sign-off
+        emoji = random.choice(POSITIVE_EMOJIS)
+
         # Construct message with graceful degradation
         if why and what:
             # Full message with Why/What bullets
             message_preview = f"{title}\nWhy: {why}\nWhat: {what}"
-            slack_text = f":github: <{pr_url}|{title}>\n• *Why?* {why}\n• *What?* {what}"
+            slack_text = f":github: <{pr_url}|{title}>\n• *Why?* {why}\n• *What?* {what}\n\nPlease take a look. Thanks! {emoji}\n- Karl"
         else:
             # Fallback: Just emoji + link (no bullets)
             message_preview = title
-            slack_text = f":github: <{pr_url}|{title}>"
+            slack_text = f":github: <{pr_url}|{title}>\n\nPlease take a look. Thanks! {emoji}\n- Karl"
 
         # Prompt user for confirmation before posting
         print(f"\n{message_preview}\n")
