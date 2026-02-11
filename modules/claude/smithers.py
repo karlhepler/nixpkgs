@@ -817,7 +817,22 @@ Return ONLY valid JSON with this structure:
 
             # Parse JSON output
             try:
-                response_data = json.loads(result.stdout.strip())
+                # Parse outer JSON wrapper from claude CLI
+                wrapper = json.loads(result.stdout.strip())
+                result_text = wrapper.get("result", "")
+
+                # Strip markdown code fences if present
+                result_text = result_text.strip()
+                if result_text.startswith("```json"):
+                    result_text = result_text[7:]  # Remove ```json
+                elif result_text.startswith("```"):
+                    result_text = result_text[3:]  # Remove ```
+                if result_text.endswith("```"):
+                    result_text = result_text[:-3]  # Remove trailing ```
+                result_text = result_text.strip()
+
+                # Parse inner JSON containing why/what
+                response_data = json.loads(result_text)
                 why_line = response_data.get("why", "").strip()
                 what_line = response_data.get("what", "").strip()
 
