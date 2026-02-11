@@ -865,7 +865,7 @@ def post_to_slack_webhook(pr_url: str, pr_info: dict) -> None:
 
     try:
         title = pr_info.get("title", "Unknown PR")
-        pr_number = parse_pr_url(pr_url)[2]  # Extract PR number from URL
+        owner, repo, pr_number = parse_pr_url(pr_url)  # Extract repo owner, name, and PR number
 
         # Generate summaries via haiku agent with gh CLI access
         why, what = generate_pr_summaries(pr_number, pr_url, title)
@@ -877,11 +877,11 @@ def post_to_slack_webhook(pr_url: str, pr_info: dict) -> None:
         if why and what:
             # Full message with Why/What bullets
             message_preview = f"{title}\nWhy: {why}\nWhat: {what}"
-            slack_text = f":github: <{pr_url}|{title}>\n• *Why?* {why}\n• *What?* {what}\n\nPlease take a look. Thanks! {emoji}\n- Karl"
+            slack_text = f":github: <{pr_url}|{title} ({repo})>\n• *Why?* {why}\n• *What?* {what}\n\nPlease take a look. Thanks! {emoji}\n- Karl"
         else:
             # Fallback: Just emoji + link (no bullets)
             message_preview = title
-            slack_text = f":github: <{pr_url}|{title}>\n\nPlease take a look. Thanks! {emoji}\n- Karl"
+            slack_text = f":github: <{pr_url}|{title} ({repo})>\n\nPlease take a look. Thanks! {emoji}\n- Karl"
 
         # Prompt user for confirmation before posting
         print(f"\n{message_preview}\n")
