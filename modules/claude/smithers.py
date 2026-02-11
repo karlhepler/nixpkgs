@@ -33,6 +33,7 @@ import tempfile
 import time
 from datetime import datetime
 from wcwidth import wcswidth
+import requests
 
 # Constants
 POLL_INTERVAL = 30  # seconds
@@ -738,6 +739,103 @@ def format_status_card(
     return result
 
 
+def post_to_slack_webhook(pr_url: str, pr_info: dict) -> None:
+    """POST PR completion message to Slack via incoming webhook.
+
+    Uses Claude haiku to analyze PR and generate concise why/what bullets,
+    then POSTs to Slack webhook if SLACK_WEBHOOK_URL is set.
+
+    Prompts user for confirmation before posting.
+
+    Args:
+        pr_url: Full PR URL
+        pr_info: PR metadata from get_pr_info()
+    """
+    # Return early if webhook not configured
+    webhook_url = os.environ.get("SMITHERS_SLACK_WEBHOOK_URL")
+    if not webhook_url:
+        return
+
+    try:
+        title = pr_info.get("title", "Unknown PR")
+        body = pr_info.get("body", "")
+
+        # Generate quick prompt for haiku
+        prompt = f"""Analyze this PR and provide:
+1. Why: One sentence explaining the intent/background/problem being solved
+2. What: One sentence explaining what was done to accomplish the why
+
+PR Title: {title}
+PR Description: {body[:500]}
+
+Format as:
+Why: [sentence]
+What: [sentence]"""
+
+        # Invoke Claude CLI with haiku model directly
+        result = subprocess.run(
+            ["claude", "--model", "haiku", "--no-continue", prompt],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+
+        if result.returncode != 0:
+            return
+
+        # Parse output for Why and What lines
+        output = result.stdout.strip()
+        lines = output.split("\n")
+
+        why_line = ""
+        what_line = ""
+
+        for line in lines:
+            line = line.strip()
+            if line.lower().startswith("why:"):
+                why_line = line[4:].strip()
+            elif line.lower().startswith("what:"):
+                what_line = line[5:].strip()
+
+        if not why_line or not what_line:
+            return
+
+        # Prompt user for confirmation before posting
+        print(f"\n{title}")
+        print(f"Why: {why_line}")
+        print(f"What: {what_line}")
+        print()
+
+        user_input = input("Do you want to share this in Slack? ").strip().lower()
+
+        # Accept variations: y/yes, n/no (default to no if unclear)
+        if user_input not in ("y", "yes"):
+            log("Slack post skipped by user")
+            return
+
+        # Build Slack blocks payload
+        payload = {
+            "blocks": [
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f":github: <{pr_url}|{title}>\n• *Why?* {why_line}\n• *What?* {what_line}"
+                    }
+                }
+            ]
+        }
+
+        # POST to webhook
+        response = requests.post(webhook_url, json=payload, timeout=10)
+        response.raise_for_status()
+        log("✓ Posted to Slack webhook")
+
+    except Exception:
+        # Silently fail - don't break smithers
+        pass
+
+
 def audit_ralph_execution() -> None:
     """Audit Ralph's execution for prohibited command patterns.
 
@@ -1417,6 +1515,9 @@ def main_loop_iteration(
             pr_number, pr_url, pr_info, owner, repo,
             cycle, elapsed, checks, bot_comments
         ))
+
+        # Post to Slack webhook if configured
+        post_to_slack_webhook(pr_url, pr_info)
 
         # Send macOS notification
         send_notification(
