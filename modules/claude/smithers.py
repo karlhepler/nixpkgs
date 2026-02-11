@@ -739,11 +739,111 @@ def format_status_card(
     return result
 
 
+def generate_pr_summaries(pr_number: int, pr_url: str, pr_title: str) -> tuple:
+    """
+    Spawn haiku agent via Task tool to analyze PR and generate Why/What summaries.
+
+    The agent uses gh CLI to explore the PR (description, diff, commits, files) and
+    returns two concise sentences: Why (intent/problem) and What (solution).
+
+    Args:
+        pr_number: PR number
+        pr_url: Full PR URL
+        pr_title: PR title
+
+    Returns:
+        tuple: (why_summary, what_summary) or (None, None) if failed
+    """
+    try:
+        # Create agent prompt with task context
+        agent_prompt = f"""You are analyzing GitHub PR #{pr_number} to generate summaries for team notification.
+
+PR: #{pr_number}
+URL: {pr_url}
+Title: {pr_title}
+
+Tasks:
+1. Use gh CLI to explore this PR:
+   - Read full description: `gh pr view {pr_number}`
+   - Get diff: `gh pr diff {pr_number}`
+   - Review commits and changes
+
+2. Generate two summaries:
+   - Why: One sentence explaining the intent/problem/background
+   - What: One sentence explaining the specific implementation approach
+
+Be SPECIFIC and CONCRETE. Avoid vague terms like "improved" or "updated".
+
+Return ONLY:
+Why: [your sentence]
+What: [your sentence]"""
+
+        # Write prompt to temp file for Task tool
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            suffix=".md",
+            prefix="smithers-pr-summary-",
+            dir="/tmp",
+            delete=False
+        ) as f:
+            f.write(agent_prompt)
+            prompt_file = f.name
+
+        try:
+            # Invoke haiku agent via Task tool (q command uses haiku)
+            # q "prompt" is equivalent to: claude --model haiku --no-continue "prompt"
+            # But we need tool access, so use claude directly with file input
+            result = subprocess.run(
+                ["claude", "--model", "haiku", "--no-continue", "--file", prompt_file],
+                capture_output=True,
+                text=True,
+                timeout=60  # 60s timeout for PR analysis
+            )
+
+            if result.returncode != 0:
+                log(f"🟡 Haiku agent failed with exit code {result.returncode}")
+                return (None, None)
+
+            # Parse output for Why and What lines
+            output = result.stdout.strip()
+            lines = output.split("\n")
+
+            why_line = ""
+            what_line = ""
+
+            for line in lines:
+                line = line.strip()
+                if line.lower().startswith("why:"):
+                    why_line = line[4:].strip()
+                elif line.lower().startswith("what:"):
+                    what_line = line[5:].strip()
+
+            if not why_line or not what_line:
+                log("🟡 Haiku agent did not return Why/What in expected format")
+                return (None, None)
+
+            return (why_line, what_line)
+
+        finally:
+            # Clean up prompt file
+            try:
+                os.unlink(prompt_file)
+            except OSError:
+                pass
+
+    except subprocess.TimeoutExpired:
+        log("🟡 Haiku agent timed out after 60s")
+        return (None, None)
+    except Exception as e:
+        log(f"🟡 Failed to generate PR summaries: {e}")
+        return (None, None)
+
+
 def post_to_slack_webhook(pr_url: str, pr_info: dict) -> None:
     """POST PR completion message to Slack via incoming webhook.
 
-    Uses Claude haiku to analyze PR and generate concise why/what bullets,
-    then POSTs to Slack webhook if SLACK_WEBHOOK_URL is set.
+    Spawns haiku agent via Task tool to analyze PR and generate Why/What summaries.
+    Posts to Slack webhook if SLACK_WEBHOOK_URL is set.
 
     Prompts user for confirmation before posting.
 
@@ -758,53 +858,23 @@ def post_to_slack_webhook(pr_url: str, pr_info: dict) -> None:
 
     try:
         title = pr_info.get("title", "Unknown PR")
-        body = pr_info.get("body", "")
+        pr_number = parse_pr_url(pr_url)[2]  # Extract PR number from URL
 
-        # Generate quick prompt for haiku
-        prompt = f"""Analyze this PR and provide:
-1. Why: One sentence explaining the intent/background/problem being solved
-2. What: One sentence explaining what was done to accomplish the why
+        # Generate summaries via haiku agent with gh CLI access
+        why, what = generate_pr_summaries(pr_number, pr_url, title)
 
-PR Title: {title}
-PR Description: {body[:500]}
-
-Format as:
-Why: [sentence]
-What: [sentence]"""
-
-        # Invoke Claude CLI with haiku model directly
-        result = subprocess.run(
-            ["claude", "--model", "haiku", "--no-continue", prompt],
-            capture_output=True,
-            text=True,
-            timeout=30
-        )
-
-        if result.returncode != 0:
-            return
-
-        # Parse output for Why and What lines
-        output = result.stdout.strip()
-        lines = output.split("\n")
-
-        why_line = ""
-        what_line = ""
-
-        for line in lines:
-            line = line.strip()
-            if line.lower().startswith("why:"):
-                why_line = line[4:].strip()
-            elif line.lower().startswith("what:"):
-                what_line = line[5:].strip()
-
-        if not why_line or not what_line:
-            return
+        # Construct message with graceful degradation
+        if why and what:
+            # Full message with Why/What bullets
+            message_preview = f"{title}\nWhy: {why}\nWhat: {what}"
+            slack_text = f":github: <{pr_url}|{title}>\n• *Why?* {why}\n• *What?* {what}"
+        else:
+            # Fallback: Just emoji + link (no bullets)
+            message_preview = title
+            slack_text = f":github: <{pr_url}|{title}>"
 
         # Prompt user for confirmation before posting
-        print(f"\n{title}")
-        print(f"Why: {why_line}")
-        print(f"What: {what_line}")
-        print()
+        print(f"\n{message_preview}\n")
 
         user_input = input("Do you want to share this in Slack? ").strip().lower()
 
@@ -820,7 +890,7 @@ What: [sentence]"""
                     "type": "section",
                     "text": {
                         "type": "mrkdwn",
-                        "text": f":github: <{pr_url}|{title}>\n• *Why?* {why_line}\n• *What?* {what_line}"
+                        "text": slack_text
                     }
                 }
             ]
