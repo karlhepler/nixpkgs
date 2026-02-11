@@ -790,11 +790,15 @@ What: [your sentence]"""
             prompt_file = f.name
 
         try:
-            # Invoke haiku agent via clauderc (fresh conversation by default)
-            # q "prompt" is equivalent to: claude --model haiku "prompt"
-            # We need tool access, so use claude directly with file input
+            # Invoke haiku agent via claude CLI with -p flag for non-interactive mode
+            # Read prompt content and pass as argument (not --file which is for resources)
+            with open(prompt_file, 'r') as f:
+                prompt_content = f.read()
+
             result = subprocess.run(
-                ["claude", "--model", "haiku", "--file", prompt_file],
+                ["claude", "-p", "--model", "haiku",
+                 "--allowedTools", "Bash,Read,Edit,Grep,Glob",
+                 prompt_content],
                 capture_output=True,
                 text=True,
                 timeout=60  # 60s timeout for PR analysis
