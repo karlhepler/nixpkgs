@@ -774,9 +774,11 @@ Tasks:
 
 Be SPECIFIC and CONCRETE. Avoid vague terms like "improved" or "updated".
 
-Return ONLY:
-Why: [your sentence]
-What: [your sentence]"""
+Return ONLY valid JSON with this structure:
+{{
+  "why": "your sentence here",
+  "what": "your sentence here"
+}}"""
 
         # Write prompt to temp file for Task tool
         with tempfile.NamedTemporaryFile(
@@ -791,14 +793,15 @@ What: [your sentence]"""
 
         try:
             # Invoke haiku agent via claude CLI with -p flag for non-interactive mode
-            # Read prompt content and pass as argument (not --file which is for resources)
+            # Pass prompt via stdin instead of command argument
             with open(prompt_file, 'r') as f:
                 prompt_content = f.read()
 
             result = subprocess.run(
                 ["claude", "-p", "--model", "haiku",
-                 "--allowedTools", "Bash,Read,Edit,Grep,Glob",
-                 prompt_content],
+                 "--output-format", "json",
+                 "--allowedTools", "Bash,Read,Edit,Grep,Glob"],
+                input=prompt_content,
                 capture_output=True,
                 text=True,
                 timeout=60  # 60s timeout for PR analysis
@@ -810,25 +813,21 @@ What: [your sentence]"""
                     log(f"   Error: {result.stderr.strip()}")
                 return (None, None)
 
-            # Parse output for Why and What lines
-            output = result.stdout.strip()
-            lines = output.split("\n")
+            # Parse JSON output
+            try:
+                response_data = json.loads(result.stdout.strip())
+                why_line = response_data.get("why", "").strip()
+                what_line = response_data.get("what", "").strip()
 
-            why_line = ""
-            what_line = ""
+                if not why_line or not what_line:
+                    log("🟡 Haiku agent returned empty why/what in JSON")
+                    return (None, None)
 
-            for line in lines:
-                line = line.strip()
-                if line.lower().startswith("why:"):
-                    why_line = line[4:].strip()
-                elif line.lower().startswith("what:"):
-                    what_line = line[5:].strip()
+                return (why_line, what_line)
 
-            if not why_line or not what_line:
-                log("🟡 Haiku agent did not return Why/What in expected format")
+            except json.JSONDecodeError as e:
+                log(f"🟡 Haiku agent returned invalid JSON: {e}")
                 return (None, None)
-
-            return (why_line, what_line)
 
         finally:
             # Clean up prompt file
