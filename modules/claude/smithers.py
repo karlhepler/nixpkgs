@@ -38,7 +38,7 @@ import requests
 
 # Constants
 POLL_INTERVAL = 30  # seconds
-POSITIVE_EMOJIS = ["😊", "🙏", "✨", "💯", "👍", "🎉", "🚀", "💪"]
+POSITIVE_EMOJIS = ["😊", "🙏", "✨", "🎉", "🚀", "🙌", "🤝", "👏", "🎊"]
 DEFAULT_MAX_CYCLES = 4  # 4 CI checks: 3 with Ralph invocations + 1 final check
 DEFAULT_MAX_RALPH_INVOCATIONS = 3
 TERMINAL_STATES = {
