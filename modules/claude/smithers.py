@@ -790,11 +790,11 @@ What: [your sentence]"""
             prompt_file = f.name
 
         try:
-            # Invoke haiku agent via Task tool (q command uses haiku)
-            # q "prompt" is equivalent to: claude --model haiku --no-continue "prompt"
-            # But we need tool access, so use claude directly with file input
+            # Invoke haiku agent via clauderc (fresh conversation by default)
+            # q "prompt" is equivalent to: claude --model haiku "prompt"
+            # We need tool access, so use claude directly with file input
             result = subprocess.run(
-                ["claude", "--model", "haiku", "--no-continue", "--file", prompt_file],
+                ["claude", "--model", "haiku", "--file", prompt_file],
                 capture_output=True,
                 text=True,
                 timeout=60  # 60s timeout for PR analysis
@@ -802,6 +802,8 @@ What: [your sentence]"""
 
             if result.returncode != 0:
                 log(f"🟡 Haiku agent failed with exit code {result.returncode}")
+                if result.stderr:
+                    log(f"   Error: {result.stderr.strip()}")
                 return (None, None)
 
             # Parse output for Why and What lines
