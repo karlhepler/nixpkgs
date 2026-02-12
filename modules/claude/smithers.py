@@ -846,12 +846,18 @@ Return ONLY valid JSON with this structure:
                     log(f"   Wrapper keys: {list(wrapper.keys())}")
                     return (None, None)
 
-                # Strip markdown code fences if present
+                # Strip markdown code fences and any preamble text
                 result_text = result_text.strip()
-                if result_text.startswith("```json"):
-                    result_text = result_text[7:]  # Remove ```json
-                elif result_text.startswith("```"):
-                    result_text = result_text[3:]  # Remove ```
+
+                # Find the start of JSON (may have preamble text before code fence)
+                json_start = result_text.find("```json")
+                if json_start >= 0:
+                    result_text = result_text[json_start + 7:]  # Remove everything before and including ```json
+                elif result_text.find("```") >= 0:
+                    json_start = result_text.find("```")
+                    result_text = result_text[json_start + 3:]  # Remove everything before and including ```
+
+                # Remove trailing code fence
                 if result_text.endswith("```"):
                     result_text = result_text[:-3]  # Remove trailing ```
                 result_text = result_text.strip()
