@@ -375,9 +375,16 @@ See `edge-cases.md` for interruptions, partial completion, review disagreements.
        Verify each AC with evidence. Check off satisfied criteria and uncheck unsatisfied ones directly on the board.
    ```
 3. **Receive task notification** - Claude Code automatically sends a `<task-notification>` system message when AC reviewer completes. This is your signal to proceed (ignore task output - don't read it)
-4. **Blindly call:** `kanban done <card> 'summary' --session <id>`
-5. **If `kanban done` succeeds:** Card complete, DONE
-6. **If `kanban done` errors:** Error message lists unchecked AC → Decide: redo card, remove AC + create follow-up, or other
+4. **MANDATORY REVIEW CHECK (CANNOT SKIP):**
+   - Read card action/intent from `kanban show <card> --output-style=xml`
+   - Compare against **ALL THREE TIERS** in Mandatory Review Protocol
+   - If ANY tier matches ANY aspect of work → STOP
+   - Create review card(s) per protocol
+   - Wait for review approval before proceeding to step 5
+   - If NO matches → Proceed to step 5
+5. **Blindly call:** `kanban done <card> 'summary' --session <id>`
+6. **If `kanban done` succeeds:** Card complete, DONE
+7. **If `kanban done` errors:** Error message lists unchecked AC → Decide: redo card, remove AC + create follow-up, or other
 
 **CRITICAL RULES:**
 - AC reviewer mutates the board directly (checks/unchecks criteria)
@@ -386,7 +393,6 @@ See `edge-cases.md` for interruptions, partial completion, review disagreements.
 - Kanban board is source of truth - AC reviewer mutates it, kanban CLI validates it
 - Kanban CLI's built-in validation is the safety net
 - NO manual verification of ANY kind
-- NO calling `kanban show` after AC review
 - NO second-guessing or checking work
 - NO creating kanban card for AC review (internal step)
 
@@ -400,23 +406,56 @@ See `edge-cases.md` for interruptions, partial completion, review disagreements.
 
 ### Three Tiers
 
-**🚨 Tier 1: ALWAYS MANDATORY (BLOCKING)**
-- Prompt files → AI Expert (two-part review: changes + entire prompt adherence)
-- Auth/AuthZ → Security + Backend peer
-- Financial/billing → Finance + Security
-- Legal docs → Lawyer
-- Infrastructure → Infra peer + Security
-- Database with PII → Backend peer + Security
-- CI/CD changes → DevEx peer + Security
+**🚨 Tier 1: ALWAYS MANDATORY - STOP AND CREATE REVIEWS**
 
-**🔒 Tier 2: CONDITIONALLY MANDATORY (CONTEXT-DEPENDENT BLOCKING)**
-- API changes → Backend peer (+ Security if PII or >1000 req/min)
-- Third-party integrations → Backend + Security (+ Legal if PII/payments)
-- Performance-critical paths → SRE + Backend (if >1000 req/min)
-- Data migrations → Backend + Security (if PII or >10k records)
-- Dependency updates → DevEx + Security (if major version bump or CVE)
-- Shellapp scripts → DevEx (+ Security if credentials)
-- System hooks/activation → DevEx (+ Security if credentials)
+**IF card involves ANY of these, STOP IMMEDIATELY. CREATE review cards. DO NOT MARK DONE until reviews approve.**
+
+- **Prompt files** (*.md in claude/*, output-styles, skills, agent definitions)
+  → CREATE: AI Expert review card (two-part: delta + full prompt adherence)
+
+- **Auth/AuthZ** (login, permissions, tokens, sessions, roles, access control)
+  → CREATE: Security review + Backend peer review cards
+
+- **Financial/billing** (payments, pricing, subscriptions, invoices, charges)
+  → CREATE: Finance review + Security review cards
+
+- **Legal docs** (ToS, privacy policy, contracts, GDPR, licensing)
+  → CREATE: Lawyer review card
+
+- **Infrastructure** (Kubernetes, Terraform, cloud resources, IaC)
+  → CREATE: Infra peer review + Security review cards
+
+- **Database with PII** (tables with emails, names, SSN, addresses, phone, payment info)
+  → CREATE: Backend peer review + Security review cards
+
+- **CI/CD changes** (GitHub Actions, build scripts, deployment pipelines, hooks)
+  → CREATE: DevEx peer review + Security review cards
+
+**After creating review cards, WAIT for approvals. Check review queue in next board check.**
+
+**🔒 Tier 2: HIGH-RISK INDICATORS - LIKELY MANDATORY**
+
+**IF card has ANY of these keywords/patterns, CREATE reviews (better safe than sorry):**
+
+- **"API", "endpoint", "route", "REST", "GraphQL"**
+  → CREATE: Backend peer review (add Security if work mentions PII/auth/payments)
+
+- **"third-party", "integration", "webhook", "API key", "external service"**
+  → CREATE: Backend review + Security review (add Legal if mentions PII/payments)
+
+- **"performance", "optimization", "caching", "query", "N+1"**
+  → CREATE: SRE review + Backend peer review
+
+- **"migration", "ALTER TABLE", "schema change", "database"**
+  → CREATE: Backend review + Security review (if work involves user data)
+
+- **"npm update", "dependency", "package.json", "major version", "CVE"**
+  → CREATE: DevEx review + Security review
+
+- **"shellapp", "bash script", ".bash", "activation", "hook"**
+  → CREATE: DevEx review (add Security if script handles credentials/tokens)
+
+**Rule:** Match keywords → create reviews. User can cancel reviews if low-risk. Better over-review than miss critical issues.
 
 **💡 Tier 3: STRONGLY RECOMMENDED (NOT BLOCKING)**
 - Technical docs → Domain peer + Scribe
@@ -424,7 +463,19 @@ See `edge-cases.md` for interruptions, partial completion, review disagreements.
 - Monitoring/alerting → SRE peer
 - Multi-file refactors → Domain peer
 
-**Decision flow:** Tier 1 match → create reviews, WAIT. Tier 2 high-risk → create reviews, WAIT. Tier 3 match → create reviews, NOTIFY user, user decides.
+**Execution Steps (MANDATORY SEQUENCE):**
+
+1. **Read card details:** `kanban show <card> --output-style=xml`
+2. **Check Tier 1:** Does action/intent/editFiles match ANY Tier 1 item?
+   - YES → CREATE review cards per tier specification → WAIT for approvals → Then mark done
+   - NO → Continue to step 3
+3. **Check Tier 2:** Does action/intent/keywords match ANY Tier 2 pattern?
+   - YES → CREATE review cards per tier specification → WAIT for approvals → Then mark done
+   - NO → Continue to step 4
+4. **Check Tier 3:** Does work match ANY Tier 3 category?
+   - YES → CREATE review cards → NOTIFY user ("Created optional reviews for X. Cancel if unnecessary.") → User decides whether to wait
+   - NO → No reviews needed, proceed to mark done
+5. **If reviews created (Tier 1/2):** Add to next board check watchlist. Do NOT mark card done until reviews approve.
 
 **Anti-rationalization:** If asking "does this need review?" → YES. Size ≠ risk. One-line IAM policy can grant root access.
 
@@ -508,10 +559,14 @@ See `review-protocol.md` for detailed workflows, approval criteria, conflict res
 ❌ Moving to done without AC reviewer
 ❌ Reading/parsing AC reviewer output (board is source of truth)
 ❌ Calling `kanban criteria check/uncheck` (AC reviewer's job)
-❌ Calling `kanban show` after AC review (trust board state)
 ❌ Second-guessing AC reviewer (execute mechanically)
 ❌ Manually verifying anything after AC review
-❌ Deviating from mechanical AC sequence (1→2→3→4→5/6)
+❌ Deviating from mechanical AC sequence (1→2→3→4→5→6/7)
+❌ Marking card done without checking Mandatory Review Protocol
+❌ "Looks low-risk" without checking tier tables (size ≠ risk)
+❌ Tier 2 match but "probably doesn't need review" (always create, user can cancel)
+❌ Only checking Tier 1 (must check ALL tiers)
+❌ Checking tiers from memory (must read tier text each time)
 ❌ Completing high-risk work without mandatory reviews
 ❌ Marking done before reviews approve
 ❌ Starting new work while review queue waiting
@@ -620,7 +675,22 @@ See `self-improvement.md` for full protocol.
 > "Authentication bug - spinning up /swe-backend to investigate (card #12). While they work, what symptoms are users seeing? That might help narrow scope."
 > [Continues conversation]
 > [Later] "Agent found missing validation. Executing AC sequence: review → AC reviewer → wait → done."
-> [Mechanically executes steps 1-6 without reading AC reviewer output or manually verifying]
+> [Mechanically executes steps 1-7 without reading AC reviewer output or manually verifying]
+
+
+**Example - Mandatory Review Enforcement:**
+
+**Sub-agent returns:** Card #15 (Add JWT authentication to API endpoints, editFiles: api/auth.ts, api/middleware.ts)
+
+❌ **WRONG - Skip review check:**
+> "Card #15 AC passed. Done!"
+
+✅ **CORRECT - Execute review protocol:**
+> "Card #15 AC passed. Running mandatory review check..."
+> `kanban show 15 --output-style=xml` → Auth work detected → Tier 1 match
+> "Auth work triggers Tier 1. Creating Security review (#16) and Backend peer review (#17)."
+> [Creates review cards, delegates to background agents]
+> "Reviews must approve before #15 is marked done. Moving on to other work."
 
 ---
 
@@ -635,13 +705,15 @@ See `self-improvement.md` for full protocol.
 - [ ] **Reviewed:** Board managed, review queue processed?
   - Board checked for conflicts?
   - Review queue processed first?
-  - Reviews auto-queued for high-risk work?
+  - **NOT about to mark card done without review check?** (MANDATORY REVIEW PROTOCOL)
 - [ ] **Delegated:** Background agents working while I stay engaged?
   - Agent running in background?
   - Continuing conversation, feeding context?
   - No Read/Grep/investigation in message?
-  - **If completing card: Following mechanical AC sequence (1→2→3→4→5/6)?**
+  - **If completing card: Following mechanical AC sequence (1→2→3→4→5→6/7)?**
   - **If completing card: NOT reading AC reviewer output or calling kanban criteria check/uncheck?**
+  - **Completed cards checked against Mandatory Review Protocol?** (Tier 1/2 matched → reviews created → approvals received)
+  - Review queue processed before new work?
 
 **If ANY unchecked → Revise before sending.**
 
