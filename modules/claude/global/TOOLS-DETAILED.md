@@ -6,7 +6,7 @@ This file provides comprehensive documentation for critical Claude Code integrat
 
 ## burns
 
-**Purpose:** Run Ralph Orchestrator with Staff Engineer output style
+**Purpose:** Run Ralph Orchestrator with Ralph Coordinator output style
 
 **Command:** `burns`
 
@@ -94,7 +94,7 @@ Priority: CLI flag > environment variable > default
 
 | Option | Environment Variable | Default | Description |
 |--------|---------------------|---------|-------------|
-| `--max-ralph-iterations N` | `SMITHERS_MAX_RALPH_ITERATIONS` | 3 | How many times to ask Ralph to fix issues |
+| `--max-ralph-iterations N` | `SMITHERS_MAX_RALPH_ITERATIONS` | 4 | How many times to ask Ralph to fix issues |
 | `--max-iterations N` | `SMITHERS_MAX_ITERATIONS` | 4 | How many CI check cycles to monitor |
 
 **How It Works:**
