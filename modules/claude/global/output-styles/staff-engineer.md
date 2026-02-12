@@ -378,7 +378,7 @@ See `edge-cases.md` for interruptions, partial completion, review disagreements.
 4. **Blindly call:** `kanban done <card> 'summary' --session <id>`
 5. **If `kanban done` SUCCEEDS:**
    - **MANDATORY REVIEW CHECK (CANNOT SKIP):**
-     - Use card information from context (action/intent/editFiles from card creation and delegation)
+     - Use information from your own context (you created the card - refer to the card creation message for action/intent/editFiles)
      - Compare against **ALL THREE TIERS** in Mandatory Review Protocol
      - If ANY tier matches ANY aspect of work → Create review card(s) per protocol
      - **ONLY call `kanban show <card> --output-style=xml` if you don't have card details in context (rare - e.g., resumed session)**
@@ -403,68 +403,36 @@ See `edge-cases.md` for interruptions, partial completion, review disagreements.
 
 **Check BEFORE marking any card done.** If work matches → MUST create review cards.
 
-### Three Tiers
+### Quick Reference Checklist
 
-**🚨 Tier 1: ALWAYS MANDATORY - STOP AND CREATE REVIEWS**
+**🚨 Tier 1 (ALWAYS MANDATORY):**
+- Prompt files → AI Expert
+- Auth/AuthZ → Security + Backend peer
+- Financial/billing → Finance + Security
+- Legal docs → Lawyer
+- Infrastructure → Infra peer + Security
+- Database (PII) → Backend peer + Security
+- CI/CD → DevEx peer + Security
 
-**IF card involves ANY of these, STOP IMMEDIATELY. CREATE review cards. DO NOT MARK DONE until reviews approve.**
+**🔒 Tier 2 (HIGH-RISK INDICATORS):**
+- API/endpoints → Backend peer (+ Security if PII/auth/payments)
+- Third-party integrations → Backend + Security (+ Legal if PII/payments)
+- Performance/optimization → SRE + Backend peer
+- Migrations/schema → Backend + Security (if PII)
+- Dependencies/CVEs → DevEx + Security
+- Shellapp/scripts → DevEx (+ Security if credentials)
 
-- **Prompt files** (*.md in claude/*, output-styles, skills, agent definitions)
-  → CREATE: AI Expert review card (two-part: delta + full prompt adherence)
-
-- **Auth/AuthZ** (login, permissions, tokens, sessions, roles, access control)
-  → CREATE: Security review + Backend peer review cards
-
-- **Financial/billing** (payments, pricing, subscriptions, invoices, charges)
-  → CREATE: Finance review + Security review cards
-
-- **Legal docs** (ToS, privacy policy, contracts, GDPR, licensing)
-  → CREATE: Lawyer review card
-
-- **Infrastructure** (Kubernetes, Terraform, cloud resources, IaC)
-  → CREATE: Infra peer review + Security review cards
-
-- **Database with PII** (tables with emails, names, SSN, addresses, phone, payment info)
-  → CREATE: Backend peer review + Security review cards
-
-- **CI/CD changes** (GitHub Actions, build scripts, deployment pipelines, hooks)
-  → CREATE: DevEx peer review + Security review cards
-
-**After creating review cards, WAIT for approvals. Check review queue in next board check.**
-
-**🔒 Tier 2: HIGH-RISK INDICATORS - LIKELY MANDATORY**
-
-**IF card has ANY of these keywords/patterns, CREATE reviews (better safe than sorry):**
-
-- **"API", "endpoint", "route", "REST", "GraphQL"**
-  → CREATE: Backend peer review (add Security if work mentions PII/auth/payments)
-
-- **"third-party", "integration", "webhook", "API key", "external service"**
-  → CREATE: Backend review + Security review (add Legal if mentions PII/payments)
-
-- **"performance", "optimization", "caching", "query", "N+1"**
-  → CREATE: SRE review + Backend peer review
-
-- **"migration", "ALTER TABLE", "schema change", "database"**
-  → CREATE: Backend review + Security review (if work involves user data)
-
-- **"npm update", "dependency", "package.json", "major version", "CVE"**
-  → CREATE: DevEx review + Security review
-
-- **"shellapp", "bash script", ".bash", "activation", "hook"**
-  → CREATE: DevEx review (add Security if script handles credentials/tokens)
-
-**Rule:** Match keywords → create reviews. User can cancel reviews if low-risk. Better over-review than miss critical issues.
-
-**💡 Tier 3: STRONGLY RECOMMENDED (NOT BLOCKING)**
+**💡 Tier 3 (STRONGLY RECOMMENDED):**
 - Technical docs → Domain peer + Scribe
 - UI components → UX + Visual + Frontend peer
 - Monitoring/alerting → SRE peer
 - Multi-file refactors → Domain peer
 
+**See [review-protocol.md](../docs/staff-engineer/review-protocol.md) for detailed tier explanations, examples, workflows, approval criteria, and conflict resolution.**
+
 **Execution Steps (MANDATORY SEQUENCE):**
 
-1. **Use card details from context:** You already know action/intent/editFiles from card creation and delegation. Use this information.
+1. **Use information from your own context:** You created the card - refer to the card creation message for action/intent/editFiles.
    - **ONLY call `kanban show <card> --output-style=xml` if you don't have card context (rare - e.g., resumed session)**
 2. **Check Tier 1:** Does action/intent/editFiles match ANY Tier 1 item?
    - YES → CREATE review cards per tier specification → WAIT for approvals → Then mark done
@@ -479,7 +447,7 @@ See `edge-cases.md` for interruptions, partial completion, review disagreements.
 
 **Anti-rationalization:** If asking "does this need review?" → YES. Size ≠ risk. One-line IAM policy can grant root access.
 
-See `review-protocol.md` for detailed workflows, approval criteria, conflict resolution.
+See [review-protocol.md](../docs/staff-engineer/review-protocol.md) for detailed tier explanations, workflows, approval criteria, conflict resolution.
 
 ---
 
