@@ -16,7 +16,7 @@ Usage:
     smithers --max-iterations N 123        # Custom watch cycles
 
 Options:
-    --max-ralph-iterations N    How many times to ask Ralph to fix issues (default: 3)
+    --max-ralph-iterations N    How many times to ask Ralph to fix issues (default: 4)
                                 Can also set via SMITHERS_MAX_RALPH_ITERATIONS env var
     --max-iterations N          How many CI check cycles to monitor (default: 4)
                                 Can also set via SMITHERS_MAX_ITERATIONS env var
@@ -40,12 +40,18 @@ import requests
 POLL_INTERVAL = 30  # seconds
 POSITIVE_EMOJIS = ["😊", "🙏", "✨", "🎉", "🚀", "🙌", "🤝", "👏", "🎊"]
 DEFAULT_MAX_CYCLES = 10  # Increased to handle multiple bot comment short-circuit cycles
-DEFAULT_MAX_RALPH_INVOCATIONS = 3
+DEFAULT_MAX_RALPH_INVOCATIONS = 4
 TERMINAL_STATES = {
     "pass", "fail", "skipping", "cancelled",
     "success", "failure", "skipped", "neutral", "stale",
     "action_required", "timed_out"  # Don't forget these terminal states
 }
+
+# Workflow failure tracking (in-memory for current run)
+# Structure: {commit_sha: {workflow_name: {"count": int, "last_failure": timestamp}}}
+WORKFLOW_FAILURE_TRACKER = {}
+# Track last HEAD commit SHA for cleanup
+LAST_HEAD_COMMIT_SHA = None
 
 
 def log(msg: str):
@@ -507,6 +513,12 @@ def get_pr_info(pr_number: int) -> dict:
         review_decision = data.get("reviewDecision", "")
         # reviewDecision values: APPROVED, CHANGES_REQUESTED, REVIEW_REQUIRED
         data["is_approved"] = review_decision == "APPROVED"
+
+        # Extract HEAD commit SHA (most recent commit)
+        if commits:
+            data["head_commit_sha"] = commits[-1].get("oid", "")
+        else:
+            data["head_commit_sha"] = ""
 
         return data
     except json.JSONDecodeError:
@@ -1065,6 +1077,98 @@ def audit_ralph_execution() -> None:
         log(f"🟡  Post-execution audit failed: {e}")
 
 
+def cleanup_old_commit_tracking(current_head_sha: str) -> None:
+    """Remove old commit data when HEAD commit changes.
+
+    Prevents memory leak by only keeping current commit data.
+
+    Args:
+        current_head_sha: Current HEAD commit SHA
+    """
+    global LAST_HEAD_COMMIT_SHA
+
+    if not current_head_sha:
+        return
+
+    # If HEAD changed, clean up old commits
+    if LAST_HEAD_COMMIT_SHA and LAST_HEAD_COMMIT_SHA != current_head_sha:
+        # Remove all commits except current one
+        old_commits = [sha for sha in WORKFLOW_FAILURE_TRACKER.keys() if sha != current_head_sha]
+        for old_sha in old_commits:
+            del WORKFLOW_FAILURE_TRACKER[old_sha]
+        log(f"🧹 Cleaned up failure tracking for {len(old_commits)} old commit(s)")
+
+    LAST_HEAD_COMMIT_SHA = current_head_sha
+
+
+def track_workflow_failure(commit_sha: str, workflow_name: str) -> None:
+    """Track workflow failure by commit hash.
+
+    Args:
+        commit_sha: Current HEAD commit SHA
+        workflow_name: Name of the failed workflow
+    """
+    if not commit_sha or not workflow_name:
+        return
+
+    if commit_sha not in WORKFLOW_FAILURE_TRACKER:
+        WORKFLOW_FAILURE_TRACKER[commit_sha] = {}
+
+    if workflow_name not in WORKFLOW_FAILURE_TRACKER[commit_sha]:
+        WORKFLOW_FAILURE_TRACKER[commit_sha][workflow_name] = {
+            "count": 0,
+            "last_failure": None
+        }
+
+    WORKFLOW_FAILURE_TRACKER[commit_sha][workflow_name]["count"] += 1
+    WORKFLOW_FAILURE_TRACKER[commit_sha][workflow_name]["last_failure"] = time.time()
+
+
+def get_failure_history_warning(commit_sha: str) -> str:
+    """Generate warning message for repeated workflow failures on same commit.
+
+    ONLY generates warning text. Does NOT track failures (tracking must happen elsewhere).
+
+    Args:
+        commit_sha: Current HEAD commit SHA
+
+    Returns:
+        Warning message if 2+ failures exist on same commit, empty string otherwise
+    """
+    if not commit_sha or commit_sha not in WORKFLOW_FAILURE_TRACKER:
+        return ""
+
+    # Build warning for workflows with 2+ failures
+    warnings = []
+    tracker = WORKFLOW_FAILURE_TRACKER[commit_sha]
+
+    for workflow_name, data in tracker.items():
+        count = data["count"]
+        if count >= 2:
+            last_failure = data["last_failure"]
+            if last_failure:
+                minutes_ago = int((time.time() - last_failure) / 60)
+                time_str = f"{minutes_ago} minute{'s' if minutes_ago != 1 else ''} ago" if minutes_ago > 0 else "just now"
+            else:
+                time_str = "unknown"
+
+            warnings.append(f'- "{workflow_name}" workflow: Failed {count} times on this commit (no code changes)\n  Last failure: {time_str}')
+
+    if not warnings:
+        return ""
+
+    short_sha = commit_sha[:7]
+    return f"""
+⚠️ **Workflow Failure History (commit {short_sha}):**
+{chr(10).join(warnings)}
+
+⚠️ This pattern suggests restarting may not resolve the issue. Consider:
+- Investigating root cause instead of restarting
+- Checking for infrastructure/environment issues
+- Determining if this is fixable via code changes
+"""
+
+
 def sanitize_for_prompt(text: str, max_length: int = 2000) -> str:
     """Sanitize external content before injecting into LLM prompts.
 
@@ -1130,6 +1234,7 @@ def generate_prompt(
     title = sanitize_for_prompt(pr_info.get("title", "Unknown"), max_length=200)
     head = sanitize_for_prompt(pr_info.get("headRefName", "Unknown"), max_length=100)
     base = sanitize_for_prompt(pr_info.get("baseRefName", "Unknown"), max_length=100)
+    commit_sha = pr_info.get("head_commit_sha", "")
 
     remaining = total_iterations - work_iteration
     sections.append(f"""# PR Watch Task
@@ -1201,7 +1306,14 @@ You have explicit permission to STOP and exit if:
 - Any safety constraint would be violated
 
 **Better to exit early than cause damage.** Document the blocker in your task system and exit.
+""")
 
+    # Inject failure history warning if applicable
+    failure_warning = get_failure_history_warning(commit_sha)
+    if failure_warning:
+        sections.append(failure_warning)
+
+    sections.append("""
 ## 🚨 WORKING DIRECTORY RESTRICTION
 
 You are running in autonomous mode within: {os.getcwd()}
@@ -1620,6 +1732,18 @@ def main_loop_iteration(
     prc_error_count = 1 if bot_comments.get("retries_exhausted") else 0
     print_status(len(failed_checks), actionable_bot, conflicts, prc_error_count)
 
+    # 4.1. Track workflow failures and cleanup old commit data
+    # Extract and validate commit SHA from pr_info
+    commit_sha = pr_info.get("head_commit_sha", "")
+    if commit_sha:
+        # Clean up old commit tracking when HEAD changes
+        cleanup_old_commit_tracking(commit_sha)
+
+        # Track current failed workflows (happens once per cycle)
+        for check in failed_checks:
+            workflow_name = check.get("name", "Unknown")
+            track_workflow_failure(commit_sha, workflow_name)
+
     # 4.5. Early exit if nothing is actionable yet
     # Safety check: If checks exist but all are pending, and no other actionable work
     # This handles edge cases where wait_for_checks might return early
@@ -1756,13 +1880,14 @@ def main_loop_iteration(
     env = os.environ.copy()
     env["BURNS_MAX_RALPH_ITERATIONS"] = str(max_ralph_invocations)
 
-    log(f"🚀 Invoking Ralph (iteration {work_iteration}/{total_iterations}): burns {prompt_file}")
+    log(f"🚀 Invoking Ralph (iteration {work_iteration}/{total_iterations}): burns --pr {pr_number} {prompt_file}")
     try:
-        # Run burns with the prompt file
+        # Run burns with the prompt file and PR context
         # Use Popen with process group for proper signal handling
         # This ensures all child processes (Ralph and its subprocesses) get signals
+        # CRITICAL: Pass --pr flag so Ralph knows PR already exists (prevents "no PR, need to create" bug)
         process = subprocess.Popen(
-            ["burns", prompt_file],
+            ["burns", "--pr", str(pr_number), prompt_file],
             env=env,
             start_new_session=True  # Create new process group
         )
