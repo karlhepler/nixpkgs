@@ -58,7 +58,10 @@ Once the user confirms the crystallized context:
 
 **TMUX pattern (borrowed from workout-staff):**
 ```bash
-tmux new-window -d -n learn-improvement -c ~/.config/nixpkgs "staff 'Your structured prompt here'"
+# Window name MUST be topic-specific to avoid conflicts
+# Format: learn-<topic-in-kebab-case>
+# Examples: learn-date-awareness, learn-tmux-naming, learn-source-code-access
+tmux new-window -d -n learn-<topic> -c ~/.config/nixpkgs "staff 'Your structured prompt here'"
 ```
 
 **The structured prompt must include:**
@@ -168,15 +171,21 @@ The goal is to make the staff engineer's behavior more reliable by encoding this
 
 ### Step 2: Create TMUX Window and Launch Staff
 
+**CRITICAL: Generate a topic-specific window name to avoid conflicts.**
+
 Use the pattern from workout-staff (TMUX window creation with command injection):
 
 ```bash
-tmux new-window -n learn-improvement -c ~/.config/nixpkgs
-tmux send-keys -t learn-improvement 'staff "YOUR_STRUCTURED_PROMPT_HERE"' C-m
+# Window name format: learn-<topic-in-kebab-case>
+# Examples: learn-date-awareness, learn-tmux-naming, learn-source-code-access
+# Generate name from the crystallized learning topic
+tmux new-window -n learn-<topic> -c ~/.config/nixpkgs
+tmux send-keys -t learn-<topic> 'staff "YOUR_STRUCTURED_PROMPT_HERE"' C-m
 ```
 
 **Important:**
-- Window name: `learn-improvement`
+- **Window name:** `learn-<topic>` where `<topic>` is derived from the learning subject in short kebab-case format
+  - Examples: `learn-delegation-rules`, `learn-kanban-workflow`, `learn-code-access-prohibition`
 - Working directory: `~/.config/nixpkgs` (guaranteed to exist)
 - Command: `staff` (guaranteed to exist - it's the alias that launches Claude Code with staff-engineer output style)
 - Prompt passed as first argument to `staff`
@@ -184,8 +193,8 @@ tmux send-keys -t learn-improvement 'staff "YOUR_STRUCTURED_PROMPT_HERE"' C-m
 **Escape handling:** If the prompt contains quotes or special characters, use a heredoc pattern:
 
 ```bash
-tmux new-window -n learn-improvement -c ~/.config/nixpkgs
-tmux send-keys -t learn-improvement "staff \"$(cat <<'EOF'
+tmux new-window -n learn-<topic> -c ~/.config/nixpkgs
+tmux send-keys -t learn-<topic> "staff \"$(cat <<'EOF'
 [Your multi-line structured prompt here]
 EOF
 )\"" C-m
@@ -197,13 +206,15 @@ After launching the TMUX window, tell the user:
 
 **Template:**
 ```
-Created a new staff session in TMUX window `learn-improvement` to implement the improvement.
+Created a new staff session in TMUX window `learn-<topic>` to implement the improvement.
 
 Switch to it with:
-- `tmux select-window -t learn-improvement`
+- `tmux select-window -t learn-<topic>`
 
 The new staff engineer has been given the context about what went wrong and will propose specific improvements to the staff-engineer.md prompt file. You can review and approve the changes in that session.
 ```
+
+**Replace `<topic>` with the actual topic-specific window name you generated** (e.g., `learn-delegation-rules`).
 
 ## Important Constraints
 
@@ -258,8 +269,9 @@ I've crystallized the issue. Ready to launch a new staff session to implement th
 
 **Your response (Phase 2):**
 ```bash
-tmux new-window -n learn-improvement -c ~/.config/nixpkgs
-tmux send-keys -t learn-improvement "staff \"$(cat <<'EOF'
+# Topic: source-code-access (derived from the mistake about using Grep inappropriately)
+tmux new-window -n learn-source-code-access -c ~/.config/nixpkgs
+tmux send-keys -t learn-source-code-access "staff \"$(cat <<'EOF'
 The staff engineer made a mistake that needs to be addressed by improving the staff-engineer.md prompt file.
 
 ## Context: What Went Wrong
@@ -296,10 +308,10 @@ EOF
 
 Then inform the user:
 ```
-Created a new staff session in TMUX window `learn-improvement` to implement the improvement.
+Created a new staff session in TMUX window `learn-source-code-access` to implement the improvement.
 
 Switch to it with:
-- `tmux select-window -t learn-improvement`
+- `tmux select-window -t learn-source-code-access`
 
 The new staff engineer has been given the context about what went wrong and will propose specific improvements to the staff-engineer.md prompt file. You can review and approve the changes in that session.
 ```
