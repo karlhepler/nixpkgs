@@ -328,7 +328,7 @@ See `delegation-guide.md` for detailed patterns.
    - AC reviewer mutates board (checks/unchecks criteria directly)
    - Wait for completion (ignore task output)
    - `kanban done <card> 'summary'` (blindly attempt completion)
-   - If success → card complete
+   - If success → Run mandatory review check → Create review cards if needed → card complete
    - If error → kanban CLI lists unchecked AC → rectify (redo, remove AC + follow-up, or other)
 5. Park for later → `kanban defer`
 6. **Terminating card (cancel, supersede, or defer while agent running)** → **MUST stop associated background agent**
@@ -375,16 +375,15 @@ See `edge-cases.md` for interruptions, partial completion, review disagreements.
        Verify each AC with evidence. Check off satisfied criteria and uncheck unsatisfied ones directly on the board.
    ```
 3. **Receive task notification** - Claude Code automatically sends a `<task-notification>` system message when AC reviewer completes. This is your signal to proceed (ignore task output - don't read it)
-4. **MANDATORY REVIEW CHECK (CANNOT SKIP):**
-   - Read card action/intent from `kanban show <card> --output-style=xml`
-   - Compare against **ALL THREE TIERS** in Mandatory Review Protocol
-   - If ANY tier matches ANY aspect of work → STOP
-   - Create review card(s) per protocol
-   - Wait for review approval before proceeding to step 5
-   - If NO matches → Proceed to step 5
-5. **Blindly call:** `kanban done <card> 'summary' --session <id>`
-6. **If `kanban done` succeeds:** Card complete, DONE
-7. **If `kanban done` errors:** Error message lists unchecked AC → Decide: redo card, remove AC + create follow-up, or other
+4. **Blindly call:** `kanban done <card> 'summary' --session <id>`
+5. **If `kanban done` SUCCEEDS:**
+   - **MANDATORY REVIEW CHECK (CANNOT SKIP):**
+     - Use card information from context (action/intent/editFiles from card creation and delegation)
+     - Compare against **ALL THREE TIERS** in Mandatory Review Protocol
+     - If ANY tier matches ANY aspect of work → Create review card(s) per protocol
+     - **ONLY call `kanban show <card> --output-style=xml` if you don't have card details in context (rare - e.g., resumed session)**
+   - Card marked done, proceed with or without reviews as needed
+6. **If `kanban done` FAILS:** Error message lists unchecked AC → Decide: redo card, remove AC + create follow-up, or other (NO review check - work incomplete)
 
 **CRITICAL RULES:**
 - AC reviewer mutates the board directly (checks/unchecks criteria)
@@ -465,7 +464,8 @@ See `edge-cases.md` for interruptions, partial completion, review disagreements.
 
 **Execution Steps (MANDATORY SEQUENCE):**
 
-1. **Read card details:** `kanban show <card> --output-style=xml`
+1. **Use card details from context:** You already know action/intent/editFiles from card creation and delegation. Use this information.
+   - **ONLY call `kanban show <card> --output-style=xml` if you don't have card context (rare - e.g., resumed session)**
 2. **Check Tier 1:** Does action/intent/editFiles match ANY Tier 1 item?
    - YES → CREATE review cards per tier specification → WAIT for approvals → Then mark done
    - NO → Continue to step 3
@@ -561,12 +561,13 @@ See `review-protocol.md` for detailed workflows, approval criteria, conflict res
 ❌ Calling `kanban criteria check/uncheck` (AC reviewer's job)
 ❌ Second-guessing AC reviewer (execute mechanically)
 ❌ Manually verifying anything after AC review
-❌ Deviating from mechanical AC sequence (1→2→3→4→5→6/7)
-❌ Marking card done without checking Mandatory Review Protocol
+❌ Deviating from mechanical AC sequence (1→2→3→4→5/6)
+❌ Checking Mandatory Review Protocol before calling `kanban done` (complete work first!)
 ❌ "Looks low-risk" without checking tier tables (size ≠ risk)
 ❌ Tier 2 match but "probably doesn't need review" (always create, user can cancel)
 ❌ Only checking Tier 1 (must check ALL tiers)
 ❌ Checking tiers from memory (must read tier text each time)
+❌ Calling `kanban show` when card details already in context (wastes tokens)
 ❌ Completing high-risk work without mandatory reviews
 ❌ Marking done before reviews approve
 ❌ Starting new work while review queue waiting
@@ -650,7 +651,7 @@ See `self-improvement.md` for full protocol.
 | `kanban list --output-style=xml` | Board check (compact XML) |
 | `kanban do '<JSON or array>'` | Create card(s) in doing |
 | `kanban todo '<JSON or array>'` | Create card(s) in todo |
-| `kanban show <card> --output-style=xml` | View full card details |
+| `kanban show <card> --output-style=xml` | View full card details (only if not in context) |
 | `kanban start <card> [cards...]` | Pick up from todo → doing |
 | `kanban review <card> [cards...]` | Move to review column |
 | `kanban redo <card>` | Send back from review → doing |
@@ -686,11 +687,12 @@ See `self-improvement.md` for full protocol.
 > "Card #15 AC passed. Done!"
 
 ✅ **CORRECT - Execute review protocol:**
-> "Card #15 AC passed. Running mandatory review check..."
-> `kanban show 15 --output-style=xml` → Auth work detected → Tier 1 match
+> "Card #15 AC passed. Attempting completion..."
+> [Calls `kanban done 15 'summary'` - succeeds]
+> "Card #15 complete. Running mandatory review check..."
+> [Uses context: card was about JWT auth to API endpoints, editFiles: api/auth.ts, api/middleware.ts]
 > "Auth work triggers Tier 1. Creating Security review (#16) and Backend peer review (#17)."
 > [Creates review cards, delegates to background agents]
-> "Reviews must approve before #15 is marked done. Moving on to other work."
 
 ---
 
@@ -710,9 +712,11 @@ See `self-improvement.md` for full protocol.
   - Agent running in background?
   - Continuing conversation, feeding context?
   - No Read/Grep/investigation in message?
-  - **If completing card: Following mechanical AC sequence (1→2→3→4→5→6/7)?**
+  - **If completing card: Following mechanical AC sequence (1→2→3→4→5/6)?**
   - **If completing card: NOT reading AC reviewer output or calling kanban criteria check/uncheck?**
-  - **Completed cards checked against Mandatory Review Protocol?** (Tier 1/2 matched → reviews created → approvals received)
+  - **If completing card: Calling `kanban done` BEFORE mandatory review check?**
+  - **If completing card: Using card details from CONTEXT, not calling `kanban show` unnecessarily?**
+  - **If `kanban done` succeeded: Checked against Mandatory Review Protocol?** (Tier 1/2 matched → reviews created)
   - Review queue processed before new work?
 
 **If ANY unchecked → Revise before sending.**
