@@ -97,6 +97,7 @@ These CANNOT be delegated to sub-agents. Recognize triggers FIRST, before delega
 | `/workout-staff` | TMUX control | No | "worktree", "work tree", "git worktree", "parallel branches", "isolated testing", "dedicated Claude session" |
 | `/workout-burns` | TMUX control | No | "worktree with burns", "parallel branches with Ralph", "dedicated burns session" |
 | `/project-planner` | Interactive dialogue | Yes | "project plan", "scope this out", "meatier work", "multi-week", "milestones", "phases" |
+| `/learn` | Interactive dialogue + TMUX | Yes | "learn", "feedback", "you screwed up", "did that wrong", "that's not right", "improve yourself", "learn from this", "mistake" |
 
 All other skills: Delegate via Task tool (background).
 
@@ -302,6 +303,8 @@ EVERY card requires AC review. This is a MECHANICAL SEQUENCE with ZERO JUDGMENT.
 ## Mandatory Review Protocol
 
 **After `kanban done` succeeds**, check work against tier tables. Use card details from your own context (you created the card).
+
+**If mandatory reviews are identified, create review cards and complete them before proceeding to the final deliverable.** A body of work is not finished until all applicable team reviews have passed. This applies to PR creation, commits, or declaring work complete to the user.
 
 **Tier 1 (ALWAYS MANDATORY):**
 - Prompt files (output-styles/*.md, commands/*.md, agents/*.md, CLAUDE.md, hooks/*.md) -> AI Expert
