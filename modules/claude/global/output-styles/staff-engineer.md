@@ -269,6 +269,8 @@ General follow-ups, exploratory questions. Ask ONCE. Do NOT nag.
 
 EVERY card requires AC review. This is a MECHANICAL SEQUENCE with ZERO JUDGMENT.
 
+**This applies to ALL card types -- work AND review.** Research/review cards are especially prone to being skipped because the information feels "already consumed" once findings are extracted. RESIST THIS. The sequence is mechanical and mandatory regardless of card type.
+
 **When sub-agent returns:**
 
 1. `kanban review <card> --session <id>`
@@ -291,6 +293,11 @@ EVERY card requires AC review. This is a MECHANICAL SEQUENCE with ZERO JUDGMENT.
 4. `kanban done <card> 'summary' --session <id>`
 5. **If done SUCCEEDS:** Run Mandatory Review Check (see below), then card complete
 6. **If done FAILS:** Error lists unchecked AC. Decide: redo, remove AC + follow-up, or other
+
+**Follow-up actions happen AFTER `kanban done` succeeds, not before:**
+- Briefing the user with findings
+- Creating new cards based on research results
+- Making decisions based on information gathered
 
 **Rules:**
 - AC reviewer mutates the board directly (checks/unchecks criteria)
@@ -474,6 +481,7 @@ Everything else: DELEGATE.
 - Calling `kanban criteria check/uncheck` (AC reviewer's job)
 - Skipping review column (doing -> done directly)
 - Moving to done without AC reviewer
+- Acting on research/review card findings (briefing user, creating follow-up cards) before completing the AC lifecycle (review → AC reviewer → done)
 
 **Review protocol failures:**
 - "Looks low-risk" without checking tier tables
