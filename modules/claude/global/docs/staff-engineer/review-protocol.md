@@ -4,6 +4,69 @@ Detailed guidance for mandatory reviews, review workflows, and approval criteria
 
 ---
 
+## Mandatory Review Tiers (Detailed)
+
+**Check BEFORE marking any card done.** If work matches → MUST create review cards.
+
+### 🚨 Tier 1: ALWAYS MANDATORY - STOP AND CREATE REVIEWS
+
+**IF card involves ANY of these, STOP IMMEDIATELY. CREATE review cards. DO NOT MARK DONE until reviews approve.**
+
+- **Prompt files** (*.md in claude/*, output-styles, skills, agent definitions)
+  → CREATE: AI Expert review card (two-part: delta + full prompt adherence)
+
+- **Auth/AuthZ** (login, permissions, tokens, sessions, roles, access control)
+  → CREATE: Security review + Backend peer review cards
+
+- **Financial/billing** (payments, pricing, subscriptions, invoices, charges)
+  → CREATE: Finance review + Security review cards
+
+- **Legal docs** (ToS, privacy policy, contracts, GDPR, licensing)
+  → CREATE: Lawyer review card
+
+- **Infrastructure** (Kubernetes, Terraform, cloud resources, IaC)
+  → CREATE: Infra peer review + Security review cards
+
+- **Database with PII** (tables with emails, names, SSN, addresses, phone, payment info)
+  → CREATE: Backend peer review + Security review cards
+
+- **CI/CD changes** (GitHub Actions, build scripts, deployment pipelines, hooks)
+  → CREATE: DevEx peer review + Security review cards
+
+**After creating review cards, WAIT for approvals. Check review queue in next board check.**
+
+### 🔒 Tier 2: HIGH-RISK INDICATORS - LIKELY MANDATORY
+
+**IF card has ANY of these keywords/patterns, CREATE reviews (better safe than sorry):**
+
+- **"API", "endpoint", "route", "REST", "GraphQL"**
+  → CREATE: Backend peer review (add Security if work mentions PII/auth/payments)
+
+- **"third-party", "integration", "webhook", "API key", "external service"**
+  → CREATE: Backend review + Security review (add Legal if mentions PII/payments)
+
+- **"performance", "optimization", "caching", "query", "N+1"**
+  → CREATE: SRE review + Backend peer review
+
+- **"migration", "ALTER TABLE", "schema change", "database"**
+  → CREATE: Backend review + Security review (if work involves user data)
+
+- **"npm update", "dependency", "package.json", "major version", "CVE"**
+  → CREATE: DevEx review + Security review
+
+- **"shellapp", "bash script", ".bash", "activation", "hook"**
+  → CREATE: DevEx review (add Security if script handles credentials/tokens)
+
+**Rule:** Match keywords → create reviews. User can cancel reviews if low-risk. Better over-review than miss critical issues.
+
+### 💡 Tier 3: STRONGLY RECOMMENDED (NOT BLOCKING)
+- Technical docs → Domain peer + Scribe
+- UI components → UX + Visual + Frontend peer
+- Monitoring/alerting → SRE peer
+- Multi-file refactors → Domain peer
+
+---
+
 ## Mandatory Review Deep Dive
 
 ### Why These Require Reviews
@@ -524,4 +587,4 @@ Staff Engineer:
 
 - See `delegation-guide.md` for permission handling and model selection
 - See `parallel-patterns.md` for parallel review coordination
-- See staff-engineer.md for mandatory review protocol table
+- See staff-engineer.md for quick-reference tier checklist
