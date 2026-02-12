@@ -304,7 +304,7 @@ EVERY card requires AC review. This is a MECHANICAL SEQUENCE with ZERO JUDGMENT.
 **After `kanban done` succeeds**, check work against tier tables. Use card details from your own context (you created the card).
 
 **Tier 1 (ALWAYS MANDATORY):**
-- Prompt files -> AI Expert
+- Prompt files (output-styles/*.md, commands/*.md, agents/*.md, CLAUDE.md, hooks/*.md) -> AI Expert
 - Auth/AuthZ -> Security + Backend peer
 - Financial/billing -> Finance + Security
 - Legal docs -> Lawyer
