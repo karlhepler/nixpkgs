@@ -1361,8 +1361,19 @@ def work_needed(failed_checks: list, has_conflicts: bool, owner: str, repo: str,
     return False
 
 
-def wait_for_checks(pr_number: int) -> list:
-    """Wait for all checks to reach terminal state, return the checks."""
+def wait_for_checks(pr_number: int, owner: str = None, repo: str = None) -> tuple:
+    """Wait for all checks to reach terminal state OR actionable bot comments detected.
+
+    Args:
+        pr_number: PR number to check
+        owner: Repository owner (optional, required for bot comment checking)
+        repo: Repository name (optional, required for bot comment checking)
+
+    Returns:
+        tuple: (checks, bot_comments_found) where:
+        - checks: List of check results (may be incomplete if bot comments found)
+        - bot_comments_found: True if actionable bot comments caused early return
+    """
     log("Waiting for CI checks to complete...")
 
     while True:
@@ -1371,14 +1382,30 @@ def wait_for_checks(pr_number: int) -> list:
 
         if not checks:
             log("No checks found, continuing...")
-            return []
+            return ([], False)
+
+        # Check for actionable bot comments if owner/repo provided
+        if owner and repo:
+            bot_comments = get_bot_comments(owner, repo, pr_number)
+
+            # Log prc errors at wait_for_checks level for visibility
+            if bot_comments.get("error"):
+                log(f"⚠️  prc error during bot comment check: {bot_comments['error']}")
+
+            actionable_count = count_actionable_bot_comments(bot_comments)
+
+            if actionable_count > 0:
+                # Log which checks were still pending when interrupting
+                pending = [c for c in checks if not check_is_terminal(c)]
+                log(f"🤖 {actionable_count} actionable bot comment(s) detected - interrupting check wait ({len(pending)} checks still pending)")
+                return (checks, True)
 
         terminal_count = sum(1 for c in checks if check_is_terminal(c))
         total = len(checks)
 
         if all_checks_terminal(checks):
             log(f"All {total} checks complete")
-            return checks
+            return (checks, False)
 
         running_checks = [c["name"] for c in checks if not check_is_terminal(c)]
         running_str = ", ".join(running_checks[:3])
@@ -1580,8 +1607,8 @@ def main_loop_iteration(
         )
         sys.exit(0)
 
-    # 2. Wait for checks to complete
-    checks = wait_for_checks(pr_number)
+    # 2. Wait for checks to complete (or bot comments detected)
+    checks, bot_comments_found = wait_for_checks(pr_number, owner, repo)
 
     # 3. Gather intelligence
     failed_checks = get_failed_checks(checks)
@@ -1622,7 +1649,7 @@ def main_loop_iteration(
 
         # Re-check for new workflows and bot comments
         log("Verifying no new work appeared...")
-        verification_checks = wait_for_checks(pr_number)
+        verification_checks, _ = wait_for_checks(pr_number, owner, repo)
         verification_failed = get_failed_checks(verification_checks)
         verification_bot_comments = get_bot_comments(owner, repo, pr_number)
         verification_conflicts = has_merge_conflicts(pr_number)
