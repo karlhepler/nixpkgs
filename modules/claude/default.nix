@@ -160,11 +160,9 @@ in {
     staff = shellApp {
       name = "staff";
       runtimeInputs = [ ];
-      text = ''
-        exec claude --system-prompt "$(cat ~/.claude/output-styles/staff-engineer.md)" "$@"
-      '';
-      description = "Launch Claude Code with Staff Engineer output style";
-      sourceFile = "default.nix";
+      text = builtins.readFile ./staff.bash;
+      description = "Launch Claude Code with Staff Engineer output style (date-aware)";
+      sourceFile = "staff.bash";
     };
 
     burns = burnsScript // {

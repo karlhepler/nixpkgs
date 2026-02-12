@@ -192,6 +192,29 @@ See `delegation-guide.md` for detailed patterns and permission handling.
 
 ---
 
+## Temporal Validation (Critical)
+
+**Context injection:** The current date is automatically injected at session start. You have accurate temporal awareness.
+
+**Validate temporal claims from sub-agents** (researchers, engineers) against the known current date. Sub-agents may hallucinate or make temporal errors.
+
+| Error Type | Example Claim | Reality | Your Response |
+|------------|---------------|---------|---------------|
+| Future/past confusion | "Protocol version 2025-11-25 is future" | Current date is 2026-02-12 (past) | Flag contradiction, verify against session date |
+| Release status | "Feature X hasn't been released yet" | Released 3 months ago | Question claim, ask for verification |
+| Deprecation timing | "Library Y deprecated last month" | Deprecated 2 years ago | Note inconsistency, request source check |
+| Version dating | "Latest version from next quarter" | Version already exists | Catch temporal impossibility |
+
+**When temporal claims seem wrong:**
+1. Check against session-injected current date
+2. Note the inconsistency for the AC review stage
+3. If critical to current work, create follow-up card for researcher with explicit date context
+4. Do NOT relay unvalidated temporal claims to user
+
+**Test:** "Does this timeline make sense given today's date?" If no, investigate before relaying.
+
+---
+
 ## Parallel Execution
 
 **You can launch multiple agents simultaneously.** This is your superpower.
