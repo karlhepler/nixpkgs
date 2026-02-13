@@ -142,6 +142,71 @@ All other skills: Delegate via Task tool (background).
 
 **Multi-week initiatives:** Suggest `/project-planner` (exception skill -- confirm first).
 
+### When Sub-Agents Discover Alternatives
+
+**CRITICAL:** Sub-agents must respect explicit decisions in their card while having autonomy within unspecified bounds.
+
+**The card's `action` field defines the bounds.** If it specifies a particular tool/approach, that's binding unless surfaced for approval.
+
+**Sub-agents CAN decide autonomously:**
+- Execution tools during work (jq vs yq, curl vs wget, rg vs grep)
+- Implementation details that produce equivalent outcomes (helper function vs inline, variable naming)
+- Technical choices within the specified approach
+
+**Sub-agents MUST surface for approval:**
+- Different tools than specified in card (Renovate instead of specified Dependabot)
+- Different approaches than card describes (automated tool instead of specified manual process)
+- Conflicting existing configuration requiring scope change
+- Discoveries that narrow or expand scope significantly
+
+**When sub-agent discovers an alternative affecting the deliverable:**
+1. **STOP the current approach immediately**
+2. **Move card to review column** (`kanban review <card>`)
+3. **Surface to user with context:**
+   - What was requested
+   - What was discovered
+   - How it changes the deliverable
+   - Key trade-offs
+   - Your recommendation (if any)
+4. **Wait for explicit approval** before proceeding
+5. **Update card with approved approach** (action, intent, AC)
+6. **Resume with `kanban redo`** or create new card if significantly different
+
+**Examples:**
+
+✅ **Requires approval:**
+- Card: "Configure Dependabot" → Found: Renovate exists → "Card specified Dependabot, but repo has Renovate. Which should we use?"
+- Card: "Add Jest testing" → Found: Vitest configured → "Card specified Jest, but Vitest exists. Switch or add both?"
+- Card: "Migrate 5 endpoints" → Found: Only 2 need changes → "Scope narrower than expected. Proceed with 2 or investigate why?"
+- Card: "Manual database migration" → Found: Migration tool exists → "Card said manual, but tool available. Use tool instead?"
+
+❌ **Doesn't require approval:**
+- Card: "Add dependency automation" → Chose: Renovate → (No tool specified, sub-agent chose)
+- Card: "Add testing" → Chose: Jest → (No tool specified, sub-agent chose)
+- Card: "Fix validation bug" → Using: yq to read config → (Execution detail, not specified)
+- Card: "Refactor auth" → Using: Helper functions instead of inline → (Implementation detail, equivalent outcome)
+
+**Anti-pattern:** "Card said Dependabot, but Renovate is better, so I configured Renovate" (violates explicit decision)
+
+**Correct:** "Card #12 to review — you specified Dependabot, but repo has Renovate configured. Renovate has better GitHub integration and is already set up. Recommend switching to Renovate, but need your approval since card specified Dependabot."
+
+**Coordinator: Detecting undisclosed alternatives during AC review:**
+
+Watch for phrases in completion summaries indicating autonomous tool switches:
+- "Decided to use X instead of Y"
+- "Switched approach to..."
+- "Found existing Z, so configured that"
+- "Changed from [card approach] to [different approach]"
+
+If detected:
+1. Check if card specified the original approach
+2. If YES: This should have been surfaced — create follow-up card to validate decision
+3. If NO: Sub-agent autonomy was appropriate — no action needed
+
+**The card's `action` field is the source of truth for what was specified.**
+
+**Test:** "Does my card specify a particular approach/tool, and does this differ from it?" YES = surface for approval.
+
 ---
 
 ## Delegation Protocol
