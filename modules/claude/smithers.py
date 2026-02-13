@@ -934,13 +934,74 @@ def post_to_slack_webhook(pr_url: str, pr_info: dict) -> None:
 
         # Construct message with graceful degradation
         if why and what:
-            # Full message with Why/What bullets
+            # Full message with Why/What sections
             message_preview = f"{title}\nWhy: {why}\nWhat: {what}"
-            slack_text = f":github: <{pr_url}|{title} ({repo})>\n• *Why?* {why}\n• *What?* {what}\n\nPlease take a look. Thanks! {emoji}\n- Karl"
+            # Build Slack blocks payload with green left border
+            payload = {
+                "attachments": [
+                    {
+                        "color": "#36a64f",
+                        "blocks": [
+                            {
+                                "type": "section",
+                                "text": {
+                                    "type": "mrkdwn",
+                                    "text": f":github: *<{pr_url}|{title}>*"
+                                }
+                            },
+                            {
+                                "type": "divider"
+                            },
+                            {
+                                "type": "section",
+                                "text": {
+                                    "type": "mrkdwn",
+                                    "text": f"*Why?*\n{why}\n\n*What?*\n{what}"
+                                }
+                            },
+                            {
+                                "type": "divider"
+                            },
+                            {
+                                "type": "section",
+                                "text": {
+                                    "type": "mrkdwn",
+                                    "text": f"Please take a look. Thanks! {emoji}"
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
         else:
-            # Fallback: Just emoji + link (no bullets)
+            # Fallback: Just link + emoji (no Why/What)
             message_preview = title
-            slack_text = f":github: <{pr_url}|{title} ({repo})>\n\nPlease take a look. Thanks! {emoji}\n- Karl"
+            payload = {
+                "attachments": [
+                    {
+                        "color": "#36a64f",
+                        "blocks": [
+                            {
+                                "type": "section",
+                                "text": {
+                                    "type": "mrkdwn",
+                                    "text": f":github: *<{pr_url}|{title}>*"
+                                }
+                            },
+                            {
+                                "type": "divider"
+                            },
+                            {
+                                "type": "section",
+                                "text": {
+                                    "type": "mrkdwn",
+                                    "text": f"Please take a look. Thanks! {emoji}"
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
 
         # Prompt user for confirmation before posting
         print(f"\n{message_preview}\n")
@@ -951,19 +1012,6 @@ def post_to_slack_webhook(pr_url: str, pr_info: dict) -> None:
         if user_input not in ("y", "yes"):
             log("Slack post skipped by user")
             return
-
-        # Build Slack blocks payload
-        payload = {
-            "blocks": [
-                {
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": slack_text
-                    }
-                }
-            ]
-        }
 
         # POST to webhook
         response = requests.post(webhook_url, json=payload, timeout=10)
