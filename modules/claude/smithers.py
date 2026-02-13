@@ -956,18 +956,24 @@ def post_to_slack_webhook(pr_url: str, pr_info: dict) -> None:
                                 "type": "section",
                                 "text": {
                                     "type": "mrkdwn",
-                                    "text": f"*Why?*\n{why}\n\n*What?*\n{what}"
+                                    "text": f"*Why?*\n{why}"
                                 }
-                            },
-                            {
-                                "type": "divider"
                             },
                             {
                                 "type": "section",
                                 "text": {
                                     "type": "mrkdwn",
-                                    "text": f"Please take a look. Thanks! {emoji}"
+                                    "text": f"*What?*\n{what}"
                                 }
+                            },
+                            {
+                                "type": "context",
+                                "elements": [
+                                    {
+                                        "type": "mrkdwn",
+                                        "text": f"📦 {repo} • Please take a look. Thanks! {emoji}"
+                                    }
+                                ]
                             }
                         ]
                     }
@@ -992,11 +998,13 @@ def post_to_slack_webhook(pr_url: str, pr_info: dict) -> None:
                                 "type": "divider"
                             },
                             {
-                                "type": "section",
-                                "text": {
-                                    "type": "mrkdwn",
-                                    "text": f"Please take a look. Thanks! {emoji}"
-                                }
+                                "type": "context",
+                                "elements": [
+                                    {
+                                        "type": "mrkdwn",
+                                        "text": f"📦 {repo} • Please take a look. Thanks! {emoji}"
+                                    }
+                                ]
                             }
                         ]
                     }

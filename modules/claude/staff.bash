@@ -6,9 +6,9 @@ set -euo pipefail
 # Injects current date context to ensure the staff engineer has temporal awareness
 # for evaluating dates, deadlines, and time-sensitive decisions.
 
-# Get current date with day of week in unambiguous format
-# Format: "Wednesday, 2026-02-12"
-current_date="$(date '+%A, %Y-%m-%d')"
+# Get current date and time with timezone in unambiguous format
+# Format: "Wednesday, 2026-02-12 14:32:45 PST"
+current_date="$(date '+%A, %Y-%m-%d %H:%M:%S %Z')"
 
 # Read the staff-engineer output style content
 staff_engineer_content="$(cat ~/.claude/output-styles/staff-engineer.md)"
