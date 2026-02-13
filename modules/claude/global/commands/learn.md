@@ -173,14 +173,15 @@ The goal is to make the staff engineer's behavior more reliable by encoding this
 
 **CRITICAL: Generate a topic-specific window name to avoid conflicts.**
 
-Use the pattern from workout-staff (TMUX window creation with command injection):
+Use the single-line atomic command pattern (reliable TMUX window creation):
 
 ```bash
 # Window name format: learn-<topic-in-kebab-case>
 # Examples: learn-date-awareness, learn-tmux-naming, learn-source-code-access
 # Generate name from the crystallized learning topic
-tmux new-window -n learn-<topic> -c ~/.config/nixpkgs
-tmux send-keys -t learn-<topic> 'staff "YOUR_STRUCTURED_PROMPT_HERE"' C-m
+
+# Single-line atomic command (working pattern)
+cd ~/.config/nixpkgs && tmux new-window -n learn-<topic> "staff 'YOUR_STRUCTURED_PROMPT_HERE'"
 ```
 
 **Important:**
@@ -270,8 +271,7 @@ I've crystallized the issue. Ready to launch a new staff session to implement th
 **Your response (Phase 2):**
 ```bash
 # Topic: source-code-access (derived from the mistake about using Grep inappropriately)
-tmux new-window -n learn-source-code-access -c ~/.config/nixpkgs
-tmux send-keys -t learn-source-code-access "staff \"$(cat <<'EOF'
+cd ~/.config/nixpkgs && tmux new-window -n learn-source-code-access "staff \"$(cat <<'EOF'
 The staff engineer made a mistake that needs to be addressed by improving the staff-engineer.md prompt file.
 
 ## Context: What Went Wrong
@@ -303,7 +303,7 @@ Update `modules/claude/global/output-styles/staff-engineer.md` to prevent this m
 
 The goal is to make the staff engineer's behavior more reliable by encoding this lesson in the prompt.
 EOF
-)\"" C-m
+)\""
 ```
 
 Then inform the user:
