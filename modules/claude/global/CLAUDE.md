@@ -290,12 +290,59 @@ Before suggesting ANY package installation:
 
 ## PR Descriptions
 
-**Focus on WHY and WHAT, not HOW.** Describe intent, not implementation.
+Two questions. That's all a PR description answers:
 
-❌ "Added function X, updated Y, fixed Z" (journey/implementation)
-✅ "Enable users to filter data by date range" (intent/end state)
+1. **Why does this exist?** — What goal, project, or problem does it serve?
+2. **What happens when it merges?** — What effect does it have?
 
-When updating, rewrite from scratch - never append.
+Reviewers read the code for everything else.
+
+### Format
+
+```
+## Why
+
+[One paragraph. What larger goal or project this contributes to. Why now. Include ticket refs naturally.]
+
+## What This Does
+
+[One paragraph. What the PR enables. What to expect after merge. High-level only.]
+
+---
+🤖 Generated with [Claude Code](https://claude.ai/claude-code)
+```
+
+*For trivial changes (typos, comment fixes, formatting), both sections still apply but compress into one short paragraph. Never omit the "Why"—even trivial changes have a reason.*
+
+### Visual Rules
+
+- **Scannable in 10 seconds** — A reviewer grasps the PR at a glance
+- **Short paragraphs** — 2-4 sentences per section, never walls of text
+- **Let it breathe** — Whitespace between sections, no visual clutter
+- **No bullet hell** — If you have more than 3 bullets, you're over-explaining
+
+### Do NOT Include
+
+- "Changes" sections with file-by-file breakdowns
+- Test plans or checklists
+- Implementation details or code snippets
+- Lists of files added/modified/deleted
+- "Key deliverables" bullet lists
+- Step-by-step "Next Steps" procedures
+
+Reviewers have the diff. They don't need it narrated.
+
+### Updating PR Descriptions
+
+When updating a PR description, **rewrite from scratch**. The description reflects the end state of the PR as it exists now — not the history of how it got there.
+
+- ❌ "Originally implemented X, then upgraded to Y"
+- ❌ "Added Z after review feedback"
+- ❌ Appending new paragraphs about recent changes
+
+- ✅ Describe the PR as if it was written in one clean pass
+- ✅ Reflect the current HEAD, not the commit history
+- ✅ Every update is a full rewrite of both sections
 
 ---
 
