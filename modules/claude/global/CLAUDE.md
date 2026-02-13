@@ -329,8 +329,38 @@ Reviewers read the code for everything else.
 - Lists of files added/modified/deleted
 - "Key deliverables" bullet lists
 - Step-by-step "Next Steps" procedures
+- **Configuration details visible in the diff:**
+  - File paths and directory structures
+  - Specific values (schedules, labels, environment variables)
+  - Workflow step details (triggers, conditions, actions)
+  - Resource configurations (timeouts, retries, quotas)
+  - Technology stack listings
 
 Reviewers have the diff. They don't need it narrated.
+
+**Example of what NOT to do:**
+
+❌ **WRONG - Verbose configuration details:**
+```
+## What This Does
+
+Adds automated PR synchronization workflow that:
+- Creates `.github/workflows/pr-sync.yml` with cron schedule
+- Runs every 6 hours (`0 */6 * * *`) to check for stale PRs
+- Adds `needs-rebase` label when PR is behind main by >10 commits
+- Posts comment with rebase instructions when label added
+- Uses `GITHUB_TOKEN` for authentication with repo scope
+- Configures 30s timeout and 3 retry attempts on API failures
+```
+
+✅ **CORRECT - High-level outcome:**
+```
+## What This Does
+
+Automatically detects PRs that have fallen behind main and notifies authors to rebase.
+```
+
+**Why this matters:** Configuration details create visual clutter, duplicate the diff, and obscure the actual purpose. Keep descriptions scannable.
 
 ### Updating PR Descriptions
 
