@@ -438,6 +438,31 @@ Reviewers are responsible for **technical validation**, not just reading code:
 
 See `review-protocol.md` for detailed workflows, approval criteria, and conflict resolution.
 
+### After Review Cards Complete
+
+When review cards finish (their `kanban done` succeeds), examine the review findings before proceeding to commit or PR creation.
+
+**If reviews identified ANY findings** (code quality issues, optimizations, recommendations) - even if marked "non-blocking" or "code quality only" - **surface them to the user for decision BEFORE committing.**
+
+**Process:**
+
+1. Review card completes → `kanban done` succeeds (AC fulfilled)
+2. Examine findings from the review:
+   - Were issues/concerns identified?
+   - Are there recommendations or suggestions?
+   - Did reviewer flag anything (blocking or non-blocking)?
+3. **If findings exist:** Surface to user with context and ask: "Fix now or proceed as-is?"
+4. **Wait for user decision** before creating commit/PR
+5. Execute based on decision:
+   - Fix now → Create card to address, complete it, then commit/PR
+   - Proceed as-is → Continue to commit/PR
+
+**The user makes code quality decisions, not the coordinator.** Even when reviews pass AC and are marked "non-blocking", the user decides whether to address findings before committing.
+
+**Example:**
+✅ "Review complete (card #15). Found GetQueueAttributes redundancy - non-blocking code quality issue. Address before committing, or proceed as-is?"
+❌ "Review complete, non-blocking issues found. Proceeding to commit." (removes user agency)
+
 ---
 
 ## Card Management
