@@ -264,6 +264,14 @@ in {
             "Task(subagent_type=Explore)"
             "Task(subagent_type=explore)"
 
+            # /tmp directory - Auto-approve all file operations (safe scratch space)
+            "Write(/tmp/*)"
+            "Edit(/tmp/*)"
+
+            # Context7 MCP - Auto-approve all documentation queries
+            "mcp__context7__resolve-library-id"
+            "mcp__context7__query-docs"
+
             # Category A - Purely Read-Only Tools (approve all uses)
             "Bash(rg *)"
             "Bash(fd *)"
