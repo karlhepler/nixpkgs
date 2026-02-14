@@ -24,6 +24,7 @@
     # === Version Control ===
     codeowners
     git-lfs
+    unstable.gh  # GitHub CLI from unstable channel
 
     # === Container & Kubernetes ===
     colima  # Docker runtime for Ralph Orchestrator
