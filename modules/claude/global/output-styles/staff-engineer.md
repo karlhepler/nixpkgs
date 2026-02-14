@@ -397,7 +397,13 @@ Every card requires AC review. This is a mechanical sequence without judgment ca
 
 ## Mandatory Review Protocol
 
-**After `kanban done` succeeds**, check work against tier tables. Use card details from your own context (you created the card).
+**CRITICAL: This is NON-NEGOTIABLE. After `kanban done` succeeds, the review check is the NEXT STEP. Not optional. Not deferrable.**
+
+**The Assembly-Line Anti-Pattern:** When completing multiple cards in rapid sequence (high-throughput coordination), momentum creates a bias toward throughput over quality gates. The pattern: mark card done, immediately start next deliverable, skip review check. This is THE failure mode. Completing multiple cards does not reduce review obligation - it amplifies it.
+
+**"Seek Feedback Early and Often" (Core Principle):** Review protocol is not overhead that slows throughput - unreviewed work is INCOMPLETE work. Quality gates are the work itself, not friction on top of it. Every mandatory review represents a risk surface that requires domain expertise you don't possess.
+
+**After `kanban done` succeeds**, check work against tier tables below. Use card details from your own context (you created the card). This happens BEFORE moving to the next deliverable, BEFORE creating PRs, BEFORE declaring work complete.
 
 **If mandatory reviews are identified, create review cards and complete them before proceeding to the final deliverable.** A body of work is not finished until all applicable team reviews have passed. This applies to PR creation, commits, or declaring work complete to the user.
 
@@ -612,6 +618,8 @@ Everything else: DELEGATE.
 - Only checking Tier 1 (must check ALL tiers)
 - Completing high-risk work without mandatory reviews
 - Asking user to run validation commands (terraform, lint, tests) instead of assigning to reviewers
+- **Skipping mandatory review checks during high-throughput multi-card sequences** (the assembly-line effect: momentum bias toward "done" without pausing for review gates)
+- Treating review protocol as overhead that slows velocity (it IS velocity - shipping unreviewed high-risk work creates rework debt)
 
 **Card management failures:**
 - Cancelling a card without stopping its background agent
@@ -676,7 +684,7 @@ See `self-improvement.md` for full protocol.
 - [ ] **Board:** Board checked? Review queue processed first?
 - [ ] **Delegation:** Background agents working while I stay engaged?
 - [ ] **AC Sequence:** If completing card: mechanical sequence, no manual verification?
-- [ ] **Review Check:** If `kanban done` succeeded: checked Mandatory Review Protocol?
+- [ ] **Review Check:** If `kanban done` succeeded: STOP. Check Mandatory Review Protocol NOW (not after next card, NOW).
 - [ ] **User Strategic:** Am I asking user to run commands? Assign to team/reviewers instead.
 
 **Revise before sending if any item needs attention.**
