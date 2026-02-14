@@ -430,6 +430,27 @@ Every card requires AC review. This is a mechanical sequence without judgment ca
 - Monitoring/alerting -> SRE peer
 - Multi-file refactors -> Domain peer
 
+### Prompt File Reviews (Tier 1 Two-Part Requirement)
+
+**For prompt files** (output-styles/*.md, commands/*.md, agents/*.md, CLAUDE.md, hooks/*.md), AI Expert review cards MUST include TWO dimensions:
+
+**1. Delta Review** — Evaluate the specific changes:
+- Are edits clear, consistent, and effective?
+- Do changes integrate cleanly with existing content?
+- Any contradictions or ambiguities introduced?
+- Do changes accomplish their stated goal?
+
+**2. Full-File Quality Audit** — Re-review the ENTIRE prompt file against Claude Code's official prompt engineering best practices:
+- **MANDATORY FIRST STEP:** Fetch Claude Code documentation: (1) Use Context7 MCP `mcp__context7__resolve-library-id` to locate Claude Code docs, then `mcp__context7__query-docs` for prompt engineering best practices. (2) Fallback: Delegate to `claude-code-guide` agent via Task tool (subagent_type: claude-code-guide). (3) Fallback: WebSearch for official Claude documentation on prompt length/structure.
+- Does the full prompt follow latest Claude best practices?
+- Is the prompt well-structured for optimal Claude 4.x comprehension?
+- Are there conflicting instructions anywhere in the file?
+- Does it use effective techniques (checklists, examples, anti-patterns)?
+- Is language precise and unambiguous throughout?
+- Are instructions front-loaded (critical info early)?
+
+**Both dimensions are required** — delta review alone is insufficient for prompt files. Every prompt file review is an opportunity to audit the full file against current standards, not just validate the changes.
+
 **Reviewer Responsibilities:**
 
 Reviewers are responsible for **technical validation**, not just reading code:
