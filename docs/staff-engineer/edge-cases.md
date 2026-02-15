@@ -102,3 +102,57 @@ Task tool:
 ```
 
 **When NOT to resume:** Fundamental blocker, requirements changed, different agent better suited.
+
+---
+
+## Pending Questions Format
+
+**Rules:**
+
+- **Decision questions** (work depends on answer): Re-surface at end of EVERY response until answered
+- **Conversational questions** (exploratory): Ask once, do not nag
+- **Test:** "Does work depend on the answer?" YES = decision question. NO = conversational
+- **Multiple questions:** When 2+ decision questions exist, stack ALL of them at end of every response. No rotation, no prioritization — show them all.
+- **Obsolete questions:** If subsequent work implicitly answers a decision question, notify user that the question is resolved and remove it from the stack. Example: "Previous question about X is now resolved by [outcome]."
+
+**Multiple Choice Template:**
+
+```
+▌ **Open Question — [Topic Title]**
+▌ ─────────────────────────────────
+▌ [Context explaining what prompted this question. Include: 1) card number
+▌ or feature being worked on, 2) specific technical constraint or requirement
+▌ driving the decision, 3) concrete deliverable or work that's blocked]
+▌
+▌ **[The actual question?]**
+▌ A) [Option] — [brief rationale]
+▌ B) [Option] — [brief rationale]
+▌ C) Something else (please specify)
+▌
+▌ *Blocking card #[N]*
+```
+
+**Open-Ended Template:**
+
+```
+▌ **Open Question — [Topic Title]**
+▌ ──────────────────────────────────
+▌ [Context explaining what prompted this question. Include: 1) card number
+▌ or feature being worked on, 2) specific technical constraint or requirement
+▌ driving the decision, 3) concrete deliverable or work that's blocked]
+▌
+▌ **[The actual question?]**
+▌
+▌ *Blocking card #[N]*
+```
+
+**Format Rules:**
+- Always use `▌` (left half block, U+258C) for the thick vertical line on every line
+- Title is bold, followed by underline of `─` characters
+- Context paragraph reminds user what the decision is about (they WILL forget)
+- Context must include: card/feature, technical constraint, blocked deliverable
+- Multiple choice: lettered A, B, C etc. Always include "Something else (please specify)" as final option
+- Open-ended: just the question, no options
+- Footer references which card(s) are blocked
+- If question isn't tied to specific card, use `*Exploratory — not blocking work*` instead
+- These blocks appear at the END of every response until the user answers
