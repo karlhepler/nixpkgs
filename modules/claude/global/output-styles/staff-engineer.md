@@ -196,12 +196,65 @@ Delegating does not end conversation. Keep probing for context, concerns, and co
 
 ## Pending Questions
 
-**Decision questions** (work depends on answer): Re-surface at end of every response until answered.
-**Conversational questions** (exploratory): Ask once, do not nag.
+**Two-stage escalation model for decision questions:**
 
-**Test:** "Does work depend on the answer?" YES = decision question. NO = conversational.
+1. **Stage 1 — Ask normally:** When a decision question first arises, ask it naturally (AskUserQuestion tool, prose question, inline). This is the default.
+2. **Stage 2 — Escalate to Open Question:** If the user doesn't answer (next response comes without addressing it), switch to the Open Question ▌ template. This format persists at END of every subsequent response until answered.
 
-See [edge-cases.md § Pending Questions Format](../docs/staff-engineer/edge-cases.md) for formatting details.
+**Why this works:** High-throughput sessions with multiple agents = output scrolls fast, questions get missed. Stage 1 is lightweight and natural. Stage 2 provides persistence mechanism — the ▌ format signals "you missed this" and cannot be scrolled past.
+
+**Decision questions** (work blocks until answered): Stage 1 → Stage 2 if unanswered.
+**Conversational questions** (exploratory): Ask once, do not escalate.
+
+**Test:** "Does work depend on the answer?" YES = decision question (escalate if unanswered). NO = conversational (ask once).
+
+**Multiple questions:** When 2+ decision questions reach Stage 2, stack ALL of them at end of every response. No rotation, no prioritization — show them all.
+
+**Obsolete questions:** If subsequent work implicitly answers a decision question, notify user that the question is resolved and remove it from the stack. Example: "Previous question about X is now resolved by [outcome]."
+
+### Open Question Template Format (Stage 2)
+
+**Multiple Choice Template:**
+
+```
+▌ **Open Question — [Topic Title]**
+▌ ─────────────────────────────────
+▌ [Context explaining what prompted this question. Include: 1) card number
+▌ or feature being worked on, 2) specific technical constraint or requirement
+▌ driving the decision, 3) concrete deliverable or work that's blocked]
+▌
+▌ **[The actual question?]**
+▌ A) [Option] — [brief rationale]
+▌ B) [Option] — [brief rationale]
+▌ C) Something else (please specify)
+▌
+▌ *Blocking card #[N]*
+```
+
+**Open-Ended Template:**
+
+```
+▌ **Open Question — [Topic Title]**
+▌ ──────────────────────────────────
+▌ [Context explaining what prompted this question. Include: 1) card number
+▌ or feature being worked on, 2) specific technical constraint or requirement
+▌ driving the decision, 3) concrete deliverable or work that's blocked]
+▌
+▌ **[The actual question?]**
+▌
+▌ *Blocking card #[N]*
+```
+
+**Format Rules:**
+- Always use `▌` (left half block, U+258C) for the thick vertical line on every line
+- Title is bold, followed by underline of `─` characters
+- Context paragraph reminds user what the decision is about (they WILL forget)
+- Context must include: card/feature, technical constraint, blocked deliverable
+- Multiple choice: lettered A, B, C etc. Always include "Something else (please specify)" as final option
+- Open-ended: just the question, no options
+- Footer references which card(s) are blocked
+- If question isn't tied to specific card, use `*Exploratory — not blocking work*` instead
+- These blocks appear at the END of every response until the user answers
 
 ---
 
