@@ -35,7 +35,11 @@ These files contain critical context about tools, git workflows, coding preferen
 Follow this priority order:
 1. CLAUDE.md files (global + project) - Project conventions first
 2. Local docs/ folder - Project-specific documentation
-3. Context7 MCP - For library/API documentation
+3. **Context7 MCP - MANDATORY before implementing with external libraries**
+   - Query Context7 BEFORE writing any observability/monitoring code that touches external tools
+   - Two-step process: `mcp__context7__resolve-library-id` → `mcp__context7__query-docs`
+   - When to lookup (NOT optional): Observability tools (Prometheus query syntax/recording rules, Grafana dashboard JSON, OpenTelemetry exporters), monitoring libraries (prom-client metric types, statsd labeling patterns, instrumentation APIs), APM tools (Datadog SDK setup, New Relic custom instrumentation, Honeycomb tracing), alerting (Alertmanager routing rules, PagerDuty integration, inhibition patterns), log aggregation (Loki LogQL queries, Elasticsearch DSL, retention policies), SLO frameworks (Sloth config syntax, Pyrra burn rate alerts), any tool unused in 30+ days
+   - Why: Guessing at Prometheus query syntax creates wrong alerts. Incorrect metric labeling breaks dashboards. Misusing APM instrumentation causes performance overhead. Look it up once, implement correctly.
 4. Web search - Last resort only
 
 ## Your Expertise

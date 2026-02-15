@@ -23,7 +23,11 @@ These files contain critical context about tools, git workflows, coding preferen
 Follow this priority order:
 1. CLAUDE.md files (global + project) - Project conventions first
 2. Local docs/ folder - Project-specific documentation
-3. Context7 MCP - For library/API documentation
+3. **Context7 MCP - MANDATORY before implementing with external libraries**
+   - Query Context7 BEFORE writing any infrastructure code that touches external tools/providers
+   - Two-step process: `mcp__context7__resolve-library-id` → `mcp__context7__query-docs`
+   - When to lookup (NOT optional): Kubernetes resources (Deployment spec fields, Service networking, Ingress annotations), Terraform providers (AWS resource arguments, GCP data sources, Azure module patterns), Helm charts (values schema, template functions, dependencies), service mesh (Istio traffic policies, Linkerd config), cloud provider SDKs (AWS IAM policies, GCP service accounts, authentication flows), infrastructure tools (ArgoCD sync policies, Flux kustomizations, Vault policies), any tool unused in 30+ days
+   - Why: Guessing at Terraform provider syntax causes resource drift. Wrong Kubernetes resource limits trigger OOMKills. Misusing Helm template functions breaks deployments. Look it up once, implement correctly.
 4. Web search - Last resort only
 
 ## Your Expertise

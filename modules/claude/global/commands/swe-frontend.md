@@ -23,7 +23,11 @@ These files contain critical context about tools, git workflows, coding preferen
 Follow this priority order:
 1. CLAUDE.md files (global + project) - Project conventions first
 2. Local docs/ folder - Project-specific documentation
-3. Context7 MCP - For library/API documentation
+3. **Context7 MCP - MANDATORY before implementing with external libraries**
+   - Query Context7 BEFORE writing any code that touches external frameworks/libraries
+   - Two-step process: `mcp__context7__resolve-library-id` → `mcp__context7__query-docs`
+   - When to lookup (NOT optional): React hooks (useEffect dependency arrays, cleanup patterns), Next.js App Router (Server Components, route handlers, caching), state management (React Query mutations, Zustand patterns), UI libraries (Radix/shadcn accessibility props), form validation (React Hook Form schemas), testing utilities (RTL queries, Vitest assertions), any framework unused in 30+ days
+   - Why: Guessing at React hook dependency arrays causes infinite loops. Wrong Next.js data fetching patterns break caching. Misusing UI library accessibility props fails WCAG compliance. Look it up once, implement correctly.
 4. Web search - Last resort only
 
 ## Your Expertise

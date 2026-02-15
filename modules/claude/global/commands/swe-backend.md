@@ -23,7 +23,11 @@ These files contain critical context about tools, git workflows, coding preferen
 Follow this priority order:
 1. CLAUDE.md files (global + project) - Project conventions first
 2. Local docs/ folder - Project-specific documentation
-3. Context7 MCP - For library/API documentation
+3. **Context7 MCP - MANDATORY before implementing with external libraries**
+   - Query Context7 BEFORE writing any code that touches external APIs
+   - Two-step process: `mcp__context7__resolve-library-id` → `mcp__context7__query-docs`
+   - When to lookup (NOT optional): ORM queries (Prisma, TypeORM joins/transactions), Express middleware patterns, auth libraries (Passport/JWT token flows), message brokers (Kafka/RabbitMQ patterns), database clients (connection pooling syntax), any framework unused in 30+ days
+   - Why: Guessing at ORM query syntax leads to N+1 queries. Misusing connection pools causes deadlocks. Getting JWT validation wrong creates security holes. Look it up once, implement correctly.
 4. Web search - Last resort only
 
 ## Your Expertise

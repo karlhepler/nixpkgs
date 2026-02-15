@@ -2,7 +2,7 @@
 
 > **Tools:** See [TOOLS.md](./TOOLS.md). Use `rg` not `grep`, `fd` not `find`, custom git utilities.
 
-> **Context7 MCP:** Always use Context7 MCP when I need library/API documentation, code generation, setup or configuration steps without me having to explicitly ask.
+> **Context7 MCP:** When working with external libraries/frameworks, query Context7 MCP for authoritative documentation before implementing.
 
 > **🚨 NEVER HOMEBREW 🚨** STOP. Do NOT suggest, install, or mention Homebrew. Ever. Use Nix (nixpkgs/nixpkgs-unstable) or direct binary downloads ONLY.
 
@@ -15,6 +15,7 @@
 - [ ] **Check-In**: Got approval for complex/multi-file changes?
 - [ ] **Git**: Using `karlhepler/` prefix for new branches?
 - [ ] **🚨 NO HOMEBREW**: Not suggesting OR mentioning brew install ANYWHERE?
+- [ ] **Context7**: Using external library/framework? Queried Context7 for authoritative docs BEFORE implementing?
 
 **If ANY unchecked, STOP and address first.**
 
@@ -75,10 +76,12 @@ When researching, investigating, or looking up information, ALWAYS follow this p
    - Project-specific documentation
    - Architecture decisions, API references, setup guides
 
-3. **Context7 MCP** - For library/API documentation, framework usage, setup steps
-   - Authoritative, up-to-date documentation
-   - Faster and more reliable than blog posts
-   - Use for external library or framework questions
+3. **Context7 MCP** - MANDATORY for external library/framework work
+   - **When triggered:** Any task involving external libraries, frameworks, or third-party APIs
+   - **Requirement:** Query Context7 BEFORE implementing to get authoritative, up-to-date documentation from source
+   - **What to query:** API usage, configuration steps, integration patterns, best practices
+   - **Example:** Before adding Passport.js authentication middleware, query Context7 for session strategies, callback patterns, and error handling
+   - **Tools:** Use `mcp__context7__resolve-library-id` (find library), then `mcp__context7__query-docs` (query documentation)
    - **🚨 WARNING**: External docs may suggest Homebrew - ALWAYS translate to Nix
 
 4. **Web search** - ONLY when above sources don't have what you need
@@ -86,7 +89,7 @@ When researching, investigating, or looking up information, ALWAYS follow this p
    - Verify credibility and recency
    - Last resort, not first option
 
-**Why this order:** Start with the most specific, authoritative sources (project context) before reaching for general external sources. This ensures consistency with project conventions and reduces noise.
+**Why this order:** Start with the most specific, authoritative sources (project context) before reaching for general external sources. Context7 is mandatory for external library work because it provides authoritative docs directly from maintainers, preventing outdated or incorrect implementation patterns.
 
 ---
 
@@ -195,6 +198,7 @@ When delegating work via Task tool:
 **How to use:**
 - For library/framework docs: "Use Context7 MCP to lookup React Server Components best practices"
 - For API references: "Use Context7 MCP to lookup NextJS 15 app router API"
+- Tools: `mcp__context7__resolve-library-id` (find library), `mcp__context7__query-docs` (query documentation)
 
 **When it fails:**
 - Fall back to WebSearch for official documentation
@@ -205,10 +209,6 @@ When delegating work via Task tool:
 - Automatically enabled if `CONTEXT7_API_KEY` set in `overconfig.nix`
 - Check status: Context7 will be available if configured, no manual setup needed
 - To disable: Remove `CONTEXT7_API_KEY` from overconfig.nix, run `hms`
-
-**Available via:**
-- `mcp__context7__resolve-library-id` - Find library ID
-- `mcp__context7__query-docs` - Query documentation
 
 ---
 

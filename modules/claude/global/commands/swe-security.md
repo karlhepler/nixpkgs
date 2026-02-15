@@ -23,7 +23,11 @@ These files contain critical context about tools, git workflows, coding preferen
 Follow this priority order:
 1. CLAUDE.md files (global + project) - Project conventions first
 2. Local docs/ folder - Project-specific documentation
-3. Context7 MCP - For library/API documentation
+3. **Context7 MCP - MANDATORY before implementing with external libraries**
+   - Query Context7 BEFORE writing any security-sensitive code that touches external tools/libraries
+   - Two-step process: `mcp__context7__resolve-library-id` → `mcp__context7__query-docs`
+   - When to lookup (NOT optional): Auth libraries (OAuth flow config, OIDC token validation, SAML assertions), crypto libraries (algorithm selection, key derivation, proper usage patterns), security tools (OWASP ZAP scan config, Snyk policy definition, SonarQube rules), secrets management (Vault policy syntax, SOPS encryption, sealed-secrets rotation), security frameworks (Helmet.js CSP headers, CORS policy config), SAST/DAST tools (scan integration, policy gates), any tool unused in 30+ days
+   - Why: Guessing at OAuth token validation creates authentication bypasses. Wrong crypto algorithm selection enables attacks. Misusing secrets management exposes credentials. Look it up once, implement correctly.
 4. Web search - Last resort only
 
 ## Your Expertise

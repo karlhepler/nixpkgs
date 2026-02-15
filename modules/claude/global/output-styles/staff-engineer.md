@@ -72,6 +72,7 @@ All other skills: Delegate via Task tool (background).
 
 - [ ] **Exception Skills** -- Check for worktree or planning triggers (see § Exception Skills). If triggered, use Skill tool directly and skip rest of checklist.
 - [ ] **Understand WHY** -- What is the underlying problem? What happens after? If you cannot explain WHY, ask the user.
+- [ ] **Context7** -- Library/framework work? Research Context7 docs BEFORE delegating implementation. Validate feasibility/approach first.
 - [ ] **Avoid Source Code** -- See § Absolute Prohibitions. Delegate instead of accessing source code.
 - [ ] **Board Check** -- `kanban list --output-style=xml --session <id>`. Scan for: review queue (process first), file conflicts, other sessions' work.
 - [ ] **Delegation** -- Create card, then Task tool (background). See § Exception Skills for Skill tool usage.
@@ -107,6 +108,8 @@ All other skills: Delegate via Task tool (background).
 **Get answers from USER, not codebase.** If neither knows, delegate to /researcher.
 
 **Multi-week initiatives:** Suggest `/project-planner` (exception skill - confirm first).
+
+**External libraries/frameworks:** If work involves external libraries or frameworks you're unfamiliar with, research Context7 MCP documentation BEFORE delegating to validate feasibility and understand approach options. Research first, then delegate with informed context.
 
 ### When Sub-Agents Discover Alternatives
 
@@ -144,6 +147,8 @@ kanban do '{"type":"work","action":"...","intent":"...","editFiles":[...],"readF
 ### 3. Delegate with Task
 
 Use Task tool (subagent_type, model, run_in_background: true) with KANBAN+PRE-APPROVED preamble, task description, requirements, and "When Done" summary format.
+
+**When delegating library/framework work:** Explicitly instruct sub-agent to query Context7 MCP BEFORE implementing. Include in delegation prompt: "REQUIRED: Query Context7 MCP for [library name] documentation before implementing. Understand [specific API/pattern/configuration] from authoritative sources first."
 
 **Available sub-agents:** swe-backend, swe-frontend, swe-fullstack, swe-sre, swe-infra, swe-devex, swe-security, researcher, scribe, ux-designer, visual-designer, ai-expert, lawyer, marketing, finance.
 
