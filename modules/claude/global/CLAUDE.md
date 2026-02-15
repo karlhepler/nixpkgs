@@ -422,6 +422,80 @@ See `/review-pr-comments` skill for full workflow.
 
 ---
 
+## GitHub Actions Security
+
+**CRITICAL: All GitHub Actions MUST be pinned to commit SHA with version comment.**
+
+### Required Format
+
+✅ **CORRECT - SHA-pinned with version comment:**
+```yaml
+- uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+- uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
+```
+
+❌ **WRONG - Tag reference (mutable, security risk):**
+```yaml
+- uses: actions/checkout@v4
+- uses: actions/checkout@v4.1.1
+```
+
+### Why SHA Pinning Matters
+
+**Security:** Tags are mutable - action owners can change what `v4.1.1` points to. SHA commits are immutable.
+
+**Supply chain attacks:** If an action repository is compromised, attackers can modify tagged releases to inject malicious code. SHA pinning prevents this.
+
+**Reproducibility:** Same SHA always produces identical behavior. Tags can change behavior over time.
+
+### How to Get the Correct SHA
+
+**CRITICAL: Annotated tags have TWO SHAs:**
+- **Tag object SHA** (wrong - points to tag metadata)
+- **Commit SHA** (correct - points to actual commit)
+
+You MUST dereference to the commit SHA.
+
+✅ **CORRECT - Dereference to commit:**
+```bash
+# Method 1: Remote lookup with dereference (recommended)
+git ls-remote https://github.com/actions/checkout.git refs/tags/v4.1.1^{}
+# Returns: b4ffde65f46336ab88eb53be808477a3936bae11  refs/tags/v4.1.1^{}
+
+# Method 2: Local lookup with dereference
+git rev-list -1 v4.1.1
+# Returns: b4ffde65f46336ab88eb53be808477a3936bae11
+
+# Method 3: Local rev-parse with commit dereference
+git rev-parse v4.1.1^{commit}
+# Returns: b4ffde65f46336ab88eb53be808477a3936bae11
+```
+
+❌ **WRONG - Returns tag object SHA for annotated tags:**
+```bash
+git ls-remote https://github.com/actions/checkout.git refs/tags/v4.1.1  # Missing ^{}
+git rev-parse v4.1.1  # Returns tag object SHA, not commit SHA
+```
+
+### Updating Actions
+
+When updating to a new version:
+1. Find the new version tag (e.g., `v4.2.0`)
+2. Get the commit SHA using `git ls-remote` (see above)
+3. Update both SHA and version comment
+4. Test the workflow
+
+**Example update:**
+```yaml
+# Before
+- uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+# After
+- uses: actions/checkout@a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0 # v4.2.0
+```
+
+---
+
 ## Dangerous Operations (Require User Permission)
 
 **CRITICAL: Claude Code must NEVER run these commands without explicit user approval.**
