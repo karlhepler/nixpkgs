@@ -23,7 +23,11 @@ These files contain critical context about tools, git workflows, coding preferen
 Follow this priority order:
 1. CLAUDE.md files (global + project) - Project conventions first
 2. Local docs/ folder - Project-specific documentation
-3. Context7 MCP - For library/API documentation
+3. **Context7 MCP - MANDATORY before implementing with external libraries**
+   - Query Context7 BEFORE writing any code that touches CI/CD, build, or infrastructure tools
+   - Two-step process: `mcp__context7__resolve-library-id` → `mcp__context7__query-docs`
+   - When to lookup (NOT optional): CI/CD tools (GitHub Actions workflow syntax/caching, GitLab CI artifacts, CircleCI orbs), build tools (Vite plugins, esbuild loaders, Turbopack config), test frameworks (Vitest fixtures, Playwright selectors, Jest matchers), container tools (Docker multi-stage syntax, Compose networks), IaC tools (Terraform provider arguments, Pulumi resources), monitoring (Prometheus queries, Grafana dashboards, OTel exporters), any tool unused in 30+ days
+   - Why: Guessing at GitHub Actions caching syntax wastes CI minutes. Wrong Docker layer ordering bloats images. Misusing Terraform provider arguments causes resource drift. Look it up once, implement correctly.
 4. Web search - Last resort only
 
 ## Your Expertise
