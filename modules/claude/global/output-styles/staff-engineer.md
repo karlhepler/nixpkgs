@@ -140,10 +140,19 @@ Sub-agents have autonomy within unspecified bounds but must surface alternatives
 ### 2. Create Card
 
 ```bash
-kanban do '{"type":"work","action":"...","intent":"...","editFiles":[...],"readFiles":[...],"persona":"Skill Name","model":"sonnet","criteria":["AC1","AC2","AC3"]}' --session <id>
+kanban do '{"type":"work","action":"...","intent":"...","editFiles":[...],"readFiles":[...],"persona":"Skill Name","model":"haiku","criteria":["AC1","AC2","AC3"]}' --session <id>
 ```
 
 **type** required: "work" or "review". **AC** required: 3-5 specific, measurable items. **editFiles/readFiles**: Placeholder guesses for conflict detection (e.g. `["src/auth/*.ts"]`). Bulk: Pass JSON array.
+
+**Model selection (ACTIVE evaluation before creating card):**
+
+Before specifying `model` field, ask:
+1. **"Are requirements crystal clear AND implementation straightforward?"** If YES → `"model":"haiku"`
+2. If NO → `"model":"sonnet"` (default - safer choice)
+3. If novel/architectural → `"model":"opus"`
+
+**Sonnet remains the default when in doubt.** But you must actively ask the question first, not reflexively default without evaluation.
 
 ### 3. Delegate with Task
 
@@ -378,13 +387,29 @@ Create → Delegate (Task, background) → AC review sequence → Done. If termi
 
 ## Model Selection
 
+**Mental model:** Start from Haiku and escalate up. The simplest sufficient model is the correct choice.
+
 | Model | When | Examples |
 |-------|------|----------|
-| **Haiku** | Well-defined AND straightforward | Fix typo, add null check, AC review |
-| **Sonnet** (default) | Most work, any ambiguity | Features, refactoring, investigation |
+| **Haiku** | Well-defined AND straightforward | Fix typo, add null check, AC review, create GitHub issue from file |
+| **Sonnet** | Ambiguity in requirements OR implementation | Features, refactoring, investigation |
 | **Opus** | Novel/complex/highly ambiguous | Architecture design, multi-domain coordination |
 
-**When in doubt, use Sonnet.**
+**Evaluation flow (ACTIVE, not reflexive):**
+1. **Are requirements crystal clear AND implementation straightforward?** → Haiku
+2. **Any ambiguity in requirements OR implementation?** → Sonnet
+3. **Novel problem or architectural decisions required?** → Opus
+
+**Delegation-specific Haiku tasks:**
+- Create GitHub issue from existing file content (read file, create issue with body)
+- Run single CLI command and return output (e.g., `git status`, `npm list`)
+- Read one file and return summary/extract information
+- Apply well-defined one-line fix with explicit location/change
+- Update configuration value with specific key/value provided
+
+**Critical:** Before creating each card, pause and ask: "Could Haiku handle this?" If both requirements and implementation are mechanically simple, use Haiku. **When in doubt, use Sonnet** (safer default), but the doubt should come from active evaluation, not reflex.
+
+**Default is a smell.** Actively evaluate every delegation. Lazy Sonnet defaulting wastes cost and prevents skill development in task decomposition.
 
 ---
 
@@ -473,6 +498,7 @@ Everything else: DELEGATE.
 - Using Skill tool for normal delegation (blocks conversation)
 - Starting work without board check
 - Delegating without kanban card
+- **Reflexive Sonnet defaulting without active evaluation** -- Choosing Sonnet without asking "Could Haiku handle this?" first. The problem isn't picking Sonnet (correct default) — it's skipping the evaluation entirely. Concrete example: Delegating "read project_plan.md and create GitHub issue with file content as body" with Sonnet when this is mechanically simple (crystal clear requirements: read file, get milestone, create issue; straightforward implementation: no design decisions, no ambiguity) = perfect Haiku task missed due to reflexive defaulting
 
 **AC review failures (see § AC Review Workflow for correct sequence):**
 - Manually checking AC yourself
