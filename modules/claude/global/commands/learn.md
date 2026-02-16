@@ -137,9 +137,13 @@ Create a prompt for the new staff session that includes:
 
 **Prompt Template:**
 ```
-The staff engineer made a mistake that needs to be addressed by improving the staff-engineer.md prompt file.
+🚨 YOU ARE A FRESH STAFF SESSION LAUNCHED BY THE /learn SKILL 🚨
 
-## Context: What Went Wrong
+This is an IMPLEMENTATION SESSION. The diagnostic dialogue has ALREADY been completed in a previous conversation. DO NOT replay Phase 1 dialogue (no "I see the issue, let me make sure I understand..." or "Is this accurate?").
+
+Your job: CLARIFY → READ → PROPOSE EDIT → CONFIRM WITH USER → IMPLEMENT.
+
+## Context: What Went Wrong (Already Crystallized)
 
 **What Happened:**
 [Concrete description from Phase 1]
@@ -150,21 +154,23 @@ The staff engineer made a mistake that needs to be addressed by improving the st
 **Desired Behavior:**
 [Specific guidance from Phase 1]
 
-## Your Task
+## Your Task (Implementation Only)
 
 Update `modules/claude/global/output-styles/staff-engineer.md` to prevent this mistake in the future.
 
-**Requirements:**
-1. Identify the section(s) that need updating
-2. Propose specific changes (additions, clarifications, or new guidelines)
-3. Ensure changes are clear, actionable, and integrated well with existing content
-4. Add to git and run `hms` to deploy the updated prompt
+**Implementation Steps:**
+1. **FIRST:** Present a brief summary of what you understand from the context above and ask: "Anything you'd like to adjust or add before I start?" (Wait for user response)
+2. Read the current staff-engineer.md file
+3. Locate the relevant section (or determine if a new section is needed)
+4. Propose specific changes (additions, clarifications, or new guidelines)
+5. Confirm your proposed edit with the user
+6. Implement the approved changes
+7. Add to git and run `hms` to deploy the updated prompt
 
-**Approach:**
-- Read the current staff-engineer.md file
-- Locate the relevant section (or determine if a new section is needed)
-- Propose the specific edit
-- Confirm with the user before implementing
+**Critical:**
+- DO start with a lightweight clarification checkpoint (step 1 above) - context can drift between sessions
+- DO NOT replay the full Phase 1 dialogue (no iterative "Is this accurate?" loops)
+- AFTER user confirms or adjusts understanding, GO STRAIGHT TO: read file → propose specific edit → confirm → implement
 
 The goal is to make the staff engineer's behavior more reliable by encoding this lesson in the prompt.
 ```
@@ -272,9 +278,13 @@ I've crystallized the issue. Ready to launch a new staff session to implement th
 ```bash
 # Topic: source-code-access (derived from the mistake about using Grep inappropriately)
 cd ~/.config/nixpkgs && tmux new-window -n learn-source-code-access "staff \"$(cat <<'EOF'
-The staff engineer made a mistake that needs to be addressed by improving the staff-engineer.md prompt file.
+🚨 YOU ARE A FRESH STAFF SESSION LAUNCHED BY THE /learn SKILL 🚨
 
-## Context: What Went Wrong
+This is an IMPLEMENTATION SESSION. The diagnostic dialogue has ALREADY been completed in a previous conversation. DO NOT replay Phase 1 dialogue (no "I see the issue, let me make sure I understand..." or "Is this accurate?").
+
+Your job: CLARIFY → READ → PROPOSE EDIT → CONFIRM WITH USER → IMPLEMENT.
+
+## Context: What Went Wrong (Already Crystallized)
 
 **What Happened:**
 Staff engineer used Grep to search codebase for error handling patterns instead of delegating.
@@ -285,21 +295,23 @@ Violated "NO SOURCE CODE ACCESS" rule. Staff engineer should coordinate via dele
 **Desired Behavior:**
 When investigation is needed, create kanban card and delegate to appropriate engineer (e.g., swe-backend) via Task tool. Never use Read/Grep/Glob on source code.
 
-## Your Task
+## Your Task (Implementation Only)
 
 Update `modules/claude/global/output-styles/staff-engineer.md` to prevent this mistake in the future.
 
-**Requirements:**
-1. Identify the section(s) that need updating (likely "NO SOURCE CODE ACCESS" or "What You Do vs What You Do NOT Do")
-2. Propose specific changes (strengthen prohibitions, add examples, or clarify edge cases)
-3. Ensure changes are clear, actionable, and integrated well with existing content
-4. Add to git and run `hms` to deploy the updated prompt
+**Implementation Steps:**
+1. **FIRST:** Present a brief summary of what you understand from the context above and ask: "Anything you'd like to adjust or add before I start?" (Wait for user response)
+2. Read the current staff-engineer.md file
+3. Locate the relevant section (likely "NO SOURCE CODE ACCESS" or "What You Do vs What You Do NOT Do")
+4. Propose specific changes (strengthen prohibitions, add examples, or clarify edge cases)
+5. Confirm your proposed edit with the user
+6. Implement the approved changes
+7. Add to git and run `hms` to deploy the updated prompt
 
-**Approach:**
-- Read the current staff-engineer.md file
-- Locate the relevant section (or determine if a new section is needed)
-- Propose the specific edit
-- Confirm with the user before implementing
+**Critical:**
+- DO start with a lightweight clarification checkpoint (step 1 above) - context can drift between sessions
+- DO NOT replay the full Phase 1 dialogue (no iterative "Is this accurate?" loops)
+- AFTER user confirms or adjusts understanding, GO STRAIGHT TO: read file → propose specific edit → confirm → implement
 
 The goal is to make the staff engineer's behavior more reliable by encoding this lesson in the prompt.
 EOF
@@ -313,7 +325,7 @@ Created a new staff session in TMUX window `learn-source-code-access` to impleme
 Switch to it with:
 - `tmux select-window -t learn-source-code-access`
 
-The new staff engineer has been given the context about what went wrong and will propose specific improvements to the staff-engineer.md prompt file. You can review and approve the changes in that session.
+The new staff engineer will start with a brief clarification checkpoint (presenting what it understands and asking for adjustments), then propose specific improvements to the staff-engineer.md prompt file. You can review and approve the changes in that session.
 ```
 
 ## Success Criteria
