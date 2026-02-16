@@ -77,6 +77,7 @@ All other skills: Delegate via Task tool (background).
 - [ ] **Board Check** -- `kanban list --output-style=xml --session <id>`. Scan for: review queue (process first), file conflicts, other sessions' work.
 - [ ] **Delegation** -- Create card, then Task tool (background). See § Exception Skills for Skill tool usage.
 - [ ] **Stay Engaged** -- Continue conversation after delegating. Keep probing, gather context.
+- [ ] **Pending Questions** -- Any unanswered decision questions from prior response? If yes, escalate to ▌ template NOW. See § Pending Questions.
 - [ ] **User Strategic** -- See § User Role. Never ask user to execute manual tasks.
 
 **Address all items before proceeding.**
@@ -198,10 +199,12 @@ Delegating does not end conversation. Keep probing for context, concerns, and co
 
 **Two-stage escalation model for decision questions:**
 
-1. **Stage 1 — Ask normally:** When a decision question first arises, ask it naturally (AskUserQuestion tool, prose question, inline). This is the default.
-2. **Stage 2 — Escalate to Open Question:** If the user doesn't answer (next response comes without addressing it), switch to the Open Question ▌ template. This format persists at END of every subsequent response until answered.
+1. **Stage 1 -- Ask normally:** When a decision question first arises, ask it naturally (AskUserQuestion tool, prose question, inline). This is the default.
+2. **Stage 2 -- Escalate to Open Question (MECHANICAL, NON-OPTIONAL):** If the user's next response does not address the question, escalate to the Open Question ▌ template. Period. No judgment. No "maybe they'll answer next time." No re-asking in prose. The trigger is binary: unanswered = escalate.
 
-**Why this works:** High-throughput sessions with multiple agents = output scrolls fast, questions get missed. Stage 1 is lightweight and natural. Stage 2 provides persistence mechanism — the ▌ format signals "you missed this" and cannot be scrolled past.
+**Stage 2 is not a suggestion.** It is a mechanical rule. If you asked a decision question and the user's next response does not address it, you MUST switch to the ▌ template in your very next response. Re-asking the same question in prose instead of escalating is a protocol violation.
+
+**Why this works:** High-throughput sessions with multiple agents = output scrolls fast, questions get missed. Stage 1 is lightweight and natural. Stage 2 provides persistence mechanism -- the ▌ format signals "you missed this" and cannot be scrolled past.
 
 **Decision questions** (work blocks until answered): Stage 1 → Stage 2 if unanswered.
 **Conversational questions** (exploratory): Ask once, do not escalate.
@@ -486,6 +489,11 @@ Everything else: DELEGATE.
 - **Skipping review checks during high-throughput sequences** (assembly-line effect)
 - Treating review protocol as overhead (it is velocity - unreviewed work creates rework debt)
 
+**Pending question failures (see § Pending Questions):**
+- Repeating a decision question in prose instead of escalating to ▌ template (Stage 2 is mechanical, not optional)
+- Re-asking the same question multiple responses in a row without switching format
+- "Softening" an unanswered question instead of escalating (the ▌ format IS the escalation)
+
 **Card management failures:**
 - Cancelling a card without stopping its background agent
 - Forgetting `--session <id>`
@@ -542,6 +550,7 @@ See `self-improvement.md` for full protocol.
 - [ ] **Delegation:** Background agents working while I stay engaged?
 - [ ] **AC Sequence:** If completing card: See § AC Review Workflow for mechanical sequence.
 - [ ] **Review Check:** If `kanban done` succeeded: See § Mandatory Review Protocol before next card.
+- [ ] **Pending Questions:** Any unanswered decision questions? Must be in ▌ template format at END of response. No prose re-asks.
 - [ ] **User Strategic:** See § User Role. Never ask user to execute manual tasks.
 
 **Revise before sending if any item needs attention.**
