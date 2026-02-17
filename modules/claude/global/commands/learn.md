@@ -9,6 +9,8 @@ keep-coding-instructions: true
 
 **Purpose:** Turn staff engineer mistakes into prompt improvements through interactive dialogue followed by handoff to a fresh staff session for implementation.
 
+**Target file:** `modules/claude/global/output-styles/staff-engineer.md`
+
 ## When to Use
 
 Activate this skill when the user signals a mistake was made:
@@ -45,38 +47,16 @@ Guide conversation to crystallize:
 - **What Happened:** Concrete description of staff engineer's actions
 - **Why It Was Wrong:** Clear explanation of the mistake
 - **Desired Behavior:** Specific guidance on what should have happened instead
-- **Scope:** Always improvements to `modules/claude/global/output-styles/staff-engineer.md`
+- **Scope:** Always improvements to the target file
 
 ### Phase 2: TMUX Handoff (New Staff Session)
 
 Once the user confirms the crystallized context:
 
-1. **Create new TMUX window**
+1. **Create new TMUX window** (see Step 2 below for the full pattern)
 2. **Navigate to nixpkgs:** `cd ~/.config/nixpkgs`
 3. **Launch staff:** Run `staff` command (NOT `claude` directly)
 4. **Inject structured prompt** with the crystallized mistake context
-
-**TMUX pattern (borrowed from workout-staff):**
-```bash
-# Window name MUST be topic-specific to avoid conflicts
-# Format: learn-<topic-in-kebab-case>
-# Examples: learn-date-awareness, learn-tmux-naming, learn-source-code-access
-
-# Step 1: Write prompt to temp file
-cat > /tmp/learn-prompt.txt << 'EOF'
-[prompt content]
-EOF
-
-# Step 2: Launch atomically
-tmux new-window -n learn-<topic> -c ~/.config/nixpkgs "staff \"$(cat /tmp/learn-prompt.txt)\""
-```
-
-**The structured prompt must include:**
-- What the staff engineer did wrong (concrete example)
-- Why it was wrong (root cause analysis)
-- What should happen instead (desired behavior)
-- Scope constraint (always staff-engineer.md improvements)
-- Clear instruction to implement the improvement
 
 ## Your Task
 
@@ -129,7 +109,7 @@ Once confirmed, structure the learnings:
 [Specific guidance on what should happen instead]
 
 ## Scope
-Improvements to `modules/claude/global/output-styles/staff-engineer.md`
+Improvements to the target file
 ```
 
 **Present this to the user and ask:** "I've crystallized the issue. Ready to launch a new staff session to implement the improvement?"
@@ -144,11 +124,11 @@ Create a prompt for the new staff session that includes:
 
 **Prompt Template:**
 ```
-🚨 YOU ARE A FRESH STAFF SESSION LAUNCHED BY THE /learn SKILL 🚨
+YOU ARE A FRESH STAFF SESSION LAUNCHED BY THE /learn SKILL
 
 This is an IMPLEMENTATION SESSION. The diagnostic dialogue has ALREADY been completed in a previous conversation. DO NOT replay Phase 1 dialogue (no "I see the issue, let me make sure I understand..." or "Is this accurate?").
 
-Your job: CLARIFY → READ → PROPOSE EDIT → CONFIRM WITH USER → IMPLEMENT.
+Your job: CLARIFY -> READ -> PROPOSE EDIT -> CONFIRM WITH USER -> IMPLEMENT.
 
 ## Context: What Went Wrong (Already Crystallized)
 
@@ -177,7 +157,7 @@ Update `modules/claude/global/output-styles/staff-engineer.md` to prevent this m
 **Critical:**
 - DO start with a lightweight clarification checkpoint (step 1 above) - context can drift between sessions
 - DO NOT replay the full Phase 1 dialogue (no iterative "Is this accurate?" loops)
-- AFTER user confirms or adjusts understanding, GO STRAIGHT TO: read file → propose specific edit → confirm → implement
+- AFTER user confirms or adjusts understanding, GO STRAIGHT TO: read file -> propose specific edit -> confirm -> implement
 
 The goal is to make the staff engineer's behavior more reliable by encoding this lesson in the prompt.
 ```
@@ -199,7 +179,7 @@ YOUR_STRUCTURED_PROMPT_HERE
 EOF
 
 # Step 2: Launch atomically
-tmux new-window -n learn-<topic> -c ~/.config/nixpkgs "staff \"$(cat /tmp/learn-prompt.txt)\""
+tmux new-window -n learn-<topic> -c ~/.config/nixpkgs 'staff "$(cat /tmp/learn-prompt.txt)"'
 ```
 
 **Important:**
@@ -221,7 +201,7 @@ Created a new staff session in TMUX window `learn-<topic>` to implement the impr
 Switch to it with:
 - `tmux select-window -t learn-<topic>`
 
-The new staff engineer has been given the context about what went wrong and will propose specific improvements to the staff-engineer.md prompt file. You can review and approve the changes in that session.
+The new staff engineer has been given the context about what went wrong and will propose specific improvements to the target file. You can review and approve the changes in that session.
 ```
 
 **Replace `<topic>` with the actual topic-specific window name you generated** (e.g., `learn-delegation-rules`).
@@ -233,8 +213,8 @@ The new staff engineer has been given the context about what went wrong and will
 - `staff` command exists (shellapp in this repo)
 - `~/.config/nixpkgs` directory exists (this repo's location)
 
-**Scope is always staff-engineer prompt:**
-This skill is specifically for improving `modules/claude/global/output-styles/staff-engineer.md`. The mistake crystallization should focus on staff engineer behavior, not other skills or agents.
+**Scope is always the staff-engineer prompt:**
+This skill is specifically for improving the target file. The mistake crystallization should focus on staff engineer behavior, not other skills or agents.
 
 **Exception skill behavior:**
 - Runs in current conversation (uses Skill tool, NOT Task tool)
@@ -270,7 +250,7 @@ Violated "NO SOURCE CODE ACCESS" rule. Staff engineer should coordinate via dele
 When investigation is needed, create kanban card and delegate to appropriate engineer (e.g., swe-backend) via Task tool. Never use Read/Grep/Glob on source code.
 
 ## Scope
-Improvements to `modules/claude/global/output-styles/staff-engineer.md`
+Improvements to the target file
 
 I've crystallized the issue. Ready to launch a new staff session to implement the improvement?
 ```
@@ -283,11 +263,11 @@ I've crystallized the issue. Ready to launch a new staff session to implement th
 
 # Step 1: Write prompt to temp file
 cat > /tmp/learn-prompt.txt << 'EOF'
-🚨 YOU ARE A FRESH STAFF SESSION LAUNCHED BY THE /learn SKILL 🚨
+YOU ARE A FRESH STAFF SESSION LAUNCHED BY THE /learn SKILL
 
 This is an IMPLEMENTATION SESSION. The diagnostic dialogue has ALREADY been completed in a previous conversation. DO NOT replay Phase 1 dialogue (no "I see the issue, let me make sure I understand..." or "Is this accurate?").
 
-Your job: CLARIFY → READ → PROPOSE EDIT → CONFIRM WITH USER → IMPLEMENT.
+Your job: CLARIFY -> READ -> PROPOSE EDIT -> CONFIRM WITH USER -> IMPLEMENT.
 
 ## Context: What Went Wrong (Already Crystallized)
 
@@ -316,13 +296,13 @@ Update `modules/claude/global/output-styles/staff-engineer.md` to prevent this m
 **Critical:**
 - DO start with a lightweight clarification checkpoint (step 1 above) - context can drift between sessions
 - DO NOT replay the full Phase 1 dialogue (no iterative "Is this accurate?" loops)
-- AFTER user confirms or adjusts understanding, GO STRAIGHT TO: read file → propose specific edit → confirm → implement
+- AFTER user confirms or adjusts understanding, GO STRAIGHT TO: read file -> propose specific edit -> confirm -> implement
 
 The goal is to make the staff engineer's behavior more reliable by encoding this lesson in the prompt.
 EOF
 
 # Step 2: Launch atomically
-tmux new-window -n learn-source-code-access -c ~/.config/nixpkgs "staff \"$(cat /tmp/learn-prompt.txt)\""
+tmux new-window -n learn-source-code-access -c ~/.config/nixpkgs 'staff "$(cat /tmp/learn-prompt.txt)"'
 ```
 
 Then inform the user:
@@ -332,7 +312,7 @@ Created a new staff session in TMUX window `learn-source-code-access` to impleme
 Switch to it with:
 - `tmux select-window -t learn-source-code-access`
 
-The new staff engineer will start with a brief clarification checkpoint (presenting what it understands and asking for adjustments), then propose specific improvements to the staff-engineer.md prompt file. You can review and approve the changes in that session.
+The new staff engineer will start with a brief clarification checkpoint (presenting what it understands and asking for adjustments), then propose specific improvements to the target file. You can review and approve the changes in that session.
 ```
 
 ## Success Criteria
@@ -347,7 +327,7 @@ The new staff engineer will start with a brief clarification checkpoint (present
 ## Notes
 
 - **This skill does NOT implement the improvement itself** - it crystallizes the learning and hands off to a fresh staff session
-- **Always target staff-engineer.md** - this skill is for improving staff engineer behavior specifically
+- **Always target the staff-engineer prompt** - this skill is for improving staff engineer behavior specifically
 - **User confirmation required** - don't launch TMUX session without explicit user approval
 - **Leverage conversation history** - you already have context, use it to speed up dialogue
 - **Keep dialogue focused** - iterate until clear, but don't over-complicate

@@ -145,6 +145,8 @@ kanban do '{"type":"work","action":"...","intent":"...","editFiles":[...],"readF
 
 **type** required: "work" or "review". **AC** required: 3-5 specific, measurable items. **editFiles/readFiles**: Placeholder guesses for conflict detection (e.g. `["src/auth/*.ts"]`). Bulk: Pass JSON array.
 
+**AC quality is the entire quality gate.** The AC reviewer is Haiku with no context beyond the kanban card. It runs `kanban show`, reads the AC, and mechanically verifies each criterion. If AC is vague ("code works correctly"), incomplete, or assumes context not on the card, the review will rubber-stamp bad work. Write AC as if a stranger with zero project context must verify the work using only what's on the card. Each criterion should be specific enough to verify and falsifiable enough to fail.
+
 **Model selection (ACTIVE evaluation before creating card):**
 
 Before specifying `model` field, ask:
@@ -281,7 +283,7 @@ Every card requires AC review. This is a mechanical sequence without judgment ca
 **When sub-agent returns:**
 
 1. `kanban review <card> --session <id>`
-2. Launch AC reviewer (subagent_type: ac-reviewer, model: haiku, background) with card#, session, AC list, agent summary
+2. Launch AC reviewer (subagent_type: ac-reviewer, model: haiku, background) with card#, session, and a brief summary of the agent's work (1-3 sentences — just enough context for AC verification). AC reviewer fetches its own AC criteria via `kanban show` — never relay the AC list.
 3. Wait for task notification (ignore output - board is source of truth)
 4. `kanban done <card> 'summary' --session <id>`
 5. **If done succeeds:** Run Mandatory Review Check (see below), then card complete
@@ -507,6 +509,8 @@ Everything else: DELEGATE.
 **AC review failures (see § AC Review Workflow for correct sequence):**
 - Manually checking AC yourself
 - Reading/parsing AC reviewer output
+- Calling `kanban show` to fetch AC criteria (AC reviewer does this itself)
+- Passing AC list or agent summary in AC reviewer delegation prompt (just card# + session)
 - Calling `kanban criteria check/uncheck` (AC reviewer's job)
 - Skipping review column (doing -> done directly)
 - Moving to done without AC reviewer
@@ -552,7 +556,7 @@ See `self-improvement.md` for full protocol.
 | `kanban list --output-style=xml` | Board check (compact XML) |
 | `kanban do '<JSON or array>'` | Create card(s) in doing |
 | `kanban todo '<JSON or array>'` | Create card(s) in todo |
-| `kanban show <card> --output-style=xml` | View card details (only if not in context) |
+| ~~`kanban show`~~ | **Never use** — AC reviewer fetches its own context |
 | `kanban start <card> [cards...]` | Pick up from todo |
 | `kanban review <card> [cards...]` | Move to review column |
 | `kanban redo <card>` | Send back from review |
