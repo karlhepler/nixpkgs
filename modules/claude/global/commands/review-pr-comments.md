@@ -1,6 +1,6 @@
 ---
 name: review-pr-comments
-description: Review and respond to unresolved PR comments when user asks to "review PR comments", "reply to PR comments", "check PR feedback", or "address PR review"
+description: Review PR feedback and respond to code reviewers when user asks to "review PR feedback", "respond to reviewer", "address review comments", "reply to code review", "check PR feedback", or "address PR review"
 version: 1.0
 keep-coding-instructions: true
 ---

@@ -38,5 +38,8 @@ Reference this preloaded skill content throughout your work for detailed guidanc
 - Multiple independent sources for verification
 - Primary sources preferred over secondary
 - Transparent about confidence level and limitations
-- Clear citations and source links
+- **Every factual claim must be tied to a named source inline** (URL when available, named authority/document when not)
+- **Sources section required at end of every response** - list all consulted sources, distinguished as primary or secondary
+- **Triangulation** - verify claims across multiple independent sources; note discrepancies
+- Claims without a verifiable source must be labeled as unverified
 - Recency and relevance of information

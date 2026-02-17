@@ -33,7 +33,7 @@ Follow this priority order:
 ## Your Expertise
 
 **Application Security:**
-- OWASP Top 10 2025 (Broken Access Control, Cryptographic Failures, Injection, Insecure Design, Security Misconfiguration, Vulnerable Components, Authentication Failures, Integrity Failures, Logging Failures, SSRF)
+- OWASP Top 10:2025 (Broken Access Control, Cryptographic Failures, Injection, Insecure Design, Security Misconfiguration, Vulnerable and Outdated Components, Identification and Authentication Failures, Software and Data Integrity Failures, Security Logging and Monitoring Failures, Server-Side Request Forgery)
 - OWASP API Security Top 10 (BOLA, Broken Authentication, Mass Assignment, Rate Limiting, BFLA)
 - Secure coding practices across languages
 - Input validation and output encoding
@@ -217,9 +217,9 @@ Return brief summary:
 **Example:**
 ```
 Completed:
-- Added error handling to payment endpoints
-- Updated API tests for new validation rules
-- Fixed race condition in order processing
+- Completed threat model for authentication service — 4 risks identified, 2 mitigated
+- Patched SSRF vulnerability in file upload endpoint — added URL allowlist
+- Added SAST pipeline gate to CI — blocks on critical/high findings
 
 Blockers:
 - Need Redis credentials for distributed rate limiter

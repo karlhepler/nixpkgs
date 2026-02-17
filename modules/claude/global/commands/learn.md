@@ -61,7 +61,14 @@ Once the user confirms the crystallized context:
 # Window name MUST be topic-specific to avoid conflicts
 # Format: learn-<topic-in-kebab-case>
 # Examples: learn-date-awareness, learn-tmux-naming, learn-source-code-access
-tmux new-window -d -n learn-<topic> -c ~/.config/nixpkgs "staff 'Your structured prompt here'"
+
+# Step 1: Write prompt to temp file
+cat > /tmp/learn-prompt.txt << 'EOF'
+[prompt content]
+EOF
+
+# Step 2: Launch atomically
+tmux new-window -n learn-<topic> -c ~/.config/nixpkgs "staff \"$(cat /tmp/learn-prompt.txt)\""
 ```
 
 **The structured prompt must include:**
@@ -179,33 +186,29 @@ The goal is to make the staff engineer's behavior more reliable by encoding this
 
 **CRITICAL: Generate a topic-specific window name to avoid conflicts.**
 
-Use the single-line atomic command pattern (reliable TMUX window creation):
+Use the temp-file + atomic-window pattern (reliable TMUX window creation):
 
 ```bash
 # Window name format: learn-<topic-in-kebab-case>
 # Examples: learn-date-awareness, learn-tmux-naming, learn-source-code-access
 # Generate name from the crystallized learning topic
 
-# Single-line atomic command (working pattern)
-cd ~/.config/nixpkgs && tmux new-window -n learn-<topic> "staff 'YOUR_STRUCTURED_PROMPT_HERE'"
+# Step 1: Write prompt to temp file
+cat > /tmp/learn-prompt.txt << 'EOF'
+YOUR_STRUCTURED_PROMPT_HERE
+EOF
+
+# Step 2: Launch atomically
+tmux new-window -n learn-<topic> -c ~/.config/nixpkgs "staff \"$(cat /tmp/learn-prompt.txt)\""
 ```
 
 **Important:**
 - **Window name:** `learn-<topic>` where `<topic>` is derived from the learning subject in short kebab-case format
   - Examples: `learn-delegation-rules`, `learn-kanban-workflow`, `learn-code-access-prohibition`
-- Working directory: `~/.config/nixpkgs` (guaranteed to exist)
+- Working directory: `~/.config/nixpkgs` (set via `-c` flag — no `cd` prefix needed)
 - Command: `staff` (guaranteed to exist - it's the alias that launches Claude Code with staff-engineer output style)
-- Prompt passed as first argument to `staff`
-
-**Escape handling:** If the prompt contains quotes or special characters, use a heredoc pattern:
-
-```bash
-tmux new-window -n learn-<topic> -c ~/.config/nixpkgs
-tmux send-keys -t learn-<topic> "staff \"$(cat <<'EOF'
-[Your multi-line structured prompt here]
-EOF
-)\"" C-m
-```
+- Prompt written to `/tmp/learn-prompt.txt` first, then read atomically at window launch — NEVER inline long prompts in TMUX commands
+- NEVER use `tmux send-keys` as a separate step — window creation and command must be atomic
 
 ### Step 3: Inform the User
 
@@ -277,7 +280,9 @@ I've crystallized the issue. Ready to launch a new staff session to implement th
 **Your response (Phase 2):**
 ```bash
 # Topic: source-code-access (derived from the mistake about using Grep inappropriately)
-cd ~/.config/nixpkgs && tmux new-window -n learn-source-code-access "staff \"$(cat <<'EOF'
+
+# Step 1: Write prompt to temp file
+cat > /tmp/learn-prompt.txt << 'EOF'
 🚨 YOU ARE A FRESH STAFF SESSION LAUNCHED BY THE /learn SKILL 🚨
 
 This is an IMPLEMENTATION SESSION. The diagnostic dialogue has ALREADY been completed in a previous conversation. DO NOT replay Phase 1 dialogue (no "I see the issue, let me make sure I understand..." or "Is this accurate?").
@@ -315,7 +320,9 @@ Update `modules/claude/global/output-styles/staff-engineer.md` to prevent this m
 
 The goal is to make the staff engineer's behavior more reliable by encoding this lesson in the prompt.
 EOF
-)\""
+
+# Step 2: Launch atomically
+tmux new-window -n learn-source-code-access -c ~/.config/nixpkgs "staff \"$(cat /tmp/learn-prompt.txt)\""
 ```
 
 Then inform the user:

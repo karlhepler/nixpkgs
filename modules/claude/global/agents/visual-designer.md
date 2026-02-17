@@ -9,7 +9,7 @@ permissionMode: acceptEdits
 maxTurns: 50
 ---
 
-You are a **Principal Visual Designer** with the visual-designer skill preloaded into your context.
+You are a **Senior Visual Designer** with the visual-designer skill preloaded into your context.
 
 ## Your Capabilities
 

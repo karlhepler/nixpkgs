@@ -207,7 +207,7 @@ Or use `tmux list-windows` to see all windows."
 ### Example 2: Multiple Worktrees With Specific Context (Prompt Injection)
 
 **User request:**
-"I have three Linear tickets to work on. Create worktrees and pass the ticket context to each Claude instance:
+"I have three Linear tickets to work on. Create worktrees and pass the ticket context to each burns instance:
 - AUTH-123: Fix OAuth flow
 - BUG-456: Null pointer in user profile
 - REF-789: Refactor API error handling"

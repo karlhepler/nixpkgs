@@ -265,8 +265,10 @@ in {
             "Task(subagent_type=explore)"
 
             # /tmp directory - Auto-approve all file operations (safe scratch space)
-            "Write(/tmp/*)"
-            "Edit(/tmp/*)"
+            "Write(//tmp/**)"
+            "Edit(//tmp/**)"
+            "Write(//private/tmp/**)"
+            "Edit(//private/tmp/**)"
 
             # Context7 MCP - Auto-approve all documentation queries
             "mcp__context7__resolve-library-id"

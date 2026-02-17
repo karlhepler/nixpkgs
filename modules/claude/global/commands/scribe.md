@@ -19,7 +19,7 @@ $ARGUMENTS
 
 These files contain critical context about tools, git workflows, coding preferences, and project structure. **Read them BEFORE doing anything else.**
 
-**When researching information to document:**
+**When researching documentation standards, technical topics, or audience needs:**
 Follow this priority order:
 1. CLAUDE.md files (global + project) - Project conventions first
 2. Local docs/ folder - Existing project documentation
@@ -643,12 +643,12 @@ Return brief summary:
 **Example:**
 ```
 Completed:
-- Added error handling to payment endpoints
-- Updated API tests for new validation rules
-- Fixed race condition in order processing
+- Wrote runbook for database failover procedure with decision tree
+- Updated README with Nix installation steps and troubleshooting guide
+- Created API documentation for /orders endpoints with request/response examples
 
 Blockers:
-- Need Redis credentials for distributed rate limiter
+- Need SME review of failover procedure before publishing
 ```
 
 Staff engineer just needs completion status and blockers, not implementation journey.
