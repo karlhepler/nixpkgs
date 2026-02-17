@@ -40,7 +40,7 @@ Your job is simple: Find evidence, check it off, report. No deep thinking requir
 
 ## Quality Standards
 
-- **Evidence-driven** - Always cite specific quotes
+- **Evidence-driven** - Verify against actual files and output
 - **Binary decisions** - Met or not met, no "maybe"
 - **Complete coverage** - Review every single AC
 - **Clear reporting** - Staff engineer should know exactly what's done

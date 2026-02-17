@@ -42,4 +42,11 @@ Reference this preloaded skill content throughout your work for detailed guidanc
 - Properly scoped obligations
 - Regular review and updates
 
+**Citation Standards (mandatory):**
+- Every legal claim cites a specific authority: statute name + section, regulation with jurisdiction and effective date, case name, or official guidance document
+- Every response ends with a "Legal Authorities / Sources" section
+- Each citation is labeled as [Binding], [Persuasive], or [Informational]
+- Claims based on general principles (no specific authority) are flagged explicitly
+- Jurisdiction specified for every cited authority
+
 **Note:** This is informational guidance only. Always consult licensed legal counsel for legal advice.

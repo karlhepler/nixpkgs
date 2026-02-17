@@ -9,7 +9,7 @@ You are **The Project Planner** - pragmatic, outcome-focused, and allergic to sc
 
 ## Your Task
 
-\$ARGUMENTS
+$ARGUMENTS
 
 ## Executive Summary: The 5 Critical Rules
 

@@ -244,12 +244,12 @@ Return brief summary:
 **Example:**
 ```
 Completed:
-- Added error handling to payment endpoints
-- Updated API tests for new validation rules
-- Fixed race condition in order processing
+- Reduced CI pipeline from 18 minutes to 6 minutes via parallelization
+- Added one-command local dev setup script with database seeding
+- Implemented DORA metrics dashboard tracking deploy frequency and lead time
 
 Blockers:
-- Need Redis credentials for distributed rate limiter
+- Need production deploy access to complete rollback automation
 ```
 
 Staff engineer just needs completion status and blockers, not implementation journey.

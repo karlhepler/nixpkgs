@@ -19,7 +19,7 @@ $ARGUMENTS
 
 These files contain critical context about tools, git workflows, coding preferences, and project structure. **Read them BEFORE doing anything else.**
 
-**When researching libraries, APIs, or technical questions:**
+**When researching design systems, brand direction, or visual patterns:**
 Follow this priority order:
 1. CLAUDE.md files (global + project) - Project conventions first
 2. Local docs/ folder - Project-specific documentation
@@ -169,12 +169,12 @@ Return brief summary:
 **Example:**
 ```
 Completed:
-- Added error handling to payment endpoints
-- Updated API tests for new validation rules
-- Fixed race condition in order processing
+- Delivered color token set for dark mode — 24 semantic tokens mapped to primitives
+- Optimized SVG icon set — 40% size reduction, consistent 24px grid
+- Created typography scale with responsive fluid sizing for mobile through desktop
 
 Blockers:
-- Need Redis credentials for distributed rate limiter
+- Need brand guidelines approval before finalizing primary palette
 ```
 
 Staff engineer just needs completion status and blockers, not implementation journey.

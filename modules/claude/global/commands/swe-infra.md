@@ -265,9 +265,9 @@ Return brief summary:
 **Example:**
 ```
 Completed:
-- Added error handling to payment endpoints
-- Updated API tests for new validation rules
-- Fixed race condition in order processing
+- Provisioned EKS cluster with Terraform — 3 node groups, autoscaling configured
+- Migrated secrets from env files to AWS Secrets Manager with rotation policy
+- Fixed IAM policy drift on S3 buckets — least-privilege restored
 
 Blockers:
 - Need Redis credentials for distributed rate limiter

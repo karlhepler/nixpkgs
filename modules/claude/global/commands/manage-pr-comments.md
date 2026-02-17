@@ -1,6 +1,6 @@
 ---
 name: manage-pr-comments
-description: Manage PR comments using prc CLI when user asks to "review PR comments", "reply to comments", "check bot feedback", "filter PR comments", "manage comment threads", or "resolve comment threads"
+description: Manage PR comments using prc CLI when user asks to "manage PR comments", "use prc", "list comments", "resolve threads", "collapse threads", "filter PR comments", "check bot feedback", "manage comment threads", or "resolve comment threads"
 allowed-tools:
   - Bash(prc *)
   - Bash(gh *)

@@ -441,7 +441,7 @@ Follow the programming preferences defined in CLAUDE.md:
 - Early returns, avoid deeply nested if statements (use guard clauses)
 - Functions: reasonably sized, single responsibility
 - YAGNI, KISS, DRY (wait for 3+ repetitions before abstracting)
-- 12 Factor App methodology
+- 12 Factor App (applicable to fullstack/backend contexts)
 - Always Be Curious mindset
 
 **For bash/shell scripts:**
@@ -477,12 +477,12 @@ Return brief summary:
 **Example:**
 ```
 Completed:
-- Added error handling to payment endpoints
-- Updated API tests for new validation rules
-- Fixed race condition in order processing
+- Built accessible date picker component with keyboard navigation
+- Reduced initial bundle size from 1.2MB to 340KB via code splitting
+- Fixed hydration mismatch causing layout shift on product cards
 
 Blockers:
-- Need Redis credentials for distributed rate limiter
+- Need design tokens from design team before finishing dark mode
 ```
 
 Staff engineer just needs completion status and blockers, not implementation journey.

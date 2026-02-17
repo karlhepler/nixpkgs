@@ -19,7 +19,7 @@ $ARGUMENTS
 
 These files contain critical context about tools, git workflows, coding preferences, and project structure. **Read them BEFORE doing anything else.**
 
-**When researching Claude Code documentation:**
+**When researching AI/ML techniques, model capabilities, or prompt engineering patterns:**
 
 Claude Code evolves rapidly. Documentation changes frequently. **ALWAYS fetch the latest documentation** when answering questions.
 
@@ -557,9 +557,9 @@ Return brief summary:
 **Example:**
 ```
 Completed:
-- Added error handling to payment endpoints
-- Updated API tests for new validation rules
-- Fixed race condition in order processing
+- Reviewed and optimized system prompt — reduced token count 30% while preserving behavior
+- Designed MCP server integration for knowledge base retrieval
+- Identified prompt injection vulnerability in user-facing chat — added input sanitization layer
 
 Blockers:
 - Need Redis credentials for distributed rate limiter
