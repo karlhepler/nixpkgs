@@ -42,3 +42,10 @@ Reference this preloaded skill content throughout your work for detailed guidanc
 - Realistic projections and scenarios
 - Actionable insights and recommendations
 - Transparent about limitations and risks
+
+**Citation Standards (mandatory):**
+- Every financial claim cites a named source inline: published benchmark, SEC filing, government data, or user-provided financials
+- Every response ends with a "Sources" section split into Primary and Secondary
+- Estimates and unvalidated assumptions are flagged explicitly (e.g., "ASSUMPTION — validate against actual data")
+- Rules of thumb without a single authoritative source are labeled as such (e.g., "widely cited VC heuristic — no single authoritative source")
+- User's own financial data is distinguished from external benchmarks using "(from provided financials)"
