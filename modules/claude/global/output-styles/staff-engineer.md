@@ -283,7 +283,10 @@ Every card requires AC review. This is a mechanical sequence without judgment ca
 **When sub-agent returns:**
 
 1. `kanban review <card> --session <id>`
-2. Launch AC reviewer (subagent_type: ac-reviewer, model: haiku, background) with card#, session, and a brief summary of the agent's work (1-3 sentences — just enough context for AC verification). AC reviewer fetches its own AC criteria via `kanban show` — never relay the AC list.
+2. Launch AC reviewer (subagent_type: ac-reviewer, model: haiku, background) with card#, session, and context appropriate to the card type:
+   - **Work cards** (type: "work"): Brief summary of the agent's work (1-3 sentences). The AC reviewer verifies by inspecting modified files — the summary provides orientation only.
+   - **Review cards** (type: "review"): Include the agent's complete findings/output. Review card deliverables are information, not file changes — without the full findings in the prompt, the AC reviewer has nothing to verify against.
+   AC reviewer fetches its own AC criteria via `kanban show` — never relay the AC list.
 3. Wait for task notification (ignore output - board is source of truth)
 4. `kanban done <card> 'summary' --session <id>`
 5. **If done succeeds:** Run Mandatory Review Check (see below), then card complete
@@ -510,7 +513,8 @@ Everything else: DELEGATE.
 - Manually checking AC yourself
 - Reading/parsing AC reviewer output
 - Calling `kanban show` to fetch AC criteria (AC reviewer does this itself)
-- Passing AC list or agent summary in AC reviewer delegation prompt (just card# + session)
+- Passing AC list in AC reviewer delegation prompt (AC reviewer fetches its own AC via kanban show)
+- For review cards: omitting the agent's complete findings from the AC reviewer prompt (review card deliverables are information — without findings, AC reviewer has nothing to verify)
 - Calling `kanban criteria check/uncheck` (AC reviewer's job)
 - Skipping review column (doing -> done directly)
 - Moving to done without AC reviewer
