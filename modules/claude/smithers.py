@@ -495,6 +495,85 @@ def has_merge_conflicts(pr_number: int) -> bool:
         return False
 
 
+def is_pr_mergeable(pr_number: int) -> bool:
+    """Check if PR is mergeable per GitHub's mergeability API.
+
+    Uses GitHub's mergeable field which reflects all repo merge requirements:
+    required approvals, passing checks, branch protection rules, etc.
+
+    Returns True only when mergeable == "MERGEABLE" (not CONFLICTING or UNKNOWN).
+
+    Note: Repos that require GitHub's merge queue feature will return mergeStateStatus
+    other than "CLEAN" (e.g., "BLOCKED"). In that case this function returns False,
+    and auto_merge_pr() will also fail — both are expected. The caller falls back to
+    posting a Slack notification so the PR can be merged manually via the merge queue.
+    """
+    code, stdout, _ = run_gh([
+        "pr", "view", str(pr_number),
+        "--json", "isDraft,mergeable,mergeStateStatus"
+    ])
+    if code != 0:
+        return False
+
+    if not stdout.strip():
+        log("is_pr_mergeable: gh exited 0 but returned empty stdout")
+        return False
+
+    try:
+        data = json.loads(stdout)
+        # Explicit draft check — a CLEAN mergeStateStatus is not possible for drafts,
+        # but we guard this explicitly to make the intent clear to future maintainers.
+        if data.get("isDraft", False):
+            return False
+        mergeable = data.get("mergeable", "").upper()
+        merge_state = data.get("mergeStateStatus", "").upper()
+        # MERGEABLE = all required approvals received, no conflicts, checks passing
+        # CLEAN is the mergeStateStatus that confirms everything is ready
+        return mergeable == "MERGEABLE" and merge_state == "CLEAN"
+    except json.JSONDecodeError:
+        log(f"is_pr_mergeable: failed to parse gh output as JSON: {stdout[:200]!r}")
+        return False
+
+
+def auto_merge_pr(pr_number: int) -> tuple:
+    """Attempt to auto-merge the PR using squash strategy (falls back to merge).
+
+    Args:
+        pr_number: PR number to merge
+
+    Returns:
+        tuple: (success: bool, message: str)
+
+    Note: Repos requiring GitHub's merge queue feature will fail both the squash
+    and regular merge attempts here (gh returns a non-zero exit code with a message
+    like "Pull request is in a merge queue"). This is expected — the caller should
+    fall back to a Slack notification so the PR can be processed via the merge queue.
+    """
+    # Try squash first (cleaner history)
+    code, stdout, squash_stderr = run_gh([
+        "pr", "merge", str(pr_number),
+        "--squash", "--auto", "--delete-branch"
+    ])
+    if code == 0:
+        return (True, "squash merged")
+
+    # Log the squash failure reason before attempting the fallback so that
+    # post-hoc debugging can distinguish a direct squash-merge from a fallback merge.
+    squash_error = squash_stderr.strip() if squash_stderr else "unknown error"
+    log(f"Squash merge failed (will try regular merge): {squash_error}")
+
+    # If squash failed (e.g. repo doesn't allow squash), try regular merge
+    code, stdout, stderr = run_gh([
+        "pr", "merge", str(pr_number),
+        "--merge", "--auto", "--delete-branch"
+    ])
+    if code == 0:
+        return (True, "merged")
+
+    error_detail = stderr.strip() if stderr else "unknown error"
+    return (False, f"merge failed: {error_detail}")
+
+
 def get_pr_info(pr_number: int) -> dict:
     """Get PR title, branch, state, etc."""
     code, stdout, _ = run_gh([
@@ -1844,21 +1923,50 @@ def main_loop_iteration(
         # Still clean after verification - safe to exit
         elapsed = time.time() - start_time
 
-        print("\n" + format_status_card(
-            "✅", "PR Ready to Merge",
-            pr_number, pr_url, pr_info, owner, repo,
-            cycle, elapsed, checks, bot_comments
-        ))
+        # Check if PR is already mergeable (all required approvals received per repo rules)
+        if is_pr_mergeable(pr_number):
+            log("PR is approved and mergeable - auto-merging...")
+            merge_success, merge_msg = auto_merge_pr(pr_number)
 
-        # Post to Slack webhook if configured
-        post_to_slack_webhook(pr_url, pr_info)
+            if merge_success:
+                print("\n" + format_status_card(
+                    "✅", f"PR Merged ({merge_msg})",
+                    pr_number, pr_url, pr_info, owner, repo,
+                    cycle, elapsed, checks, bot_comments
+                ))
+                send_notification(
+                    "Smithers Merged PR",
+                    f"PR #{pr_number} auto-merged — was already approved",
+                    "Glass"
+                )
+            else:
+                log(f"Auto-merge failed: {merge_msg}")
+                print("\n" + format_status_card(
+                    "🟡", "PR Ready — Auto-merge Failed",
+                    pr_number, pr_url, pr_info, owner, repo,
+                    cycle, elapsed, checks, bot_comments
+                ))
+                # Post to Slack since auto-merge failed — PR still needs manual attention
+                post_to_slack_webhook(pr_url, pr_info)
+                send_notification(
+                    "Smithers Complete",
+                    f"PR #{pr_number} is ready to merge (auto-merge failed)\nCompleted in {cycle} cycle(s)",
+                    "Glass"
+                )
+        else:
+            print("\n" + format_status_card(
+                "✅", "PR Ready to Merge",
+                pr_number, pr_url, pr_info, owner, repo,
+                cycle, elapsed, checks, bot_comments
+            ))
+            # Post to Slack webhook if configured
+            post_to_slack_webhook(pr_url, pr_info)
+            send_notification(
+                "Smithers Complete",
+                f"PR #{pr_number} is ready to merge!\nCompleted in {cycle} cycle(s)",
+                "Glass"
+            )
 
-        # Send macOS notification
-        send_notification(
-            "Smithers Complete",
-            f"PR #{pr_number} is ready to merge!\nCompleted in {cycle} cycle(s)",
-            "Glass"
-        )
         sys.exit(0)
 
     # 6. Handle final cycle - show errors but don't invoke Ralph
