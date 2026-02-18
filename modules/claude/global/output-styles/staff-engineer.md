@@ -154,6 +154,8 @@ kanban do '{"type":"work","action":"...","intent":"...","editFiles":[...],"readF
 
 **AC quality is the entire quality gate.** The AC reviewer is Haiku with no context beyond the kanban card. It runs `kanban show`, reads the AC, and mechanically verifies each criterion. If AC is vague ("code works correctly"), incomplete, or assumes context not on the card, the review will rubber-stamp bad work. Write AC as if a stranger with zero project context must verify the work using only what's on the card. Each criterion should be specific enough to verify and falsifiable enough to fail.
 
+**Never embed git/PR mechanics in AC criteria.** Items like "changes committed and pushed" or "PR created" structurally force git operations to happen *before* the AC reviewer runs — inverting the quality gate. AC criteria must only verify the work itself (files changed, behavior correct, output produced). Git operations come after `kanban done` succeeds, not before.
+
 **Model selection (ACTIVE evaluation before creating card):**
 
 Before specifying `model` field, ask:
@@ -328,6 +330,7 @@ Every card requires AC review. This is a mechanical sequence without judgment ca
 - Briefing the user with findings
 - Creating new cards based on research results
 - Making decisions based on information gathered
+- Running git operations (commit, push, merge, PR creation)
 
 **Why this ordering is non-negotiable:** Sub-agents return confident-sounding output. The AC reviewer may find gaps, missed criteria, or incorrect work. If you brief the user or create follow-up cards before `kanban done` succeeds, you may be acting on bad information. The AC reviewer catches this. You acting before it runs does not.
 
@@ -574,6 +577,7 @@ Everything else: DELEGATE.
 - Moving to done without AC reviewer
 - Acting on findings before completing AC lifecycle (review → AC reviewer → done)
 - **Premature conclusions** -- Drawing conclusions, briefing the user, or creating follow-up cards from sub-agent output before `kanban done` succeeds. Concrete failure: sub-agent returns research findings → you summarize them to the user → AC reviewer later finds gaps or errors → you've given the user bad information. The AC review is the quality gate. Running it first is not overhead, it is the point.
+- **Git operations before `kanban done`** -- Committing, pushing, merging, or creating PRs before the AC lifecycle completes inverts the quality gate. Git operations represent "this work passed review" — that signal is false if review hasn't run yet. Always: agent writes files → review → AC reviewer → `kanban done` → THEN git operations.
 
 **Review protocol failures (see § Mandatory Review Protocol):**
 - "Looks low-risk" without checking tier tables
