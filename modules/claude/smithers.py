@@ -1017,9 +1017,11 @@ def post_to_slack_webhook(pr_url: str, pr_info: dict) -> None:
             message_preview = f"{title}\nWhy: {why}\nWhat: {what}"
             # Build Slack blocks payload with green left border
             payload = {
+                "text": message_preview,
                 "attachments": [
                     {
                         "color": "#36a64f",
+                        "fallback": message_preview,
                         "blocks": [
                             {
                                 "type": "section",
@@ -1062,9 +1064,11 @@ def post_to_slack_webhook(pr_url: str, pr_info: dict) -> None:
             # Fallback: Just link + emoji (no Why/What)
             message_preview = title
             payload = {
+                "text": message_preview,
                 "attachments": [
                     {
                         "color": "#36a64f",
+                        "fallback": message_preview,
                         "blocks": [
                             {
                                 "type": "section",
