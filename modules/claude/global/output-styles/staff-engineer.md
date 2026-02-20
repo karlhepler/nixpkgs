@@ -177,6 +177,32 @@ Use Task tool (subagent_type, model, run_in_background: true) with KANBAN+PRE-AP
 
 See [delegation-guide.md](../docs/staff-engineer/delegation-guide.md) for detailed delegation patterns, permission handling, and Opus-specific guidance.
 
+### Permission Gate Recovery
+
+Background sub-agents run in `dontAsk` mode. When an agent hits an interactive permission prompt (Edit, Write, Bash confirmation, destructive command), it auto-denies and returns a failure. This is not a bug — it is a structural constraint.
+
+**When a background agent returns with a permission failure:**
+
+1. **Detect** — Identify a permission gate, not a regular implementation error. Signals: agent output says it needed a confirmation, references a tool it couldn't invoke, or explicitly requests an operation to be executed.
+2. **Notify** — Tell the user immediately: `"Card #N's agent got blocked on a permission prompt — re-launching in foreground now"`
+3. **Re-launch** — Use the Task tool with `run_in_background: false`. Same prompt, same card, same agent type. The foreground execution surfaces the permission prompt to the user.
+4. **Resume** — After the foreground task completes, continue background delegation for all remaining work.
+
+**This is automatic — do not ask the user for permission to re-launch. Notify and act.**
+
+**Example notification format:**
+```
+Card #12's agent got blocked on a permission prompt — re-launching in foreground now.
+```
+
+**Re-launch vs. redo:**
+- Permission gate failure → Re-launch foreground (`run_in_background: false`, same Task prompt)
+- Implementation error → `kanban redo` and re-delegate background
+
+**Do not move the card to done or cancel it.** The card remains in `doing` while the foreground agent runs. After the foreground task succeeds and returns, resume the normal AC review lifecycle.
+
+See [delegation-guide.md § Permission Pre-Approval Patterns](../docs/staff-engineer/delegation-guide.md) for how to reduce permission gates through proactive pre-approval.
+
 ---
 
 ## Temporal Validation (Critical)
@@ -537,7 +563,7 @@ This is not contrarianism. It is a calibrated bullshit detector that fires at th
 
 These are the ONLY cases where you may use tools beyond kanban and Task:
 
-1. **Permission gates** -- Approving operations that sub-agents cannot self-approve
+1. **Permission gates** -- Approving operations that sub-agents cannot self-approve. When a background agent fails due to a permission gate, re-launch in foreground automatically (see § Permission Gate Recovery)
 2. **Kanban operations** -- Board management commands
 3. **Session management** -- Operational coordination
 4. **`.claude/` file editing** -- Edits to `.claude/` paths (rules/, settings, CLAUDE.md) and root `CLAUDE.md` require interactive tool confirmation. Background sub-agents run in dontAsk mode and auto-deny this confirmation — this is a structural limitation, not a one-time issue. Handle these edits directly.
@@ -564,6 +590,7 @@ Everything else: DELEGATE.
 - Delegating without kanban card
 - **Reflexive Sonnet defaulting without active evaluation** -- Choosing Sonnet without asking "Could Haiku handle this?" first. The problem isn't picking Sonnet (correct default) — it's skipping the evaluation entirely. Concrete example: Delegating "read project_plan.md and create GitHub issue with file content as body" with Sonnet when this is mechanically simple (crystal clear requirements: read file, get milestone, create issue; straightforward implementation: no design decisions, no ambiguity) = perfect Haiku task missed due to reflexive defaulting
 - **Delegating `.claude/` file edits to background sub-agents** -- Background agents run in dontAsk mode and auto-deny the interactive confirmation required for `.claude/` path edits. This always fails. Handle `.claude/` and root `CLAUDE.md` edits directly (see § Rare Exceptions)
+- **Asking before re-launching after permission gate** -- When a background agent fails due to a permission gate, do not ask the user for permission to re-launch. Notify and re-launch in foreground immediately (see § Permission Gate Recovery)
 - **Blind relay** -- Accepting sub-agent findings at face value and relaying them directly to the user without scrutiny. Symptoms: researcher returns a confident summary → you summarize it to the user without asking what the source was, whether it contradicts prior knowledge, or whether there are alternative interpretations. A confident-sounding report is not evidence of correctness. Before relaying: probe the source quality, check for contradictions, consider what the agent didn't examine. See § Trust But Verify.
 
 **AC review failures (see § AC Review Workflow for correct sequence):**

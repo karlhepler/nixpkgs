@@ -314,8 +314,10 @@ Return a summary as your final message. Include:
 - Testing performed and results
 - Assumptions or limitations
 
-If you hit a permission gate (Edit, Write, git push, npm install),
-return what you need executed as your final message and stop.
+If a permission gate auto-denies and blocks your work, return what
+you were attempting as your final message. The staff engineer will
+detect the failure and re-launch this task in foreground to surface
+the permission prompt.
 
 Built-in general-purpose sub-agents may have MCP access (e.g., Context7), but background subagents have historically had limited MCP support. Provide key context in the Task prompt as a fallback.
 ```
@@ -349,8 +351,10 @@ Return a summary as your final message with:
 2. Security issues found (High/Medium/Low)
 3. Recommended fixes with priority
 
-If you hit a permission gate (Edit, Write, git push, npm install),
-return what you need executed as your final message and stop.
+If a permission gate auto-denies and blocks your work, return what
+you were attempting as your final message. The staff engineer will
+detect the failure and re-launch this task in foreground to surface
+the permission prompt.
 
 Built-in general-purpose sub-agents may have MCP access (e.g., Context7), but background subagents have historically had limited MCP support. Provide key context in the Task prompt as a fallback.
 ```
@@ -389,8 +393,10 @@ Return a summary as your final message with review result:
 
 Include specific feedback for any issues found.
 
-If you hit a permission gate (Edit, Write, git push, npm install),
-return what you need executed as your final message and stop.
+If a permission gate auto-denies and blocks your work, return what
+you were attempting as your final message. The staff engineer will
+detect the failure and re-launch this task in foreground to surface
+the permission prompt.
 
 Built-in general-purpose sub-agents may have MCP access (e.g., Context7), but background subagents have historically had limited MCP support. Provide key context in the Task prompt as a fallback.
 ```
