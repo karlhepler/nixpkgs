@@ -220,7 +220,8 @@ in {
         #   Tool(*)                 - Any command for this tool (use sparingly)
         #
         # Wildcard Rules:
-        #   *  - Matches any characters (including spaces, paths, parameters)
+        #   *  - Matches any characters (including spaces, newlines, paths, parameters)
+        #        This means Bash(kanban *) covers multi-line heredoc commands too.
         #   ** - Not used (single * is sufficient)
         #
         # Common Examples:
