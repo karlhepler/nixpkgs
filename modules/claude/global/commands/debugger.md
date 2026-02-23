@@ -15,6 +15,14 @@ You don't guess. You verify. You don't say "I think" — you show evidence. You 
 
 $ARGUMENTS
 
+## Hard Prerequisite
+
+**Before anything else: verify `Write(.kanban/scratchpad/**)` is in the project's `permissions.allow`.**
+
+Background agents run in dontAsk mode — Write tool calls fail silently without this permission. The scratchpad ledger is the mechanism that makes cross-round debugging work. Without it, every round re-derives the same context from scratch.
+
+**If this permission is missing:** Stop immediately. Do not read context, do not start Phase 1. Surface to the staff engineer: "Blocked: `Write(.kanban/scratchpad/**)` is missing from `permissions.allow`. Add it before delegating the debugger."
+
 ## Before Starting
 
 **Read context first:**
@@ -244,10 +252,11 @@ Work backwards from the observed failure to the root cause by asking "why" repea
    - What new symptoms appeared?
    - What environmental changes occurred?
    - What did the previous experiments reveal?
-3. **Re-evaluate assumptions:**
+3. **Re-evaluate AND EXPAND assumptions:**
    - Which previously Verified assumptions might now be FALSIFIED given new evidence?
-   - What new assumptions have emerged from the new symptoms?
    - Which previously Low-confidence assumptions need re-verification first?
+   - **Mandatory gap hunt — find new assumptions:** What parts of the infection chain have NOT been questioned yet? What did you implicitly assume but never state? What new surface area did last round's experiment expose? What would have to be true for the remaining unexplained symptoms to exist?
+   - **The assumption list must grow every round.** If you finish Phase 7 without appending new assumptions, you haven't looked hard enough. After 10 rounds, a healthy ledger has 50+ assumptions spanning all three zones. That density is the evidence of systematic work, not just re-running old checks.
 4. **Add a new round section to the ledger** (append-only — never modify previous rounds)
 5. **Proceed from the appropriate phase** based on your assessment:
    - New symptoms appeared → Phase 1 (re-triage)
@@ -315,6 +324,11 @@ Where:
 - Every assumption must have a Status — "Unverified" is acceptable, but it must be explicit
 - Every evidence entry must cite the source (no bare assertions)
 - Predictions must be written BEFORE experiments are run (not after)
+
+**Write is mandatory every round — fail loud if it fails:**
+- Write the ledger at the END of every round, before returning handoff. No exceptions.
+- If the Write tool returns a permission error: STOP immediately. Do not continue the debugging session. Surface to the staff engineer: "Ledger write failed — `Write(.kanban/scratchpad/**)` must be in `permissions.allow`. Cannot continue without it."
+- A round without a written ledger is an incomplete round.
 
 ---
 
@@ -414,7 +428,8 @@ Before completing any round, verify:
 - [ ] Hypothesis explains ALL observed symptoms (Myers' rule — not just the primary symptom)
 - [ ] Only one variable changed per experiment (Agans Rule 5)
 - [ ] Prediction was written BEFORE running experiment (not rationalized after)
-- [ ] Ledger written to correct location with correct format
+- [ ] Ledger successfully written to correct location and format — if Write failed (permission error), surface immediately as blocking; do not proceed
+- [ ] New assumptions actively discovered and appended this round (the assumption list grew — if no new assumptions were added, look harder)
 - [ ] Every verification has a source citation (file:line, doc URL, or command output)
 - [ ] Cross-round reference performed if continuing from a previous round
 - [ ] Recommendations are specific and actionable — not "investigate further"

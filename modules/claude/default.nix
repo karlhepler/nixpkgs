@@ -271,6 +271,9 @@ in {
             "Write(//private/tmp/**)"
             "Edit(//private/tmp/**)"
 
+            # Kanban scratchpad - required for debugger ledger persistence across rounds
+            "Write(.kanban/scratchpad/**)"
+
             # Context7 MCP - Auto-approve all documentation queries
             "mcp__context7__resolve-library-id"
             "mcp__context7__query-docs"
@@ -614,6 +617,9 @@ in {
             "Bash(pnpm why *)"
             "Bash(pnpm audit *)"
 
+            # pnpm test runner (global - vitest should be runnable in any project)
+            "Bash(pnpm vitest *)"
+
             # Category C - uv (Python tooling, read-only)
             "Bash(uv pip list *)"
             "Bash(uv pip show *)"
@@ -665,6 +671,9 @@ in {
             # Category C - node / python3 (version query only; -e/-p/-c excluded)
             "Bash(node --version *)"
             "Bash(python3 --version *)"
+
+            # Worktree navigation (cd into ~/worktrees/ - organized worktree directory)
+            "Bash(cd ${user.homeDirectory}/worktrees *)"
           ];
 
           # ============================================================================
