@@ -24,9 +24,11 @@ Options:
 """
 
 import argparse
+import html
 import json
 import os
 import random
+import re
 import signal
 import subprocess
 import sys
@@ -320,6 +322,55 @@ def get_workflow_failure_details(owner: str, repo: str, check: dict) -> dict:
     return result
 
 
+def _prc_retry(pr_number: int, max_retries: int, backoff_base: int) -> dict:
+    """Run prc list with retry logic, returning parsed JSON or error dict.
+
+    Retries up to max_retries times with exponential backoff on:
+    - Non-zero exit codes
+    - JSON decode failures
+    - Error fields in response
+
+    Args:
+        pr_number: PR number to list comments for
+        max_retries: Maximum number of attempts
+        backoff_base: Base for exponential backoff (seconds = base^(attempt-1))
+
+    Returns:
+        Parsed prc response dict, or {"comments": [], "error": ..., "retries_exhausted": True}
+    """
+    for attempt in range(1, max_retries + 1):
+        result = subprocess.run(
+            ["prc", "list", str(pr_number), "--bots-only", "--inline-only", "--max-replies", "0"],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+
+        if result.returncode != 0:
+            error = result.stderr or "Unknown error"
+            error_msg = f"prc failed (exit {result.returncode}): {error.strip()}"
+        else:
+            try:
+                data = json.loads(result.stdout)
+                if "error" not in data:
+                    return data  # success
+                error_msg = f"prc returned error: {data['error']}"
+            except json.JSONDecodeError as e:
+                error_msg = f"prc JSON decode failed: {e}"
+                error = error_msg
+
+        if attempt < max_retries:
+            backoff = backoff_base ** (attempt - 1)
+            log(f"{error_msg}. Retrying in {backoff}s... (attempt {attempt}/{max_retries})")
+            time.sleep(backoff)
+        else:
+            log(f"prc failed after {max_retries} attempts: {error_msg}")
+            return {"comments": [], "error": error_msg, "retries_exhausted": True}
+
+    # Should never reach here
+    return {"comments": [], "error": "Max retries reached", "retries_exhausted": True}
+
+
 def get_bot_comments(owner: str, repo: str, pr_number: int) -> dict:
     """Get inline bot comments with zero replies from the PR using prc CLI.
 
@@ -361,56 +412,7 @@ def get_bot_comments(owner: str, repo: str, pr_number: int) -> dict:
     """
     max_retries = int(os.environ.get("SMITHERS_PRC_MAX_RETRIES", 5))
     backoff_base = int(os.environ.get("SMITHERS_PRC_BACKOFF_BASE", 2))
-
-    for attempt in range(1, max_retries + 1):
-        # Use prc list to get inline bot comments with no replies (prevents duplicate handling)
-        result = subprocess.run(
-            ["prc", "list", str(pr_number), "--bots-only", "--inline-only", "--max-replies", "0"],
-            capture_output=True,
-            text=True,
-            check=False
-        )
-
-        # Success - return immediately
-        if result.returncode == 0:
-            try:
-                data = json.loads(result.stdout)
-                if "error" in data:
-                    error = data["error"]
-                    # Retry on transient errors
-                    if attempt < max_retries:
-                        backoff = backoff_base ** (attempt - 1)
-                        log(f"prc returned error: {error}. Retrying in {backoff}s... (attempt {attempt}/{max_retries})")
-                        time.sleep(backoff)
-                        continue
-                    else:
-                        log(f"prc failed after {max_retries} attempts: {error}")
-                        return {"comments": [], "error": error, "retries_exhausted": True}
-
-                return data  # prc returns {"comments": [...], "rate_limit": {...}}
-            except json.JSONDecodeError as e:
-                error = f"Failed to parse prc output: {e}"
-                if attempt < max_retries:
-                    backoff = backoff_base ** (attempt - 1)
-                    log(f"prc JSON decode failed. Retrying in {backoff}s... (attempt {attempt}/{max_retries})")
-                    time.sleep(backoff)
-                    continue
-                else:
-                    log(f"prc failed after {max_retries} attempts: {error}")
-                    return {"comments": [], "error": error, "retries_exhausted": True}
-
-        # Non-zero return code - retry
-        error = result.stderr or "Unknown error"
-        if attempt < max_retries:
-            backoff = backoff_base ** (attempt - 1)
-            log(f"prc failed (exit {result.returncode}): {error.strip()}. Retrying in {backoff}s... (attempt {attempt}/{max_retries})")
-            time.sleep(backoff)
-        else:
-            log(f"prc failed after {max_retries} attempts (exit {result.returncode}): {error.strip()}")
-            return {"comments": [], "error": error, "retries_exhausted": True}
-
-    # Should never reach here, but return error for safety
-    return {"comments": [], "error": "Max retries reached", "retries_exhausted": True}
+    return _prc_retry(pr_number, max_retries, backoff_base)
 
 
 def has_unaddressed_bot_comments(owner: str, repo: str, pr_number: int) -> bool:
@@ -832,6 +834,70 @@ def format_status_card(
     return result
 
 
+def _parse_haiku_json_response(stdout_content: str) -> tuple:
+    """Extract and parse the why/what JSON from a haiku agent's stdout.
+
+    The haiku agent wraps its output in a JSON envelope with a "result" field.
+    The result may contain a raw JSON object or a markdown code-fenced JSON block.
+
+    Args:
+        stdout_content: Raw stdout from the claude CLI invocation
+
+    Returns:
+        (why, what) strings, or (None, None) on any parse failure
+    """
+    if not stdout_content:
+        log("🟡 Haiku agent returned empty stdout")
+        return (None, None)
+
+    # Parse outer JSON wrapper from claude CLI
+    try:
+        wrapper = json.loads(stdout_content)
+    except json.JSONDecodeError as e:
+        log(f"🟡 Haiku agent returned invalid JSON: {e}")
+        log(f"   First 200 chars of stdout: {stdout_content[:200]}")
+        return (None, None)
+
+    result_text = wrapper.get("result", "")
+    if not result_text:
+        log("🟡 Haiku agent JSON missing 'result' field")
+        log(f"   Wrapper keys: {list(wrapper.keys())}")
+        return (None, None)
+
+    # Strip markdown code fences and any preamble text
+    result_text = result_text.strip()
+
+    # Find the start of JSON (may have preamble text before code fence)
+    json_start = result_text.find("```json")
+    if json_start >= 0:
+        result_text = result_text[json_start + 7:]  # Remove everything before and including ```json
+    elif result_text.find("```") >= 0:
+        json_start = result_text.find("```")
+        result_text = result_text[json_start + 3:]  # Remove everything before and including ```
+
+    # Remove trailing code fence
+    if result_text.endswith("```"):
+        result_text = result_text[:-3]  # Remove trailing ```
+    result_text = result_text.strip()
+
+    # Parse inner JSON containing why/what
+    try:
+        response_data = json.loads(result_text)
+    except json.JSONDecodeError as e:
+        log(f"🟡 Haiku agent returned invalid JSON: {e}")
+        log(f"   First 200 chars of stdout: {stdout_content[:200]}")
+        return (None, None)
+
+    why_line = response_data.get("why", "").strip()
+    what_line = response_data.get("what", "").strip()
+
+    if not why_line or not what_line:
+        log("🟡 Haiku agent returned empty why/what in JSON")
+        return (None, None)
+
+    return (why_line, what_line)
+
+
 def generate_pr_summaries(pr_number: int, pr_url: str, pr_title: str) -> tuple:
     """
     Spawn haiku agent via Task tool to analyze PR and generate Why/What summaries.
@@ -916,58 +982,7 @@ Return ONLY valid JSON with this structure:
                 log(f"   Debug output saved to: {debug_file}")
                 return (None, None)
 
-            # Parse JSON output
-            try:
-                stdout_content = result.stdout.strip()
-
-                # Log if stdout is empty
-                if not stdout_content:
-                    log("🟡 Haiku agent returned empty stdout")
-                    if result.stderr:
-                        log(f"   stderr: {result.stderr.strip()}")
-                    return (None, None)
-
-                # Parse outer JSON wrapper from claude CLI
-                wrapper = json.loads(stdout_content)
-                result_text = wrapper.get("result", "")
-
-                # Log if result field is missing or empty
-                if not result_text:
-                    log("🟡 Haiku agent JSON missing 'result' field")
-                    log(f"   Wrapper keys: {list(wrapper.keys())}")
-                    return (None, None)
-
-                # Strip markdown code fences and any preamble text
-                result_text = result_text.strip()
-
-                # Find the start of JSON (may have preamble text before code fence)
-                json_start = result_text.find("```json")
-                if json_start >= 0:
-                    result_text = result_text[json_start + 7:]  # Remove everything before and including ```json
-                elif result_text.find("```") >= 0:
-                    json_start = result_text.find("```")
-                    result_text = result_text[json_start + 3:]  # Remove everything before and including ```
-
-                # Remove trailing code fence
-                if result_text.endswith("```"):
-                    result_text = result_text[:-3]  # Remove trailing ```
-                result_text = result_text.strip()
-
-                # Parse inner JSON containing why/what
-                response_data = json.loads(result_text)
-                why_line = response_data.get("why", "").strip()
-                what_line = response_data.get("what", "").strip()
-
-                if not why_line or not what_line:
-                    log("🟡 Haiku agent returned empty why/what in JSON")
-                    return (None, None)
-
-                return (why_line, what_line)
-
-            except json.JSONDecodeError as e:
-                log(f"🟡 Haiku agent returned invalid JSON: {e}")
-                log(f"   First 200 chars of stdout: {result.stdout[:200]}")
-                return (None, None)
+            return _parse_haiku_json_response(result.stdout.strip())
 
         finally:
             # Clean up prompt file
@@ -982,6 +997,79 @@ Return ONLY valid JSON with this structure:
     except Exception as e:
         log(f"🟡 Failed to generate PR summaries: {e}")
         return (None, None)
+
+
+def _build_slack_payload(title: str, pr_url: str, repo: str, emoji: str, why: str, what: str) -> dict:
+    """Build the Slack webhook payload for a PR completion notification.
+
+    When why and what are provided, includes Why/What context sections.
+    Otherwise falls back to a minimal link + footer message.
+
+    Args:
+        title: PR title
+        pr_url: Full PR URL
+        repo: Repository name (shown in footer)
+        emoji: Positive emoji for sign-off
+        why: Why summary sentence, or empty string for fallback
+        what: What summary sentence, or empty string for fallback
+
+    Returns:
+        Slack incoming webhook payload dict
+    """
+    mrkdwn_title = f"*<{pr_url}|:github: {title}>*"
+    footer_text = f"📦 {repo} • Please take a look. Thanks! {emoji}"
+
+    if why and what:
+        blocks = [
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*Why?*\n{why}"
+                }
+            },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*What?*\n{what}"
+                }
+            },
+            {
+                "type": "context",
+                "elements": [
+                    {
+                        "type": "mrkdwn",
+                        "text": footer_text
+                    }
+                ]
+            }
+        ]
+    else:
+        # Fallback: Just link + emoji (no Why/What)
+        blocks = [
+            {
+                "type": "context",
+                "elements": [
+                    {
+                        "type": "mrkdwn",
+                        "text": footer_text
+                    }
+                ]
+            }
+        ]
+
+    return {
+        "text": mrkdwn_title,
+        "mrkdwn": True,
+        "attachments": [
+            {
+                "color": "#36a64f",
+                "fallback": title,
+                "blocks": blocks
+            }
+        ]
+    }
 
 
 def post_to_slack_webhook(pr_url: str, pr_info: dict) -> None:
@@ -1011,68 +1099,8 @@ def post_to_slack_webhook(pr_url: str, pr_info: dict) -> None:
         # Pick random emoji for sign-off
         emoji = random.choice(POSITIVE_EMOJIS)
 
-        # Construct message with graceful degradation
-        mrkdwn_title = f"*<{pr_url}|:github: {title}>*"
-        if why and what:
-            # Full message with Why/What sections
-            payload = {
-                "text": mrkdwn_title,
-                "mrkdwn": True,
-                "attachments": [
-                    {
-                        "color": "#36a64f",
-                        "fallback": title,
-                        "blocks": [
-                            {
-                                "type": "section",
-                                "text": {
-                                    "type": "mrkdwn",
-                                    "text": f"*Why?*\n{why}"
-                                }
-                            },
-                            {
-                                "type": "section",
-                                "text": {
-                                    "type": "mrkdwn",
-                                    "text": f"*What?*\n{what}"
-                                }
-                            },
-                            {
-                                "type": "context",
-                                "elements": [
-                                    {
-                                        "type": "mrkdwn",
-                                        "text": f"📦 {repo} • Please take a look. Thanks! {emoji}"
-                                    }
-                                ]
-                            }
-                        ]
-                    }
-                ]
-            }
-        else:
-            # Fallback: Just link + emoji (no Why/What)
-            payload = {
-                "text": mrkdwn_title,
-                "mrkdwn": True,
-                "attachments": [
-                    {
-                        "color": "#36a64f",
-                        "fallback": title,
-                        "blocks": [
-                            {
-                                "type": "context",
-                                "elements": [
-                                    {
-                                        "type": "mrkdwn",
-                                        "text": f"📦 {repo} • Please take a look. Thanks! {emoji}"
-                                    }
-                                ]
-                            }
-                        ]
-                    }
-                ]
-            }
+        payload = _build_slack_payload(title, pr_url, repo, emoji, why or "", what or "")
+        mrkdwn_title = payload["text"]
 
         # Prompt user for confirmation before posting
         print(f"\n{mrkdwn_title}\n")
@@ -1104,8 +1132,6 @@ def audit_ralph_execution() -> None:
     - Input sanitization (prevents prompt injection)
     - Prompt constraints (guides Ralph behavior)
     """
-    import re
-
     # Prohibited command patterns (same as in safety constraints)
     prohibited_patterns = [
         r'kubectl\s+(apply|create|patch|delete|scale|exec|port-forward)',
@@ -1304,9 +1330,6 @@ def sanitize_for_prompt(text: str, max_length: int = 2000) -> str:
     Returns:
         Sanitized text safe for prompt injection
     """
-    import re
-    import html
-
     if not text or not isinstance(text, str):
         return ""
 
@@ -1646,6 +1669,135 @@ def wait_for_checks(pr_number: int, owner: str = None, repo: str = None) -> tupl
         time.sleep(POLL_INTERVAL)
 
 
+def _gather_final_state(pr_number: int, owner: str, repo: str) -> tuple:
+    """Gather PR info, check results, and bot comments for display.
+
+    Args:
+        pr_number: PR number
+        owner: Repository owner
+        repo: Repository name
+
+    Returns:
+        tuple: (pr_info, checks, bot_comments, elapsed placeholder)
+    """
+    pr_info = get_pr_info(pr_number)
+    status = get_check_status(pr_number)
+    checks = status.get("checks", [])
+    bot_comments = get_bot_comments(owner, repo, pr_number)
+    return pr_info, checks, bot_comments
+
+
+def _show_card_and_notify(
+    status_emoji: str,
+    status_message: str,
+    pr_number: int,
+    pr_url: str,
+    pr_info: dict,
+    owner: str,
+    repo: str,
+    cycle: int,
+    elapsed: float,
+    checks: list,
+    bot_comments: dict,
+    notification_title: str,
+    notification_message: str,
+    sound: str = "Glass"
+) -> None:
+    """Print the status card and send a macOS notification.
+
+    Args:
+        status_emoji: Card header emoji
+        status_message: Card header message
+        pr_number: PR number
+        pr_url: Full PR URL
+        pr_info: PR metadata dict
+        owner: Repository owner
+        repo: Repository name
+        cycle: Cycle count for display
+        elapsed: Elapsed seconds
+        checks: CI check results
+        bot_comments: Bot comment data
+        notification_title: macOS notification title
+        notification_message: macOS notification body
+        sound: macOS notification sound name
+    """
+    print("\n" + format_status_card(
+        status_emoji, status_message,
+        pr_number, pr_url, pr_info, owner, repo,
+        cycle, elapsed, checks, bot_comments
+    ))
+    send_notification(notification_title, notification_message, sound)
+
+
+def _handle_pr_ready(
+    pr_number: int,
+    pr_url: str,
+    pr_info: dict,
+    owner: str,
+    repo: str,
+    cycle: int,
+    elapsed: float,
+    checks: list,
+    bot_comments: dict,
+    max_ralph_invocations: int
+) -> None:
+    """Handle the success path when no work is needed and PR is verified clean.
+
+    Attempts auto-merge if the PR is mergeable. Posts to Slack and sends a
+    notification. Always exits with code 0.
+
+    Args:
+        pr_number: PR number
+        pr_url: Full PR URL
+        pr_info: PR metadata dict
+        owner: Repository owner
+        repo: Repository name
+        cycle: Current cycle number
+        elapsed: Elapsed seconds since smithers started
+        checks: CI check results
+        bot_comments: Bot comment data
+        max_ralph_invocations: Max Ralph invocations (used in fallback notification)
+    """
+    if is_pr_mergeable(pr_number):
+        log("PR is approved and mergeable - auto-merging...")
+        merge_success, merge_msg = auto_merge_pr(pr_number)
+
+        if merge_success:
+            _show_card_and_notify(
+                "✅", f"PR Merged ({merge_msg})",
+                pr_number, pr_url, pr_info, owner, repo,
+                cycle, elapsed, checks, bot_comments,
+                "Smithers Merged PR",
+                f"PR #{pr_number} auto-merged — was already approved",
+                "Glass"
+            )
+        else:
+            log(f"Auto-merge failed: {merge_msg}")
+            _show_card_and_notify(
+                "🟡", "PR Ready — Auto-merge Failed",
+                pr_number, pr_url, pr_info, owner, repo,
+                cycle, elapsed, checks, bot_comments,
+                "Smithers Complete",
+                f"PR #{pr_number} is ready to merge (auto-merge failed)\nCompleted in {cycle} cycle(s)",
+                "Glass"
+            )
+            # Post to Slack since auto-merge failed — PR still needs manual attention
+            post_to_slack_webhook(pr_url, pr_info)
+    else:
+        _show_card_and_notify(
+            "✅", "PR Ready to Merge",
+            pr_number, pr_url, pr_info, owner, repo,
+            cycle, elapsed, checks, bot_comments,
+            "Smithers Complete",
+            f"PR #{pr_number} is ready to merge!\nCompleted in {cycle} cycle(s)",
+            "Glass"
+        )
+        # Post to Slack webhook if configured
+        post_to_slack_webhook(pr_url, pr_info)
+
+    sys.exit(0)
+
+
 def main():
     """Main entry point."""
     start_time = time.time()  # Track elapsed time
@@ -1749,46 +1901,27 @@ def main():
             if ralph_invoked:
                 ralph_invocation_count += 1
     except KeyboardInterrupt:
-        # Calculate elapsed time
         elapsed = time.time() - start_time
+        pr_info, checks, bot_comments = _gather_final_state(pr_number, owner, repo)
 
-        # Get PR info and checks for card display
-        pr_info = get_pr_info(pr_number)
-        status = get_check_status(pr_number)
-        checks = status.get("checks", [])
-        bot_comments = get_bot_comments(owner, repo, pr_number)
-
-        # Display status card
-        print("\n" + format_status_card(
+        _show_card_and_notify(
             "🟡", "Interrupted by User",
             pr_number, pr_url, pr_info, owner, repo,
-            current_cycle, elapsed, checks, bot_comments
-        ))
-
-        send_notification(
+            current_cycle, elapsed, checks, bot_comments,
             "Smithers Interrupted",
             f"PR #{pr_number} watch interrupted by user",
             "Basso"
         )
         return 130  # Standard exit code for SIGINT
 
-    # Calculate elapsed time for max cycles exit
+    # Max cycles reached without PR being ready
     elapsed = time.time() - start_time
+    pr_info, checks, bot_comments = _gather_final_state(pr_number, owner, repo)
 
-    # Get final PR info and checks
-    pr_info = get_pr_info(pr_number)
-    status = get_check_status(pr_number)
-    checks = status.get("checks", [])
-    bot_comments = get_bot_comments(owner, repo, pr_number)
-
-    # Display status card for max cycles
-    print("\n" + format_status_card(
+    _show_card_and_notify(
         "🟡", "Max Cycles Reached",
         pr_number, pr_url, pr_info, owner, repo,
-        effective_max_cycles, elapsed, checks, bot_comments
-    ))
-
-    send_notification(
+        effective_max_cycles, elapsed, checks, bot_comments,
         "Smithers Max Cycles",
         f"PR #{pr_number} reached {effective_max_cycles} cycles without being ready",
         "Sosumi"
@@ -1821,17 +1954,12 @@ def main_loop_iteration(
 
     if pr_state == "MERGED":
         elapsed = time.time() - start_time
-        status = get_check_status(pr_number)
-        checks = status.get("checks", [])
-        bot_comments = get_bot_comments(owner, repo, pr_number)
+        pr_info, checks, bot_comments = _gather_final_state(pr_number, owner, repo)
 
-        print("\n" + format_status_card(
+        _show_card_and_notify(
             "✅", "PR Already Merged",
             pr_number, pr_url, pr_info, owner, repo,
-            cycle, elapsed, checks, bot_comments
-        ))
-
-        send_notification(
+            cycle, elapsed, checks, bot_comments,
             "Smithers Complete",
             f"PR #{pr_number} is already merged",
             "Glass"
@@ -1894,7 +2022,6 @@ def main_loop_iteration(
         log("Verifying no new work appeared...")
         verification_checks, _ = wait_for_checks(pr_number, owner, repo)
         verification_failed = get_failed_checks(verification_checks)
-        verification_bot_comments = get_bot_comments(owner, repo, pr_number)
         verification_conflicts = has_merge_conflicts(pr_number)
 
         if work_needed(verification_failed, verification_conflicts, owner, repo, pr_number):
@@ -1906,52 +2033,10 @@ def main_loop_iteration(
 
         # Still clean after verification - safe to exit
         elapsed = time.time() - start_time
-
-        # Check if PR is already mergeable (all required approvals received per repo rules)
-        if is_pr_mergeable(pr_number):
-            log("PR is approved and mergeable - auto-merging...")
-            merge_success, merge_msg = auto_merge_pr(pr_number)
-
-            if merge_success:
-                print("\n" + format_status_card(
-                    "✅", f"PR Merged ({merge_msg})",
-                    pr_number, pr_url, pr_info, owner, repo,
-                    cycle, elapsed, checks, bot_comments
-                ))
-                send_notification(
-                    "Smithers Merged PR",
-                    f"PR #{pr_number} auto-merged — was already approved",
-                    "Glass"
-                )
-            else:
-                log(f"Auto-merge failed: {merge_msg}")
-                print("\n" + format_status_card(
-                    "🟡", "PR Ready — Auto-merge Failed",
-                    pr_number, pr_url, pr_info, owner, repo,
-                    cycle, elapsed, checks, bot_comments
-                ))
-                # Post to Slack since auto-merge failed — PR still needs manual attention
-                post_to_slack_webhook(pr_url, pr_info)
-                send_notification(
-                    "Smithers Complete",
-                    f"PR #{pr_number} is ready to merge (auto-merge failed)\nCompleted in {cycle} cycle(s)",
-                    "Glass"
-                )
-        else:
-            print("\n" + format_status_card(
-                "✅", "PR Ready to Merge",
-                pr_number, pr_url, pr_info, owner, repo,
-                cycle, elapsed, checks, bot_comments
-            ))
-            # Post to Slack webhook if configured
-            post_to_slack_webhook(pr_url, pr_info)
-            send_notification(
-                "Smithers Complete",
-                f"PR #{pr_number} is ready to merge!\nCompleted in {cycle} cycle(s)",
-                "Glass"
-            )
-
-        sys.exit(0)
+        _handle_pr_ready(
+            pr_number, pr_url, pr_info, owner, repo,
+            cycle, elapsed, checks, bot_comments, max_ralph_invocations
+        )
 
     # 6. Handle final cycle - show errors but don't invoke Ralph
     if cycle == max_cycles:
@@ -1988,13 +2073,10 @@ def main_loop_iteration(
             log("\n  ❌ Merge conflicts detected")
 
         # Display status card
-        print("\n" + format_status_card(
+        _show_card_and_notify(
             "❌", "Max Ralph Invocations Reached",
             pr_number, pr_url, pr_info, owner, repo,
-            cycle, elapsed, checks, bot_comments
-        ))
-
-        send_notification(
+            cycle, elapsed, checks, bot_comments,
             "Smithers Max Iterations",
             f"PR #{pr_number} has unresolved issues after {max_ralph_invocations} attempts",
             "Sosumi"
