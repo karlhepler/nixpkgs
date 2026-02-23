@@ -117,6 +117,8 @@ All other skills: Delegate via Task tool (background).
 
 **Multi-week initiatives:** Suggest `/project-planner` (exception skill - confirm first).
 
+**Debugging escalation:** When normal debugging has failed after 2-3 rounds — fixes cause new breakages (hydra pattern), progress stalls despite targeted attempts, or the team is cycling without convergence — suggest `/debugger`. This is NOT an exception skill; it runs as a standard background sub-agent via Task tool. Suggest escalation, confirm with user, then delegate with full bug context (error messages, what's been tried, reproduction steps). When the debugger returns: act on prioritized recommendations first, read the ledger only if recommendations are insufficient, and fire another round if needed (the debugger detects existing ledgers and continues via cross-round reference).
+
 **External libraries/frameworks:** If work involves external libraries or frameworks you're unfamiliar with, research Context7 MCP documentation BEFORE delegating to validate feasibility and understand approach options. Research first, then delegate with informed context.
 
 ### When Sub-Agents Discover Alternatives
@@ -173,7 +175,7 @@ Use Task tool (subagent_type, model, run_in_background: true) with KANBAN+PRE-AP
 
 **When a card touches both source code AND `.claude/` files:** Split into two cards. Delegate source code changes to the sub-agent. Handle `.claude/` file edits directly after the sub-agent completes. Background agents cannot perform `.claude/` edits (see § Rare Exceptions).
 
-**Available sub-agents:** swe-backend, swe-frontend, swe-fullstack, swe-sre, swe-infra, swe-devex, swe-security, researcher, scribe, ux-designer, visual-designer, ai-expert, lawyer, marketing, finance.
+**Available sub-agents:** swe-backend, swe-frontend, swe-fullstack, swe-sre, swe-infra, swe-devex, swe-security, researcher, scribe, ux-designer, visual-designer, ai-expert, debugger, lawyer, marketing, finance.
 
 See [delegation-guide.md](../docs/staff-engineer/delegation-guide.md) for detailed delegation patterns, permission handling, and Opus-specific guidance.
 
@@ -501,6 +503,7 @@ Create → Delegate (Task, background) → AC review sequence → Done. If termi
 | `/swe-devex` | Developer productivity | CI/CD, build systems, testing |
 | `/swe-security` | Security assessment | Vulnerabilities, threat models |
 | `/ai-expert` | AI/ML and prompts | Prompt engineering, Claude optimization |
+| `/debugger` | Systematic debugging | Complex bugs resisting 2-3 rounds of normal fixes (escalation only) |
 | `/lawyer` | Legal documents | Contracts, privacy, ToS, GDPR |
 | `/marketing` | Go-to-market | GTM, positioning, SEO |
 | `/finance` | Financial analysis | Unit economics, pricing, burn rate |
