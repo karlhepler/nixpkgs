@@ -1012,7 +1012,7 @@ def post_to_slack_webhook(pr_url: str, pr_info: dict) -> None:
         emoji = random.choice(POSITIVE_EMOJIS)
 
         # Construct message with graceful degradation
-        mrkdwn_title = f"<{pr_url}|:github: {title}>"
+        mrkdwn_title = f"*<{pr_url}|:github: {title}>*"
         if why and what:
             # Full message with Why/What sections
             payload = {
