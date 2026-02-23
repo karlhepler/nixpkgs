@@ -1012,27 +1012,17 @@ def post_to_slack_webhook(pr_url: str, pr_info: dict) -> None:
         emoji = random.choice(POSITIVE_EMOJIS)
 
         # Construct message with graceful degradation
+        mrkdwn_title = f"<{pr_url}|:github: {title}>"
         if why and what:
             # Full message with Why/What sections
-            message_preview = f"{title}\nWhy: {why}\nWhat: {what}"
-            # Build Slack blocks payload with green left border
             payload = {
-                "text": message_preview,
+                "text": mrkdwn_title,
+                "mrkdwn": True,
                 "attachments": [
                     {
                         "color": "#36a64f",
-                        "fallback": message_preview,
+                        "fallback": title,
                         "blocks": [
-                            {
-                                "type": "section",
-                                "text": {
-                                    "type": "mrkdwn",
-                                    "text": f":github: *<{pr_url}|{title}>*"
-                                }
-                            },
-                            {
-                                "type": "divider"
-                            },
                             {
                                 "type": "section",
                                 "text": {
@@ -1062,24 +1052,14 @@ def post_to_slack_webhook(pr_url: str, pr_info: dict) -> None:
             }
         else:
             # Fallback: Just link + emoji (no Why/What)
-            message_preview = title
             payload = {
-                "text": message_preview,
+                "text": mrkdwn_title,
+                "mrkdwn": True,
                 "attachments": [
                     {
                         "color": "#36a64f",
-                        "fallback": message_preview,
+                        "fallback": title,
                         "blocks": [
-                            {
-                                "type": "section",
-                                "text": {
-                                    "type": "mrkdwn",
-                                    "text": f":github: *<{pr_url}|{title}>*"
-                                }
-                            },
-                            {
-                                "type": "divider"
-                            },
                             {
                                 "type": "context",
                                 "elements": [
@@ -1095,7 +1075,7 @@ def post_to_slack_webhook(pr_url: str, pr_info: dict) -> None:
             }
 
         # Prompt user for confirmation before posting
-        print(f"\n{message_preview}\n")
+        print(f"\n{mrkdwn_title}\n")
 
         user_input = input("Do you want to share this in Slack? ").strip().lower()
 
