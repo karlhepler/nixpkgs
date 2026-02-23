@@ -125,7 +125,7 @@ When reviewing for "Claude Code adherence" or evaluating compliance with officia
 - Coordinate dependent operations: "After reading X, then do Y"
 
 **Thinking and Extended Thinking:**
-- `<thinking>` tags trigger internal reasoning (visible to user)
+- `<thinking>` tags are XML markup structure — they do NOT trigger extended thinking in Claude Code prompts. Extended thinking is enabled through API parameters, not XML tags.
 - Extended thinking enables deeper reasoning for complex problems
 - Opus is more sensitive to thinking prompts - can over-analyze
 - Use for debugging, architecture decisions, complex trade-offs
@@ -247,7 +247,7 @@ NOT reviewing: UI components, tests (separate task)
 </priorities>
 
 <model-guidance>
-Use extended thinking for this task - security analysis requires deep reasoning.
+Use extended thinking for this task - security analysis requires deep reasoning. (Note: Extended thinking is enabled via API parameters, not XML tags - see "Thinking and Extended Thinking" section above.)
 Consider multiple attack vectors before finalizing recommendations.
 </model-guidance>
 ```
@@ -339,15 +339,31 @@ Consider multiple attack vectors before finalizing recommendations.
 - Hooks trigger at specific points in Claude Code workflow
 - Enable custom workflows, notifications, formatting, validation
 
-**Hook Event Types:**
+**Documented Hook Event Types** (all 6):
 
 - `PreToolUse` - Fires before a tool executes (can block). Use case: validation, logging, dry-run checks.
 - `PostToolUse` - Fires after a tool completes. Use case: auto-formatting (e.g., run csharpier after Edit on *.cs files), side effects.
 - `Notification` - Fires on notification events during agent execution. Use case: desktop notifications, tmux alerts.
 - `Stop` - Fires when the session completes. Use case: completion sounds, cleanup, post-session reporting.
+- `SubagentStop` - Fires when a subagent (spawned via Task or Agent SDK) completes. Use case: subagent monitoring, cleanup, reporting.
 - `SessionStart` - Fires at session startup. Use case: inject session identity, initialize state (e.g., kanban session hook).
 
 Hooks are configured in `.claude/settings.json` (project) or `~/.claude/settings.json` (user) under the `hooks` key, keyed by event type.
+
+**Hook Handler Types** (`type` field in hook configuration):
+
+- `command` - Shell script executed directly. Most common. Use for formatting, notifications, validation.
+  ```json
+  { "type": "command", "command": "my-script.sh" }
+  ```
+- `prompt` - Single-turn LLM call (defaults to a fast model). Receives hook context as input, returns text. Use for lightweight AI-assisted decisions without tool access.
+  ```json
+  { "type": "prompt", "prompt": "Summarize what just changed" }
+  ```
+- `agent` - Multi-turn subagent with full tool access. Use for complex hook tasks requiring file reads, API calls, or multi-step logic.
+  ```json
+  { "type": "agent", "prompt": "Review the edit and flag any security issues" }
+  ```
 
 **Communication:**
 - Stdin - Receives event data as JSON
@@ -373,8 +389,9 @@ Hooks are configured in `.claude/settings.json` (project) or `~/.claude/settings
 - `$ARGUMENTS` placeholder for runtime task injection
 
 **Frontmatter Fields:**
-- `description` - When to invoke this skill (rich with trigger keywords)
-- Optional: `model`, `output_style`, `temperature`, `max_tokens`
+- `description` — Recommended. Describes when to invoke this skill; primary auto-invocation signal (rich with trigger keywords, synonyms, use cases)
+- `name` — Skill identifier (required, must match filename)
+- Other fields (optional): `argument-hint`, `disable-model-invocation`, `user-invocable`, `allowed-tools`, `model`, `context`, `agent`, `hooks`
 
 **Invocation Control:**
 - Description determines when Claude auto-invokes skill

@@ -13,16 +13,18 @@ $ARGUMENTS
 
 ## Hard Prerequisites
 
-**Before anything else: verify required permissions are in the project's `permissions.allow`.**
+**Bash permissions guard — NOT a Context7 block.**
 
-Due to a known Claude Code bug ([GitHub #5140](https://github.com/anthropics/claude-code/issues/5140)), global `~/.claude/settings.json` permissions are **not** inherited by projects with their own `permissions.allow` -- project settings replace globals entirely. To verify: read `.claude/settings.json` or `.claude/settings.local.json` in the project root and confirm each required permission appears in the `permissions.allow` array.
+You run as a background sub-agent in `dontAsk` mode. In `dontAsk` mode, any `Bash` call not covered by `permissions.allow` is **silently denied** — no error, no prompt, just a quiet no-op. Without pre-approved patterns, all kanban commands fail silently and your review produces no board mutations.
 
-**Required:** `Bash(kanban *)`
+**The delegating agent MUST pre-approve these Bash patterns before spawning you:**
 
-This skill's entire purpose is mutating kanban board state via `kanban criteria check` and `kanban criteria uncheck`. Without this permission, every kanban command silently fails in `dontAsk` mode.
+- `Bash(kanban show *)` — fetch card details
+- `Bash(kanban criteria check *)` — check off satisfied criteria
+- `Bash(kanban criteria uncheck *)` — uncheck unsatisfied criteria
 
-**If missing:** Stop immediately. Do not start work. Surface to the staff engineer:
-> "Blocked: `Bash(kanban *)` is missing from `permissions.allow`. Add it before delegating ac-reviewer."
+If these patterns are not in `permissions.allow`, stop immediately and surface to the staff engineer:
+> "Blocked: kanban Bash permissions not pre-approved. Add `Bash(kanban show *)`, `Bash(kanban criteria check *)`, and `Bash(kanban criteria uncheck *)` to `permissions.allow` before delegating ac-reviewer."
 
 ## Your Single Purpose
 

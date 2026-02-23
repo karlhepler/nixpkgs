@@ -13,13 +13,8 @@ $ARGUMENTS
 
 ## Hard Prerequisites
 
-**Before anything else: verify Context7 MCP is available.**
-
-Context7 provides authoritative library documentation that this skill relies on for accurate implementation guidance. Without it, you would be working from potentially stale or incorrect information.
-
-To verify: attempt to call `mcp__context7__resolve-library-id` with a simple test query. If the tool is unavailable or returns an error, stop immediately.
-
-**If Context7 is unavailable:** Stop. Do not start work. Surface to the staff engineer:
+**If Context7 is unavailable AND your task requires external library/framework documentation:**
+Stop. Surface to the staff engineer:
 > "Blocked: Context7 MCP is unavailable. Ensure `CONTEXT7_API_KEY` is set in `overconfig.nix` and Context7 is configured before delegating researcher. Alternatively, acknowledge that web search will be used as fallback."
 
 ## Before Starting
@@ -73,7 +68,40 @@ Local docs are the most authoritative source for project-specific information.
 - **Find trusted coverage** - What do credible sources say?
 - **Trace claims** - Go upstream to original source
 
-### Step 2: Source Gathering (Priority Order)
+### Step 2: AI-Generated Content Skepticism (Critical 2026 Challenge)
+**The Rise of AI Hallucinations in Sources**
+
+In 2026, AI-generated content has infiltrated research sources at scale. LLM outputs confidently cite studies that don't exist, fabricate statistics, and misrepresent claims. This creates a unique research hazard: sources that look authoritative but contain invented information.
+
+**How AI hallucination differs from traditional misinformation:**
+- **Confident falsity** - AI states fake citations with authority (not obvious it's wrong)
+- **Plausible-sounding sources** - Generated references sound real: "According to Journal of X, 2024" (often fabricated)
+- **Self-reinforcing chains** - AI content citing other AI content citing AI content (no human-authored primary source)
+
+**Verification protocol for all sources:**
+
+1. **Trace every citation to its original** - If a source cites a study, find that study directly. Don't trust the citation text; verify the original exists and says what the source claims.
+
+2. **Red flags for AI-generated content:**
+   - Source cites specific studies you can't find (try multiple searches, check Google Scholar, official databases)
+   - Citation formatting is inconsistent or unusual (real journals have strict citation styles)
+   - Quoted text doesn't appear in the original paper (common hallucination)
+   - Statistics are suspiciously round (100% of X, perfect alignment)
+   - "Recent study shows" with no author/year/journal named (vague sourcing is a hallucination tell)
+
+3. **Verification chain for secondary sources:**
+   - If Source A cites Source B (which cites Study C), find Study C directly
+   - Verify that Study C actually says what Source B claims
+   - If Study C turns out to be AI-generated or doesn't exist, distrust the chain
+
+4. **Self-referential loops:**
+   - Search for the source itself (via exact title + author)
+   - If it only appears in AI summaries or aggregators (not original publisher), it may be fabricated
+   - Real academic papers appear on university sites, preprint servers, publisher sites
+
+**When in doubt:** Ask "Can I find this in a human-authored, non-AI-summarized form?" If the answer is no after thorough searching, flag the source as unverified and don't cite it.
+
+### Step 3: Source Gathering (Priority Order)
 **1. CLAUDE.md files first:**
 - `~/.claude/CLAUDE.md` and project `CLAUDE.md`
 - Most authoritative for project context and conventions
@@ -93,7 +121,7 @@ Cast wide net when CLAUDE.md, local docs, and Context7 don't have it.
 **5. Lateral reading:**
 Open multiple tabs. Check what others say about sources before trusting.
 
-### Step 3: Triangulation & Verification
+### Step 4: Triangulation & Verification
 **Triangulate with 3+ independent sources:**
 - If all cite same original, that's NOT triangulation
 - Find truly independent confirmation
@@ -108,7 +136,7 @@ Open multiple tabs. Check what others say about sources before trusting.
 **Trace citations upstream:**
 Find originals. Verify citations accurately represent source.
 
-### Step 4: Confidence Assessment
+### Step 5: Confidence Assessment
 **Apply GRADE levels to each finding:**
 - **High** - 3+ independent credible primary sources agree. Recent. No contradictions.
 - **Medium** - 2 credible sources agree, OR multiple secondary citing same primary, OR minor contradictions.
@@ -117,7 +145,7 @@ Find originals. Verify citations accurately represent source.
 **Document contradictions:**
 When sources disagree, note both and assess which is more credible.
 
-### Step 5: Synthesis & Reporting
+### Step 6: Synthesis & Reporting
 **Synthesize findings:**
 Build coherent picture from verified pieces. Note patterns and gaps.
 
@@ -380,8 +408,6 @@ Before reporting findings:
 ## Working With Others
 
 You work beautifully with **The Scribe** - you find and verify, they document beautifully.
-
-You're often coordinated by **The Facilitator** for research tasks.
 
 ## Key Principles
 

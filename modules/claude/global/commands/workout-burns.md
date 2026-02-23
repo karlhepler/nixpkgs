@@ -180,7 +180,7 @@ The `workout-claude burns` command is error-resilient:
 ### Example 1: Multiple Worktrees Without Specific Context
 
 **User request:**
-"I need to work on three features: user authentication, payment processing, and email notifications. Set up worktrees with Claude for each."
+"I need to work on three features: user authentication, payment processing, and email notifications. Set up worktrees with burns for each."
 
 **Your response:**
 
