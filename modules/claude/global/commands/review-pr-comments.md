@@ -9,6 +9,23 @@ keep-coding-instructions: true
 
 **Purpose:** Systematically review and respond to all unresolved PR comments that you haven't replied to yet.
 
+## Hard Prerequisites
+
+**Before anything else: verify required permissions are in the project's `permissions.allow`.**
+
+Due to a known Claude Code bug ([GitHub #5140](https://github.com/anthropics/claude-code/issues/5140)), global `~/.claude/settings.json` permissions are **not** inherited by projects with their own `permissions.allow` -- project settings replace globals entirely. To verify: read `.claude/settings.json` or `.claude/settings.local.json` in the project root and confirm each required permission appears in the `permissions.allow` array.
+
+**Required:**
+- `Bash(git add *)`
+- `Bash(git commit *)`
+- `Bash(git push *)`
+- `Bash(gh api --method POST *)`
+
+This skill fixes code, commits, pushes, and replies to PR comments via the GitHub API. Without these permissions, the fix-commit-push-reply workflow silently fails in `dontAsk` mode.
+
+**If any are missing:** Stop immediately. Do not start work. Surface to the staff engineer:
+> "Blocked: One or more required permissions (`Bash(git add *)`, `Bash(git commit *)`, `Bash(git push *)`, `Bash(gh api --method POST *)`) are missing from `permissions.allow`. Add them before delegating review-pr-comments."
+
 ## When to Use
 
 Activate this skill when the user asks to:

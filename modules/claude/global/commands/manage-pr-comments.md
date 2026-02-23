@@ -10,6 +10,19 @@ allowed-tools:
 
 **Purpose:** Efficiently manage PR comments and review threads using the `prc` CLI tool, which provides GraphQL-powered operations for filtering, replying to, and resolving comment threads.
 
+## Hard Prerequisites
+
+**Before anything else: verify required permissions are in the project's `permissions.allow`.**
+
+Due to a known Claude Code bug ([GitHub #5140](https://github.com/anthropics/claude-code/issues/5140)), global `~/.claude/settings.json` permissions are **not** inherited by projects with their own `permissions.allow` -- project settings replace globals entirely. To verify: read `.claude/settings.json` or `.claude/settings.local.json` in the project root and confirm each required permission appears in the `permissions.allow` array.
+
+**Required:** `Bash(prc *)`
+
+This skill relies entirely on the `prc` CLI for listing, replying to, resolving, and collapsing PR comment threads. Without this permission, every `prc` command silently fails in `dontAsk` mode.
+
+**If missing:** Stop immediately. Do not start work. Surface to the staff engineer:
+> "Blocked: `Bash(prc *)` is missing from `permissions.allow`. Add it before delegating manage-pr-comments."
+
 ## When to Use This Skill
 
 Activate when the user asks to:

@@ -9,6 +9,19 @@ keep-coding-instructions: true
 
 **Purpose:** Automate creation of multiple git worktrees with dedicated TMUX windows and staff (Claude Code) instances for parallel development workflows.
 
+## Hard Prerequisites
+
+**Before anything else: verify required permissions are in the project's `permissions.allow`.**
+
+Due to a known Claude Code bug ([GitHub #5140](https://github.com/anthropics/claude-code/issues/5140)), global `~/.claude/settings.json` permissions are **not** inherited by projects with their own `permissions.allow` -- project settings replace globals entirely. To verify: read `.claude/settings.json` or `.claude/settings.local.json` in the project root and confirm each required permission appears in the `permissions.allow` array.
+
+**Required:**
+- `Bash(workout *)` -- needed to create git worktrees
+- `Bash(tmux *)` -- needed to create TMUX windows for each worktree
+
+**If any are missing:** Stop immediately. Do not start work. Surface to the staff engineer:
+> "Blocked: Required permissions (`Bash(workout *)`, `Bash(tmux *)`) are missing from `permissions.allow`. Add them before delegating workout-staff."
+
 ## When to Use
 
 Activate this skill when the user asks to:
