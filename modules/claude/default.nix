@@ -617,8 +617,8 @@ in {
             "Bash(pnpm why *)"
             "Bash(pnpm audit *)"
 
-            # pnpm test runner (global - vitest should be runnable in any project)
-            "Bash(pnpm vitest *)"
+            # pnpm test runner (global - run-only mode; watch/interactive excluded to reduce attack surface)
+            "Bash(pnpm vitest run *)"
 
             # Category C - uv (Python tooling, read-only)
             "Bash(uv pip list *)"
@@ -672,8 +672,6 @@ in {
             "Bash(node --version *)"
             "Bash(python3 --version *)"
 
-            # Worktree navigation (cd into ~/worktrees/ - organized worktree directory)
-            "Bash(cd ${user.homeDirectory}/worktrees *)"
           ];
 
           # ============================================================================
