@@ -14,12 +14,15 @@ Usage:
     smithers <url>    # Use specific PR URL
     smithers --max-ralph-iterations N 123  # Custom Ralph iterations
     smithers --max-iterations N 123        # Custom watch cycles
+    smithers --expunge 123                 # Delete .ralph memory, then watch
 
 Options:
     --max-ralph-iterations N    How many times to ask Ralph to fix issues (default: 4)
                                 Can also set via SMITHERS_MAX_RALPH_ITERATIONS env var
     --max-iterations N          How many CI check cycles to monitor (default: 4)
                                 Can also set via SMITHERS_MAX_ITERATIONS env var
+    --expunge                   Delete .ralph memory directory before starting for a
+                                clean-slate restart (uses trash CLI, not rm -rf)
     Priority: CLI flag > env var > default
 """
 
@@ -1825,8 +1828,29 @@ def main():
         default=None,
         help=f"Max watch loop cycles (default: {DEFAULT_MAX_CYCLES}). Override with SMITHERS_MAX_ITERATIONS env var"
     )
+    parser.add_argument(
+        "--expunge",
+        action="store_true",
+        default=False,
+        help="Delete .ralph memory directory before starting for a clean-slate restart"
+    )
 
     args = parser.parse_args()
+
+    # Expunge .ralph memory directory if requested
+    if args.expunge:
+        ralph_dir = ".ralph"
+        if os.path.exists(ralph_dir):
+            print("Expunging .ralph memory...", flush=True)
+            result = subprocess.run(["trash", ralph_dir], check=False)
+            if result.returncode != 0:
+                print(
+                    f"Warning: trash command exited with code {result.returncode}. "
+                    "Continuing anyway.",
+                    file=sys.stderr,
+                    flush=True
+                )
+        # .ralph does not exist — silently continue
 
     # Determine max iterations: CLI flag > env var > default
     max_ralph_invocations = args.max_ralph_iterations
