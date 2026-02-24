@@ -1032,10 +1032,132 @@
       }
     },
     {
+      "id": 19,
+      "type": "table",
+      "title": "Turn Statistics by Agent Type",
+      "gridPos": { "x": 0, "y": 45, "w": 24, "h": 8 },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawQueryText": "SELECT role, MIN(turns) as min_turns, MAX(turns) as max_turns, ROUND(AVG(turns), 1) as avg_turns, (SELECT turns FROM agent_metrics am2 WHERE am2.role = am.role AND am2.role != 'parent' ORDER BY turns LIMIT 1 OFFSET (SELECT CAST(COUNT(*) * 0.95 AS INTEGER) FROM agent_metrics am3 WHERE am3.role = am.role)) as p95_turns, COUNT(*) as sample_count FROM agent_metrics am WHERE role != 'parent' GROUP BY role ORDER BY avg_turns DESC",
+          "queryText": "SELECT role, MIN(turns) as min_turns, MAX(turns) as max_turns, ROUND(AVG(turns), 1) as avg_turns, (SELECT turns FROM agent_metrics am2 WHERE am2.role = am.role AND am2.role != 'parent' ORDER BY turns LIMIT 1 OFFSET (SELECT CAST(COUNT(*) * 0.95 AS INTEGER) FROM agent_metrics am3 WHERE am3.role = am.role)) as p95_turns, COUNT(*) as sample_count FROM agent_metrics am WHERE role != 'parent' GROUP BY role ORDER BY avg_turns DESC",
+          "queryType": "table",
+          "timeColumns": [],
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true,
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "role" },
+            "properties": [
+              { "id": "displayName", "value": "Agent Type" },
+              { "id": "custom.width", "value": 150 }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "min_turns" },
+            "properties": [
+              { "id": "displayName", "value": "Min" },
+              { "id": "custom.width", "value": 80 }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "max_turns" },
+            "properties": [
+              { "id": "displayName", "value": "Max" },
+              { "id": "custom.width", "value": 80 }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "avg_turns" },
+            "properties": [
+              { "id": "displayName", "value": "Avg" },
+              { "id": "custom.width", "value": 80 },
+              { "id": "decimals", "value": 1 },
+              {
+                "id": "custom.cellOptions",
+                "value": { "type": "color-background" }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "color": "green", "value": null },
+                    { "color": "yellow", "value": 20 },
+                    { "color": "red", "value": 50 }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "p95_turns" },
+            "properties": [
+              { "id": "displayName", "value": "p95" },
+              { "id": "custom.width", "value": 80 }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "sample_count" },
+            "properties": [
+              { "id": "displayName", "value": "Samples" },
+              { "id": "custom.width", "value": 90 }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": ["sum"],
+          "countRows": false,
+          "fields": ""
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Avg",
+            "desc": true
+          }
+        ]
+      },
+      "transformations": []
+    },
+    {
       "id": 101,
       "type": "row",
       "title": "Quality & Efficiency",
-      "gridPos": { "x": 0, "y": 45, "w": 24, "h": 1 },
+      "gridPos": { "x": 0, "y": 53, "w": 24, "h": 1 },
       "collapsed": false,
       "datasource": null,
       "panels": []
@@ -1044,7 +1166,7 @@
       "id": 16,
       "type": "barchart",
       "title": "Error Rate by Agent Type",
-      "gridPos": { "x": 0, "y": 46, "w": 8, "h": 8 },
+      "gridPos": { "x": 0, "y": 54, "w": 8, "h": 8 },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -1119,7 +1241,7 @@
       "id": 17,
       "type": "barchart",
       "title": "Token Efficiency (Cost per Tool Call)",
-      "gridPos": { "x": 8, "y": 46, "w": 8, "h": 8 },
+      "gridPos": { "x": 8, "y": 54, "w": 8, "h": 8 },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -1182,7 +1304,7 @@
       "id": 18,
       "type": "barchart",
       "title": "Latency Distribution by Agent Type",
-      "gridPos": { "x": 16, "y": 46, "w": 8, "h": 8 },
+      "gridPos": { "x": 16, "y": 54, "w": 8, "h": 8 },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
