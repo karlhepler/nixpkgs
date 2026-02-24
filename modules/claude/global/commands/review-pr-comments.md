@@ -109,7 +109,7 @@ For each comment that needs a reply:
 **1. Read the comment:**
 ```bash
 jq --slurp -r '.[] |
-  "ID: \(.id)\nAuthor: \(.author)\nis_bot: \(.is_bot)\nPath: \(.path):\(.line // .original_position)\n\(.body)\n---"' /tmp/unreplied_comments.json
+  "ID: \(.id)\nAuthor: \(.author)\nis_bot: \(.is_bot)\nPath: \(.path):\(.line)\n\(.body)\n---"' /tmp/unreplied_comments.json
 ```
 
 **2. Identify comment author type (2-tier detection):**
@@ -128,7 +128,7 @@ Some bots are "machine users" — GitHub classifies them as `User` type, so prc 
 **When uncertain:** Treat as human. The cost of being curt with a real person outweighs the cost of being extra careful with a bot.
 
 **3. Read the code:**
-- Use Read tool on `.path` at line `.line` or `.original_position`
+- Use Read tool on `.path` at line `.line`
 - Get surrounding context (±10 lines)
 - Understand what code is doing
 
