@@ -724,6 +724,7 @@ Did you modify any code files?
 - [ ] **Changes are pushed** - If code was modified (git push completed)
 - [ ] **Summary provided** - User knows what was accomplished
 - [ ] **No "verify CI" tasks created** - Smithers handles CI monitoring
+- [ ] **Loop completed** - Ran `ralph emit LOOP_COMPLETE` (if running inside Ralph's event loop)
 
 **If ANY item unchecked → DO NOT EXIT. Complete it first.**
 
@@ -738,11 +739,20 @@ Did you modify any code files?
 - If you exit without pushing, your work is invisible to the monitoring system
 
 **Common mistake to avoid:**
-- ❌ Completing work → Emitting loop.complete → Exiting (forgot to push!)
-- ✅ Completing work → Committing → Pushing → Exiting
+- ❌ Completing work → Printing "LOOP_COMPLETE" as text → Exiting (wrong — must use ralph emit)
+- ✅ Completing work → Committing → Pushing → `ralph emit LOOP_COMPLETE` → Exiting
+
+**How to complete the loop:**
+
+When all work is done and you are running inside Ralph's event loop, emit completion via:
+```bash
+ralph emit LOOP_COMPLETE
+```
+
+This is a structured JSONL event — do NOT print "LOOP_COMPLETE" as plain text. The `ralph emit` CLI is the only correct way to signal loop completion.
 
 **Examples:**
-- ✅ Fixed validation bug → Run tests → Commit → Push → Exit
-- ✅ Added new feature → Run tests → Commit → Push → Exit
-- ✅ Researched issue, found no code changes needed → Exit (no commit needed)
-- ❌ Fixed validation bug → Run tests → Exit (WRONG - forgot to push!)
+- ✅ Fixed validation bug → Run tests → Commit → Push → `ralph emit LOOP_COMPLETE` → Exit
+- ✅ Added new feature → Run tests → Commit → Push → `ralph emit LOOP_COMPLETE` → Exit
+- ✅ Researched issue, found no code changes needed → `ralph emit LOOP_COMPLETE` → Exit
+- ❌ Fixed validation bug → Run tests → Exit (WRONG - forgot to push and emit!)

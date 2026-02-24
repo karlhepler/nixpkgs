@@ -29,6 +29,7 @@ let
     event_loop:
       prompt_file: "PROMPT.md"
       completion_promise: "LOOP_COMPLETE"
+      starting_event: "loop.start"
       max_iterations: 50
 
     cli:
@@ -286,6 +287,7 @@ in {
 
             # Claude scratchpad - required for debugger ledger and project plan persistence across rounds
             "Write(~/.claude/scratchpad/**)"
+            "Edit(~/.claude/scratchpad/**)"
 
             # Context7 MCP - Auto-approve all documentation queries
             "mcp__context7__resolve-library-id"
