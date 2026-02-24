@@ -296,6 +296,12 @@ def parse_transcript(transcript_path: str) -> dict:
                         continue
                     tool_name = block.get("name", "unknown")
                     tool_id = block.get("id", "")
+                    # For Bash tools, enrich name with the command being run
+                    if tool_name == "Bash":
+                        command = block.get("input", {}).get("command", "")
+                        if command:
+                            truncated = command[:50] + "..." if len(command) > 50 else command
+                            tool_name = f"Bash:{truncated}"
                     if tool_name not in tools:
                         tools[tool_name] = {"calls": 0, "errors": 0}
                     tools[tool_name]["calls"] += 1
@@ -357,12 +363,15 @@ def lookup_kanban_session(working_directory: str, session_id: str):
     """
     Read {working_directory}/.kanban/sessions.json and return the friendly
     session name for session_id. Returns None on any failure.
+
+    sessions.json keys are the first 8 characters of the Claude session UUID
+    (matching how kanban session-hook stores them via resolve_session_name).
     """
     try:
         sessions_path = Path(working_directory) / ".kanban" / "sessions.json"
         with open(sessions_path, "r", encoding="utf-8") as fh:
             sessions = json.load(fh)
-        return sessions.get(session_id)
+        return sessions.get(session_id[:8])
     except Exception:
         return None
 
