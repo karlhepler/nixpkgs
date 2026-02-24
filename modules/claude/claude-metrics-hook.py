@@ -551,7 +551,7 @@ def main() -> None:
 
     session_id = payload.get("session_id", "")
     agent_id = payload.get("agent_id") or ""
-    working_directory = os.getcwd()
+    working_directory = payload.get("cwd") or os.getcwd()
     kanban_session = lookup_kanban_session(working_directory, session_id)
     print(
         f"DEBUG kanban: cwd={working_directory}, session_id={session_id}, "
