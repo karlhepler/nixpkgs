@@ -37,8 +37,7 @@ let
 
     hats:
       ralph-coordinator:
-        emoji: "🎭"
-        name: "Ralph Coordinator"
+        name: "🎭 ralph"
         description: "Sequential coordinator who executes work directly via Skill tool"
         triggers: ["loop.start", "work.review_needed", "task.blocked"]
         publishes: ["research.needed", "implementation.needed", "work.approved", "LOOP_COMPLETE"]
