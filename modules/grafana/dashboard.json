@@ -249,8 +249,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT recorded_at as time, cost_usd as cost, role FROM agent_metrics ORDER BY recorded_at",
-          "queryText": "SELECT recorded_at as time, cost_usd as cost, role FROM agent_metrics ORDER BY recorded_at",
+          "rawQueryText": "SELECT recorded_at as time, cost_usd as cost FROM agent_metrics ORDER BY recorded_at",
+          "queryText": "SELECT recorded_at as time, cost_usd as cost FROM agent_metrics ORDER BY recorded_at",
           "queryType": "time series",
           "timeColumns": ["time"],
           "refId": "A"
@@ -347,7 +347,7 @@
     },
     {
       "id": 7,
-      "type": "piechart",
+      "type": "barchart",
       "title": "Cost by Model",
       "gridPos": { "x": 8, "y": 12, "w": 8, "h": 8 },
       "datasource": {
@@ -375,28 +375,30 @@
             "mode": "palette-classic"
           },
           "custom": {
-            "hideFrom": {
-              "tooltip": false,
-              "viz": false,
-              "legend": false
-            }
+            "fillOpacity": 80,
+            "lineWidth": 1
           }
         },
         "overrides": []
       },
       "options": {
-        "pieType": "pie",
-        "displayLabels": ["percent", "name"],
+        "orientation": "horizontal",
+        "xTickLabelRotation": 0,
+        "xTickLabelMaxLength": 20,
+        "groupWidth": 0.7,
+        "barWidth": 0.97,
+        "barRadius": 0,
+        "fullHighlight": false,
         "tooltip": {
           "mode": "single",
           "sort": "none"
         },
         "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true,
-          "values": ["percent", "value"]
-        }
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "xField": "model_family"
       }
     },
     {

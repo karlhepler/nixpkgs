@@ -9,6 +9,11 @@ cost, and writes one row per model to ~/.claude/metrics/claude-metrics.db.
 V2 additions: tool usage per session, session duration, turn latency, cache
 hit ratio, and tool error counts.
 
+V3 fix: UPSERT keyed on (session_id, agent_id, role, model) prevents duplicate
+rows when the hook fires multiple times per session (once per SubagentStop and
+once at final Stop). Each subsequent fire replaces the previous row with the
+latest cumulative totals from the transcript.
+
 Never exits non-zero — all errors are swallowed silently to avoid disrupting
 Claude Code's hook pipeline.
 """
@@ -69,7 +74,7 @@ CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS agent_metrics (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id TEXT NOT NULL,
-    agent_id TEXT,
+    agent_id TEXT NOT NULL DEFAULT '',
     role TEXT NOT NULL,
     recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     working_directory TEXT,
@@ -87,29 +92,22 @@ CREATE TABLE IF NOT EXISTS agent_metrics (
     avg_turn_latency_seconds REAL DEFAULT 0.0,
     cache_hit_ratio REAL DEFAULT 0.0,
     tool_calls INTEGER DEFAULT 0,
-    tool_errors INTEGER DEFAULT 0
+    tool_errors INTEGER DEFAULT 0,
+    UNIQUE(session_id, agent_id, role, model)
 )
 """
-
-# Columns added in V2 — each entry: (column_name, column_definition)
-V2_NEW_COLUMNS = [
-    ("duration_seconds", "REAL DEFAULT 0.0"),
-    ("avg_turn_latency_seconds", "REAL DEFAULT 0.0"),
-    ("cache_hit_ratio", "REAL DEFAULT 0.0"),
-    ("tool_calls", "INTEGER DEFAULT 0"),
-    ("tool_errors", "INTEGER DEFAULT 0"),
-]
 
 CREATE_TABLE_TOOL_USAGE_SQL = """
 CREATE TABLE IF NOT EXISTS agent_tool_usage (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id TEXT NOT NULL,
-    agent_id TEXT,
+    agent_id TEXT NOT NULL DEFAULT '',
     role TEXT NOT NULL,
     recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     tool_name TEXT NOT NULL,
     call_count INTEGER NOT NULL DEFAULT 0,
-    error_count INTEGER NOT NULL DEFAULT 0
+    error_count INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(session_id, agent_id, role, tool_name)
 )
 """
 
@@ -379,6 +377,23 @@ def lookup_kanban_session(working_directory: str, session_id: str):
 # ---------------------------------------------------------------------------
 # SQLite writer
 # ---------------------------------------------------------------------------
+def _needs_recreation(conn: sqlite3.Connection) -> bool:
+    """
+    Return True if agent_metrics lacks the UNIQUE constraint introduced in V3.
+
+    SQLite encodes inline UNIQUE constraints as auto-named indexes with sql=NULL
+    (e.g. sqlite_autoindex_agent_metrics_1). We detect presence of the V3
+    constraint by checking whether any such autoindex exists on agent_metrics,
+    which only appears after the UNIQUE clause is added to the DDL.
+    """
+    cur = conn.execute(
+        "SELECT COUNT(*) FROM sqlite_master "
+        "WHERE type='index' AND tbl_name='agent_metrics' "
+        "AND name LIKE 'sqlite_autoindex_%'"
+    )
+    return cur.fetchone()[0] == 0
+
+
 def open_db() -> sqlite3.Connection:
     """Open (and migrate) the metrics database."""
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -386,49 +401,23 @@ def open_db() -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=5000")
 
-    # Create tables (fresh DB path)
+    # V3 migration: if the unique constraint on agent_metrics is missing, drop
+    # and recreate both tables so the new DDL (with UNIQUE) takes effect.
+    # This is a one-time operation on existing databases.
+    try:
+        existing = conn.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='agent_metrics'"
+        ).fetchone()[0]
+        if existing and _needs_recreation(conn):
+            conn.execute("DROP TABLE IF EXISTS agent_metrics")
+            conn.execute("DROP TABLE IF EXISTS agent_tool_usage")
+            conn.commit()
+    except sqlite3.OperationalError:
+        pass
+
+    # Create tables (fresh DB or post-migration)
     conn.execute(CREATE_TABLE_SQL)
     conn.execute(CREATE_TABLE_TOOL_USAGE_SQL)
-
-    # V2 migration: add new columns to agent_metrics if they don't exist yet.
-    # sqlite3 raises OperationalError when a column already exists — that's fine.
-    for col_name, col_def in V2_NEW_COLUMNS:
-        try:
-            conn.execute(
-                f"ALTER TABLE agent_metrics ADD COLUMN {col_name} {col_def}"
-            )
-        except sqlite3.OperationalError:
-            pass  # Column already exists — no-op
-
-    # Cost calculation fix: recalculate inflated costs from early bug.
-    # Early data had cache_read/creation tokens inflated by ~50-1000x.
-    # Safest migration: recalculate using only input/output tokens (set cache to 0)
-    # since the cache token values in the DB are unreliable.
-    try:
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT id, input_tokens, output_tokens, model_family
-            FROM agent_metrics
-            WHERE cost_usd > 50
-        """)
-        inflated_rows = cursor.fetchall()
-
-        if inflated_rows:
-            for row_id, in_tok, out_tok, family in inflated_rows:
-                prices = PRICING.get(family, PRICING["unknown"])
-                # Recalculate using only input/output (cache tokens had scaling bug)
-                corrected_cost = (
-                    in_tok * prices["input"] / 1_000_000.0
-                    + out_tok * prices["output"] / 1_000_000.0
-                )
-                cursor.execute(
-                    "UPDATE agent_metrics SET cost_usd = ? WHERE id = ?",
-                    (corrected_cost, row_id),
-                )
-        conn.commit()
-    except sqlite3.OperationalError:
-        # Table might not exist yet (first run) — that's fine
-        pass
 
     for idx_sql in CREATE_INDEX_SQL:
         conn.execute(idx_sql)
@@ -440,7 +429,7 @@ def open_db() -> sqlite3.Connection:
 def write_metrics(
     conn: sqlite3.Connection,
     session_id: str,
-    agent_id,
+    agent_id: str,
     role: str,
     working_directory: str,
     kanban_session,
@@ -450,8 +439,13 @@ def write_metrics(
     avg_turn_latency_seconds: float,
 ) -> None:
     """
-    Insert one row per model into agent_metrics and one row per tool_name
+    Upsert one row per model into agent_metrics and one row per tool_name
     into agent_tool_usage.
+
+    INSERT OR REPLACE ensures that repeated hook firings for the same
+    (session_id, agent_id, role, model) update the existing row rather than
+    appending a new one. The recorded_at DEFAULT expression fires on every
+    replace, so the timestamp reflects the latest hook invocation.
     """
     for model, tokens in models.items():
         family = detect_model_family(model)
@@ -464,7 +458,7 @@ def write_metrics(
 
         conn.execute(
             """
-            INSERT INTO agent_metrics (
+            INSERT OR REPLACE INTO agent_metrics (
                 session_id, agent_id, role,
                 working_directory, kanban_session,
                 model, model_family,
@@ -501,7 +495,7 @@ def write_metrics(
     for tool_name, counts in tools.items():
         conn.execute(
             """
-            INSERT INTO agent_tool_usage (
+            INSERT OR REPLACE INTO agent_tool_usage (
                 session_id, agent_id, role,
                 tool_name, call_count, error_count
             ) VALUES (?, ?, ?, ?, ?, ?)
@@ -536,7 +530,7 @@ def main() -> None:
         transcript_path = payload.get("transcript_path", "")
 
     session_id = payload.get("session_id", "")
-    agent_id = payload.get("agent_id") or None
+    agent_id = payload.get("agent_id") or ""
     working_directory = os.getcwd()
     kanban_session = lookup_kanban_session(working_directory, session_id)
 
