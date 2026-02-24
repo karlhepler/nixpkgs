@@ -408,6 +408,14 @@ What kind of work?
 └─ PR threads need management → /manage-pr-comments
 ```
 
+### /researcher Usage Guidance (Rare Skill)
+
+**Use `/researcher` ONLY when the task genuinely requires external information not available in the codebase or PR context** -- e.g., "what does this third-party API do?", "is there an existing library for X?", "what are the compliance requirements for Y?"
+
+- Do NOT use for code investigation -- use the relevant `/swe-*` skill instead (they can read code, grep, and trace logic)
+- Do NOT use speculatively -- only when you have a specific question requiring external sources
+- Most tasks should never need `/researcher`. When in doubt, a SWE skill is almost always the right choice.
+
 ### When to Combine Skills Sequentially
 
 **When the task matches these patterns, invoke multiple skills in sequence:**
@@ -663,32 +671,48 @@ Work complete?
 
 ---
 
-## Final Exit Criteria - Pull Request Requirement
+## Mandatory Review (Before Exit)
 
-**When ALL work is complete, check your prompt for "Pull Request Requirement" section.**
+**Required after completing implementation work, BEFORE `ralph emit LOOP_COMPLETE`.** Check your changes against the tier tables below and invoke the applicable review skills sequentially.
 
-### If prompt says "No pull request exists yet"
+**How it works:** You invoke review skills DIRECTLY via Skill tool (same as implementation skills). The reviewer skill runs in your session, reviews the work, and returns findings. Fix any issues before proceeding.
 
-You MUST create a PR before exiting:
+**Tier 1 (Always Mandatory):**
 
-1. **Commit all changes** - Use `/commit` skill if needed
-2. **Create PR:**
-   ```bash
-   gh pr create --title "Brief summary" --body "Detailed description of changes"
-   ```
-3. **Verify PR created** - Check output for PR number/URL
-4. **THEN exit**
+| Change Type | Invoke These Skills |
+|-------------|-------------------|
+| Auth/AuthZ changes | `/swe-security` + `/swe-backend` |
+| Financial/billing code | `/finance` + `/swe-security` |
+| Infrastructure (K8s, Terraform, cloud) | `/swe-infra` + `/swe-security` |
+| Database schema with PII | `/swe-backend` + `/swe-security` |
+| CI/CD changes | `/swe-devex` + `/swe-security` |
 
-### If prompt says "Pull request already exists"
+**Tier 2 (High-Risk -- invoke if applicable):**
 
-- ✅ Summarize work completed
-- ✅ Exit (PR is already being watched)
+| Change Type | Invoke These Skills |
+|-------------|-------------------|
+| New API endpoints | `/swe-backend` |
+| Third-party integrations with PII/payments | `/swe-backend` + `/swe-security` |
+| Performance-sensitive changes | `/swe-sre` |
+| Database migrations | `/swe-backend` |
 
-**Why this matters:** Burns workflow is:
-1. User runs `burns` → completes work → creates PR
-2. User runs `smithers` → watches that PR autonomously
+**Tier 3 (Recommended):**
 
-The prompt explicitly tells you whether PR creation is required based on how burns was invoked (`--pr` flag).
+| Change Type | Invoke These Skills |
+|-------------|-------------------|
+| Significant UI changes | `/ux-designer` or `/swe-frontend` |
+| Multi-file refactors | Domain expert `/swe-*` skill |
+
+### Review Workflow
+
+```
+Implementation complete?
+  ├─ Check Tier 1 table → Match? → MUST invoke listed skills for review
+  ├─ Check Tier 2 table → Match? → Invoke listed skills for review
+  ├─ Check Tier 3 table → Match? → Invoke if time/scope allows
+  ├─ Fix any issues found by reviewers
+  └─ THEN proceed to commit → push → ralph emit LOOP_COMPLETE
+```
 
 ---
 
@@ -738,39 +762,17 @@ Did you modify any code files?
 
 - [ ] **Work is complete** - All tasks finished, nothing half-done
 - [ ] **Local tests passed** - Lint, type-check, unit tests all green
+- [ ] **Mandatory reviews completed** - Checked tier table, invoked required review skills (see Mandatory Review section)
 - [ ] **Changes are committed** - If code was modified (git status clean)
 - [ ] **Changes are pushed** - If code was modified (git push completed)
 - [ ] **Summary provided** - User knows what was accomplished
 - [ ] **No "verify CI" tasks created** - Smithers handles CI monitoring
-- [ ] **Loop completed** - Ran `ralph emit LOOP_COMPLETE` (MANDATORY — the loop does not terminate until this is emitted)
+- [ ] **Loop completed** - Ran `ralph emit LOOP_COMPLETE` (see MANDATORY EXIT REQUIREMENT at top of file)
 
 **If ANY item unchecked → DO NOT EXIT. Complete it first.**
 
 **Quick self-test:**
 - "Did I modify code?" → YES → "Did I push?" → If NO, push now!
 - "Did I create any 'verify CI' tasks?" → If YES, delete them!
+- "Did I run mandatory reviews per the tier table?" → If NO, check now!
 - "Can Smithers see my changes?" → If NO, push now!
-
-**Why this matters:**
-- Smithers/Burns workflow depends on changes being pushed
-- Smithers watches the PR for your pushed changes
-- If you exit without pushing, your work is invisible to the monitoring system
-
-**Common mistake to avoid:**
-- ❌ Completing work → Printing "LOOP_COMPLETE" as text → Exiting (wrong — must use ralph emit)
-- ✅ Completing work → Committing → Pushing → `ralph emit LOOP_COMPLETE` → Exiting
-
-**How to complete the loop:**
-
-When all work is done, emit completion via:
-```bash
-ralph emit LOOP_COMPLETE
-```
-
-This is a structured JSONL event — do NOT print "LOOP_COMPLETE" as plain text. The `ralph emit` CLI is the ONLY correct way to signal loop completion. The loop does not terminate until this command runs.
-
-**Examples:**
-- ✅ Fixed validation bug → Run tests → Commit → Push → `ralph emit LOOP_COMPLETE` → Exit
-- ✅ Added new feature → Run tests → Commit → Push → `ralph emit LOOP_COMPLETE` → Exit
-- ✅ Researched issue, found no code changes needed → `ralph emit LOOP_COMPLETE` → Exit
-- ❌ Fixed validation bug → Run tests → Exit (WRONG - forgot to push and emit!)
