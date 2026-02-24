@@ -1,0 +1,768 @@
+{
+  "__inputs": [],
+  "__requires": [
+    {
+      "type": "datasource",
+      "id": "frser-sqlite-datasource",
+      "name": "SQLite",
+      "version": "3.8.2"
+    }
+  ],
+  "annotations": {
+    "list": []
+  },
+  "description": "Claude Code agent metrics dashboard — cost, tokens, turns, and session analytics",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Total Cost (All Time)",
+      "gridPos": { "x": 0, "y": 0, "w": 8, "h": 4 },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawSql": "SELECT COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 5 },
+              { "color": "red", "value": 20 }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Total Cost (Today)",
+      "gridPos": { "x": 8, "y": 0, "w": 8, "h": 4 },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawSql": "SELECT COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics WHERE date(recorded_at) = date('now')",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 5 },
+              { "color": "red", "value": 20 }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Sessions Today",
+      "gridPos": { "x": 16, "y": 0, "w": 8, "h": 4 },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawSql": "SELECT COUNT(DISTINCT session_id) as sessions FROM agent_metrics WHERE date(recorded_at) = date('now')",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Cost Over Time",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawSql": "SELECT date(recorded_at) as time, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics GROUP BY date(recorded_at) ORDER BY time",
+          "refId": "A",
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "spanNulls": false,
+            "insertNulls": false,
+            "showPoints": "auto",
+            "pointSize": 5,
+            "drawStyle": "line",
+            "lineInterpolation": "linear"
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Session Timeline",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawSql": "SELECT recorded_at as time, cost_usd as cost, role FROM agent_metrics ORDER BY recorded_at",
+          "refId": "A",
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4,
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 5,
+            "gradientMode": "none",
+            "spanNulls": false,
+            "insertNulls": false,
+            "showPoints": "always",
+            "pointSize": 5,
+            "drawStyle": "points",
+            "lineInterpolation": "linear"
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": "barchart",
+      "title": "Cost by Agent Type",
+      "gridPos": { "x": 0, "y": 12, "w": 8, "h": 8 },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawSql": "SELECT role, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics WHERE role != 'parent' GROUP BY role ORDER BY cost DESC",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xTickLabelRotation": 0,
+        "xTickLabelMaxLength": 20,
+        "groupWidth": 0.7,
+        "barWidth": 0.97,
+        "barRadius": 0,
+        "fullHighlight": false,
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "xField": "role"
+      }
+    },
+    {
+      "id": 7,
+      "type": "piechart",
+      "title": "Cost by Model",
+      "gridPos": { "x": 8, "y": 12, "w": 8, "h": 8 },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawSql": "SELECT model_family, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics GROUP BY model_family ORDER BY cost DESC",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "pieType": "pie",
+        "displayLabels": ["percent", "name"],
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "values": ["percent", "value"]
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "barchart",
+      "title": "Cost by Project",
+      "gridPos": { "x": 16, "y": 12, "w": 8, "h": 8 },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawSql": "SELECT COALESCE(REPLACE(working_directory, rtrim(working_directory, replace(working_directory, '/', '')), '~/'), working_directory) as project, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics GROUP BY working_directory ORDER BY cost DESC LIMIT 10",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xTickLabelRotation": 0,
+        "xTickLabelMaxLength": 30,
+        "groupWidth": 0.7,
+        "barWidth": 0.97,
+        "barRadius": 0,
+        "fullHighlight": false,
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "xField": "project"
+      }
+    },
+    {
+      "id": 9,
+      "type": "barchart",
+      "title": "Token Breakdown",
+      "gridPos": { "x": 0, "y": 20, "w": 12, "h": 8 },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawSql": "SELECT model_family, SUM(input_tokens) as input_tok, SUM(output_tokens) as output_tok, SUM(cache_read_tokens) as cache_tok FROM agent_metrics GROUP BY model_family",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "input_tok" },
+            "properties": [
+              { "id": "displayName", "value": "Input" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "output_tok" },
+            "properties": [
+              { "id": "displayName", "value": "Output" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "cache_tok" },
+            "properties": [
+              { "id": "displayName", "value": "Cache Read" }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "orientation": "vertical",
+        "xTickLabelRotation": 0,
+        "xTickLabelMaxLength": 20,
+        "groupWidth": 0.7,
+        "barWidth": 0.97,
+        "barRadius": 0,
+        "fullHighlight": false,
+        "stacking": "normal",
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "xField": "model_family"
+      }
+    },
+    {
+      "id": 10,
+      "type": "barchart",
+      "title": "Turns by Agent Type",
+      "gridPos": { "x": 12, "y": 20, "w": 12, "h": 8 },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawSql": "SELECT role, SUM(turns) as total_turns FROM agent_metrics WHERE role != 'parent' GROUP BY role ORDER BY total_turns DESC",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xTickLabelRotation": 0,
+        "xTickLabelMaxLength": 20,
+        "groupWidth": 0.7,
+        "barWidth": 0.97,
+        "barRadius": 0,
+        "fullHighlight": false,
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "xField": "role"
+      }
+    },
+    {
+      "id": 11,
+      "type": "barchart",
+      "title": "Cost by Kanban Session",
+      "gridPos": { "x": 0, "y": 28, "w": 12, "h": 8 },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawSql": "SELECT COALESCE(kanban_session, 'unknown') as session_name, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics GROUP BY kanban_session ORDER BY cost DESC LIMIT 10",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xTickLabelRotation": 0,
+        "xTickLabelMaxLength": 20,
+        "groupWidth": 0.7,
+        "barWidth": 0.97,
+        "barRadius": 0,
+        "fullHighlight": false,
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "xField": "session_name"
+      }
+    },
+    {
+      "id": 12,
+      "type": "table",
+      "title": "Top 10 Expensive Sessions",
+      "gridPos": { "x": 12, "y": 28, "w": 12, "h": 8 },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawSql": "SELECT session_id, COALESCE(kanban_session, '') as kanban, working_directory as project, COUNT(*) as agents, SUM(turns) as total_turns, SUM(input_tokens + output_tokens) as total_tokens, ROUND(SUM(cost_usd), 4) as total_cost FROM agent_metrics GROUP BY session_id ORDER BY total_cost DESC LIMIT 10",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true,
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "session_id" },
+            "properties": [
+              { "id": "displayName", "value": "Session ID" },
+              { "id": "custom.width", "value": 180 }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "kanban" },
+            "properties": [
+              { "id": "displayName", "value": "Kanban Session" },
+              { "id": "custom.width", "value": 130 }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "project" },
+            "properties": [
+              { "id": "displayName", "value": "Project" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "agents" },
+            "properties": [
+              { "id": "displayName", "value": "Agents" },
+              { "id": "custom.width", "value": 70 }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "total_turns" },
+            "properties": [
+              { "id": "displayName", "value": "Turns" },
+              { "id": "custom.width", "value": 70 }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "total_tokens" },
+            "properties": [
+              { "id": "displayName", "value": "Tokens" },
+              { "id": "custom.width", "value": 90 }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "total_cost" },
+            "properties": [
+              { "id": "displayName", "value": "Cost" },
+              { "id": "unit", "value": "currencyUSD" },
+              { "id": "decimals", "value": 4 },
+              { "id": "custom.width", "value": 80 },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "color": "green", "value": null },
+                    { "color": "yellow", "value": 1 },
+                    { "color": "red", "value": 5 }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": ["sum"],
+          "countRows": false,
+          "fields": ""
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Cost",
+            "desc": true
+          }
+        ]
+      },
+      "transformations": []
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["claude", "metrics", "agents"],
+  "templating": { "list": [] },
+  "time": { "from": "now-7d", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Claudit \u2014 Claude Code Agent Metrics",
+  "uid": "claudit-dashboard",
+  "version": 1
+}

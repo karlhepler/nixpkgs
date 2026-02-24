@@ -70,6 +70,11 @@ let
     flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
   } (builtins.readFile ./prc.py);
 
+  # Claude Metrics Hook (tracks agent metrics on stop events)
+  claudeMetricsHookScript = pkgs.writers.writePython3Bin "claude-metrics-hook" {
+    flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
+  } (builtins.readFile ./claude-metrics-hook.py);
+
 in {
   # ============================================================================
   # Claude Code Configuration & Shell Applications
@@ -186,6 +191,14 @@ in {
         description = "PR comment management using GraphQL (list, reply, resolve, collapse)";
         mainProgram = "prc";
         homepage = "${builtins.toString ./.}/prc.py";
+      };
+    };
+
+    claude-metrics-hook = claudeMetricsHookScript // {
+      meta = {
+        description = "Hook for tracking agent metrics on stop events";
+        mainProgram = "claude-metrics-hook";
+        homepage = "${builtins.toString ./.}/claude-metrics-hook.py";
       };
     };
   };
@@ -743,11 +756,23 @@ in {
               command = "${shellapps.claude-notification-hook}/bin/claude-notification-hook";
             }];
           }];
-          Stop = [{
+          SubagentStop = [{
             hooks = [{
               type = "command";
-              command = "${shellapps.claude-complete-hook}/bin/claude-complete-hook";
+              command = "${shellapps.claude-metrics-hook}/bin/claude-metrics-hook";
             }];
+          }];
+          Stop = [{
+            hooks = [
+              {
+                type = "command";
+                command = "${shellapps.claude-complete-hook}/bin/claude-complete-hook";
+              }
+              {
+                type = "command";
+                command = "${shellapps.claude-metrics-hook}/bin/claude-metrics-hook";
+              }
+            ];
           }];
           PostToolUse = [{
             matcher = "Edit|MultiEdit|Write";
