@@ -557,7 +557,7 @@ def auto_merge_pr(pr_number: int) -> tuple:
     # Try squash first (cleaner history)
     code, stdout, squash_stderr = run_gh([
         "pr", "merge", str(pr_number),
-        "--squash", "--auto", "--delete-branch"
+        "--squash", "--auto"
     ])
     if code == 0:
         return (True, "squash merged")
@@ -570,7 +570,7 @@ def auto_merge_pr(pr_number: int) -> tuple:
     # If squash failed (e.g. repo doesn't allow squash), try regular merge
     code, stdout, stderr = run_gh([
         "pr", "merge", str(pr_number),
-        "--merge", "--auto", "--delete-branch"
+        "--merge", "--auto"
     ])
     if code == 0:
         return (True, "merged")
@@ -1510,12 +1510,13 @@ You are running in autonomous mode within: {os.getcwd()}
             path = sanitize_for_prompt(comment.get("path", ""), max_length=200)
             line = comment.get("line")
             thread_id = comment.get("thread_id", "")
+            comment_id = comment.get("id", "")
             is_resolved = comment.get("is_resolved", False)
             reply_count = comment.get("reply_count", 0)
 
             resolved_str = " [RESOLVED]" if is_resolved else ""
             sections.append(
-                f"\n**{user}** on `{path}:{line}` (thread: `{thread_id}`){resolved_str} ([link]({url})):\n```\n{body}\n```"
+                f"\n**{user}** on `{path}:{line}` (thread: `{thread_id}`, comment: `{comment_id}`){resolved_str} ([link]({url})):\n```\n{body}\n```"
             )
 
             # Show reply count if there are replies
@@ -1525,8 +1526,9 @@ You are running in autonomous mode within: {os.getcwd()}
         sections.append("""
 **Recommended Tool:** Use `prc` CLI for efficient comment management:
 - List unanswered bot comments: `prc list --bots-only --inline-only --max-replies 0`
-- Reply to specific comment: `prc reply <comment-id> "your message"`
-- Resolve discussion thread: `prc resolve <thread-id>`
+- Reply to a comment: `prc reply <numeric-comment-id> "your message"` — uses the **numeric integer** `comment` value shown above (e.g., `prc reply 2848786952 "message"`)
+- Resolve a thread: `prc resolve <thread-id>` — uses the **PRRT_ thread ID** `thread` value shown above (e.g., `prc resolve PRRT_kwABC123`)
+- **IMPORTANT:** These are two DIFFERENT identifiers. Do NOT pass the PRRT_ thread ID to `prc reply` — it takes only the numeric integer comment ID.
 - See full workflow: `/manage-pr-comments` skill
 
 All operations use GraphQL and output machine-readable JSON.
@@ -1534,8 +1536,8 @@ All operations use GraphQL and output machine-readable JSON.
 **Action:** For EACH bot comment you must:
 1. Fix the issue in code
 2. Commit and push the fix
-3. Reply to the comment thread: `prc reply <comment-id> "Fixed in commit <sha>: <explanation>"`
-4. **MANDATORY:** Resolve the thread: `prc resolve <thread-id>`
+3. Reply to the comment: `prc reply <numeric-comment-id> "Fixed in commit <sha>: <explanation>"` — use the numeric `comment` value (e.g., `2848786952`)
+4. **MANDATORY:** Resolve the thread: `prc resolve <thread-id>` — use the PRRT_ `thread` value (e.g., `PRRT_kwABC123`)
 
 **CRITICAL - Why Resolution Matters:**
 - Smithers ONLY shows threads with ZERO replies
