@@ -9,11 +9,14 @@ let
   # Plugin package
   sqlitePlugin = pkgs.grafanaPlugins.frser-sqlite-datasource;
 
-  # Plugin directory: a single derivation that holds the plugin symlinked in
+  # Plugin directory: a single derivation that holds the plugin copied in
   # Grafana's expected layout: <pluginsDir>/<plugin-id>/
+  # We use `cp -rL` (copy, following symlinks) instead of `ln -s` because
+  # Grafana's plugin loader rejects files whose resolved paths fall outside
+  # the plugins directory. Symlinks into the Nix store fail this check.
   pluginsDir = pkgs.runCommand "grafana-plugins" {} ''
     mkdir -p $out/${sqlitePlugin.pname}
-    ln -s ${sqlitePlugin}/* $out/${sqlitePlugin.pname}/
+    cp -rL ${sqlitePlugin}/. $out/${sqlitePlugin.pname}/
   '';
 
   # Provisioning datasource YAML
@@ -87,7 +90,7 @@ in {
       name = "claudit";
       runtimeInputs = [ pkgs.grafana pkgs.curl ];
       text = ''
-        GRAFANA_URL="http://claudit.local:3200"
+        GRAFANA_URL="http://claudit.local:3200/d/claudit-dashboard/claudit-claude-code-agent-metrics?orgId=1&from=now-7d&to=now&timezone=browser&refresh=30s"
         GRAFANA_HOMEPATH="${pkgs.grafana}/share/grafana"
         GRAFANA_PID=""
 
@@ -106,13 +109,38 @@ in {
               echo "Added! Continuing..."
             else
               echo "Skipping. Falling back to http://localhost:3200"
-              GRAFANA_URL="http://localhost:3200"
+              GRAFANA_URL="http://localhost:3200/d/claudit-dashboard/claudit-claude-code-agent-metrics?orgId=1&from=now-7d&to=now&timezone=browser&refresh=30s"
             fi
+          fi
+        }
+
+        # --- Loading animation ---
+        LOADING_PID=""
+        start_loading() {
+          (
+            while true; do
+              printf "\rLoading.  "
+              sleep 0.3
+              printf "\rLoading.. "
+              sleep 0.3
+              printf "\rLoading..."
+              sleep 0.3
+            done
+          ) &
+          LOADING_PID=$!
+        }
+
+        stop_loading() {
+          if [[ -n "''${LOADING_PID}" ]]; then
+            kill "''${LOADING_PID}" 2>/dev/null || true
+            wait "''${LOADING_PID}" 2>/dev/null || true
+            printf "\r             \r"  # Clear the line
           fi
         }
 
         # --- Clean shutdown on Ctrl+C ---
         cleanup() {
+          stop_loading
           echo ""
           echo "Stopping Grafana..."
           if [[ -n "''${GRAFANA_PID}" ]]; then
@@ -139,7 +167,9 @@ in {
         # --- Start ---
         check_hosts
 
-        echo "Starting Grafana..."
+        start_loading
+        sleep 0.1  # Brief delay to ensure animation starts cleanly
+
         grafana server \
           --config ${grafanaIni} \
           --homepath "''${GRAFANA_HOMEPATH}" \
@@ -156,8 +186,11 @@ in {
 
         # Wait until HTTP is ready, then open browser
         if wait_for_grafana; then
+          stop_loading
+          echo "Starting Grafana... Done!"
           open "''${GRAFANA_URL}"
         else
+          stop_loading
           echo "WARNING: Grafana did not respond within 10s. Opening browser anyway..."
           open "''${GRAFANA_URL}"
         fi
