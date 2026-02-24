@@ -549,10 +549,9 @@ def auto_merge_pr(pr_number: int) -> tuple:
     Returns:
         tuple: (success: bool, message: str)
 
-    Note: Repos requiring GitHub's merge queue feature will fail both the squash
-    and regular merge attempts here (gh returns a non-zero exit code with a message
-    like "Pull request is in a merge queue"). This is expected — the caller should
-    fall back to a Slack notification so the PR can be processed via the merge queue.
+    Note: The `--delete-branch` flag was intentionally omitted to support repos with
+    merge queue enabled. Branch cleanup is left to the repo's "Automatically delete
+    head branches" GitHub setting, avoiding merge failures in merge queue workflows.
     """
     # Try squash first (cleaner history)
     code, stdout, squash_stderr = run_gh([
@@ -1510,6 +1509,7 @@ You are running in autonomous mode within: {os.getcwd()}
             path = sanitize_for_prompt(comment.get("path", ""), max_length=200)
             line = comment.get("line")
             thread_id = comment.get("thread_id", "")
+            # "id" is the field name from prc's normalize_comments() — maps to GraphQL databaseId (numeric ID needed by prc reply)
             comment_id = comment.get("id", "")
             is_resolved = comment.get("is_resolved", False)
             reply_count = comment.get("reply_count", 0)
