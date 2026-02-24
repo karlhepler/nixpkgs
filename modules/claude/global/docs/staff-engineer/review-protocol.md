@@ -14,6 +14,7 @@ Detailed guidance for mandatory reviews, review workflows, and approval criteria
 
 - **Prompt files** (*.md in claude/*, output-styles, skills, agent definitions)
   → CREATE: AI Expert review card (two-part: delta + full prompt adherence)
+  → **Model selection:** Opus required for first reviews or full-file audits; Sonnet acceptable for narrow deltas on recently-audited files. See staff-engineer.md for details.
 
 - **Auth/AuthZ** (login, permissions, tokens, sessions, roles, access control)
   → CREATE: Security review + Backend peer review cards
