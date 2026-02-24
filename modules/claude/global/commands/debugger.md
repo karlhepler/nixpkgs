@@ -16,13 +16,13 @@ $ARGUMENTS
 
 ## Hard Prerequisite
 
-**Before anything else: verify `Write(~/.claude/scratchpad/**)` is in the user's `permissions.allow`.**
+**Before anything else: verify `Write(~/.claude/scratchpad/**)` and `Edit(~/.claude/scratchpad/**)` are in the user's `permissions.allow`.**
 
-Background agents run in dontAsk mode — Write tool calls are silently auto-denied to the user/coordinator (though the agent receives the permission error). The scratchpad ledger is the mechanism that makes cross-round debugging work. Without it, every round re-derives the same context from scratch.
+Background agents run in dontAsk mode — Write and Edit tool calls are silently auto-denied to the user/coordinator (though the agent receives the permission error). The scratchpad ledger is the mechanism that makes cross-round debugging work. Without it, every round re-derives the same context from scratch.
 
-To verify: read `~/.claude/settings.json` and confirm `Write(~/.claude/scratchpad/**)` appears in the `permissions.allow` array.
+To verify: read `~/.claude/settings.json` and confirm both `Write(~/.claude/scratchpad/**)` and `Edit(~/.claude/scratchpad/**)` appear in the `permissions.allow` array.
 
-**If this permission is missing:** Stop immediately. Do not read context, do not start Phase 1. Surface to the staff engineer: "Blocked: `Write(~/.claude/scratchpad/**)` is missing from `permissions.allow`. Add it before delegating the debugger."
+**If either permission is missing:** Stop immediately. Do not read context, do not start Phase 1. Surface to the staff engineer: "Blocked: `Write(~/.claude/scratchpad/**)` and/or `Edit(~/.claude/scratchpad/**)` is missing from `permissions.allow`. Add both before delegating the debugger."
 
 ## Epistemic Standards
 
@@ -430,7 +430,7 @@ Confidence is bounded by data. You cannot raise confidence by reasoning alone. Y
 
 **Write is mandatory every round — fail loud if it fails:**
 - Write the ledger at the END of every round, before returning handoff. No exceptions.
-- If the Write tool returns a permission error (auto-denied in dontAsk mode — the error is returned to the agent even though it is silent to the user): STOP immediately. Do not continue the debugging session. Surface to the staff engineer: "Ledger write failed — `Write(~/.claude/scratchpad/**)` must be in `permissions.allow`. Cannot continue without it."
+- If the Write or Edit tool returns a permission error (auto-denied in dontAsk mode — the error is returned to the agent even though it is silent to the user): STOP immediately. Do not continue the debugging session. Surface to the staff engineer: "Ledger write failed — `Write(~/.claude/scratchpad/**)` and `Edit(~/.claude/scratchpad/**)` must be in `permissions.allow`. Cannot continue without them."
 - A round without a written ledger is an incomplete round.
 
 ---

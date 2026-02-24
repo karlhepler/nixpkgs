@@ -29,12 +29,12 @@ For all other planning tasks, proceed without Context7.
 
 ### 2. Scratchpad Write Permission
 
-**Required:** `Write(~/.claude/scratchpad/**)`
+**Required:** `Write(~/.claude/scratchpad/**)` and `Edit(~/.claude/scratchpad/**)`
 
-The plan document lives in `~/.claude/scratchpad/`. Without write access, the skill cannot create or update the plan -- its primary deliverable. This permission lives in the global `~/.claude/settings.json` and is pre-configured by the Nix home manager setup. Verify it's present before proceeding.
+The plan document lives in `~/.claude/scratchpad/`. Without write and edit access, the skill cannot create or update the plan -- its primary deliverable. These permissions live in the global `~/.claude/settings.json` and are pre-configured by the Nix home manager setup. Verify both are present before proceeding.
 
 **If missing:** Stop immediately. Do not start work. Surface to the staff engineer:
-> "Blocked: `Write(~/.claude/scratchpad/**)` is missing from `permissions.allow`. Add it before delegating project-planner."
+> "Blocked: `Write(~/.claude/scratchpad/**)` and/or `Edit(~/.claude/scratchpad/**)` is missing from `permissions.allow`. Add both before delegating project-planner."
 
 ## Executive Summary: The 5 Critical Rules
 
