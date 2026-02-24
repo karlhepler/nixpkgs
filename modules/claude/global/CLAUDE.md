@@ -392,9 +392,8 @@ When updating a PR description, **rewrite from scratch**. The description reflec
 - Reply directly to threads (use `/replies` endpoint, NOT `gh pr comment`)
 - Never reply if your reply is already last in thread
 - Fix → commit → push → THEN reply (include commit SHA)
-- End with: `---\n_💬 Written by [Claude Code](https://claude.ai/code)_`
 
-See `/review-pr-comments` skill for full workflow.
+See the `/review-pr-comments` skill for full workflow.
 
 ---
 

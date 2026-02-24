@@ -2,7 +2,6 @@
 name: review-pr-comments
 description: Review PR feedback and respond to code reviewers when user asks to "review PR feedback", "respond to reviewer", "address review comments", "reply to code review", "check PR feedback", or "address PR review"
 version: 1.0
-keep-coding-instructions: true
 ---
 
 # Review Pull Request Comments
@@ -20,20 +19,12 @@ Due to a known Claude Code bug ([GitHub #5140](https://github.com/anthropics/cla
 - `Bash(git commit *)`
 - `Bash(git push *)`
 - `Bash(gh api --method POST *)`
+- `Bash(gh api --method PUT *)`
 
-This skill fixes code, commits, pushes, and replies to PR comments via the GitHub API. Without these permissions, the fix-commit-push-reply workflow silently fails in `dontAsk` mode.
+This skill fixes code, commits, pushes, replies to PR comments, and resolves bot threads via the GitHub API. Without these permissions, the fix-commit-push-reply workflow silently fails in `dontAsk` mode.
 
 **If any are missing:** Stop immediately. Do not start work. Surface to the staff engineer:
-> "Blocked: One or more required permissions (`Bash(git add *)`, `Bash(git commit *)`, `Bash(git push *)`, `Bash(gh api --method POST *)`) are missing from `permissions.allow`. Add them before delegating review-pr-comments."
-
-## When to Use
-
-Activate this skill when the user asks to:
-- "Review PR comments"
-- "Reply to PR comments"
-- "Check PR feedback"
-- "Address PR review"
-- "Respond to reviewers"
+> "Blocked: One or more required permissions (`Bash(git add *)`, `Bash(git commit *)`, `Bash(git push *)`, `Bash(gh api --method POST *)`, `Bash(gh api --method PUT *)`) are missing from `permissions.allow`. Add them before delegating review-pr-comments."
 
 ## Critical Rules
 
@@ -54,9 +45,11 @@ Activate this skill when the user asks to:
 
 **Always:**
 - ✅ Reply directly to comment threads
-- ✅ Be concise, positive, curious, thankful
-- ✅ Think critically about bot suggestions
-- ✅ Trust but verify human suggestions
+- ✅ Think critically about bot suggestions — false positives are common
+- ✅ Treat human reviewers as authorities — their perspective matters
+- ✅ Ask clarifying questions for ambiguous human comments instead of assuming
+- ✅ Resolve bot threads after replying
+- ✅ Leave human threads open (conversation, not closure)
 
 ## Workflow
 
@@ -66,10 +59,10 @@ Activate this skill when the user asks to:
 # Get PR info
 REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
 PR_NUM=$(gh pr view --json number -q .number)
-USERNAME=$(gh api user -q .login)
+USERNAME=$(gh api user -q .login)  # Note: USERNAME assumes single-token GitHub auth (standard setup)
 
-# Fetch all comments
-gh api "repos/$REPO/pulls/$PR_NUM/comments" --paginate > /tmp/pr_comments.json
+# Fetch all comments with is_bot field via prc
+prc list $PR_NUM > /tmp/pr_comments.json
 
 # Filter to comments that need replies from Claude
 jq --arg user "$USERNAME" '
@@ -104,12 +97,23 @@ For each comment that needs a reply:
 **1. Read the comment:**
 ```bash
 cat /tmp/unreplied_comments.json | jq -r '.[] |
-  "ID: \(.id)\nAuthor: \(.user.login)\nPath: \(.path):\(.line // .original_position)\n\(.body)\n---"'
+  "ID: \(.id)\nAuthor: \(.user.login)\nis_bot: \(.is_bot)\nPath: \(.path):\(.line // .original_position)\n\(.body)\n---"'
 ```
 
-**2. Determine comment type:**
-- Bot comment: `user.login` matches `*bot*` or `*[bot]*`
-- Human comment: Everything else
+**2. Identify comment author type (2-tier detection):**
+
+**Tier 1 — prc detection (primary, authoritative):**
+Every comment in `prc list` output includes an `is_bot` field. If `is_bot == true`, treat as bot. This covers all GitHub App bots (e.g., `github-actions[bot]`, `dependabot[bot]`, `renovate[bot]`).
+
+**Tier 2 — Known machine user names (fallback):**
+Some bots are "machine users" — GitHub classifies them as `User` type, so prc won't mark them as bots. If `is_bot == false`, check `user.login` against this list: `codecov`, `dependabot`, `snyk`, `sonarcloud`, `renovate`, `deepsource`, `codeclimate`, `mergify`, `linear`. (Note: `dependabot` and `renovate` are already caught by Tier 1 as GitHub Apps, but their bare names appear here as a fallback for any non-App account variants Tier 1 might miss.) If matched, treat as bot.
+
+**Routing:**
+- `is_bot == true` → bot handling track
+- `is_bot == false` AND `user.login` matches known machine user names → bot handling track
+- `is_bot == false` AND no match → human handling track
+
+**When uncertain:** Treat as human. The cost of being curt with a real person outweighs the cost of being extra careful with a bot.
 
 **3. Read the code:**
 - Use Read tool on `.path` at line `.line` or `.original_position`
@@ -118,25 +122,27 @@ cat /tmp/unreplied_comments.json | jq -r '.[] |
 
 **4. Critically evaluate:**
 
-**For bot comments:**
+**For bot comments — mechanical, efficient:**
 - What is the bot claiming?
-- Read the actual code - is the claim valid?
+- Read the actual code — is the claim valid?
 - Do you have context the bot lacks?
 - Is this a false positive?
-- What's the right action?
+- Decide: fix, reject with explanation, or ignore if clearly irrelevant.
+- Bot threads: reply after any action, then **resolve the thread** (bots don't continue conversations).
 
-**For human comments:**
-- What concern are they raising?
-- Read the code - do you see the issue?
-- What edge cases might they know about?
-- Is there merit to their suggestion?
-- How should you respond?
+**For human comments — authority, dialogue:**
+- Treat the reviewer as someone whose perspective genuinely matters.
+- What concern are they raising? What might they know that you don't?
+- Read the code. Do you see the issue? Could there be an edge case you missed?
+- When the comment is ambiguous, **ask a clarifying question** rather than assuming.
+- Do NOT auto-resolve human threads — leave them open for the conversation to continue.
+- Your reply is an invitation to dialogue, not a notification that it's done.
 
 **5. Decide action:**
 - **Fix:** Implement change, commit, push, reply with commit SHA
 - **Defer:** Valid but out of scope, reply explaining why
 - **Reject:** Not applicable, reply with reasoning
-- **Discuss:** Unclear, ask clarifying question in reply
+- **Discuss:** Ambiguous or you disagree, ask a clarifying question or share your thinking and invite response
 
 ### Phase 3: Take Action (if fixing)
 
@@ -170,47 +176,78 @@ gh api --method POST \
   -f body='<your concise reply>'
 ```
 
-**Reply templates (ALWAYS include signature):**
+**For bot threads only — resolve after replying:**
 
-**Fixed:**
-```
-Good catch! Fixed in COMMIT_SHA. The issue was [X] because [Y].
-
----
-_💬 Written by [Claude Code](https://claude.ai/code)_
+```bash
+gh api --method PUT \
+  repos/$REPO/pulls/$PR_NUM/comments/COMMENT_ID/resolved \
+  -f resolved=true
 ```
 
-**Rejected (bot false positive):**
-```
-Thanks for flagging this. After checking [context the bot missed], this is actually correct because [reason].
+Do NOT resolve human threads. Leave them open.
 
----
-_💬 Written by [Claude Code](https://claude.ai/code)_
-```
+**Reply guidelines by author type:**
 
-**Rejected (human - explain reasoning):**
-```
-Thanks for the suggestion! I investigated and found [X]. I think [alternative approach] is better here because [reason]. Thoughts?
+**Bot — close the loop efficiently:**
 
----
-_💬 Written by [Claude Code](https://claude.ai/code)_
+Fixed:
+```
+Fixed in COMMIT_SHA. [One sentence on what changed.]
 ```
 
-**Deferred:**
+Rejected (bot is factually wrong):
 ```
-Great point! This is out of scope for this PR, but I've created issue #XYZ to track it.
-
----
-_💬 Written by [Claude Code](https://claude.ai/code)_
+This is correct because [specific reason the bot's analysis was incorrect].
 ```
 
-**Discussing:**
+Rejected (code is intentional, not an error):
 ```
-Interesting observation. Can you clarify [specific question]? I see [X] but wondering about [Y].
+This is intentional because [specific reason for the deviation by design].
+```
+
+After replying to a bot thread: resolve the thread.
 
 ---
-_💬 Written by [Claude Code](https://claude.ai/code)_
+
+**Human — tone requirements:**
+
+Replies to humans must be:
+- **Curious and respectful** — assume positive intent, engage with the idea
+- **Short** — 1-3 sentences maximum. No walls of text.
+- **Authentic** — sounds like a real person wrote it
+
+**Explicitly prohibited language (never use these):**
+- "good catch", "great point", "absolutely", "certainly", "of course"
+- "happy to", "I went ahead and", "I've gone ahead"
+- "rip it out", "no worries", "sounds good", "makes sense"
+- Any opener that reads like a chatbot greeting
+- Filler affirmations before the actual substance
+
+If it sounds like a chatbot wrote it, rewrite it.
+
+**Human reply templates:**
+
+Fixed:
 ```
+Fixed in COMMIT_SHA. [What changed and why in plain language.]
+```
+
+Disagreeing or offering alternative:
+```
+[Your specific concern or alternative.] [Reason.] [Optional: "What do you think?" or "Am I missing something?"]
+```
+
+Ambiguous — ask rather than assume:
+```
+[What you're uncertain about.] [Specific question to resolve it.]
+```
+
+Deferred:
+```
+[Acknowledge the validity.] Out of scope here — created #XYZ to track it.
+```
+
+Do NOT resolve human threads after replying.
 
 ### Phase 5: Verify
 
@@ -223,33 +260,32 @@ After replying to all comments:
 
 ## Key Principles
 
-**Critical Thinking for Bots:**
-- You have full codebase access - bots see only the diff
-- Bots follow patterns - you understand intent
-- False positives are common - verify every claim
+**Bots — efficient, not conversational:**
+- You have full codebase access — bots see only the diff
+- False positives are common — verify every claim before acting
 - Your judgment > bot suggestion when you have more context
+- After replying, resolve the thread — bots don't continue conversations
 
-**Trust but Verify for Humans:**
-- Humans have domain knowledge you might lack
-- They might see edge cases you missed
-- Take their concerns seriously
-- But still verify by reading code
-- Discuss respectfully if you disagree
+**Humans — authority, dialogue, no AI clichés:**
+- Treat reviewers as people whose perspective genuinely matters
+- They may have domain knowledge or edge cases you don't
+- When ambiguous, ask rather than assume
+- Leave threads open — replies are invitations to keep talking, not closures
+- Write like a real person: direct, specific, no filler
 
 **Reply Conciseness:**
-- One or two sentences maximum
-- Skip "thank you so much" - just "Thanks!"
-- Skip "I really appreciate" - just state what you did
-- Focus on substance: what changed and why
-- Be positive but not effusive
+- 1-3 sentences maximum for humans, 1-2 for bots
+- Start with substance — no opener filler
+- Focus on what changed and why, or what question you're asking
+- Never start with affirmations ("Good catch!", "Great point!", "Absolutely!")
 
-**Example progression:**
+**Example — human reply:**
 
-❌ Too verbose:
-"Thank you so much for catching this! You're absolutely right that this could be a problem. I really appreciate you taking the time to review this so thoroughly. I've gone ahead and implemented your excellent suggestion in commit abc123. Let me know if there's anything else I should change!"
+❌ AI cliché:
+"Good catch! You're absolutely right that this could be a problem. I've gone ahead and implemented your excellent suggestion in commit abc123. Let me know if there's anything else I should change!"
 
-✅ Just right:
-"Good catch! Fixed in abc123. The issue was X because Y."
+✅ Human:
+"Fixed in abc123 — the null check was missing when the list is empty. Does that cover the case you had in mind?"
 
 ## Error Handling
 
@@ -273,6 +309,8 @@ After replying to all comments:
 - [ ] **For fixes: Changes committed AND pushed BEFORE replying**
 - [ ] **For fixes: Reply includes commit SHA**
 - [ ] Direct reply posted to each comment (only if Claude's reply is NOT already the most recent)
-- [ ] Replies are concise and substantive
+- [ ] Replies are concise and substantive — no AI clichés in human replies
+- [ ] Bot threads resolved after replying
+- [ ] Human threads left open
 - [ ] No PR-level comments added
 - [ ] No original comments edited
