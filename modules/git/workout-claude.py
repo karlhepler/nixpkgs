@@ -22,6 +22,7 @@ Example Usage:
 """
 
 import json
+import os
 import subprocess
 import sys
 from typing import List, Dict, Optional
@@ -42,12 +43,19 @@ ARGUMENTS:
 INPUT FORMAT (JSON via stdin):
   [
     {"worktree": "branch-name", "prompt": "Context for Claude command"},
-    {"worktree": "another-branch", "prompt": "Different context"}
+    {"worktree": "another-branch", "prompt": "Different context"},
+    {"worktree": "ops-work", "prompt": "Fix infra issue", "repo": "~/path/to/other/repo"}
   ]
 
   Each object MUST have:
     - worktree: Branch name (karlhepler/ prefix auto-added if missing)
     - prompt: Context string to pass to Claude command as positional argument
+
+  Each object MAY have:
+    - repo: Path to a different git repository (e.g., "~/ops", "/Users/me/projects/other")
+            When present, the worktree is created in that repo instead of the current one.
+            Supports ~ expansion, absolute paths, or relative paths (relative paths resolve
+            against CWD at invocation time). Omit to use current repo (default behavior).
 
 DESCRIPTION:
   Creates multiple git worktrees with dedicated TMUX windows and
@@ -81,6 +89,9 @@ EXAMPLES:
     {"worktree": "refactor-y", "prompt": "Refactor Y module per tech debt ticket"}
   ]
   EOF
+
+  # Cross-repo: create worktree in a different repository
+  echo '[{"worktree": "fix-infra", "prompt": "Fix the deployment issue", "repo": "~/ops"}]' | workout-claude staff
 
   # From file
   cat worktrees.json | workout-claude staff
@@ -157,10 +168,20 @@ def validate_json_input(data: any) -> List[Dict[str, str]]:
 
         # prompt can be empty string (valid use case - just launch command with no custom prompt)
 
-        validated.append({
+        validated_item: Dict[str, str] = {
             "worktree": item["worktree"].strip(),
             "prompt": item["prompt"]
-        })
+        }
+
+        # Optional repo field for cross-repo worktree creation
+        if "repo" in item:
+            if not isinstance(item["repo"], str):
+                raise ValueError(f"Item {i} field 'repo' must be a string")
+            if not item["repo"].strip():
+                raise ValueError(f"Item {i} field 'repo' cannot be empty")
+            validated_item["repo"] = item["repo"].strip()
+
+        validated.append(validated_item)
 
     return validated
 
@@ -189,12 +210,13 @@ def normalize_branch_name(branch_input: str) -> tuple[str, str]:
     return branch_suffix, full_branch_name
 
 
-def run_command(cmd: List[str], capture_output: bool = True) -> Optional[subprocess.CompletedProcess]:
+def run_command(cmd: List[str], capture_output: bool = True, cwd: Optional[str] = None) -> Optional[subprocess.CompletedProcess]:
     """Run command and return result
 
     Args:
         cmd: Command and arguments as list
         capture_output: Whether to capture stdout/stderr
+        cwd: Working directory for the command (None = current directory)
 
     Returns:
         CompletedProcess if capture_output=True, None otherwise
@@ -205,37 +227,43 @@ def run_command(cmd: List[str], capture_output: bool = True) -> Optional[subproc
                 cmd,
                 capture_output=True,
                 text=True,
-                check=False
+                check=False,
+                cwd=cwd
             )
             return result
         else:
-            subprocess.run(cmd, check=False)
+            subprocess.run(cmd, check=False, cwd=cwd)
             return None
     except Exception as e:
         print(f"Error running command {' '.join(cmd)}: {e}", file=sys.stderr)
         return None
 
 
-def check_prerequisites(command: str) -> bool:
+def check_prerequisites(command: str, check_git_cwd: bool = True) -> bool:
     """Check if required commands are available
 
     Args:
         command: Claude command to check (e.g., 'staff', 'burns')
+        check_git_cwd: Whether to validate that CWD is a git repo with a remote.
+                       Pass False when all worktree items specify an explicit repo
+                       field (cross-repo mode), so the user need not be in a git
+                       repo at invocation time.
 
     Returns:
         True if all required commands exist, False otherwise
     """
-    # Check git repo
-    result = run_command(["git", "rev-parse", "--git-dir"])
-    if not result or result.returncode != 0:
-        print("Error: Not in a git repository", file=sys.stderr)
-        return False
+    if check_git_cwd:
+        # Check git repo
+        result = run_command(["git", "rev-parse", "--git-dir"])
+        if not result or result.returncode != 0:
+            print("Error: Not in a git repository", file=sys.stderr)
+            return False
 
-    # Check git remote
-    result = run_command(["git", "remote", "get-url", "origin"])
-    if not result or result.returncode != 0:
-        print("Error: Could not get git remote URL", file=sys.stderr)
-        return False
+        # Check git remote
+        result = run_command(["git", "remote", "get-url", "origin"])
+        if not result or result.returncode != 0:
+            print("Error: Could not get git remote URL", file=sys.stderr)
+            return False
 
     # Check tmux
     result = run_command(["which", "tmux"])
@@ -272,10 +300,25 @@ def create_worktree_with_prompt(worktree_def: Dict[str, str], command: str) -> b
     branch_suffix, full_branch_name = normalize_branch_name(worktree_def["worktree"])
     prompt = worktree_def["prompt"]
 
+    # Resolve optional cross-repo path
+    cwd: Optional[str] = None
+    repo_path = worktree_def.get("repo")
+    if repo_path:
+        expanded = os.path.expanduser(repo_path)
+        if not os.path.isdir(expanded):
+            print(f"  ✗ Repo path does not exist: {repo_path}", file=sys.stderr)
+            return False
+        check = run_command(["git", "rev-parse", "--git-dir"], cwd=expanded)
+        if not check or check.returncode != 0:
+            print(f"  ✗ Not a git repository: {repo_path}", file=sys.stderr)
+            return False
+        cwd = expanded
+        print(f"  Using repo: {expanded}", file=sys.stderr)
+
     print(f"Processing: {branch_suffix}...", file=sys.stderr)
 
     # Call existing workout command to create/navigate to worktree
-    result = run_command(["workout", full_branch_name])
+    result = run_command(["workout", full_branch_name], cwd=cwd)
 
     if not result or result.returncode != 0:
         print("  ✗ Failed to create worktree", file=sys.stderr)
@@ -378,11 +421,8 @@ def main():
         print("Run 'workout-claude --help' for full documentation", file=sys.stderr)
         sys.exit(1)
 
-    # Check prerequisites
-    if not check_prerequisites(command):
-        sys.exit(1)
-
-    # Read and parse JSON from stdin
+    # Read and parse JSON from stdin (must happen before check_prerequisites so
+    # we know whether any items lack a repo field and need a CWD git check)
     try:
         json_input = sys.stdin.read()
         data = json.loads(json_input)
@@ -398,6 +438,14 @@ def main():
         worktree_defs = validate_json_input(data)
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    # Only require the CWD to be a git repo when at least one item relies on it
+    # (i.e., does not specify an explicit repo field)
+    needs_cwd_check = any("repo" not in item for item in worktree_defs)
+
+    # Check prerequisites
+    if not check_prerequisites(command, check_git_cwd=needs_cwd_check):
         sys.exit(1)
 
     # Process each worktree

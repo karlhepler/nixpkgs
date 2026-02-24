@@ -2,7 +2,6 @@
 name: workout-burns
 description: Create git worktrees with TMUX windows and burns (Ralph Orchestrator) instances for parallel development. Use when user wants to test features in isolation, work on multiple branches simultaneously, or needs dedicated burns Ralph sessions per worktree.
 version: 1.0
-keep-coding-instructions: true
 ---
 
 # Workout Burns - Batch Worktree Creation with TMUX and Burns
@@ -121,6 +120,7 @@ echo '[
 **JSON format requirements:**
 - Array of objects (MUST be valid JSON array)
 - Each object MUST have `worktree` (branch name) and `prompt` (context string)
+- Each object MAY have `repo` (path to a different git repository — see Cross-Repo below)
 - `prompt` can be empty string `""` to launch burns interactively without initial prompt
 - Branch names auto-prefixed with `karlhepler/` (strips first if present)
 
@@ -142,6 +142,32 @@ echo '[
 **If user wants simple worktree creation without prompts:**
 - For multiple worktrees without context, build JSON with empty prompts: `[{"worktree": "branch1", "prompt": ""}, {"worktree": "branch2", "prompt": ""}]`
 - For single worktree, use `workout` command directly (not `workout-claude`)
+
+## Cross-Repo Support
+
+To create a worktree in a **different repository** than the current one, add a `repo` field to any JSON entry:
+
+```bash
+echo '[
+  {"worktree": "fix-infra", "prompt": "Fix the deployment pipeline", "repo": "~/ops"}
+]' | workout-claude burns
+```
+
+**`repo` field rules:**
+- Path to any git repository on disk — absolute, `~`-prefixed, or relative (relative paths resolve against CWD at invocation time)
+- When present: worktree is created in that repo instead of the current one
+- When absent: default behavior (current repo) — fully backward compatible
+- Can be mixed: some entries with `repo`, others without (each uses its own repo)
+
+**Example — parallel work across two repos:**
+```bash
+echo '[
+  {"worktree": "feature-x", "prompt": "Implement feature X", "repo": "~/maze-monorepo"},
+  {"worktree": "fix-deploy", "prompt": "Fix staging deployment", "repo": "~/ops"}
+]' | workout-claude burns
+```
+
+**When to use:** Whenever the user asks to set up a worktree for work that lives in a different repository than the current session context.
 
 ## What the User Gets
 
