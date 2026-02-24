@@ -151,15 +151,21 @@ def detect_model_family(model: str) -> str:
 # Cost calculation
 # ---------------------------------------------------------------------------
 def calculate_cost(family: str, tokens: dict) -> float:
-    """Calculate USD cost given model family and token counts."""
+    """
+    Calculate USD cost given model family and token counts.
+
+    All prices in PRICING table are per 1 million tokens.
+    Token counts are raw totals from transcripts.
+    Formula: (tokens / 1_000_000) * price_per_million = cost_usd
+    """
     prices = PRICING.get(family, PRICING["unknown"])
     per_million = 1_000_000.0
     cost = (
-        tokens["input"] * prices["input"] / per_million
-        + tokens["output"] * prices["output"] / per_million
-        + tokens["cache_creation_5m"] * prices["cache_creation_5m"] / per_million
-        + tokens["cache_creation_1h"] * prices["cache_creation_1h"] / per_million
-        + tokens["cache_read"] * prices["cache_read"] / per_million
+        tokens.get("input", 0) * prices["input"] / per_million
+        + tokens.get("output", 0) * prices["output"] / per_million
+        + tokens.get("cache_creation_5m", 0) * prices["cache_creation_5m"] / per_million
+        + tokens.get("cache_creation_1h", 0) * prices["cache_creation_1h"] / per_million
+        + tokens.get("cache_read", 0) * prices["cache_read"] / per_million
     )
     return cost
 
@@ -384,6 +390,36 @@ def open_db() -> sqlite3.Connection:
             )
         except sqlite3.OperationalError:
             pass  # Column already exists — no-op
+
+    # Cost calculation fix: recalculate inflated costs from early bug.
+    # Early data had cache_read/creation tokens inflated by ~50-1000x.
+    # Safest migration: recalculate using only input/output tokens (set cache to 0)
+    # since the cache token values in the DB are unreliable.
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, input_tokens, output_tokens, model_family
+            FROM agent_metrics
+            WHERE cost_usd > 50
+        """)
+        inflated_rows = cursor.fetchall()
+
+        if inflated_rows:
+            for row_id, in_tok, out_tok, family in inflated_rows:
+                prices = PRICING.get(family, PRICING["unknown"])
+                # Recalculate using only input/output (cache tokens had scaling bug)
+                corrected_cost = (
+                    in_tok * prices["input"] / 1_000_000.0
+                    + out_tok * prices["output"] / 1_000_000.0
+                )
+                cursor.execute(
+                    "UPDATE agent_metrics SET cost_usd = ? WHERE id = ?",
+                    (corrected_cost, row_id),
+                )
+        conn.commit()
+    except sqlite3.OperationalError:
+        # Table might not exist yet (first run) — that's fine
+        pass
 
     for idx_sql in CREATE_INDEX_SQL:
         conn.execute(idx_sql)
