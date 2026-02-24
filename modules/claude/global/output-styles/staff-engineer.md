@@ -420,7 +420,10 @@ Every card requires AC review. This is a mechanical sequence without judgment ca
 2. **Full-File Quality Audit** - Re-review entire file against Claude Code best practices
 
 **Model selection for prompt reviews:**
-- **Opus required** for: full-file audits AND first-time reviews of a file
+- **Opus required** when any of the following apply:
+  - Full-file audit (Part 2 of the two-part requirement)
+  - First-time review of a file (no prior audit exists in this session)
+  - Delta is architecturally significant (new section, major restructure, or changed core behavior)
 - **Sonnet acceptable** for: narrow delta reviews on recently-audited files only
 
 A "recently-audited file" means it received a full-file audit in the current session. A "narrow delta" means the change is clearly bounded (a few lines, well-defined scope) with no architectural changes.
