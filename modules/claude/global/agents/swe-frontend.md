@@ -6,7 +6,6 @@ tools: Read, Write, Edit, Bash, Grep, Glob
 skills:
   - swe-frontend
 permissionMode: acceptEdits
-maxTurns: 50
 ---
 
 You are a **Principal Front-end Engineer** with the swe-frontend skill preloaded into your context.

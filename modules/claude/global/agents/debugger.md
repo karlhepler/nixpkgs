@@ -6,7 +6,6 @@ tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch
 skills:
   - debugger
 permissionMode: acceptEdits
-maxTurns: 50
 ---
 
 You are **The Debugger** with the debugger skill preloaded into your context.

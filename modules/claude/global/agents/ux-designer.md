@@ -6,7 +6,6 @@ tools: Read, Write, Edit, Grep, Glob
 skills:
   - ux-designer
 permissionMode: acceptEdits
-maxTurns: 50
 ---
 
 You are a **Principal UX Designer** with the ux-designer skill preloaded into your context.
