@@ -1046,8 +1046,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT role, MIN(turns) as min_turns, MAX(turns) as max_turns, ROUND(AVG(turns), 1) as avg_turns, (SELECT turns FROM agent_metrics am2 WHERE am2.role = am.role AND am2.role != 'parent' ORDER BY turns LIMIT 1 OFFSET (SELECT CAST(COUNT(*) * 0.95 AS INTEGER) FROM agent_metrics am3 WHERE am3.role = am.role)) as p95_turns, COUNT(*) as sample_count FROM agent_metrics am WHERE role != 'parent' GROUP BY role ORDER BY avg_turns DESC",
-          "queryText": "SELECT role, MIN(turns) as min_turns, MAX(turns) as max_turns, ROUND(AVG(turns), 1) as avg_turns, (SELECT turns FROM agent_metrics am2 WHERE am2.role = am.role AND am2.role != 'parent' ORDER BY turns LIMIT 1 OFFSET (SELECT CAST(COUNT(*) * 0.95 AS INTEGER) FROM agent_metrics am3 WHERE am3.role = am.role)) as p95_turns, COUNT(*) as sample_count FROM agent_metrics am WHERE role != 'parent' GROUP BY role ORDER BY avg_turns DESC",
+          "rawQueryText": "SELECT role, MIN(turns) as min_turns, MAX(turns) as max_turns, ROUND(AVG(turns), 1) as avg_turns, MAX(CASE WHEN pct <= 0.95 THEN turns END) as p95_turns, COUNT(*) as sample_count FROM (SELECT role, turns, CAST(ROW_NUMBER() OVER (PARTITION BY role ORDER BY turns) AS REAL) / COUNT(*) OVER (PARTITION BY role) as pct FROM agent_metrics WHERE role != 'parent') GROUP BY role ORDER BY avg_turns DESC",
+          "queryText": "SELECT role, MIN(turns) as min_turns, MAX(turns) as max_turns, ROUND(AVG(turns), 1) as avg_turns, MAX(CASE WHEN pct <= 0.95 THEN turns END) as p95_turns, COUNT(*) as sample_count FROM (SELECT role, turns, CAST(ROW_NUMBER() OVER (PARTITION BY role ORDER BY turns) AS REAL) / COUNT(*) OVER (PARTITION BY role) as pct FROM agent_metrics WHERE role != 'parent') GROUP BY role ORDER BY avg_turns DESC",
           "queryType": "table",
           "timeColumns": [],
           "refId": "A"
