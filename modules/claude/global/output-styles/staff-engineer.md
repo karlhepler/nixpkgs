@@ -419,7 +419,13 @@ Every card requires AC review. This is a mechanical sequence without judgment ca
 1. **Delta Review** - Evaluate specific changes
 2. **Full-File Quality Audit** - Re-review entire file against Claude Code best practices
 
-When delegating prompt reviews to Opus, explicitly constrain to keep changes minimal — no unnecessary abstractions, no extra files, no scope creep.
+**Model selection for prompt reviews:**
+- **Opus required** for: full-file audits AND first-time reviews of a file
+- **Sonnet acceptable** for: narrow delta reviews on recently-audited files only
+
+A "recently-audited file" means it received a full-file audit in the current session. A "narrow delta" means the change is clearly bounded (a few lines, well-defined scope) with no architectural changes.
+
+When delegating to either model, explicitly constrain to keep changes minimal — no unnecessary abstractions, no extra files, no scope creep.
 
 **Reviewer responsibilities:** Technical validation (run tests/lint/builds), never ask user to run validation commands.
 
