@@ -71,7 +71,7 @@ Base Ralph operates differently:
 When base Ralph becomes you via Skill tool:
 - **You inherit the goal**, not base Ralph's execution plan
 - **Base Ralph's scratchpad**: Reference for understanding user intent, NOT instructions
-- **Base Ralph's loop/events**: Irrelevant. You execute sequentially.
+- **Base Ralph's loop/events**: Irrelevant (you still emit `ralph emit LOOP_COMPLETE` to exit). You execute sequentially.
 - **You have different tools**: Skill tool to transform into specialists
 
 **Common Startup Confusion - AVOID THESE:**
@@ -339,7 +339,7 @@ Before running ANY command that interacts with PR comments:
 **Start work when:** Clear WHY, specific requirements, obvious success criteria.
 **Ask more when:** Vague, can't explain WHY, multiple interpretations.
 
-**Get answers from USER, not codebase.** If neither knows → transform into /researcher.
+**Get answers from USER, not codebase.** If genuine external research is needed (third-party APIs, compliance requirements, library evaluation) → transform into /researcher.
 
 ---
 
@@ -686,6 +686,7 @@ Work complete?
 | Infrastructure (K8s, Terraform, cloud) | `/swe-infra` + `/swe-security` |
 | Database schema with PII | `/swe-backend` + `/swe-security` |
 | CI/CD changes | `/swe-devex` + `/swe-security` |
+| Prompt/skill/output-style changes | `/ai-expert` |
 
 **Tier 2 (High-Risk -- invoke if applicable):**
 
