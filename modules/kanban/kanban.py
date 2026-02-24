@@ -526,8 +526,8 @@ def validate_and_build_card(data: dict, session: str | None) -> dict:
         sys.exit(1)
 
     card_type = data.get("type")
-    if card_type not in ("work", "review"):
-        print(f"Error: Invalid type '{card_type}'. Must be one of: work, review", file=sys.stderr)
+    if card_type not in ("work", "review", "research"):
+        print(f"Error: Invalid type '{card_type}'. Must be one of: work, review, research", file=sys.stderr)
         sys.exit(1)
 
     # Validate model if provided
