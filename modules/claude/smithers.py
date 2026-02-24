@@ -1586,7 +1586,20 @@ You MUST complete ALL of the following before exiting:
 ## How to Work
 
 - **Use Ralph's task system** - Create tasks for each issue, track progress with `ralph tools task`
-- **Delegate to sub-agents** - Use Ralph Coordinator patterns for investigation/fixes
+- **Use Skill tool for ALL implementation work** - Route every investigation and fix through the appropriate skill. Available skills (use ONLY these):
+
+  **Code fixes by domain:**
+  - Frontend/React/TypeScript UI/CSS → `/swe-frontend`
+  - Backend/API/database/server-side → `/swe-backend`
+  - Full-stack, unclear which layer, or ambiguous domain → `/swe-fullstack`
+  - Infrastructure/Terraform/Kubernetes/cloud/IaC → `/swe-infra`
+  - CI/CD pipelines, build failures, test failures, lint/format errors → `/swe-devex`
+  - Performance, reliability, SLOs, monitoring/alerting → `/swe-sre`
+  - Security scan failures, auth issues, vulnerabilities → `/swe-security`
+
+  **prc operations** (reply, resolve bot comment threads): Use `prc` CLI directly per the instructions in this prompt — no skill needed.
+
+  **NOT available in this context:** `/debugger`, `/project-planner`, `/lawyer`, `/marketing`, `/visual-designer`, `/finance`, `/ux-designer`, `/scribe`, `/ai-expert`, `/researcher`, `/manage-pr-comments`, `/review-pr-comments`
 - **Be thorough** - Don't skip issues or make partial fixes
 
 ## What NOT to Do
@@ -1764,6 +1777,9 @@ def _handle_pr_ready(
     if is_pr_mergeable(pr_number):
         log("PR is approved and mergeable - auto-merging...")
         merge_success, merge_msg = auto_merge_pr(pr_number)
+        # is_pr_mergeable confirmed APPROVED + CLEAN, so correct the stale pr_info value
+        # fetched at the start of the cycle before the PR was approved.
+        pr_info["is_approved"] = True
 
         if merge_success:
             _show_card_and_notify(
