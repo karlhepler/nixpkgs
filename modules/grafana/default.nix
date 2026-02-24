@@ -54,6 +54,8 @@ let
     [server]
     http_port = 3200
     http_addr = 127.0.0.1
+    domain = claudit.local
+    root_url = http://claudit.local:3200/
 
     [auth.anonymous]
     enabled = true
@@ -76,20 +78,109 @@ in {
   # ============================================================================
   # Grafana - On-demand local metrics viewer
   # ============================================================================
-  # Run `claudit` to start Grafana on http://localhost:3200
-  # Press Ctrl+C to stop — no background service is created
+  # Run `claudit` to start Grafana on http://claudit.local:3200
+  # Press SPACE to reopen browser, Ctrl+C to stop.
   # ============================================================================
 
   _module.args.grafanaShellapps = {
     claudit = shellApp {
       name = "claudit";
-      runtimeInputs = [ pkgs.grafana ];
+      runtimeInputs = [ pkgs.grafana pkgs.curl ];
       text = ''
-        echo "Claudit metrics dashboard: http://localhost:3200"
-        echo "Press Ctrl+C to stop."
+        GRAFANA_URL="http://claudit.local:3200"
+        GRAFANA_HOMEPATH="${pkgs.grafana}/share/grafana"
+        GRAFANA_PID=""
+
+        # --- /etc/hosts check ---
+        check_hosts() {
+          if ! dscacheutil -q host -a name claudit.local 2>/dev/null | grep -q '127.0.0.1'; then
+            echo "claudit.local is not in /etc/hosts."
+            echo ""
+            echo "To add it, run:"
+            echo "  sudo sh -c 'echo \"127.0.0.1 claudit.local\" >> /etc/hosts'"
+            echo ""
+            printf "Want me to add it now? [y/N] "
+            read -r answer
+            if [[ "''${answer}" =~ ^[Yy]$ ]]; then
+              sudo sh -c 'echo "127.0.0.1 claudit.local" >> /etc/hosts'
+              echo "Added! Continuing..."
+            else
+              echo "Skipping. Falling back to http://localhost:3200"
+              GRAFANA_URL="http://localhost:3200"
+            fi
+          fi
+        }
+
+        # --- Clean shutdown on Ctrl+C ---
+        cleanup() {
+          echo ""
+          echo "Stopping Grafana..."
+          if [[ -n "''${GRAFANA_PID}" ]]; then
+            kill "''${GRAFANA_PID}" 2>/dev/null || true
+            wait "''${GRAFANA_PID}" 2>/dev/null || true
+          fi
+          exit 0
+        }
+        trap cleanup INT TERM
+
+        # --- Wait for Grafana to accept connections ---
+        wait_for_grafana() {
+          local attempts=0
+          while (( attempts < 20 )); do
+            if curl -sf "http://127.0.0.1:3200/api/health" >/dev/null 2>&1; then
+              return 0
+            fi
+            sleep 0.5
+            (( attempts++ )) || true
+          done
+          return 1
+        }
+
+        # --- Start ---
+        check_hosts
+
+        echo "Starting Grafana..."
         grafana server \
           --config ${grafanaIni} \
-          --homepath ${pkgs.grafana}
+          --homepath "''${GRAFANA_HOMEPATH}" \
+          >"''${HOME}/.local/share/grafana/log/claudit.log" 2>&1 &
+        GRAFANA_PID="$!"
+
+        # Verify process started
+        sleep 0.5
+        if ! kill -0 "''${GRAFANA_PID}" 2>/dev/null; then
+          echo "ERROR: Grafana failed to start. Check log:"
+          echo "  ''${HOME}/.local/share/grafana/log/claudit.log"
+          exit 1
+        fi
+
+        # Wait until HTTP is ready, then open browser
+        if wait_for_grafana; then
+          open "''${GRAFANA_URL}"
+        else
+          echo "WARNING: Grafana did not respond within 10s. Opening browser anyway..."
+          open "''${GRAFANA_URL}"
+        fi
+
+        echo "Claudit metrics dashboard: ''${GRAFANA_URL}"
+        echo "Press SPACE to open browser, Ctrl+C to stop."
+
+        # --- Foreground keypress loop ---
+        while true; do
+          # Read one character without requiring Enter (-n 1), silent (-s)
+          if read -r -s -n 1 key 2>/dev/null; then
+            # SPACE (empty after trimming) or Enter (\n becomes empty string)
+            if [[ "''${key}" == " " || "''${key}" == "" ]]; then
+              open "''${GRAFANA_URL}"
+            fi
+          fi
+          # Check if Grafana process is still alive
+          if ! kill -0 "''${GRAFANA_PID}" 2>/dev/null; then
+            echo "Grafana exited unexpectedly. Check log:"
+            echo "  ''${HOME}/.local/share/grafana/log/claudit.log"
+            exit 1
+          fi
+        done
       '';
       description = "Start on-demand Grafana server for Claude Code agent metrics (port 3200)";
       sourceFile = "default.nix";
