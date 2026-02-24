@@ -103,7 +103,7 @@ kanban show <card#> --output-style=xml --session <your-session-id>
 Extract from successful output:
 - Action (what was supposed to be done)
 - Intent (desired end result)
-- Card type (work or review)
+- Card type (work, review, or research)
 - Acceptance criteria (list of measurable outcomes)
 
 ### Step 1.5: Understand Card Type (Critical)
@@ -122,7 +122,13 @@ The card type determines your verification strategy:
 - Files are SECONDARY or not relevant (you're reviewing what was learned, not what was changed)
 - Example: "Review identifies 3 architectural risks" → Check summary first
 
-**This is fundamental:** Work cards = verify files. Review cards = verify summary. Not an exception, just different card types requiring different evidence strategies.
+**Research cards (`type: research`)** - "Investigate something" cards
+- AC defines expected ANSWERS or FINDINGS to be returned
+- Verification: SUMMARY is PRIMARY evidence (the findings ARE the deliverable)
+- Files are SECONDARY or not relevant (you're verifying questions were answered, not changes made)
+- Example: "Research identifies viable migration paths with trade-offs" → Check summary first
+
+**This is fundamental:** Work cards = verify files. Review and research cards = verify summary. Not an exception, just different card types requiring different evidence strategies.
 
 ### Step 2: Gather Evidence (Based on Card Type)
 
@@ -285,8 +291,15 @@ Card #25: 1:✓ 2:✓ 3:✗ 4:✗ 5:✓ 6:✓
 - **Verification priority:** Read AC → Check summary FIRST → Optionally verify claims in files
 - **Investigation limit:** Summary should have all evidence. Only read files if absolutely necessary (rare)
 
+**RESEARCH CARDS** (type: research):
+- **Agent summary is PRIMARY** - it IS the deliverable (answers, synthesis, recommendations)
+- **Files are SECONDARY** - may spot-check if relevant, usually not needed
+- **Default approach:** Read summary for findings, assess whether open questions were answered
+- **Verification priority:** Read AC → Check summary FIRST → Optionally verify claims in files
+- **Investigation limit:** Summary should have all evidence. Only read files if absolutely necessary (rare)
+
 **Summary alone is insufficient for work cards** (need file evidence).
-**Summary alone IS sufficient for review cards** (information returned is the work product).
+**Summary alone IS sufficient for review and research cards** (information returned is the work product).
 
 **You CAN:**
 - Read source files to verify claimed changes

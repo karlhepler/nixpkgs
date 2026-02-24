@@ -39,8 +39,8 @@ underway (card #16)."
 
 **What to do:**
 - **Move card to review** - `kanban review <card#>` FIRST (always required)
-- **Check acceptance criteria** - `kanban show <card#>` to see which AC are satisfied
-- **For satisfied AC** - Check them off: `kanban criteria check <card#> <n>`
+- **Launch AC reviewer** - AC reviewer fetches card details (`kanban show`) and evaluates which criteria are satisfied
+- **AC reviewer checks/unchecks criteria** - Only the AC reviewer calls `kanban criteria check/uncheck` (never staff engineer)
 - **For remaining items** - Two paths:
   - **Resume work**: `kanban redo <card#>`, new agent picks up remaining unchecked AC
   - **Follow-up card**: If scope changed, create new card with remaining work
@@ -51,19 +51,30 @@ underway (card #16)."
 Agent returns: "Completed API endpoint and tests. Hit permission gate for deployment."
 
 You:
-1. kanban review 20  # Move to review
-2. kanban show 20    # Check AC
-3. kanban criteria check 20 1  # "API endpoint implemented"
-4. kanban criteria check 20 2  # "Tests passing"
-5. AC #3 "Deployed to staging" still unchecked
-6. Execute deployment (permission gate)
-7. kanban criteria check 20 3  # Now all AC checked
-8. kanban done 20 'JWT auth implemented, tested, deployed'
+1. kanban review 20          # Move to review (staff engineer's only kanban call here)
+2. [Launch AC reviewer for card #20]
+
+AC Reviewer:
+1. kanban show 20            # Fetch card details and AC list
+2. kanban criteria check 20 1  # "API endpoint implemented" - satisfied
+3. kanban criteria check 20 2  # "Tests passing" - satisfied
+4. Returns: "AC #3 'Deployed to staging' still unchecked - deployment blocked"
+
+You:
+5. Execute deployment (handle permission gate)
+6. [Launch AC reviewer again after deployment]
+
+AC Reviewer:
+7. kanban criteria check 20 3  # Now satisfied
+8. Returns: "All AC checked"
+
+You:
+9. kanban done 20 'JWT auth implemented, tested, deployed'
 ```
 
 **Anti-pattern:**
 - Moving directly from doing to done (skipping review)
-- Not checking off satisfied AC before redo
+- Staff engineer calling `kanban show` or `kanban criteria check/uncheck` directly
 - Creating new card instead of resuming when AC are clear
 
 ---

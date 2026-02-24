@@ -158,7 +158,7 @@ Sub-agents have autonomy within unspecified bounds but must surface alternatives
 kanban do '{"type":"work","action":"...","intent":"...","editFiles":[...],"readFiles":[...],"persona":"Skill Name","model":"haiku","criteria":["AC1","AC2","AC3"]}' --session <id>
 ```
 
-**type** required: "work" or "review". **AC** required: 3-5 specific, measurable items. **editFiles/readFiles**: Placeholder guesses for conflict detection (e.g. `["src/auth/*.ts"]`). Bulk: Pass JSON array.
+**type** required: "work", "review", or "research". **AC** required: 3-5 specific, measurable items. **editFiles/readFiles**: Placeholder guesses for conflict detection (e.g. `["src/auth/*.ts"]`). Bulk: Pass JSON array.
 
 **AC quality is the entire quality gate.** The AC reviewer is Haiku with no context beyond the kanban card. It runs `kanban show`, reads the AC, and mechanically verifies each criterion. If AC is vague ("code works correctly"), incomplete, or assumes context not on the card, the review will rubber-stamp bad work. Write AC as if a stranger with zero project context must verify the work using only what's on the card. Each criterion should be specific enough to verify and falsifiable enough to fail.
 
@@ -344,7 +344,7 @@ Delegating does not end conversation. Keep probing for context, concerns, and co
 
 Every card requires AC review. This is a mechanical sequence without judgment calls.
 
-**This applies to all card types -- work and review.** Research/review cards are especially prone to being skipped because the information feels "already consumed" once findings are extracted. Follow the sequence regardless of card type.
+**This applies to all card types -- work, review, and research.** Information cards (review and research) are especially prone to being skipped because the findings feel "already consumed" once extracted. Follow the sequence regardless of card type.
 
 **When sub-agent returns:**
 
@@ -352,6 +352,7 @@ Every card requires AC review. This is a mechanical sequence without judgment ca
 2. Launch AC reviewer (subagent_type: ac-reviewer, model: haiku, background) with card#, session, and context appropriate to the card type:
    - **Work cards** (type: "work"): Brief summary of the agent's work (1-3 sentences). The AC reviewer verifies by inspecting modified files — the summary provides orientation only.
    - **Review cards** (type: "review"): Include the agent's complete findings/output. Review card deliverables are information, not file changes — without the full findings in the prompt, the AC reviewer has nothing to verify against.
+   - **Research cards** (type: "research"): Same as review cards — include the agent's complete findings/output. Research deliverables are information (answers, synthesis, recommendations); without the full findings, the AC reviewer cannot verify that the questions were answered.
    AC reviewer fetches its own AC criteria via `kanban show` — never relay the AC list.
 3. Wait for task notification (ignore output - board is source of truth)
 4. `kanban done <card> 'summary' --session <id>`
@@ -441,7 +442,16 @@ See [review-protocol.md § Post-Review Decision Flow](../docs/staff-engineer/rev
 
 - **action** -- WHAT (one sentence, ~15 words)
 - **intent** -- END RESULT (the desired outcome, not the problem)
-- **type** -- "work" (file changes) or "review" (information returned)
+- **type** -- "work" (file changes), "review" (evaluate specific artifact), or "research" (investigate open question)
+
+| Type | Input | Output | AC verifies |
+|------|-------|--------|-------------|
+| work | task to implement | file changes | changes present in files |
+| review | specific artifact to evaluate | assessment/judgment | findings returned |
+| research | open question or problem space | findings/synthesis/recommendation | questions were answered |
+
+**Choosing between review and research:** Use **review** when delegating evaluation of a specific known artifact (code, PR, document, security posture). Use **research** when delegating open-ended investigation of a question or problem space where the answer isn't known upfront.
+
 - **criteria** -- 3-5 specific, measurable outcomes
 - **editFiles/readFiles** -- Placeholder guesses for conflict detection
 
@@ -613,7 +623,7 @@ Everything else: DELEGATE.
 - Reading/parsing AC reviewer output
 - Calling `kanban show` to fetch AC criteria (AC reviewer does this itself)
 - Passing AC list in AC reviewer delegation prompt (AC reviewer fetches its own AC via kanban show)
-- For review cards: omitting the agent's complete findings from the AC reviewer prompt (review card deliverables are information — without findings, AC reviewer has nothing to verify)
+- For review or research cards: omitting the agent's complete findings from the AC reviewer prompt (information card deliverables are findings — without them, AC reviewer has nothing to verify)
 - Calling `kanban criteria check/uncheck` (AC reviewer's job)
 - Skipping review column (doing -> done directly)
 - Moving to done without AC reviewer
