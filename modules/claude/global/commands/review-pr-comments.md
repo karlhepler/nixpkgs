@@ -7,6 +7,10 @@ description: Review PR feedback and respond to code reviewers when user asks to 
 
 **Purpose:** Systematically review and respond to all unresolved PR comments that you haven't replied to yet.
 
+## Invocation Context
+
+$ARGUMENTS
+
 ## Hard Prerequisites
 
 **Before anything else: verify required permissions are in the project's `permissions.allow`.**
@@ -18,12 +22,11 @@ Due to a known Claude Code bug ([GitHub #5140](https://github.com/anthropics/cla
 - `Bash(git commit *)`
 - `Bash(git push *)`
 - `Bash(gh api --method POST *)`
-- `Bash(gh api --method PUT *)`
 
 This skill fixes code, commits, pushes, replies to PR comments, and resolves bot threads via the GitHub API. Without these permissions, the fix-commit-push-reply workflow silently fails in `dontAsk` mode.
 
 **If any are missing:** Stop immediately. Do not start work. Surface to the staff engineer:
-> "Blocked: One or more required permissions (`Bash(git add *)`, `Bash(git commit *)`, `Bash(git push *)`, `Bash(gh api --method POST *)`, `Bash(gh api --method PUT *)`) are missing from `permissions.allow`. Add them before delegating review-pr-comments."
+> "Blocked: One or more required permissions (`Bash(git add *)`, `Bash(git commit *)`, `Bash(git push *)`, `Bash(gh api --method POST *)`) are missing from `permissions.allow`. Add them before delegating review-pr-comments."
 
 ## Critical Rules
 
@@ -65,11 +68,10 @@ prc list $PR_NUM > /tmp/pr_comments.json
 
 # Filter to comments that need replies from Claude
 jq --arg user "$USERNAME" '
-  # Group all comments for thread analysis
-  . as $all_comments |
+  .comments as $all_comments |
 
   # Get all top-level comments not by Claude
-  [.[] | select(.in_reply_to_id == null) | select(.user.login == $user | not)] as $top_level |
+  [$all_comments[] | select(.in_reply_to_id == null) | select(.author == $user | not)] as $top_level |
 
   # For each top-level comment, apply thread-type-specific filtering
   $top_level[] |
@@ -82,7 +84,7 @@ jq --arg user "$USERNAME" '
   (if ($replies | length) > 0 then ($replies | last) else null end) as $last_reply |
 
   if $comment.is_bot then
-    # Bot threads: prc list already returns only unresolved/no-reply threads.
+    # Bot threads: prc list returns all comments; the jq filter above selects which need replies.
     # Accept as-is — no additional filtering needed.
     select(true)
   else
@@ -94,7 +96,7 @@ jq --arg user "$USERNAME" '
       $last_reply == null or
 
       # Case 2: Most recent reply is NOT from Claude -> human responded, warrants another look
-      ($last_reply.user.login != $user)
+      ($last_reply.author != $user)
     )
   end
 ' /tmp/pr_comments.json > /tmp/unreplied_comments.json
@@ -107,7 +109,7 @@ For each comment that needs a reply:
 **1. Read the comment:**
 ```bash
 jq --slurp -r '.[] |
-  "ID: \(.id)\nAuthor: \(.user.login)\nis_bot: \(.is_bot)\nPath: \(.path):\(.line // .original_position)\n\(.body)\n---"' /tmp/unreplied_comments.json
+  "ID: \(.id)\nAuthor: \(.author)\nis_bot: \(.is_bot)\nPath: \(.path):\(.line // .original_position)\n\(.body)\n---"' /tmp/unreplied_comments.json
 ```
 
 **2. Identify comment author type (2-tier detection):**
@@ -116,11 +118,11 @@ jq --slurp -r '.[] |
 Every comment in `prc list` output includes an `is_bot` field. If `is_bot == true`, treat as bot. This covers all GitHub App bots (e.g., `github-actions[bot]`, `dependabot[bot]`, `renovate[bot]`).
 
 **Tier 2 — Known machine user names (fallback):**
-Some bots are "machine users" — GitHub classifies them as `User` type, so prc won't mark them as bots. If `is_bot == false`, check `user.login` against this list: `codecov`, `dependabot`, `snyk`, `sonarcloud`, `renovate`, `deepsource`, `codeclimate`, `mergify`, `linear`. (Note: `dependabot` and `renovate` are already caught by Tier 1 as GitHub Apps, but their bare names appear here as a fallback for any non-App account variants Tier 1 might miss.) If matched, treat as bot.
+Some bots are "machine users" — GitHub classifies them as `User` type, so prc won't mark them as bots. If `is_bot == false`, check `.author` against this list: `codecov`, `dependabot`, `snyk`, `sonarcloud`, `renovate`, `deepsource`, `codeclimate`, `mergify`, `linear`. (Note: `dependabot` and `renovate` are already caught by Tier 1 as GitHub Apps, but their bare names appear here as a fallback for any non-App account variants Tier 1 might miss.) If matched, treat as bot.
 
 **Routing:**
 - `is_bot == true` → bot handling track
-- `is_bot == false` AND `user.login` matches known machine user names → bot handling track
+- `is_bot == false` AND `.author` matches known machine user names → bot handling track
 - `is_bot == false` AND no match → human handling track
 
 **When uncertain:** Treat as human. The cost of being curt with a real person outweighs the cost of being extra careful with a bot.
@@ -181,9 +183,7 @@ COMMIT_SHA=$(git rev-parse --short HEAD)
 **Now reply (only after Phase 3 is complete if fixing):**
 
 ```bash
-gh api --method POST \
-  repos/$REPO/pulls/$PR_NUM/comments/COMMENT_ID/replies \
-  -f body='<your concise reply>'
+prc reply COMMENT_ID '<your concise reply>'
 ```
 
 **For bot threads only — resolve after replying:**
