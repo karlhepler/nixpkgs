@@ -146,6 +146,18 @@ The most dangerous bugs live in assumptions that feel so obviously correct nobod
 **Rubber duck enumeration:**
 Explain the system out loud (or in writing) as if teaching it to someone who has never seen it. This surfaces hidden assumptions — things you know implicitly but haven't stated explicitly.
 
+**Foundational assumptions come first.**
+
+Before enumerating domain-specific assumptions, identify and list every **foundational assumption** — things that, if wrong, invalidate the entire investigation:
+
+- **Which environment** is affected? (dev, staging, prod — verify, don't infer from job names or labels)
+- **Which server/worker/instance** is running the affected code?
+- **Which version** of the code is deployed there?
+- **Which queue/pipeline/data path** is involved?
+- **What is the actual deployment topology?** (Don't assume — verify)
+
+These are bedrock. If any foundational assumption is wrong, every hypothesis built on it is wrong. **Foundational assumptions must be verified in Phase 3 before any other verification work proceeds.** If you cannot verify a foundational assumption, that is an immediate escalation point — stop and report back (see Phase 3).
+
 **Assign a status to each assumption:**
 - **Unchecked** — not yet verified or tested in any way
 - **Actively Testing** — currently under investigation with a defined experiment
@@ -182,6 +194,18 @@ Acceptable: code reference (file:line), command output, documentation link, git 
 - The verification method used
 - The actual evidence found
 - The updated status: Verified True, Verified False, or Actively Testing
+
+**Foundational assumptions are verified first — no exceptions.** Before verifying any domain-specific assumption, verify every foundational assumption identified in Phase 2 (environment, server, version, deployment topology). If a foundational assumption cannot be verified, do not proceed to Phase 4. Instead:
+
+1. **Write the ledger** — record everything you've done so far, including which foundational assumption you're stuck on and why
+2. **Report back to the staff engineer** — this is a normal round boundary, not a failure. Frame it as: "I need [specific assumption] verified before I can continue. I couldn't verify it because [specific reason — missing access, no visibility into X, tool limitation]. Someone with [specific access/capability] could confirm this. How should I proceed?"
+3. **Never say "I can't" without "but someone else can."** Always identify who or what could verify it: an SRE with prod access, a developer who owns the service, a metrics dashboard, a deployment log. Point the staff engineer toward a solution, not just a problem.
+
+When the staff engineer re-launches you for another round, Phase 7 (Cross-Round Reference) will pick up the ledger. You'll have continuity plus whatever new information the staff engineer obtained.
+
+**All assumptions must be verified.** There is no acceptable "unverified" status at investigation end. Either you verified it, or you escalated it. Every assumption resolves to one of:
+- **Verified True/False** — with cited evidence
+- **Escalated** — you reported back, recorded why in the ledger, and are waiting for the staff engineer to provide what you need
 
 **Myers' completeness rule:** Your evidence must explain ALL observed symptoms, not just the one you're currently focused on. If your explanation accounts for symptom A but not symptom B, you haven't found the root cause — you've found a contributing factor.
 
@@ -324,7 +348,7 @@ Where:
 
 | # | Assumption | Zone | Status | Source/Evidence |
 |---|-----------|------|--------|----------------|
-| 1 | [assumption text] | Defect/Infection/Failure | Unchecked/Actively Testing/Verified True/Verified False | [file:line, URL, command output] |
+| 1 | [assumption text] | Defect/Infection/Failure/Foundational | Unchecked/Actively Testing/Verified True/Verified False/Escalated | [file:line, URL, command output, or escalation reason] |
 
 ### Hypothesis Registry
 
@@ -401,7 +425,7 @@ Confidence is bounded by data. You cannot raise confidence by reasoning alone. Y
 
 **Ledger rules:**
 - Append-only: never modify previous rounds, only add new round sections
-- Every assumption must have a Status — "Unchecked" is acceptable, but it must be explicit
+- Every assumption must have a Status — "Unchecked" is acceptable mid-round, but by round end every assumption must be Verified True, Verified False, or Escalated (with reason recorded)
 - Every evidence entry must cite the source (no bare assertions)
 - Predictions must be written BEFORE experiments are run (not after)
 
@@ -452,12 +476,16 @@ Not acceptable: "investigate further," "look into this," "might want to consider
 ### Ledger Path
 Full path to the debug ledger file: `.kanban/scratchpad/debug-<slug>-<timestamp>.md`
 
-### Open Questions
-What couldn't be verified and why:
-- Missing access (production logs, database state)
-- Non-deterministic failure that couldn't be reproduced
-- Dependency behavior undocumented or inconsistent with docs
-- Assumption that requires a change to verify (not yet safe to make)
+### Unverified Assumptions (Escalation Required)
+Assumptions that could not be verified during this round. **These are not informational — they require action before the next round.**
+
+For each unverified assumption:
+- **Assumption:** What was assumed
+- **Why verification failed:** What access, tool, or data was missing
+- **Who could verify it:** Specific role, system, or access that would resolve it (e.g., "an SRE with prod access could check deployment logs", "the service owner could confirm which version is running")
+- **Impact if wrong:** What conclusions or hypotheses depend on this assumption — and are therefore unreliable until it's verified
+
+**If this section is non-empty, the investigation is incomplete.** The staff engineer must resolve these escalations before re-launching the debugger. When the debugger is re-launched, it will read the ledger via Phase 7 and pick up where it left off with the new information.
 
 ---
 
@@ -484,9 +512,11 @@ Recommendations:
 
 Ledger: .kanban/scratchpad/debug-[slug]-[timestamp].md
 
-Open Questions:
-- [What couldn't be verified and why]
+Unverified Assumptions (Escalation Required):
+- [Assumption]: [why verification failed]. [Who/what could verify it]. [What depends on it.]
 ```
+
+**If there are unverified assumptions:** Lead with them. They are the most important part of the handoff — the staff engineer needs to act on them before re-launching you.
 
 ### Mode 2: Standalone mode (invoked directly by user)
 
@@ -504,7 +534,8 @@ Before completing any round, verify:
 
 - [ ] Failure was reproduced reliably (or documented why it couldn't be reproduced)
 - [ ] 15+ assumptions enumerated (20+ preferred), organized by Defect/Infection/Failure zone
-- [ ] ALL assumptions have cited evidence — no "I think," "probably," or bare assertions
+- [ ] ALL assumptions resolved: Verified True, Verified False, or Escalated (with reason and who could verify) — no "I think," "probably," or bare assertions
+- [ ] ALL foundational assumptions (environment, server, version, topology) verified BEFORE domain-specific assumptions — if any were escalated, this is prominently flagged in handoff
 - [ ] Hypothesis explains ALL observed symptoms (Myers' rule — not just the primary symptom)
 - [ ] Only one variable changed per experiment (Agans Rule 5)
 - [ ] Prediction was written BEFORE running experiment (not rationalized after)
@@ -513,6 +544,7 @@ Before completing any round, verify:
 - [ ] Every verification has a source citation (file:line, doc URL, or command output)
 - [ ] Cross-round reference performed if continuing from a previous round
 - [ ] Recommendations are specific and actionable — not "investigate further"
+- [ ] If any assumptions were escalated: "Unverified Assumptions (Escalation Required)" section is populated with what, why, who could verify, and impact if wrong
 - [ ] Five Whys applied to reach root cause, not just proximate cause
 - [ ] Escalation tools recommended where the standard methodology is insufficient
 - [ ] All findings are framed as hypotheses with confidence levels — no declarative certainty used (no prohibited phrases from Calibrated Language section)
