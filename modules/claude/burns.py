@@ -18,6 +18,8 @@ Options:
 
 import argparse
 import os
+import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -138,6 +140,69 @@ def sanitize_for_prompt(text: str, max_length: int = 2000) -> str:
     return text
 
 
+def clean_stale_tool_results(working_dir: str) -> None:
+    """Delete stale tool-results/ dirs from Claude session directories.
+
+    Claude accumulates tool-result artifact files in:
+      ~/.claude/projects/<project-key>/<session-uuid>/tool-results/
+
+    These stale files cause Claude to re-load old tool output on startup,
+    which pollutes the session context. This function removes only the
+    tool-results/ subdirectory from each session directory, leaving
+    memory/ and any other subdirectories untouched so that Ralph's
+    legitimate cross-iteration memory is preserved.
+
+    Args:
+        working_dir: The current working directory (used to derive the
+                     Claude project path key).
+    """
+    # Claude derives the project key by replacing all '/' with '-'
+    project_key = working_dir.replace("/", "-")
+    project_path = os.path.expanduser(f"~/.claude/projects/{project_key}")
+
+    if not os.path.isdir(project_path):
+        return
+
+    # UUID pattern: 8-4-4-4-12 hex characters separated by hyphens (36 chars)
+    uuid_pattern = re.compile(
+        r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+        re.IGNORECASE
+    )
+
+    cleaned_count = 0
+    try:
+        for entry in os.scandir(project_path):
+            if not entry.is_dir():
+                continue
+            if not uuid_pattern.match(entry.name):
+                continue
+
+            tool_results_dir = os.path.join(entry.path, "tool-results")
+            if not os.path.isdir(tool_results_dir):
+                continue
+
+            try:
+                shutil.rmtree(tool_results_dir)
+                cleaned_count += 1
+            except Exception as e:
+                print(
+                    f"Warning: Failed to clean {tool_results_dir}: {e}",
+                    file=sys.stderr
+                )
+    except Exception as e:
+        print(
+            f"Warning: Failed to scan project path {project_path}: {e}",
+            file=sys.stderr
+        )
+        return
+
+    if cleaned_count > 0:
+        print(
+            f"Cleaned stale tool-results from {cleaned_count} session(s)",
+            file=sys.stderr
+        )
+
+
 def main():
     """Main entry point."""
     # Validate Nix substitution occurred (check if hat file exists)
@@ -244,15 +309,14 @@ You are running in autonomous mode within: {working_dir}
     # Prepare environment
     env = os.environ.copy()
 
+    # Pre-clean stale tool-results artifacts so Claude doesn't re-load them
+    # on startup. Only tool-results/ is removed; memory/ and other dirs are
+    # preserved so Ralph's cross-iteration memory remains intact.
+    clean_stale_tool_results(working_dir)
+
     # Run Ralph as subprocess (not exec) so we can handle Ctrl+C
-    # Use /tmp as cwd to prevent Claude from loading stale project session
-    # artifacts from ~/.claude/projects/<worktree-hash>/. Claude associates
-    # sessions with the cwd, so running from /tmp means no stale tool-result
-    # files are loaded. Ralph still knows the actual working directory because
-    # the WORKING DIRECTORY RESTRICTION section of the prompt contains the
-    # absolute path.
     try:
-        process = subprocess.Popen(cmd, env=env, cwd="/tmp")
+        process = subprocess.Popen(cmd, env=env)
         exit_code = process.wait()
         sys.exit(exit_code)
     except KeyboardInterrupt:
