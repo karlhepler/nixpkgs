@@ -442,10 +442,11 @@ def write_metrics(
     Upsert one row per model into agent_metrics and one row per tool_name
     into agent_tool_usage.
 
-    INSERT OR REPLACE ensures that repeated hook firings for the same
-    (session_id, agent_id, role, model) update the existing row rather than
-    appending a new one. The recorded_at DEFAULT expression fires on every
-    replace, so the timestamp reflects the latest hook invocation.
+    Uses INSERT INTO ... ON CONFLICT DO UPDATE SET rather than INSERT OR REPLACE
+    so that the row's id and recorded_at are preserved across hook re-fires.
+    INSERT OR REPLACE deletes then re-inserts (changing id and recorded_at),
+    which causes Grafana panels to flicker when time-series queries filter by
+    recorded_at — the row appears to move forward in time on each hook fire.
     """
     for model, tokens in models.items():
         family = detect_model_family(model)
@@ -458,7 +459,7 @@ def write_metrics(
 
         conn.execute(
             """
-            INSERT OR REPLACE INTO agent_metrics (
+            INSERT INTO agent_metrics (
                 session_id, agent_id, role,
                 working_directory, kanban_session,
                 model, model_family,
@@ -468,6 +469,22 @@ def write_metrics(
                 duration_seconds, avg_turn_latency_seconds,
                 cache_hit_ratio, tool_calls, tool_errors
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(session_id, agent_id, role, model) DO UPDATE SET
+                working_directory = excluded.working_directory,
+                kanban_session = excluded.kanban_session,
+                model_family = excluded.model_family,
+                turns = excluded.turns,
+                input_tokens = excluded.input_tokens,
+                output_tokens = excluded.output_tokens,
+                cache_creation_5m_tokens = excluded.cache_creation_5m_tokens,
+                cache_creation_1h_tokens = excluded.cache_creation_1h_tokens,
+                cache_read_tokens = excluded.cache_read_tokens,
+                cost_usd = excluded.cost_usd,
+                duration_seconds = excluded.duration_seconds,
+                avg_turn_latency_seconds = excluded.avg_turn_latency_seconds,
+                cache_hit_ratio = excluded.cache_hit_ratio,
+                tool_calls = excluded.tool_calls,
+                tool_errors = excluded.tool_errors
             """,
             (
                 session_id,
@@ -495,10 +512,13 @@ def write_metrics(
     for tool_name, counts in tools.items():
         conn.execute(
             """
-            INSERT OR REPLACE INTO agent_tool_usage (
+            INSERT INTO agent_tool_usage (
                 session_id, agent_id, role,
                 tool_name, call_count, error_count
             ) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(session_id, agent_id, role, tool_name) DO UPDATE SET
+                call_count = excluded.call_count,
+                error_count = excluded.error_count
             """,
             (
                 session_id,
@@ -533,6 +553,11 @@ def main() -> None:
     agent_id = payload.get("agent_id") or ""
     working_directory = os.getcwd()
     kanban_session = lookup_kanban_session(working_directory, session_id)
+    print(
+        f"DEBUG kanban: cwd={working_directory}, session_id={session_id}, "
+        f"first8={session_id[:8]}, kanban_session={kanban_session}",
+        file=sys.stderr,
+    )
 
     if not transcript_path:
         return
