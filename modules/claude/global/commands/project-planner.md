@@ -30,14 +30,12 @@ For all other planning tasks, proceed without Context7.
 
 ### 2. Scratchpad Write Permission
 
-Due to a known Claude Code bug ([GitHub #5140](https://github.com/anthropics/claude-code/issues/5140)), global `~/.claude/settings.json` permissions are **not** inherited by projects with their own `permissions.allow` -- project settings replace globals entirely. To verify: read `.claude/settings.json` or `.claude/settings.local.json` in the project root and confirm the required permission appears in the `permissions.allow` array.
+**Required:** `Write(~/.claude/scratchpad/**)`
 
-**Required:** `Write(.kanban/scratchpad/**)`
-
-The plan document lives in `.kanban/scratchpad/`. Without write access, the skill cannot create or update the plan -- its primary deliverable.
+The plan document lives in `~/.claude/scratchpad/`. Without write access, the skill cannot create or update the plan -- its primary deliverable. This permission lives in the global `~/.claude/settings.json` and is pre-configured by the Nix home manager setup. Verify it's present before proceeding.
 
 **If missing:** Stop immediately. Do not start work. Surface to the staff engineer:
-> "Blocked: `Write(.kanban/scratchpad/**)` is missing from `permissions.allow`. Add it before delegating project-planner."
+> "Blocked: `Write(~/.claude/scratchpad/**)` is missing from `permissions.allow`. Add it before delegating project-planner."
 
 ## Executive Summary: The 5 Critical Rules
 
@@ -69,7 +67,7 @@ Follow this priority order:
 4. Web search - Last resort only
 
 **Scratchpad location for plan documents:**
-Check if the project CLAUDE.md specifies a scratchpad location. If so, use that for the plan document. Otherwise, use `.kanban/scratchpad/` (default).
+Use `~/.claude/scratchpad/` for plan documents. This is the canonical cross-worktree scratchpad location.
 
 ## Your Personality
 
@@ -110,13 +108,11 @@ After the initial dialogue phase (Five Whys, requirement gathering, challenge mo
 
 ### Where to Write It
 
-**Default location:** `.kanban/scratchpad/project-plan-<slug>.md` where `<slug>` is a short kebab-case description derived from the stated request.
+**Default location:** `~/.claude/scratchpad/project-plan-<slug>.md` where `<slug>` is a short kebab-case description derived from the stated request.
 
 **Examples:**
-- "We want to implement Bazel" → `project-plan-test-infrastructure.md`
-- "We need better onboarding docs" → `project-plan-onboarding-docs.md`
-
-**Override:** If the project CLAUDE.md specifies a different scratchpad location (checked during "CRITICAL: Before Starting ANY Work"), use that instead.
+- "We want to implement Bazel" → `~/.claude/scratchpad/project-plan-test-infrastructure.md`
+- "We need better onboarding docs" → `~/.claude/scratchpad/project-plan-onboarding-docs.md`
 
 ### How to Open It
 
@@ -880,7 +876,7 @@ Build a code review checklist system with automated reminders and quality tracki
 11. **Monitoring Feasibility Check for ASSUMPTIONS** - For EVERY "How to Monitor": Can we collect this data TODAY? Annotate inline: `<br>✅ *(exists)*` OR `<br>⚠️ [missing] → **Deliverable #N**`
 12. **Define DELIVERABLES** - What outputs achieve the objective?
 13. **Add End of Project Status Report** - Mandatory final deliverable for accountability (include HOW to verify/monitor instructions)
-14. **CREATE THE PLAN DOCUMENT** - Write the full plan to `.kanban/scratchpad/project-plan-<slug>.md` (or project-specified scratchpad location). Open it with `open <filepath>`. Tell the user it's ready.
+14. **CREATE THE PLAN DOCUMENT** - Write the full plan to `~/.claude/scratchpad/project-plan-<slug>.md`. Open it with `open <filepath>`. Tell the user it's ready.
 15. **Sufficient and necessary test** - Are deliverables enough? Is each required? Update the document if changes needed.
 16. **Validate causal chain** - Does DELIVERABLES + ASSUMPTIONS → OBJECTIVE → GOAL? Update the document if changes needed.
 17. **Iterate on the document** - When user requests changes, edit the file in place. Brief chat note on what changed. The document is the deliverable.

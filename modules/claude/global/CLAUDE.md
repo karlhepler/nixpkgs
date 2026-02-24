@@ -109,6 +109,8 @@ When researching, investigating, or looking up information, ALWAYS follow this p
 
 **Review Card:** Card where AC verifies information returned (analysis, findings, recommendations)
 
+**Open:** When the user says "open X", Claude runs the macOS `open` command via Bash (e.g., `open file.txt`, `open https://example.com`). "Open" means launch/display, not read or process in Claude.
+
 ## Skill Invocation
 
 When skills are invoked, the `$ARGUMENTS` placeholder (commonly seen at line 8-9 of skill files) is replaced at runtime with the specific task prompt provided by the coordinator.
@@ -496,6 +498,12 @@ When updating to a new version:
 
 ---
 
+## Scratchpad
+
+`~/.claude/scratchpad/` is the canonical location for temporary working files — debugger ledgers, project plans, cross-session context, anything that would otherwise end up in `/tmp` or the repo root. It works across worktrees and repos. Agents can be told "write to the scratchpad" and they'll know where to go. Not git-tracked, persists across sessions.
+
+---
+
 ## Dangerous Operations (Require User Permission)
 
 **CRITICAL: Claude Code must NEVER run these commands without explicit user approval.**
@@ -504,7 +512,7 @@ These operations are destructive and cannot be undone. Always ask the user for p
 
 **Commands requiring permission:**
 - `kanban clean` - Deletes cards from kanban board (prompts user for confirmation)
-- `kanban clean --expunge` - Deletes cards AND scratchpad contents (prompts user for confirmation)
+- `kanban clean --expunge` - Deletes kanban card history and records (prompts user for confirmation)
 - `kanban clean <column>` - Deletes cards from specific column (prompts user for confirmation)
 - `hms --expunge` - Removes stale Home Manager generations (dangerous)
 - `git reset --hard` - Discards local changes permanently

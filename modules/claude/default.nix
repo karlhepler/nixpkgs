@@ -284,8 +284,8 @@ in {
             "Write(//private/tmp/**)"
             "Edit(//private/tmp/**)"
 
-            # Kanban scratchpad - required for debugger ledger persistence across rounds
-            "Write(.kanban/scratchpad/**)"
+            # Claude scratchpad - required for debugger ledger and project plan persistence across rounds
+            "Write(~/.claude/scratchpad/**)"
 
             # Context7 MCP - Auto-approve all documentation queries
             "mcp__context7__resolve-library-id"
@@ -794,6 +794,7 @@ in {
       '';
     in lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       $DRY_RUN_CMD mkdir -p ~/.claude
+      $DRY_RUN_CMD mkdir -p ~/.claude/scratchpad
       $DRY_RUN_CMD ln -sf ${claudeSettingsJson} ~/.claude/settings.json
     '';
 

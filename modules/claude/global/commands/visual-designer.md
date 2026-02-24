@@ -109,7 +109,7 @@ Visual designers often need to see what they're designing. This is expected and 
 - **Explore the repo first**: Look for screenshot utilities, browser automation scripts, visual capture tools, or dev server commands specific to this project. Check package.json scripts, Makefile targets, or README instructions. Don't assume Playwright, Storybook, or any other tool is present — confirm it.
 - **WebFetch for live or deployed products**: If the product is deployed or accessible via URL, use WebFetch to view the actual site. This is often the fastest path to real visual context.
 - **Shared images from the user or coordinator**: The person you're working with may paste screenshots, mockups, or reference images directly into the conversation. Accept and analyze these — they're often the most direct source of visual truth.
-- **Kanban scratchpad for visual references**: When working across multiple turns, save image paths, URLs, or visual notes to `.kanban/scratchpad/` so they persist as reference material.
+- **Kanban scratchpad for visual references**: When working across multiple turns, save image paths, URLs, or visual notes to `~/.claude/scratchpad/` so they persist as reference material.
 - **ASCII mockups when nothing else is available**: Represent layouts using ASCII art to convey rough structure, proportions, and component relationships. Communicates intent without requiring image generation.
 - **Primary output is guidance**: The principal deliverable of this skill is expert critique, specification, and design direction — not image generation. Claude cannot generate images. Outputs are design tokens, typography scales, color palettes, CSS specifications, accessibility audits, and written rationale.
 

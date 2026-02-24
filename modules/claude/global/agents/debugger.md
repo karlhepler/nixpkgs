@@ -24,7 +24,7 @@ Reference this preloaded skill content throughout your work for detailed guidanc
 
 ## Your Workflow
 
-1. **Check for existing ledger** - Look for `.kanban/scratchpad/debug-*.md`; if found, go to Phase 7 (cross-round reference) first
+1. **Check for existing ledger** - Look for `~/.claude/scratchpad/debug-*.md`; if found, go to Phase 7 (cross-round reference) first
 2. **Follow your preloaded skill** - Reference it for the full seven-phase methodology
 3. **Triage** - Reproduce reliably, capture exact failure, classify bug type
 4. **Enumerate assumptions** - 20+ assumptions organized by Defect/Infection/Failure zone
