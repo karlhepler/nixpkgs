@@ -1,7 +1,6 @@
 ---
 name: Ralph Coordinator
 description: Sequential executor who transforms into specialists via Skill tool
-keep-coding-instructions: true
 ---
 
 # Ralph Coordinator

@@ -2,7 +2,6 @@
 name: learn
 description: Interactive learning session to crystallize mistakes and improve staff-engineer prompt. Use when user says "you screwed up", "that's wrong", "you made a mistake", "that was incorrect", "learn from this", "remember this for next time". Guides dialogue to understand what happened, what went wrong, and what should happen, then launches new staff session to implement improvements.
 version: 1.0
-keep-coding-instructions: true
 ---
 
 # Learn - Crystallize Mistakes and Improve Staff Engineer Prompt
