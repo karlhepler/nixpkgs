@@ -66,27 +66,38 @@ prc list $PR_NUM > /tmp/pr_comments.json
 
 # Filter to comments that need replies from Claude
 jq --arg user "$USERNAME" '
-  # Get all top-level comments not by Claude
-  [.[] | select(.in_reply_to_id == null) | select(.user.login == $user | not)] as $top_level |
-
   # Group all comments for thread analysis
   . as $all_comments |
 
-  # For each top-level comment, check if we should reply
+  # Get all top-level comments not by Claude
+  [.[] | select(.in_reply_to_id == null) | select(.user.login == $user | not)] as $top_level |
+
+  # For each top-level comment, apply thread-type-specific filtering
   $top_level[] |
   . as $comment |
 
-  # Get all replies to this comment
-  ($all_comments | map(select(.in_reply_to_id == $comment.id))) as $replies |
+  # Get all replies to this comment (chronological)
+  ($all_comments | map(select(.in_reply_to_id == $comment.id)) | sort_by(.created_at)) as $replies |
 
-  # Determine if we should reply
-  select(
-    # Case 1: No replies at all -> should reply
-    ($replies | length == 0) or
+  # Last reply in thread (null if none)
+  (if ($replies | length) > 0 then ($replies | last) else null end) as $last_reply |
 
-    # Case 2: Has replies, but most recent reply is NOT by Claude -> should reply
-    (($replies | length > 0) and ($replies | sort_by(.created_at) | last | .user.login == $user | not))
-  )
+  if $comment.is_bot then
+    # Bot threads: prc list already returns only unresolved/no-reply threads.
+    # Accept as-is — no additional filtering needed.
+    select(true)
+  else
+    # Human threads:
+    # - SKIP if our most recent reply is already the last one (waiting for human, do not double-reply)
+    # - REVIEW if there is a new human reply after our last reply (conversation has continued)
+    select(
+      # Case 1: No replies yet -> OK to reply
+      $last_reply == null or
+
+      # Case 2: Most recent reply is NOT from Claude -> human responded, warrants another look
+      ($last_reply.user.login != $user)
+    )
+  end
 ' /tmp/pr_comments.json > /tmp/unreplied_comments.json
 ```
 
