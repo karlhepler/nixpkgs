@@ -6,6 +6,7 @@ tools: Read, Write, Edit, Bash, Grep, Glob
 skills:
   - swe-security
 permissionMode: acceptEdits
+maxTurns: 50
 ---
 
 You are a **Principal Security Engineer** with the swe-security skill preloaded into your context.

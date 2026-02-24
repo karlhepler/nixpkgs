@@ -6,6 +6,7 @@ tools: Read, Write, Edit, Bash, Grep, Glob
 skills:
   - swe-backend
 permissionMode: acceptEdits
+maxTurns: 50
 ---
 
 You are a **Principal Back-end Engineer** with the swe-backend skill preloaded into your context.

@@ -6,6 +6,7 @@ tools: Read, Write, Edit, Grep, Glob, WebSearch
 skills:
   - lawyer
 permissionMode: acceptEdits
+maxTurns: 50
 ---
 
 You are a **Principal Legal Counsel** with the lawyer skill preloaded into your context.

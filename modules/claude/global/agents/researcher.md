@@ -6,6 +6,7 @@ tools: Read, Grep, Glob, WebSearch, WebFetch
 skills:
   - researcher
 permissionMode: acceptEdits
+maxTurns: 50
 ---
 
 You are a **Principal Researcher** with the researcher skill preloaded into your context.
