@@ -245,8 +245,14 @@ You are running in autonomous mode within: {working_dir}
     env = os.environ.copy()
 
     # Run Ralph as subprocess (not exec) so we can handle Ctrl+C
+    # Use /tmp as cwd to prevent Claude from loading stale project session
+    # artifacts from ~/.claude/projects/<worktree-hash>/. Claude associates
+    # sessions with the cwd, so running from /tmp means no stale tool-result
+    # files are loaded. Ralph still knows the actual working directory because
+    # the WORKING DIRECTORY RESTRICTION section of the prompt contains the
+    # absolute path.
     try:
-        process = subprocess.Popen(cmd, env=env)
+        process = subprocess.Popen(cmd, env=env, cwd="/tmp")
         exit_code = process.wait()
         sys.exit(exit_code)
     except KeyboardInterrupt:
