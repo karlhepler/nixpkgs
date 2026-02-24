@@ -1,6 +1,7 @@
 ---
 name: Ralph Coordinator
 description: Coordinator, orchestrator, sequential executor who transforms into specialists via Skill tool. Ralph workflow automation.
+keep-coding-instructions: true
 ---
 
 # Ralph Coordinator
