@@ -33,9 +33,11 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawSql": "SELECT COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics",
-          "refId": "A",
-          "format": "table"
+          "rawQueryText": "SELECT COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics",
+          "queryText": "SELECT COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics",
+          "queryType": "table",
+          "timeColumns": [],
+          "refId": "A"
         }
       ],
       "fieldConfig": {
@@ -85,9 +87,11 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawSql": "SELECT COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics WHERE date(recorded_at) = date('now')",
-          "refId": "A",
-          "format": "table"
+          "rawQueryText": "SELECT COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics WHERE date(recorded_at) = date('now')",
+          "queryText": "SELECT COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics WHERE date(recorded_at) = date('now')",
+          "queryType": "table",
+          "timeColumns": [],
+          "refId": "A"
         }
       ],
       "fieldConfig": {
@@ -137,9 +141,11 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawSql": "SELECT COUNT(DISTINCT session_id) as sessions FROM agent_metrics WHERE date(recorded_at) = date('now')",
-          "refId": "A",
-          "format": "table"
+          "rawQueryText": "SELECT COUNT(DISTINCT session_id) as sessions FROM agent_metrics WHERE date(recorded_at) = date('now')",
+          "queryText": "SELECT COUNT(DISTINCT session_id) as sessions FROM agent_metrics WHERE date(recorded_at) = date('now')",
+          "queryType": "table",
+          "timeColumns": [],
+          "refId": "A"
         }
       ],
       "fieldConfig": {
@@ -188,9 +194,11 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawSql": "SELECT date(recorded_at) as time, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics GROUP BY date(recorded_at) ORDER BY time",
-          "refId": "A",
-          "format": "time_series"
+          "rawQueryText": "SELECT date(recorded_at) || 'T00:00:00Z' as time, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics GROUP BY date(recorded_at) ORDER BY time",
+          "queryText": "SELECT date(recorded_at) || 'T00:00:00Z' as time, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics GROUP BY date(recorded_at) ORDER BY time",
+          "queryType": "time series",
+          "timeColumns": ["time"],
+          "refId": "A"
         }
       ],
       "fieldConfig": {
@@ -241,9 +249,11 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawSql": "SELECT recorded_at as time, cost_usd as cost, role FROM agent_metrics ORDER BY recorded_at",
-          "refId": "A",
-          "format": "time_series"
+          "rawQueryText": "SELECT recorded_at as time, cost_usd as cost, role FROM agent_metrics ORDER BY recorded_at",
+          "queryText": "SELECT recorded_at as time, cost_usd as cost, role FROM agent_metrics ORDER BY recorded_at",
+          "queryType": "time series",
+          "timeColumns": ["time"],
+          "refId": "A"
         }
       ],
       "fieldConfig": {
@@ -294,9 +304,11 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawSql": "SELECT role, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics WHERE role != 'parent' GROUP BY role ORDER BY cost DESC",
-          "refId": "A",
-          "format": "table"
+          "rawQueryText": "SELECT role, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics WHERE role != 'parent' GROUP BY role ORDER BY cost DESC",
+          "queryText": "SELECT role, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics WHERE role != 'parent' GROUP BY role ORDER BY cost DESC",
+          "queryType": "table",
+          "timeColumns": [],
+          "refId": "A"
         }
       ],
       "fieldConfig": {
@@ -348,9 +360,11 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawSql": "SELECT model_family, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics GROUP BY model_family ORDER BY cost DESC",
-          "refId": "A",
-          "format": "table"
+          "rawQueryText": "SELECT model_family, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics GROUP BY model_family ORDER BY cost DESC",
+          "queryText": "SELECT model_family, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics GROUP BY model_family ORDER BY cost DESC",
+          "queryType": "table",
+          "timeColumns": [],
+          "refId": "A"
         }
       ],
       "fieldConfig": {
@@ -400,9 +414,11 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawSql": "SELECT COALESCE(REPLACE(working_directory, rtrim(working_directory, replace(working_directory, '/', '')), '~/'), working_directory) as project, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics GROUP BY working_directory ORDER BY cost DESC LIMIT 10",
-          "refId": "A",
-          "format": "table"
+          "rawQueryText": "SELECT COALESCE(REPLACE(working_directory, rtrim(working_directory, replace(working_directory, '/', '')), '~/'), working_directory) as project, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics GROUP BY working_directory ORDER BY cost DESC LIMIT 10",
+          "queryText": "SELECT COALESCE(REPLACE(working_directory, rtrim(working_directory, replace(working_directory, '/', '')), '~/'), working_directory) as project, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics GROUP BY working_directory ORDER BY cost DESC LIMIT 10",
+          "queryType": "table",
+          "timeColumns": [],
+          "refId": "A"
         }
       ],
       "fieldConfig": {
@@ -454,9 +470,11 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawSql": "SELECT model_family, SUM(input_tokens) as input_tok, SUM(output_tokens) as output_tok, SUM(cache_read_tokens) as cache_tok FROM agent_metrics GROUP BY model_family",
-          "refId": "A",
-          "format": "table"
+          "rawQueryText": "SELECT model_family, SUM(input_tokens) as input_tok, SUM(output_tokens) as output_tok, SUM(cache_read_tokens) as cache_tok FROM agent_metrics GROUP BY model_family",
+          "queryText": "SELECT model_family, SUM(input_tokens) as input_tok, SUM(output_tokens) as output_tok, SUM(cache_read_tokens) as cache_tok FROM agent_metrics GROUP BY model_family",
+          "queryType": "table",
+          "timeColumns": [],
+          "refId": "A"
         }
       ],
       "fieldConfig": {
@@ -532,9 +550,11 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawSql": "SELECT role, SUM(turns) as total_turns FROM agent_metrics WHERE role != 'parent' GROUP BY role ORDER BY total_turns DESC",
-          "refId": "A",
-          "format": "table"
+          "rawQueryText": "SELECT role, SUM(turns) as total_turns FROM agent_metrics WHERE role != 'parent' GROUP BY role ORDER BY total_turns DESC",
+          "queryText": "SELECT role, SUM(turns) as total_turns FROM agent_metrics WHERE role != 'parent' GROUP BY role ORDER BY total_turns DESC",
+          "queryType": "table",
+          "timeColumns": [],
+          "refId": "A"
         }
       ],
       "fieldConfig": {
@@ -586,9 +606,11 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawSql": "SELECT COALESCE(kanban_session, 'unknown') as session_name, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics GROUP BY kanban_session ORDER BY cost DESC LIMIT 10",
-          "refId": "A",
-          "format": "table"
+          "rawQueryText": "SELECT COALESCE(kanban_session, 'unknown') as session_name, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics GROUP BY kanban_session ORDER BY cost DESC LIMIT 10",
+          "queryText": "SELECT COALESCE(kanban_session, 'unknown') as session_name, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics GROUP BY kanban_session ORDER BY cost DESC LIMIT 10",
+          "queryType": "table",
+          "timeColumns": [],
+          "refId": "A"
         }
       ],
       "fieldConfig": {
@@ -640,9 +662,11 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawSql": "SELECT session_id, COALESCE(kanban_session, '') as kanban, working_directory as project, COUNT(*) as agents, SUM(turns) as total_turns, SUM(input_tokens + output_tokens) as total_tokens, ROUND(SUM(cost_usd), 4) as total_cost FROM agent_metrics GROUP BY session_id ORDER BY total_cost DESC LIMIT 10",
-          "refId": "A",
-          "format": "table"
+          "rawQueryText": "SELECT session_id, COALESCE(kanban_session, '') as kanban, working_directory as project, COUNT(*) as agents, SUM(turns) as total_turns, SUM(input_tokens + output_tokens) as total_tokens, ROUND(SUM(cost_usd), 4) as total_cost FROM agent_metrics GROUP BY session_id ORDER BY total_cost DESC LIMIT 10",
+          "queryText": "SELECT session_id, COALESCE(kanban_session, '') as kanban, working_directory as project, COUNT(*) as agents, SUM(turns) as total_turns, SUM(input_tokens + output_tokens) as total_tokens, ROUND(SUM(cost_usd), 4) as total_cost FROM agent_metrics GROUP BY session_id ORDER BY total_cost DESC LIMIT 10",
+          "queryType": "table",
+          "timeColumns": [],
+          "refId": "A"
         }
       ],
       "fieldConfig": {
@@ -779,9 +803,11 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawSql": "SELECT role, tool_name, SUM(call_count) as calls, SUM(error_count) as errors FROM agent_tool_usage WHERE role != 'parent' GROUP BY role, tool_name ORDER BY calls DESC",
-          "refId": "A",
-          "format": "table"
+          "rawQueryText": "SELECT role, tool_name, SUM(call_count) as calls, SUM(error_count) as errors FROM agent_tool_usage WHERE role != 'parent' GROUP BY role, tool_name ORDER BY calls DESC",
+          "queryText": "SELECT role, tool_name, SUM(call_count) as calls, SUM(error_count) as errors FROM agent_tool_usage WHERE role != 'parent' GROUP BY role, tool_name ORDER BY calls DESC",
+          "queryType": "table",
+          "timeColumns": [],
+          "refId": "A"
         }
       ],
       "fieldConfig": {
@@ -899,9 +925,11 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawSql": "SELECT role, COALESCE(AVG(duration_seconds), 0) as avg_duration FROM agent_metrics WHERE role != 'parent' AND duration_seconds > 0 GROUP BY role ORDER BY avg_duration DESC",
-          "refId": "A",
-          "format": "table"
+          "rawQueryText": "SELECT role, COALESCE(AVG(duration_seconds), 0) as avg_duration FROM agent_metrics WHERE role != 'parent' AND duration_seconds > 0 GROUP BY role ORDER BY avg_duration DESC",
+          "queryText": "SELECT role, COALESCE(AVG(duration_seconds), 0) as avg_duration FROM agent_metrics WHERE role != 'parent' AND duration_seconds > 0 GROUP BY role ORDER BY avg_duration DESC",
+          "queryType": "table",
+          "timeColumns": [],
+          "refId": "A"
         }
       ],
       "fieldConfig": {
@@ -953,9 +981,11 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawSql": "SELECT date(recorded_at) as time, COALESCE(AVG(cache_hit_ratio) * 100, 0) as cache_hit_pct FROM agent_metrics WHERE cache_hit_ratio > 0 GROUP BY date(recorded_at) ORDER BY time",
-          "refId": "A",
-          "format": "time_series"
+          "rawQueryText": "SELECT date(recorded_at) || 'T00:00:00Z' as time, COALESCE(AVG(cache_hit_ratio) * 100, 0) as cache_hit_pct FROM agent_metrics WHERE cache_hit_ratio > 0 GROUP BY date(recorded_at) ORDER BY time",
+          "queryText": "SELECT date(recorded_at) || 'T00:00:00Z' as time, COALESCE(AVG(cache_hit_ratio) * 100, 0) as cache_hit_pct FROM agent_metrics WHERE cache_hit_ratio > 0 GROUP BY date(recorded_at) ORDER BY time",
+          "queryType": "time series",
+          "timeColumns": ["time"],
+          "refId": "A"
         }
       ],
       "fieldConfig": {
@@ -1025,9 +1055,11 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawSql": "SELECT role, COALESCE(SUM(tool_errors), 0) as total_errors, COALESCE(SUM(tool_calls), 0) as total_calls, CASE WHEN SUM(tool_calls) > 0 THEN ROUND(CAST(SUM(tool_errors) AS REAL) / SUM(tool_calls) * 100, 1) ELSE 0 END as error_pct FROM agent_metrics WHERE role != 'parent' GROUP BY role ORDER BY error_pct DESC",
-          "refId": "A",
-          "format": "table"
+          "rawQueryText": "SELECT role, COALESCE(SUM(tool_errors), 0) as total_errors, COALESCE(SUM(tool_calls), 0) as total_calls, CASE WHEN SUM(tool_calls) > 0 THEN ROUND(CAST(SUM(tool_errors) AS REAL) / SUM(tool_calls) * 100, 1) ELSE 0 END as error_pct FROM agent_metrics WHERE role != 'parent' GROUP BY role ORDER BY error_pct DESC",
+          "queryText": "SELECT role, COALESCE(SUM(tool_errors), 0) as total_errors, COALESCE(SUM(tool_calls), 0) as total_calls, CASE WHEN SUM(tool_calls) > 0 THEN ROUND(CAST(SUM(tool_errors) AS REAL) / SUM(tool_calls) * 100, 1) ELSE 0 END as error_pct FROM agent_metrics WHERE role != 'parent' GROUP BY role ORDER BY error_pct DESC",
+          "queryType": "table",
+          "timeColumns": [],
+          "refId": "A"
         }
       ],
       "fieldConfig": {
@@ -1098,9 +1130,11 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawSql": "SELECT role, CASE WHEN SUM(tool_calls) > 0 THEN ROUND(SUM(cost_usd) / SUM(tool_calls), 4) ELSE 0 END as cost_per_tool_call FROM agent_metrics WHERE role != 'parent' AND tool_calls > 0 GROUP BY role ORDER BY cost_per_tool_call DESC",
-          "refId": "A",
-          "format": "table"
+          "rawQueryText": "SELECT role, CASE WHEN SUM(tool_calls) > 0 THEN ROUND(SUM(cost_usd) / SUM(tool_calls), 4) ELSE 0 END as cost_per_tool_call FROM agent_metrics WHERE role != 'parent' AND tool_calls > 0 GROUP BY role ORDER BY cost_per_tool_call DESC",
+          "queryText": "SELECT role, CASE WHEN SUM(tool_calls) > 0 THEN ROUND(SUM(cost_usd) / SUM(tool_calls), 4) ELSE 0 END as cost_per_tool_call FROM agent_metrics WHERE role != 'parent' AND tool_calls > 0 GROUP BY role ORDER BY cost_per_tool_call DESC",
+          "queryType": "table",
+          "timeColumns": [],
+          "refId": "A"
         }
       ],
       "fieldConfig": {
@@ -1159,9 +1193,11 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawSql": "SELECT role, COALESCE(AVG(avg_turn_latency_seconds), 0) as avg_latency FROM agent_metrics WHERE role != 'parent' AND avg_turn_latency_seconds > 0 GROUP BY role ORDER BY avg_latency DESC",
-          "refId": "A",
-          "format": "table"
+          "rawQueryText": "SELECT role, COALESCE(AVG(avg_turn_latency_seconds), 0) as avg_latency FROM agent_metrics WHERE role != 'parent' AND avg_turn_latency_seconds > 0 GROUP BY role ORDER BY avg_latency DESC",
+          "queryText": "SELECT role, COALESCE(AVG(avg_turn_latency_seconds), 0) as avg_latency FROM agent_metrics WHERE role != 'parent' AND avg_turn_latency_seconds > 0 GROUP BY role ORDER BY avg_latency DESC",
+          "queryType": "table",
+          "timeColumns": [],
+          "refId": "A"
         }
       ],
       "fieldConfig": {
@@ -1215,5 +1251,5 @@
   "timezone": "browser",
   "title": "Claudit \u2014 Claude Code Agent Metrics",
   "uid": "claudit-dashboard",
-  "version": 1
+  "version": 2
 }
