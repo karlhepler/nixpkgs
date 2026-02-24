@@ -2125,12 +2125,30 @@ def main_loop_iteration(
         )
         sys.exit(1)
 
-    # 7. Calculate work iteration based on Ralph invocations (not smithers cycles)
+    # 7. Guard: never invoke Ralph beyond max_ralph_invocations regardless of cycle count
+    # Without this check, cycles > max_ralph_invocations would invoke Ralph with
+    # work_iteration > total_iterations (e.g. "iteration 5/4"), bypassing the budget.
+    if ralph_invocation_count >= max_ralph_invocations:
+        elapsed = time.time() - start_time
+
+        log("🟡 Max Ralph invocations reached — no more Ralph invocations allowed")
+
+        _show_card_and_notify(
+            "❌", "Max Ralph Invocations Reached",
+            pr_number, pr_url, pr_info, owner, repo,
+            cycle, elapsed, checks, bot_comments,
+            "Smithers Max Iterations",
+            f"PR #{pr_number} has unresolved issues after {max_ralph_invocations} attempts",
+            "Sosumi"
+        )
+        sys.exit(1)
+
+    # 8. Calculate work iteration based on Ralph invocations (not smithers cycles)
     # Ralph is invoked up to max_ralph_invocations times
     work_iteration = ralph_invocation_count + 1
     total_iterations = max_ralph_invocations
 
-    # 8. Generate prompt and invoke Ralph
+    # 9. Generate prompt and invoke Ralph
     log("📝 Generating prompt for Ralph...")
     prompt = generate_prompt(
         pr_url, pr_info, failed_checks, bot_comments, conflicts,
