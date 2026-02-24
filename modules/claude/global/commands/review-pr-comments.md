@@ -1,7 +1,6 @@
 ---
 name: review-pr-comments
 description: Review PR feedback and respond to code reviewers when user asks to "review PR feedback", "respond to reviewer", "address review comments", "reply to code review", "check PR feedback", or "address PR review"
-version: 1.0
 ---
 
 # Review Pull Request Comments
@@ -107,8 +106,8 @@ For each comment that needs a reply:
 
 **1. Read the comment:**
 ```bash
-cat /tmp/unreplied_comments.json | jq -r '.[] |
-  "ID: \(.id)\nAuthor: \(.user.login)\nis_bot: \(.is_bot)\nPath: \(.path):\(.line // .original_position)\n\(.body)\n---"'
+jq --slurp -r '.[] |
+  "ID: \(.id)\nAuthor: \(.user.login)\nis_bot: \(.is_bot)\nPath: \(.path):\(.line // .original_position)\n\(.body)\n---"' /tmp/unreplied_comments.json
 ```
 
 **2. Identify comment author type (2-tier detection):**
@@ -190,9 +189,8 @@ gh api --method POST \
 **For bot threads only — resolve after replying:**
 
 ```bash
-gh api --method PUT \
-  repos/$REPO/pulls/$PR_NUM/comments/COMMENT_ID/resolved \
-  -f resolved=true
+# THREAD_ID is the thread_id field from prc list output (GraphQL node ID, not comment database ID)
+prc resolve THREAD_ID
 ```
 
 Do NOT resolve human threads. Leave them open.
@@ -264,10 +262,16 @@ Do NOT resolve human threads after replying.
 
 After replying to all comments:
 
-1. Check GitHub PR page in browser
-2. Verify all replies are threaded under original comments
-3. Confirm no PR-level comments were added
-4. Verify original comments weren't edited
+```bash
+# Re-fetch comments and confirm replies were posted under their parent threads
+prc list $PR_NUM | jq '[.comments[] | select(.in_reply_to_id != null)] | length'
+
+# Confirm no PR-level comments were added by Claude
+prc list $PR_NUM | jq --arg user "$USERNAME" '[.comments[] | select(.type == "pr-level") | select(.author == $user)]'
+
+# Confirm no inline comments were edited (all created_at should differ from updated_at only for the bot's own comments, not for original comments authored by others)
+prc list $PR_NUM | jq '[.comments[] | select(.author != $user) | select(.created_at != .updated_at)]' --arg user "$USERNAME"
+```
 
 ## Key Principles
 
