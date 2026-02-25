@@ -7,43 +7,138 @@ let
   # Common hook library functions (inlined at build time)
   hookCommon = builtins.readFile ./claude-hook-common.bash;
 
-  # Ralph Coordinator output style content (stripped of YAML frontmatter)
-  ralphCoordinatorContent = let
-    raw = builtins.readFile ./global/output-styles/ralph-coordinator.md;
-    # Split on "---" and take everything after the second occurrence
-    parts = lib.splitString "---" raw;
-    # parts[0] = "", parts[1] = frontmatter, parts[2...] = content
-    contentParts = lib.drop 2 parts;
-  in lib.concatStringsSep "---" contentParts;
+  # Strip YAML frontmatter from a markdown file
+  stripFrontmatter = raw:
+    let
+      parts = lib.splitString "---" raw;
+      contentParts = lib.drop 2 parts;
+    in lib.concatStringsSep "---" contentParts;
 
-  # Generate Ralph hat YAML with embedded Ralph Coordinator instructions
-  ralphCoordinatorHatYaml = pkgs.writeText "ralph-coordinator-hat.yml" ''
-    # Ralph Hat Configuration: Ralph Coordinator
+  # Indent each line of text by N spaces (for YAML embedding)
+  indentLines = spaces: text:
+    let
+      prefix = lib.concatStrings (lib.genList (_: " ") spaces);
+    in
+    lib.concatMapStringsSep "\n"
+      (line: "${prefix}${line}")
+      (lib.splitString "\n" text);
+
+  # Generate a specialist hat YAML block from a skill file.
+  # Supports two modes: implementation (implementation.{domain}.needed) and
+  # review (review.{domain}.needed). Researcher uses makeResearcherHat instead.
+  makeSkillHat = { hatKey, display, description, domain, filePath }:
+    let
+      raw = builtins.readFile filePath;
+      body = stripFrontmatter raw;
+      # Replace $ARGUMENTS placeholder with ralph context instruction
+      withContext = builtins.replaceStrings
+        [ "$ARGUMENTS" ]
+        [ "You receive your task from the event payload that triggered you and the session context.\nComplete the work described, then emit your completion event." ]
+        body;
+      # Append emit instructions (additive - keep existing verification checklists)
+      withEmit = withContext + ''
+
+
+## Emit When Complete
+
+Once all verification passes:
+
+**If triggered by `implementation.${domain}.needed`:**
+```
+ralph emit "work.done" "brief summary of what was accomplished"
+```
+
+**If triggered by `review.${domain}.needed`:**
+```
+ralph emit "review.${domain}.done" "findings: [pass|fail], issues: [none|description of blockers]"
+```
+
+Payload: 1-2 sentences max.
+'';
+      indented = indentLines 10 withEmit;
+    in ''
+      ${hatKey}:
+        name: "${display}"
+        description: "${description}"
+        triggers: ["implementation.${domain}.needed", "review.${domain}.needed"]
+        publishes: ["work.done", "review.${domain}.done"]
+        default_publishes: "work.done"
+        instructions: |
+${indented}
+  '';
+
+  # Researcher hat: investigation only, no review mode
+  makeResearcherHat = filePath:
+    let
+      raw = builtins.readFile filePath;
+      body = stripFrontmatter raw;
+      withContext = builtins.replaceStrings
+        [ "$ARGUMENTS" ]
+        [ "You receive your research question from the event payload that triggered you.\nInvestigate thoroughly, then emit your completion event." ]
+        body;
+      withEmit = withContext + ''
+
+
+## Emit When Complete
+
+Once investigation is complete:
+
+```
+ralph emit "research.done" "findings: [summary of what you discovered]"
+```
+
+Payload: 1-2 sentences summarizing key findings.
+'';
+      indented = indentLines 10 withEmit;
+    in ''
+      researcher:
+        name: "Researcher"
+        description: "Multi-source investigation, fact-checking, information synthesis"
+        triggers: ["research.needed"]
+        publishes: ["research.done"]
+        default_publishes: "research.done"
+        instructions: |
+${indented}
+  '';
+
+  # Coordinator hat content from monty-burns.md (frontmatter stripped)
+  montyBurnsContent = stripFrontmatter (builtins.readFile ./global/hats/monty-burns.md);
+
+  # All specialist hats (7 specialists + researcher)
+  skillHats = lib.concatStrings [
+    (makeSkillHat { hatKey = "swe-backend";   display = "Backend Engineer";         description = "Backend APIs, databases, server-side logic, data modeling";        domain = "backend";   filePath = ./global/commands/swe-backend.md;   })
+    (makeSkillHat { hatKey = "swe-frontend";  display = "Frontend Engineer";        description = "React/Next.js UI, TypeScript, CSS, accessibility, web performance"; domain = "frontend";  filePath = ./global/commands/swe-frontend.md;  })
+    (makeSkillHat { hatKey = "swe-fullstack"; display = "Fullstack Engineer";        description = "End-to-end features from UI to API to database";                   domain = "fullstack"; filePath = ./global/commands/swe-fullstack.md; })
+    (makeSkillHat { hatKey = "swe-devex";     display = "DevEx Engineer";           description = "CI/CD, build systems, developer tooling, testing infrastructure";  domain = "devex";     filePath = ./global/commands/swe-devex.md;     })
+    (makeSkillHat { hatKey = "swe-infra";     display = "Infrastructure Engineer";  description = "Kubernetes, Terraform, cloud platforms, IaC, networking";           domain = "infra";     filePath = ./global/commands/swe-infra.md;     })
+    (makeSkillHat { hatKey = "swe-security";  display = "Security Engineer";         description = "Security review, vulnerability assessment, threat modeling";        domain = "security";  filePath = ./global/commands/swe-security.md;  })
+    (makeSkillHat { hatKey = "swe-sre";       display = "SRE";                       description = "Reliability, observability, SLIs/SLOs, monitoring, incidents";     domain = "sre";       filePath = ./global/commands/swe-sre.md;       })
+    (makeResearcherHat ./global/commands/researcher.md)
+  ];
+
+  # Generate multi-hat Ralph YAML with Monty Burns coordinator + 8 specialists
+  montyBurnsHatYaml = pkgs.writeText "monty-burns-hat.yml" ''
+    # Ralph Hat Configuration: Monty Burns (Multi-Hat Architecture)
     # Generated from Home Manager - do not edit directly
-    # Source: modules/claude/global/output-styles/ralph-coordinator.md
-    #
-    # Usage:
-    #   cp $(ralph-coordinator-hat) ralph.yml
-    #   ralph run --config $(ralph-coordinator-hat)
+    # Source: modules/claude/global/hats/monty-burns.md + modules/claude/global/commands/*.md
 
     event_loop:
-      prompt_file: "PROMPT.md"
-      completion_promise: "LOOP_COMPLETE"
       starting_event: "loop.start"
-      max_iterations: 50
+      completion_promise: "LOOP_COMPLETE"
 
     cli:
       backend: "claude"
 
     hats:
-      ralph-coordinator:
-        name: "🎭 ralph"
-        description: "Sequential coordinator who executes work directly via Skill tool"
-        triggers: ["loop.start", "work.review_needed", "task.blocked"]
-        publishes: ["research.needed", "implementation.needed", "work.approved", "LOOP_COMPLETE"]
-        default_publishes: "work.approved"
+      monty-burns:
+        name: "Monty Burns"
+        description: "Routes work to specialists and manages tiered review workflow"
+        triggers: ["loop.start", "work.done", "research.done", "review.security.done", "review.infra.done", "review.devex.done", "review.backend.done", "review.sre.done", "review.frontend.done", "review.fullstack.done"]
+        publishes: ["implementation.backend.needed", "implementation.frontend.needed", "implementation.fullstack.needed", "implementation.devex.needed", "implementation.infra.needed", "implementation.security.needed", "implementation.sre.needed", "research.needed", "review.security.needed", "review.infra.needed", "review.devex.needed", "review.backend.needed", "review.sre.needed", "review.frontend.needed", "review.fullstack.needed", "LOOP_COMPLETE"]
         instructions: |
-    ${lib.concatMapStringsSep "\n" (line: "      ${line}") (lib.splitString "\n" ralphCoordinatorContent)}
+${indentLines 10 montyBurnsContent}
+
+${skillHats}
   '';
 
   # Python environment for smithers with required packages
@@ -57,7 +152,7 @@ let
     flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
   } (builtins.replaceStrings
     ["RALPH_COORDINATOR_HAT_YAML"]
-    ["${ralphCoordinatorHatYaml}"]
+    ["${montyBurnsHatYaml}"]
     (builtins.readFile ./burns.py));
 
   # Smithers Python CLI (token-efficient PR watcher)
