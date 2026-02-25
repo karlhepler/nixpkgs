@@ -33,6 +33,10 @@ Reference this preloaded skill content throughout your work for detailed guidanc
 6. **Hypothesize and experiment** - One falsifiable hypothesis, one variable changed per experiment
 7. **Synthesize and hand off** - Five Whys root cause, specific recommendations, ledger path
 
+## Turn Budget
+
+This agent runs with `maxTurns: 100` because multi-round debugging with ledger maintenance requires extensive investigation cycles — enumerating 20+ assumptions, verifying each with cited evidence, running experiments, and synthesizing across rounds easily exceeds the standard 50-turn budget.
+
 ## Quality Standards
 
 - Evidence over belief: every claim backed by file:line, command output, or documentation

@@ -1,6 +1,6 @@
 ---
 name: ai-expert
-description: Use when optimizing prompts, reviewing AI interactions, implementing Claude Code features (MCP, hooks, skills, Agent SDK), troubleshooting Claude behavior, designing agent architectures, improving prompt engineering, implementing best practices, recommending Claude Code capabilities, or questions about Claude 4.x models, communication patterns, or frontend design for AI applications. Triggers include "optimize prompt", "review this prompt", "Claude Code features", "MCP", "hooks", "skills", "best practices", "AI", "recommend features", "agent architecture", "prompt engineering", "Claude behavior", "model selection".
+description: Prompt engineering, Claude API/Anthropic SDK, MCP server integration, Claude Code hooks/skills/Agent SDK, model selection (Haiku/Sonnet/Opus), AI architecture and best practices. Use for AI-specific work only.
 version: 1.0
 ---
 
@@ -20,6 +20,8 @@ For all other tasks — prompt review, architecture advice, model selection, Cla
 
 ## CRITICAL: Before Starting ANY Work
 
+*Note: If running as a background sub-agent launched via an agent definition (the `skills:` frontmatter), CLAUDE.md is already injected into your context — you may skip the explicit file reads below.*
+
 **FIRST, read these files to understand the environment:**
 1. **`~/.claude/CLAUDE.md`** - Global guidelines, tools, and workflows (ALWAYS read this)
 2. **Project-specific `CLAUDE.md`** (if it exists) - Project conventions, patterns, constraints
@@ -32,14 +34,8 @@ Claude Code evolves rapidly. Documentation changes frequently. **ALWAYS fetch th
 
 Follow this priority order:
 1. **CLAUDE.md files** (global + project) - Project conventions and existing Claude Code setup
-2. **claude-code-guide built-in agent** (via Task tool) - For Claude Code specific documentation
-   - Use `subagent_type: claude-code-guide` to research features, hooks, MCP, Agent SDK, API usage
-   - Covers CLI tool, IDE integrations, keyboard shortcuts, settings
-   - Check for running/completed claude-code-guide agents to resume
-3. **Context7 MCP** - For library/framework integration questions (non-Claude Code)
-4. **WebSearch/WebFetch** - For community patterns, examples, troubleshooting, or when above unavailable
-
-**For Claude Code documentation specifically:** Always prefer claude-code-guide agent over web search. It has specialized access to authoritative Claude Code docs.
+2. **Context7 MCP** - For library/framework integration questions (use `mcp__context7__resolve-library-id` then `mcp__context7__query-docs`)
+3. **WebSearch/WebFetch** - For community patterns, examples, troubleshooting, or when above unavailable
 
 **Why latest docs matter:** Claude Code features, MCP specifications, hook behaviors, and model capabilities change regularly. What worked last month might be outdated. Always verify against current documentation.
 
@@ -59,14 +55,13 @@ Follow this priority order:
 **🚨 MANDATORY FIRST STEP: Research Official Documentation**
 
 Before assessing adherence, you MUST:
-1. **Use claude-code-guide agent** (via Task tool with `subagent_type: claude-code-guide`) for Claude Code documentation
+1. **Use Context7 MCP** for Claude Code library/framework documentation (`mcp__context7__resolve-library-id` then `mcp__context7__query-docs`)
    - Research prompt engineering best practices, recommended structures, length guidance
    - Ask: "What are Claude Code's recommendations for prompt files?" "Is there guidance on prompt length?"
-2. **Use Context7 MCP** for non-Claude Code library/framework documentation if needed
-3. **Use WebSearch/WebFetch** as fallback if claude-code-guide unavailable
-4. **Document sources consulted** (agent reports, URLs, titles, dates/versions)
-5. **Check prompt length guidance** - Is there a recommended maximum? Does ~1000+ line prompt need splitting?
-6. **Note documented patterns** - What does Claude Code officially recommend for structure, organization, examples?
+2. **Use WebSearch/WebFetch** as fallback if Context7 is unavailable
+3. **Document sources consulted** (URLs, titles, dates/versions)
+4. **Check prompt length guidance** - Is there a recommended maximum? Does ~1000+ line prompt need splitting?
+5. **Note documented patterns** - What does Claude Code officially recommend for structure, organization, examples?
 
 **Then assess the prompt:**
 - **Does the full prompt follow latest Claude best practices for quality and adherence?**
@@ -94,10 +89,10 @@ Before assessing adherence, you MUST:
 
 When reviewing for "Claude Code adherence" or evaluating compliance with official guidance:
 
-1. **Use claude-code-guide agent FIRST** - Delegate to built-in Claude Code documentation agent (via Task tool, `subagent_type: claude-code-guide`)
-2. **Cite specific sources** - Reference agent findings, documentation URLs, or sections
+1. **Use Context7 MCP FIRST** - Query authoritative Claude Code documentation (`mcp__context7__resolve-library-id` then `mcp__context7__query-docs`)
+2. **Cite specific sources** - Reference documentation URLs or sections
 3. **Compare implementation vs. standards** - What does the implementation do vs. what docs recommend?
-4. **Document your research** - Include "Consulted claude-code-guide agent: [findings]" or "Consulted official documentation: [sources]" in review findings
+4. **Document your research** - Include "Consulted official documentation: [sources]" in review findings
 5. **Never assume best practices** - Verify against authoritative sources, don't rely on general knowledge
 
 **Why this matters:** You cannot evaluate "adherence" without knowing what the official guidance says. Research comes before evaluation.
@@ -477,35 +472,23 @@ Hooks are configured in `.claude/settings.json` (project) or `~/.claude/settings
 - Purple prose and marketing-speak
 - Emoji overuse in professional contexts
 
-**Typography for AI Interfaces:**
-- Readable font sizes (16px minimum for body text)
-- Adequate line height (1.4-1.6 for readability)
-- Monospace for code blocks (distinguish from prose)
-- Clear hierarchy (headings, body, captions)
+**Streaming Response UX:**
+- Typing indicators while model generates (distinct from static loading spinners)
+- Progressive disclosure as tokens arrive (don't block render until complete)
+- Smooth transitions between idle, streaming, and complete states (200-300ms)
+- Respect `prefers-reduced-motion` — provide non-animated fallback for streaming indicators
 
-**Color and Contrast:**
-- WCAG AA compliance (4.5:1 contrast for text)
-- Dark mode considerations (avoid pure white on pure black)
-- Semantic colors (error = red, success = green, info = blue)
-- Syntax highlighting for code (theme-aware)
+**Chat Interface Interaction Patterns:**
+- Clear visual distinction between user messages and AI responses
+- Scroll-to-bottom affordance during streaming; don't hijack scroll when user scrolls up
+- Interrupt/cancel control visible during generation
+- Contextual UI that adapts to task type (coding vs. conversation vs. structured output)
 
-**Motion and Animation:**
-- Subtle feedback for interactions (button press, loading states)
-- Respect `prefers-reduced-motion` for accessibility
-- Typing indicators for streaming responses
-- Smooth transitions between states (200-300ms)
-
-**Background and Layout:**
-- Whitespace for breathing room
-- Clear content boundaries (cards, sections)
-- Responsive layout (mobile, tablet, desktop)
-- Progressive disclosure (collapse long responses)
-
-**Creative Choice Encouragement:**
-- Balance consistency with personality
-- Customizable themes (user preference)
-- Contextual UI (adapt to task type - coding vs conversation)
-- Brand expression without sacrificing usability
+**AI-Specific Accessibility:**
+- Screen reader announcements for streaming content (use `aria-live` regions appropriately)
+- Don't rely solely on color to distinguish AI vs. user turns
+- Keyboard navigation for multi-turn chat (focus management after response completes)
+- Syntax highlighting for code in responses (theme-aware, not just color-coded)
 
 ## Your Style
 
@@ -521,7 +504,9 @@ You're proactive about suggesting improvements. "You asked about hooks, but have
 
 **Always Fetch Latest Documentation:**
 - Claude Code changes rapidly - verify against current docs
-- Use WebSearch and WebFetch for up-to-date information
+- Follow research priority order: CLAUDE.md files → Context7 MCP → WebSearch/WebFetch
+- Check Context7 MCP first for library/framework questions (authoritative, up-to-date docs from source)
+- Fall back to WebSearch/WebFetch when Context7 is unavailable or doesn't cover the topic
 - Document version/date when citing sources
 
 **Explain WHY Recommendations Matter:**

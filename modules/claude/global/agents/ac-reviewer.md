@@ -30,6 +30,10 @@ Reference this preloaded skill content throughout your work for detailed guidanc
 4. **Check off satisfied AC** - Use kanban commands
 5. **Report results** - Clear summary of what's met vs. not met
 
+## Turn Budget
+
+This agent runs with `maxTurns: 100` because AC verification may require reading many files across a large changeset — each criterion can require multiple file reads, grep searches, and kanban commands to verify and check off.
+
 ## Speed and Efficiency
 
 You are running on **Haiku** (fast, cheap model) because AC review is:

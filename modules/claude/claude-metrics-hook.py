@@ -28,35 +28,56 @@ from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # Pricing table — per 1M tokens, keyed by model family
+# Prices last verified: 2026-02-25
+# Source: https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching
+#
+# Model identifier patterns per family:
+#   "opus"     — claude-opus-4, claude-opus-4-5, claude-opus-4-6 (current gen, $5/$25)
+#                NOTE: legacy models claude-opus-4-1 and claude-3-opus billed at
+#                $15 input / $75 output / $18.75 cache-write-5m / $30 cache-write-1h /
+#                $1.50 cache-read. Those are deprecated and cost here will be understated
+#                if encountered.
+#   "sonnet"   — claude-sonnet-4, claude-sonnet-4-5, claude-sonnet-4-6,
+#                claude-sonnet-3-7 (deprecated)
+#   "haiku-3.5"— claude-haiku-3-5 (deprecated)
+#   "haiku"    — claude-haiku-4-5 and newer haiku models ($1/$5). NOTE: legacy
+#                claude-haiku-3 billed at $0.25 input / $1.25 output; cost will be
+#                overstated if encountered. haiku-3.5 is handled by the "haiku-3.5"
+#                key above.
+#   "unknown"  — unrecognised model strings; cost recorded as $0.00
 # ---------------------------------------------------------------------------
 PRICING = {
     "opus": {
-        "input": 15.00,
-        "output": 75.00,
-        "cache_creation_5m": 18.75,
-        "cache_creation_1h": 0.00,  # not yet billed separately
-        "cache_read": 1.50,
+        # claude-opus-4, claude-opus-4-5, claude-opus-4-6
+        "input": 5.00,
+        "output": 25.00,
+        "cache_creation_5m": 6.25,
+        "cache_creation_1h": 10.00,
+        "cache_read": 0.50,
     },
     "sonnet": {
+        # claude-sonnet-4, claude-sonnet-4-5, claude-sonnet-4-6
         "input": 3.00,
         "output": 15.00,
         "cache_creation_5m": 3.75,
-        "cache_creation_1h": 0.00,
+        "cache_creation_1h": 6.00,
         "cache_read": 0.30,
     },
     "haiku-3.5": {
+        # claude-haiku-3-5 (deprecated)
         "input": 0.80,
         "output": 4.00,
         "cache_creation_5m": 1.00,
-        "cache_creation_1h": 0.00,
+        "cache_creation_1h": 1.60,
         "cache_read": 0.08,
     },
     "haiku": {
-        "input": 0.80,
-        "output": 4.00,
-        "cache_creation_5m": 1.00,
-        "cache_creation_1h": 0.00,
-        "cache_read": 0.08,
+        # claude-haiku-4-5 and newer haiku models
+        "input": 1.00,
+        "output": 5.00,
+        "cache_creation_5m": 1.25,
+        "cache_creation_1h": 2.00,
+        "cache_read": 0.10,
     },
     "unknown": {
         "input": 0.00,

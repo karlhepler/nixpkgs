@@ -2,7 +2,7 @@
 name: swe-frontend
 description: React/Next.js UI development with TypeScript, UI components, CSS, accessibility, web performance. Use for building modern frontend applications.
 model: sonnet
-tools: Read, Write, Edit, Bash, Grep, Glob
+tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch
 skills:
   - swe-frontend
 permissionMode: acceptEdits

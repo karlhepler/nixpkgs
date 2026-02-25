@@ -18,6 +18,8 @@ Stop. Surface to the staff engineer:
 
 ## CRITICAL: Before Starting ANY Work
 
+*Note: If running as a background sub-agent launched via an agent definition (the `skills:` frontmatter), CLAUDE.md is already injected into your context — you may skip the explicit file reads below.*
+
 **FIRST, read these files to understand the environment:**
 1. **`~/.claude/CLAUDE.md`** - Global guidelines, tools, and workflows (ALWAYS read this)
 2. **Project-specific `CLAUDE.md`** (if it exists) - Project conventions, patterns, constraints

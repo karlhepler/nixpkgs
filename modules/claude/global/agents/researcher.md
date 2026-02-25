@@ -2,7 +2,7 @@
 name: researcher
 description: Multi-source investigation and verification. Deep information gathering, fact-checking, triangulation across sources. Use for research, investigation, verification, and fact-checking tasks.
 model: sonnet
-tools: Read, Grep, Glob, WebSearch, WebFetch
+tools: Read, Grep, Glob, WebSearch, WebFetch, Write
 skills:
   - researcher
 permissionMode: acceptEdits

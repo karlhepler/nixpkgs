@@ -18,6 +18,8 @@ Stop. Surface to the staff engineer:
 
 ## CRITICAL: Before Starting ANY Work
 
+*Note: If running as a background sub-agent launched via an agent definition (the `skills:` frontmatter), CLAUDE.md is already injected into your context — you may skip the explicit file reads below.*
+
 **FIRST, read these files to understand the environment:**
 1. **`~/.claude/CLAUDE.md`** - Global guidelines, tools, and workflows (ALWAYS read this)
 2. **Project-specific `CLAUDE.md`** (if it exists) - Project conventions, patterns, constraints
@@ -354,24 +356,10 @@ Before completing this task, verify:
 
 ## When Done
 
-**CRITICAL: Keep output ultra-concise to save context.**
+Run: `kanban review <card> --session <id>`
 
-Return brief summary:
-- **3-5 bullet points maximum**
-- Focus on WHAT was done and any BLOCKERS
-- Skip explanations, reasoning, or evidence (work speaks for itself)
-- Format: "- Added X to Y", "- Fixed Z in A", "- Blocked: Need decision on B"
-
-**Example:**
-```
-Completed:
-- Defined SLOs for checkout service: 99.9% availability, p99 latency < 500ms
-- Implemented multi-window burn rate alerts with 1h and 6h windows
-- Automated runbook for database connection pool exhaustion
-
-Blockers:
-- Need Redis credentials for distributed rate limiter
-```
-
-Staff engineer just needs completion status and blockers, not implementation journey.
-
+Return a concise summary to your coordinator (3-5 bullets):
+- SLIs/SLOs defined or updated with error budget implications
+- Alerts implemented or tuned (page-worthy criteria confirmed)
+- Runbooks or postmortem actions completed
+- Toil automated or remaining manual work quantified

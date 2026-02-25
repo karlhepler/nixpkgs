@@ -2,7 +2,7 @@
 name: swe-sre
 description: Reliability and observability engineering using Google SRE principles. SLIs/SLOs, monitoring, alerts, incident response, toil automation. Use for ensuring system uptime and graceful failure modes.
 model: sonnet
-tools: Read, Write, Edit, Bash, Grep, Glob
+tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch
 skills:
   - swe-sre
 permissionMode: acceptEdits

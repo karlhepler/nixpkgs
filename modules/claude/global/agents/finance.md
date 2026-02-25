@@ -2,7 +2,7 @@
 name: finance
 description: Financial analysis and planning. Unit economics, CAC/LTV, burn rate, MRR/ARR, pricing strategy, budgeting, forecasting, SaaS metrics, fundraising, financial modeling. Use for financial analysis, pricing decisions, or board reporting.
 model: sonnet
-tools: Read, Write, Edit, Bash, Grep, Glob
+tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch
 skills:
   - finance
 permissionMode: acceptEdits

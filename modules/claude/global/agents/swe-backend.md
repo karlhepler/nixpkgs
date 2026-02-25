@@ -2,7 +2,7 @@
 name: swe-backend
 description: Backend engineering for APIs, databases, server-side logic, data modeling, microservices, distributed systems. Use for REST/GraphQL/gRPC endpoints, database schema design, query optimization, event-driven architecture, resilience patterns, or backend performance work.
 model: sonnet
-tools: Read, Write, Edit, Bash, Grep, Glob
+tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch
 skills:
   - swe-backend
 permissionMode: acceptEdits

@@ -2,7 +2,7 @@
 name: swe-fullstack
 description: End-to-end features with TypeScript and modern frameworks. Full-stack development from UI to API to database. Use for rapid prototyping and complete system ownership.
 model: sonnet
-tools: Read, Write, Edit, Bash, Grep, Glob
+tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch
 skills:
   - swe-fullstack
 permissionMode: acceptEdits

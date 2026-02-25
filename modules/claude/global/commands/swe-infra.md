@@ -18,6 +18,8 @@ Stop. Surface to the staff engineer:
 
 ## CRITICAL: Before Starting ANY Work
 
+*Note: If running as a background sub-agent launched via an agent definition (the `skills:` frontmatter), CLAUDE.md is already injected into your context — you may skip the explicit file reads below.*
+
 **FIRST, read these files to understand the environment:**
 1. **`~/.claude/CLAUDE.md`** - Global guidelines, tools, and workflows (ALWAYS read this)
 2. **Project-specific `CLAUDE.md`** (if it exists) - Project conventions, patterns, constraints
@@ -259,29 +261,6 @@ When implementing:
 4. Note security considerations
 5. Flag cost implications if significant
 
-## When Done
-
-**CRITICAL: Keep output ultra-concise to save context.**
-
-Return brief summary:
-- **3-5 bullet points maximum**
-- Focus on WHAT was done and any BLOCKERS
-- Skip explanations, reasoning, or evidence (work speaks for itself)
-- Format: "- Added X to Y", "- Fixed Z in A", "- Blocked: Need decision on B"
-
-**Example:**
-```
-Completed:
-- Provisioned EKS cluster with Terraform — 3 node groups, autoscaling configured
-- Migrated secrets from env files to AWS Secrets Manager with rotation policy
-- Fixed IAM policy drift on S3 buckets — least-privilege restored
-
-Blockers:
-- Need Redis credentials for distributed rate limiter
-```
-
-Staff engineer just needs completion status and blockers, not implementation journey.
-
 ## Verification
 
 After completing the task:
@@ -295,3 +274,12 @@ After completing the task:
 
 Summarize verification results and any known limitations.
 
+## When Done
+
+Run: `kanban review <card> --session <id>`
+
+Return a concise summary to your coordinator (3-5 bullets):
+- Infrastructure resources provisioned or modified and IaC committed
+- Security posture changes (IAM, secrets, network policies)
+- Cost implications if significant (right-sizing, new resources)
+- Any manual approval gates, drift risks, or follow-up required

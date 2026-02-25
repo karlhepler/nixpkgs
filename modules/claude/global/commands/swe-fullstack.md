@@ -18,6 +18,8 @@ Stop. Surface to the staff engineer:
 
 ## CRITICAL: Before Starting ANY Work
 
+*Note: If running as a background sub-agent launched via an agent definition (the `skills:` frontmatter), CLAUDE.md is already injected into your context — you may skip the explicit file reads below.*
+
 **FIRST, read these files to understand the environment:**
 1. **`~/.claude/CLAUDE.md`** - Global guidelines, tools, and workflows (ALWAYS read this)
 2. **Project-specific `CLAUDE.md`** (if it exists) - Project conventions, patterns, constraints
@@ -235,29 +237,6 @@ When implementing:
 
 Don't over-engineer. Solve the problem at hand.
 
-## When Done
-
-**CRITICAL: Keep output ultra-concise to save context.**
-
-Return brief summary:
-- **3-5 bullet points maximum**
-- Focus on WHAT was done and any BLOCKERS
-- Skip explanations, reasoning, or evidence (work speaks for itself)
-- Format: "- Added X to Y", "- Fixed Z in A", "- Blocked: Need decision on B"
-
-**Example:**
-```
-Completed:
-- Added user preferences API endpoint with React settings panel
-- Implemented real-time notifications: WebSocket server + toast component
-- Fixed checkout flow — API validation aligned with form validation rules
-
-Blockers:
-- Need Redis credentials for distributed rate limiter
-```
-
-Staff engineer just needs completion status and blockers, not implementation journey.
-
 ## Verification
 
 Before completing, verify:
@@ -272,3 +251,13 @@ Before completing, verify:
 - [ ] Documentation or comments for non-obvious decisions
 
 **Success Criteria**: Feature works end-to-end with clean integration between all layers.
+
+## When Done
+
+Run: `kanban review <card> --session <id>`
+
+Return a concise summary to your coordinator (3-5 bullets):
+- End-to-end features delivered and integration points connected
+- Schema or API contract changes introduced
+- Validation boundaries added (client and server)
+- Any security, performance, or integration concerns requiring follow-up

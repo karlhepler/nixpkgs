@@ -50,7 +50,13 @@ except Exception:
 
 # Only process C# files
 if [[ -n "$file_path" && "$file_path" == *.cs ]]; then
-    # Check if dotnet-csharpier is available and the file exists
+    # Intentional exception to the no-fallback scripting principle:
+    # dotnet-csharpier is project-specific C# tooling, not a system-wide
+    # Nix dependency. Not all projects use C#, so absence is expected and
+    # normal. The check here is a runtime feature-detection guard, not a
+    # defensive fallback — formatting is skipped silently when the tool is
+    # absent rather than failing loudly, because that is the correct behavior
+    # for an optional, project-specific formatter.
     if command -v dotnet-csharpier >/dev/null 2>&1 && [[ -f "$file_path" ]]; then
         # Run dotnet-csharpier on the file, suppress output to avoid noise
         dotnet-csharpier "$file_path" &>/dev/null || true

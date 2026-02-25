@@ -2,7 +2,7 @@
 name: swe-devex
 description: Developer productivity and experience. CI/CD pipelines, build systems, testing infrastructure, DORA metrics, platform engineering, golden paths. Use for improving developer workflow efficiency and inner loop optimization.
 model: sonnet
-tools: Read, Write, Edit, Bash, Grep, Glob
+tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch
 skills:
   - swe-devex
 permissionMode: acceptEdits

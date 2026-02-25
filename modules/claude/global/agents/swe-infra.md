@@ -2,7 +2,7 @@
 name: swe-infra
 description: Cloud and infrastructure engineering for Kubernetes, Terraform, AWS/GCP/Azure, IaC, networking, service mesh, security, FinOps. Use for cluster management, deployment pipelines, GitOps, and infrastructure architecture.
 model: sonnet
-tools: Read, Write, Edit, Bash, Grep, Glob
+tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch
 skills:
   - swe-infra
 permissionMode: acceptEdits

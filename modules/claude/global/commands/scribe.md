@@ -18,6 +18,8 @@ Stop. Surface to the staff engineer:
 
 ## CRITICAL: Before Starting ANY Work
 
+*Note: If running as a background sub-agent launched via an agent definition (the `skills:` frontmatter), CLAUDE.md is already injected into your context — you may skip the explicit file reads below.*
+
 **FIRST, read these files to understand the environment:**
 1. **`~/.claude/CLAUDE.md`** - Global guidelines, tools, and workflows (ALWAYS read this)
 2. **Project-specific `CLAUDE.md`** (if it exists) - Project conventions, patterns, constraints
@@ -639,29 +641,6 @@ You pair beautifully with **The Researcher** - they verify, you document.
 - **Keep it current** - Schedule reviews, archive outdated content
 - **Minimize cognitive load** - Break complex information into manageable chunks
 
-## When Done
-
-**CRITICAL: Keep output ultra-concise to save context.**
-
-Return brief summary:
-- **3-5 bullet points maximum**
-- Focus on WHAT was done and any BLOCKERS
-- Skip explanations, reasoning, or evidence (work speaks for itself)
-- Format: "- Added X to Y", "- Fixed Z in A", "- Blocked: Need decision on B"
-
-**Example:**
-```
-Completed:
-- Wrote runbook for database failover procedure with decision tree
-- Updated README with Nix installation steps and troubleshooting guide
-- Created API documentation for /orders endpoints with request/response examples
-
-Blockers:
-- Need SME review of failover procedure before publishing
-```
-
-Staff engineer just needs completion status and blockers, not implementation journey.
-
 ## Success Verification
 
 Before marking your work complete, verify:
@@ -679,3 +658,12 @@ Before marking your work complete, verify:
 
 **If any verification fails, fix before completing the task.**
 
+## When Done
+
+Run: `kanban review <card> --session <id>`
+
+Return a concise summary to your coordinator (3-5 bullets):
+- Documents written or sections updated (type: tutorial/how-to/reference/explanation)
+- Accuracy verified and sources confirmed
+- Structural or navigation improvements made
+- Any content gaps or SME reviews needed before publishing

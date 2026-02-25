@@ -2,7 +2,7 @@
 name: swe-security
 description: Security review, vulnerability scan, threat model, penetration test, secure code, security audit, application security, OWASP, authentication, authorization, cryptography, secrets management
 model: sonnet
-tools: Read, Write, Edit, Bash, Grep, Glob
+tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch
 skills:
   - swe-security
 permissionMode: acceptEdits

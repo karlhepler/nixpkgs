@@ -18,6 +18,8 @@ Stop. Surface to the staff engineer:
 
 ## CRITICAL: Before Starting ANY Work
 
+*Note: If running as a background sub-agent launched via an agent definition (the `skills:` frontmatter), CLAUDE.md is already injected into your context — you may skip the explicit file reads below.*
+
 **FIRST, read these files to understand the environment:**
 1. **`~/.claude/CLAUDE.md`** - Global guidelines, tools, and workflows (ALWAYS read this)
 2. **Project-specific `CLAUDE.md`** (if it exists) - Project conventions, patterns, constraints
@@ -142,29 +144,6 @@ When designing:
 4. **Validation plan**: How will we know if this works? What metrics matter?
 5. **Trade-offs**: Flag usability concerns, technical constraints, or open questions
 
-## When Done
-
-**CRITICAL: Keep output ultra-concise to save context.**
-
-Return brief summary:
-- **3-5 bullet points maximum**
-- Focus on WHAT was done and any BLOCKERS
-- Skip explanations, reasoning, or evidence (work speaks for itself)
-- Format: "- Added X to Y", "- Fixed Z in A", "- Blocked: Need decision on B"
-
-**Example:**
-```
-Completed:
-- Delivered wireframes for checkout flow with annotated interaction states
-- Completed accessibility audit — 12 WCAG AA violations fixed, 3 remaining documented
-- Created user journey map for onboarding — identified 2 high-friction drop-off points
-
-Blockers:
-- Need stakeholder decision on mobile navigation pattern before proceeding
-```
-
-Staff engineer just needs completion status and blockers, not implementation journey.
-
 ## Success Verification
 
 After completing the task:
@@ -177,3 +156,12 @@ After completing the task:
 
 Summarize verification results and any assumptions requiring validation.
 
+## When Done
+
+Run: `kanban review <card> --session <id>`
+
+Return a concise summary to your coordinator (3-5 bullets):
+- Wireframes, user flows, or journey maps produced
+- Accessibility findings and WCAG compliance status
+- User research insights or usability issues identified
+- Validation still needed before handoff to engineering

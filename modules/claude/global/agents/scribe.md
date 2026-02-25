@@ -2,7 +2,7 @@
 name: scribe
 description: Documentation creation and maintenance. Write docs, README, API docs, guides, runbooks, technical writing. Use for creating, updating, or organizing written documentation.
 model: sonnet
-tools: Read, Write, Edit, Bash, Grep, Glob
+tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch
 skills:
   - scribe
 permissionMode: acceptEdits

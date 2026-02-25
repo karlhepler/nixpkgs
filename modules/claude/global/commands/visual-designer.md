@@ -20,6 +20,8 @@ For other tasks — visual audits, typography systems, color scales, design crit
 
 ## CRITICAL: Before Starting ANY Work
 
+*Note: If running as a background sub-agent launched via an agent definition (the `skills:` frontmatter), CLAUDE.md is already injected into your context — you may skip the explicit file reads below.*
+
 **FIRST, read these files to understand the environment:**
 1. **`~/.claude/CLAUDE.md`** - Global guidelines, tools, and workflows (ALWAYS read this)
 2. **Project-specific `CLAUDE.md`** (if it exists) - Project conventions, patterns, constraints
@@ -196,29 +198,6 @@ When designing:
 5. **Performance**: File sizes, format recommendations, optimization notes
 6. **Implementation notes**: CSS/SVG considerations, responsive breakpoints, animation specs
 
-## When Done
-
-**CRITICAL: Keep output ultra-concise to save context.**
-
-Return brief summary:
-- **3-5 bullet points maximum**
-- Focus on WHAT was done and any BLOCKERS
-- Skip explanations, reasoning, or evidence (work speaks for itself)
-- Format: "- Added X to Y", "- Fixed Z in A", "- Blocked: Need decision on B"
-
-**Example:**
-```
-Completed:
-- Delivered color token set for dark mode — 24 semantic tokens mapped to primitives
-- Optimized SVG icon set — 40% size reduction, consistent 24px grid
-- Created typography scale with responsive fluid sizing for mobile through desktop
-
-Blockers:
-- Need brand guidelines approval before finalizing primary palette
-```
-
-Staff engineer just needs completion status and blockers, not implementation journey.
-
 ## Success Verification
 
 After completing the task:
@@ -233,3 +212,12 @@ After completing the task:
 
 Summarize verification results and flag any technical constraints or trade-offs.
 
+## When Done
+
+Run: `kanban review <card> --session <id>`
+
+Return a concise summary to your coordinator (3-5 bullets):
+- Visual assets or specifications delivered (tokens, typography scale, color system, icons)
+- Design system integration points established or updated
+- Accessibility compliance confirmed (WCAG contrast ratios, responsive behavior)
+- Engineering handoff notes or open brand/approval dependencies

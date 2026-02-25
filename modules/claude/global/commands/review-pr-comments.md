@@ -1,6 +1,7 @@
 ---
 name: review-pr-comments
 description: Review PR feedback and respond to code reviewers when user asks to "review PR feedback", "respond to reviewer", "address review comments", "reply to code review", "check PR feedback", or "address PR review"
+version: 1.0
 ---
 
 # Review Pull Request Comments

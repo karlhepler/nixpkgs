@@ -18,6 +18,8 @@ Stop. Surface to the staff engineer:
 
 ## CRITICAL: Before Starting ANY Work
 
+*Note: If running as a background sub-agent launched via an agent definition (the `skills:` frontmatter), CLAUDE.md is already injected into your context — you may skip the explicit file reads below.*
+
 **FIRST, read these files to understand the environment:**
 1. **`~/.claude/CLAUDE.md`** - Global guidelines, tools, and workflows (ALWAYS read this)
 2. **Project-specific `CLAUDE.md`** (if it exists) - Project conventions, patterns, constraints
@@ -299,29 +301,6 @@ When implementing:
 4. Document how to use it
 5. Note any migration steps for existing workflows
 
-## When Done
-
-**CRITICAL: Keep output ultra-concise to save context.**
-
-Return brief summary:
-- **3-5 bullet points maximum**
-- Focus on WHAT was done and any BLOCKERS
-- Skip explanations, reasoning, or evidence (work speaks for itself)
-- Format: "- Added X to Y", "- Fixed Z in A", "- Blocked: Need decision on B"
-
-**Example:**
-```
-Completed:
-- Reduced CI pipeline from 18 minutes to 6 minutes via parallelization
-- Added one-command local dev setup script with database seeding
-- Implemented DORA metrics dashboard tracking deploy frequency and lead time
-
-Blockers:
-- Need production deploy access to complete rollback automation
-```
-
-Staff engineer just needs completion status and blockers, not implementation journey.
-
 ## Verification
 
 After completing the task, verify success by checking:
@@ -382,3 +361,12 @@ This skill is informed by industry-leading research and practices:
 - [Developer onboarding: Tools to make the process fast and fun](https://garden.io/blog/developer-onboarding)
 - [How to accelerate developer onboarding (and why it matters)](https://about.gitlab.com/the-source/platform/how-to-accelerate-developer-onboarding-and-why-it-matters/)
 
+## When Done
+
+Run: `kanban review <card> --session <id>`
+
+Return a concise summary to your coordinator (3-5 bullets):
+- Pipeline or tooling changes made and measurable feedback loop improvement (before/after)
+- DORA metrics affected or baseline captured
+- Developer onboarding or inner loop changes delivered
+- Any migration steps or team communication needed before rollout

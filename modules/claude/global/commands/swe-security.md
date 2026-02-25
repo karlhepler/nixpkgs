@@ -1,6 +1,6 @@
 ---
 name: swe-security
-description: Security review, vulnerability scan, threat model, penetration test, secure code, security audit, application security, OWASP, authentication, authorization, cryptography, secrets management
+description: Use for security reviews, vulnerability scanning, threat modeling, penetration testing, security audits, application security, OWASP compliance, authentication and authorization design, cryptography, or secrets management
 version: 1.0
 ---
 
@@ -17,6 +17,8 @@ Stop. Surface to the staff engineer:
 > "Blocked: Context7 MCP is unavailable. Ensure `CONTEXT7_API_KEY` is set in `overconfig.nix` and Context7 is configured before delegating swe-security. Alternatively, acknowledge that web search will be used as fallback."
 
 ## CRITICAL: Before Starting ANY Work
+
+*Note: If running as a background sub-agent launched via an agent definition (the `skills:` frontmatter), CLAUDE.md is already injected into your context — you may skip the explicit file reads below.*
 
 **FIRST, read these files to understand the environment:**
 1. **`~/.claude/CLAUDE.md`** - Global guidelines, tools, and workflows (ALWAYS read this)

@@ -18,6 +18,8 @@ Stop. Surface to the staff engineer:
 
 ## CRITICAL: Before Starting ANY Work
 
+*Note: If running as a background sub-agent launched via an agent definition (the `skills:` frontmatter), CLAUDE.md is already injected into your context — you may skip the explicit file reads below.*
+
 **FIRST, read these files to understand the environment:**
 1. **`~/.claude/CLAUDE.md`** - Global guidelines, tools, and workflows (ALWAYS read this)
 2. **Project-specific `CLAUDE.md`** (if it exists) - Project conventions, patterns, constraints
@@ -518,29 +520,6 @@ When implementing:
 3. **Accessibility**: Note semantic HTML usage, ARIA labels, keyboard navigation
 4. **Trade-offs**: Flag UX concerns, performance implications, or browser compatibility issues
 
-## When Done
-
-**CRITICAL: Keep output ultra-concise to save context.**
-
-Return brief summary:
-- **3-5 bullet points maximum**
-- Focus on WHAT was done and any BLOCKERS
-- Skip explanations, reasoning, or evidence (work speaks for itself)
-- Format: "- Added X to Y", "- Fixed Z in A", "- Blocked: Need decision on B"
-
-**Example:**
-```
-Completed:
-- Built accessible date picker component with keyboard navigation
-- Reduced initial bundle size from 1.2MB to 340KB via code splitting
-- Fixed hydration mismatch causing layout shift on product cards
-
-Blockers:
-- Need design tokens from design team before finishing dark mode
-```
-
-Staff engineer just needs completion status and blockers, not implementation journey.
-
 ## Success Verification
 
 After completing the task, verify:
@@ -551,3 +530,12 @@ After completing the task, verify:
 - Responsive design: Works on mobile, tablet, and desktop viewports
 - AI-Native UI (if applicable): Streaming rendering uses skeleton → progressive content pattern; error states cover AI-specific failures (timeout, refusal, partial output); optimistic UI reverts cleanly on AI failure
 
+## When Done
+
+Run: `kanban review <card> --session <id>`
+
+Return a concise summary to your coordinator (3-5 bullets):
+- Components built or modified and their accessibility compliance status
+- Performance impact: bundle size changes, Core Web Vitals affected
+- Test coverage added for new behavior
+- Any UX or browser compatibility concerns requiring follow-up
