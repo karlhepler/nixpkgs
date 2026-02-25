@@ -859,14 +859,25 @@ EOF
       # Copy all global configuration (mirrors global/ -> ~/.claude/ structure)
       # EXCLUDE hats/ directory - contains build-time template files only
       $DRY_RUN_CMD mkdir -p ~/.claude
+
+      # Make existing files writable BEFORE copying, so cp can overwrite read-only
+      # files left by previous builds. Also removes stale hash-prefixed store-path
+      # directories accumulated by earlier buggy activations (see below).
+      $DRY_RUN_CMD chmod -R u+w ~/.claude/
+
+      # Copy top-level files from the Nix store path into ~/.claude/
       $DRY_RUN_CMD find ${claudeGlobalDir} -maxdepth 1 -type f -exec cp {} ~/.claude/ \;
-      $DRY_RUN_CMD find ${claudeGlobalDir} -maxdepth 1 -type d ! -name . ! -name hats -exec cp -rf {} ~/.claude/ \;
+
+      # Copy subdirectories (commands, agents, etc.) into ~/.claude/
+      # -mindepth 1: excludes the store path root itself (prevents creating
+      #              ~/.claude/HASH-global/ directories on every hms run)
+      # ! -name hats: excludes build-time template directory
+      $DRY_RUN_CMD find ${claudeGlobalDir} -mindepth 1 -maxdepth 1 -type d ! -name hats -exec cp -rf {} ~/.claude/ \;
 
       # Ensure all subdirectories exist (in case cp didn't create them)
       $DRY_RUN_CMD mkdir -p ~/.claude/commands ~/.claude/output-styles ~/.claude/docs ~/.claude/agents
 
       # Make copied files writable (Nix store files are read-only by default)
-      # Top-level files (e.g. CLAUDE.md, TOOLS-DETAILED.md) need this too, not just subdirectories
       $DRY_RUN_CMD chmod -R u+w ~/.claude/
 
       # Add generated TOOLS.md (use install to handle read-only destination from previous build)
