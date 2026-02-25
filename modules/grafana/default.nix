@@ -89,11 +89,30 @@ in {
   _module.args.grafanaShellapps = {
     claudit = shellApp {
       name = "claudit";
-      runtimeInputs = [ pkgs.grafana pkgs.curl ];
+      runtimeInputs = [ pkgs.grafana pkgs.curl pkgs.sqlite ];
       text = ''
         GRAFANA_URL="http://claudit.local:3200/d/claudit-dashboard/claudit-claude-code-agent-metrics?orgId=1&from=now-7d&to=now&timezone=browser&refresh=30s"
         GRAFANA_HOMEPATH="${pkgs.grafana}/share/grafana"
         GRAFANA_PID=""
+        METRICS_DB="''${HOME}/.claude/metrics/claude-metrics.db"
+
+        # --- Handle --expunge flag ---
+        if [[ "''${1:-}" == "--expunge" ]]; then
+          echo "This will permanently delete all claudit metrics data."
+          printf "Continue? [y/N] "
+          read -r answer
+          if [[ "''${answer}" =~ ^[Yy]$ ]]; then
+            if [[ -f "''${METRICS_DB}" ]]; then
+              sqlite3 "''${METRICS_DB}" "DELETE FROM agent_metrics; DELETE FROM agent_tool_usage;"
+              echo "All metrics data deleted."
+            else
+              echo "No database found at ''${METRICS_DB}. Nothing to delete."
+            fi
+          else
+            echo "Aborted."
+          fi
+          exit 0
+        fi
 
         # --- /etc/hosts check ---
         check_hosts() {
