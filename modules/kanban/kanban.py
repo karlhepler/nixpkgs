@@ -445,6 +445,22 @@ _CREATE_KANBAN_CARD_EVENTS_INDEX_SQL = [
     "CREATE INDEX IF NOT EXISTS idx_kanban_card_events_recorded_at ON kanban_card_events (recorded_at)",
 ]
 
+# Migration: add columns to kanban_card_events for databases created before V6.
+# CREATE TABLE IF NOT EXISTS is a no-op on existing tables, so ALTER TABLE is
+# required to add new columns to existing databases. OperationalError
+# ("duplicate column name") is caught and ignored — safe to run repeatedly.
+# NOTE: This migration list is intentionally duplicated in modules/claude/claude-metrics-hook.py
+# Both files must stay in sync — changes here require matching changes there.
+_V6_KANBAN_MIGRATION_SQL = [
+    "ALTER TABLE kanban_card_events ADD COLUMN card_created_at TEXT",
+    "ALTER TABLE kanban_card_events ADD COLUMN card_completed_at TEXT",
+    "ALTER TABLE kanban_card_events ADD COLUMN card_type TEXT",
+    "ALTER TABLE kanban_card_events ADD COLUMN ac_count INTEGER",
+    "ALTER TABLE kanban_card_events ADD COLUMN git_project TEXT",
+    "ALTER TABLE kanban_card_events ADD COLUMN from_column TEXT",
+    "ALTER TABLE kanban_card_events ADD COLUMN to_column TEXT",
+]
+
 def write_kanban_event(
     card: dict,
     card_num: str,
@@ -481,6 +497,12 @@ def write_kanban_event(
             conn.execute(_CREATE_KANBAN_CARD_EVENTS_SQL)
             for idx_sql in _CREATE_KANBAN_CARD_EVENTS_INDEX_SQL:
                 conn.execute(idx_sql)
+            # V6 migration: add columns absent in pre-V6 databases.
+            for alter_sql in _V6_KANBAN_MIGRATION_SQL:
+                try:
+                    conn.execute(alter_sql)
+                except sqlite3.OperationalError:
+                    pass
             conn.execute(
                 """
                 INSERT INTO kanban_card_events (

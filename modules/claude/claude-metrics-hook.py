@@ -37,6 +37,15 @@ V5 additions:
   tool_use_id to recover tool_name and tool_input.
 - Migration: CREATE TABLE IF NOT EXISTS is idempotent for existing databases.
 
+V6 additions:
+- New: kanban_card_events table created here (idempotent) for Grafana
+  availability before the first kanban CLI event. Written by kanban CLI.
+- Migration: existing databases gain card_created_at, card_completed_at,
+  card_type, ac_count, git_project, from_column, to_column columns on the
+  kanban_card_events table via ALTER TABLE ... ADD COLUMN (no-op if present).
+  This fixes "no such column" errors in Grafana dashboard panels that query
+  these columns (DORA metrics, flow tracking, estimation calibration panels).
+
 Never exits non-zero — all errors are swallowed silently to avoid disrupting
 Claude Code's hook pipeline.
 """
@@ -202,6 +211,22 @@ CREATE_INDEX_KANBAN_CARD_EVENTS_SQL = [
     "CREATE INDEX IF NOT EXISTS idx_kanban_card_events_event_type ON kanban_card_events (event_type)",
     "CREATE INDEX IF NOT EXISTS idx_kanban_card_events_persona ON kanban_card_events (persona)",
     "CREATE INDEX IF NOT EXISTS idx_kanban_card_events_recorded_at ON kanban_card_events (recorded_at)",
+]
+
+# V6 migration: add columns that were added to kanban_card_events in V6 but may
+# be absent in databases created before this version (CREATE TABLE IF NOT EXISTS
+# is a no-op on existing tables, so ALTER TABLE is required for existing DBs).
+# OperationalError ("duplicate column name") is caught and ignored — idempotent.
+# NOTE: This migration list is intentionally duplicated in modules/kanban/kanban.py
+# Both files must stay in sync — changes here require matching changes there.
+V6_KANBAN_MIGRATION_SQL = [
+    "ALTER TABLE kanban_card_events ADD COLUMN card_created_at TEXT",
+    "ALTER TABLE kanban_card_events ADD COLUMN card_completed_at TEXT",
+    "ALTER TABLE kanban_card_events ADD COLUMN card_type TEXT",
+    "ALTER TABLE kanban_card_events ADD COLUMN ac_count INTEGER",
+    "ALTER TABLE kanban_card_events ADD COLUMN git_project TEXT",
+    "ALTER TABLE kanban_card_events ADD COLUMN from_column TEXT",
+    "ALTER TABLE kanban_card_events ADD COLUMN to_column TEXT",
 ]
 
 
@@ -626,6 +651,15 @@ def open_db() -> sqlite3.Connection:
     conn.execute(CREATE_TABLE_KANBAN_CARD_EVENTS_SQL)
     for idx_sql in CREATE_INDEX_KANBAN_CARD_EVENTS_SQL:
         conn.execute(idx_sql)
+
+    # V6 migration: add columns to kanban_card_events for databases that predate V6.
+    # ALTER TABLE ADD COLUMN is safe to retry — OperationalError is raised if the
+    # column already exists, which we silently ignore.
+    for alter_sql in V6_KANBAN_MIGRATION_SQL:
+        try:
+            conn.execute(alter_sql)
+        except sqlite3.OperationalError:
+            pass
 
     # V4 migration: add new columns to existing databases that predate V4.
     # ALTER TABLE ADD COLUMN is safe to retry — OperationalError is raised if
