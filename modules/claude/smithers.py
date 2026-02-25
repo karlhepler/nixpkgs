@@ -2168,7 +2168,6 @@ def main_loop_iteration(
 
     # Prepare environment with Ralph configuration
     env = os.environ.copy()
-    env["BURNS_MAX_RALPH_ITERATIONS"] = str(max_ralph_invocations)
 
     log(f"🚀 Invoking Ralph (iteration {work_iteration}/{total_iterations}): burns --pr {pr_number} {prompt_file}")
     try:

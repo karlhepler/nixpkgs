@@ -35,8 +35,17 @@ let
         [ "$ARGUMENTS" ]
         [ "You receive your task from the event payload that triggered you and the session context.\nComplete the work described, then emit your completion event." ]
         body;
-      # Append emit instructions (additive - keep existing verification checklists)
+      # Append PR comment protocol + emit instructions (additive - keep existing verification checklists)
       withEmit = withContext + ''
+
+
+## PR Comment Protocol
+
+When addressing PR comments as part of your work:
+1. Run `prc list --unresolved --bots-only --max-replies 0` to find ONLY unresolved bot threads with zero existing replies
+2. Do NOT reply to threads that already have replies — they are already handled
+3. Do NOT reply to resolved threads
+4. Only process threads returned by the above command
 
 
 ## Emit When Complete
