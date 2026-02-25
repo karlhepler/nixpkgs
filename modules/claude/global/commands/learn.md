@@ -1,18 +1,18 @@
 ---
 name: learn
-description: Interactive learning session to crystallize mistakes and improve staff-engineer prompt. Use when user says "you screwed up", "that's wrong", "you made a mistake", "that was incorrect", "learn from this", "remember this for next time". Guides dialogue to understand what happened, what went wrong, and what should happen, then launches new staff session to implement improvements.
-version: 1.0
+description: Interactive learning session to crystallize mistakes and improve Claude configuration. Use when user says "you screwed up", "that's wrong", "you made a mistake", "that was incorrect", "learn from this", "remember this for next time", "fix the skill", "fix the prompt", "update the agent", "update staff engineer", "improve burns", "fix smithers". Guides dialogue to identify which Claude artifact needs improvement (staff engineer prompt, team member skill, agent definition, burns/Ralph orchestrator, smithers, etc.), understand what went wrong, and what should happen, then launches new staff session to implement improvements.
+version: 1.1
 ---
 
-# Learn - Crystallize Mistakes and Improve Staff Engineer Prompt
+# Learn - Crystallize Mistakes and Improve Claude Configuration
 
-**Purpose:** Turn staff engineer mistakes into prompt improvements through interactive dialogue followed by handoff to a fresh staff session for implementation.
+**Purpose:** Turn mistakes into prompt improvements through interactive dialogue followed by handoff to a fresh staff session for implementation.
 
-**Target file:** `modules/claude/global/output-styles/staff-engineer.md`
+**Default target:** `modules/claude/global/output-styles/staff-engineer.md` (when context is ambiguous)
 
 ## When to Use
 
-Activate this skill when the user signals a mistake was made:
+Activate this skill when the user signals a mistake was made or wants to improve a Claude artifact:
 - "You screwed up"
 - "That's wrong"
 - "You made a mistake"
@@ -20,6 +20,10 @@ Activate this skill when the user signals a mistake was made:
 - "Learn from this"
 - "Remember this for next time"
 - "Why did you do X? You should have done Y"
+- "Fix the prompt"
+- "Fix the [skill/agent/burns/smithers/ralph]"
+- "Update [team member name]'s skill"
+- "Improve [Claude config artifact]"
 
 **This is an exception skill.** It runs in the current conversation, NOT as a background sub-agent.
 
@@ -43,10 +47,10 @@ Guide conversation to crystallize:
 - Iterate until the user confirms: "Yes, that's exactly it."
 
 **Output of Phase 1:** A structured summary containing:
-- **What Happened:** Concrete description of staff engineer's actions
+- **What Happened:** Concrete description of the artifact's actions or behavior
 - **Why It Was Wrong:** Clear explanation of the mistake
 - **Desired Behavior:** Specific guidance on what should have happened instead
-- **Scope:** Always improvements to the target file
+- **Target:** The artifact name and file path to update
 
 ### Phase 2: TMUX Handoff (New Staff Session)
 
@@ -78,6 +82,31 @@ Due to a known Claude Code bug ([GitHub #5140](https://github.com/anthropics/cla
 
 **You already have conversation context.** Use it to surface what went wrong.
 
+### Step 0: Identify the Target Artifact
+
+Before the dialogue, determine which Claude artifact needs improvement. Use conversation context and any explicit user direction.
+
+**Known artifact types:**
+
+| Artifact | File Path | Notes |
+|----------|-----------|-------|
+| Staff engineer prompt (default) | `modules/claude/global/output-styles/staff-engineer.md` | |
+| Team member skill | `modules/claude/global/commands/<name>.md` | For skill-generated hats, also see hat template row below |
+| Agent definition | `modules/claude/global/agents/<name>.md` | |
+| Hat template (routing/wiring) | `modules/claude/global/hats/<name>.yml.tmpl` | Build-time only — never deployed to `~/.claude/`. Controls display name, routing description, trigger/published events, backpressure. Edit when changing how Ralph routes to this hat or its event wiring. Skill-generated hats have two edit surfaces: this file (routing) + the skill `.md` file (expertise). |
+| Monty Burns hat | `modules/claude/global/hats/monty-burns.yml.tmpl` | Standalone special case — fully self-contained, no corresponding skill file. Its instructions live directly in the hat template. |
+| Burns / Ralph orchestrator | `modules/claude/burns.py` | Launcher script only — hat behavior is in `monty-burns.yml.tmpl` above |
+| Smithers | `~/.config/nixpkgs/modules/claude/smithers.py` | |
+| Other Claude config | Identify from conversation context | |
+
+**Decision logic:**
+- User explicitly names an artifact (e.g., "fix the swe-backend skill") → use that artifact
+- Mistake clearly involves a specific team member's behavior → use their skill file
+- Mistake involves staff engineer coordination/orchestration behavior → use staff engineer prompt (default)
+- Context is ambiguous → default to staff engineer prompt, confirm with user during dialogue
+
+**If the target is ambiguous:** Surface your assumption early in Step 1 so the user can correct it.
+
 ### Step 1: Acknowledge and Surface
 
 Start by acknowledging the mistake and presenting what you understand went wrong:
@@ -89,6 +118,8 @@ I see the issue. Let me make sure I understand what went wrong.
 **What I did:** [Describe your actions from conversation history]
 
 **Why it was wrong:** [Your hypothesis about the mistake]
+
+**Target for improvement:** [Named artifact and file path — or "staff engineer prompt (default)" if ambiguous]
 
 Is this accurate, or did I misunderstand the problem?
 ```
@@ -112,7 +143,7 @@ Once confirmed, structure the learnings:
 **Structured Summary:**
 ```
 ## What Happened
-[Concrete description of staff engineer's actions]
+[Concrete description of the artifact's actions or behavior]
 
 ## Why It Was Wrong
 [Clear explanation of the mistake and its impact]
@@ -120,8 +151,8 @@ Once confirmed, structure the learnings:
 ## Desired Behavior
 [Specific guidance on what should happen instead]
 
-## Scope
-Improvements to the target file
+## Target
+[Artifact name and file path to update]
 ```
 
 **Present this to the user and ask:** "I've crystallized the issue. Ready to launch a new staff session to implement the improvement?"
@@ -153,13 +184,16 @@ Your job: CLARIFY -> READ -> PROPOSE EDIT -> CONFIRM WITH USER -> IMPLEMENT.
 **Desired Behavior:**
 [Specific guidance from Phase 1]
 
+**Target:**
+[Artifact name and file path from Phase 1]
+
 ## Your Task (Implementation Only)
 
-Update `modules/claude/global/output-styles/staff-engineer.md` to prevent this mistake in the future.
+Update `[TARGET FILE PATH]` to prevent this mistake in the future.
 
 **Implementation Steps:**
 1. **FIRST:** Present a brief summary of what you understand from the context above and ask: "Anything you'd like to adjust or add before I start?" (Wait for user response)
-2. Read the current staff-engineer.md file
+2. Read the current target file
 3. Locate the relevant section (or determine if a new section is needed)
 4. Propose specific changes (additions, clarifications, or new guidelines)
 5. Confirm your proposed edit with the user
@@ -171,7 +205,7 @@ Update `modules/claude/global/output-styles/staff-engineer.md` to prevent this m
 - DO NOT replay the full Phase 1 dialogue (no iterative "Is this accurate?" loops)
 - AFTER user confirms or adjusts understanding, GO STRAIGHT TO: read file -> propose specific edit -> confirm -> implement
 
-The goal is to make the staff engineer's behavior more reliable by encoding this lesson in the prompt.
+The goal is to make the artifact's behavior more reliable by encoding this lesson in the prompt.
 ```
 
 ### Step 2: Create TMUX Window and Launch Staff
@@ -225,8 +259,8 @@ The new staff engineer has been given the context about what went wrong and will
 - `staff` command exists (shellapp in this repo)
 - `~/.config/nixpkgs` directory exists (this repo's location)
 
-**Scope is always the staff-engineer prompt:**
-This skill is specifically for improving the target file. The mistake crystallization should focus on staff engineer behavior, not other skills or agents.
+**Scope is any Claude configuration artifact:**
+This skill improves any Claude config — staff engineer prompt (default), team member skills, agent definitions, burns/Ralph, smithers, or other Claude-related config files. The target is determined from conversation context in Phase 1.
 
 **Exception skill behavior:**
 - Runs in current conversation (uses Skill tool, NOT Task tool)
@@ -235,7 +269,7 @@ This skill is specifically for improving the target file. The mistake crystalliz
 
 ## Example Usage
 
-**User says:** "You screwed up. You should have delegated that to an engineer instead of trying to investigate yourself."
+**Example 1 — Default target (staff engineer prompt): user says:** "You screwed up. You should have delegated that to an engineer instead of trying to investigate yourself."
 
 **Your response (Phase 1, Step 1):**
 ```
@@ -261,13 +295,51 @@ Violated "NO SOURCE CODE ACCESS" rule. Staff engineer should coordinate via dele
 ## Desired Behavior
 When investigation is needed, create kanban card and delegate to appropriate engineer (e.g., swe-backend) via Task tool. Never use Read/Grep/Glob on source code.
 
-## Scope
-Improvements to the target file
+## Target
+`modules/claude/global/output-styles/staff-engineer.md`
+
+I've crystallized the issue. Ready to launch a new staff session to implement the improvement?
+```
+
+**Non-default target example — user says:** "The swe-backend skill is giving wrong advice about APIs. It keeps suggesting REST when we've standardized on GraphQL."
+
+**Your response (Phase 1, Step 1):**
+```
+I see the issue. Let me make sure I understand what went wrong.
+
+**What I did:** The swe-backend skill recommended REST endpoints for the new data layer.
+
+**Why it was wrong:** The project has standardized on GraphQL. Recommending REST contradicts that decision and sends engineers in the wrong direction.
+
+**Target for improvement:** `modules/claude/global/commands/swe-backend.md` (team member skill)
+
+Is this accurate, or did I misunderstand the problem?
+```
+
+**Your response (Phase 1, Step 3):**
+```
+## What Happened
+swe-backend skill recommended REST endpoints for the new data layer.
+
+## Why It Was Wrong
+The project has standardized on GraphQL. Recommending REST contradicts that decision and sends engineers in the wrong direction.
+
+## Desired Behavior
+swe-backend should default to GraphQL for all new data layer work and only suggest REST when there is an explicit reason to deviate.
+
+## Target
+`modules/claude/global/commands/swe-backend.md`
 
 I've crystallized the issue. Ready to launch a new staff session to implement the improvement?
 ```
 
 **User:** "Yes, go ahead."
+
+**Your response (Phase 2):** Phase 2 follows the same pattern shown in Example 1. The only differences are the target file (`modules/claude/global/commands/swe-backend.md`), the window name (`learn-graphql-standardization`), and the crystallized context above.
+
+---
+
+**Example 1 Phase 2 (shown in full for reference):**
 
 **Your response (Phase 2):**
 ```bash
@@ -329,6 +401,7 @@ The new staff engineer will start with a brief clarification checkpoint (present
 
 ## Success Criteria
 
+- [ ] Identified correct target artifact in Step 0
 - [ ] Mistake acknowledged and conversation context leveraged
 - [ ] Interactive dialogue crystallized what happened, why it was wrong, and desired behavior
 - [ ] User confirmed the crystallized context
@@ -339,7 +412,8 @@ The new staff engineer will start with a brief clarification checkpoint (present
 ## Notes
 
 - **This skill does NOT implement the improvement itself** - it crystallizes the learning and hands off to a fresh staff session
-- **Always target the staff-engineer prompt** - this skill is for improving staff engineer behavior specifically
+- **Default to staff-engineer prompt when ambiguous** - if context doesn't clearly point to another artifact, assume staff engineer and surface that assumption early so the user can correct it
+- **Accept any Claude artifact target** - team member skills, agent definitions, burns/Ralph, smithers, or any other Claude config in `modules/claude/`
 - **User confirmation required** - don't launch TMUX session without explicit user approval
 - **Leverage conversation history** - you already have context, use it to speed up dialogue
 - **Keep dialogue focused** - iterate until clear, but don't over-complicate

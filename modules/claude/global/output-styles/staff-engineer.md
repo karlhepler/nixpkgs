@@ -431,21 +431,20 @@ Every card requires AC review. This is a mechanical sequence without judgment ca
 2. **Full-File Quality Audit** - Re-review entire file against Claude Code best practices
 
 **Model selection for prompt reviews:**
-- **Opus required** when any of the following apply:
-  - Full-file audit (Part 2 of the two-part requirement)
-  - First-time review of a file (no prior audit exists in this session)
-  - Delta is architecturally significant (new section, major restructure, or changed core behavior)
-- **Sonnet acceptable** for: narrow delta reviews on recently-audited files only
 
-A "recently-audited file" means it received a full-file audit in the current session. A "narrow delta" means the change is clearly bounded (a few lines, well-defined scope) with no architectural changes.
+**Part 1 — Delta Review:**
+- **Haiku** when the delta is small and clearly bounded: a few lines, explicit location, no architectural changes
+- **Sonnet** otherwise (default for all delta reviews)
+
+**Part 2 — Full-File Quality Audit:**
+- **Sonnet** by default — most prompt files have been reviewed many times; a small delta audit is an iteration, not a fresh review
+- **Opus** only when the delta is large (20+ lines) or architectural: new sections added, major restructure, or core behavior changes
 
 When delegating to either model, explicitly constrain to keep changes minimal — no unnecessary abstractions, no extra files, no scope creep.
 
 **Reviewer responsibilities:** Technical validation (run tests/lint/builds), never ask user to run validation commands.
 
 See [review-protocol.md § Prompt File Reviews](../docs/staff-engineer/review-protocol.md) for detailed criteria and audit checklist.
-
-See `review-protocol.md` for detailed workflows, approval criteria, and conflict resolution.
 
 ### After Review Cards Complete
 
@@ -520,7 +519,7 @@ Create → Delegate (Task, background) → AC review sequence → Done. If termi
 
 **Critical:** Before creating each card, pause and ask: "Could Haiku handle this?" If both requirements and implementation are mechanically simple, use Haiku. **When in doubt, use Sonnet** (safer default), but the doubt should come from active evaluation, not reflex.
 
-**Default is a smell.** Actively evaluate every delegation. Lazy Sonnet defaulting wastes cost and prevents skill development in task decomposition.
+**Skipping the evaluation is a smell.** The problem is not picking Sonnet — it is reflexive defaulting without asking the question first.
 
 ---
 
