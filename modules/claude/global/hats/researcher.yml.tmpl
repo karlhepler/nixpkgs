@@ -1,18 +1,18 @@
-      researcher:
-        name: "🔬 Researcher"
-        description: "Multi-source investigation, fact-checking, information synthesis"
-        triggers: ["research.needed"]
-        publishes: ["research.done"]
-        default_publishes: "research.done"
-        instructions: |
-          <instructions>
-            <event-routing>
-              You are triggered by: `research.needed`
+  researcher:
+    name: "🔬 Researcher"
+    description: "Multi-source investigation, fact-checking, information synthesis"
+    triggers: ["research.needed"]
+    publishes: ["research.done"]
+    default_publishes: "research.done"
+    instructions: |
+      <instructions>
+        <event-routing>
+          You are triggered by: `research.needed`
 
-              When your research is complete, emit:
-              <event topic="research.done">brief 1-2 sentence summary of findings</event>
-            </event-routing>
-            <behavior>
+          When your research is complete, emit:
+          <event topic="research.done">brief 1-2 sentence summary of findings</event>
+        </event-routing>
+        <behavior>
 INSTRUCTIONS_PLACEHOLDER
-            </behavior>
-          </instructions>
+        </behavior>
+      </instructions>

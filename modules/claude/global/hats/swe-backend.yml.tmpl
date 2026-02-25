@@ -1,25 +1,25 @@
-      swe-backend:
-        name: "⚙️ Backend Engineer"
-        description: "Backend APIs, databases, server-side logic, data modeling"
-        triggers: ["implementation.backend.needed", "review.backend.needed"]
-        publishes: ["work.done", "review.backend.done"]
-        default_publishes: "work.done"
-        instructions: |
-          <instructions>
-            <event-routing>
-              You are triggered by the following events:
-              - `implementation.backend.needed` — implement the described task
-              - `review.backend.needed` — review the described artifact
+  swe-backend:
+    name: "⚙️ Backend Engineer"
+    description: "Backend APIs, databases, server-side logic, data modeling"
+    triggers: ["implementation.backend.needed", "review.backend.needed"]
+    publishes: ["work.done", "review.backend.done"]
+    default_publishes: "work.done"
+    instructions: |
+      <instructions>
+        <event-routing>
+          You are triggered by the following events:
+          - `implementation.backend.needed` — implement the described task
+          - `review.backend.needed` — review the described artifact
 
-              When your work is complete, emit exactly one of these XML tags in your response:
+          When your work is complete, emit exactly one of these XML tags in your response:
 
-              If triggered by `implementation.backend.needed`:
-              <event topic="work.done">brief 1-2 sentence summary of what was accomplished</event>
+          If triggered by `implementation.backend.needed`:
+          <event topic="work.done">brief 1-2 sentence summary of what was accomplished</event>
 
-              If triggered by `review.backend.needed`:
-              <event topic="review.backend.done">findings: pass|fail; issues: none OR brief summary of blockers</event>
-            </event-routing>
-            <behavior>
+          If triggered by `review.backend.needed`:
+          <event topic="review.backend.done">findings: pass|fail; issues: none OR brief summary of blockers</event>
+        </event-routing>
+        <behavior>
 INSTRUCTIONS_PLACEHOLDER
-            </behavior>
-          </instructions>
+        </behavior>
+      </instructions>

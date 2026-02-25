@@ -14,13 +14,14 @@ let
       contentParts = lib.drop 2 parts;
     in lib.concatStringsSep "---" contentParts;
 
-  # Indent each line of text by N spaces (for YAML embedding)
+  # Indent each non-empty line of text by N spaces (for YAML embedding)
+  # Empty lines are preserved as-is (no trailing spaces)
   indentLines = spaces: text:
     let
       prefix = lib.concatStrings (lib.genList (_: " ") spaces);
     in
     lib.concatMapStringsSep "\n"
-      (line: "${prefix}${line}")
+      (line: if line == "" then "" else "${prefix}${line}")
       (lib.splitString "\n" text);
 
   # Read a hat template file and substitute INSTRUCTIONS_PLACEHOLDER with

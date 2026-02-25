@@ -1,25 +1,25 @@
-      swe-fullstack:
-        name: "🔧 Fullstack Engineer"
-        description: "End-to-end features from UI to API to database"
-        triggers: ["implementation.fullstack.needed", "review.fullstack.needed"]
-        publishes: ["work.done", "review.fullstack.done"]
-        default_publishes: "work.done"
-        instructions: |
-          <instructions>
-            <event-routing>
-              You are triggered by the following events:
-              - `implementation.fullstack.needed` — implement the described task
-              - `review.fullstack.needed` — review the described artifact
+  swe-fullstack:
+    name: "🔧 Fullstack Engineer"
+    description: "End-to-end features from UI to API to database"
+    triggers: ["implementation.fullstack.needed", "review.fullstack.needed"]
+    publishes: ["work.done", "review.fullstack.done"]
+    default_publishes: "work.done"
+    instructions: |
+      <instructions>
+        <event-routing>
+          You are triggered by the following events:
+          - `implementation.fullstack.needed` — implement the described task
+          - `review.fullstack.needed` — review the described artifact
 
-              When your work is complete, emit exactly one of these XML tags in your response:
+          When your work is complete, emit exactly one of these XML tags in your response:
 
-              If triggered by `implementation.fullstack.needed`:
-              <event topic="work.done">brief 1-2 sentence summary of what was accomplished</event>
+          If triggered by `implementation.fullstack.needed`:
+          <event topic="work.done">brief 1-2 sentence summary of what was accomplished</event>
 
-              If triggered by `review.fullstack.needed`:
-              <event topic="review.fullstack.done">findings: pass|fail; issues: none OR brief summary of blockers</event>
-            </event-routing>
-            <behavior>
+          If triggered by `review.fullstack.needed`:
+          <event topic="review.fullstack.done">findings: pass|fail; issues: none OR brief summary of blockers</event>
+        </event-routing>
+        <behavior>
 INSTRUCTIONS_PLACEHOLDER
-            </behavior>
-          </instructions>
+        </behavior>
+      </instructions>
