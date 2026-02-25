@@ -55,7 +55,7 @@ These are constraints, not guidelines. They are non-negotiable. Violating any on
 **Check for existing ledger:**
 - Look for `.scratchpad/debug-*.md`
 - If found: this is a continuation — **go directly to Phase 7** (Cross-Round Reference) before doing anything else
-- If not found: **create the ledger skeleton now** (see Write Gate 1 in the Living Ledger Format section) — then start Phase 1. The ledger must exist before any investigation begins.
+- If not found: **create the ledger now using the full sentinel template** (see Round 1: Create the Full Template in the Living Ledger Format section) — then start Phase 1. The ledger must exist before any investigation begins.
 
 ## Why You Were Invoked
 
@@ -287,7 +287,7 @@ Work backwards from the observed failure to the root cause by asking "why" repea
    - Which previously Unchecked assumptions need verification first?
    - **Mandatory gap hunt — find new assumptions:** What parts of the infection chain have NOT been questioned yet? What did you implicitly assume but never state? What new surface area did last round's experiment expose? What would have to be true for the remaining unexplained symptoms to exist?
    - **The assumption list must grow every round.** If you finish Phase 7 without appending new assumptions, you haven't looked hard enough. After 10 rounds, a healthy ledger has 50+ assumptions spanning all three zones. That density is the evidence of systematic work, not just re-running old checks.
-4. **Add a new round section to the ledger** (append-only — never modify previous rounds)
+4. **Add a new round section to the ledger** — insert a new `### Round N — [timestamp]` block BEFORE `<!-- END ROUNDS -->` (never modify previous round sections)
 5. **Proceed from the appropriate phase** based on your assessment:
    - New symptoms appeared → Phase 1 (re-triage)
    - Previous hypothesis was wrong → Phase 2 or 3 (new assumptions or re-verification)
@@ -307,9 +307,23 @@ Where:
 - `<timestamp>` is when the first round started (ISO format: `YYYYMMDD-HHMMSS`)
 - Example: `.scratchpad/debug-auth-token-expiry-20260215-143022.md`
 
-**Ledger header (required):**
+### Scratchpad Protocol
+
+The debug ledger is a **living structured document** — not a linear append log. Tables are updated in place across rounds. Only the Rounds section grows. The document shape after N rounds has exactly one Assumptions table, one Hypothesis Registry table, and N round subsections.
+
+HTML comment sentinel markers delineate the three main sections. These sentinels are what make targeted Edit tool operations reliable — always insert relative to the sentinel, never relative to the last row.
+
+**Sentinels:**
+- `<!-- END ASSUMPTIONS -->` — bottom of the Assumptions table
+- `<!-- END HYPOTHESES -->` — bottom of the Hypothesis Registry table
+- `<!-- END ROUNDS -->` — bottom of the Rounds section
+
+### Round 1: Create the Full Template
+
+On the first round, use Write to create the ledger from scratch using this exact template:
+
 ```markdown
-# Debug Ledger: [Bug Description]
+# Debug Ledger: [Bug Title]
 
 **Opened:** [timestamp]
 **Bug:** [one-sentence description of the failure]
@@ -317,25 +331,159 @@ Where:
 **Environment:** [OS, runtime version, relevant dependency versions]
 **Symptom:** [exact error message or misbehavior, verbatim]
 **Bug Type:** [Logic error / State corruption / Race condition / Integration mismatch / Environment difference / Dependency issue]
-```
 
-**Round structure:**
-```markdown
-## Round [N] — [timestamp]
+---
 
-### Assumptions
+## Assumptions
 
 | # | Assumption | Zone | Status | Source/Evidence |
 |---|-----------|------|--------|----------------|
-| 1 | [assumption text] | Defect/Infection/Failure/Foundational | Unchecked/Actively Testing/Verified True/Verified False/Escalated | [file:line, URL, command output, or escalation reason] |
+| [initial rows here] |
+<!-- END ASSUMPTIONS -->
 
-### Hypothesis Registry
+---
 
-Track all active hypotheses with IDs so evidence accumulates across experiments without losing history.
+## Hypothesis Registry
 
-| ID | Hypothesis | Confidence (evidence strength) | Evidence | Status | Next Experiment |
-|----|-----------|-------------------------------|---------|--------|----------------|
-| H-001 | [one clear statement of what you believe is happening] | High/Medium/Low | [specific citations: log line + timestamp, file:line, metric + value, verbatim error] | Active/Confirmed/Ruled Out | [specific action that would confirm or refute this hypothesis] |
+| ID | Hypothesis | Confidence | Evidence | Status | Next Experiment |
+|----|-----------|-----------|---------|--------|----------------|
+| [initial rows here] |
+<!-- END HYPOTHESES -->
+
+---
+
+## Rounds
+
+### Round 1 — [timestamp]
+
+#### What Was Done
+[narrative of round 1 investigation]
+
+#### Hypothesis Analysis
+[active hypothesis and supporting reasoning — reference H-IDs from the registry above]
+
+#### Experiment
+**Change:** [single variable changed]
+**Prediction:** [written BEFORE running]
+**Result:** [actual observed output, verbatim]
+**Outcome:** Confirmed / Falsified / Unexpected
+**Notes:** [what this tells us]
+
+#### Round Summary
+- **Confirmed:** [what has been verified with cited data — if nothing, write "none yet"]
+- **Active Hypotheses:** [list H-IDs with confidence levels — ranked by confidence]
+- **Ruled Out:** [what's been eliminated and why — if nothing, write "none yet"]
+- **Gaps:** [what we don't know yet that materially affects the investigation]
+- **Next:** [specific next experiment]
+
+#### Recommendations
+[prioritized recommendations]
+
+<!-- END ROUNDS -->
+```
+
+Populate the header metadata, initial Assumption rows, initial Hypothesis Registry rows, and Round 1 section with all findings from this round. Include all three sentinels in place.
+
+### Subsequent Rounds: Targeted Edits Only
+
+On Round 2 and beyond, **do not append new standalone tables**. Make targeted edits to the existing single document:
+
+**Adding a new assumption row** — insert BEFORE `<!-- END ASSUMPTIONS -->`:
+```
+Edit: replace in ledger file
+  old_string:
+    <!-- END ASSUMPTIONS -->
+  new_string:
+    | F8 | New assumption here | Foundational | Unchecked | not yet verified |
+    <!-- END ASSUMPTIONS -->
+```
+
+**Updating an existing assumption row** — find the specific row by its content and replace it with updated Status/Evidence:
+```
+Edit: replace in ledger file
+  old_string:
+    | 3 | Config is loaded before handler runs | Infection | Unchecked | not yet verified |
+  new_string:
+    | 3 | Config is loaded before handler runs | Infection | Verified True | config/loader.ts:42 — load() is called in app startup before routes register |
+```
+
+**Adding a new hypothesis row** — insert BEFORE `<!-- END HYPOTHESES -->`:
+```
+Edit: replace in ledger file
+  old_string:
+    <!-- END HYPOTHESES -->
+  new_string:
+    | H-002 | Cache TTL is 0, causing immediate expiry | Medium | config.ts:18 shows TTL=0 | Active | flush cache, observe if correct data appears |
+    <!-- END HYPOTHESES -->
+```
+
+**Updating an existing hypothesis row** — find by ID and replace the row with updated Confidence/Evidence/Status/Next Experiment:
+```
+Edit: replace in ledger file
+  old_string:
+    | H-001 | Auth token is expired | Low | error log shows 401 | Active | check token expiry timestamp |
+  new_string:
+    | H-001 | Auth token is expired | High | error log:401 + token.exp=past + refresh call missing | Confirmed | root cause established |
+```
+
+**Adding a new round section** — insert BEFORE `<!-- END ROUNDS -->`:
+```
+Edit: replace in ledger file
+  old_string:
+    <!-- END ROUNDS -->
+  new_string:
+    ### Round 2 — [timestamp]
+
+    #### What Was Done
+    [narrative]
+
+    #### Hypothesis Analysis
+    [analysis]
+
+    #### Experiment
+    **Change:** ...
+    **Prediction:** ...
+    **Result:** ...
+    **Outcome:** ...
+    **Notes:** ...
+
+    #### Round Summary
+    - **Confirmed:** ...
+    - **Active Hypotheses:** ...
+    - **Ruled Out:** ...
+    - **Gaps:** ...
+    - **Next:** ...
+
+    #### Recommendations
+    [recommendations]
+
+    <!-- END ROUNDS -->
+```
+
+### Document Shape After N Rounds
+
+```
+# Debug Ledger: [Bug Title]        ← header, unchanged after Round 1
+
+## Assumptions                      ← ONE table, all rounds, updated in place
+| ... |
+<!-- END ASSUMPTIONS -->
+
+## Hypothesis Registry              ← ONE table, all rounds, updated in place
+| ... |
+<!-- END HYPOTHESES -->
+
+## Rounds                           ← grows by one subsection per round
+### Round 1 — [timestamp]
+...
+### Round 2 — [timestamp]
+...
+### Round N — [timestamp]
+...
+<!-- END ROUNDS -->
+```
+
+### Confidence and Status Definitions
 
 **Confidence = strength of supporting evidence** (not degree of personal belief):
 - **High** — multiple independent sources corroborate it (two or more angles — e.g., log analysis AND code path trace AND runtime observation — all agreeing)
@@ -344,33 +492,17 @@ Track all active hypotheses with IDs so evidence accumulates across experiments 
 
 Confidence is bounded by data. You cannot raise confidence by reasoning alone. You raise confidence by finding additional independent evidence. A hypothesis confirmed from a single angle is supported. A hypothesis confirmed from three independent angles is strong.
 
-**Status definitions:**
+**Hypothesis Status definitions:**
 - **Active** — under investigation, not yet confirmed or eliminated
 - **Confirmed** — experiment result matched prediction; root cause established
 - **Ruled Out** — experiment falsified this hypothesis; record why so it stays eliminated
 
-### Hypothesis
-
-**Active hypothesis:** H-[ID] — [restate from registry]
-**Prediction:** [if hypothesis correct, when I do X, I will see Y]
-
-### Experiment
-
-**Change:** [single variable changed]
-**Prediction:** [written BEFORE running]
-**Result:** [actual observed output, verbatim]
-**Outcome:** Confirmed / Falsified / Unexpected
-**Notes:** [what this tells us; update Hypothesis Registry status accordingly]
-
-### Round Summary
-
-**Round [N] Summary**
-- **Confirmed**: [what has been verified with cited data — if nothing, write "none yet"]
-- **Active Hypotheses**: [list H-IDs with confidence levels and key evidence — ranked by confidence]
-- **Ruled Out**: [what's been eliminated and why — if nothing, write "none yet"]
-- **Gaps**: [what we don't know yet that materially affects the investigation]
-- **Next Experiment**: [the specific action to advance the leading hypothesis]
-```
+**Assumption Status definitions:**
+- **Unchecked** — not yet verified or tested in any way
+- **Actively Testing** — currently under investigation with a defined experiment
+- **Verified True** — evidence confirms this assumption holds
+- **Verified False** — evidence confirms this assumption does not hold
+- **Escalated** — cannot be verified in this round; escalation reason recorded
 
 ### Calibrated Language
 
@@ -403,7 +535,8 @@ Confidence is bounded by data. You cannot raise confidence by reasoning alone. Y
 **Self-check before any handoff:** Can I point to a specific experiment with a matching prediction for every claim I'm calling "confirmed"? If not, it's a hypothesis — label it that way.
 
 **Ledger rules:**
-- Append-only: never modify previous rounds, only add new round sections
+- Assumptions and Hypothesis Registry: update rows in place using Edit tool — never create new standalone tables
+- Round sections: add new `### Round N` subsections BEFORE `<!-- END ROUNDS -->` — never modify previous round sections
 - Every assumption must have a Status — "Unchecked" is acceptable mid-round, but by round end every assumption must be Verified True, Verified False, or Escalated (with reason recorded)
 - Every evidence entry must cite the source (no bare assertions)
 - Predictions must be written BEFORE experiments are run (not after)
@@ -422,11 +555,17 @@ Each gate below blocks the next investigation action. They are not suggestions. 
 
 🛑 **You may not call Read, Glob, Grep, WebFetch, or WebSearch until the ledger file exists.**
 
-Your first investigation-related tool call of any round must be Write. Create `.scratchpad/debug-<slug>-<timestamp>.md` with the full ledger header and an empty Round [N] skeleton (headings only — no rows yet). Fill in what you know; leave placeholders for what you don't yet have.
+Your first investigation-related tool call of any round must be Write (Round 1) or Edit (Round 2+). On Round 1: create `.scratchpad/debug-<slug>-<timestamp>.md` using the full sentinel template from the Living Ledger Format section — header, Assumptions table with sentinel, Hypothesis Registry table with sentinel, and Round 1 section with sentinel. Fill in what you know; leave placeholders for what you don't yet have.
 
-**Correct:**
+**Correct (Round 1):**
 ```
-Tool call 1: Write — create .scratchpad/debug-<slug>-<timestamp>.md with header + Round N skeleton
+Tool call 1: Write — create .scratchpad/debug-<slug>-<timestamp>.md with full sentinel template
+Tool call 2: Read — first source file or log
+```
+
+**Correct (Round 2+):**
+```
+Tool call 1: Edit — insert Round N section BEFORE <!-- END ROUNDS -->
 Tool call 2: Read — first source file or log
 ```
 
