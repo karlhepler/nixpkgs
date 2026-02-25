@@ -1,8 +1,12 @@
   swe-backend:
     name: "⚙️ Backend Engineer"
     description: "Backend APIs, databases, server-side logic, data modeling"
-    triggers: ["implementation.backend.needed", "review.backend.needed"]
-    publishes: ["work.done", "review.backend.done"]
+    triggers:
+      - "implementation.backend.needed"
+      - "review.backend.needed"
+    publishes:
+      - "work.done"
+      - "review.backend.done"
     default_publishes: "work.done"
     instructions: |
       <instructions>

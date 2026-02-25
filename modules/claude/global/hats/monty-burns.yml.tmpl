@@ -1,14 +1,28 @@
   monty-burns:
     name: "🎩 Monty Burns"
     description: "Routes work to specialists and manages tiered review workflow"
-    triggers: ["loop.start", "work.done", "research.done", "review.*.done"]
-    publishes: ["implementation.backend.needed", "implementation.frontend.needed",
-                "implementation.fullstack.needed", "implementation.devex.needed",
-                "implementation.infra.needed", "implementation.security.needed",
-                "implementation.sre.needed", "research.needed",
-                "review.security.needed", "review.infra.needed", "review.devex.needed",
-                "review.backend.needed", "review.sre.needed", "review.frontend.needed",
-                "review.fullstack.needed", "LOOP_COMPLETE"]
+    triggers:
+      - "loop.start"
+      - "work.done"
+      - "research.done"
+      - "review.*.done"
+    publishes:
+      - "implementation.backend.needed"
+      - "implementation.frontend.needed"
+      - "implementation.fullstack.needed"
+      - "implementation.devex.needed"
+      - "implementation.infra.needed"
+      - "implementation.security.needed"
+      - "implementation.sre.needed"
+      - "research.needed"
+      - "review.security.needed"
+      - "review.infra.needed"
+      - "review.devex.needed"
+      - "review.backend.needed"
+      - "review.sre.needed"
+      - "review.frontend.needed"
+      - "review.fullstack.needed"
+      - "LOOP_COMPLETE"
     default_publishes: "LOOP_COMPLETE"
     instructions: |
       <instructions>

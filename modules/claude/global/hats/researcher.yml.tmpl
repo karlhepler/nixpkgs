@@ -1,8 +1,10 @@
   researcher:
     name: "🔬 Researcher"
     description: "Multi-source investigation, fact-checking, information synthesis"
-    triggers: ["research.needed"]
-    publishes: ["research.done"]
+    triggers:
+      - "research.needed"
+    publishes:
+      - "research.done"
     default_publishes: "research.done"
     instructions: |
       <instructions>

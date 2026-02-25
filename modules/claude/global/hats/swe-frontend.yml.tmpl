@@ -1,8 +1,12 @@
   swe-frontend:
     name: "🖥️ Frontend Engineer"
     description: "React/Next.js UI, TypeScript, CSS, accessibility, web performance"
-    triggers: ["implementation.frontend.needed", "review.frontend.needed"]
-    publishes: ["work.done", "review.frontend.done"]
+    triggers:
+      - "implementation.frontend.needed"
+      - "review.frontend.needed"
+    publishes:
+      - "work.done"
+      - "review.frontend.done"
     default_publishes: "work.done"
     instructions: |
       <instructions>

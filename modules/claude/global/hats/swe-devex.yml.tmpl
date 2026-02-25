@@ -1,8 +1,12 @@
   swe-devex:
     name: "🛠️ DevEx Engineer"
     description: "CI/CD, build systems, developer tooling, testing infrastructure"
-    triggers: ["implementation.devex.needed", "review.devex.needed"]
-    publishes: ["work.done", "review.devex.done"]
+    triggers:
+      - "implementation.devex.needed"
+      - "review.devex.needed"
+    publishes:
+      - "work.done"
+      - "review.devex.done"
     default_publishes: "work.done"
     instructions: |
       <instructions>
