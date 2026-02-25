@@ -65,7 +65,7 @@ PR_NUM=$(gh pr view --json number -q .number)
 USERNAME=$(gh api user -q .login)  # Note: USERNAME assumes single-token GitHub auth (standard setup)
 
 # Fetch all comments with is_bot field via prc
-prc list $PR_NUM > /tmp/pr_comments.json
+prc list $PR_NUM > .scratchpad/pr_comments.json
 
 # Filter to comments that need replies from Claude
 jq --arg user "$USERNAME" '
@@ -100,7 +100,7 @@ jq --arg user "$USERNAME" '
       ($last_reply.author != $user)
     )
   end
-' /tmp/pr_comments.json > /tmp/unreplied_comments.json
+' .scratchpad/pr_comments.json > .scratchpad/unreplied_comments.json
 ```
 
 ### Phase 2: Evaluate Each Comment
@@ -110,7 +110,7 @@ For each comment that needs a reply:
 **1. Read the comment:**
 ```bash
 jq --slurp -r '.[] |
-  "ID: \(.id)\nAuthor: \(.author)\nis_bot: \(.is_bot)\nPath: \(.path):\(.line)\n\(.body)\n---"' /tmp/unreplied_comments.json
+  "ID: \(.id)\nAuthor: \(.author)\nis_bot: \(.is_bot)\nPath: \(.path):\(.line)\n\(.body)\n---"' .scratchpad/unreplied_comments.json
 ```
 
 **2. Identify comment author type (2-tier detection):**
