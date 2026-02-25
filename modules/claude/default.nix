@@ -866,10 +866,11 @@ EOF
       $DRY_RUN_CMD mkdir -p ~/.claude/commands ~/.claude/output-styles ~/.claude/docs ~/.claude/agents
 
       # Make copied files writable (Nix store files are read-only by default)
-      $DRY_RUN_CMD chmod -R u+w ~/.claude/commands ~/.claude/output-styles ~/.claude/docs ~/.claude/agents
+      # Top-level files (e.g. CLAUDE.md, TOOLS-DETAILED.md) need this too, not just subdirectories
+      $DRY_RUN_CMD chmod -R u+w ~/.claude/
 
-      # Add generated TOOLS.md (force overwrite read-only file from previous build)
-      $DRY_RUN_CMD cp -f ${toolsMarkdown} ~/.claude/TOOLS.md
+      # Add generated TOOLS.md (use install to handle read-only destination from previous build)
+      $DRY_RUN_CMD install -m 644 ${toolsMarkdown} ~/.claude/TOOLS.md
     '';
 
     # claudeMcp
