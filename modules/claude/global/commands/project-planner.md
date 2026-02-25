@@ -29,12 +29,12 @@ For all other planning tasks, proceed without Context7.
 
 ### 2. Scratchpad Write Permission
 
-**Required:** `Write(~/.claude/scratchpad/**)` and `Edit(~/.claude/scratchpad/**)`
+**Required:** `Write(.scratchpad/**)` and `Edit(.scratchpad/**)`
 
-The plan document lives in `~/.claude/scratchpad/`. Without write and edit access, the skill cannot create or update the plan -- its primary deliverable. These permissions live in the global `~/.claude/settings.json` and are pre-configured by the Nix home manager setup. Verify both are present before proceeding.
+The plan document lives in `.scratchpad/` (project-local, sibling to `.kanban/`). Without write and edit access, the skill cannot create or update the plan -- its primary deliverable. These permissions live in the global `~/.claude/settings.json` and are pre-configured by the Nix home manager setup. Verify both are present before proceeding.
 
 **If missing:** Stop immediately. Do not start work. Surface to the staff engineer:
-> "Blocked: `Write(~/.claude/scratchpad/**)` and/or `Edit(~/.claude/scratchpad/**)` is missing from `permissions.allow`. Add both before delegating project-planner."
+> "Blocked: `Write(.scratchpad/**)` and/or `Edit(.scratchpad/**)` is missing from `permissions.allow`. Add both before delegating project-planner."
 
 ## Executive Summary: The 5 Critical Rules
 
@@ -66,7 +66,7 @@ Follow this priority order:
 4. Web search - Last resort only
 
 **Scratchpad location for plan documents:**
-Use `~/.claude/scratchpad/` for plan documents. This is the canonical cross-worktree scratchpad location.
+Use `.scratchpad/` (project-local, sibling to `.kanban/`) for plan documents. This is the canonical scratchpad location — background sub-agents can write here because it is within the project tree.
 
 ## Your Personality
 
@@ -107,11 +107,11 @@ After the initial dialogue phase (Five Whys, requirement gathering, challenge mo
 
 ### Where to Write It
 
-**Default location:** `~/.claude/scratchpad/project-plan-<slug>.md` where `<slug>` is a short kebab-case description derived from the stated request.
+**Default location:** `.scratchpad/project-plan-<slug>.md` where `<slug>` is a short kebab-case description derived from the stated request.
 
 **Examples:**
-- "We want to implement Bazel" → `~/.claude/scratchpad/project-plan-test-infrastructure.md`
-- "We need better onboarding docs" → `~/.claude/scratchpad/project-plan-onboarding-docs.md`
+- "We want to implement Bazel" → `.scratchpad/project-plan-test-infrastructure.md`
+- "We need better onboarding docs" → `.scratchpad/project-plan-onboarding-docs.md`
 
 ### How to Open It
 
@@ -875,7 +875,7 @@ Build a code review checklist system with automated reminders and quality tracki
 11. **Monitoring Feasibility Check for ASSUMPTIONS** - For EVERY "How to Monitor": Can we collect this data TODAY? Annotate inline: `<br>✅ *(exists)*` OR `<br>⚠️ [missing] → **Deliverable #N**`
 12. **Define DELIVERABLES** - What outputs achieve the objective?
 13. **Add End of Project Status Report** - Mandatory final deliverable for accountability (include HOW to verify/monitor instructions)
-14. **CREATE THE PLAN DOCUMENT** - Write the full plan to `~/.claude/scratchpad/project-plan-<slug>.md`. Open it with `open <filepath>`. Tell the user it's ready.
+14. **CREATE THE PLAN DOCUMENT** - Write the full plan to `.scratchpad/project-plan-<slug>.md`. Open it with `open <filepath>`. Tell the user it's ready.
 15. **Sufficient and necessary test** - Are deliverables enough? Is each required? Update the document if changes needed.
 16. **Validate causal chain** - Does DELIVERABLES + ASSUMPTIONS → OBJECTIVE → GOAL? Update the document if changes needed.
 17. **Iterate on the document** - When user requests changes, edit the file in place. Brief chat note on what changed. The document is the deliverable.

@@ -137,6 +137,7 @@ in {
       ".ralph"
       ".agent"
       ".kanban"
+      ".scratchpad"
     ];
     settings = {
       user = {
