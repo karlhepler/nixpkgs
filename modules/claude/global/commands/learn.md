@@ -73,10 +73,10 @@ Due to a known Claude Code bug ([GitHub #5140](https://github.com/anthropics/cla
 
 **Required:**
 - `Bash(tmux *)` -- needed to create TMUX windows for the handoff session
-- `Write(/tmp/**)` or `Write(/private/tmp/**)` -- needed to write the structured prompt to a temp file before TMUX launch (macOS maps `/tmp` to `/private/tmp`)
+- `Write(.scratchpad/**)` -- needed to write the structured prompt file before TMUX launch (`.scratchpad/` is project-local, persists across sessions)
 
 **If any are missing:** Stop immediately. Do not start work. Surface to the staff engineer:
-> "Blocked: Required permissions (`Bash(tmux *)`, `Write(/tmp/**)` or `Write(/private/tmp/**)`) are missing from `permissions.allow`. Add them before delegating learn."
+> "Blocked: Required permissions (`Bash(tmux *)`, `Write(.scratchpad/**)`) are missing from `permissions.allow`. Add them before delegating learn."
 
 ## Phase 1: Interactive Dialogue
 
@@ -219,13 +219,13 @@ Use the temp-file + atomic-window pattern (reliable TMUX window creation):
 # Examples: learn-date-awareness, learn-tmux-naming, learn-source-code-access
 # Generate name from the crystallized learning topic
 
-# Step 1: Write prompt to temp file
-cat > /tmp/learn-prompt.txt << 'EOF'
+# Step 1: Write prompt to scratchpad (filename matches window name for uniqueness)
+cat > .scratchpad/learn-<topic>-prompt.txt << 'EOF'
 YOUR_STRUCTURED_PROMPT_HERE
 EOF
 
 # Step 2: Launch atomically
-tmux new-window -n learn-<topic> -c ~/.config/nixpkgs 'staff "$(cat /tmp/learn-prompt.txt)"'
+tmux new-window -n learn-<topic> -c ~/.config/nixpkgs 'staff "$(cat .scratchpad/learn-<topic>-prompt.txt)"'
 ```
 
 **Important:**
@@ -233,7 +233,7 @@ tmux new-window -n learn-<topic> -c ~/.config/nixpkgs 'staff "$(cat /tmp/learn-p
   - Examples: `learn-delegation-rules`, `learn-kanban-workflow`, `learn-code-access-prohibition`
 - Working directory: `~/.config/nixpkgs` (set via `-c` flag — no `cd` prefix needed)
 - Command: `staff` (guaranteed to exist - it's the alias that launches Claude Code with staff-engineer output style)
-- Prompt written to `/tmp/learn-prompt.txt` first, then read atomically at window launch — NEVER inline long prompts in TMUX commands
+- Prompt written to `.scratchpad/learn-<topic>-prompt.txt` first (filename matches window name for uniqueness across concurrent sessions), then read atomically at window launch — NEVER inline long prompts in TMUX commands
 - NEVER use `tmux send-keys` as a separate step — window creation and command must be atomic
 
 ### Step 3: Inform the User
@@ -345,8 +345,8 @@ I've crystallized the issue. Ready to launch a new staff session to implement th
 ```bash
 # Topic: source-code-access (derived from the mistake about using Grep inappropriately)
 
-# Step 1: Write prompt to temp file
-cat > /tmp/learn-prompt.txt << 'EOF'
+# Step 1: Write prompt to scratchpad (filename matches window name for uniqueness)
+cat > .scratchpad/learn-source-code-access-prompt.txt << 'EOF'
 YOU ARE A FRESH STAFF SESSION LAUNCHED BY THE /learn SKILL
 
 This is an IMPLEMENTATION SESSION. The diagnostic dialogue has ALREADY been completed in a previous conversation. DO NOT replay Phase 1 dialogue (no "I see the issue, let me make sure I understand..." or "Is this accurate?").
@@ -386,7 +386,7 @@ The goal is to make the staff engineer's behavior more reliable by encoding this
 EOF
 
 # Step 2: Launch atomically
-tmux new-window -n learn-source-code-access -c ~/.config/nixpkgs 'staff "$(cat /tmp/learn-prompt.txt)"'
+tmux new-window -n learn-source-code-access -c ~/.config/nixpkgs 'staff "$(cat .scratchpad/learn-source-code-access-prompt.txt)"'
 ```
 
 Then inform the user:

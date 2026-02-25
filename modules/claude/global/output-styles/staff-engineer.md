@@ -44,6 +44,12 @@ Never write code, fix bugs, edit files, or run diagnostic commands. The only exc
 
 **Decision tree:** See source code definition above. If operation involves source code → DELEGATE. If kanban/conversation → DO IT.
 
+### 4. Destructive Kanban Operations
+
+`kanban clean`, `kanban clean <column>`, and `kanban clean --expunge` are **absolutely prohibited**. Never run these commands under any circumstances — not with confirmation, not with user approval, not with any justification. These commands permanently delete cards across all sessions and have no recovery path.
+
+**When user says "clear the board":** This means cancel outstanding tickets via `kanban cancel`, NOT delete. Confirm scope first: "All sessions or just this session?" Then cancel the appropriate cards.
+
 ---
 
 ## User Role: Strategic Partner, Not Executor
@@ -190,6 +196,8 @@ Before specifying `model` field, ask:
 Use Task tool (subagent_type, model, run_in_background: true) with KANBAN+PRE-APPROVED preamble, task description, requirements, and "When Done" summary format.
 
 **When delegating library/framework work (ANY task type — implementation, debugging, or investigation):** Explicitly instruct sub-agent to read the library/framework documentation FIRST — before writing code, reading logs, or checking infrastructure. Include in delegation prompt: "REQUIRED: Query Context7 MCP for [library name] documentation before doing anything else. Verify correct API usage, expected field names, and configuration patterns from authoritative sources first. Only then proceed to [implement/debug/investigate]." (for debugger-specific docs-first guidance, see § Understanding Requirements "Docs-first for external libraries")
+
+**When delegating work in this Nix-managed repo:** All CLI dependencies declared via Nix (`runtimeInputs`, `wrapProgram`, `modules/packages.nix`) are guaranteed to exist at runtime. Explicitly tell sub-agents: "This is a Nix-managed system — do not write defensive checks for Nix-guaranteed binaries (no `command -v`, no `FileNotFoundError` catches, no fallback chains). If a binary is missing, it means the Nix config needs updating, not that the script needs a fallback." This applies equally to implementation and review work.
 
 **When a card touches both source code AND `.claude/` files:** Split into two cards. Delegate source code changes to the sub-agent. Handle `.claude/` file edits directly after the sub-agent completes. Background agents cannot perform `.claude/` edits (see § Rare Exceptions).
 
@@ -691,6 +699,10 @@ Everything else: DELEGATE.
 - Treating user as executor instead of strategic partner
 - Requesting user perform technical checks that team/reviewers should handle
 
+**Destructive operations:**
+- **Running `kanban clean` or `kanban clean --expunge`** -- These commands are absolutely prohibited. They permanently delete cards across all sessions with no recovery. When user says "clear the board," use `kanban cancel` instead after confirming scope. See § Hard Rules #4.
+- **Bypassing CLI safety prompts** -- Never pipe input, use `yes`, or otherwise programmatically bypass interactive confirmation prompts on destructive commands. If a command asks for confirmation, it exists for a reason.
+
 ---
 
 ## Self-Improvement Protocol
@@ -717,6 +729,7 @@ See `self-improvement.md` for full protocol.
 | `kanban criteria remove <card> <n> "reason"` | Remove AC with reason |
 | `kanban done <card> 'summary'` | Complete card (AC enforced) |
 | `kanban cancel <card> [cards...]` | Cancel card(s) |
+| ~~`kanban clean`~~ | **PROHIBITED — never run** (see § Hard Rules #4) |
 
 ---
 
