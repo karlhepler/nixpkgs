@@ -22,7 +22,12 @@
       "id": 1,
       "type": "stat",
       "title": "Total Cost (All Time)",
-      "gridPos": { "x": 0, "y": 0, "w": 8, "h": 4 },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 8,
+        "h": 4
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -47,9 +52,18 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 5 },
-              { "color": "red", "value": 20 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5
+              },
+              {
+                "color": "red",
+                "value": 20
+              }
             ]
           },
           "mappings": [],
@@ -61,7 +75,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -76,7 +92,12 @@
       "id": 2,
       "type": "stat",
       "title": "Total Cost (Today)",
-      "gridPos": { "x": 8, "y": 0, "w": 8, "h": 4 },
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 8,
+        "h": 4
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -101,9 +122,18 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 5 },
-              { "color": "red", "value": 20 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5
+              },
+              {
+                "color": "red",
+                "value": 20
+              }
             ]
           },
           "mappings": [],
@@ -115,7 +145,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -130,7 +162,12 @@
       "id": 3,
       "type": "stat",
       "title": "Sessions Today",
-      "gridPos": { "x": 16, "y": 0, "w": 8, "h": 4 },
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 8,
+        "h": 4
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -155,7 +192,10 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "blue", "value": null }
+              {
+                "color": "blue",
+                "value": null
+              }
             ]
           },
           "mappings": [],
@@ -168,7 +208,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -183,7 +225,12 @@
       "id": 20,
       "type": "stat",
       "title": "Total Tokens (All Time)",
-      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 4 },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 12,
+        "h": 4
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -208,7 +255,10 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "purple", "value": null }
+              {
+                "color": "purple",
+                "value": null
+              }
             ]
           },
           "mappings": [],
@@ -221,7 +271,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -236,7 +288,12 @@
       "id": 21,
       "type": "stat",
       "title": "Total Tokens (Today)",
-      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 4 },
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 12,
+        "h": 4
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -261,7 +318,10 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "purple", "value": null }
+              {
+                "color": "purple",
+                "value": null
+              }
             ]
           },
           "mappings": [],
@@ -274,7 +334,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -289,7 +351,12 @@
       "id": 4,
       "type": "timeseries",
       "title": "Cost Over Time",
-      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -303,7 +370,9 @@
           "rawQueryText": "SELECT date(recorded_at) || 'T00:00:00Z' as time, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics GROUP BY date(recorded_at) ORDER BY time",
           "queryText": "SELECT date(recorded_at) || 'T00:00:00Z' as time, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics GROUP BY date(recorded_at) ORDER BY time",
           "queryType": "time series",
-          "timeColumns": ["time"],
+          "timeColumns": [
+            "time"
+          ],
           "refId": "A"
         }
       ],
@@ -344,7 +413,12 @@
       "id": 5,
       "type": "timeseries",
       "title": "Session Timeline",
-      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -358,7 +432,9 @@
           "rawQueryText": "SELECT recorded_at as time, cost_usd as cost FROM agent_metrics ORDER BY recorded_at",
           "queryText": "SELECT recorded_at as time, cost_usd as cost FROM agent_metrics ORDER BY recorded_at",
           "queryType": "time series",
-          "timeColumns": ["time"],
+          "timeColumns": [
+            "time"
+          ],
           "refId": "A"
         }
       ],
@@ -399,7 +475,12 @@
       "id": 6,
       "type": "barchart",
       "title": "Cost by Agent Type",
-      "gridPos": { "x": 0, "y": 16, "w": 8, "h": 8 },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 8,
+        "h": 8
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -455,7 +536,12 @@
       "id": 7,
       "type": "barchart",
       "title": "Cost by Model",
-      "gridPos": { "x": 8, "y": 16, "w": 8, "h": 8 },
+      "gridPos": {
+        "x": 8,
+        "y": 16,
+        "w": 8,
+        "h": 8
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -511,7 +597,12 @@
       "id": 8,
       "type": "barchart",
       "title": "Cost by Project",
-      "gridPos": { "x": 16, "y": 16, "w": 8, "h": 8 },
+      "gridPos": {
+        "x": 16,
+        "y": 16,
+        "w": 8,
+        "h": 8
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -567,7 +658,12 @@
       "id": 9,
       "type": "barchart",
       "title": "Token Breakdown",
-      "gridPos": { "x": 0, "y": 24, "w": 12, "h": 8 },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -603,21 +699,39 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "input_tok" },
+            "matcher": {
+              "id": "byName",
+              "options": "input_tok"
+            },
             "properties": [
-              { "id": "displayName", "value": "Input" }
+              {
+                "id": "displayName",
+                "value": "Input"
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "output_tok" },
+            "matcher": {
+              "id": "byName",
+              "options": "output_tok"
+            },
             "properties": [
-              { "id": "displayName", "value": "Output" }
+              {
+                "id": "displayName",
+                "value": "Output"
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "cache_tok" },
+            "matcher": {
+              "id": "byName",
+              "options": "cache_tok"
+            },
             "properties": [
-              { "id": "displayName", "value": "Cache Read" }
+              {
+                "id": "displayName",
+                "value": "Cache Read"
+              }
             ]
           }
         ]
@@ -647,7 +761,12 @@
       "id": 10,
       "type": "barchart",
       "title": "Turns by Agent Type",
-      "gridPos": { "x": 12, "y": 24, "w": 12, "h": 8 },
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -703,7 +822,12 @@
       "id": 11,
       "type": "barchart",
       "title": "Cost by Kanban Session",
-      "gridPos": { "x": 0, "y": 32, "w": 12, "h": 8 },
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -759,7 +883,12 @@
       "id": 12,
       "type": "table",
       "title": "Top 10 Expensive Sessions",
-      "gridPos": { "x": 12, "y": 32, "w": 12, "h": 8 },
+      "gridPos": {
+        "x": 12,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -794,65 +923,152 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null }
+              {
+                "color": "green",
+                "value": null
+              }
             ]
           }
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "session_id" },
+            "matcher": {
+              "id": "byName",
+              "options": "session_id"
+            },
             "properties": [
-              { "id": "displayName", "value": "Session ID" },
-              { "id": "custom.width", "value": 180 }
+              {
+                "id": "displayName",
+                "value": "Session ID"
+              },
+              {
+                "id": "custom.width",
+                "value": 180
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "kanban" },
+            "matcher": {
+              "id": "byName",
+              "options": "kanban"
+            },
             "properties": [
-              { "id": "displayName", "value": "Kanban Session" },
-              { "id": "custom.width", "value": 130 }
+              {
+                "id": "displayName",
+                "value": "Kanban Session"
+              },
+              {
+                "id": "custom.width",
+                "value": 130
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "project" },
+            "matcher": {
+              "id": "byName",
+              "options": "project"
+            },
             "properties": [
-              { "id": "displayName", "value": "Project" }
+              {
+                "id": "displayName",
+                "value": "Project"
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "agents" },
+            "matcher": {
+              "id": "byName",
+              "options": "agents"
+            },
             "properties": [
-              { "id": "displayName", "value": "Agents" },
-              { "id": "unit", "value": "short" },
-              { "id": "decimals", "value": 0 },
-              { "id": "custom.width", "value": 70 }
+              {
+                "id": "displayName",
+                "value": "Agents"
+              },
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 70
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "total_turns" },
+            "matcher": {
+              "id": "byName",
+              "options": "total_turns"
+            },
             "properties": [
-              { "id": "displayName", "value": "Turns" },
-              { "id": "unit", "value": "short" },
-              { "id": "decimals", "value": 0 },
-              { "id": "custom.width", "value": 70 }
+              {
+                "id": "displayName",
+                "value": "Turns"
+              },
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 70
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "total_tokens" },
+            "matcher": {
+              "id": "byName",
+              "options": "total_tokens"
+            },
             "properties": [
-              { "id": "displayName", "value": "Tokens" },
-              { "id": "unit", "value": "short" },
-              { "id": "decimals", "value": 1 },
-              { "id": "custom.width", "value": 90 }
+              {
+                "id": "displayName",
+                "value": "Tokens"
+              },
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.width",
+                "value": 90
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "total_cost" },
+            "matcher": {
+              "id": "byName",
+              "options": "total_cost"
+            },
             "properties": [
-              { "id": "displayName", "value": "Cost" },
-              { "id": "unit", "value": "currencyUSD" },
-              { "id": "decimals", "value": 4 },
-              { "id": "custom.width", "value": 80 },
+              {
+                "id": "displayName",
+                "value": "Cost"
+              },
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 4
+              },
+              {
+                "id": "custom.width",
+                "value": 80
+              },
               {
                 "id": "custom.cellOptions",
                 "value": {
@@ -864,9 +1080,18 @@
                 "value": {
                   "mode": "absolute",
                   "steps": [
-                    { "color": "green", "value": null },
-                    { "color": "yellow", "value": 1 },
-                    { "color": "red", "value": 5 }
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 1
+                    },
+                    {
+                      "color": "red",
+                      "value": 5
+                    }
                   ]
                 }
               }
@@ -878,7 +1103,9 @@
         "cellHeight": "sm",
         "footer": {
           "show": false,
-          "reducer": ["sum"],
+          "reducer": [
+            "sum"
+          ],
           "countRows": false,
           "fields": ""
         },
@@ -896,7 +1123,12 @@
       "id": 100,
       "type": "row",
       "title": "Agent Behavior",
-      "gridPos": { "x": 0, "y": 40, "w": 24, "h": 1 },
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 24,
+        "h": 1
+      },
       "collapsed": false,
       "datasource": null,
       "panels": []
@@ -905,7 +1137,12 @@
       "id": 13,
       "type": "table",
       "title": "Tool Usage Heatmap (by Agent)",
-      "gridPos": { "x": 0, "y": 41, "w": 8, "h": 8 },
+      "gridPos": {
+        "x": 0,
+        "y": 41,
+        "w": 8,
+        "h": 8
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -940,66 +1177,133 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null }
+              {
+                "color": "green",
+                "value": null
+              }
             ]
           }
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "role" },
+            "matcher": {
+              "id": "byName",
+              "options": "role"
+            },
             "properties": [
-              { "id": "displayName", "value": "Agent" },
-              { "id": "custom.width", "value": 100 }
+              {
+                "id": "displayName",
+                "value": "Agent"
+              },
+              {
+                "id": "custom.width",
+                "value": 100
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "tool_name" },
+            "matcher": {
+              "id": "byName",
+              "options": "tool_name"
+            },
             "properties": [
-              { "id": "displayName", "value": "Tool" }
+              {
+                "id": "displayName",
+                "value": "Tool"
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "calls" },
+            "matcher": {
+              "id": "byName",
+              "options": "calls"
+            },
             "properties": [
-              { "id": "displayName", "value": "Calls" },
-              { "id": "unit", "value": "short" },
-              { "id": "decimals", "value": 0 },
-              { "id": "custom.width", "value": 80 },
+              {
+                "id": "displayName",
+                "value": "Calls"
+              },
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 80
+              },
               {
                 "id": "custom.cellOptions",
-                "value": { "type": "color-background" }
+                "value": {
+                  "type": "color-background"
+                }
               },
               {
                 "id": "thresholds",
                 "value": {
                   "mode": "absolute",
                   "steps": [
-                    { "color": "blue", "value": null },
-                    { "color": "green", "value": 10 },
-                    { "color": "yellow", "value": 50 },
-                    { "color": "red", "value": 200 }
+                    {
+                      "color": "blue",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 10
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 50
+                    },
+                    {
+                      "color": "red",
+                      "value": 200
+                    }
                   ]
                 }
               }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "errors" },
+            "matcher": {
+              "id": "byName",
+              "options": "errors"
+            },
             "properties": [
-              { "id": "displayName", "value": "Errors" },
-              { "id": "custom.width", "value": 80 },
+              {
+                "id": "displayName",
+                "value": "Errors"
+              },
+              {
+                "id": "custom.width",
+                "value": 80
+              },
               {
                 "id": "custom.cellOptions",
-                "value": { "type": "color-background" }
+                "value": {
+                  "type": "color-background"
+                }
               },
               {
                 "id": "thresholds",
                 "value": {
                   "mode": "absolute",
                   "steps": [
-                    { "color": "green", "value": null },
-                    { "color": "yellow", "value": 1 },
-                    { "color": "red", "value": 5 }
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 1
+                    },
+                    {
+                      "color": "red",
+                      "value": 5
+                    }
                   ]
                 }
               }
@@ -1011,7 +1315,9 @@
         "cellHeight": "sm",
         "footer": {
           "show": false,
-          "reducer": ["sum"],
+          "reducer": [
+            "sum"
+          ],
           "countRows": false,
           "fields": ""
         },
@@ -1027,9 +1333,14 @@
     },
     {
       "id": 22,
-      "type": "barchart",
+      "type": "table",
       "title": "Top Tools (All Agents Combined)",
-      "gridPos": { "x": 8, "y": 41, "w": 16, "h": 8 },
+      "gridPos": {
+        "x": 8,
+        "y": 41,
+        "w": 16,
+        "h": 8
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -1049,56 +1360,91 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
-          "decimals": 0,
           "color": {
-            "mode": "palette-classic"
+            "mode": "thresholds"
           },
           "custom": {
-            "fillOpacity": 80,
-            "lineWidth": 1
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true,
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
           }
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "tool_name" },
+            "matcher": {
+              "id": "byName",
+              "options": "tool_name"
+            },
             "properties": [
-              { "id": "displayName", "value": "Tool" }
+              {
+                "id": "displayName",
+                "value": "Tool Name"
+              },
+              {
+                "id": "custom.width",
+                "value": 200
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "total_calls" },
+            "matcher": {
+              "id": "byName",
+              "options": "total_calls"
+            },
             "properties": [
-              { "id": "displayName", "value": "Total Calls" }
+              {
+                "id": "displayName",
+                "value": "Total Calls"
+              },
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 100
+              }
             ]
           }
         ]
       },
       "options": {
-        "orientation": "horizontal",
-        "xTickLabelRotation": 0,
-        "xTickLabelMaxLength": 60,
-        "groupWidth": 0.7,
-        "barWidth": 0.97,
-        "barRadius": 0,
-        "fullHighlight": false,
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        },
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": false
-        },
-        "xField": "tool_name"
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Total Calls",
+            "desc": true
+          }
+        ]
       }
     },
     {
       "id": 24,
       "type": "barchart",
       "title": "Most Denied Tools",
-      "gridPos": { "x": 0, "y": 49, "w": 12, "h": 8 },
+      "gridPos": {
+        "x": 0,
+        "y": 49,
+        "w": 12,
+        "h": 8
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -1130,15 +1476,27 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "tool_name" },
+            "matcher": {
+              "id": "byName",
+              "options": "tool_name"
+            },
             "properties": [
-              { "id": "displayName", "value": "Tool" }
+              {
+                "id": "displayName",
+                "value": "Tool"
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "denials" },
+            "matcher": {
+              "id": "byName",
+              "options": "denials"
+            },
             "properties": [
-              { "id": "displayName", "value": "Denials" }
+              {
+                "id": "displayName",
+                "value": "Denials"
+              }
             ]
           }
         ]
@@ -1167,7 +1525,12 @@
       "id": 14,
       "type": "barchart",
       "title": "Session Duration by Agent Type",
-      "gridPos": { "x": 0, "y": 57, "w": 8, "h": 8 },
+      "gridPos": {
+        "x": 0,
+        "y": 57,
+        "w": 8,
+        "h": 8
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -1223,7 +1586,12 @@
       "id": 15,
       "type": "timeseries",
       "title": "Cache Efficiency Over Time",
-      "gridPos": { "x": 8, "y": 57, "w": 8, "h": 8 },
+      "gridPos": {
+        "x": 8,
+        "y": 57,
+        "w": 8,
+        "h": 8
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -1237,7 +1605,9 @@
           "rawQueryText": "SELECT date(recorded_at) || 'T00:00:00Z' as time, COALESCE(AVG(cache_hit_ratio) * 100, 0) as cache_hit_pct FROM agent_metrics WHERE cache_hit_ratio > 0 GROUP BY date(recorded_at) ORDER BY time",
           "queryText": "SELECT date(recorded_at) || 'T00:00:00Z' as time, COALESCE(AVG(cache_hit_ratio) * 100, 0) as cache_hit_pct FROM agent_metrics WHERE cache_hit_ratio > 0 GROUP BY date(recorded_at) ORDER BY time",
           "queryType": "time series",
-          "timeColumns": ["time"],
+          "timeColumns": [
+            "time"
+          ],
           "refId": "A"
         }
       ],
@@ -1264,9 +1634,18 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 40 },
-              { "color": "green", "value": 70 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 40
+              },
+              {
+                "color": "green",
+                "value": 70
+              }
             ]
           }
         },
@@ -1288,7 +1667,12 @@
       "id": 23,
       "type": "barchart",
       "title": "Turns by Agent Type (Detail)",
-      "gridPos": { "x": 16, "y": 57, "w": 8, "h": 8 },
+      "gridPos": {
+        "x": 16,
+        "y": 57,
+        "w": 8,
+        "h": 8
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -1344,7 +1728,12 @@
       "id": 19,
       "type": "table",
       "title": "Turn Statistics by Agent Type",
-      "gridPos": { "x": 0, "y": 65, "w": 24, "h": 8 },
+      "gridPos": {
+        "x": 0,
+        "y": 65,
+        "w": 24,
+        "h": 8
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -1379,67 +1768,138 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null }
+              {
+                "color": "green",
+                "value": null
+              }
             ]
           }
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "role" },
+            "matcher": {
+              "id": "byName",
+              "options": "role"
+            },
             "properties": [
-              { "id": "displayName", "value": "Agent Type" },
-              { "id": "custom.width", "value": 150 }
+              {
+                "id": "displayName",
+                "value": "Agent Type"
+              },
+              {
+                "id": "custom.width",
+                "value": 150
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "min_turns" },
+            "matcher": {
+              "id": "byName",
+              "options": "min_turns"
+            },
             "properties": [
-              { "id": "displayName", "value": "Min" },
-              { "id": "custom.width", "value": 80 }
+              {
+                "id": "displayName",
+                "value": "Min"
+              },
+              {
+                "id": "custom.width",
+                "value": 80
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "max_turns" },
+            "matcher": {
+              "id": "byName",
+              "options": "max_turns"
+            },
             "properties": [
-              { "id": "displayName", "value": "Max" },
-              { "id": "custom.width", "value": 80 }
+              {
+                "id": "displayName",
+                "value": "Max"
+              },
+              {
+                "id": "custom.width",
+                "value": 80
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "avg_turns" },
+            "matcher": {
+              "id": "byName",
+              "options": "avg_turns"
+            },
             "properties": [
-              { "id": "displayName", "value": "Avg" },
-              { "id": "custom.width", "value": 80 },
-              { "id": "decimals", "value": 1 },
+              {
+                "id": "displayName",
+                "value": "Avg"
+              },
+              {
+                "id": "custom.width",
+                "value": 80
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
               {
                 "id": "custom.cellOptions",
-                "value": { "type": "color-background" }
+                "value": {
+                  "type": "color-background"
+                }
               },
               {
                 "id": "thresholds",
                 "value": {
                   "mode": "absolute",
                   "steps": [
-                    { "color": "green", "value": null },
-                    { "color": "yellow", "value": 20 },
-                    { "color": "red", "value": 50 }
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 20
+                    },
+                    {
+                      "color": "red",
+                      "value": 50
+                    }
                   ]
                 }
               }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "p95_turns" },
+            "matcher": {
+              "id": "byName",
+              "options": "p95_turns"
+            },
             "properties": [
-              { "id": "displayName", "value": "p95" },
-              { "id": "custom.width", "value": 80 }
+              {
+                "id": "displayName",
+                "value": "p95"
+              },
+              {
+                "id": "custom.width",
+                "value": 80
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "sample_count" },
+            "matcher": {
+              "id": "byName",
+              "options": "sample_count"
+            },
             "properties": [
-              { "id": "displayName", "value": "Samples" },
-              { "id": "custom.width", "value": 90 }
+              {
+                "id": "displayName",
+                "value": "Samples"
+              },
+              {
+                "id": "custom.width",
+                "value": 90
+              }
             ]
           }
         ]
@@ -1448,7 +1908,9 @@
         "cellHeight": "sm",
         "footer": {
           "show": false,
-          "reducer": ["sum"],
+          "reducer": [
+            "sum"
+          ],
           "countRows": false,
           "fields": ""
         },
@@ -1466,7 +1928,12 @@
       "id": 101,
       "type": "row",
       "title": "Quality & Efficiency",
-      "gridPos": { "x": 0, "y": 73, "w": 24, "h": 1 },
+      "gridPos": {
+        "x": 0,
+        "y": 73,
+        "w": 24,
+        "h": 1
+      },
       "collapsed": false,
       "datasource": null,
       "panels": []
@@ -1475,7 +1942,12 @@
       "id": 16,
       "type": "barchart",
       "title": "Error Rate by Agent Type",
-      "gridPos": { "x": 0, "y": 74, "w": 8, "h": 8 },
+      "gridPos": {
+        "x": 0,
+        "y": 74,
+        "w": 8,
+        "h": 8
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -1507,21 +1979,39 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "total_errors" },
+            "matcher": {
+              "id": "byName",
+              "options": "total_errors"
+            },
             "properties": [
-              { "id": "custom.hidden", "value": true }
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "total_calls" },
+            "matcher": {
+              "id": "byName",
+              "options": "total_calls"
+            },
             "properties": [
-              { "id": "custom.hidden", "value": true }
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "error_pct" },
+            "matcher": {
+              "id": "byName",
+              "options": "error_pct"
+            },
             "properties": [
-              { "id": "displayName", "value": "Error %" }
+              {
+                "id": "displayName",
+                "value": "Error %"
+              }
             ]
           }
         ]
@@ -1550,7 +2040,12 @@
       "id": 17,
       "type": "barchart",
       "title": "Token Efficiency (Cost per Tool Call)",
-      "gridPos": { "x": 8, "y": 74, "w": 8, "h": 8 },
+      "gridPos": {
+        "x": 8,
+        "y": 74,
+        "w": 8,
+        "h": 8
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -1582,9 +2077,15 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "cost_per_tool_call" },
+            "matcher": {
+              "id": "byName",
+              "options": "cost_per_tool_call"
+            },
             "properties": [
-              { "id": "displayName", "value": "Cost / Tool Call" }
+              {
+                "id": "displayName",
+                "value": "Cost / Tool Call"
+              }
             ]
           }
         ]
@@ -1613,7 +2114,12 @@
       "id": 18,
       "type": "barchart",
       "title": "Latency Distribution by Agent Type",
-      "gridPos": { "x": 16, "y": 74, "w": 8, "h": 8 },
+      "gridPos": {
+        "x": 16,
+        "y": 74,
+        "w": 8,
+        "h": 8
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -1645,9 +2151,15 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "avg_latency" },
+            "matcher": {
+              "id": "byName",
+              "options": "avg_latency"
+            },
             "properties": [
-              { "id": "displayName", "value": "Avg Latency (s)" }
+              {
+                "id": "displayName",
+                "value": "Avg Latency (s)"
+              }
             ]
           }
         ]
@@ -1675,12 +2187,21 @@
   ],
   "refresh": "30s",
   "schemaVersion": 39,
-  "tags": ["claude", "metrics", "agents"],
-  "templating": { "list": [] },
-  "time": { "from": "now-7d", "to": "now" },
+  "tags": [
+    "claude",
+    "metrics",
+    "agents"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
   "timepicker": {},
   "timezone": "browser",
-  "title": "Claudit \u2014 Claude Code Agent Metrics",
+  "title": "Claudit — Claude Code Agent Metrics",
   "uid": "claudit-dashboard",
   "version": 3
 }
