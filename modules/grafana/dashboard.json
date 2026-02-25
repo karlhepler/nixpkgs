@@ -180,10 +180,116 @@
       }
     },
     {
+      "id": 20,
+      "type": "stat",
+      "title": "Total Tokens (All Time)",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 4 },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawQueryText": "SELECT COALESCE(SUM(input_tokens + output_tokens), 0) as total_tokens FROM agent_metrics",
+          "queryText": "SELECT COALESCE(SUM(input_tokens + output_tokens), 0) as total_tokens FROM agent_metrics",
+          "queryType": "table",
+          "timeColumns": [],
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "purple", "value": null }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "purple"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 21,
+      "type": "stat",
+      "title": "Total Tokens (Today)",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 4 },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawQueryText": "SELECT COALESCE(SUM(input_tokens + output_tokens), 0) as total_tokens FROM agent_metrics WHERE date(recorded_at) = date('now')",
+          "queryText": "SELECT COALESCE(SUM(input_tokens + output_tokens), 0) as total_tokens FROM agent_metrics WHERE date(recorded_at) = date('now')",
+          "queryType": "table",
+          "timeColumns": [],
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "purple", "value": null }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "purple"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
       "id": 4,
       "type": "timeseries",
       "title": "Cost Over Time",
-      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -238,7 +344,7 @@
       "id": 5,
       "type": "timeseries",
       "title": "Session Timeline",
-      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -293,7 +399,7 @@
       "id": 6,
       "type": "barchart",
       "title": "Cost by Agent Type",
-      "gridPos": { "x": 0, "y": 12, "w": 8, "h": 8 },
+      "gridPos": { "x": 0, "y": 16, "w": 8, "h": 8 },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -349,7 +455,7 @@
       "id": 7,
       "type": "barchart",
       "title": "Cost by Model",
-      "gridPos": { "x": 8, "y": 12, "w": 8, "h": 8 },
+      "gridPos": { "x": 8, "y": 16, "w": 8, "h": 8 },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -405,7 +511,7 @@
       "id": 8,
       "type": "barchart",
       "title": "Cost by Project",
-      "gridPos": { "x": 16, "y": 12, "w": 8, "h": 8 },
+      "gridPos": { "x": 16, "y": 16, "w": 8, "h": 8 },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -461,7 +567,7 @@
       "id": 9,
       "type": "barchart",
       "title": "Token Breakdown",
-      "gridPos": { "x": 0, "y": 20, "w": 12, "h": 8 },
+      "gridPos": { "x": 0, "y": 24, "w": 12, "h": 8 },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -481,8 +587,8 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "none",
-          "decimals": 0,
+          "unit": "short",
+          "decimals": 1,
           "color": {
             "mode": "palette-classic"
           },
@@ -541,7 +647,7 @@
       "id": 10,
       "type": "barchart",
       "title": "Turns by Agent Type",
-      "gridPos": { "x": 12, "y": 20, "w": 12, "h": 8 },
+      "gridPos": { "x": 12, "y": 24, "w": 12, "h": 8 },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -561,7 +667,7 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "none",
+          "unit": "short",
           "decimals": 0,
           "color": {
             "mode": "palette-classic"
@@ -597,7 +703,7 @@
       "id": 11,
       "type": "barchart",
       "title": "Cost by Kanban Session",
-      "gridPos": { "x": 0, "y": 28, "w": 12, "h": 8 },
+      "gridPos": { "x": 0, "y": 32, "w": 12, "h": 8 },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -653,7 +759,7 @@
       "id": 12,
       "type": "table",
       "title": "Top 10 Expensive Sessions",
-      "gridPos": { "x": 12, "y": 28, "w": 12, "h": 8 },
+      "gridPos": { "x": 12, "y": 32, "w": 12, "h": 8 },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -717,6 +823,8 @@
             "matcher": { "id": "byName", "options": "agents" },
             "properties": [
               { "id": "displayName", "value": "Agents" },
+              { "id": "unit", "value": "short" },
+              { "id": "decimals", "value": 0 },
               { "id": "custom.width", "value": 70 }
             ]
           },
@@ -724,6 +832,8 @@
             "matcher": { "id": "byName", "options": "total_turns" },
             "properties": [
               { "id": "displayName", "value": "Turns" },
+              { "id": "unit", "value": "short" },
+              { "id": "decimals", "value": 0 },
               { "id": "custom.width", "value": 70 }
             ]
           },
@@ -731,6 +841,8 @@
             "matcher": { "id": "byName", "options": "total_tokens" },
             "properties": [
               { "id": "displayName", "value": "Tokens" },
+              { "id": "unit", "value": "short" },
+              { "id": "decimals", "value": 1 },
               { "id": "custom.width", "value": 90 }
             ]
           },
@@ -779,13 +891,12 @@
         ]
       },
       "transformations": []
-    }
-  ,
+    },
     {
       "id": 100,
       "type": "row",
       "title": "Agent Behavior",
-      "gridPos": { "x": 0, "y": 36, "w": 24, "h": 1 },
+      "gridPos": { "x": 0, "y": 40, "w": 24, "h": 1 },
       "collapsed": false,
       "datasource": null,
       "panels": []
@@ -793,8 +904,8 @@
     {
       "id": 13,
       "type": "table",
-      "title": "Tool Usage Heatmap",
-      "gridPos": { "x": 0, "y": 37, "w": 8, "h": 8 },
+      "title": "Tool Usage Heatmap (by Agent)",
+      "gridPos": { "x": 0, "y": 41, "w": 8, "h": 8 },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -851,6 +962,8 @@
             "matcher": { "id": "byName", "options": "calls" },
             "properties": [
               { "id": "displayName", "value": "Calls" },
+              { "id": "unit", "value": "short" },
+              { "id": "decimals", "value": 0 },
               { "id": "custom.width", "value": 80 },
               {
                 "id": "custom.cellOptions",
@@ -913,10 +1026,148 @@
       "transformations": []
     },
     {
+      "id": 22,
+      "type": "barchart",
+      "title": "Top Tools (All Agents Combined)",
+      "gridPos": { "x": 8, "y": 41, "w": 16, "h": 8 },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawQueryText": "SELECT tool_name, SUM(call_count) as total_calls FROM agent_tool_usage GROUP BY tool_name ORDER BY total_calls DESC LIMIT 30",
+          "queryText": "SELECT tool_name, SUM(call_count) as total_calls FROM agent_tool_usage GROUP BY tool_name ORDER BY total_calls DESC LIMIT 30",
+          "queryType": "table",
+          "timeColumns": [],
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 1
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "tool_name" },
+            "properties": [
+              { "id": "displayName", "value": "Tool" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "total_calls" },
+            "properties": [
+              { "id": "displayName", "value": "Total Calls" }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xTickLabelRotation": 0,
+        "xTickLabelMaxLength": 60,
+        "groupWidth": 0.7,
+        "barWidth": 0.97,
+        "barRadius": 0,
+        "fullHighlight": false,
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "xField": "tool_name"
+      }
+    },
+    {
+      "id": 24,
+      "type": "barchart",
+      "title": "Most Denied Tools",
+      "gridPos": { "x": 0, "y": 49, "w": 12, "h": 8 },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawQueryText": "SELECT tool_name, COUNT(*) as denials FROM permission_denials GROUP BY tool_name ORDER BY denials DESC LIMIT 20",
+          "queryText": "SELECT tool_name, COUNT(*) as denials FROM permission_denials GROUP BY tool_name ORDER BY denials DESC LIMIT 20",
+          "queryType": "table",
+          "timeColumns": [],
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 1
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "tool_name" },
+            "properties": [
+              { "id": "displayName", "value": "Tool" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "denials" },
+            "properties": [
+              { "id": "displayName", "value": "Denials" }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xTickLabelRotation": 0,
+        "xTickLabelMaxLength": 60,
+        "groupWidth": 0.7,
+        "barWidth": 0.97,
+        "barRadius": 0,
+        "fullHighlight": false,
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "xField": "tool_name"
+      }
+    },
+    {
       "id": 14,
       "type": "barchart",
       "title": "Session Duration by Agent Type",
-      "gridPos": { "x": 8, "y": 37, "w": 8, "h": 8 },
+      "gridPos": { "x": 0, "y": 57, "w": 8, "h": 8 },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -972,7 +1223,7 @@
       "id": 15,
       "type": "timeseries",
       "title": "Cache Efficiency Over Time",
-      "gridPos": { "x": 16, "y": 37, "w": 8, "h": 8 },
+      "gridPos": { "x": 8, "y": 57, "w": 8, "h": 8 },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -1034,10 +1285,66 @@
       }
     },
     {
+      "id": 23,
+      "type": "barchart",
+      "title": "Turns by Agent Type (Detail)",
+      "gridPos": { "x": 16, "y": 57, "w": 8, "h": 8 },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawQueryText": "SELECT role, SUM(turns) as total_turns FROM agent_metrics WHERE role != 'parent' GROUP BY role ORDER BY total_turns DESC",
+          "queryText": "SELECT role, SUM(turns) as total_turns FROM agent_metrics WHERE role != 'parent' GROUP BY role ORDER BY total_turns DESC",
+          "queryType": "table",
+          "timeColumns": [],
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xTickLabelRotation": 0,
+        "xTickLabelMaxLength": 20,
+        "groupWidth": 0.7,
+        "barWidth": 0.97,
+        "barRadius": 0,
+        "fullHighlight": false,
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "xField": "role"
+      }
+    },
+    {
       "id": 19,
       "type": "table",
       "title": "Turn Statistics by Agent Type",
-      "gridPos": { "x": 0, "y": 45, "w": 24, "h": 8 },
+      "gridPos": { "x": 0, "y": 65, "w": 24, "h": 8 },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -1159,7 +1466,7 @@
       "id": 101,
       "type": "row",
       "title": "Quality & Efficiency",
-      "gridPos": { "x": 0, "y": 53, "w": 24, "h": 1 },
+      "gridPos": { "x": 0, "y": 73, "w": 24, "h": 1 },
       "collapsed": false,
       "datasource": null,
       "panels": []
@@ -1168,7 +1475,7 @@
       "id": 16,
       "type": "barchart",
       "title": "Error Rate by Agent Type",
-      "gridPos": { "x": 0, "y": 54, "w": 8, "h": 8 },
+      "gridPos": { "x": 0, "y": 74, "w": 8, "h": 8 },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -1243,7 +1550,7 @@
       "id": 17,
       "type": "barchart",
       "title": "Token Efficiency (Cost per Tool Call)",
-      "gridPos": { "x": 8, "y": 54, "w": 8, "h": 8 },
+      "gridPos": { "x": 8, "y": 74, "w": 8, "h": 8 },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -1306,7 +1613,7 @@
       "id": 18,
       "type": "barchart",
       "title": "Latency Distribution by Agent Type",
-      "gridPos": { "x": 16, "y": 54, "w": 8, "h": 8 },
+      "gridPos": { "x": 16, "y": 74, "w": 8, "h": 8 },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "claude-metrics-sqlite"
@@ -1375,5 +1682,5 @@
   "timezone": "browser",
   "title": "Claudit \u2014 Claude Code Agent Metrics",
   "uid": "claudit-dashboard",
-  "version": 2
+  "version": 3
 }
