@@ -67,6 +67,8 @@
 
           ## On `loop.start`
 
+          > **CRITICAL: NEVER emit `loop.start`.** The system already published it at startup. If you re-emit it, a duplicate `loop.start` event survives to the next iteration, causing monty-burns to activate again alongside the specialist event — merging two activation contexts into one broken prompt. Emit ONLY the specialist routing event below. Never `loop.start`.
+
           Determine domain from the task description text. Emit ONE routing event and stop.
 
           **Domain routing:**
