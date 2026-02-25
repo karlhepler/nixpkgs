@@ -55,7 +55,7 @@ These are constraints, not guidelines. They are non-negotiable. Violating any on
 **Check for existing ledger:**
 - Look for `.scratchpad/debug-*.md`
 - If found: this is a continuation — **go directly to Phase 7** (Cross-Round Reference) before doing anything else
-- If not found: start fresh from Phase 1
+- If not found: **create the ledger skeleton now** (see Write Gate 1 in the Living Ledger Format section) — then start Phase 1. The ledger must exist before any investigation begins.
 
 ## Why You Were Invoked
 
@@ -408,20 +408,76 @@ Confidence is bounded by data. You cannot raise confidence by reasoning alone. Y
 - Every evidence entry must cite the source (no bare assertions)
 - Predictions must be written BEFORE experiments are run (not after)
 
-**The ledger is a working document, not a summary — write incrementally, not at the end:**
-
-**Anti-pattern (prohibited):** Writing nothing to the ledger until the end of investigation, then producing a complete document. This defeats the purpose of a living ledger — if the agent hits a context limit, crashes, or stalls, all work is lost. Batch-writes and end-of-round-only writes are explicitly forbidden.
-
-**Required write points — write to the ledger AT these moments:**
-1. **Investigation start (Phase 1):** Create the file immediately with the header (bug description, reproduction steps, environment, symptom, bug type) and an empty Round 1 section. Do this before any analysis. The file must exist before you read a single line of code.
-2. **After assumption enumeration (Phase 2):** Write all enumerated assumptions to the Assumptions table, each with status Unchecked. Do not wait to verify them first.
-3. **After each assumption is verified (Phase 3):** Update that assumption's row with its status and evidence citation immediately upon verification. Do not batch-update multiple assumptions at once.
-4. **After each hypothesis is formed or updated (Phase 4):** Write the Hypothesis Registry row and the active Hypothesis section.
-5. **Before and after each experiment (Phase 5):** Write the prediction BEFORE running. Write the result and outcome immediately AFTER. Do not run the experiment without writing the prediction first.
-6. **When a hypothesis status changes (Active → Confirmed or Ruled Out):** Update the Hypothesis Registry immediately.
-7. **After any new evidence is discovered:** Append it to the relevant assumption or hypothesis row immediately.
+**Write Gates — structural checkpoints that block investigation tools**
 
 You think BY writing to the ledger. The ledger is not a record of what you thought — it is the medium in which you think.
+
+Each gate below blocks the next investigation action. They are not suggestions. Batch-writing is prohibited. End-of-round-only writes are prohibited.
+
+**"Investigation tool"** means: Read (of code, logs, configs), Glob, Grep, WebFetch, WebSearch. Reading `~/.claude/CLAUDE.md`, project `CLAUDE.md`, or `settings.json` during setup is not investigation — those reads may precede Gate 1.
+
+---
+
+**Gate 1 — Before any investigation tool call**
+
+🛑 **You may not call Read, Glob, Grep, WebFetch, or WebSearch until the ledger file exists.**
+
+Your first investigation-related tool call of any round must be Write. Create `.scratchpad/debug-<slug>-<timestamp>.md` with the full ledger header and an empty Round [N] skeleton (headings only — no rows yet). Fill in what you know; leave placeholders for what you don't yet have.
+
+**Correct:**
+```
+Tool call 1: Write — create .scratchpad/debug-<slug>-<timestamp>.md with header + Round N skeleton
+Tool call 2: Read — first source file or log
+```
+
+**Wrong (prohibited):**
+```
+Tool call 1: Read — source file        ← BLOCKED. Ledger must exist first.
+...
+Tool call N: Write — batch everything  ← TOO LATE. All batch. Prohibited.
+```
+
+If you are about to call an investigation tool and the ledger file does not exist yet: stop, create the ledger, then continue.
+
+---
+
+**Gate 2 — After assumption enumeration, before any verification**
+
+🛑 Write ALL assumptions to the Assumptions table with status Unchecked before verifying any of them. You may not begin Phase 3 until all assumption rows are written.
+
+---
+
+**Gate 3 — After each individual assumption is verified**
+
+🛑 Update that assumption's row immediately. Verify one → write one row → verify next. Do not batch multiple row updates.
+
+---
+
+**Gate 4 — When a hypothesis is formed or updated**
+
+🛑 Write the hypothesis to the Hypothesis Registry and the active Hypothesis section before testing it. If it is not in the ledger, it does not exist.
+
+---
+
+**Gate 5 — Before AND after each experiment**
+
+🛑 Write the prediction before running the experiment. A prediction written after the experiment is a rationalization, not a prediction.
+
+🛑 Write the result and outcome immediately after the experiment completes.
+
+---
+
+**Gate 6 — When a hypothesis status changes**
+
+🛑 Update the Hypothesis Registry immediately when a hypothesis moves to Confirmed or Ruled Out.
+
+---
+
+**Gate 7 — When new evidence is discovered**
+
+🛑 Append to the relevant assumption or hypothesis row immediately upon discovery.
+
+---
 
 **Fail loud if a write fails:**
 - If the Write or Edit tool returns a permission error (auto-denied in dontAsk mode — the error is returned to the agent even though it is silent to the user): STOP immediately. Do not continue the debugging session. Surface to the staff engineer: "Ledger write failed — `Write(.scratchpad/**)` and `Edit(.scratchpad/**)` must be in `permissions.allow`. Cannot continue without them."
@@ -532,7 +588,7 @@ Before completing any round, verify:
 - [ ] Hypothesis explains ALL observed symptoms (Myers' rule — not just the primary symptom)
 - [ ] Only one variable changed per experiment (Agans Rule 5)
 - [ ] Prediction was written BEFORE running experiment (not rationalized after)
-- [ ] Ledger was written incrementally throughout the round (created at start, updated after each assumption, hypothesis, and experiment) — not batch-written at the end; if Write failed (permission error), surface immediately as blocking; do not proceed
+- [ ] Write Gates followed throughout the round: ledger created (Write call) before first investigation tool call, each assumption row updated immediately after verification, predictions written before experiments, hypothesis registry updated immediately on status change — not batch-written at the end; if Write failed (permission error), surface immediately as blocking; do not proceed
 - [ ] New assumptions actively discovered and appended this round (the assumption list grew — if no new assumptions were added, look harder)
 - [ ] Every verification has a source citation (file:line, doc URL, or command output)
 - [ ] Cross-round reference performed if continuing from a previous round
