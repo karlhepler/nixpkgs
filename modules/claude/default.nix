@@ -32,7 +32,19 @@ let
       [ instructionsContent ]
       (builtins.readFile templateFile);
 
-  # Process a skill file: strip frontmatter, replace $ARGUMENTS, then indent
+  # Trim leading and trailing empty lines from a string
+  trimLines = s:
+    let
+      lines = lib.splitString "\n" s;
+      dropLeadingEmpty = lst:
+        if lst == [] || builtins.head lst != ""
+        then lst
+        else dropLeadingEmpty (builtins.tail lst);
+      dropTrailingEmpty = lst: lib.reverseList (dropLeadingEmpty (lib.reverseList lst));
+      trimmed = dropTrailingEmpty (dropLeadingEmpty lines);
+    in lib.concatStringsSep "\n" trimmed;
+
+  # Process a skill file: strip frontmatter, replace $ARGUMENTS, trim empty lines, then indent
   # to 10 spaces for YAML block scalar embedding inside <behavior> tags.
   processSkillFile = filePath:
     let
@@ -42,7 +54,8 @@ let
         [ "$ARGUMENTS" ]
         [ "You receive your task from the event payload that triggered you and the session context.\nComplete the work described, then emit your completion event." ]
         body;
-    in indentLines 10 withArgs;
+      trimmed = trimLines withArgs;
+    in indentLines 10 trimmed;
 
   # Assemble all hat YAML blocks from templates
   hatYaml = lib.concatStrings [
