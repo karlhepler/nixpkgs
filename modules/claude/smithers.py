@@ -2149,7 +2149,7 @@ def main_loop_iteration(
     total_iterations = max_ralph_invocations
 
     # 9. Generate prompt and invoke Ralph
-    log("📝 Generating prompt for Ralph...")
+    log("📝 Generating prompt for Monty Burns...")
     prompt = generate_prompt(
         pr_url, pr_info, failed_checks, bot_comments, conflicts,
         work_iteration, total_iterations
@@ -2169,7 +2169,7 @@ def main_loop_iteration(
     # Prepare environment with Ralph configuration
     env = os.environ.copy()
 
-    log(f"🚀 Invoking Ralph (iteration {work_iteration}/{total_iterations}): burns --pr {pr_number} {prompt_file}")
+    log(f"🚀 Invoking Monty Burns (iteration {work_iteration}/{total_iterations}): burns --pr {pr_number} {prompt_file}")
     try:
         # Run burns with the prompt file and PR context
         # Use Popen with process group for proper signal handling
@@ -2212,7 +2212,7 @@ def main_loop_iteration(
         except OSError:
             pass
 
-    log("Ralph finished, re-checking PR status...")
+    log("Monty Burns finished, re-checking PR status...")
 
     # Post-execution security audit
     audit_ralph_execution()

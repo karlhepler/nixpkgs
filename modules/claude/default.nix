@@ -101,7 +101,7 @@ Payload: 1-2 sentences summarizing key findings.
       indented = indentLines 10 withEmit;
     in ''
       researcher:
-        name: "Researcher"
+        name: "🔬 Researcher"
         description: "Multi-source investigation, fact-checking, information synthesis"
         triggers: ["research.needed"]
         publishes: ["research.done"]
@@ -115,13 +115,13 @@ ${indented}
 
   # All specialist hats (7 specialists + researcher)
   skillHats = lib.concatStrings [
-    (makeSkillHat { hatKey = "swe-backend";   display = "Backend Engineer";         description = "Backend APIs, databases, server-side logic, data modeling";        domain = "backend";   filePath = ./global/commands/swe-backend.md;   })
-    (makeSkillHat { hatKey = "swe-frontend";  display = "Frontend Engineer";        description = "React/Next.js UI, TypeScript, CSS, accessibility, web performance"; domain = "frontend";  filePath = ./global/commands/swe-frontend.md;  })
-    (makeSkillHat { hatKey = "swe-fullstack"; display = "Fullstack Engineer";        description = "End-to-end features from UI to API to database";                   domain = "fullstack"; filePath = ./global/commands/swe-fullstack.md; })
-    (makeSkillHat { hatKey = "swe-devex";     display = "DevEx Engineer";           description = "CI/CD, build systems, developer tooling, testing infrastructure";  domain = "devex";     filePath = ./global/commands/swe-devex.md;     })
-    (makeSkillHat { hatKey = "swe-infra";     display = "Infrastructure Engineer";  description = "Kubernetes, Terraform, cloud platforms, IaC, networking";           domain = "infra";     filePath = ./global/commands/swe-infra.md;     })
-    (makeSkillHat { hatKey = "swe-security";  display = "Security Engineer";         description = "Security review, vulnerability assessment, threat modeling";        domain = "security";  filePath = ./global/commands/swe-security.md;  })
-    (makeSkillHat { hatKey = "swe-sre";       display = "SRE";                       description = "Reliability, observability, SLIs/SLOs, monitoring, incidents";     domain = "sre";       filePath = ./global/commands/swe-sre.md;       })
+    (makeSkillHat { hatKey = "swe-backend";   display = "⚙️ Backend Engineer";         description = "Backend APIs, databases, server-side logic, data modeling";        domain = "backend";   filePath = ./global/commands/swe-backend.md;   })
+    (makeSkillHat { hatKey = "swe-frontend";  display = "🖥️ Frontend Engineer";        description = "React/Next.js UI, TypeScript, CSS, accessibility, web performance"; domain = "frontend";  filePath = ./global/commands/swe-frontend.md;  })
+    (makeSkillHat { hatKey = "swe-fullstack"; display = "🔧 Fullstack Engineer";        description = "End-to-end features from UI to API to database";                   domain = "fullstack"; filePath = ./global/commands/swe-fullstack.md; })
+    (makeSkillHat { hatKey = "swe-devex";     display = "🛠️ DevEx Engineer";           description = "CI/CD, build systems, developer tooling, testing infrastructure";  domain = "devex";     filePath = ./global/commands/swe-devex.md;     })
+    (makeSkillHat { hatKey = "swe-infra";     display = "☁️ Infrastructure Engineer";  description = "Kubernetes, Terraform, cloud platforms, IaC, networking";           domain = "infra";     filePath = ./global/commands/swe-infra.md;     })
+    (makeSkillHat { hatKey = "swe-security";  display = "🔒 Security Engineer";         description = "Security review, vulnerability assessment, threat modeling";        domain = "security";  filePath = ./global/commands/swe-security.md;  })
+    (makeSkillHat { hatKey = "swe-sre";       display = "📊 SRE";                       description = "Reliability, observability, SLIs/SLOs, monitoring, incidents";     domain = "sre";       filePath = ./global/commands/swe-sre.md;       })
     (makeResearcherHat ./global/commands/researcher.md)
   ];
 
@@ -140,9 +140,9 @@ ${indented}
 
     hats:
       monty-burns:
-        name: "Monty Burns"
+        name: "🎩 Monty Burns"
         description: "Routes work to specialists and manages tiered review workflow"
-        triggers: ["loop.start", "work.done", "research.done", "review.security.done", "review.infra.done", "review.devex.done", "review.backend.done", "review.sre.done", "review.frontend.done", "review.fullstack.done"]
+        triggers: ["loop.start", "work.done", "research.done", "review.*.done"]
         publishes: ["implementation.backend.needed", "implementation.frontend.needed", "implementation.fullstack.needed", "implementation.devex.needed", "implementation.infra.needed", "implementation.security.needed", "implementation.sre.needed", "research.needed", "review.security.needed", "review.infra.needed", "review.devex.needed", "review.backend.needed", "review.sre.needed", "review.frontend.needed", "review.fullstack.needed", "LOOP_COMPLETE"]
         instructions: |
 ${indentLines 10 montyBurnsContent}
