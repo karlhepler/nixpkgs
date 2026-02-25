@@ -28,11 +28,6 @@
           ralph emit "work.done" "tests: pass, lint: pass, typecheck: pass"
           ```
 
-          ⚠️ MANDATORY: YOUR LAST ACTION MUST BE `ralph emit` VIA BASH TOOL
-
-          Describing your work in text does NOT count as completion.
-          The loop WILL FAIL if you do not run ralph emit using the Bash tool.
-
           If triggered by `implementation.backend.needed`:
           ```bash
           ralph emit "work.done" "tests: pass, lint: pass, typecheck: pass"
@@ -43,25 +38,12 @@
           ralph emit "review.backend.done" "findings: pass|fail; issues: none OR brief summary"
           ```
         </event-routing>
-        <pr-comments>
-          For ALL PR comment work, use the `prc` CLI. NEVER use `gh api` or `gh pr comment`.
-
-          Before replying to any threads:
-          ```bash
-          prc list --unresolved --bots-only --max-replies 0
-          ```
-          Do NOT reply to threads that already have replies.
-
-          Reply to a thread:
-          ```bash
-          prc reply <comment-id> "your reply"
-          ```
-
-          Resolve a thread:
-          ```bash
-          prc resolve <comment-id>
-          ```
-        </pr-comments>
+        <constraints>
+          - Confine all file operations to the current workspace directory
+          - Do not modify configuration files, system files, or files outside the task scope
+          - If backpressure gates fail (tests fail, lint fails): fix the issue and retry — do NOT bypass gates or emit work.done with failing evidence
+          - If you cannot complete the work (missing context, blocked dependency): emit your completion event with a failure payload describing the blocker
+        </constraints>
         <behavior>
 INSTRUCTIONS_PLACEHOLDER
         </behavior>
