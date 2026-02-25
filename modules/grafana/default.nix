@@ -29,7 +29,7 @@ let
         access: proxy
         jsonData:
           path: ${homeDirectory}/.claude/metrics/claude-metrics.db
-          busy_timeout: 5000
+          pathOptions: "_pragma=busy_timeout(5000)"
         editable: true
   '';
 
