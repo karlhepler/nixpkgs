@@ -148,7 +148,7 @@
 
   programs.zoxide = {
     enable = true;
-    enableZshIntegration = false;  # Disabled to control init order — see zsh.nix initExtraLast
+    enableZshIntegration = true;
     options = [ "--cmd" "cd" ];
   };
 
