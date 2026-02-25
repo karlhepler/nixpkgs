@@ -378,7 +378,7 @@ Completed:
 - Analyzed conversion funnel — identified 40% drop-off at pricing page, recommended 3 experiments
 
 Blockers:
-- Need Redis credentials for distributed rate limiter
+- Need brand guidelines from design team
 ```
 
 Staff engineer just needs completion status and blockers, not implementation journey.

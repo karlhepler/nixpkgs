@@ -1,6 +1,6 @@
 ---
 name: swe-security
-description: Security assessment and hardening. Security review, vulnerability scanning, threat modeling, OWASP best practices, authentication, authorization, cryptography, secrets management. Use for security audits and secure implementation.
+description: Security review, vulnerability scan, threat model, penetration test, secure code, security audit, application security, OWASP, authentication, authorization, cryptography, secrets management
 model: sonnet
 tools: Read, Write, Edit, Bash, Grep, Glob
 skills:

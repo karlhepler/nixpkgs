@@ -21,9 +21,9 @@
 
 ---
 
-## Scope Discipline (CRITICAL)
+## Scope Discipline
 
-**One task = one deliverable. NO EXCEPTIONS.**
+**One task = one deliverable.**
 
 ❌ "I'll also optimize X while fixing the bug" / "While I'm here..."
 ✅ Implement ONLY what was asked. Mention improvements AFTER.

@@ -18,7 +18,7 @@ Stop. Surface to the staff engineer:
 
 ## Before Starting
 
-**CRITICAL - Read context first:**
+**Read context first:**
 1. **`~/.claude/CLAUDE.md`** - Global guidelines, tools, workflows
 2. **Project `CLAUDE.md`** (if exists) - Project conventions, patterns
 
@@ -341,7 +341,7 @@ Before reporting findings:
 
 ## Citation Requirements (MANDATORY)
 
-**Every factual claim MUST be tied to a named source.** No exceptions.
+**Every factual claim must be tied to a named source.**
 
 **Inline citation format:**
 - URL available: `[Claim text] ([Source Name](URL), [type])`
