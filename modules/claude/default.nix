@@ -23,20 +23,28 @@ let
       (line: "${prefix}${line}")
       (lib.splitString "\n" text);
 
-  # Generate a specialist hat YAML block from a skill file.
-  # Supports two modes: implementation (implementation.{domain}.needed) and
-  # review (review.{domain}.needed). Researcher uses makeResearcherHat instead.
-  makeSkillHat = { hatKey, display, description, domain, filePath }:
+  # Read a hat template file and substitute INSTRUCTIONS_PLACEHOLDER with
+  # the provided instructions content (already indented).
+  processTemplate = templateFile: instructionsContent:
+    builtins.replaceStrings
+      [ "INSTRUCTIONS_PLACEHOLDER" ]
+      [ instructionsContent ]
+      (builtins.readFile templateFile);
+
+  # Process a skill file: strip frontmatter, replace $ARGUMENTS, append emit
+  # instructions, then indent to 10 spaces for YAML block scalar embedding.
+  processSkillFile = filePath: emitInstructions:
     let
       raw = builtins.readFile filePath;
       body = stripFrontmatter raw;
-      # Replace $ARGUMENTS placeholder with ralph context instruction
-      withContext = builtins.replaceStrings
+      withArgs = builtins.replaceStrings
         [ "$ARGUMENTS" ]
         [ "You receive your task from the event payload that triggered you and the session context.\nComplete the work described, then emit your completion event." ]
         body;
-      # Append PR comment protocol + emit instructions (additive - keep existing verification checklists)
-      withEmit = withContext + ''
+    in indentLines 10 (withArgs + emitInstructions);
+
+  # Emit instructions appended to each specialist skill file
+  specialistEmit = domain: ''
 
 
 ## PR Comment Protocol
@@ -53,76 +61,34 @@ When addressing PR comments as part of your work:
 Once all verification passes:
 
 **If triggered by `implementation.${domain}.needed`:**
-```
-ralph emit "work.done" "brief summary of what was accomplished"
-```
+<event topic="work.done">brief summary of what was accomplished</event>
 
 **If triggered by `review.${domain}.needed`:**
-```
-ralph emit "review.${domain}.done" "findings: [pass|fail], issues: [none|description of blockers]"
-```
-
-Payload: 1-2 sentences max.
+<event topic="review.${domain}.done">findings: [pass|fail], issues: [none|description of blockers]</event>
 '';
-      indented = indentLines 10 withEmit;
-    in ''
-      ${hatKey}:
-        name: "${display}"
-        description: "${description}"
-        triggers: ["implementation.${domain}.needed", "review.${domain}.needed"]
-        publishes: ["work.done", "review.${domain}.done"]
-        default_publishes: "work.done"
-        instructions: |
-${indented}
-  '';
 
-  # Researcher hat: investigation only, no review mode
-  makeResearcherHat = filePath:
-    let
-      raw = builtins.readFile filePath;
-      body = stripFrontmatter raw;
-      withContext = builtins.replaceStrings
-        [ "$ARGUMENTS" ]
-        [ "You receive your research question from the event payload that triggered you.\nInvestigate thoroughly, then emit your completion event." ]
-        body;
-      withEmit = withContext + ''
+  # Emit instructions for the researcher hat
+  researcherEmit = ''
 
 
 ## Emit When Complete
 
 Once investigation is complete:
 
-```
-ralph emit "research.done" "findings: [summary of what you discovered]"
-```
-
-Payload: 1-2 sentences summarizing key findings.
+<event topic="research.done">brief summary of findings</event>
 '';
-      indented = indentLines 10 withEmit;
-    in ''
-      researcher:
-        name: "🔬 Researcher"
-        description: "Multi-source investigation, fact-checking, information synthesis"
-        triggers: ["research.needed"]
-        publishes: ["research.done"]
-        default_publishes: "research.done"
-        instructions: |
-${indented}
-  '';
 
-  # Coordinator hat content from monty-burns.md (frontmatter stripped)
-  montyBurnsContent = stripFrontmatter (builtins.readFile ./global/hats/monty-burns.md);
-
-  # All specialist hats (7 specialists + researcher)
-  skillHats = lib.concatStrings [
-    (makeSkillHat { hatKey = "swe-backend";   display = "⚙️ Backend Engineer";         description = "Backend APIs, databases, server-side logic, data modeling";        domain = "backend";   filePath = ./global/commands/swe-backend.md;   })
-    (makeSkillHat { hatKey = "swe-frontend";  display = "🖥️ Frontend Engineer";        description = "React/Next.js UI, TypeScript, CSS, accessibility, web performance"; domain = "frontend";  filePath = ./global/commands/swe-frontend.md;  })
-    (makeSkillHat { hatKey = "swe-fullstack"; display = "🔧 Fullstack Engineer";        description = "End-to-end features from UI to API to database";                   domain = "fullstack"; filePath = ./global/commands/swe-fullstack.md; })
-    (makeSkillHat { hatKey = "swe-devex";     display = "🛠️ DevEx Engineer";           description = "CI/CD, build systems, developer tooling, testing infrastructure";  domain = "devex";     filePath = ./global/commands/swe-devex.md;     })
-    (makeSkillHat { hatKey = "swe-infra";     display = "☁️ Infrastructure Engineer";  description = "Kubernetes, Terraform, cloud platforms, IaC, networking";           domain = "infra";     filePath = ./global/commands/swe-infra.md;     })
-    (makeSkillHat { hatKey = "swe-security";  display = "🔒 Security Engineer";         description = "Security review, vulnerability assessment, threat modeling";        domain = "security";  filePath = ./global/commands/swe-security.md;  })
-    (makeSkillHat { hatKey = "swe-sre";       display = "📊 SRE";                       description = "Reliability, observability, SLIs/SLOs, monitoring, incidents";     domain = "sre";       filePath = ./global/commands/swe-sre.md;       })
-    (makeResearcherHat ./global/commands/researcher.md)
+  # Assemble all hat YAML blocks from templates
+  hatYaml = lib.concatStrings [
+    (builtins.readFile ./global/hats/monty-burns.yml.tmpl)
+    (processTemplate ./global/hats/swe-backend.yml.tmpl  (processSkillFile ./global/commands/swe-backend.md   (specialistEmit "backend")))
+    (processTemplate ./global/hats/swe-frontend.yml.tmpl (processSkillFile ./global/commands/swe-frontend.md  (specialistEmit "frontend")))
+    (processTemplate ./global/hats/swe-fullstack.yml.tmpl (processSkillFile ./global/commands/swe-fullstack.md (specialistEmit "fullstack")))
+    (processTemplate ./global/hats/swe-devex.yml.tmpl    (processSkillFile ./global/commands/swe-devex.md     (specialistEmit "devex")))
+    (processTemplate ./global/hats/swe-infra.yml.tmpl    (processSkillFile ./global/commands/swe-infra.md     (specialistEmit "infra")))
+    (processTemplate ./global/hats/swe-security.yml.tmpl (processSkillFile ./global/commands/swe-security.md  (specialistEmit "security")))
+    (processTemplate ./global/hats/swe-sre.yml.tmpl      (processSkillFile ./global/commands/swe-sre.md       (specialistEmit "sre")))
+    (processTemplate ./global/hats/researcher.yml.tmpl   (processSkillFile ./global/commands/researcher.md    researcherEmit))
   ];
 
   # Generate multi-hat Ralph YAML with Monty Burns coordinator + 8 specialists
@@ -139,15 +105,7 @@ ${indented}
       backend: "claude"
 
     hats:
-      monty-burns:
-        name: "🎩 Monty Burns"
-        description: "Routes work to specialists and manages tiered review workflow"
-        triggers: ["loop.start", "work.done", "research.done", "review.*.done"]
-        publishes: ["implementation.backend.needed", "implementation.frontend.needed", "implementation.fullstack.needed", "implementation.devex.needed", "implementation.infra.needed", "implementation.security.needed", "implementation.sre.needed", "research.needed", "review.security.needed", "review.infra.needed", "review.devex.needed", "review.backend.needed", "review.sre.needed", "review.frontend.needed", "review.fullstack.needed", "LOOP_COMPLETE"]
-        instructions: |
-${indentLines 10 montyBurnsContent}
-
-${skillHats}
+${hatYaml}
   '';
 
   # Python environment for smithers with required packages
