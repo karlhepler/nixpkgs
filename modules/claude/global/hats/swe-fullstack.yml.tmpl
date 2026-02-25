@@ -28,7 +28,10 @@
           ralph emit "work.done" "tests: pass, lint: pass, typecheck: pass"
           ```
 
-          When your work is complete, run ONE ralph emit command using the Bash tool:
+          ⚠️ MANDATORY: YOUR LAST ACTION MUST BE `ralph emit` VIA BASH TOOL
+
+          Describing your work in text does NOT count as completion.
+          The loop WILL FAIL if you do not run ralph emit using the Bash tool.
 
           If triggered by `implementation.fullstack.needed`:
           ```bash
@@ -37,9 +40,28 @@
 
           If triggered by `review.fullstack.needed`:
           ```bash
-          ralph emit "review.fullstack.done" "findings: pass|fail; issues: none OR brief summary of blockers"
+          ralph emit "review.fullstack.done" "findings: pass|fail; issues: none OR brief summary"
           ```
         </event-routing>
+        <pr-comments>
+          For ALL PR comment work, use the `prc` CLI. NEVER use `gh api` or `gh pr comment`.
+
+          Before replying to any threads:
+          ```bash
+          prc list --unresolved --bots-only --max-replies 0
+          ```
+          Do NOT reply to threads that already have replies.
+
+          Reply to a thread:
+          ```bash
+          prc reply <comment-id> "your reply"
+          ```
+
+          Resolve a thread:
+          ```bash
+          prc resolve <comment-id>
+          ```
+        </pr-comments>
         <behavior>
 INSTRUCTIONS_PLACEHOLDER
         </behavior>

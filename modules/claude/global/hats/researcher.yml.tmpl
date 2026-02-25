@@ -24,11 +24,34 @@
           ralph emit "research.done" "questions: answered, sources: cited, synthesis: complete"
           ```
 
-          When your research is complete, run:
+          ⚠️ MANDATORY: YOUR LAST ACTION MUST BE `ralph emit` VIA BASH TOOL
+
+          Describing your findings in text does NOT count as completion.
+          The loop WILL FAIL if you do not run ralph emit using the Bash tool.
+
           ```bash
           ralph emit "research.done" "questions: answered, sources: cited, synthesis: complete"
           ```
         </event-routing>
+        <pr-comments>
+          For ALL PR comment work, use the `prc` CLI. NEVER use `gh api` or `gh pr comment`.
+
+          Before replying to any threads:
+          ```bash
+          prc list --unresolved --bots-only --max-replies 0
+          ```
+          Do NOT reply to threads that already have replies.
+
+          Reply to a thread:
+          ```bash
+          prc reply <comment-id> "your reply"
+          ```
+
+          Resolve a thread:
+          ```bash
+          prc resolve <comment-id>
+          ```
+        </pr-comments>
         <behavior>
 INSTRUCTIONS_PLACEHOLDER
         </behavior>
