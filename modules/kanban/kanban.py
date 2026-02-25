@@ -20,6 +20,7 @@ import json
 import os
 import re
 import select
+import sqlite3
 import subprocess
 import sys
 import termios
@@ -410,6 +411,70 @@ def is_my_card(card: dict, current_session: str | None) -> bool:
 
 
 # =============================================================================
+# Metrics event writer
+# =============================================================================
+
+_METRICS_DB_PATH = Path.home() / ".claude" / "metrics" / "claude-metrics.db"
+
+# NOTE: This DDL is intentionally duplicated in modules/claude/claude-metrics-hook.py
+# Both files must stay in sync — changes here require matching changes there.
+_CREATE_KANBAN_CARD_EVENTS_SQL = """
+CREATE TABLE IF NOT EXISTS kanban_card_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    card_number TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    persona TEXT,
+    model TEXT,
+    kanban_session TEXT,
+    recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+)
+"""
+
+# NOTE: These index definitions are intentionally duplicated in modules/claude/claude-metrics-hook.py
+# Both files must stay in sync — changes here require matching changes there.
+_CREATE_KANBAN_CARD_EVENTS_INDEX_SQL = [
+    "CREATE INDEX IF NOT EXISTS idx_kanban_card_events_event_type ON kanban_card_events (event_type)",
+    "CREATE INDEX IF NOT EXISTS idx_kanban_card_events_persona ON kanban_card_events (persona)",
+    "CREATE INDEX IF NOT EXISTS idx_kanban_card_events_recorded_at ON kanban_card_events (recorded_at)",
+]
+
+
+def write_kanban_event(card: dict, card_num: str, event_type: str) -> None:
+    """Write a kanban lifecycle event (done/redo) to the metrics SQLite DB.
+
+    Runs silently — never raises, never disrupts the kanban CLI workflow.
+    The table is created on first use (idempotent DDL).
+    """
+    try:
+        _METRICS_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(_METRICS_DB_PATH))
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA busy_timeout=5000")
+            conn.execute(_CREATE_KANBAN_CARD_EVENTS_SQL)
+            for idx_sql in _CREATE_KANBAN_CARD_EVENTS_INDEX_SQL:
+                conn.execute(idx_sql)
+            conn.execute(
+                """
+                INSERT INTO kanban_card_events (card_number, event_type, persona, model, kanban_session)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    card_num,
+                    event_type,
+                    card.get("persona"),
+                    card.get("model"),
+                    card.get("session"),
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass  # Never disrupt kanban CLI — metrics are best-effort
+
+
+# =============================================================================
 # Commands
 # =============================================================================
 
@@ -632,8 +697,13 @@ def cmd_redo(args) -> None:
         sys.exit(1)
 
     card = read_card(card_path)
+    card["activity"].append({
+        "timestamp": now_iso(),
+        "message": "Sent back for rework (AC review failed)",
+    })
     card["updated"] = now_iso()
     write_card(card_path, card)
+    write_kanban_event(card, num, "redo")
 
     target = root / "doing" / card_path.name
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -1599,6 +1669,7 @@ def cmd_done(args) -> None:
     card["updated"] = now_iso()
     write_card(card_path, card)
 
+    write_kanban_event(card, num, "done")
     target = root / "done" / card_path.name
     target.parent.mkdir(parents=True, exist_ok=True)
     card_path.rename(target)

@@ -172,6 +172,31 @@ CREATE TABLE IF NOT EXISTS permission_denials (
 )
 """
 
+# V6: kanban_card_events — written by the kanban CLI on done/redo transitions.
+# Created here (idempotent) so Grafana can query the table even before the
+# first redo event occurs.  Also created by the kanban CLI itself on first use.
+# NOTE: This DDL is intentionally duplicated in modules/kanban/kanban.py
+# Both files must stay in sync — changes here require matching changes there.
+CREATE_TABLE_KANBAN_CARD_EVENTS_SQL = """
+CREATE TABLE IF NOT EXISTS kanban_card_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    card_number TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    persona TEXT,
+    model TEXT,
+    kanban_session TEXT,
+    recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+)
+"""
+
+# NOTE: These index definitions are intentionally duplicated in modules/kanban/kanban.py
+# Both files must stay in sync — changes here require matching changes there.
+CREATE_INDEX_KANBAN_CARD_EVENTS_SQL = [
+    "CREATE INDEX IF NOT EXISTS idx_kanban_card_events_event_type ON kanban_card_events (event_type)",
+    "CREATE INDEX IF NOT EXISTS idx_kanban_card_events_persona ON kanban_card_events (persona)",
+    "CREATE INDEX IF NOT EXISTS idx_kanban_card_events_recorded_at ON kanban_card_events (recorded_at)",
+]
+
 CREATE_INDEX_SQL = [
     "CREATE INDEX IF NOT EXISTS idx_agent_metrics_session_id ON agent_metrics (session_id)",
     "CREATE INDEX IF NOT EXISTS idx_agent_metrics_recorded_at ON agent_metrics (recorded_at)",
@@ -588,6 +613,11 @@ def open_db() -> sqlite3.Connection:
     conn.execute(CREATE_TABLE_TOOL_USAGE_SQL)
     # V5: permission_denials table — CREATE IF NOT EXISTS is idempotent
     conn.execute(CREATE_TABLE_PERMISSION_DENIALS_SQL)
+    # V6: kanban_card_events table — written by kanban CLI, created here for
+    # Grafana availability even before the first redo/done event is written.
+    conn.execute(CREATE_TABLE_KANBAN_CARD_EVENTS_SQL)
+    for idx_sql in CREATE_INDEX_KANBAN_CARD_EVENTS_SQL:
+        conn.execute(idx_sql)
 
     # V4 migration: add new columns to existing databases that predate V4.
     # ALTER TABLE ADD COLUMN is safe to retry — OperationalError is raised if
