@@ -157,7 +157,7 @@ fi
 
 # Ensure MarkText is the default app for markdown files
 if [ -d /Applications/MarkText.app ]; then
-  duti -s com.github.marktext.marktext .md all
+  duti -s com.electron.app .md all
 fi
 
 # Configure local git for this repo (silent, idempotent)
