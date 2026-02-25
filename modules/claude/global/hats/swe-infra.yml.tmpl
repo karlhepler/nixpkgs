@@ -15,13 +15,17 @@
           - `implementation.infra.needed` — implement the described task
           - `review.infra.needed` — review the described artifact
 
-          When your work is complete, emit exactly one of these XML tags in your response:
+          When your work is complete, run ONE ralph emit command using the Bash tool:
 
           If triggered by `implementation.infra.needed`:
-          <event topic="work.done">brief 1-2 sentence summary of what was accomplished</event>
+          ```bash
+          ralph emit "work.done" "brief 1-2 sentence summary of what was accomplished"
+          ```
 
           If triggered by `review.infra.needed`:
-          <event topic="review.infra.done">findings: pass|fail; issues: none OR brief summary of blockers</event>
+          ```bash
+          ralph emit "review.infra.done" "findings: pass|fail; issues: none OR brief summary of blockers"
+          ```
         </event-routing>
         <behavior>
 INSTRUCTIONS_PLACEHOLDER

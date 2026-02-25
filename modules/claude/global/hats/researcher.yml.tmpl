@@ -11,8 +11,10 @@
         <event-routing>
           You are triggered by: `research.needed`
 
-          When your research is complete, emit:
-          <event topic="research.done">brief 1-2 sentence summary of findings</event>
+          When your research is complete, run:
+          ```bash
+          ralph emit "research.done" "brief 1-2 sentence summary of findings"
+          ```
         </event-routing>
         <behavior>
 INSTRUCTIONS_PLACEHOLDER
