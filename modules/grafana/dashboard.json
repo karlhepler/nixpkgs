@@ -2926,12 +2926,27 @@
       "transformations": []
     },
     {
-      "id": 23,
-      "type": "barchart",
-      "title": "Turns by Agent Type (Detail)",
+      "id": 206,
+      "type": "row",
+      "title": "Kanban — Throughput & Quality",
       "gridPos": {
         "x": 0,
         "y": 115,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "datasource": null,
+      "panels": []
+    },
+    {
+      "id": 28,
+      "type": "timeseries",
+      "title": "Throughput — Cards Done Per Day",
+      "description": "Daily card completion velocity. A rising trend means more work is flowing through to done. Gaps indicate days with no completions.",
+      "gridPos": {
+        "x": 0,
+        "y": 116,
         "w": 24,
         "h": 8
       },
@@ -2945,8 +2960,152 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT role, SUM(turns) as total_turns FROM agent_metrics WHERE role != 'parent' GROUP BY role ORDER BY total_turns DESC",
-          "queryText": "SELECT role, SUM(turns) as total_turns FROM agent_metrics WHERE role != 'parent' GROUP BY role ORDER BY total_turns DESC",
+          "rawQueryText": "SELECT date(recorded_at) || 'T00:00:00Z' as time, COUNT(*) as cards_done FROM kanban_card_events WHERE event_type = 'done' GROUP BY date(recorded_at) ORDER BY time",
+          "queryText": "SELECT date(recorded_at) || 'T00:00:00Z' as time, COUNT(*) as cards_done FROM kanban_card_events WHERE event_type = 'done' GROUP BY date(recorded_at) ORDER BY time",
+          "queryType": "time series",
+          "timeColumns": [
+            "time"
+          ],
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "spanNulls": false,
+            "insertNulls": false,
+            "showPoints": "never",
+            "pointSize": 5,
+            "drawStyle": "bars",
+            "lineInterpolation": "linear"
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      }
+    },
+    {
+      "id": 29,
+      "type": "timeseries",
+      "title": "Redo Rate Over Time",
+      "description": "Percentage of all kanban events that were redos, by day. A declining trend means quality is improving — fewer cards are being sent back for rework.",
+      "gridPos": {
+        "x": 0,
+        "y": 124,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawQueryText": "SELECT date(recorded_at) || 'T00:00:00Z' as time, SUM(CASE WHEN event_type='redo' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0) as redo_rate_pct FROM kanban_card_events GROUP BY date(recorded_at) ORDER BY time",
+          "queryText": "SELECT date(recorded_at) || 'T00:00:00Z' as time, SUM(CASE WHEN event_type='redo' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0) as redo_rate_pct FROM kanban_card_events GROUP BY date(recorded_at) ORDER BY time",
+          "queryType": "time series",
+          "timeColumns": [
+            "time"
+          ],
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "min": 0,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "spanNulls": true,
+            "insertNulls": false,
+            "showPoints": "auto",
+            "pointSize": 5,
+            "drawStyle": "line",
+            "lineInterpolation": "smooth"
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 20
+              },
+              {
+                "color": "red",
+                "value": 40
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      }
+    },
+    {
+      "id": 30,
+      "type": "barchart",
+      "title": "Cards Done by Persona",
+      "description": "Total card completions broken down by agent persona. Shows workload distribution — which agents are carrying the most throughput.",
+      "gridPos": {
+        "x": 0,
+        "y": 132,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawQueryText": "SELECT COALESCE(persona, 'unassigned') as persona, COUNT(*) as completions FROM kanban_card_events WHERE event_type = 'done' GROUP BY persona ORDER BY completions DESC",
+          "queryText": "SELECT COALESCE(persona, 'unassigned') as persona, COUNT(*) as completions FROM kanban_card_events WHERE event_type = 'done' GROUP BY persona ORDER BY completions DESC",
           "queryType": "table",
           "timeColumns": [],
           "refId": "A"
@@ -2983,7 +3142,881 @@
           "placement": "bottom",
           "showLegend": true
         },
-        "xField": "role"
+        "xField": "persona"
+      }
+    },
+    {
+      "id": 31,
+      "type": "table",
+      "title": "First-Pass Completion Rate by Agent x Model",
+      "description": "Percentage of cards completed without any redos, broken down by agent and model. High first-pass rate means work lands clean. Low rate signals the agent-model combo needs recalibration — either the model is under-powered or the task scope is too broad.",
+      "gridPos": {
+        "x": 12,
+        "y": 132,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawQueryText": "SELECT e.persona, e.model, COUNT(DISTINCT e.card_number) as total_done, SUM(CASE WHEN redo_counts.redos IS NULL THEN 1 ELSE 0 END) as first_pass, ROUND(100.0 * SUM(CASE WHEN redo_counts.redos IS NULL THEN 1 ELSE 0 END) / NULLIF(COUNT(DISTINCT e.card_number), 0), 1) as first_pass_pct FROM kanban_card_events e LEFT JOIN (SELECT card_number, COUNT(*) as redos FROM kanban_card_events WHERE event_type = 'redo' GROUP BY card_number) redo_counts ON e.card_number = redo_counts.card_number WHERE e.event_type = 'done' GROUP BY e.persona, e.model ORDER BY first_pass_pct DESC",
+          "queryText": "SELECT e.persona, e.model, COUNT(DISTINCT e.card_number) as total_done, SUM(CASE WHEN redo_counts.redos IS NULL THEN 1 ELSE 0 END) as first_pass, ROUND(100.0 * SUM(CASE WHEN redo_counts.redos IS NULL THEN 1 ELSE 0 END) / NULLIF(COUNT(DISTINCT e.card_number), 0), 1) as first_pass_pct FROM kanban_card_events e LEFT JOIN (SELECT card_number, COUNT(*) as redos FROM kanban_card_events WHERE event_type = 'redo' GROUP BY card_number) redo_counts ON e.card_number = redo_counts.card_number WHERE e.event_type = 'done' GROUP BY e.persona, e.model ORDER BY first_pass_pct DESC",
+          "queryType": "table",
+          "timeColumns": [],
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true,
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "persona"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Agent"
+              },
+              {
+                "id": "custom.width",
+                "value": 160
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "model"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Model"
+              },
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "total_done"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Total Done"
+              },
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "first_pass"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "First Pass"
+              },
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "first_pass_pct"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "First Pass %"
+              },
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.width",
+                "value": 120
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 50
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 70
+                    },
+                    {
+                      "color": "green",
+                      "value": 85
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "First Pass %",
+            "desc": true
+          }
+        ]
+      },
+      "transformations": []
+    },
+    {
+      "id": 207,
+      "type": "row",
+      "title": "Kanban — Lead Time & Flow",
+      "gridPos": {
+        "x": 0,
+        "y": 148,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "datasource": null,
+      "panels": []
+    },
+    {
+      "id": 32,
+      "type": "histogram",
+      "title": "Lead Time Distribution",
+      "description": "Distribution of how many hours cards take from creation to completion. The bulk of the distribution shows the typical card duration; outliers on the right indicate cards that got stuck or were exceptionally complex.",
+      "gridPos": {
+        "x": 0,
+        "y": 149,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawQueryText": "SELECT (julianday(card_completed_at) - julianday(card_created_at)) * 24 as lead_time_hours FROM kanban_card_events WHERE event_type = 'done' AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL",
+          "queryText": "SELECT (julianday(card_completed_at) - julianday(card_created_at)) * 24 as lead_time_hours FROM kanban_card_events WHERE event_type = 'done' AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL",
+          "queryType": "table",
+          "timeColumns": [],
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "h",
+          "decimals": 1,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "gradientMode": "none"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "bucketSize": "auto",
+        "bucketOffset": 0,
+        "fillOpacity": 80,
+        "gradientMode": "none",
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      }
+    },
+    {
+      "id": 33,
+      "type": "timeseries",
+      "title": "Average Lead Time Over Time",
+      "description": "Daily average card completion time in minutes. A declining trend means work is getting faster — a rising trend may signal increasing scope or complexity.",
+      "gridPos": {
+        "x": 12,
+        "y": 149,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawQueryText": "SELECT date(card_completed_at) || 'T00:00:00Z' as time, AVG((julianday(card_completed_at) - julianday(card_created_at)) * 24 * 60) as avg_lead_time_minutes FROM kanban_card_events WHERE event_type = 'done' AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL GROUP BY date(card_completed_at) ORDER BY time",
+          "queryText": "SELECT date(card_completed_at) || 'T00:00:00Z' as time, AVG((julianday(card_completed_at) - julianday(card_created_at)) * 24 * 60) as avg_lead_time_minutes FROM kanban_card_events WHERE event_type = 'done' AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL GROUP BY date(card_completed_at) ORDER BY time",
+          "queryType": "time series",
+          "timeColumns": [
+            "time"
+          ],
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "m",
+          "decimals": 0,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "spanNulls": true,
+            "insertNulls": false,
+            "showPoints": "auto",
+            "pointSize": 5,
+            "drawStyle": "line",
+            "lineInterpolation": "smooth"
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      }
+    },
+    {
+      "id": 34,
+      "type": "barchart",
+      "title": "Lead Time by Agent Type",
+      "description": "Average card completion time (in minutes) per agent persona. Longer bars indicate agents working on higher-complexity cards or models that require more elapsed time.",
+      "gridPos": {
+        "x": 0,
+        "y": 157,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawQueryText": "SELECT COALESCE(persona, 'unassigned') as persona, ROUND(AVG((julianday(card_completed_at) - julianday(card_created_at)) * 24 * 60), 1) as avg_lead_time_minutes, COUNT(*) as card_count FROM kanban_card_events WHERE event_type = 'done' AND persona IS NOT NULL AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL GROUP BY persona ORDER BY avg_lead_time_minutes DESC",
+          "queryText": "SELECT COALESCE(persona, 'unassigned') as persona, ROUND(AVG((julianday(card_completed_at) - julianday(card_created_at)) * 24 * 60), 1) as avg_lead_time_minutes, COUNT(*) as card_count FROM kanban_card_events WHERE event_type = 'done' AND persona IS NOT NULL AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL GROUP BY persona ORDER BY avg_lead_time_minutes DESC",
+          "queryType": "table",
+          "timeColumns": [],
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "m",
+          "decimals": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xTickLabelRotation": 0,
+        "xTickLabelMaxLength": 20,
+        "groupWidth": 0.7,
+        "barWidth": 0.97,
+        "barRadius": 0,
+        "fullHighlight": false,
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "xField": "persona"
+      }
+    },
+    {
+      "id": 35,
+      "type": "barchart",
+      "title": "Lead Time by Card Type",
+      "description": "Average completion time (in minutes) for each card type (work, review, research). Compares how long different kinds of cards actually take to flow through to done.",
+      "gridPos": {
+        "x": 12,
+        "y": 157,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawQueryText": "SELECT COALESCE(card_type, 'unknown') as card_type, ROUND(AVG((julianday(card_completed_at) - julianday(card_created_at)) * 24 * 60), 1) as avg_lead_time_minutes, COUNT(*) as card_count FROM kanban_card_events WHERE event_type = 'done' AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL GROUP BY card_type ORDER BY avg_lead_time_minutes DESC",
+          "queryText": "SELECT COALESCE(card_type, 'unknown') as card_type, ROUND(AVG((julianday(card_completed_at) - julianday(card_created_at)) * 24 * 60), 1) as avg_lead_time_minutes, COUNT(*) as card_count FROM kanban_card_events WHERE event_type = 'done' AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL GROUP BY card_type ORDER BY avg_lead_time_minutes DESC",
+          "queryType": "table",
+          "timeColumns": [],
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "m",
+          "decimals": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xTickLabelRotation": 0,
+        "xTickLabelMaxLength": 20,
+        "groupWidth": 0.7,
+        "barWidth": 0.97,
+        "barRadius": 0,
+        "fullHighlight": false,
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "xField": "card_type"
+      }
+    },
+    {
+      "id": 36,
+      "type": "barchart",
+      "title": "AC Count vs Lead Time — Estimation Calibration",
+      "description": "Average completion time (minutes) grouped by number of acceptance criteria. More ACs should mean longer lead times — if the slope is flat, scope is consistently underestimated. Use this to calibrate Claude's complexity estimates against real completion data.",
+      "gridPos": {
+        "x": 0,
+        "y": 165,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawQueryText": "SELECT ac_count, ROUND(AVG((julianday(card_completed_at) - julianday(card_created_at)) * 24 * 60), 1) as avg_lead_time_minutes, COUNT(*) as card_count FROM kanban_card_events WHERE event_type = 'done' AND ac_count IS NOT NULL AND ac_count > 0 AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL GROUP BY ac_count ORDER BY ac_count",
+          "queryText": "SELECT ac_count, ROUND(AVG((julianday(card_completed_at) - julianday(card_created_at)) * 24 * 60), 1) as avg_lead_time_minutes, COUNT(*) as card_count FROM kanban_card_events WHERE event_type = 'done' AND ac_count IS NOT NULL AND ac_count > 0 AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL GROUP BY ac_count ORDER BY ac_count",
+          "queryType": "table",
+          "timeColumns": [],
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "m",
+          "decimals": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 1
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "card_count"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Cards"
+              },
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": true
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "avg_lead_time_minutes"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Avg Lead Time (min)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ac_count"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "AC Count"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "orientation": "auto",
+        "xTickLabelRotation": 0,
+        "xTickLabelMaxLength": 20,
+        "groupWidth": 0.7,
+        "barWidth": 0.97,
+        "barRadius": 0,
+        "fullHighlight": false,
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "xField": "ac_count"
+      }
+    },
+    {
+      "id": 37,
+      "type": "table",
+      "title": "Throughput by Project",
+      "description": "Card completions and active days per git project. Shows which projects consume the most kanban work and how concentrated or spread the effort is.",
+      "gridPos": {
+        "x": 0,
+        "y": 140,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawQueryText": "SELECT COALESCE(git_project, 'unknown') as project, COUNT(*) as completions, COUNT(DISTINCT date(card_completed_at)) as active_days FROM kanban_card_events WHERE event_type = 'done' AND git_project IS NOT NULL GROUP BY git_project ORDER BY completions DESC",
+          "queryText": "SELECT COALESCE(git_project, 'unknown') as project, COUNT(*) as completions, COUNT(DISTINCT date(card_completed_at)) as active_days FROM kanban_card_events WHERE event_type = 'done' AND git_project IS NOT NULL GROUP BY git_project ORDER BY completions DESC",
+          "queryType": "table",
+          "timeColumns": [],
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true,
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "project"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Project"
+              },
+              {
+                "id": "custom.width",
+                "value": 280
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "completions"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Completions"
+              },
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 120
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "blue",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 5
+                    },
+                    {
+                      "color": "super-light-green",
+                      "value": 20
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "active_days"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Active Days"
+              },
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Completions",
+            "desc": true
+          }
+        ]
+      },
+      "transformations": []
+    },
+    {
+      "id": 38,
+      "type": "timeseries",
+      "title": "Cumulative Flow Diagram",
+      "description": "Cards-in-each-column over time. Stacked areas show WIP distribution. A growing 'doing' or 'review' band signals a bottleneck. A rising 'done' band indicates throughput. Note: only cards with transition events appear here — historical cards moved before this tracking was enabled will not be included.",
+      "gridPos": {
+        "x": 0,
+        "y": 173,
+        "w": 24,
+        "h": 10
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawQueryText": "WITH dates AS (SELECT DISTINCT date(recorded_at) as d FROM kanban_card_events WHERE to_column IS NOT NULL), card_state AS (SELECT d.d as snap_date, e.card_number, e.to_column FROM dates d JOIN kanban_card_events e ON date(e.recorded_at) <= d.d AND e.to_column IS NOT NULL WHERE e.id = (SELECT MAX(id) FROM kanban_card_events WHERE card_number = e.card_number AND to_column IS NOT NULL AND date(recorded_at) <= d.d)) SELECT snap_date || 'T00:00:00Z' as time, SUM(CASE WHEN to_column = 'todo' THEN 1 ELSE 0 END) as todo, SUM(CASE WHEN to_column = 'doing' THEN 1 ELSE 0 END) as doing, SUM(CASE WHEN to_column = 'review' THEN 1 ELSE 0 END) as review, SUM(CASE WHEN to_column = 'done' THEN 1 ELSE 0 END) as done FROM card_state GROUP BY snap_date ORDER BY time",
+          "queryText": "WITH dates AS (SELECT DISTINCT date(recorded_at) as d FROM kanban_card_events WHERE to_column IS NOT NULL), card_state AS (SELECT d.d as snap_date, e.card_number, e.to_column FROM dates d JOIN kanban_card_events e ON date(e.recorded_at) <= d.d AND e.to_column IS NOT NULL WHERE e.id = (SELECT MAX(id) FROM kanban_card_events WHERE card_number = e.card_number AND to_column IS NOT NULL AND date(recorded_at) <= d.d)) SELECT snap_date || 'T00:00:00Z' as time, SUM(CASE WHEN to_column = 'todo' THEN 1 ELSE 0 END) as todo, SUM(CASE WHEN to_column = 'doing' THEN 1 ELSE 0 END) as doing, SUM(CASE WHEN to_column = 'review' THEN 1 ELSE 0 END) as review, SUM(CASE WHEN to_column = 'done' THEN 1 ELSE 0 END) as done FROM card_state GROUP BY snap_date ORDER BY time",
+          "queryType": "time series",
+          "timeColumns": [
+            "time"
+          ],
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "min": 0,
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "gradientMode": "none",
+            "spanNulls": true,
+            "insertNulls": false,
+            "showPoints": "never",
+            "pointSize": 5,
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "todo"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Todo"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "doing"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Doing"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "yellow",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "review"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Review"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "done"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Done"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
       }
     }
   ],
@@ -3005,5 +4038,5 @@
   "timezone": "browser",
   "title": "Claudit — Claude Code Agent Metrics",
   "uid": "claudit-dashboard",
-  "version": 4
+  "version": 5
 }

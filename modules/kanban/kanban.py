@@ -426,7 +426,14 @@ CREATE TABLE IF NOT EXISTS kanban_card_events (
     persona TEXT,
     model TEXT,
     kanban_session TEXT,
-    recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    card_created_at TEXT,
+    card_completed_at TEXT,
+    card_type TEXT,
+    ac_count INTEGER,
+    git_project TEXT,
+    from_column TEXT,
+    to_column TEXT
 )
 """
 
@@ -438,14 +445,34 @@ _CREATE_KANBAN_CARD_EVENTS_INDEX_SQL = [
     "CREATE INDEX IF NOT EXISTS idx_kanban_card_events_recorded_at ON kanban_card_events (recorded_at)",
 ]
 
-
-def write_kanban_event(card: dict, card_num: str, event_type: str) -> None:
-    """Write a kanban lifecycle event (done/redo) to the metrics SQLite DB.
+def write_kanban_event(
+    card: dict,
+    card_num: str,
+    event_type: str,
+    card_completed_at: str | None = None,
+    from_column: str | None = None,
+    to_column: str | None = None,
+    git_project: str | None = None,
+) -> None:
+    """Write a kanban lifecycle event to the metrics SQLite DB.
 
     Runs silently — never raises, never disrupts the kanban CLI workflow.
     The table is created on first use (idempotent DDL).
+
+    Args:
+        card: The card dict (source of created/type/criteria metadata).
+        card_num: Card number string (e.g. "42").
+        event_type: One of "create", "start", "review", "redo", "defer", "done", "canceled".
+        card_completed_at: Completion timestamp — only meaningful for "done" events.
+        from_column: Column the card moved from (None for "create" events).
+        to_column: Column the card moved to.
+        git_project: Pre-computed git project name. If None, computed internally.
+                     Pass this in bulk loops to avoid N redundant git subprocesses.
     """
     try:
+        if git_project is None:
+            git_root = get_git_root()
+            git_project = os.path.basename(git_root) if git_root else None
         _METRICS_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(str(_METRICS_DB_PATH))
         try:
@@ -456,8 +483,12 @@ def write_kanban_event(card: dict, card_num: str, event_type: str) -> None:
                 conn.execute(idx_sql)
             conn.execute(
                 """
-                INSERT INTO kanban_card_events (card_number, event_type, persona, model, kanban_session)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO kanban_card_events (
+                    card_number, event_type, persona, model, kanban_session,
+                    card_created_at, card_completed_at, card_type, ac_count, git_project,
+                    from_column, to_column
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     card_num,
@@ -465,6 +496,13 @@ def write_kanban_event(card: dict, card_num: str, event_type: str) -> None:
                     card.get("persona"),
                     card.get("model"),
                     card.get("session"),
+                    card.get("created"),
+                    card_completed_at,
+                    card.get("type"),
+                    len(card.get("criteria", [])),
+                    git_project,
+                    from_column,
+                    to_column,
                 ),
             )
             conn.commit()
@@ -658,6 +696,10 @@ def cmd_do(args) -> None:
 
     session = args.session if hasattr(args, "session") and args.session else get_current_session_id()
 
+    # Pre-compute git_project once to avoid N redundant git subprocesses in bulk loops
+    git_root = get_git_root()
+    git_project = os.path.basename(git_root) if git_root else None
+
     # Detect array vs object
     if isinstance(data, list):
         # Bulk creation: validate all cards first (fail fast)
@@ -672,17 +714,17 @@ def cmd_do(args) -> None:
         # All validation passed — create all cards
         for card in cards:
             num = create_card_in_column(root, "doing", card)
+            write_kanban_event(card, str(num), "create", to_column="doing", git_project=git_project)
             print(num)
     elif isinstance(data, dict):
         # Single card creation (existing behavior)
         card = validate_and_build_card(data, session)
         num = create_card_in_column(root, "doing", card)
+        write_kanban_event(card, str(num), "create", to_column="doing", git_project=git_project)
         print(num)
     else:
         print(f"Error: JSON must be an object or array, got {type(data).__name__}", file=sys.stderr)
         sys.exit(1)
-
-
 
 
 def cmd_redo(args) -> None:
@@ -703,7 +745,7 @@ def cmd_redo(args) -> None:
     })
     card["updated"] = now_iso()
     write_card(card_path, card)
-    write_kanban_event(card, num, "redo")
+    write_kanban_event(card, num, "redo", from_column="review", to_column="doing")
 
     target = root / "doing" / card_path.name
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -715,6 +757,10 @@ def cmd_defer(args) -> None:
     """Move card(s) from doing or review back to todo."""
     root = get_root(args.root)
     card_numbers = args.card if isinstance(args.card, list) else [args.card]
+
+    # Pre-compute git_project once to avoid N redundant git subprocesses in bulk loops
+    git_root = get_git_root()
+    git_project = os.path.basename(git_root) if git_root else None
 
     for card_num in card_numbers:
         card_path = find_card(root, card_num)
@@ -728,6 +774,7 @@ def cmd_defer(args) -> None:
         card = read_card(card_path)
         card["updated"] = now_iso()
         write_card(card_path, card)
+        write_kanban_event(card, num, "defer", from_column=col, to_column="todo", git_project=git_project)
 
         target = root / "todo" / card_path.name
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -739,6 +786,10 @@ def cmd_start(args) -> None:
     """Move card(s) from todo to doing (pick up queued work)."""
     root = get_root(args.root)
     card_numbers = args.card if isinstance(args.card, list) else [args.card]
+
+    # Pre-compute git_project once to avoid N redundant git subprocesses in bulk loops
+    git_root = get_git_root()
+    git_project = os.path.basename(git_root) if git_root else None
 
     failed = False
     for card_num in card_numbers:
@@ -755,6 +806,7 @@ def cmd_start(args) -> None:
             card = read_card(card_path)
             card["updated"] = now_iso()
             write_card(card_path, card)
+            write_kanban_event(card, num, "start", from_column="todo", to_column="doing", git_project=git_project)
 
             target = root / "doing" / card_path.name
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -891,8 +943,13 @@ def cmd_cancel(args) -> None:
     # Store cancellation reason if provided (applies to all cards in bulk)
     reason = args.reason if hasattr(args, "reason") and args.reason else None
 
+    # Pre-compute git_project once to avoid N redundant git subprocesses in bulk loops
+    git_root = get_git_root()
+    git_project = os.path.basename(git_root) if git_root else None
+
     for card_num in card_numbers:
         card_path = find_card(root, card_num)
+        col = card_path.parent.name
         card = read_card(card_path)
         num = card_number(card_path)
 
@@ -901,6 +958,8 @@ def cmd_cancel(args) -> None:
 
         card["updated"] = now_iso()
         write_card(card_path, card)
+
+        write_kanban_event(card, num, "canceled", from_column=col, to_column="canceled", git_project=git_project)
 
         target_path = root / "canceled" / card_path.name
         target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1597,6 +1656,10 @@ def cmd_todo(args) -> None:
 
     session = args.session if hasattr(args, "session") and args.session else get_current_session_id()
 
+    # Pre-compute git_project once to avoid N redundant git subprocesses in bulk loops
+    git_root = get_git_root()
+    git_project = os.path.basename(git_root) if git_root else None
+
     # Detect array vs object
     if isinstance(data, list):
         # Bulk creation: validate all cards first (fail fast)
@@ -1611,11 +1674,13 @@ def cmd_todo(args) -> None:
         # All validation passed — create all cards
         for card in cards:
             num = create_card_in_column(root, "todo", card)
+            write_kanban_event(card, str(num), "create", to_column="todo", git_project=git_project)
             print(num)
     elif isinstance(data, dict):
         # Single card creation (existing behavior)
         card = validate_and_build_card(data, session)
         num = create_card_in_column(root, "todo", card)
+        write_kanban_event(card, str(num), "create", to_column="todo", git_project=git_project)
         print(num)
     else:
         print(f"Error: JSON must be an object or array, got {type(data).__name__}", file=sys.stderr)
@@ -1627,13 +1692,23 @@ def cmd_review(args) -> None:
     root = get_root(args.root)
     card_numbers = args.card if isinstance(args.card, list) else [args.card]
 
+    # Pre-compute git_project once to avoid N redundant git subprocesses in bulk loops
+    git_root = get_git_root()
+    git_project = os.path.basename(git_root) if git_root else None
+
     for card_num in card_numbers:
         card_path = find_card(root, card_num)
-        card = read_card(card_path)
+        col = card_path.parent.name
         num = card_number(card_path)
 
+        if col == "review":
+            print(f"Card #{num} is already in review")
+            continue
+
+        card = read_card(card_path)
         card["updated"] = now_iso()
         write_card(card_path, card)
+        write_kanban_event(card, num, "review", from_column=col, to_column="review", git_project=git_project)
 
         target = root / "review" / card_path.name
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -1645,6 +1720,7 @@ def cmd_done(args) -> None:
     """Move card to done column (pure verb - no view mode)."""
     root = get_root(args.root)
     card_path = find_card(root, args.card)
+    col = card_path.parent.name
     card = read_card(card_path)
     num = card_number(card_path)
 
@@ -1669,7 +1745,7 @@ def cmd_done(args) -> None:
     card["updated"] = now_iso()
     write_card(card_path, card)
 
-    write_kanban_event(card, num, "done")
+    write_kanban_event(card, num, "done", card_completed_at=card["updated"], from_column=col, to_column="done")
     target = root / "done" / card_path.name
     target.parent.mkdir(parents=True, exist_ok=True)
     card_path.rename(target)
