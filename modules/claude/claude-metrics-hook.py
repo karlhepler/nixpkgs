@@ -357,21 +357,49 @@ def compute_timing(models: dict) -> tuple[float, float]:
 # ---------------------------------------------------------------------------
 # Kanban session lookup
 # ---------------------------------------------------------------------------
+def _read_sessions_file(path: Path) -> dict:
+    """Read a sessions.json file, returning empty dict on any failure."""
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception:
+        return {}
+
+
 def lookup_kanban_session(working_directory: str, session_id: str):
     """
-    Read {working_directory}/.kanban/sessions.json and return the friendly
-    session name for session_id. Returns None on any failure.
+    Return the friendly kanban session name for session_id, or None.
+
+    Strategy:
+    1. Check {working_directory}/.kanban/sessions.json first (fast path,
+       works when payload contains correct cwd).
+    2. If not found, scan all .kanban/sessions.json files under $HOME.
+       This handles the case where cwd is absent from the payload and
+       os.getcwd() returns a different directory than the project's root.
 
     sessions.json keys are the first 8 characters of the Claude session UUID
     (matching how kanban session-hook stores them via resolve_session_name).
     """
-    try:
-        sessions_path = Path(working_directory) / ".kanban" / "sessions.json"
-        with open(sessions_path, "r", encoding="utf-8") as fh:
-            sessions = json.load(fh)
-        return sessions.get(session_id[:8])
-    except Exception:
-        return None
+    prefix = session_id[:8]
+
+    # Fast path: cwd-based lookup
+    sessions_path = Path(working_directory) / ".kanban" / "sessions.json"
+    sessions = _read_sessions_file(sessions_path)
+    result = sessions.get(prefix)
+    if result is not None:
+        return result
+
+    # Fallback: search all .kanban/sessions.json files under $HOME
+    home = Path.home()
+    for candidate in home.rglob(".kanban/sessions.json"):
+        if candidate == sessions_path:
+            continue
+        sessions = _read_sessions_file(candidate)
+        result = sessions.get(prefix)
+        if result is not None:
+            return result
+
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -553,11 +581,6 @@ def main() -> None:
     agent_id = payload.get("agent_id") or ""
     working_directory = payload.get("cwd") or os.getcwd()
     kanban_session = lookup_kanban_session(working_directory, session_id)
-    print(
-        f"DEBUG kanban: cwd={working_directory}, session_id={session_id}, "
-        f"first8={session_id[:8]}, kanban_session={kanban_session}",
-        file=sys.stderr,
-    )
 
     if not transcript_path:
         return
