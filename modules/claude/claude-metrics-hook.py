@@ -410,8 +410,7 @@ def parse_transcript(transcript_path: str) -> dict:
                     if tool_name == "Bash":
                         command = block.get("input", {}).get("command", "")
                         if command:
-                            truncated = command[:50] + "..." if len(command) > 50 else command
-                            tool_name = f"Bash:{truncated}"
+                            tool_name = f"Bash:{command[:500]}"
                     if tool_name not in tools:
                         tools[tool_name] = {"calls": 0, "errors": 0}
                     tools[tool_name]["calls"] += 1
