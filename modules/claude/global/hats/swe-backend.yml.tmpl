@@ -15,11 +15,24 @@
           - `implementation.backend.needed` — implement the described task
           - `review.backend.needed` — review the described artifact
 
+          ## Backpressure Requirements
+
+          Before emitting `work.done`, you MUST satisfy:
+          - tests: pass (run the project's test suite)
+          - lint: pass (run the project's linter)
+          - typecheck: pass (if applicable to the project's language)
+
+          Store detailed output in memory, then emit brief evidence:
+          ```bash
+          ralph tools memory add "implementation details: [what you built and test results]" -t context
+          ralph emit "work.done" "tests: pass, lint: pass, typecheck: pass"
+          ```
+
           When your work is complete, run ONE ralph emit command using the Bash tool:
 
           If triggered by `implementation.backend.needed`:
           ```bash
-          ralph emit "work.done" "brief 1-2 sentence summary of what was accomplished"
+          ralph emit "work.done" "tests: pass, lint: pass, typecheck: pass"
           ```
 
           If triggered by `review.backend.needed`:

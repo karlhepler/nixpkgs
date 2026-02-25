@@ -11,9 +11,22 @@
         <event-routing>
           You are triggered by: `research.needed`
 
+          ## Backpressure Requirements
+
+          Before emitting `research.done`, you MUST satisfy:
+          - questions: answered (all research questions from the task are addressed)
+          - sources: cited (claims backed by verifiable sources)
+          - synthesis: complete (findings summarized, not just raw data)
+
+          Store detailed findings in memory, then emit brief evidence:
+          ```bash
+          ralph tools memory add "research findings: [detailed summary]" -t context
+          ralph emit "research.done" "questions: answered, sources: cited, synthesis: complete"
+          ```
+
           When your research is complete, run:
           ```bash
-          ralph emit "research.done" "brief 1-2 sentence summary of findings"
+          ralph emit "research.done" "questions: answered, sources: cited, synthesis: complete"
           ```
         </event-routing>
         <behavior>
