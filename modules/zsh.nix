@@ -33,6 +33,13 @@ in {
 
       # Kanban CLI: Hide own session by default (show only other sessions)
       export KANBAN_HIDE_MINE=true
+
+      # Suppress zoxide's "possible configuration issue" warning.
+      # zoxide fires this when it detects something initialized after it in the
+      # shell config. Home Manager always appends plugins and integrations after
+      # initContent, so the warning fires unconditionally. Silencing it here is
+      # the approach zoxide itself recommends in the warning message.
+      export _ZO_DOCTOR=0
     '';
     initContent = ''
       # Set up fpath to include completion directories
@@ -251,10 +258,6 @@ in {
         exec ${homeDirectory}/.nix-profile/bin/tmux new-session
       fi
 
-      # Zoxide must be initialized at the very end of shell config to avoid
-      # its "possible configuration issue" warning. It needs to run after
-      # compinit, all plugins, and all completions are already loaded.
-      eval "$(${pkgs.zoxide}/bin/zoxide init --cmd cd zsh)"
     '';
     shellAliases = {
       desk = "cd ~/Desktop";
