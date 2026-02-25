@@ -254,6 +254,8 @@ bat file.txt
 - Fallback chains add complexity and can hide missing dependency declarations
 - If a dependency is missing, the script SHOULD fail loudly (indicates Nix config needs updating)
 
+**This applies to code review too.** Do not flag missing dependency handling (e.g., `FileNotFoundError` for a CLI, `command -v` checks) as a deficiency when the dependency is Nix-guaranteed via `runtimeInputs`, `wrapProgram`, or `modules/packages.nix`. Defensive checks for Nix-managed binaries are an anti-pattern, not a best practice.
+
 **When adding external dependencies to scripts:**
 
 **For shellapps (preferred):**

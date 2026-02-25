@@ -15,6 +15,7 @@ let
     src = ./.;
 
     buildInputs = [ pythonWithPackages ];
+    nativeBuildInputs = [ pkgs.makeWrapper ];
 
     buildPhase = ''
       # Use python3 writer to create the script
@@ -31,6 +32,12 @@ let
       EOF
       cat kanban.py >> $out/bin/kanban
       chmod +x $out/bin/kanban
+
+      # Wrap to ensure trash CLI (darwin.trash) is available at runtime.
+      # trash sends files to macOS Trash with 'Put Back' metadata so
+      # kanban clean operations are reversible.
+      wrapProgram $out/bin/kanban \
+        --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.darwin.trash ]}
 
       # Install the completion file
       cp _kanban $out/share/zsh/site-functions/_kanban

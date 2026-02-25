@@ -1605,13 +1605,27 @@ def cmd_done(args) -> None:
     print(f"Done: #{num} — {message}")
 
 
+def trash_path(path: Path) -> None:
+    """Move a file or directory to the macOS Trash using the trash CLI.
+
+    Files moved to Trash via the trash CLI preserve their original path
+    metadata, enabling Finder's 'Put Back' to restore them to their exact
+    original location.
+    """
+    result = subprocess.run(["trash", str(path)], capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"trash failed for {path}: {result.stderr.strip()}")
+
+
 def cmd_clean(args) -> None:
-    """Delete cards with user confirmation (optionally including scratchpad).
+    """Move cards to macOS Trash with user confirmation (optionally including scratchpad).
+
+    Files are sent to macOS Trash and can be restored via Finder's 'Put Back'.
 
     Modes:
-    - kanban clean: Delete all cards from all columns (not scratchpad)
-    - kanban clean --expunge: Delete all cards AND scratchpad contents
-    - kanban clean <column>: Delete cards only from specified column
+    - kanban clean: Trash all cards from all columns (not scratchpad)
+    - kanban clean --expunge: Trash all cards AND scratchpad contents
+    - kanban clean <column>: Trash cards only from specified column
     """
     root = get_root(args.root, auto_init=False)
     if not root.exists():
@@ -1655,57 +1669,56 @@ def cmd_clean(args) -> None:
             print("No cards found.")
         return
 
-    # Show what will be deleted and prompt for confirmation
+    # Require interactive terminal - reject piped input to prevent programmatic bypass
+    if not sys.stdin.isatty():
+        print("Error: kanban clean requires interactive confirmation (stdin must be a terminal).", file=sys.stderr)
+        sys.exit(1)
+
+    # Show what will be trashed and prompt for confirmation
     if expunge:
-        print(f"⚠️  WARNING: This will delete {total_cards} cards from all columns AND scratchpad contents ({scratchpad_count} files).")
-        print("Are you sure? (yes/no)")
+        print(f"WARNING: This will trash {total_cards} cards from all columns AND scratchpad contents ({scratchpad_count} files).")
+        prompt = "Files will be moved to macOS Trash (recoverable via Finder 'Put Back'). Continue? [y/N] "
     elif column:
-        print(f"This will delete {total_cards} cards from the '{column}' column. Are you sure? (yes/no)")
+        prompt = f"This will trash {total_cards} cards from the '{column}' column (recoverable via Finder 'Put Back'). Continue? [y/N] "
     else:
-        print(f"This will delete {total_cards} cards from all columns. Are you sure? (yes/no)")
+        prompt = f"This will trash {total_cards} cards from all columns (recoverable via Finder 'Put Back'). Continue? [y/N] "
 
-    # Read user confirmation
+    # Read user confirmation - only 'y' or 'Y' proceeds; empty input (Enter) = abort
     try:
-        response = input().strip().lower()
+        response = input(prompt).strip()
     except (EOFError, KeyboardInterrupt):
-        print("\nCanceled.")
-        sys.exit(1)
+        print("\nAborted.")
+        sys.exit(0)
 
-    if response not in ["yes", "y"]:
-        print("Canceled.")
-        sys.exit(1)
+    if response not in ["y", "Y"]:
+        print("Aborted.")
+        sys.exit(0)
 
-    # Delete cards
-    deleted_count = 0
+    # Trash cards
+    trashed_count = 0
     for col in columns_to_clean:
         col_path = root / col
         if col_path.exists():
             for card_file in col_path.glob("*.json"):
-                card_file.unlink()
-                deleted_count += 1
+                trash_path(card_file)
+                trashed_count += 1
 
-    # Delete scratchpad if expunge
-    scratchpad_deleted = 0
+    # Trash scratchpad if expunge
+    scratchpad_trashed = 0
     if expunge:
         scratchpad_path = root / "scratchpad"
         if scratchpad_path.exists():
-            import shutil
             for item in scratchpad_path.iterdir():
-                if item.is_file():
-                    item.unlink()
-                    scratchpad_deleted += 1
-                elif item.is_dir():
-                    shutil.rmtree(item)
-                    # Count as one deletion per directory
-                    scratchpad_deleted += 1
+                trash_path(item)
+                scratchpad_trashed += 1
 
     # Report results
     if expunge:
-        print(f"Deleted {deleted_count} cards and {scratchpad_deleted} scratchpad items.")
+        print(f"Trashed {trashed_count} cards and {scratchpad_trashed} scratchpad items. Restore via Finder 'Put Back'.")
     elif column:
-        print(f"Deleted {deleted_count} cards from '{column}' column.")
+        print(f"Trashed {trashed_count} cards from '{column}' column. Restore via Finder 'Put Back'.")
     else:
-        print(f"Deleted {deleted_count} cards.")
+        print(f"Trashed {trashed_count} cards. Restore via Finder 'Put Back'.")
 
 
 def cmd_report(args) -> None:

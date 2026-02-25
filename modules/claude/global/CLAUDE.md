@@ -510,9 +510,9 @@ When updating to a new version:
 These operations are destructive and cannot be undone. Always ask the user for permission BEFORE running them.
 
 **Commands requiring permission:**
-- `kanban clean` - Deletes cards from kanban board (prompts user for confirmation)
-- `kanban clean --expunge` - Deletes kanban card history and records (prompts user for confirmation)
-- `kanban clean <column>` - Deletes cards from specific column (prompts user for confirmation)
+- `kanban clean` - **PROHIBITED for staff engineer** — never run under any circumstances. Use `kanban cancel` instead.
+- `kanban clean --expunge` - **PROHIBITED for staff engineer** — never run under any circumstances.
+- `kanban clean <column>` - **PROHIBITED for staff engineer** — never run under any circumstances.
 - `hms --expunge` - Removes stale Home Manager generations (dangerous)
 - `git reset --hard` - Discards local changes permanently
 - `git push --force` - Overwrites remote history
