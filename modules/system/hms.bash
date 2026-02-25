@@ -151,6 +151,7 @@ elif [ "$marktext_installed" != "$marktext_latest" ]; then
   rm -rf /Applications/MarkText.app
   mv "$marktext_tmp/marktext.app" /Applications/MarkText.app
   xattr -cr /Applications/MarkText.app
+  codesign --force --deep --sign - /Applications/MarkText.app
   rm -rf "$marktext_tmp"
   echo "MarkText v$marktext_latest installed."
 fi
