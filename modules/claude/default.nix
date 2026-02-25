@@ -31,9 +31,9 @@ let
       [ instructionsContent ]
       (builtins.readFile templateFile);
 
-  # Process a skill file: strip frontmatter, replace $ARGUMENTS, append emit
-  # instructions, then indent to 10 spaces for YAML block scalar embedding.
-  processSkillFile = filePath: emitInstructions:
+  # Process a skill file: strip frontmatter, replace $ARGUMENTS, then indent
+  # to 10 spaces for YAML block scalar embedding inside <behavior> tags.
+  processSkillFile = filePath:
     let
       raw = builtins.readFile filePath;
       body = stripFrontmatter raw;
@@ -41,72 +41,31 @@ let
         [ "$ARGUMENTS" ]
         [ "You receive your task from the event payload that triggered you and the session context.\nComplete the work described, then emit your completion event." ]
         body;
-    in indentLines 10 (withArgs + emitInstructions);
-
-  # Emit instructions appended to each specialist skill file
-  specialistEmit = domain: ''
-
-
-## PR Comment Protocol
-
-When addressing PR comments as part of your work:
-1. Run `prc list --unresolved --bots-only --max-replies 0` to find ONLY unresolved bot threads with zero existing replies
-2. Do NOT reply to threads that already have replies — they are already handled
-3. Do NOT reply to resolved threads
-4. Only process threads returned by the above command
-
-
-## Emit When Complete
-
-Once all verification passes:
-
-**If triggered by `implementation.${domain}.needed`:**
-<event topic="work.done">brief summary of what was accomplished</event>
-
-**If triggered by `review.${domain}.needed`:**
-<event topic="review.${domain}.done">findings: [pass|fail], issues: [none|description of blockers]</event>
-'';
-
-  # Emit instructions for the researcher hat
-  researcherEmit = ''
-
-
-## Emit When Complete
-
-Once investigation is complete:
-
-<event topic="research.done">brief summary of findings</event>
-'';
+    in indentLines 10 withArgs;
 
   # Assemble all hat YAML blocks from templates
   hatYaml = lib.concatStrings [
     (builtins.readFile ./global/hats/monty-burns.yml.tmpl)
-    (processTemplate ./global/hats/swe-backend.yml.tmpl  (processSkillFile ./global/commands/swe-backend.md   (specialistEmit "backend")))
-    (processTemplate ./global/hats/swe-frontend.yml.tmpl (processSkillFile ./global/commands/swe-frontend.md  (specialistEmit "frontend")))
-    (processTemplate ./global/hats/swe-fullstack.yml.tmpl (processSkillFile ./global/commands/swe-fullstack.md (specialistEmit "fullstack")))
-    (processTemplate ./global/hats/swe-devex.yml.tmpl    (processSkillFile ./global/commands/swe-devex.md     (specialistEmit "devex")))
-    (processTemplate ./global/hats/swe-infra.yml.tmpl    (processSkillFile ./global/commands/swe-infra.md     (specialistEmit "infra")))
-    (processTemplate ./global/hats/swe-security.yml.tmpl (processSkillFile ./global/commands/swe-security.md  (specialistEmit "security")))
-    (processTemplate ./global/hats/swe-sre.yml.tmpl      (processSkillFile ./global/commands/swe-sre.md       (specialistEmit "sre")))
-    (processTemplate ./global/hats/researcher.yml.tmpl   (processSkillFile ./global/commands/researcher.md    researcherEmit))
+    (processTemplate ./global/hats/swe-backend.yml.tmpl  (processSkillFile ./global/commands/swe-backend.md))
+    (processTemplate ./global/hats/swe-frontend.yml.tmpl (processSkillFile ./global/commands/swe-frontend.md))
+    (processTemplate ./global/hats/swe-fullstack.yml.tmpl (processSkillFile ./global/commands/swe-fullstack.md))
+    (processTemplate ./global/hats/swe-devex.yml.tmpl    (processSkillFile ./global/commands/swe-devex.md))
+    (processTemplate ./global/hats/swe-infra.yml.tmpl    (processSkillFile ./global/commands/swe-infra.md))
+    (processTemplate ./global/hats/swe-security.yml.tmpl (processSkillFile ./global/commands/swe-security.md))
+    (processTemplate ./global/hats/swe-sre.yml.tmpl      (processSkillFile ./global/commands/swe-sre.md))
+    (processTemplate ./global/hats/researcher.yml.tmpl   (processSkillFile ./global/commands/researcher.md))
   ];
 
   # Generate multi-hat Ralph YAML with Monty Burns coordinator + 8 specialists
-  montyBurnsHatYaml = pkgs.writeText "monty-burns-hat.yml" ''
-    # Ralph Hat Configuration: Monty Burns (Multi-Hat Architecture)
-    # Generated from Home Manager - do not edit directly
-    # Source: modules/claude/global/hats/monty-burns.md + modules/claude/global/commands/*.md
-
-    event_loop:
-      starting_event: "loop.start"
-      completion_promise: "LOOP_COMPLETE"
-
-    cli:
-      backend: "claude"
-
-    hats:
-${hatYaml}
-  '';
+  # Use builtins.readFile + replaceStrings to avoid Nix indented string indentation stripping,
+  # which would misalign top-level YAML keys (event_loop:, cli:, hats:) if the string is
+  # indented within the Nix expression.
+  montyBurnsHatYaml = pkgs.writeText "monty-burns-hat.yml" (
+    builtins.replaceStrings
+      [ "HATS_PLACEHOLDER" ]
+      [ hatYaml ]
+      (builtins.readFile ./global/hats/wrapper.yml.tmpl)
+  );
 
   # Python environment for smithers with required packages
   smithersPython = pkgs.python3.withPackages (ps: with ps; [
@@ -883,8 +842,10 @@ EOF
       '';
     in lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       # Copy all global configuration (mirrors global/ -> ~/.claude/ structure)
+      # EXCLUDE hats/ directory - contains build-time template files only
       $DRY_RUN_CMD mkdir -p ~/.claude
-      $DRY_RUN_CMD cp -rf ${claudeGlobalDir}/* ~/.claude/
+      $DRY_RUN_CMD find ${claudeGlobalDir} -maxdepth 1 -type f -exec cp {} ~/.claude/ \;
+      $DRY_RUN_CMD find ${claudeGlobalDir} -maxdepth 1 -type d ! -name . ! -name hats -exec cp -rf {} ~/.claude/ \;
 
       # Ensure all subdirectories exist (in case cp didn't create them)
       $DRY_RUN_CMD mkdir -p ~/.claude/commands ~/.claude/output-styles ~/.claude/docs ~/.claude/agents

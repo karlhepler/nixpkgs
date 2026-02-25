@@ -5,4 +5,21 @@
         publishes: ["work.done", "review.sre.done"]
         default_publishes: "work.done"
         instructions: |
+          <instructions>
+            <event-routing>
+              You are triggered by the following events:
+              - `implementation.sre.needed` — implement the described task
+              - `review.sre.needed` — review the described artifact
+
+              When your work is complete, emit exactly one of these XML tags in your response:
+
+              If triggered by `implementation.sre.needed`:
+              <event topic="work.done">brief 1-2 sentence summary of what was accomplished</event>
+
+              If triggered by `review.sre.needed`:
+              <event topic="review.sre.done">findings: pass|fail; issues: none OR brief summary of blockers</event>
+            </event-routing>
+            <behavior>
 INSTRUCTIONS_PLACEHOLDER
+            </behavior>
+          </instructions>
