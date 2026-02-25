@@ -335,6 +335,13 @@ Both files made git-invisible by `hms` after first run. Backups linked via `*.la
 - Config merged into `~/.claude.json` (preserves Claude's metadata)
 - To disable: Remove `CONTEXT7_API_KEY`, run `hms`
 
+**Analytics Dashboard (claudit):**
+- Grafana-based dashboard for Claude Code usage analytics (user nickname: "claudit")
+- Dashboard definition: `modules/grafana/dashboard.json`
+- Metrics collection: `modules/claude/claude-metrics-hook.py` (captures metrics via Claude Code metrics hook)
+- Displays: Total cost (today/all-time), token breakdown (input/output/cache), cost by kanban session, turn statistics by agent type, tool usage heat map (by tool and agent)
+- Access via Grafana interface (configured in Home Manager)
+
 **Available skills:**
 - Engineering: swe-backend, swe-frontend, swe-fullstack, swe-devex, swe-infra, swe-security, swe-sre
 - Design: ux-designer, visual-designer
