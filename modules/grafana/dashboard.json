@@ -19,84 +19,28 @@
   "links": [],
   "panels": [
     {
-      "id": 1,
-      "type": "stat",
-      "title": "Total Cost (All Time)",
+      "id": 200,
+      "type": "row",
+      "title": "How much am I spending?",
       "gridPos": {
         "x": 0,
         "y": 0,
-        "w": 8,
-        "h": 4
+        "w": 24,
+        "h": 1
       },
-      "datasource": {
-        "type": "frser-sqlite-datasource",
-        "uid": "claude-metrics-sqlite"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "frser-sqlite-datasource",
-            "uid": "claude-metrics-sqlite"
-          },
-          "rawQueryText": "SELECT COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics",
-          "queryText": "SELECT COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics",
-          "queryType": "table",
-          "timeColumns": [],
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "currencyUSD",
-          "decimals": 2,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 5
-              },
-              {
-                "color": "red",
-                "value": 20
-              }
-            ]
-          },
-          "mappings": [],
-          "color": {
-            "mode": "thresholds"
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "orientation": "auto",
-        "textMode": "auto",
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "auto"
-      }
+      "collapsed": false,
+      "datasource": null,
+      "panels": []
     },
     {
       "id": 2,
       "type": "stat",
       "title": "Total Cost (Today)",
       "gridPos": {
-        "x": 8,
-        "y": 0,
-        "w": 8,
-        "h": 4
+        "x": 0,
+        "y": 1,
+        "w": 5,
+        "h": 3
       },
       "datasource": {
         "type": "frser-sqlite-datasource",
@@ -159,14 +103,14 @@
       }
     },
     {
-      "id": 3,
+      "id": 1,
       "type": "stat",
-      "title": "Sessions Today",
+      "title": "Total Cost (All Time)",
       "gridPos": {
-        "x": 16,
-        "y": 0,
-        "w": 8,
-        "h": 4
+        "x": 5,
+        "y": 1,
+        "w": 5,
+        "h": 3
       },
       "datasource": {
         "type": "frser-sqlite-datasource",
@@ -178,8 +122,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT COUNT(DISTINCT session_id) as sessions FROM agent_metrics WHERE date(recorded_at) = date('now')",
-          "queryText": "SELECT COUNT(DISTINCT session_id) as sessions FROM agent_metrics WHERE date(recorded_at) = date('now')",
+          "rawQueryText": "SELECT COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics",
+          "queryText": "SELECT COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics",
           "queryType": "table",
           "timeColumns": [],
           "refId": "A"
@@ -187,84 +131,28 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "none",
-          "decimals": 0,
+          "unit": "currencyUSD",
+          "decimals": 2,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "blue",
+                "color": "green",
                 "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5
+              },
+              {
+                "color": "red",
+                "value": 20
               }
             ]
           },
           "mappings": [],
           "color": {
-            "mode": "fixed",
-            "fixedColor": "blue"
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "orientation": "auto",
-        "textMode": "auto",
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "auto"
-      }
-    },
-    {
-      "id": 20,
-      "type": "stat",
-      "title": "Total Tokens (All Time)",
-      "gridPos": {
-        "x": 0,
-        "y": 4,
-        "w": 12,
-        "h": 4
-      },
-      "datasource": {
-        "type": "frser-sqlite-datasource",
-        "uid": "claude-metrics-sqlite"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "frser-sqlite-datasource",
-            "uid": "claude-metrics-sqlite"
-          },
-          "rawQueryText": "SELECT COALESCE(SUM(input_tokens + output_tokens), 0) as total_tokens FROM agent_metrics",
-          "queryText": "SELECT COALESCE(SUM(input_tokens + output_tokens), 0) as total_tokens FROM agent_metrics",
-          "queryType": "table",
-          "timeColumns": [],
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "decimals": 1,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "purple",
-                "value": null
-              }
-            ]
-          },
-          "mappings": [],
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "purple"
+            "mode": "thresholds"
           }
         },
         "overrides": []
@@ -289,10 +177,10 @@
       "type": "stat",
       "title": "Total Tokens (Today)",
       "gridPos": {
-        "x": 12,
-        "y": 4,
-        "w": 12,
-        "h": 4
+        "x": 10,
+        "y": 1,
+        "w": 5,
+        "h": 3
       },
       "datasource": {
         "type": "frser-sqlite-datasource",
@@ -348,14 +236,14 @@
       }
     },
     {
-      "id": 4,
-      "type": "timeseries",
-      "title": "Cost Over Time",
+      "id": 20,
+      "type": "stat",
+      "title": "Total Tokens (All Time)",
       "gridPos": {
-        "x": 0,
-        "y": 8,
-        "w": 12,
-        "h": 8
+        "x": 15,
+        "y": 1,
+        "w": 5,
+        "h": 3
       },
       "datasource": {
         "type": "frser-sqlite-datasource",
@@ -367,384 +255,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT date(recorded_at) || 'T00:00:00Z' as time, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics GROUP BY date(recorded_at) ORDER BY time",
-          "queryText": "SELECT date(recorded_at) || 'T00:00:00Z' as time, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics GROUP BY date(recorded_at) ORDER BY time",
-          "queryType": "time series",
-          "timeColumns": [
-            "time"
-          ],
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "currencyUSD",
-          "decimals": 4,
-          "custom": {
-            "lineWidth": 2,
-            "fillOpacity": 20,
-            "gradientMode": "opacity",
-            "spanNulls": true,
-            "insertNulls": false,
-            "showPoints": "never",
-            "pointSize": 5,
-            "drawStyle": "line",
-            "lineInterpolation": "smooth"
-          },
-          "color": {
-            "mode": "palette-classic"
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        },
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        }
-      }
-    },
-    {
-      "id": 5,
-      "type": "timeseries",
-      "title": "Session Timeline (Cost + Tool Calls)",
-      "gridPos": {
-        "x": 12,
-        "y": 8,
-        "w": 12,
-        "h": 8
-      },
-      "datasource": {
-        "type": "frser-sqlite-datasource",
-        "uid": "claude-metrics-sqlite"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "frser-sqlite-datasource",
-            "uid": "claude-metrics-sqlite"
-          },
-          "rawQueryText": "SELECT MIN(recorded_at) as time, COALESCE(kanban_session, session_id) as session_label, ROUND(SUM(cost_usd), 4) as session_cost, SUM(tool_calls) as total_tool_calls, ROUND(SUM(duration_seconds) / 60.0, 1) as duration_minutes FROM agent_metrics GROUP BY session_id ORDER BY time",
-          "queryText": "SELECT MIN(recorded_at) as time, COALESCE(kanban_session, session_id) as session_label, ROUND(SUM(cost_usd), 4) as session_cost, SUM(tool_calls) as total_tool_calls, ROUND(SUM(duration_seconds) / 60.0, 1) as duration_minutes FROM agent_metrics GROUP BY session_id ORDER BY time",
-          "queryType": "time series",
-          "timeColumns": [
-            "time"
-          ],
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "currencyUSD",
-          "decimals": 4,
-          "custom": {
-            "lineWidth": 0,
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "spanNulls": false,
-            "insertNulls": false,
-            "showPoints": "always",
-            "pointSize": 8,
-            "drawStyle": "points",
-            "lineInterpolation": "linear"
-          },
-          "color": {
-            "mode": "palette-classic"
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "session_cost"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Session Cost"
-              },
-              {
-                "id": "unit",
-                "value": "currencyUSD"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "total_tool_calls"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Tool Calls"
-              },
-              {
-                "id": "unit",
-                "value": "short"
-              },
-              {
-                "id": "decimals",
-                "value": 0
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "duration_minutes"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Duration (min)"
-              },
-              {
-                "id": "unit",
-                "value": "short"
-              },
-              {
-                "id": "decimals",
-                "value": 1
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "session_label"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Session"
-              }
-            ]
-          }
-        ]
-      },
-      "options": {
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        },
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": false
-        }
-      }
-    },
-    {
-      "id": 6,
-      "type": "barchart",
-      "title": "Cost by Agent Type",
-      "gridPos": {
-        "x": 0,
-        "y": 16,
-        "w": 8,
-        "h": 8
-      },
-      "datasource": {
-        "type": "frser-sqlite-datasource",
-        "uid": "claude-metrics-sqlite"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "frser-sqlite-datasource",
-            "uid": "claude-metrics-sqlite"
-          },
-          "rawQueryText": "SELECT role, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics WHERE role != 'parent' GROUP BY role ORDER BY cost DESC",
-          "queryText": "SELECT role, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics WHERE role != 'parent' GROUP BY role ORDER BY cost DESC",
-          "queryType": "table",
-          "timeColumns": [],
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "currencyUSD",
-          "decimals": 4,
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "fillOpacity": 80,
-            "lineWidth": 1
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "orientation": "horizontal",
-        "xTickLabelRotation": 0,
-        "xTickLabelMaxLength": 20,
-        "groupWidth": 0.7,
-        "barWidth": 0.97,
-        "barRadius": 0,
-        "fullHighlight": false,
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        },
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "xField": "role"
-      }
-    },
-    {
-      "id": 7,
-      "type": "barchart",
-      "title": "Cost by Model",
-      "gridPos": {
-        "x": 8,
-        "y": 16,
-        "w": 8,
-        "h": 8
-      },
-      "datasource": {
-        "type": "frser-sqlite-datasource",
-        "uid": "claude-metrics-sqlite"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "frser-sqlite-datasource",
-            "uid": "claude-metrics-sqlite"
-          },
-          "rawQueryText": "SELECT model_family, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics GROUP BY model_family ORDER BY cost DESC",
-          "queryText": "SELECT model_family, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics GROUP BY model_family ORDER BY cost DESC",
-          "queryType": "table",
-          "timeColumns": [],
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "currencyUSD",
-          "decimals": 4,
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "fillOpacity": 80,
-            "lineWidth": 1
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "orientation": "horizontal",
-        "xTickLabelRotation": 0,
-        "xTickLabelMaxLength": 20,
-        "groupWidth": 0.7,
-        "barWidth": 0.97,
-        "barRadius": 0,
-        "fullHighlight": false,
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        },
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "xField": "model_family"
-      }
-    },
-    {
-      "id": 8,
-      "type": "barchart",
-      "title": "Cost by Project",
-      "gridPos": {
-        "x": 16,
-        "y": 16,
-        "w": 8,
-        "h": 8
-      },
-      "datasource": {
-        "type": "frser-sqlite-datasource",
-        "uid": "claude-metrics-sqlite"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "frser-sqlite-datasource",
-            "uid": "claude-metrics-sqlite"
-          },
-          "rawQueryText": "SELECT COALESCE(REPLACE(working_directory, rtrim(working_directory, replace(working_directory, '/', '')), '~/'), working_directory) as project, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics GROUP BY working_directory ORDER BY cost DESC LIMIT 10",
-          "queryText": "SELECT COALESCE(REPLACE(working_directory, rtrim(working_directory, replace(working_directory, '/', '')), '~/'), working_directory) as project, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics GROUP BY working_directory ORDER BY cost DESC LIMIT 10",
-          "queryType": "table",
-          "timeColumns": [],
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "currencyUSD",
-          "decimals": 4,
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "fillOpacity": 80,
-            "lineWidth": 1
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "orientation": "horizontal",
-        "xTickLabelRotation": 0,
-        "xTickLabelMaxLength": 30,
-        "groupWidth": 0.7,
-        "barWidth": 0.97,
-        "barRadius": 0,
-        "fullHighlight": false,
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        },
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "xField": "project"
-      }
-    },
-    {
-      "id": 9,
-      "type": "barchart",
-      "title": "Token Breakdown",
-      "gridPos": {
-        "x": 0,
-        "y": 24,
-        "w": 12,
-        "h": 8
-      },
-      "datasource": {
-        "type": "frser-sqlite-datasource",
-        "uid": "claude-metrics-sqlite"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "frser-sqlite-datasource",
-            "uid": "claude-metrics-sqlite"
-          },
-          "rawQueryText": "SELECT model_family, SUM(input_tokens) as input_tok, SUM(output_tokens) as output_tok, SUM(cache_read_tokens) as cache_tok FROM agent_metrics GROUP BY model_family",
-          "queryText": "SELECT model_family, SUM(input_tokens) as input_tok, SUM(output_tokens) as output_tok, SUM(cache_read_tokens) as cache_tok FROM agent_metrics GROUP BY model_family",
+          "rawQueryText": "SELECT COALESCE(SUM(input_tokens + output_tokens), 0) as total_tokens FROM agent_metrics",
+          "queryText": "SELECT COALESCE(SUM(input_tokens + output_tokens), 0) as total_tokens FROM agent_metrics",
           "queryType": "table",
           "timeColumns": [],
           "refId": "A"
@@ -754,87 +266,47 @@
         "defaults": {
           "unit": "short",
           "decimals": 1,
-          "color": {
-            "mode": "palette-classic"
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "purple",
+                "value": null
+              }
+            ]
           },
-          "custom": {
-            "fillOpacity": 80,
-            "lineWidth": 1,
-            "stacking": {
-              "mode": "normal",
-              "group": "A"
-            }
+          "mappings": [],
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "purple"
           }
         },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "input_tok"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Input"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "output_tok"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Output"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "cache_tok"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Cache Read"
-              }
-            ]
-          }
-        ]
+        "overrides": []
       },
       "options": {
-        "orientation": "vertical",
-        "xTickLabelRotation": 0,
-        "xTickLabelMaxLength": 20,
-        "groupWidth": 0.7,
-        "barWidth": 0.97,
-        "barRadius": 0,
-        "fullHighlight": false,
-        "stacking": "normal",
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
         },
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "xField": "model_family"
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto"
       }
     },
     {
-      "id": 10,
-      "type": "barchart",
-      "title": "Turns by Agent Type",
+      "id": 3,
+      "type": "stat",
+      "title": "Sessions Today",
       "gridPos": {
-        "x": 12,
-        "y": 24,
-        "w": 12,
-        "h": 8
+        "x": 20,
+        "y": 1,
+        "w": 4,
+        "h": 3
       },
       "datasource": {
         "type": "frser-sqlite-datasource",
@@ -846,8 +318,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT role, SUM(turns) as total_turns FROM agent_metrics WHERE role != 'parent' GROUP BY role ORDER BY total_turns DESC",
-          "queryText": "SELECT role, SUM(turns) as total_turns FROM agent_metrics WHERE role != 'parent' GROUP BY role ORDER BY total_turns DESC",
+          "rawQueryText": "SELECT COUNT(DISTINCT session_id) as sessions FROM agent_metrics WHERE date(recorded_at) = date('now')",
+          "queryText": "SELECT COUNT(DISTINCT session_id) as sessions FROM agent_metrics WHERE date(recorded_at) = date('now')",
           "queryType": "table",
           "timeColumns": [],
           "refId": "A"
@@ -855,37 +327,53 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "none",
           "decimals": 0,
-          "color": {
-            "mode": "palette-classic"
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
           },
-          "custom": {
-            "fillOpacity": 80,
-            "lineWidth": 1
+          "mappings": [],
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
           }
         },
         "overrides": []
       },
       "options": {
-        "orientation": "horizontal",
-        "xTickLabelRotation": 0,
-        "xTickLabelMaxLength": 20,
-        "groupWidth": 0.7,
-        "barWidth": 0.97,
-        "barRadius": 0,
-        "fullHighlight": false,
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
         },
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "xField": "role"
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto"
       }
+    },
+    {
+      "id": 201,
+      "type": "row",
+      "title": "Where is it going?",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "datasource": null,
+      "panels": []
     },
     {
       "id": 11,
@@ -893,7 +381,7 @@
       "title": "Cost by Kanban Session",
       "gridPos": {
         "x": 0,
-        "y": 32,
+        "y": 5,
         "w": 12,
         "h": 8
       },
@@ -954,7 +442,7 @@
       "title": "Top 10 Expensive Sessions",
       "gridPos": {
         "x": 12,
-        "y": 32,
+        "y": 5,
         "w": 12,
         "h": 8
       },
@@ -1189,26 +677,205 @@
       "transformations": []
     },
     {
-      "id": 100,
-      "type": "row",
-      "title": "Agent Behavior",
+      "id": 4,
+      "type": "timeseries",
+      "title": "Cost Over Time",
       "gridPos": {
         "x": 0,
-        "y": 40,
-        "w": 24,
-        "h": 1
+        "y": 13,
+        "w": 12,
+        "h": 8
       },
-      "collapsed": false,
-      "datasource": null,
-      "panels": []
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawQueryText": "SELECT date(recorded_at) || 'T00:00:00Z' as time, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics GROUP BY date(recorded_at) ORDER BY time",
+          "queryText": "SELECT date(recorded_at) || 'T00:00:00Z' as time, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics GROUP BY date(recorded_at) ORDER BY time",
+          "queryType": "time series",
+          "timeColumns": [
+            "time"
+          ],
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "gradientMode": "opacity",
+            "spanNulls": true,
+            "insertNulls": false,
+            "showPoints": "never",
+            "pointSize": 5,
+            "drawStyle": "line",
+            "lineInterpolation": "smooth"
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      }
     },
     {
-      "id": 13,
-      "type": "table",
-      "title": "Tool Usage Heatmap (by Agent)",
+      "id": 5,
+      "type": "timeseries",
+      "title": "Session Timeline (Cost + Tool Calls)",
+      "gridPos": {
+        "x": 12,
+        "y": 13,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawQueryText": "SELECT MIN(recorded_at) as time, COALESCE(kanban_session, session_id) as session_label, ROUND(SUM(cost_usd), 4) as session_cost, SUM(tool_calls) as total_tool_calls, ROUND(SUM(duration_seconds) / 60.0, 1) as duration_minutes FROM agent_metrics GROUP BY session_id ORDER BY time",
+          "queryText": "SELECT MIN(recorded_at) as time, COALESCE(kanban_session, session_id) as session_label, ROUND(SUM(cost_usd), 4) as session_cost, SUM(tool_calls) as total_tool_calls, ROUND(SUM(duration_seconds) / 60.0, 1) as duration_minutes FROM agent_metrics GROUP BY session_id ORDER BY time",
+          "queryType": "time series",
+          "timeColumns": [
+            "time"
+          ],
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4,
+          "custom": {
+            "lineWidth": 0,
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "spanNulls": false,
+            "insertNulls": false,
+            "showPoints": "always",
+            "pointSize": 8,
+            "drawStyle": "points",
+            "lineInterpolation": "linear"
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "session_cost"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Session Cost"
+              },
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "total_tool_calls"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Tool Calls"
+              },
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "duration_minutes"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Duration (min)"
+              },
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "session_label"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Session"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": "barchart",
+      "title": "Cost by Agent Type",
       "gridPos": {
         "x": 0,
-        "y": 41,
+        "y": 21,
         "w": 8,
         "h": 8
       },
@@ -1222,8 +889,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT role, tool_name, SUM(call_count) as calls, SUM(error_count) as errors FROM agent_tool_usage WHERE role != 'parent' GROUP BY role, tool_name ORDER BY calls DESC",
-          "queryText": "SELECT role, tool_name, SUM(call_count) as calls, SUM(error_count) as errors FROM agent_tool_usage WHERE role != 'parent' GROUP BY role, tool_name ORDER BY calls DESC",
+          "rawQueryText": "SELECT role, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics WHERE role != 'parent' GROUP BY role ORDER BY cost DESC",
+          "queryText": "SELECT role, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics WHERE role != 'parent' GROUP BY role ORDER BY cost DESC",
           "queryType": "table",
           "timeColumns": [],
           "refId": "A"
@@ -1231,184 +898,183 @@
       ],
       "fieldConfig": {
         "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4,
           "color": {
-            "mode": "thresholds"
+            "mode": "palette-classic"
           },
           "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "filterable": true,
-            "inspect": false
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
+            "fillOpacity": 80,
+            "lineWidth": 1
           }
         },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "role"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Agent"
-              },
-              {
-                "id": "custom.width",
-                "value": 100
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "tool_name"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Tool"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "calls"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Calls"
-              },
-              {
-                "id": "unit",
-                "value": "short"
-              },
-              {
-                "id": "decimals",
-                "value": 0
-              },
-              {
-                "id": "custom.width",
-                "value": 80
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-background"
-                }
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "blue",
-                      "value": null
-                    },
-                    {
-                      "color": "green",
-                      "value": 10
-                    },
-                    {
-                      "color": "yellow",
-                      "value": 50
-                    },
-                    {
-                      "color": "red",
-                      "value": 200
-                    }
-                  ]
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "errors"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Errors"
-              },
-              {
-                "id": "custom.width",
-                "value": 80
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-background"
-                }
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "green",
-                      "value": null
-                    },
-                    {
-                      "color": "yellow",
-                      "value": 1
-                    },
-                    {
-                      "color": "red",
-                      "value": 5
-                    }
-                  ]
-                }
-              }
-            ]
-          }
-        ]
+        "overrides": []
       },
       "options": {
-        "cellHeight": "sm",
-        "footer": {
-          "show": false,
-          "reducer": [
-            "sum"
-          ],
-          "countRows": false,
-          "fields": ""
+        "orientation": "horizontal",
+        "xTickLabelRotation": 0,
+        "xTickLabelMaxLength": 20,
+        "groupWidth": 0.7,
+        "barWidth": 0.97,
+        "barRadius": 0,
+        "fullHighlight": false,
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
         },
-        "showHeader": true,
-        "sortBy": [
-          {
-            "displayName": "Calls",
-            "desc": true
-          }
-        ]
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "xField": "role"
+      }
+    },
+    {
+      "id": 7,
+      "type": "barchart",
+      "title": "Cost by Model",
+      "gridPos": {
+        "x": 8,
+        "y": 21,
+        "w": 8,
+        "h": 8
       },
-      "transformations": []
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawQueryText": "SELECT model_family, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics GROUP BY model_family ORDER BY cost DESC",
+          "queryText": "SELECT model_family, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics GROUP BY model_family ORDER BY cost DESC",
+          "queryType": "table",
+          "timeColumns": [],
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xTickLabelRotation": 0,
+        "xTickLabelMaxLength": 20,
+        "groupWidth": 0.7,
+        "barWidth": 0.97,
+        "barRadius": 0,
+        "fullHighlight": false,
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "xField": "model_family"
+      }
+    },
+    {
+      "id": 8,
+      "type": "barchart",
+      "title": "Cost by Project",
+      "gridPos": {
+        "x": 16,
+        "y": 21,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawQueryText": "SELECT COALESCE(REPLACE(working_directory, rtrim(working_directory, replace(working_directory, '/', '')), '~/'), working_directory) as project, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics GROUP BY working_directory ORDER BY cost DESC LIMIT 10",
+          "queryText": "SELECT COALESCE(REPLACE(working_directory, rtrim(working_directory, replace(working_directory, '/', '')), '~/'), working_directory) as project, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics GROUP BY working_directory ORDER BY cost DESC LIMIT 10",
+          "queryType": "table",
+          "timeColumns": [],
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xTickLabelRotation": 0,
+        "xTickLabelMaxLength": 30,
+        "groupWidth": 0.7,
+        "barWidth": 0.97,
+        "barRadius": 0,
+        "fullHighlight": false,
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "xField": "project"
+      }
+    },
+    {
+      "id": 202,
+      "type": "row",
+      "title": "What should I optimize?",
+      "gridPos": {
+        "x": 0,
+        "y": 29,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "datasource": null,
+      "panels": []
     },
     {
       "id": 22,
       "type": "table",
       "title": "Top Tools (All Agents Combined)",
       "gridPos": {
-        "x": 8,
-        "y": 41,
-        "w": 16,
-        "h": 8
+        "x": 0,
+        "y": 30,
+        "w": 8,
+        "h": 10
       },
       "datasource": {
         "type": "frser-sqlite-datasource",
@@ -1505,10 +1171,10 @@
       "type": "barchart",
       "title": "Most Denied Tools",
       "gridPos": {
-        "x": 0,
-        "y": 49,
-        "w": 12,
-        "h": 8
+        "x": 8,
+        "y": 30,
+        "w": 8,
+        "h": 10
       },
       "datasource": {
         "type": "frser-sqlite-datasource",
@@ -1587,12 +1253,282 @@
       }
     },
     {
+      "id": 17,
+      "type": "barchart",
+      "title": "Cost per Tool Call by Agent",
+      "gridPos": {
+        "x": 16,
+        "y": 30,
+        "w": 8,
+        "h": 10
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawQueryText": "SELECT role, CASE WHEN SUM(tool_calls) > 0 THEN ROUND(SUM(cost_usd) / SUM(tool_calls), 4) ELSE 0 END as cost_per_tool_call FROM agent_metrics WHERE role != 'parent' AND tool_calls > 0 GROUP BY role ORDER BY cost_per_tool_call DESC",
+          "queryText": "SELECT role, CASE WHEN SUM(tool_calls) > 0 THEN ROUND(SUM(cost_usd) / SUM(tool_calls), 4) ELSE 0 END as cost_per_tool_call FROM agent_metrics WHERE role != 'parent' AND tool_calls > 0 GROUP BY role ORDER BY cost_per_tool_call DESC",
+          "queryType": "table",
+          "timeColumns": [],
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.05
+              },
+              {
+                "color": "red",
+                "value": 0.10
+              }
+            ]
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 1
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cost_per_tool_call"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Cost / Tool Call"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xTickLabelRotation": 0,
+        "xTickLabelMaxLength": 20,
+        "groupWidth": 0.7,
+        "barWidth": 0.97,
+        "barRadius": 0,
+        "fullHighlight": false,
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "xField": "role"
+      }
+    },
+    {
+      "id": 203,
+      "type": "row",
+      "title": "How is quality?",
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "datasource": null,
+      "panels": []
+    },
+    {
+      "id": 16,
+      "type": "barchart",
+      "title": "Error Rate by Agent Type",
+      "gridPos": {
+        "x": 0,
+        "y": 41,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawQueryText": "SELECT role, CASE WHEN SUM(tool_calls) > 0 THEN ROUND(CAST(SUM(tool_errors) AS REAL) / SUM(tool_calls) * 100, 1) ELSE 0 END as error_pct FROM agent_metrics WHERE role != 'parent' GROUP BY role ORDER BY error_pct DESC",
+          "queryText": "SELECT role, CASE WHEN SUM(tool_calls) > 0 THEN ROUND(CAST(SUM(tool_errors) AS REAL) / SUM(tool_calls) * 100, 1) ELSE 0 END as error_pct FROM agent_metrics WHERE role != 'parent' GROUP BY role ORDER BY error_pct DESC",
+          "queryType": "table",
+          "timeColumns": [],
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5
+              },
+              {
+                "color": "red",
+                "value": 15
+              }
+            ]
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 1
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "error_pct"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Error %"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xTickLabelRotation": 0,
+        "xTickLabelMaxLength": 20,
+        "groupWidth": 0.7,
+        "barWidth": 0.97,
+        "barRadius": 0,
+        "fullHighlight": false,
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "xField": "role"
+      }
+    },
+    {
+      "id": 18,
+      "type": "barchart",
+      "title": "Latency Distribution by Agent Type",
+      "gridPos": {
+        "x": 8,
+        "y": 41,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawQueryText": "SELECT role, COALESCE(AVG(avg_turn_latency_seconds), 0) as avg_latency FROM agent_metrics WHERE role != 'parent' AND avg_turn_latency_seconds > 0 GROUP BY role ORDER BY avg_latency DESC",
+          "queryText": "SELECT role, COALESCE(AVG(avg_turn_latency_seconds), 0) as avg_latency FROM agent_metrics WHERE role != 'parent' AND avg_turn_latency_seconds > 0 GROUP BY role ORDER BY avg_latency DESC",
+          "queryType": "table",
+          "timeColumns": [],
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 2,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 1
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "avg_latency"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Avg Latency (s)"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xTickLabelRotation": 0,
+        "xTickLabelMaxLength": 20,
+        "groupWidth": 0.7,
+        "barWidth": 0.97,
+        "barRadius": 0,
+        "fullHighlight": false,
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "xField": "role"
+      }
+    },
+    {
       "id": 14,
       "type": "barchart",
       "title": "Session Duration by Agent Type",
       "gridPos": {
-        "x": 0,
-        "y": 57,
+        "x": 16,
+        "y": 41,
         "w": 8,
         "h": 8
       },
@@ -1652,10 +1588,10 @@
       "type": "timeseries",
       "title": "Cache Efficiency Over Time",
       "gridPos": {
-        "x": 8,
-        "y": 57,
-        "w": 8,
-        "h": 8
+        "x": 0,
+        "y": 49,
+        "w": 24,
+        "h": 6
       },
       "datasource": {
         "type": "frser-sqlite-datasource",
@@ -1729,13 +1665,130 @@
       }
     },
     {
-      "id": 23,
-      "type": "barchart",
-      "title": "Turns by Agent Type (Detail)",
+      "id": 204,
+      "type": "row",
+      "title": "Deep dive",
       "gridPos": {
-        "x": 16,
-        "y": 57,
-        "w": 8,
+        "x": 0,
+        "y": 55,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "datasource": null,
+      "panels": []
+    },
+    {
+      "id": 9,
+      "type": "barchart",
+      "title": "Token Breakdown",
+      "gridPos": {
+        "x": 0,
+        "y": 56,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawQueryText": "SELECT model_family, SUM(input_tokens) as input_tok, SUM(output_tokens) as output_tok, SUM(cache_read_tokens) as cache_tok FROM agent_metrics GROUP BY model_family",
+          "queryText": "SELECT model_family, SUM(input_tokens) as input_tok, SUM(output_tokens) as output_tok, SUM(cache_read_tokens) as cache_tok FROM agent_metrics GROUP BY model_family",
+          "queryType": "table",
+          "timeColumns": [],
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 1,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "input_tok"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Input"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "output_tok"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Output"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cache_tok"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Cache Read"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "orientation": "vertical",
+        "xTickLabelRotation": 0,
+        "xTickLabelMaxLength": 20,
+        "groupWidth": 0.7,
+        "barWidth": 0.97,
+        "barRadius": 0,
+        "fullHighlight": false,
+        "stacking": "normal",
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "xField": "model_family"
+      }
+    },
+    {
+      "id": 10,
+      "type": "barchart",
+      "title": "Turns by Agent Type",
+      "gridPos": {
+        "x": 12,
+        "y": 56,
+        "w": 12,
         "h": 8
       },
       "datasource": {
@@ -1795,7 +1848,7 @@
       "title": "Turn Statistics by Agent Type",
       "gridPos": {
         "x": 0,
-        "y": 65,
+        "y": 64,
         "w": 24,
         "h": 8
       },
@@ -1990,27 +2043,211 @@
       "transformations": []
     },
     {
-      "id": 101,
-      "type": "row",
-      "title": "Quality & Efficiency",
+      "id": 13,
+      "type": "table",
+      "title": "Tool Usage Heatmap (by Agent)",
       "gridPos": {
         "x": 0,
-        "y": 73,
+        "y": 72,
         "w": 24,
-        "h": 1
+        "h": 10
       },
-      "collapsed": false,
-      "datasource": null,
-      "panels": []
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claude-metrics-sqlite"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claude-metrics-sqlite"
+          },
+          "rawQueryText": "SELECT role, tool_name, SUM(call_count) as calls, SUM(error_count) as errors FROM agent_tool_usage WHERE role != 'parent' GROUP BY role, tool_name ORDER BY calls DESC",
+          "queryText": "SELECT role, tool_name, SUM(call_count) as calls, SUM(error_count) as errors FROM agent_tool_usage WHERE role != 'parent' GROUP BY role, tool_name ORDER BY calls DESC",
+          "queryType": "table",
+          "timeColumns": [],
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true,
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "role"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Agent"
+              },
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "tool_name"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Tool"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "calls"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Calls"
+              },
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 80
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "blue",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 10
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 50
+                    },
+                    {
+                      "color": "red",
+                      "value": 200
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "errors"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Errors"
+              },
+              {
+                "id": "custom.width",
+                "value": 80
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 1
+                    },
+                    {
+                      "color": "red",
+                      "value": 5
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Calls",
+            "desc": true
+          }
+        ]
+      },
+      "transformations": []
     },
     {
-      "id": 16,
+      "id": 23,
       "type": "barchart",
-      "title": "Error Rate by Agent Type",
+      "title": "Turns by Agent Type (Detail)",
       "gridPos": {
         "x": 0,
-        "y": 74,
-        "w": 8,
+        "y": 82,
+        "w": 12,
         "h": 8
       },
       "datasource": {
@@ -2023,8 +2260,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT role, CASE WHEN SUM(tool_calls) > 0 THEN ROUND(CAST(SUM(tool_errors) AS REAL) / SUM(tool_calls) * 100, 1) ELSE 0 END as error_pct FROM agent_metrics WHERE role != 'parent' GROUP BY role ORDER BY error_pct DESC",
-          "queryText": "SELECT role, CASE WHEN SUM(tool_calls) > 0 THEN ROUND(CAST(SUM(tool_errors) AS REAL) / SUM(tool_calls) * 100, 1) ELSE 0 END as error_pct FROM agent_metrics WHERE role != 'parent' GROUP BY role ORDER BY error_pct DESC",
+          "rawQueryText": "SELECT role, SUM(turns) as total_turns FROM agent_metrics WHERE role != 'parent' GROUP BY role ORDER BY total_turns DESC",
+          "queryText": "SELECT role, SUM(turns) as total_turns FROM agent_metrics WHERE role != 'parent' GROUP BY role ORDER BY total_turns DESC",
           "queryType": "table",
           "timeColumns": [],
           "refId": "A"
@@ -2032,190 +2269,8 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "percent",
-          "decimals": 1,
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 5
-              },
-              {
-                "color": "red",
-                "value": 15
-              }
-            ]
-          },
-          "custom": {
-            "fillOpacity": 80,
-            "lineWidth": 1
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "error_pct"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Error %"
-              }
-            ]
-          }
-        ]
-      },
-      "options": {
-        "orientation": "horizontal",
-        "xTickLabelRotation": 0,
-        "xTickLabelMaxLength": 20,
-        "groupWidth": 0.7,
-        "barWidth": 0.97,
-        "barRadius": 0,
-        "fullHighlight": false,
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        },
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": false
-        },
-        "xField": "role"
-      }
-    },
-    {
-      "id": 17,
-      "type": "barchart",
-      "title": "Cost per Tool Call by Agent",
-      "gridPos": {
-        "x": 8,
-        "y": 74,
-        "w": 8,
-        "h": 8
-      },
-      "datasource": {
-        "type": "frser-sqlite-datasource",
-        "uid": "claude-metrics-sqlite"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "frser-sqlite-datasource",
-            "uid": "claude-metrics-sqlite"
-          },
-          "rawQueryText": "SELECT role, CASE WHEN SUM(tool_calls) > 0 THEN ROUND(SUM(cost_usd) / SUM(tool_calls), 4) ELSE 0 END as cost_per_tool_call FROM agent_metrics WHERE role != 'parent' AND tool_calls > 0 GROUP BY role ORDER BY cost_per_tool_call DESC",
-          "queryText": "SELECT role, CASE WHEN SUM(tool_calls) > 0 THEN ROUND(SUM(cost_usd) / SUM(tool_calls), 4) ELSE 0 END as cost_per_tool_call FROM agent_metrics WHERE role != 'parent' AND tool_calls > 0 GROUP BY role ORDER BY cost_per_tool_call DESC",
-          "queryType": "table",
-          "timeColumns": [],
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "currencyUSD",
-          "decimals": 4,
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 0.05
-              },
-              {
-                "color": "red",
-                "value": 0.10
-              }
-            ]
-          },
-          "custom": {
-            "fillOpacity": 80,
-            "lineWidth": 1
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "cost_per_tool_call"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Cost / Tool Call"
-              }
-            ]
-          }
-        ]
-      },
-      "options": {
-        "orientation": "horizontal",
-        "xTickLabelRotation": 0,
-        "xTickLabelMaxLength": 20,
-        "groupWidth": 0.7,
-        "barWidth": 0.97,
-        "barRadius": 0,
-        "fullHighlight": false,
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        },
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": false
-        },
-        "xField": "role"
-      }
-    },
-    {
-      "id": 18,
-      "type": "barchart",
-      "title": "Latency Distribution by Agent Type",
-      "gridPos": {
-        "x": 16,
-        "y": 74,
-        "w": 8,
-        "h": 8
-      },
-      "datasource": {
-        "type": "frser-sqlite-datasource",
-        "uid": "claude-metrics-sqlite"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "frser-sqlite-datasource",
-            "uid": "claude-metrics-sqlite"
-          },
-          "rawQueryText": "SELECT role, COALESCE(AVG(avg_turn_latency_seconds), 0) as avg_latency FROM agent_metrics WHERE role != 'parent' AND avg_turn_latency_seconds > 0 GROUP BY role ORDER BY avg_latency DESC",
-          "queryText": "SELECT role, COALESCE(AVG(avg_turn_latency_seconds), 0) as avg_latency FROM agent_metrics WHERE role != 'parent' AND avg_turn_latency_seconds > 0 GROUP BY role ORDER BY avg_latency DESC",
-          "queryType": "table",
-          "timeColumns": [],
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s",
-          "decimals": 2,
+          "unit": "short",
+          "decimals": 0,
           "color": {
             "mode": "palette-classic"
           },
@@ -2224,20 +2279,7 @@
             "lineWidth": 1
           }
         },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "avg_latency"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Avg Latency (s)"
-              }
-            ]
-          }
-        ]
+        "overrides": []
       },
       "options": {
         "orientation": "horizontal",
