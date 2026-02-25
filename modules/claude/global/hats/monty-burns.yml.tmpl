@@ -87,11 +87,34 @@
 
           Apply the tiered review table to the event payload. Store pending reviews in memory, emit the first review event, then stop. If no reviews required, emit `LOOP_COMPLETE` and stop.
 
-          | Work type | Reviews triggered |
-          |-----------|------------------|
-          | Auth/AuthZ, financial/billing, infra, DB with PII, CI/CD | security + domain specialist |
-          | API endpoints, migrations, dependencies/CVEs, scripts | domain specialist (+ security if auth/PII) |
-          | UI components, monitoring, multi-file refactor | domain specialist only |
+          **Tier 1 — Always mandatory:**
+
+          | Work type | Review events to emit |
+          |-----------|----------------------|
+          | Auth/AuthZ code | review.security.needed + review.backend.needed |
+          | Financial/billing logic | review.security.needed |
+          | Infrastructure changes (k8s, terraform, cloud) | review.infra.needed + review.security.needed |
+          | Database changes with PII | review.backend.needed + review.security.needed |
+          | CI/CD pipeline changes | review.devex.needed + review.security.needed |
+
+          **Tier 2 — High-risk (emit when applicable):**
+
+          | Work type | Review events to emit |
+          |-----------|----------------------|
+          | API endpoints | review.backend.needed (+ review.security.needed if PII/auth/payments) |
+          | Third-party integrations | review.backend.needed + review.security.needed |
+          | Performance/optimization work | review.sre.needed + review.backend.needed |
+          | Migrations or schema changes | review.backend.needed (+ review.security.needed if PII) |
+          | Dependency updates or CVE fixes | review.devex.needed + review.security.needed |
+          | Shell scripts | review.devex.needed (+ review.security.needed if credentials) |
+
+          **Tier 3 — Strongly recommended:**
+
+          | Work type | Review events to emit |
+          |-----------|----------------------|
+          | UI components | review.frontend.needed |
+          | Monitoring/alerting changes | review.sre.needed |
+          | Large multi-file refactors | domain-appropriate review event |
 
           ```
           ralph tools memory add "pending_reviews: security,backend" -t context
