@@ -1392,10 +1392,6 @@
               {
                 "id": "displayName",
                 "value": "Tool Name"
-              },
-              {
-                "id": "custom.width",
-                "value": 200
               }
             ]
           },
