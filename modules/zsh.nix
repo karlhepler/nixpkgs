@@ -33,9 +33,6 @@ in {
 
       # Kanban CLI: Hide own session by default (show only other sessions)
       export KANBAN_HIDE_MINE=true
-
-      # Initialize zoxide for all zsh contexts
-      eval "$(${pkgs.zoxide}/bin/zoxide init --cmd cd zsh)"
     '';
     initContent = ''
       # Set up fpath to include completion directories
@@ -253,6 +250,11 @@ in {
       if [ -z "$TMUX" ]; then
         exec ${homeDirectory}/.nix-profile/bin/tmux new-session
       fi
+
+      # Zoxide must be initialized at the very end of shell config to avoid
+      # its "possible configuration issue" warning. It needs to run after
+      # compinit, all plugins, and all completions are already loaded.
+      eval "$(${pkgs.zoxide}/bin/zoxide init --cmd cd zsh)"
     '';
     shellAliases = {
       desk = "cd ~/Desktop";
