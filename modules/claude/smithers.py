@@ -15,6 +15,8 @@ Usage:
     smithers --max-ralph-iterations N 123  # Custom Ralph iterations
     smithers --max-iterations N 123        # Custom watch cycles
     smithers --expunge 123                 # Delete .ralph memory, then watch
+    smithers --debug                       # Enable Ralph diagnostics mode
+    smithers --debug 123                   # Debug mode with explicit PR number
 
 Options:
     --max-ralph-iterations N    How many times to ask Ralph to fix issues (default: 4)
@@ -23,6 +25,8 @@ Options:
                                 Can also set via SMITHERS_MAX_ITERATIONS env var
     --expunge                   Delete .ralph memory directory before starting for a
                                 clean-slate restart (uses trash CLI, not rm -rf)
+    --debug                     Enable Ralph diagnostics mode (passes --debug to burns,
+                                sets RALPH_DIAGNOSTICS=1, generates JSONL logs in .ralph/diagnostics/)
     Priority: CLI flag > env var > default
 """
 
@@ -1852,6 +1856,12 @@ def main():
         default=False,
         help="Delete .ralph memory directory before starting for a clean-slate restart"
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        default=False,
+        help="Enable Ralph diagnostics mode (passes --debug to burns, sets RALPH_DIAGNOSTICS=1)"
+    )
 
     args = parser.parse_args()
 
@@ -1918,7 +1928,8 @@ def main():
             current_cycle = cycle
             ralph_invoked, should_restart = main_loop_iteration(
                 cycle, ralph_invocation_count, pr_number, pr_url, owner, repo,
-                max_ralph_invocations, effective_max_cycles, start_time
+                max_ralph_invocations, effective_max_cycles, start_time,
+                debug=args.debug
             )
             if ralph_invoked:
                 ralph_invocation_count += 1
@@ -1938,7 +1949,8 @@ def main():
             current_cycle = effective_max_cycles + 1
             ralph_invoked, _ = main_loop_iteration(
                 effective_max_cycles + 1, ralph_invocation_count, pr_number, pr_url, owner, repo,
-                max_ralph_invocations, effective_max_cycles + 1, start_time
+                max_ralph_invocations, effective_max_cycles + 1, start_time,
+                debug=args.debug
             )
             if ralph_invoked:
                 ralph_invocation_count += 1
@@ -1980,7 +1992,8 @@ def main_loop_iteration(
     repo: str,
     max_ralph_invocations: int,
     max_cycles: int,
-    start_time: float
+    start_time: float,
+    debug: bool = False
 ) -> tuple:
     """Single iteration of the main watch loop.
 
@@ -2169,14 +2182,19 @@ def main_loop_iteration(
     # Prepare environment with Ralph configuration
     env = os.environ.copy()
 
-    log(f"🚀 Invoking Monty Burns (iteration {work_iteration}/{total_iterations}): burns --pr {pr_number} {prompt_file}")
+    burns_cmd = ["burns", "--pr", str(pr_number)]
+    if debug:
+        burns_cmd.append("--debug")
+    burns_cmd.append(prompt_file)
+
+    log(f"🚀 Invoking Monty Burns (iteration {work_iteration}/{total_iterations}): {' '.join(burns_cmd)}")
     try:
         # Run burns with the prompt file and PR context
         # Use Popen with process group for proper signal handling
         # This ensures all child processes (Ralph and its subprocesses) get signals
         # CRITICAL: Pass --pr flag so Ralph knows PR already exists (prevents "no PR, need to create" bug)
         process = subprocess.Popen(
-            ["burns", "--pr", str(pr_number), prompt_file],
+            burns_cmd,
             env=env,
             start_new_session=True  # Create new process group
         )

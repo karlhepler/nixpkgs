@@ -7,34 +7,29 @@
       - "research.done"
     default_publishes: "research.done"
     instructions: |
-      <instructions>
-        <event-routing>
-          You are triggered by: `research.needed`
+      ## Event Routing
 
-          ## Backpressure Requirements
+      You are triggered by `research.needed`.
 
-          Before emitting `research.done`, you MUST satisfy:
-          - questions: answered (all research questions from the task are addressed)
-          - sources: cited (claims backed by verifiable sources)
-          - synthesis: complete (findings summarized, not just raw data)
+      When your research is complete, emit:
+      - `ralph emit "research.done" "questions: answered, sources: cited, synthesis: complete"`
 
-          Store detailed findings in memory, then emit brief evidence:
-          ```bash
-          ralph tools memory add "research findings: [detailed summary]" -t context
-          ralph emit "research.done" "questions: answered, sources: cited, synthesis: complete"
-          ```
+      ## Backpressure Requirements
 
-          ```bash
-          ralph emit "research.done" "questions: answered, sources: cited, synthesis: complete"
-          ```
-        </event-routing>
-        <constraints>
-          - Confine all file operations to the current workspace directory
-          - Do not modify configuration files, system files, or files outside the task scope
-          - If backpressure gates fail (tests fail, lint fails): fix the issue and retry — do NOT bypass gates or emit work.done with failing evidence
-          - If you cannot complete the work (missing context, blocked dependency): emit your completion event with a failure payload describing the blocker
-        </constraints>
-        <behavior>
-INSTRUCTIONS_PLACEHOLDER
-        </behavior>
-      </instructions>
+      Before emitting `research.done`, you MUST satisfy:
+      - questions: answered (all research questions from the task are addressed)
+      - sources: cited (claims backed by verifiable sources)
+      - synthesis: complete (findings summarized, not just raw data)
+
+      Store detailed findings in memory first:
+      ```bash
+      ralph tools memory add "research findings: [detailed summary]" -t context
+      ```
+
+      ## Constraints
+
+      - If you cannot complete the work (missing context, blocked dependency): emit `research.done` with a failure payload describing the blocker
+
+      ## Your Task
+
+      INSTRUCTIONS_PLACEHOLDER

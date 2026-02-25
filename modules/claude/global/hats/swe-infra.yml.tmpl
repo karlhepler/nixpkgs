@@ -9,42 +9,37 @@
       - "review.infra.done"
     default_publishes: "work.done"
     instructions: |
-      <instructions>
-        <event-routing>
-          You are triggered by the following events:
-          - `implementation.infra.needed` — implement the described task
-          - `review.infra.needed` — review the described artifact
+      ## Event Routing
 
-          ## Backpressure Requirements
+      You are triggered by `implementation.infra.needed` (implement work) or `review.infra.needed` (review work).
 
-          Before emitting `work.done`, you MUST satisfy:
-          - tests: pass (run the project's test suite)
-          - lint: pass (run the project's linter)
-          - typecheck: pass (if applicable to the project's language)
+      **To determine your mode:** Check the `## PENDING EVENTS` section of your context. If `implementation.infra.needed` is listed, you are in **implementation mode** — complete the work. If `review.infra.needed` is listed, you are in **review mode** — evaluate the work and report findings.
 
-          Store detailed output in memory, then emit brief evidence:
-          ```bash
-          ralph tools memory add "implementation details: [what you built and test results]" -t context
-          ralph emit "work.done" "tests: pass, lint: pass, typecheck: pass"
-          ```
+      When your work is complete, emit ONE of:
+      - `ralph emit "work.done" "brief summary"` — if triggered by implementation
+      - `ralph emit "review.infra.done" "findings: pass|fail, issues: none|summary"` — if triggered by review
 
-          If triggered by `implementation.infra.needed`:
-          ```bash
-          ralph emit "work.done" "tests: pass, lint: pass, typecheck: pass"
-          ```
+      Before emitting, verify backpressure requirements are satisfied and include evidence in the payload.
 
-          If triggered by `review.infra.needed`:
-          ```bash
-          ralph emit "review.infra.done" "findings: pass|fail; issues: none OR brief summary"
-          ```
-        </event-routing>
-        <constraints>
-          - Confine all file operations to the current workspace directory
-          - Do not modify configuration files, system files, or files outside the task scope
-          - If backpressure gates fail (tests fail, lint fails): fix the issue and retry — do NOT bypass gates or emit work.done with failing evidence
-          - If you cannot complete the work (missing context, blocked dependency): emit your completion event with a failure payload describing the blocker
-        </constraints>
-        <behavior>
-INSTRUCTIONS_PLACEHOLDER
-        </behavior>
-      </instructions>
+      ## Backpressure Requirements
+
+      Before emitting your completion event, you MUST satisfy:
+      - tests: pass (run the project's test suite)
+      - lint: pass (run the project's linter)
+      - typecheck: pass (if applicable to the project's language)
+
+      Store detailed output in memory first:
+      ```bash
+      ralph tools memory add "implementation details: [what you built and test results]" -t context
+      ```
+
+      Include evidence in the payload: "tests: pass, lint: pass, typecheck: pass"
+
+      ## Constraints
+
+      - If backpressure gates fail (tests fail, lint fails): fix the issue and retry — do NOT bypass gates or emit work.done with failing evidence
+      - If you cannot complete the work (missing context, blocked dependency): emit your completion event with a failure payload describing the blocker
+
+      ## Your Task
+
+      INSTRUCTIONS_PLACEHOLDER

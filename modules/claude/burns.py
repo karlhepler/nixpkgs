@@ -8,12 +8,15 @@ Usage:
     burns --pr 123 "prompt"                    # PR already exists (e.g., from smithers)
     burns --pr https://github.com/... "prompt" # PR URL provided
     burns --max-ralph-iterations N "prompt"    # Custom max iterations
+    burns --debug "prompt"                     # Enable Ralph diagnostics mode
 
 Options:
     --pr NUMBER_OR_URL          Pull request already exists (skips PR creation requirement)
     --max-ralph-iterations N    Max iterations for Ralph (default: 20)
                                 Can also set via BURNS_MAX_RALPH_ITERATIONS env var
                                 Priority: CLI flag > env var > default
+    --debug                     Enable Ralph diagnostics mode (sets RALPH_DIAGNOSTICS=1)
+                                Generates detailed JSONL logs in .ralph/diagnostics/
 """
 
 import argparse
@@ -234,6 +237,12 @@ def main():
         default=None,
         help="PR number or URL if pull request already exists (e.g., '123' or 'https://github.com/owner/repo/pull/123')"
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        default=False,
+        help="Enable Ralph diagnostics mode (sets RALPH_DIAGNOSTICS=1, generates JSONL logs in .ralph/diagnostics/)"
+    )
 
     args = parser.parse_args()
 
@@ -308,6 +317,8 @@ You are running in autonomous mode within: {working_dir}
 
     # Prepare environment
     env = os.environ.copy()
+    if args.debug:
+        env["RALPH_DIAGNOSTICS"] = "1"
 
     # Pre-clean stale tool-results artifacts so Claude doesn't re-load them
     # on startup. Only tool-results/ is removed; memory/ and other dirs are
