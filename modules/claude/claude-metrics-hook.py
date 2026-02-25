@@ -9,6 +9,11 @@ cost, and writes one row per model to ~/.claude/metrics/claude-metrics.db.
 V2 additions: tool usage per session, session duration, turn latency, cache
 hit ratio, and tool error counts.
 
+V3 fix: UPSERT keyed on (session_id, agent_id, role, model) prevents duplicate
+rows when the hook fires multiple times per session (once per SubagentStop and
+once at final Stop). Each subsequent fire replaces the previous row with the
+latest cumulative totals from the transcript.
+
 Never exits non-zero — all errors are swallowed silently to avoid disrupting
 Claude Code's hook pipeline.
 """
@@ -69,7 +74,7 @@ CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS agent_metrics (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id TEXT NOT NULL,
-    agent_id TEXT,
+    agent_id TEXT NOT NULL DEFAULT '',
     role TEXT NOT NULL,
     recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     working_directory TEXT,
@@ -87,29 +92,22 @@ CREATE TABLE IF NOT EXISTS agent_metrics (
     avg_turn_latency_seconds REAL DEFAULT 0.0,
     cache_hit_ratio REAL DEFAULT 0.0,
     tool_calls INTEGER DEFAULT 0,
-    tool_errors INTEGER DEFAULT 0
+    tool_errors INTEGER DEFAULT 0,
+    UNIQUE(session_id, agent_id, role, model)
 )
 """
-
-# Columns added in V2 — each entry: (column_name, column_definition)
-V2_NEW_COLUMNS = [
-    ("duration_seconds", "REAL DEFAULT 0.0"),
-    ("avg_turn_latency_seconds", "REAL DEFAULT 0.0"),
-    ("cache_hit_ratio", "REAL DEFAULT 0.0"),
-    ("tool_calls", "INTEGER DEFAULT 0"),
-    ("tool_errors", "INTEGER DEFAULT 0"),
-]
 
 CREATE_TABLE_TOOL_USAGE_SQL = """
 CREATE TABLE IF NOT EXISTS agent_tool_usage (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id TEXT NOT NULL,
-    agent_id TEXT,
+    agent_id TEXT NOT NULL DEFAULT '',
     role TEXT NOT NULL,
     recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     tool_name TEXT NOT NULL,
     call_count INTEGER NOT NULL DEFAULT 0,
-    error_count INTEGER NOT NULL DEFAULT 0
+    error_count INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(session_id, agent_id, role, tool_name)
 )
 """
 
@@ -151,15 +149,21 @@ def detect_model_family(model: str) -> str:
 # Cost calculation
 # ---------------------------------------------------------------------------
 def calculate_cost(family: str, tokens: dict) -> float:
-    """Calculate USD cost given model family and token counts."""
+    """
+    Calculate USD cost given model family and token counts.
+
+    All prices in PRICING table are per 1 million tokens.
+    Token counts are raw totals from transcripts.
+    Formula: (tokens / 1_000_000) * price_per_million = cost_usd
+    """
     prices = PRICING.get(family, PRICING["unknown"])
     per_million = 1_000_000.0
     cost = (
-        tokens["input"] * prices["input"] / per_million
-        + tokens["output"] * prices["output"] / per_million
-        + tokens["cache_creation_5m"] * prices["cache_creation_5m"] / per_million
-        + tokens["cache_creation_1h"] * prices["cache_creation_1h"] / per_million
-        + tokens["cache_read"] * prices["cache_read"] / per_million
+        tokens.get("input", 0) * prices["input"] / per_million
+        + tokens.get("output", 0) * prices["output"] / per_million
+        + tokens.get("cache_creation_5m", 0) * prices["cache_creation_5m"] / per_million
+        + tokens.get("cache_creation_1h", 0) * prices["cache_creation_1h"] / per_million
+        + tokens.get("cache_read", 0) * prices["cache_read"] / per_million
     )
     return cost
 
@@ -290,6 +294,12 @@ def parse_transcript(transcript_path: str) -> dict:
                         continue
                     tool_name = block.get("name", "unknown")
                     tool_id = block.get("id", "")
+                    # For Bash tools, enrich name with the command being run
+                    if tool_name == "Bash":
+                        command = block.get("input", {}).get("command", "")
+                        if command:
+                            truncated = command[:50] + "..." if len(command) > 50 else command
+                            tool_name = f"Bash:{truncated}"
                     if tool_name not in tools:
                         tools[tool_name] = {"calls": 0, "errors": 0}
                     tools[tool_name]["calls"] += 1
@@ -351,12 +361,15 @@ def lookup_kanban_session(working_directory: str, session_id: str):
     """
     Read {working_directory}/.kanban/sessions.json and return the friendly
     session name for session_id. Returns None on any failure.
+
+    sessions.json keys are the first 8 characters of the Claude session UUID
+    (matching how kanban session-hook stores them via resolve_session_name).
     """
     try:
         sessions_path = Path(working_directory) / ".kanban" / "sessions.json"
         with open(sessions_path, "r", encoding="utf-8") as fh:
             sessions = json.load(fh)
-        return sessions.get(session_id)
+        return sessions.get(session_id[:8])
     except Exception:
         return None
 
@@ -364,6 +377,23 @@ def lookup_kanban_session(working_directory: str, session_id: str):
 # ---------------------------------------------------------------------------
 # SQLite writer
 # ---------------------------------------------------------------------------
+def _needs_recreation(conn: sqlite3.Connection) -> bool:
+    """
+    Return True if agent_metrics lacks the UNIQUE constraint introduced in V3.
+
+    SQLite encodes inline UNIQUE constraints as auto-named indexes with sql=NULL
+    (e.g. sqlite_autoindex_agent_metrics_1). We detect presence of the V3
+    constraint by checking whether any such autoindex exists on agent_metrics,
+    which only appears after the UNIQUE clause is added to the DDL.
+    """
+    cur = conn.execute(
+        "SELECT COUNT(*) FROM sqlite_master "
+        "WHERE type='index' AND tbl_name='agent_metrics' "
+        "AND name LIKE 'sqlite_autoindex_%'"
+    )
+    return cur.fetchone()[0] == 0
+
+
 def open_db() -> sqlite3.Connection:
     """Open (and migrate) the metrics database."""
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -371,19 +401,23 @@ def open_db() -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=5000")
 
-    # Create tables (fresh DB path)
+    # V3 migration: if the unique constraint on agent_metrics is missing, drop
+    # and recreate both tables so the new DDL (with UNIQUE) takes effect.
+    # This is a one-time operation on existing databases.
+    try:
+        existing = conn.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='agent_metrics'"
+        ).fetchone()[0]
+        if existing and _needs_recreation(conn):
+            conn.execute("DROP TABLE IF EXISTS agent_metrics")
+            conn.execute("DROP TABLE IF EXISTS agent_tool_usage")
+            conn.commit()
+    except sqlite3.OperationalError:
+        pass
+
+    # Create tables (fresh DB or post-migration)
     conn.execute(CREATE_TABLE_SQL)
     conn.execute(CREATE_TABLE_TOOL_USAGE_SQL)
-
-    # V2 migration: add new columns to agent_metrics if they don't exist yet.
-    # sqlite3 raises OperationalError when a column already exists — that's fine.
-    for col_name, col_def in V2_NEW_COLUMNS:
-        try:
-            conn.execute(
-                f"ALTER TABLE agent_metrics ADD COLUMN {col_name} {col_def}"
-            )
-        except sqlite3.OperationalError:
-            pass  # Column already exists — no-op
 
     for idx_sql in CREATE_INDEX_SQL:
         conn.execute(idx_sql)
@@ -395,7 +429,7 @@ def open_db() -> sqlite3.Connection:
 def write_metrics(
     conn: sqlite3.Connection,
     session_id: str,
-    agent_id,
+    agent_id: str,
     role: str,
     working_directory: str,
     kanban_session,
@@ -405,8 +439,14 @@ def write_metrics(
     avg_turn_latency_seconds: float,
 ) -> None:
     """
-    Insert one row per model into agent_metrics and one row per tool_name
+    Upsert one row per model into agent_metrics and one row per tool_name
     into agent_tool_usage.
+
+    Uses INSERT INTO ... ON CONFLICT DO UPDATE SET rather than INSERT OR REPLACE
+    so that the row's id and recorded_at are preserved across hook re-fires.
+    INSERT OR REPLACE deletes then re-inserts (changing id and recorded_at),
+    which causes Grafana panels to flicker when time-series queries filter by
+    recorded_at — the row appears to move forward in time on each hook fire.
     """
     for model, tokens in models.items():
         family = detect_model_family(model)
@@ -429,6 +469,22 @@ def write_metrics(
                 duration_seconds, avg_turn_latency_seconds,
                 cache_hit_ratio, tool_calls, tool_errors
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(session_id, agent_id, role, model) DO UPDATE SET
+                working_directory = excluded.working_directory,
+                kanban_session = excluded.kanban_session,
+                model_family = excluded.model_family,
+                turns = excluded.turns,
+                input_tokens = excluded.input_tokens,
+                output_tokens = excluded.output_tokens,
+                cache_creation_5m_tokens = excluded.cache_creation_5m_tokens,
+                cache_creation_1h_tokens = excluded.cache_creation_1h_tokens,
+                cache_read_tokens = excluded.cache_read_tokens,
+                cost_usd = excluded.cost_usd,
+                duration_seconds = excluded.duration_seconds,
+                avg_turn_latency_seconds = excluded.avg_turn_latency_seconds,
+                cache_hit_ratio = excluded.cache_hit_ratio,
+                tool_calls = excluded.tool_calls,
+                tool_errors = excluded.tool_errors
             """,
             (
                 session_id,
@@ -460,6 +516,9 @@ def write_metrics(
                 session_id, agent_id, role,
                 tool_name, call_count, error_count
             ) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(session_id, agent_id, role, tool_name) DO UPDATE SET
+                call_count = excluded.call_count,
+                error_count = excluded.error_count
             """,
             (
                 session_id,
@@ -491,9 +550,14 @@ def main() -> None:
         transcript_path = payload.get("transcript_path", "")
 
     session_id = payload.get("session_id", "")
-    agent_id = payload.get("agent_id") or None
-    working_directory = os.getcwd()
+    agent_id = payload.get("agent_id") or ""
+    working_directory = payload.get("cwd") or os.getcwd()
     kanban_session = lookup_kanban_session(working_directory, session_id)
+    print(
+        f"DEBUG kanban: cwd={working_directory}, session_id={session_id}, "
+        f"first8={session_id[:8]}, kanban_session={kanban_session}",
+        file=sys.stderr,
+    )
 
     if not transcript_path:
         return
