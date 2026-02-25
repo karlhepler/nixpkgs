@@ -4,13 +4,13 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 Nix Home Manager configuration managing development environments with flakes. Creates reproducible system configurations (zsh, Neovim, terminal, git, dev tools).
 
-**Critical**: This repository MUST be installed at `~/.config/nixpkgs`.
+**Required**: This repository must be installed at `~/.config/nixpkgs`.
 
-## 🚨 ABSOLUTE PROHIBITION: NEVER HOMEBREW 🚨
+## 🚨 NEVER HOMEBREW 🚨
 
-**STOP. READ THIS FIRST.**
+**Read this before installing anything.**
 
-This is a **Nix-managed system**. Homebrew is **ABSOLUTELY FORBIDDEN**. No exceptions.
+This is a **Nix-managed system**. Homebrew is forbidden. No exceptions.
 
 ❌ Do NOT suggest `brew install` for ANYTHING
 ❌ Do NOT mention Homebrew as an option
@@ -87,6 +87,15 @@ This repository (`~/.config/nixpkgs`) is the **single source of truth** for syst
 
 **Why both files:** Skills contain the detailed expertise and prompts. Agent definitions enable reliable skill injection (95%+ vs 70% reliability) by preloading the skill content into the sub-agent's context at startup.
 
+### Exception Skills
+
+Some skills intentionally lack agent definitions because they are exception or workflow skills that run differently:
+
+- **Exception skills** (learn, workout-burns, workout-staff, project-planner) — Run via Skill tool directly, not delegated as background sub-agents. These are specialized capabilities invoked for specific use cases, not general-purpose team members.
+- **Workflow skills** (manage-pr-comments, review-pr-comments) — Run via Skill tool with specific CLI tooling integration. These coordinate external processes and don't fit the standard team member pattern.
+
+**Important:** The "Adding a team member" process (skill + agent) applies to standard delegatable team members only, not these exceptions. When updating or adding skills, distinguish between standard delegatable skills and exception/workflow skills.
+
 ## Quick Commands
 
 ### Configuration Management
@@ -159,7 +168,7 @@ This repository (`~/.config/nixpkgs`) is the **single source of truth** for syst
 2. **Repository Location**: MUST be installed at `~/.config/nixpkgs`
 3. **Use hms Command**: Always use `hms` for syncing to ensure proper git handling
 4. **Backup Synchronization**: Sync `~/.backup` folder with cloud storage for machine-specific configuration safety
-5. **--expunge Flag**: Claude Code must never use the `--expunge` flag with `hms`
+5. **--expunge Flag**: Claude Code must NEVER use the `--expunge` flag with `hms`
 6. **macOS ARM Only**: This configuration is locked to `aarch64-darwin` (Apple Silicon Macs)
 
 ## Configuration Structure
@@ -327,9 +336,10 @@ Both files made git-invisible by `hms` after first run. Backups linked via `*.la
 **Available skills:**
 - Engineering: swe-backend, swe-frontend, swe-fullstack, swe-devex, swe-infra, swe-security, swe-sre
 - Design: ux-designer, visual-designer
-- Support: researcher, scribe, ai-expert
-- Workflow: review-pr-comments
+- Support: researcher, scribe, ai-expert, ac-reviewer, debugger, learn
+- Workflow: review-pr-comments, manage-pr-comments
 - Business: finance, lawyer, marketing
+- Special: workout-burns, workout-staff, project-planner
 
 ## Reference Documentation
 

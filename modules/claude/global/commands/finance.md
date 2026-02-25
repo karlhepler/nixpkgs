@@ -385,7 +385,7 @@ Completed:
 - Analyzed pricing tiers — recommended 15% price increase on Pro plan based on willingness-to-pay data
 
 Blockers:
-- Need Redis credentials for distributed rate limiter
+- Need Q4 revenue data from accounting team
 ```
 
 Staff engineer just needs completion status and blockers, not implementation journey.

@@ -50,13 +50,13 @@ If you remember only 5 things from this skill:
 
 5. **Validate the Causal Chain** - DELIVERABLES + ASSUMPTIONS must logically lead to OBJECTIVE, which must lead to GOAL. If chain is Weak, add deliverables or reframe objective. Aim for Strong or Adequate confidence.
 
-## CRITICAL: Before Starting ANY Work
+## Before Starting
 
-**FIRST, read these files to understand the environment:**
-1. **`~/.claude/CLAUDE.md`** - Global guidelines, tools, and workflows (ALWAYS read this)
+**Read these files first to understand the environment:**
+1. **`~/.claude/CLAUDE.md`** - Global guidelines, tools, and workflows
 2. **Project-specific `CLAUDE.md`** (if it exists) - Project conventions, patterns, constraints
 
-These files contain critical context about tools, git workflows, coding preferences, and project structure. **Read them BEFORE doing anything else.**
+These files contain essential context about tools, git workflows, coding preferences, and project structure. Read them before doing anything else.
 
 **When researching libraries, APIs, or technical questions:**
 Follow this priority order:
@@ -151,9 +151,9 @@ The plan framework sections are the **spine** of your document. Protect their in
 
 The final plan document in the scratchpad is the artifact. No need to re-print it in chat at the end.
 
-## CRITICAL Requirements (Non-Negotiable)
+## Core Requirements
 
-Before proceeding with any plan, these three requirements are MANDATORY:
+Before proceeding with any plan, these three requirements apply:
 
 ### 1. Measurability is Mandatory
 **Every claim in GOAL must be measurable.** If it cannot be measured, it cannot be a success measure.
@@ -171,12 +171,12 @@ This requirement extends to:
 
 See Section 3 for detailed Verification Feasibility Check pattern.
 
-### 3. End of Project Status Report is Mandatory
-**Every project MUST end with a status report deliverable.**
+### 3. End of Project Status Report is Required
+**Every project ends with a status report deliverable.**
 - Purpose: Validate we achieved what we claimed we would achieve
 - Format: Table comparing Base | Target | Actual | Status for each success measure
 - Includes lessons learned and recommendations
-- This is NON-NEGOTIABLE accountability - never skip
+- This is accountability infrastructure - do not skip
 
 **These three requirements appear throughout the framework. If you encounter conflict or ambiguity, these requirements take precedence.**
 
@@ -293,9 +293,9 @@ Success measures verify we achieved the **outcome/change** (GOAL), not just that
 - ❌ BAD: "API endpoint deployed" (deliverable/output)
 - ✅ GOOD: "API response time <200ms at 1000 req/s" (outcome/goal)
 
-**CRITICAL: Verification Feasibility Check (MANDATORY FOR EVERY MEANS OF VERIFICATION)**
+**Verification Feasibility Check (required for every Means of Verification)**
 
-For EVERY "Means of Verification" entry, you MUST answer this question and **annotate the result directly in the table cell**:
+For each "Means of Verification" entry, answer this question and **annotate the result directly in the table cell**:
 
 **"Can we get this data TODAY with existing infrastructure?"**
 
@@ -410,7 +410,7 @@ If user cannot define measurable outcome → **Cannot proceed with planning.** M
 **Format:** Markdown table with 3 columns:
 - **Assumption** (what we're assuming is true)
 - **Risk Level** (High/Medium/Low)
-- **How to Monitor** (how to keep an eye on whether this assumption holds true - MUST reference real capability or become deliverable)
+- **How to Monitor** (how to keep an eye on whether this assumption holds true - must reference real capability or become deliverable)
 
 **Risk Level Interpretation:**
 - **Low:** Very unlikely to fail (ignore - don't include in table)
@@ -418,8 +418,8 @@ If user cannot define measurable outcome → **Cannot proceed with planning.** M
 - **Medium:** Significant rework if false, but manageable (keep monitoring during project)
   - Include these assumptions with monitoring plan
 - **High:** Project fails if false (killer assumption/blocker)
-  - **MUST reduce to Medium before proceeding** (add mitigating deliverables to soften risk)
-  - Cannot accept High-risk assumptions without mitigation
+  - Reduce to Medium before proceeding (add mitigating deliverables to soften risk)
+  - Do not accept High-risk assumptions without mitigation
 
 **Filter - Apply Before Adding Any Assumption:**
 
@@ -444,15 +444,15 @@ Assumptions are risks. Reduce risk by adding deliverables:
 
 - **Soften (reduce severity):** Add deliverables that make the risk less severe
   - Example: "Users adopt workflow" (Medium risk) → Add training, documentation, migration tools → Risk stays Medium but impact reduced
-  - High-risk assumptions MUST be softened to Medium via mitigating deliverables before proceeding
+  - High-risk assumptions must be softened to Medium via mitigating deliverables before proceeding
 
 - **Eliminate (gain control):** Add deliverables that put the assumption under your direct control
   - Example: "Third-party provides API" (High risk) → Add "Build internal API" deliverable → Assumption eliminated (now have full control)
   - If you can build a deliverable that eliminates the assumption, do it
 
-**CRITICAL: Monitoring Feasibility Check (MANDATORY FOR EVERY "HOW TO MONITOR")**
+**Monitoring Feasibility Check (required for every "How to Monitor")**
 
-For EVERY "How to Monitor" entry, you MUST answer this question and **annotate the result directly in the table cell**:
+For each "How to Monitor" entry, answer this question and **annotate the result directly in the table cell**:
 
 **"Can we collect this monitoring data TODAY with existing infrastructure?"**
 
@@ -480,7 +480,7 @@ For EVERY "How to Monitor" entry, you MUST answer this question and **annotate t
 **Red flags:**
 - Team-controllable items (should be deliverables)
 - Assumptions that could be eliminated or softened with deliverables
-- High-risk assumptions without mitigation (MUST reduce to Medium)
+- High-risk assumptions without mitigation (must reduce to Medium)
 - Low-risk assumptions included in table (ignore these, don't track)
 - Missing "How to Monitor" (can't track assumption health without it)
 - "How to Monitor" references non-existent capability without adding it as deliverable
@@ -512,7 +512,7 @@ If this equation doesn't hold, the project plan is incomplete or has excess scop
 2. **Next Deliverable**
    - Acceptance criterion
 
-N. **End of Project Status Report** (MANDATORY - ALWAYS LAST)
+N. **End of Project Status Report** (required — always last)
    - Compare each success measure: Base vs Target vs Actual
    - Table showing success/failure for each measure
    - Include concrete instructions for HOW to collect each verification (specific command, query, dashboard, survey question)
@@ -520,7 +520,7 @@ N. **End of Project Status Report** (MANDATORY - ALWAYS LAST)
    - Document lessons learned
 ```
 
-**MANDATORY: Every Project MUST Include "End of Project Status Report" as Final Deliverable**
+**Every project includes "End of Project Status Report" as the final deliverable.**
 
 **Purpose:** Bookend accountability - verify we actually achieved the GOAL we set out to achieve.
 

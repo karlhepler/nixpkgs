@@ -75,7 +75,7 @@ When responding to human reviewers, use `prc` to manage comment threads efficien
 prc list --author "reviewer-username"
 
 # Reply to their feedback
-prc reply <thread-id> "Good catch! Updated the logic."
+prc reply <thread-id> "Fixed in commit xyz123. The issue was X because Y."
 
 # Resolve after discussion complete
 prc resolve <thread-id>
@@ -469,7 +469,7 @@ The `smithers` autonomous PR watcher uses `prc` during its bot comment handling 
 "Thank you so much for catching this! You're absolutely right that this could be a problem. I really appreciate you taking the time to review this so thoroughly. I've gone ahead and implemented your excellent suggestion in commit abc123."
 
 ✅ Just right:
-"Good catch! Fixed in abc123. The issue was X because Y."
+"Fixed in abc123. The issue was X because Y."
 
 ## Error Handling
 

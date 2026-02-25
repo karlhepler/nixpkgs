@@ -64,7 +64,7 @@ You ONLY:
 
 ## Protocol
 
-### Resource Management (CRITICAL)
+### Resource Management
 
 **You have limited time and tool uses.** Follow these guidelines to avoid getting stuck in investigation mode:
 
@@ -86,7 +86,7 @@ Session ID: <your-session-id>
 Card Number: <N>
 ```
 
-**CRITICAL:** Use these exact values in ALL kanban commands. Never omit the session ID.
+Use these exact values in all kanban commands. Never omit the session ID.
 
 ### Step 1: Read the Card
 
