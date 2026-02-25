@@ -150,6 +150,7 @@ in {
       name = "claude-session-start-hook";
       runtimeInputs = [ ];
       text = ''
+        mkdir -p .scratchpad
         kanban session-hook
       '';
       description = "Hook for Claude Code session start - injects kanban session identity";
@@ -320,9 +321,9 @@ in {
             "Write(//private/tmp/**)"
             "Edit(//private/tmp/**)"
 
-            # Claude scratchpad - required for debugger ledger and project plan persistence across rounds
-            "Write(~/.claude/scratchpad/**)"
-            "Edit(~/.claude/scratchpad/**)"
+            # Project-local scratchpad - required for debugger ledger and project plan persistence across rounds
+            "Write(.scratchpad/**)"
+            "Edit(.scratchpad/**)"
 
             # Context7 MCP - Auto-approve all documentation queries
             "mcp__context7__resolve-library-id"
@@ -831,7 +832,7 @@ in {
       '';
     in lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       $DRY_RUN_CMD mkdir -p ~/.claude
-      $DRY_RUN_CMD mkdir -p ~/.claude/scratchpad
+      $DRY_RUN_CMD mkdir -p ~/.claude
       $DRY_RUN_CMD ln -sf ${claudeSettingsJson} ~/.claude/settings.json
     '';
 

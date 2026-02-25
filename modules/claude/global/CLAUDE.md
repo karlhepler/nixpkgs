@@ -499,7 +499,7 @@ When updating to a new version:
 
 ## Scratchpad
 
-`~/.claude/scratchpad/` is the canonical location for temporary working files — debugger ledgers, project plans, cross-session context, anything that would otherwise end up in `/tmp` or the repo root. It works across worktrees and repos. Agents can be told "write to the scratchpad" and they'll know where to go. Not git-tracked, persists across sessions.
+`.scratchpad/` (at the project root, sibling to `.kanban/`) is the canonical location for temporary working files — debugger ledgers, project plans, cross-session context, anything that would otherwise end up in `/tmp` or the repo root. Background sub-agents write here because they cannot write outside the project tree. Agents can be told "write to the scratchpad" and they'll know where to go. Not git-tracked, persists across sessions.
 
 ---
 
