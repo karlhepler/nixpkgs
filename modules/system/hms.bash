@@ -133,6 +133,33 @@ else
   fi
 fi
 
+# MarkText: Markdown editor (Tkaixiang maintained fork, installed from GitHub releases)
+marktext_installed=$(defaults read /Applications/MarkText.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null || echo "")
+marktext_latest=$(curl -fsSL "https://api.github.com/repos/Tkaixiang/marktext/releases/latest" | jq -r '.tag_name // empty' | sed 's/^v//' || echo "")
+
+if [ -z "$marktext_latest" ]; then
+  echo "Warning: Could not fetch latest MarkText version, skipping."
+elif [ "$marktext_installed" != "$marktext_latest" ]; then
+  if [ -z "$marktext_installed" ]; then
+    echo "Installing MarkText v$marktext_latest..."
+  else
+    echo "Updating MarkText from v$marktext_installed to v$marktext_latest..."
+  fi
+  marktext_tmp=$(mktemp -d)
+  curl -fsSL "https://github.com/Tkaixiang/marktext/releases/download/v${marktext_latest}/marktext-mac-arm64-${marktext_latest}.zip" -o "$marktext_tmp/marktext.zip"
+  unzip -q "$marktext_tmp/marktext.zip" -d "$marktext_tmp"
+  rm -rf /Applications/MarkText.app
+  mv "$marktext_tmp/marktext.app" /Applications/MarkText.app
+  xattr -cr /Applications/MarkText.app
+  rm -rf "$marktext_tmp"
+  echo "MarkText v$marktext_latest installed."
+fi
+
+# Ensure MarkText is the default app for markdown files
+if [ -d /Applications/MarkText.app ]; then
+  duti -s com.github.marktext.marktext .md all
+fi
+
 # Configure local git for this repo (silent, idempotent)
 # USER_NAME and USER_EMAIL are provided as env vars by the nix wrapper
 git -C ~/.config/nixpkgs config --local user.name "$USER_NAME" 2>/dev/null

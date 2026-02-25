@@ -382,14 +382,14 @@
           "decimals": 4,
           "custom": {
             "lineWidth": 2,
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "spanNulls": false,
+            "fillOpacity": 20,
+            "gradientMode": "opacity",
+            "spanNulls": true,
             "insertNulls": false,
-            "showPoints": "auto",
+            "showPoints": "never",
             "pointSize": 5,
             "drawStyle": "line",
-            "lineInterpolation": "linear"
+            "lineInterpolation": "smooth"
           },
           "color": {
             "mode": "palette-classic"
@@ -412,7 +412,7 @@
     {
       "id": 5,
       "type": "timeseries",
-      "title": "Session Timeline",
+      "title": "Session Timeline (Cost + Tool Calls)",
       "gridPos": {
         "x": 12,
         "y": 8,
@@ -429,8 +429,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT recorded_at as time, cost_usd as cost FROM agent_metrics ORDER BY recorded_at",
-          "queryText": "SELECT recorded_at as time, cost_usd as cost FROM agent_metrics ORDER BY recorded_at",
+          "rawQueryText": "SELECT MIN(recorded_at) as time, COALESCE(kanban_session, session_id) as session_label, ROUND(SUM(cost_usd), 4) as session_cost, SUM(tool_calls) as total_tool_calls, ROUND(SUM(duration_seconds) / 60.0, 1) as duration_minutes FROM agent_metrics GROUP BY session_id ORDER BY time",
+          "queryText": "SELECT MIN(recorded_at) as time, COALESCE(kanban_session, session_id) as session_label, ROUND(SUM(cost_usd), 4) as session_cost, SUM(tool_calls) as total_tool_calls, ROUND(SUM(duration_seconds) / 60.0, 1) as duration_minutes FROM agent_metrics GROUP BY session_id ORDER BY time",
           "queryType": "time series",
           "timeColumns": [
             "time"
@@ -443,13 +443,13 @@
           "unit": "currencyUSD",
           "decimals": 4,
           "custom": {
-            "lineWidth": 1,
-            "fillOpacity": 5,
+            "lineWidth": 0,
+            "fillOpacity": 0,
             "gradientMode": "none",
             "spanNulls": false,
             "insertNulls": false,
             "showPoints": "always",
-            "pointSize": 5,
+            "pointSize": 8,
             "drawStyle": "points",
             "lineInterpolation": "linear"
           },
@@ -457,7 +457,76 @@
             "mode": "palette-classic"
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "session_cost"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Session Cost"
+              },
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "total_tool_calls"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Tool Calls"
+              },
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "duration_minutes"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Duration (min)"
+              },
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "session_label"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Session"
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "tooltip": {
@@ -467,7 +536,7 @@
         "legend": {
           "displayMode": "list",
           "placement": "bottom",
-          "showLegend": true
+          "showLegend": false
         }
       }
     },
@@ -1954,8 +2023,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT role, COALESCE(SUM(tool_errors), 0) as total_errors, COALESCE(SUM(tool_calls), 0) as total_calls, CASE WHEN SUM(tool_calls) > 0 THEN ROUND(CAST(SUM(tool_errors) AS REAL) / SUM(tool_calls) * 100, 1) ELSE 0 END as error_pct FROM agent_metrics WHERE role != 'parent' GROUP BY role ORDER BY error_pct DESC",
-          "queryText": "SELECT role, COALESCE(SUM(tool_errors), 0) as total_errors, COALESCE(SUM(tool_calls), 0) as total_calls, CASE WHEN SUM(tool_calls) > 0 THEN ROUND(CAST(SUM(tool_errors) AS REAL) / SUM(tool_calls) * 100, 1) ELSE 0 END as error_pct FROM agent_metrics WHERE role != 'parent' GROUP BY role ORDER BY error_pct DESC",
+          "rawQueryText": "SELECT role, CASE WHEN SUM(tool_calls) > 0 THEN ROUND(CAST(SUM(tool_errors) AS REAL) / SUM(tool_calls) * 100, 1) ELSE 0 END as error_pct FROM agent_metrics WHERE role != 'parent' GROUP BY role ORDER BY error_pct DESC",
+          "queryText": "SELECT role, CASE WHEN SUM(tool_calls) > 0 THEN ROUND(CAST(SUM(tool_errors) AS REAL) / SUM(tool_calls) * 100, 1) ELSE 0 END as error_pct FROM agent_metrics WHERE role != 'parent' GROUP BY role ORDER BY error_pct DESC",
           "queryType": "table",
           "timeColumns": [],
           "refId": "A"
@@ -1966,7 +2035,24 @@
           "unit": "percent",
           "decimals": 1,
           "color": {
-            "mode": "palette-classic"
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5
+              },
+              {
+                "color": "red",
+                "value": 15
+              }
+            ]
           },
           "custom": {
             "fillOpacity": 80,
@@ -1974,30 +2060,6 @@
           }
         },
         "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "total_errors"
-            },
-            "properties": [
-              {
-                "id": "custom.hidden",
-                "value": true
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "total_calls"
-            },
-            "properties": [
-              {
-                "id": "custom.hidden",
-                "value": true
-              }
-            ]
-          },
           {
             "matcher": {
               "id": "byName",
@@ -2027,7 +2089,7 @@
         "legend": {
           "displayMode": "list",
           "placement": "bottom",
-          "showLegend": true
+          "showLegend": false
         },
         "xField": "role"
       }
@@ -2035,7 +2097,7 @@
     {
       "id": 17,
       "type": "barchart",
-      "title": "Token Efficiency (Cost per Tool Call)",
+      "title": "Cost per Tool Call by Agent",
       "gridPos": {
         "x": 8,
         "y": 74,
@@ -2064,7 +2126,24 @@
           "unit": "currencyUSD",
           "decimals": 4,
           "color": {
-            "mode": "palette-classic"
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.05
+              },
+              {
+                "color": "red",
+                "value": 0.10
+              }
+            ]
           },
           "custom": {
             "fillOpacity": 80,
@@ -2101,7 +2180,7 @@
         "legend": {
           "displayMode": "list",
           "placement": "bottom",
-          "showLegend": true
+          "showLegend": false
         },
         "xField": "role"
       }

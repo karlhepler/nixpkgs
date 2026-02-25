@@ -90,7 +90,8 @@
   ] ++ lib.optionals pkgs.stdenv.isDarwin [
     # macOS-only utilities
     pkgs.darwin.trash
-  ] ++ (builtins.attrValues shellapps);
+    pkgs.duti  # Set default app associations on macOS
+] ++ (builtins.attrValues shellapps);
 
   # ============================================================================
   # Simple Program Configurations
