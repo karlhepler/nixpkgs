@@ -14,6 +14,13 @@ in {
     autosuggestion.enable = true;
     syntaxHighlighting.enable = true;
     enableCompletion = false;  # We handle this ourselves for performance
+    # _ZO_DOCTOR=0 must live in .zshenv so it is set before zoxide init runs in
+    # .zshrc for ALL shell types. profileExtra only writes to .zprofile, which
+    # is skipped entirely for non-login shells (every tmux pane). .zshenv is
+    # the only file zsh always sources regardless of login/interactive state.
+    envExtra = ''
+      export _ZO_DOCTOR=0
+    '';
     profileExtra = ''
       # Optimize zsh autosuggestions
       export ZSH_AUTOSUGGEST_USE_ASYNC=true
@@ -33,13 +40,6 @@ in {
 
       # Kanban CLI: Hide own session by default (show only other sessions)
       export KANBAN_HIDE_MINE=true
-
-      # Suppress zoxide's "possible configuration issue" warning.
-      # zoxide fires this when it detects something initialized after it in the
-      # shell config. Home Manager always appends plugins and integrations after
-      # initContent, so the warning fires unconditionally. Silencing it here is
-      # the approach zoxide itself recommends in the warning message.
-      export _ZO_DOCTOR=0
     '';
     initContent = ''
       # Set up fpath to include completion directories
