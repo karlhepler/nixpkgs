@@ -9,6 +9,13 @@ let
     flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
   } (builtins.readFile ./workout-claude.py);
 
+  # workout-smithers Python CLI (launch smithers across multiple PRs in parallel TMUX windows)
+  # Bare Python binary - runtime deps (gh, tmux, git, workout) injected via wrapProgram
+  # in the gitShellapps rec block where the workout shellapp is in scope.
+  workoutSmithersScript = pkgs.writers.writePython3Bin "workout-smithers" {
+    flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
+  } (builtins.readFile ./workout-smithers.py);
+
 in {
   # ============================================================================
   # Git Configuration & Shell Applications
@@ -124,6 +131,25 @@ in {
         description = "Batch worktree creation with JSON input and per-worktree Claude command prompt injection";
         mainProgram = "workout-claude";
         homepage = "${builtins.toString ./.}/workout-claude.py";
+      };
+    };
+    workout-smithers = pkgs.symlinkJoin {
+      name = "workout-smithers";
+      paths = [ workoutSmithersScript ];
+      buildInputs = [ pkgs.makeWrapper ];
+      postBuild = ''
+        wrapProgram $out/bin/workout-smithers \
+          --prefix PATH : ${pkgs.lib.makeBinPath [
+            pkgs.gh
+            pkgs.tmux
+            pkgs.git
+            workout
+          ]}
+      '';
+      meta = {
+        description = "Launch smithers across multiple PRs in parallel TMUX windows, each with a dedicated git worktree";
+        mainProgram = "workout-smithers";
+        homepage = "${builtins.toString ./.}/workout-smithers.py";
       };
     };
   };
