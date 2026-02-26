@@ -566,6 +566,11 @@ def cmd_session_hook(args) -> None:
     if data.get("agent_type"):
         return
 
+    # Burns sessions (Ralph-spawned via ralph CLI) don't have agent_type but
+    # should also be suppressed — burns.py sets BURNS_SESSION=1 in the env
+    if os.environ.get("BURNS_SESSION"):
+        return
+
     # Resolve UUID to friendly name via .kanban/sessions.json
     root = get_root(None, auto_init=False)
     root.mkdir(parents=True, exist_ok=True)

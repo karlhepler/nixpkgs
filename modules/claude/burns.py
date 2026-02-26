@@ -319,6 +319,9 @@ You are running in autonomous mode within: {working_dir}
     env = os.environ.copy()
     if args.debug:
         env["RALPH_DIAGNOSTICS"] = "1"
+    # Signal to kanban session-hook that this is a Burns-spawned session so it
+    # suppresses kanban instructions (Ralph sessions don't use the kanban board)
+    env["BURNS_SESSION"] = "1"
 
     # Pre-clean stale tool-results artifacts so Claude doesn't re-load them
     # on startup. Only tool-results/ is removed; memory/ and other dirs are
