@@ -50,7 +50,45 @@ This skill fetches PR diffs, posts unified GitHub reviews via `prr`, runs kanban
 **If any are missing:** Stop immediately. Do not start work. Surface to the user:
 > "Blocked: One or more required permissions are missing from `permissions.allow`. Add `Bash(gh pr *)`, `Bash(gh api *)`, `Bash(kanban *)`, `Bash(prc *)`, `Bash(prr *)`, `Bash(git branch *)`, `Bash(git rev-parse *)`, `Bash(workout-claude *)`, and `Bash(workout *)` before running /review."
 
-## Phase 1 — Fetch PR Context
+## Phase 1 — Worktree Setup + One-Way Handoff
+
+**This is the first thing that happens.** The goal is to give specialists full branch context by running the review inside a dedicated worktree. The current session creates that environment and steps back.
+
+### Determine Review Mode
+
+**If `--repo` flag was used (cross-repo review):**
+- Cannot create a local worktree for a different repository
+- Skip worktree setup; proceed directly to Phase 2 (diff-only review)
+
+**If same-repo review:**
+
+Check whether the PR is from a fork:
+```bash
+gh pr view <number> --json isCrossRepository --jq .isCrossRepository
+```
+
+- **If fork PR (`true`):** Cannot check out the fork branch locally. Skip worktree setup; proceed to Phase 2 (diff-only review).
+
+- **If same-repo branch (`false`):**
+  ```bash
+  # Get the PR branch name
+  gh pr view <number> --json headRefName --jq .headRefName
+
+  # Get current branch
+  git branch --show-current
+  ```
+
+  - **If current branch == PR's `headRefName`:** Already on the right branch. Proceed to Phase 2.
+
+  - **If current branch != PR's `headRefName`:** Create the worktree + TMUX window and hand off:
+    ```bash
+    echo '[{"worktree": "<headRefName>", "prompt": "Review PR #<number>"}]' | workout-claude staff
+    ```
+    Tell the user: "Opened a new TMUX window to review PR #<number> — switch to it to watch the review run."
+
+    **STOP. Do not proceed.** The new staff session in the worktree will handle everything from here.
+
+## Phase 2 — Fetch PR Context
 
 ```bash
 # Fetch PR metadata (add --repo owner/repo if cross-repo)
@@ -60,54 +98,17 @@ gh pr view <number> --json number,title,author,body,url,baseRefName,headRefName 
 gh pr diff <number> [--repo owner/repo]
 ```
 
-Extract `{owner}/{repo}` for the Phase 5 API URL: use the `--repo` flag value if provided, otherwise parse it from the PR's `url` field (e.g., `https://github.com/owner/repo/pull/123`).
+Extract `{owner}/{repo}` for the Phase 6 API URL: use the `--repo` flag value if provided, otherwise parse it from the PR's `url` field (e.g., `https://github.com/owner/repo/pull/123`).
 
 Extract changed file paths from diff header lines matching `+++ b/...`.
 
-Store PR metadata, `{owner}/{repo}`, and diff text in memory — all three are passed to each specialist and used in Phase 5.
+**Repository access:**
+- Same-repo reviews: `git rev-parse --show-toplevel` gives `repo_path` — pass this to specialists for full codebase access
+- Cross-repo or fork reviews: set `repo_path = null` — specialists receive diff only
 
-### Worktree Setup for Full Repository Context
+Store PR metadata, `{owner}/{repo}`, and diff text in memory — all three are passed to each specialist and used in Phase 6.
 
-After fetching PR metadata, determine whether specialists can have full repository access:
-
-**If `--repo` flag was used (cross-repo review):**
-- Set `repo_path = null`, `worktree_created = false`
-- Specialists will receive the diff only
-
-**If same-repo review:**
-
-First, check whether the PR is from a fork:
-```bash
-gh pr view <number> --json isCrossRepository --jq .isCrossRepository
-```
-
-- If `isCrossRepository` is `true` (fork PR):
-  - Set `repo_path = null`, `worktree_created = false`
-  - Specialists will receive the diff only — note in each specialist prompt that this is a fork PR and full repository context is unavailable (diff-only review)
-
-- If `isCrossRepository` is `false` (same-repo branch):
-  ```bash
-  # Get current branch
-  git branch --show-current
-  ```
-
-  - If current branch == PR's `headRefName`:
-    ```bash
-    git rev-parse --show-toplevel
-    ```
-    Set `repo_path` to that output, `worktree_created = false`
-
-  - If current branch != PR's `headRefName`:
-    ```bash
-    # Create worktree + TMUX window via workout-claude
-    echo '[{"worktree": "<headRefName>", "prompt": "PR #<number>: <title> — checked out for specialist review"}]' | workout-claude staff
-
-    # Get the worktree path
-    worktree_path=$(workout <headRefName> 2>/dev/null | head -1 | sed "s/cd '//; s/'$//")
-    ```
-    Set `repo_path = worktree_path`, `worktree_created = true`
-
-## Phase 2 — Detect Domains
+## Phase 3 — Detect Domains
 
 Apply these detection rules against changed file paths and diff content to build the specialist list:
 
@@ -125,7 +126,7 @@ Apply these detection rules against changed file paths and diff content to build
 
 **Minimum one specialist:** If detection yields none, default to `swe-backend`. Single-specialist reviews are valid.
 
-## Phase 3 — Parallel Specialist Delegation
+## Phase 4 — Parallel Specialist Delegation
 
 ### Create All Kanban Cards at Once
 
@@ -218,13 +219,14 @@ COMMENT: This approach can expose users to SQL injection (OWASP A03:2021 Injecti
 
 Findings that are purely observational (e.g., "this variable is shadowed") do not require citation.
 
-**Tone:**
-Write findings in a collegial, curious tone. These are teammates, not suspects.
-- Frame observations as questions or suggestions before conclusions ("I noticed...", "Have you considered...", "Curious about...")
-- Acknowledge trade-offs and context before suggesting alternatives
+**Tone and Scope:**
+Write as if you personally reviewed this code — direct, collegial, human.
+- One paragraph per inline finding — no more
+- If a finding is borderline or minor, cut it entirely. Only include findings worth surfacing to the author
+- No severity labels in the COMMENT text itself — severity belongs in the SEVERITY field only
+- No specialist attribution in comments — they will be posted as a unified review
 - Assume the author was deliberate — ask why before calling something wrong
-- Flag blocking issues clearly but without condescension
-- Frame nitpicks as "up to you" suggestions
+- Flag issues clearly but without condescension
 
 **Required Output Format:**
 Write your complete findings to `.scratchpad/review-{number}-{domain}.md` using this structure:
@@ -237,8 +239,8 @@ Write your complete findings to `.scratchpad/review-{number}-{domain}.md` using 
 
 FILE: path/to/file.go
 LINE: 42
-SEVERITY: blocking | concern | nit
-COMMENT: [Inline comment text — collegial tone, assume good intent — embed citations inline when referencing standards or library APIs]
+SEVERITY: blocking | concern
+COMMENT: [Inline comment text — one paragraph, plain language, no severity label prefix, no specialist attribution, cite sources inline when referencing standards]
 
 FILE: (none)
 LINE: (none)
@@ -280,9 +282,9 @@ Include the appropriate block in each specialist's prompt:
 **ai-expert:**
 > Prompt injection risk, model selection justification, context window efficiency, output validation, token cost implications, prompt file structure quality
 
-## Phase 4 — AC Review and Aggregate
+## Phase 5 — AC Review and Aggregate
 
-Phase 3 ends when all specialist Task agents have been launched. Phase 4 begins as specialists complete their work and call `kanban review <card>`.
+Phase 4 ends when all specialist Task agents have been launched. Phase 5 begins as specialists complete their work and call `kanban review <card>`.
 
 **Pipeline (per specialist — do NOT wait for all specialists before starting any AC reviews):**
 
@@ -305,23 +307,18 @@ Phase 3 ends when all specialist Task agents have been launched. Phase 4 begins 
 
 ### Assemble Aggregated Review Body
 
-```markdown
-## Expert Code Review
+The review body must read as if one developer wrote it — no headers, no specialist attribution, no tooling metadata.
 
-**Reviewed by:** {comma-separated specialist list}
-**Inline comments:** {N} comments on specific lines
+```
+{If any specialist found blocking or concern-level issues:
+Write 2–3 sentences in plain language summarizing the key concerns. No "## Expert Code Review" header.
+No "Reviewed by:" line. No "Inline comments: N" metadata. No specialist names. Sounds like a
+developer who read the PR.}
 
-{For each specialist with ⚠️ or 🚨 verdict: one short paragraph summarizing their domain findings}
-
-{If all ✅ LGTM: "All specialists gave this a clean bill of health."}
-
----
-*Specialist team review via Claude Code*
+{If all specialists returned LGTM: leave the body empty.}
 ```
 
-Keep the body brief. Inline comments carry the detail. One paragraph per specialist with concerns; LGTM specialists need only a mention in "Reviewed by".
-
-Write the full aggregated review body to `.scratchpad/review-<number>.md` before posting.
+Write the aggregated review body to `.scratchpad/review-<number>.md` before posting.
 
 ### Write Findings JSON
 
@@ -329,7 +326,7 @@ In addition to the `.md` summary, write `.scratchpad/review-<number>.json` with 
 
 ```json
 {
-  "body": "<full aggregated review body text from above>",
+  "body": "<aggregated review body — plain text, no headers, no attribution, or empty string if all LGTM>",
   "comments": [
     {"path": "src/auth/login.go", "line": 42, "severity": "blocking", "body": "Have you considered..."},
     {"path": null, "line": null, "severity": "concern", "body": "Overall finding — no specific location"}
@@ -337,9 +334,13 @@ In addition to the `.md` summary, write `.scratchpad/review-<number>.json` with 
 }
 ```
 
-Aggregate all specialist FILE/LINE/SEVERITY/COMMENT findings into the `comments` array. Findings with `FILE: (none)` become `{"path": null, "line": null, ...}` entries. Build the `body` from the aggregated review body text assembled above.
+Aggregate all specialist FILE/LINE/SEVERITY/COMMENT findings into the `comments` array. Findings with `FILE: (none)` become `{"path": null, "line": null, ...}` entries.
 
-## Phase 5 — Post Review
+**Comment body rules:**
+- Use the specialist's COMMENT text verbatim — do not prepend severity labels (`[blocking]`, `[concern]`) or specialist attribution (`[swe-security]`)
+- The comment body must be plain text only: one paragraph, developer voice
+
+## Phase 6 — Post Review
 
 Post a **single unified GitHub review** via `prr`.
 
@@ -371,8 +372,13 @@ Report back:
 
 ## Critical Rules
 
+**Worktree handoff is one-way:**
+- When Phase 1 creates a worktree, the current session STOPS immediately after
+- Do NOT continue doing review work in the current session after handing off
+- Do NOT wait for the new session to complete
+
 **Never post before all specialists complete:**
-- Do NOT submit the GitHub review until every specialist card has reached `kanban done` or been retried and excluded per Phase 4
+- Do NOT submit the GitHub review until every specialist card has reached `kanban done` or been retried and excluded per Phase 5
 - Do NOT skip the AC lifecycle to save time
 
 **Single unified review:**
@@ -380,20 +386,30 @@ Report back:
 - Never submit multiple separate reviews or `gh pr comment` calls
 - Inline placement (file:line) preferred; body-level for findings without a specific location
 
-**Preserve specificity:**
-- Never flatten findings into vague summaries
-- Keep file:line pairs from specialist output intact in the inline comments array
-- If a specialist gives LGTM with no findings, acknowledge them in the "Reviewed by" header — do not omit them
+**Human voice — no tooling artifacts:**
+- No `## Expert Code Review` header or any header in the review body
+- No `**Reviewed by:**` or specialist attribution of any kind
+- No severity labels in comment text (`[blocking]`, `[concern]`, `[nit]`)
+- No `*Specialist team review via Claude Code*` footer
+- The posted review must read as if one developer wrote it
 
-**Tone discipline:**
-- All specialist delegation prompts must include the tone block (curious, collegial, assume good intent)
-- The aggregated review body inherits that tone
+**No nits:**
+- If a finding is borderline or minor, cut it entirely
+- Only include findings worth surfacing to the author
+- When in doubt, leave it out
+
+**Preserve specificity:**
+- Keep file:line pairs from specialist output intact in the inline comments array
+- Never flatten findings into vague body-level summaries when a specific location exists
 
 **Verification:**
 - Read `inline_count` and `body_count` directly from `prr`'s JSON output to confirm counts (no separate `prc list` call needed)
 - If inline comments are missing from `prr` output, check whether line numbers fell outside diff hunks and repost affected findings in the review body
 
 ## Key Principles
+
+**Worktree is the review environment:**
+The worktree gives specialists full branch context. Create it first, hand off immediately. The current session's only job is setup and launch — not review work.
 
 **Auto-detection is a starting point, not gospel:**
 If the diff has an unusual structure, use judgment to add specialists the heuristics missed. The goal is coverage, not mechanical matching.
@@ -402,7 +418,7 @@ If the diff has an unusual structure, use judgment to add specialists the heuris
 All specialists run simultaneously. Sequential delegation defeats the purpose. Launch all Task agents in one message.
 
 **The review body is a summary, not the review:**
-Inline comments are where the substance lives. Keep the body scannable — one short paragraph per specialist with concerns.
+Inline comments are where the substance lives. The body — if needed at all — is 2-3 sentences of plain language context. Keep it human.
 
 **One review submission per PR invocation:**
 GitHub shows multiple reviews as cluttered history. Aggregate everything into a single POST, even if some specialists found nothing.
