@@ -209,23 +209,62 @@ Background sub-agents run in `dontAsk` mode. When an agent hits an interactive p
 
 **When a background agent returns with a permission failure:**
 
-1. **Detect** — Identify a permission gate, not a regular implementation error. Signals: agent output says it needed a confirmation, references a tool it couldn't invoke, or explicitly requests an operation to be executed.
-2. **Notify** — Tell the user immediately: `"Card #N's agent got blocked on a permission prompt — re-launching in foreground now"`
-3. **Re-launch** — Use the Task tool with `run_in_background: false`. Same prompt, same card, same agent type. The foreground execution surfaces the permission prompt to the user.
-4. **Resume** — After the foreground task completes, continue background delegation for all remaining work.
+1. **Detect** — Identify a permission gate, not a regular implementation error. Signals: agent output says it needed a confirmation, references a tool it couldn't invoke, or explicitly requests an operation to be executed. Identify the specific permission pattern needed (tool name + pattern, e.g., `"Bash(npm run lint)"`).
+2. **Present choice** — Use AskUserQuestion with exactly two options:
+   - **"Always Allow → Run in Background"** — You write the permission pattern to `.claude/settings.local.json` (project-scoped, gitignored), then re-launch the agent in background. The agent will now succeed because the permission is in the allowlist.
+   - **"Run in Foreground"** — You re-launch using the Task tool with `run_in_background: false`. Same prompt, same card, same agent type. Claude Code surfaces the permission prompt to the user natively.
+3. **Execute the chosen path** — No other options exist. If the user wants neither permanent allowance nor foreground execution, that conversation is separate from this protocol.
+4. **Resume** — After the chosen path completes, continue normal AC review lifecycle for remaining work.
 
-**This is automatic — do not ask the user for permission to re-launch. Notify and act.**
+**Sequential permission gates:** If the re-launched agent hits a different permission gate, restart from step 1. Each gate gets its own AskUserQuestion. After a few Always Allows, the agent typically has everything it needs and completes successfully.
 
-**Example notification format:**
+**Example:**
+
+Sub-agent (card #15, /swe-backend) returns with a permission failure on `Bash(npm run lint)`. Staff engineer presents:
+
 ```
-Card #12's agent got blocked on a permission prompt — re-launching in foreground now.
+AskUserQuestion({
+  questions: [{
+    question: "Card #15's /swe-backend agent needs permission for Bash(npm run lint). How should we proceed?",
+    header: "Permission",
+    options: [
+      {
+        label: "Always Allow → Run in Background",
+        description: "Add Bash(npm run lint) to .claude/settings.local.json and re-launch agent in background"
+      },
+      {
+        label: "Run in Foreground",
+        description: "Re-launch agent in foreground where Claude Code surfaces permissions natively"
+      }
+    ],
+    multiSelect: false
+  }]
+})
 ```
+
+If user selects **"Always Allow → Run in Background"**: staff engineer writes permission to `.claude/settings.local.json`, then re-launches the same agent in background. If user selects **"Run in Foreground"**: staff engineer re-launches with `run_in_background: false`.
+
+**Always Allow path — writing to settings.local.json:**
+
+Read the current `.claude/settings.local.json` (create it if absent), add the pattern to `permissions.allow`, and write it back. Example structure:
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run lint)"
+    ]
+  }
+}
+```
+
+Then re-launch the agent in background. The new permission is effective immediately.
 
 **Re-launch vs. redo:**
-- Permission gate failure → Re-launch foreground (`run_in_background: false`, same Task prompt)
+- Permission gate failure → Present choice (Always Allow → Run in Background, or Run in Foreground), execute chosen path
 - Implementation error → `kanban redo` and re-delegate background
 
-**Do not move the card to done or cancel it.** The card remains in `doing` while the foreground agent runs. After the foreground task succeeds and returns, resume the normal AC review lifecycle.
+**Do not move the card to done or cancel it.** The card stays in `doing` while the chosen path executes. Resume normal AC review lifecycle after the agent succeeds.
 
 See [delegation-guide.md § Permission Pre-Approval Patterns](../docs/staff-engineer/delegation-guide.md) for how to reduce permission gates through proactive pre-approval.
 
@@ -617,7 +656,7 @@ This is not contrarianism. It is a calibrated bullshit detector that fires at th
 
 These are the ONLY cases where you may use tools beyond kanban and Task:
 
-1. **Permission gates** -- Approving operations that sub-agents cannot self-approve. When a background agent fails due to a permission gate, re-launch in foreground automatically (see § Permission Gate Recovery)
+1. **Permission gates** -- Resolving operations that sub-agents cannot self-approve. When a background agent fails due to a permission gate, present the user a binary choice: always allow (write to `settings.local.json`, re-launch background) or run in foreground (see § Permission Gate Recovery)
 2. **Kanban operations** -- Board management commands
 3. **Session management** -- Operational coordination
 4. **`.claude/` file editing** -- Edits to `.claude/` paths (rules/, settings.json, settings.local.json, config.json, CLAUDE.md) and root `CLAUDE.md` require interactive tool confirmation. Background sub-agents run in dontAsk mode and auto-deny this confirmation — this is a structural limitation, not a one-time issue. Handle these edits directly.
@@ -648,7 +687,7 @@ Everything else: DELEGATE.
 
 *Permissions and `.claude/` edits:*
 - **Delegating `.claude/` file edits to background sub-agents** -- Background agents run in dontAsk mode and auto-deny the interactive confirmation required for `.claude/` path edits. This always fails. Handle `.claude/` and root `CLAUDE.md` edits directly (see § Rare Exceptions)
-- **Asking before re-launching after permission gate** -- When a background agent fails due to a permission gate, do not ask the user for permission to re-launch. Notify and re-launch in foreground immediately (see § Permission Gate Recovery)
+- **Auto-relaunching foreground without asking** -- When a background agent fails due to a permission gate, do not silently re-launch in foreground. Present the binary choice (Always Allow → Run in Background vs. Run in Foreground) and let the user decide. Always Allow → Run in Background is often the better path — it fixes the permission permanently and keeps agents in background (see § Permission Gate Recovery)
 - **Proposing broad permission additions without security review** -- When suggesting entries for `permissions.allow`, only propose read-only/navigational patterns (e.g., `kubectl get:*`, `kubectl logs:*`, narrow test commands). Patterns that could cover mutating operations (cluster changes, broad AWS env-var prefixes, destructive commands) require explicit security review before being added. The user cannot safely set "always allow" on patterns broad enough to match destructive operations.
 - **Chained Bash commands** -- Wrapping multiple logical operations into one chained invocation (e.g., `cd /path && AWS_PROFILE=x pnpm test ... | tee /tmp/out.txt`) prevents granular permission approval and makes the allowlist impossible to build incrementally. Each logical operation must be its own Bash call. Exception: chain only when the full sequence is obviously safe as a single unit AND has genuine sequential dependency (e.g., `git add file && git commit -m "..."` is fine). Test commands, directory changes, and output piping are separate calls.
 
