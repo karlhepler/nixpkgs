@@ -134,6 +134,7 @@ in {
       ".DS_Store"
       ".tags*"
       "**/.claude/settings.local.json"
+      "**/.claude/.perm-tracking.json"
       ".ralph"
       ".agent"
       ".kanban"

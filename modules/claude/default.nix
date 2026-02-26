@@ -316,6 +316,10 @@ in {
             "Bash(kanban)"
             "Bash(kanban *)"
 
+            # Perm CLI (permission lifecycle management)
+            "Bash(perm)"
+            "Bash(perm *)"
+
             # Claude Code Read-Only Tools (no parameters needed - approve all uses)
             "Read"
             "Glob"
