@@ -122,12 +122,15 @@ Some skills intentionally lack agent definitions because they are exception or w
 - `groot`: Navigate to git repository root
 
 ### Claude Code Helpers
+
+> **These are shellapps defined in this repo.** To extend or modify them, edit their source in `modules/claude/` and run `hms`. Do NOT edit deployed copies directly.
+
 - `q "question"`: Quick Claude question (haiku model - fastest)
 - `qq "question"`: Claude question (sonnet model - balanced)
 - `qqq "question"`: Complex Claude question (opus model - most capable)
-- `burns "prompt"` or `burns file.md`: Run Ralph Orchestrator with Ralph Coordinator output style
-- `smithers` or `smithers <PR>`: Autonomous PR watcher (monitors checks, fixes issues, handles bot comments)
-- `prc`: PR comment management tool (list, reply, resolve, collapse)
+- `burns "prompt"` or `burns file.md`: Run Ralph Orchestrator with Ralph Coordinator output style — source: `modules/claude/burns.py`
+- `smithers` or `smithers <PR>`: Autonomous PR watcher (monitors checks, fixes issues, handles bot comments) — source: `modules/claude/smithers.py`
+- `prc`: PR comment management tool (list, reply, resolve, collapse) — source: `modules/claude/prc.py`; see `/manage-pr-comments` skill for usage documentation
 
 ### Kanban CLI (Agent Coordination)
 
