@@ -1,12 +1,15 @@
 ---
 name: review
 description: Orchestrate a specialist team review of a GitHub PR. Auto-detects which domain experts to involve based on the diff and aggregates their findings into a structured PR review comment. Invoke when user says "review PR", "code review PR #N", "run a review on this PR", "get specialist review", or "review pull request".
-version: 1.0
+disable-model-invocation: true
+model: sonnet
+argument-hint: "[pr-number or url] [--repo owner/repo]"
 allowed-tools:
   - Bash(gh pr *)
   - Bash(gh api *)
   - Bash(kanban *)
   - Bash(prc *)
+  - Bash(prr *)
 ---
 
 # Review Pull Request
@@ -32,11 +35,12 @@ Due to a known Claude Code bug ([GitHub #5140](https://github.com/anthropics/cla
 - `Bash(gh api *)`
 - `Bash(kanban *)`
 - `Bash(prc *)`
+- `Bash(prr *)`
 
-This skill fetches PR diffs, posts unified GitHub reviews via API, runs kanban operations for specialist cards, and verifies inline comments via `prc`. Without these permissions, operations silently fail in `dontAsk` mode.
+This skill fetches PR diffs, posts unified GitHub reviews via `prr`, runs kanban operations for specialist cards, and verifies inline comments via `prc`. Without these permissions, operations silently fail in `dontAsk` mode.
 
 **If any are missing:** Stop immediately. Do not start work. Surface to the user:
-> "Blocked: One or more required permissions are missing from `permissions.allow`. Add `Bash(gh pr *)`, `Bash(gh api *)`, `Bash(kanban *)`, and `Bash(prc *)` before running /review."
+> "Blocked: One or more required permissions are missing from `permissions.allow`. Add `Bash(gh pr *)`, `Bash(gh api *)`, `Bash(kanban *)`, `Bash(prc *)`, and `Bash(prr *)` before running /review."
 
 ## Phase 1 — Fetch PR Context
 
@@ -199,9 +203,9 @@ Include the appropriate block in each specialist's prompt:
 For each specialist card:
 
 1. **Wait for each specialist to move their card to review column before launching the AC reviewer.**
-2. Launch AC reviewer as background subagent (model: haiku, skill: ac-reviewer) with the specialist's `.scratchpad/review-<number>-<domain>.md` content as context
-3. After AC reviewer returns: `kanban done <card> '<one-line summary>' --session <id>`
-4. **If `kanban done` fails** (unchecked AC): `kanban redo <card> --session <id>`, re-launch that specialist once with the same prompt. If it fails a second time, proceed without that specialist's findings and note the gap in the aggregated review body.
+2. Launch **all AC reviewers simultaneously in parallel** (one per specialist card, all in a single message) as background subagents (model: haiku, skill: ac-reviewer) with the specialist's `.scratchpad/review-<number>-<domain>.md` content as context
+3. After each AC reviewer returns: `kanban done <card> '<one-line summary>' --session <id>`
+4. **If `kanban done` fails** (unchecked AC): `kanban redo <card> --session <id>`, re-launch that specialist once with the same prompt. If it fails after one retry (two total attempts), proceed without that specialist's findings and note the gap in the aggregated review body.
 
 **Do NOT aggregate or post until ALL specialist cards reach `kanban done` or have been retried and excluded.**
 
@@ -233,63 +237,53 @@ For each specialist card:
 
 Keep the body brief. Inline comments carry the detail. One paragraph per specialist with concerns; LGTM specialists need only a mention in "Reviewed by".
 
-Write the full aggregated review to `.scratchpad/review-<number>.md` before posting.
+Write the full aggregated review body to `.scratchpad/review-<number>.md` before posting.
+
+### Write Findings JSON
+
+In addition to the `.md` summary, write `.scratchpad/review-<number>.json` with the structured findings for `prr`:
+
+```json
+{
+  "body": "<full aggregated review body text from above>",
+  "comments": [
+    {"path": "src/auth/login.go", "line": 42, "severity": "blocking", "body": "Have you considered..."},
+    {"path": null, "line": null, "severity": "concern", "body": "Overall finding — no specific location"}
+  ]
+}
+```
+
+Aggregate all specialist FILE/LINE/SEVERITY/COMMENT findings into the `comments` array. Findings with `FILE: (none)` become `{"path": null, "line": null, ...}` entries. Build the `body` from the aggregated review body text assembled above.
 
 ## Phase 5 — Post Review
 
-Post a **single unified GitHub review** via the API.
+Post a **single unified GitHub review** via `prr`.
 
-### Build the Review Payload
-
-From all specialist findings:
-- Findings with `FILE:` and `LINE:` values → inline comments array
-- Findings with `FILE: (none)` → append to review body text
-- If any finding has `SEVERITY: blocking` → `event: REQUEST_CHANGES`, otherwise `event: COMMENT`
-
-### Submit via GitHub API
-
-For reviews with inline comments, use JSON input to avoid shell quoting issues:
+### Submit via prr
 
 ```bash
-# Build payload as JSON, then pipe to gh api
-cat <<'EOF' | gh api repos/{owner}/{repo}/pulls/{number}/reviews --method POST --input -
-{
-  "body": "## Expert Code Review\n\n...",
-  "event": "COMMENT",
-  "comments": [
-    {
-      "path": "path/to/file.go",
-      "line": 42,
-      "body": "Inline comment text here"
-    }
-  ]
-}
-EOF
+prr submit <pr-number> --findings .scratchpad/review-<pr-number>.json
 ```
 
-For reviews with no inline comments (all LGTM or body-only findings):
+`prr` handles all mechanics: loading the findings JSON, fetching the head commit SHA, separating inline vs body-level comments, auto-determining the event from severity fields, and posting the review via the GitHub REST API.
+
+Override the event explicitly if needed:
 
 ```bash
-gh api repos/{owner}/{repo}/pulls/{number}/reviews \
-  --method POST \
-  --field body='...' \
-  --field event='COMMENT'
+prr submit <pr-number> --findings .scratchpad/review-<pr-number>.json --event REQUEST_CHANGES
 ```
 
-**Note on line numbers:** GitHub's review API requires the line number to be within the diff hunk. If a specialist's line number falls outside the diff, post that finding as a body-level observation instead of an inline comment.
+**Note on line numbers:** GitHub's review API requires the line number to be within the diff hunk. If a specialist's line number falls outside the diff, edit the findings JSON to set `path: null` and `line: null` for that comment before submitting so it becomes a body-level observation.
 
 ### Verify and Report
 
-```bash
-# Verify inline comments landed
-prc list --inline-only
-```
+Read `inline_count` and `body_count` directly from `prr`'s JSON output — no separate `prc list` call needed.
 
 Report back:
-- How many inline comments were posted
-- How many findings went into the review body
+- How many inline comments were posted (`inline_count` from prr output)
+- How many findings went into the review body (`body_count` from prr output)
 - Which specialists flagged concerns vs. LGTM
-- The overall review event (COMMENT or REQUEST_CHANGES)
+- The overall review event (`event` from prr output)
 
 ## Critical Rules
 
@@ -312,8 +306,8 @@ Report back:
 - The aggregated review body inherits that tone
 
 **Verification:**
-- Always run `prc list --inline-only` after posting to confirm inline comments landed correctly
-- If inline comments are missing, check whether line numbers fell outside diff hunks and repost affected findings in the review body
+- Read `inline_count` and `body_count` directly from `prr`'s JSON output to confirm counts (no separate `prc list` call needed)
+- If inline comments are missing from `prr` output, check whether line numbers fell outside diff hunks and repost affected findings in the review body
 
 ## Key Principles
 

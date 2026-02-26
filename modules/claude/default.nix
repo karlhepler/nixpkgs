@@ -106,6 +106,11 @@ let
     flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
   } (builtins.readFile ./prc.py);
 
+  # PRR Python CLI (PR review submission using REST API)
+  prrScript = pkgs.writers.writePython3Bin "prr" {
+    flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
+  } (builtins.readFile ./prr.py);
+
   # Claude Metrics Hook (tracks agent metrics on stop events)
   claudeMetricsHookScript = pkgs.writers.writePython3Bin "claude-metrics-hook" {
     flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
@@ -231,6 +236,14 @@ in {
         description = "PR comment management using GraphQL (list, reply, resolve, collapse)";
         mainProgram = "prc";
         homepage = "${builtins.toString ./.}/prc.py";
+      };
+    };
+
+    prr = prrScript // {
+      meta = {
+        description = "Submit GitHub PR reviews with inline comments from a structured findings JSON file";
+        mainProgram = "prr";
+        homepage = "${builtins.toString ./.}/prr.py";
       };
     };
 
