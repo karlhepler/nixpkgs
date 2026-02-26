@@ -7,10 +7,12 @@ set -euo pipefail
 # Tracks temporary vs permanent patterns for lifecycle cleanup.
 #
 # SUBCOMMANDS:
-#   perm [--session <id>] allow <pattern>    Add pattern as temporary permission (session-scoped)
+#   perm [--session <id>] allow <pattern>    Add pattern as temporary permission (session-scoped, timestamped)
 #   perm always <pattern>                    Add pattern as permanent permission
 #   perm [--session <id>] cleanup            Remove temporary permissions owned by given session
-#   perm list                                Show tracked permissions with labels
+#   perm cleanup-stale [--max-age <hours>]   Remove temporary permissions older than max-age (default: 4h)
+#   perm list                                Show tracked permissions with labels and timestamps
+#   perm session-hook                        SessionStart hook: read JSON from stdin, print session UUID
 #
 # FILES:
 #   .claude/settings.local.json  - Claude Code local settings
@@ -19,7 +21,7 @@ set -euo pipefail
 # TRACKING FORMAT:
 #   {
 #     "temporary": {
-#       "Bash(npm run lint)": ["fair-drift", "cool-vale"]
+#       "Bash(npm run lint)": {"session-uuid-a": 1709000000, "session-uuid-b": 1709000100}
 #     },
 #     "permanent": ["Bash(npm run test)"]
 #   }
@@ -29,16 +31,18 @@ show_help() {
 perm - Claude Code permission manager
 
 USAGE:
-  perm --session <id> allow <pattern>    Add pattern as temporary permission (cleaned up on perm cleanup)
-  perm always <pattern>                  Add pattern as permanent permission (never cleaned up)
-  perm --session <id> cleanup            Remove temporary permissions owned by the given session
-  perm list                              Show tracked permissions with labels
-  perm --help                            Show this help message
+  perm --session <id> allow <pattern>      Add temporary permission (session-scoped, timestamped)
+  perm always <pattern>                    Add permanent permission (never cleaned up)
+  perm --session <id> cleanup              Remove temporary permissions owned by the given session
+  perm cleanup-stale [--max-age <hours>]   Remove temporary permissions older than max-age (default: 4h)
+  perm list                                Show tracked permissions with labels and timestamps
+  perm session-hook                        SessionStart hook: read JSON stdin, print session UUID
+  perm --help                              Show this help message
 
 OPTIONS:
-  --session <id>    Session identifier (required for allow and cleanup subcommands).
-                    Can be a kanban friendly name, a Claude session UUID, or any
-                    arbitrary string. Not session-scoped; any identifier works.
+  --session <id>      Session identifier (required for allow and cleanup).
+                      Use the perm session UUID printed at session start.
+  --max-age <hours>   Maximum age in hours for cleanup-stale (default: 4).
 
 DESCRIPTION:
   Manages Claude Code permissions in .claude/settings.local.json.
@@ -47,79 +51,119 @@ DESCRIPTION:
   Tracking is stored in .claude/.perm-tracking.json to distinguish
   temporary permissions (granted for a session) from permanent ones.
 
-  Temporary permissions are session-scoped. Multiple sessions can hold
-  the same temporary permission; cleanup only removes the given session's
-  claim. The permission is removed from settings only when no sessions hold it.
+  Temporary permissions are session-scoped and timestamped. Multiple
+  sessions can hold the same temporary permission; cleanup only removes
+  the given session's claim. The permission is removed from settings
+  only when no sessions hold it.
+
+  cleanup-stale removes any temporary claims older than the specified
+  max-age (default: 4 hours), regardless of session. Designed to run
+  automatically at session start as a safety net for crashed or
+  forgotten sessions.
+
+  session-hook reads Claude Code SessionStart JSON from stdin and
+  prints the session UUID for use with --session flags.
 
 EXAMPLES:
-  perm --session abc123 allow "Bash(npm run lint)"
+  perm --session a1b2c3d4 allow "Bash(npm run lint)"
   perm always "Bash(npm run test)"
-  perm --session abc123 cleanup
+  perm --session a1b2c3d4 cleanup
+  perm cleanup-stale
+  perm cleanup-stale --max-age 2
   perm list
 
 EOF
 }
 
-# Find git repo root — Nix guarantees git is available
-repo_root="$(git rev-parse --show-toplevel)"
-settings_file="${repo_root}/.claude/settings.local.json"
-tracking_file="${repo_root}/.claude/.perm-tracking.json"
+# --- Lazy repo root resolution ---
+# Not all subcommands need file access (e.g., session-hook).
+# Functions that need files call ensure_repo first.
+_repo_root=""
+_settings_file=""
+_tracking_file=""
 
-# Ensure .claude directory exists
-mkdir -p "${repo_root}/.claude"
+ensure_repo() {
+  if [[ -z "${_repo_root}" ]]; then
+    _repo_root="$(git rev-parse --show-toplevel)"
+    _settings_file="${_repo_root}/.claude/settings.local.json"
+    _tracking_file="${_repo_root}/.claude/.perm-tracking.json"
+    mkdir -p "${_repo_root}/.claude"
+  fi
+}
 
 # Initialize settings.local.json if absent or missing required keys
 init_settings() {
-  if [[ ! -f "${settings_file}" ]]; then
-    echo '{"permissions":{"allow":[]}}' | jq . > "${settings_file}"
+  ensure_repo
+
+  if [[ ! -f "${_settings_file}" ]]; then
+    echo '{"permissions":{"allow":[]}}' | jq . > "${_settings_file}"
     return
   fi
 
   # Ensure permissions key exists
   local has_permissions
-  has_permissions="$(jq 'has("permissions")' "${settings_file}")"
+  has_permissions="$(jq 'has("permissions")' "${_settings_file}")"
   if [[ "${has_permissions}" == "false" ]]; then
-    jq '.permissions = {"allow":[]}' "${settings_file}" > "${settings_file}.tmp"
-    mv "${settings_file}.tmp" "${settings_file}"
+    jq '.permissions = {"allow":[]}' "${_settings_file}" > "${_settings_file}.tmp"
+    mv "${_settings_file}.tmp" "${_settings_file}"
     return
   fi
 
   # Ensure permissions.allow key exists
   local has_allow
-  has_allow="$(jq '.permissions | has("allow")' "${settings_file}")"
+  has_allow="$(jq '.permissions | has("allow")' "${_settings_file}")"
   if [[ "${has_allow}" == "false" ]]; then
-    jq '.permissions.allow = []' "${settings_file}" > "${settings_file}.tmp"
-    mv "${settings_file}.tmp" "${settings_file}"
+    jq '.permissions.allow = []' "${_settings_file}" > "${_settings_file}.tmp"
+    mv "${_settings_file}.tmp" "${_settings_file}"
   fi
 }
 
 # Initialize .perm-tracking.json if absent.
-# Migrates old array-based temporary format to the new object format.
+# Migrates old formats to current session→timestamp object format.
 init_tracking() {
-  if [[ ! -f "${tracking_file}" ]]; then
-    echo '{"temporary":{},"permanent":[]}' | jq . > "${tracking_file}"
+  ensure_repo
+
+  if [[ ! -f "${_tracking_file}" ]]; then
+    echo '{"temporary":{},"permanent":[]}' | jq . > "${_tracking_file}"
     return
   fi
 
-  # Migrate old format: temporary was an array, now it is an object
+  # Migration 1: temporary was a flat array → now an object (keyed by pattern)
   local temp_is_array
-  temp_is_array="$(jq '.temporary | type == "array"' "${tracking_file}")"
+  temp_is_array="$(jq '.temporary | type == "array"' "${_tracking_file}")"
   if [[ "${temp_is_array}" == "true" ]]; then
-    jq '.temporary = {}' "${tracking_file}" > "${tracking_file}.tmp"
-    mv "${tracking_file}.tmp" "${tracking_file}"
+    jq '.temporary = {}' "${_tracking_file}" > "${_tracking_file}.tmp"
+    mv "${_tracking_file}.tmp" "${_tracking_file}"
+  fi
+
+  # Migration 2: temporary values were session arrays → now session→timestamp objects
+  # Detect: if any value in .temporary is an array, migrate all to objects with current timestamp
+  local has_array_values
+  has_array_values="$(jq '[.temporary | to_entries[] | .value | type] | any(. == "array")' "${_tracking_file}")"
+  if [[ "${has_array_values}" == "true" ]]; then
+    local now
+    now="$(date +%s)"
+    jq --argjson now "${now}" '
+      .temporary |= with_entries(
+        if (.value | type) == "array" then
+          .value = (.value | map({(.): $now}) | add // {})
+        else . end
+      )
+    ' "${_tracking_file}" > "${_tracking_file}.tmp"
+    mv "${_tracking_file}.tmp" "${_tracking_file}"
   fi
 }
 
 # Check if a pattern is already in settings.local.json permissions.allow
 pattern_in_settings() {
   local pattern="$1"
-  jq --arg p "${pattern}" '.permissions.allow | index($p) != null' "${settings_file}"
+  jq --arg p "${pattern}" '.permissions.allow | index($p) != null' "${_settings_file}"
 }
 
 # Check if a pattern is already tracked under permanent
 pattern_in_permanent() {
   local pattern="$1"
-  jq --arg p "${pattern}" '.permanent | index($p) != null' "${tracking_file}"
+  jq --arg p "${pattern}" '.permanent | index($p) != null' "${_tracking_file}"
 }
 
 # Add a pattern to settings.local.json permissions.allow (idempotent)
@@ -132,29 +176,25 @@ add_to_settings() {
     return
   fi
 
-  jq --arg p "${pattern}" '.permissions.allow += [$p]' "${settings_file}" > "${settings_file}.tmp"
-  mv "${settings_file}.tmp" "${settings_file}"
+  jq --arg p "${pattern}" '.permissions.allow += [$p]' "${_settings_file}" > "${_settings_file}.tmp"
+  mv "${_settings_file}.tmp" "${_settings_file}"
 }
 
-# Add session to the temporary pattern's session array (idempotent)
+# Add session claim with timestamp to the temporary pattern (idempotent, updates timestamp)
 add_to_temporary() {
   local pattern="$1"
   local session="$2"
+  local now
+  now="$(date +%s)"
 
-  # If pattern doesn't exist in temporary, create it with [session].
-  # If it exists, append session only if not already present.
-  jq --arg p "${pattern}" --arg s "${session}" '
+  jq --arg p "${pattern}" --arg s "${session}" --argjson now "${now}" '
     if .temporary | has($p) then
-      if (.temporary[$p] | index($s)) != null then
-        .
-      else
-        .temporary[$p] += [$s]
-      end
+      .temporary[$p][$s] = $now
     else
-      .temporary[$p] = [$s]
+      .temporary[$p] = {($s): $now}
     end
-  ' "${tracking_file}" > "${tracking_file}.tmp"
-  mv "${tracking_file}.tmp" "${tracking_file}"
+  ' "${_tracking_file}" > "${_tracking_file}.tmp"
+  mv "${_tracking_file}.tmp" "${_tracking_file}"
 }
 
 # Add a pattern to permanent tracking (idempotent)
@@ -167,16 +207,16 @@ add_to_permanent() {
     return
   fi
 
-  jq --arg p "${pattern}" '.permanent += [$p]' "${tracking_file}" > "${tracking_file}.tmp"
-  mv "${tracking_file}.tmp" "${tracking_file}"
+  jq --arg p "${pattern}" '.permanent += [$p]' "${_tracking_file}" > "${_tracking_file}.tmp"
+  mv "${_tracking_file}.tmp" "${_tracking_file}"
 }
 
 # Remove a pattern from settings.local.json permissions.allow
 remove_from_settings() {
   local pattern="$1"
   jq --arg p "${pattern}" '.permissions.allow = [.permissions.allow[] | select(. != $p)]' \
-    "${settings_file}" > "${settings_file}.tmp"
-  mv "${settings_file}.tmp" "${settings_file}"
+    "${_settings_file}" > "${_settings_file}.tmp"
+  mv "${_settings_file}.tmp" "${_settings_file}"
 }
 
 cmd_allow() {
@@ -231,18 +271,18 @@ cmd_cleanup() {
 
   # Get all temporary patterns
   local temp_count
-  temp_count="$(jq '.temporary | length' "${tracking_file}")"
+  temp_count="$(jq '.temporary | length' "${_tracking_file}")"
 
   if [[ "${temp_count}" -eq 0 ]]; then
     echo "No temporary permissions to clean up."
     return
   fi
 
-  # Find patterns owned by this session
+  # Find patterns that have a claim from this session
   local owned_patterns
   owned_patterns="$(jq -r --arg s "${session}" \
-    '.temporary | to_entries[] | select(.value | index($s) != null) | .key' \
-    "${tracking_file}")"
+    '.temporary | to_entries[] | select(.value | has($s)) | .key' \
+    "${_tracking_file}")"
 
   if [[ -z "${owned_patterns}" ]]; then
     echo "No temporary permissions owned by session '${session}'."
@@ -252,21 +292,21 @@ cmd_cleanup() {
   local removed_count=0
 
   while IFS= read -r pattern; do
-    # Remove this session from the pattern's session array
+    # Remove this session's claim from the pattern
     jq --arg p "${pattern}" --arg s "${session}" \
-      '.temporary[$p] = [.temporary[$p][] | select(. != $s)]' \
-      "${tracking_file}" > "${tracking_file}.tmp"
-    mv "${tracking_file}.tmp" "${tracking_file}"
+      'del(.temporary[$p][$s])' \
+      "${_tracking_file}" > "${_tracking_file}.tmp"
+    mv "${_tracking_file}.tmp" "${_tracking_file}"
 
-    # If session array is now empty, remove from both files
+    # If no claims remain, remove from both files
     local remaining
-    remaining="$(jq --arg p "${pattern}" '.temporary[$p] | length' "${tracking_file}")"
+    remaining="$(jq --arg p "${pattern}" '.temporary[$p] | length' "${_tracking_file}")"
 
     if [[ "${remaining}" -eq 0 ]]; then
       remove_from_settings "${pattern}"
       jq --arg p "${pattern}" 'del(.temporary[$p])' \
-        "${tracking_file}" > "${tracking_file}.tmp"
-      mv "${tracking_file}.tmp" "${tracking_file}"
+        "${_tracking_file}" > "${_tracking_file}.tmp"
+      mv "${_tracking_file}.tmp" "${_tracking_file}"
       removed_count=$((removed_count + 1))
     fi
   done <<< "${owned_patterns}"
@@ -284,13 +324,105 @@ cmd_cleanup() {
   fi
 }
 
+cmd_cleanup_stale() {
+  local max_age_hours="${1:-4}"
+
+  # Gracefully exit if not in a git repo (safety net — may run outside repos)
+  ensure_repo 2>/dev/null || return 0
+
+  # Gracefully exit if tracking file doesn't exist yet
+  if [[ ! -f "${_tracking_file}" ]]; then
+    return
+  fi
+
+  init_settings
+  init_tracking
+
+  local temp_count
+  temp_count="$(jq '.temporary | length' "${_tracking_file}")"
+
+  if [[ "${temp_count}" -eq 0 ]]; then
+    return  # Silent — this is a background safety net
+  fi
+
+  local now max_age_seconds cutoff
+  now="$(date +%s)"
+  max_age_seconds=$((max_age_hours * 3600))
+  cutoff=$((now - max_age_seconds))
+
+  # Find patterns that have at least one stale claim
+  local stale_patterns
+  stale_patterns="$(jq -r --argjson cutoff "${cutoff}" '
+    .temporary | to_entries[]
+    | select(.value | to_entries | any(.value < $cutoff))
+    | .key
+  ' "${_tracking_file}")" || true
+
+  if [[ -z "${stale_patterns}" ]]; then
+    return  # Silent
+  fi
+
+  local stale_count=0
+
+  while IFS= read -r pattern; do
+    # Remove stale claims from this pattern
+    jq --arg p "${pattern}" --argjson cutoff "${cutoff}" '
+      .temporary[$p] |= with_entries(select(.value >= $cutoff))
+    ' "${_tracking_file}" > "${_tracking_file}.tmp"
+    mv "${_tracking_file}.tmp" "${_tracking_file}"
+
+    # If no claims remain, remove from both files
+    local remaining
+    remaining="$(jq --arg p "${pattern}" '.temporary[$p] | length' "${_tracking_file}")"
+
+    if [[ "${remaining}" -eq 0 ]]; then
+      remove_from_settings "${pattern}"
+      jq --arg p "${pattern}" 'del(.temporary[$p])' \
+        "${_tracking_file}" > "${_tracking_file}.tmp"
+      mv "${_tracking_file}.tmp" "${_tracking_file}"
+      stale_count=$((stale_count + 1))
+    fi
+  done <<< "${stale_patterns}"
+
+  if [[ "${stale_count}" -gt 0 ]]; then
+    echo "Cleaned up ${stale_count} stale temporary permission(s) (older than ${max_age_hours}h)."
+  fi
+}
+
+cmd_session_hook() {
+  # Read JSON from stdin (Claude Code SessionStart hook format)
+  local json
+  json="$(cat)"
+
+  local session_id
+  session_id="$(echo "${json}" | jq -r '.session_id // empty')"
+
+  if [[ -z "${session_id}" ]]; then
+    return
+  fi
+
+  # Suppress for sub-agents (they have agent_type in the JSON)
+  local agent_type
+  agent_type="$(echo "${json}" | jq -r '.agent_type // empty')"
+  if [[ -n "${agent_type}" ]]; then
+    return
+  fi
+
+  # Suppress for burns sessions
+  if [[ -n "${BURNS_SESSION:-}" ]]; then
+    return
+  fi
+
+  echo "🔑 Your perm session is: ${session_id}"
+}
+
 cmd_list() {
   init_tracking
 
   local temp_count
   local perm_count
-  temp_count="$(jq '.temporary | length' "${tracking_file}")"
-  perm_count="$(jq '.permanent | length' "${tracking_file}")"
+  temp_count="$(jq '.temporary | length' "${_tracking_file}")"
+  perm_count="$(jq '.permanent | length' "${_tracking_file}")"
 
   if [[ "${temp_count}" -eq 0 && "${perm_count}" -eq 0 ]]; then
     echo "No tracked permissions."
@@ -299,15 +431,22 @@ cmd_list() {
 
   if [[ "${temp_count}" -gt 0 ]]; then
     echo "Temporary:"
-    jq -r '.temporary | to_entries[] | "\(.key)\t\(.value | join(", "))"' "${tracking_file}" \
-      | while IFS=$'\t' read -r pattern sessions; do
-          echo "  [temporary] ${pattern} (sessions: ${sessions})"
+    jq -r '
+      .temporary | to_entries[] |
+      .key as $pattern |
+      .value | to_entries[] |
+      "\($pattern)\t\(.key)\t\(.value)"
+    ' "${_tracking_file}" \
+      | while IFS=$'\t' read -r pattern session timestamp; do
+          local age_hours
+          age_hours=$(( ($(date +%s) - timestamp) / 3600 ))
+          echo "  [temporary] ${pattern} (session: ${session}, age: ${age_hours}h)"
         done
   fi
 
   if [[ "${perm_count}" -gt 0 ]]; then
     echo "Permanent:"
-    jq -r '.permanent[]' "${tracking_file}" | while IFS= read -r pattern; do
+    jq -r '.permanent[]' "${_tracking_file}" | while IFS= read -r pattern; do
       echo "  [permanent] ${pattern}"
     done
   fi
@@ -316,7 +455,7 @@ cmd_list() {
 # Parse global --session flag and subcommand.
 # Accepted forms:
 #   perm --session <id> <subcommand> [args...]
-#   perm <subcommand> [args...]   (session not required for always/list)
+#   perm <subcommand> [args...]   (session not required for always/list/cleanup-stale/session-hook)
 session_id=""
 subcommand=""
 
@@ -334,7 +473,7 @@ while [[ $# -gt 0 ]]; do
       show_help
       exit 0
       ;;
-    allow|always|cleanup|list)
+    allow|always|cleanup|cleanup-stale|list|session-hook)
       subcommand="$1"
       shift
       break
@@ -353,17 +492,42 @@ if [[ -z "${subcommand}" ]]; then
   exit 1
 fi
 
+# Parse subcommand-specific flags
+sub_args=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --max-age)
+      if [[ $# -lt 2 ]]; then
+        echo "Error: --max-age requires an argument" >&2
+        exit 1
+      fi
+      sub_args+=("$2")
+      shift 2
+      ;;
+    *)
+      sub_args+=("$1")
+      shift
+      ;;
+  esac
+done
+
 case "${subcommand}" in
   allow)
-    cmd_allow "${session_id}" "${1:-}"
+    cmd_allow "${session_id}" "${sub_args[0]:-}"
     ;;
   always)
-    cmd_always "${1:-}"
+    cmd_always "${sub_args[0]:-}"
     ;;
   cleanup)
     cmd_cleanup "${session_id}"
     ;;
+  cleanup-stale)
+    cmd_cleanup_stale "${sub_args[0]:-4}"
+    ;;
   list)
     cmd_list
+    ;;
+  session-hook)
+    cmd_session_hook
     ;;
 esac

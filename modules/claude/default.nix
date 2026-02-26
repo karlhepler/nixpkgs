@@ -150,10 +150,13 @@ in {
       name = "claude-session-start-hook";
       runtimeInputs = [ ];
       text = ''
+        json=$(cat)
         mkdir -p .scratchpad
-        kanban session-hook
+        echo "$json" | kanban session-hook
+        ${perm}/bin/perm cleanup-stale 2>/dev/null || true
+        echo "$json" | ${perm}/bin/perm session-hook 2>/dev/null || true
       '';
-      description = "Hook for Claude Code session start - injects kanban session identity";
+      description = "Hook for Claude Code session start - injects kanban session identity and perm session UUID";
       sourceFile = "default.nix";
     };
 

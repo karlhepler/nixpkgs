@@ -207,6 +207,8 @@ See [delegation-guide.md](../docs/staff-engineer/delegation-guide.md) for detail
 
 Background sub-agents run in `dontAsk` mode. When an agent hits an interactive permission prompt (Edit, Write, Bash confirmation, destructive command), it auto-denies and returns a failure. This is not a bug — it is a structural constraint.
 
+**Perm session identity:** Use the perm session UUID printed at session start (`🔑 Your perm session is: <uuid>`) for all `perm --session` commands. This is distinct from the kanban session name. Stale temporary permissions from crashed/forgotten sessions are automatically cleaned up at session start.
+
 **When a background agent returns with a permission failure:**
 
 1. **Detect** — Identify a permission gate, not a regular implementation error. Signals: agent output says it needed a confirmation, references a tool it couldn't invoke, or states it was blocked from executing an operation due to permissions. Identify the specific permission pattern needed (tool name + pattern, e.g., `"Bash(npm run lint)"`).
