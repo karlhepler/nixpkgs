@@ -211,18 +211,15 @@ Background sub-agents run in `dontAsk` mode. When an agent hits an interactive p
 
 1. **Detect** — Identify a permission gate, not a regular implementation error. Signals: agent output says it needed a confirmation, references a tool it couldn't invoke, or states it was blocked from executing an operation due to permissions. Identify the specific permission pattern needed (tool name + pattern, e.g., `"Bash(npm run lint)"`).
 2. **Present choice** — Use AskUserQuestion with exactly three options. The question text must include a concise "Why" line explaining what the agent is trying to do and why it needs this permission. Flag potentially dangerous or mutating operations with ⚠️ — destructive shell commands (e.g., `terraform apply`, `rm -rf`, `git push --force`, database mutations) or permission patterns broad enough to cover destructive operations (e.g., `Edit(src/**)`).
-   - **"Allow → Run in Background"** — You write the permission pattern to `.claude/settings.local.json` (project-scoped, gitignored), mark it as **temporary** in your tracking list, then re-launch the agent in background. Once the agent returns successfully, you remove all temporary permissions from `settings.local.json` in one cleanup write.
-   - **"Always Allow → Run in Background"** — Same write, same re-launch, but permanent. Mark it as **permanent** in your tracking list. No cleanup after the agent completes.
-   - **"Run in Foreground"** — Before re-launching, remove ALL temporary (Allow) permissions written so far in this recovery loop from `.claude/settings.local.json`. Then re-launch using the Task tool with `run_in_background: false`. Same prompt, same card, same agent type. Claude Code surfaces the permission prompt to the user natively. Temporary permissions must not linger — foreground mode means Claude Code handles permissions itself.
+   - **"Allow → Run in Background"** — Run `perm --session <your-session-id> allow "<pattern>"` to add the permission to `.claude/settings.local.json` tracked as temporary for your session, then re-launch the agent in background. Once the agent returns successfully, run `perm --session <your-session-id> cleanup` to remove your session's temporary permissions.
+   - **"Always Allow → Run in Background"** — Run `perm always "<pattern>"` to add the permission permanently, then re-launch the agent in background. No cleanup after the agent completes.
+   - **"Run in Foreground"** — Before re-launching, run `perm --session <your-session-id> cleanup` to remove all temporary permissions for your session. Then re-launch using the Task tool with `run_in_background: false`. Same prompt, same card, same agent type. Claude Code surfaces the permission prompt to the user natively.
 3. **Execute the chosen path** — No other options exist. If the user wants none of these, that conversation is separate from this protocol.
 4. **Resume** — After the chosen path completes, continue normal AC review lifecycle for remaining work.
 
-**Tracking:** During the permission recovery loop, maintain a list in your active conversation context that distinguishes temporary (Allow) from permanent (Always Allow) permissions. You will reference this list during cleanup. Example (agent hits three sequential gates):
-- `Bash(npm run lint)` → temporary (user chose Allow)
-- `Bash(npm run test)` → permanent (user chose Always Allow)
-- `Edit(src/**)` → temporary (user chose Allow)
+**Tracking:** `perm` handles session-aware tracking. Run `perm list` to see current state with session IDs if you need to inspect what's active.
 
-**Sequential permission gates:** If the re-launched agent hits a different permission gate, restart from step 1. Each gate gets its own AskUserQuestion. Temporary permissions stay in place while the loop continues — cleanup happens once the agent returns (success or failure). On success, proceed to AC review. On implementation failure, clean up temporary permissions first, then `kanban redo` and re-delegate. After a few Allow or Always Allow selections, the agent typically has everything it needs and completes successfully. If the user selects "Run in Foreground" at any point mid-loop, clean up ALL temporary permissions accumulated so far before re-launching in foreground.
+**Sequential permission gates:** If the re-launched agent hits a different permission gate, restart from step 1. Each gate gets its own AskUserQuestion. Temporary permissions stay in place while the loop continues — cleanup happens once the agent returns (success or failure). On success, proceed to AC review. On implementation failure, run `perm --session <your-session-id> cleanup`, then `kanban redo` and re-delegate. After a few Allow or Always Allow selections, the agent typically has everything it needs and completes successfully. If the user selects "Run in Foreground" at any point mid-loop, run `perm --session <your-session-id> cleanup` before re-launching in foreground.
 
 **Example:**
 
@@ -252,23 +249,7 @@ AskUserQuestion({
 })
 ```
 
-If user selects **"Allow → Run in Background"**: staff engineer writes permission to `.claude/settings.local.json`, marks it as temporary, then re-launches the same agent in background with a scoped authorization constraint (see below). After the agent returns successfully, staff engineer removes all temporary permissions from `settings.local.json`. If user selects **"Always Allow → Run in Background"**: same write and re-launch with scoped authorization, but permanent — no cleanup after completion. If user selects **"Run in Foreground"**: staff engineer removes all temporary (Allow) permissions written so far from `settings.local.json`, then re-launches with `run_in_background: false`.
-
-**Allow/Always Allow path — writing to settings.local.json:**
-
-Read the current `.claude/settings.local.json` (create it if absent), add the pattern to `permissions.allow`, and write it back. Example structure:
-
-```json
-{
-  "permissions": {
-    "allow": [
-      "Bash(npm run lint)"
-    ]
-  }
-}
-```
-
-Then re-launch the agent in background. The new permission is effective immediately.
+If user selects **"Allow → Run in Background"**: run `perm --session <your-session-id> allow "Bash(npm run lint)"`, then re-launch the same agent in background with a scoped authorization constraint (see below). After the agent returns successfully, run `perm --session <your-session-id> cleanup`. If user selects **"Always Allow → Run in Background"**: run `perm always "Bash(npm run lint)"`, then re-launch with scoped authorization — no cleanup after completion. If user selects **"Run in Foreground"**: run `perm --session <your-session-id> cleanup` first, then re-launch with `run_in_background: false`.
 
 **Scoped authorization in re-launch prompts:**
 
@@ -286,13 +267,7 @@ If the re-launched agent returns saying it needs to use an already-permitted too
 
 **Allow path — cleanup after agent returns:**
 
-After the agent returns (success or failure), remove only the temporary permissions from `settings.local.json`. Leave permanent (Always Allow) permissions intact. Steps:
-
-1. Read `.claude/settings.local.json`
-2. Remove only the patterns marked as temporary in your tracking list from `permissions.allow`
-3. Write the file back in a single call to avoid partial-state intermediate reads. Preserve all non-permission keys.
-
-If all permissions were temporary and none remain, `permissions.allow` becomes an empty array (or the object can be omitted entirely). If the file only contained temporary permissions, write back an empty allow list rather than deleting the file — other keys may be present.
+Run `perm --session <your-session-id> cleanup`. This removes only your session's temporary permissions from `settings.local.json`, leaving permanent (Always Allow) permissions and other sessions' claims intact.
 
 **Re-launch vs. redo:**
 - Permission gate failure → Present three-option choice (Allow → Run in Background, Always Allow → Run in Background, or Run in Foreground), execute chosen path

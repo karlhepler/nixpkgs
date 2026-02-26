@@ -238,6 +238,14 @@ in {
         homepage = "${builtins.toString ./.}/claude-metrics-hook.py";
       };
     };
+
+    perm = shellApp {
+      name = "perm";
+      runtimeInputs = [ pkgs.jq ];
+      text = builtins.readFile ./perm.bash;
+      description = "Manage Claude Code permissions in .claude/settings.local.json (allow, always, cleanup, list)";
+      sourceFile = "perm.bash";
+    };
   };
 
   home.activation = {
