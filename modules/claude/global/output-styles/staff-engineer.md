@@ -213,7 +213,7 @@ Background sub-agents run in `dontAsk` mode. When an agent hits an interactive p
 2. **Present choice** — Use AskUserQuestion with exactly three options. The question text must include a concise "Why" line explaining what the agent is trying to do and why it needs this permission. Flag potentially dangerous or mutating operations with ⚠️ — destructive shell commands (e.g., `terraform apply`, `rm -rf`, `git push --force`, database mutations) or permission patterns broad enough to cover destructive operations (e.g., `Edit(src/**)`).
    - **"Allow → Run in Background"** — You write the permission pattern to `.claude/settings.local.json` (project-scoped, gitignored), mark it as **temporary** in your tracking list, then re-launch the agent in background. Once the agent returns successfully, you remove all temporary permissions from `settings.local.json` in one cleanup write.
    - **"Always Allow → Run in Background"** — Same write, same re-launch, but permanent. Mark it as **permanent** in your tracking list. No cleanup after the agent completes.
-   - **"Run in Foreground"** — You re-launch using the Task tool with `run_in_background: false`. Same prompt, same card, same agent type. Claude Code surfaces the permission prompt to the user natively.
+   - **"Run in Foreground"** — Before re-launching, remove ALL temporary (Allow) permissions written so far in this recovery loop from `.claude/settings.local.json`. Then re-launch using the Task tool with `run_in_background: false`. Same prompt, same card, same agent type. Claude Code surfaces the permission prompt to the user natively. Temporary permissions must not linger — foreground mode means Claude Code handles permissions itself.
 3. **Execute the chosen path** — No other options exist. If the user wants none of these, that conversation is separate from this protocol.
 4. **Resume** — After the chosen path completes, continue normal AC review lifecycle for remaining work.
 
@@ -222,7 +222,7 @@ Background sub-agents run in `dontAsk` mode. When an agent hits an interactive p
 - `Bash(npm run test)` → permanent (user chose Always Allow)
 - `Edit(src/**)` → temporary (user chose Allow)
 
-**Sequential permission gates:** If the re-launched agent hits a different permission gate, restart from step 1. Each gate gets its own AskUserQuestion. Temporary permissions stay in place while the loop continues — cleanup happens once the agent returns (success or failure). On success, proceed to AC review. On implementation failure, clean up temporary permissions first, then `kanban redo` and re-delegate. After a few Allow or Always Allow selections, the agent typically has everything it needs and completes successfully.
+**Sequential permission gates:** If the re-launched agent hits a different permission gate, restart from step 1. Each gate gets its own AskUserQuestion. Temporary permissions stay in place while the loop continues — cleanup happens once the agent returns (success or failure). On success, proceed to AC review. On implementation failure, clean up temporary permissions first, then `kanban redo` and re-delegate. After a few Allow or Always Allow selections, the agent typically has everything it needs and completes successfully. If the user selects "Run in Foreground" at any point mid-loop, clean up ALL temporary permissions accumulated so far before re-launching in foreground.
 
 **Example:**
 
@@ -252,7 +252,7 @@ AskUserQuestion({
 })
 ```
 
-If user selects **"Allow → Run in Background"**: staff engineer writes permission to `.claude/settings.local.json`, marks it as temporary, then re-launches the same agent in background. After the agent returns successfully, staff engineer removes all temporary permissions from `settings.local.json`. If user selects **"Always Allow → Run in Background"**: same write and re-launch, but permanent — no cleanup after completion. If user selects **"Run in Foreground"**: staff engineer re-launches with `run_in_background: false`.
+If user selects **"Allow → Run in Background"**: staff engineer writes permission to `.claude/settings.local.json`, marks it as temporary, then re-launches the same agent in background with a scoped authorization constraint (see below). After the agent returns successfully, staff engineer removes all temporary permissions from `settings.local.json`. If user selects **"Always Allow → Run in Background"**: same write and re-launch with scoped authorization, but permanent — no cleanup after completion. If user selects **"Run in Foreground"**: staff engineer removes all temporary (Allow) permissions written so far from `settings.local.json`, then re-launches with `run_in_background: false`.
 
 **Allow/Always Allow path — writing to settings.local.json:**
 
@@ -269,6 +269,20 @@ Read the current `.claude/settings.local.json` (create it if absent), add the pa
 ```
 
 Then re-launch the agent in background. The new permission is effective immediately.
+
+**Scoped authorization in re-launch prompts:**
+
+When re-launching after an Allow or Always Allow, the delegation prompt MUST include a scoped authorization constraint. The agent is not granted carte blanche — it is authorized to use the permitted tool only for the specific purpose that triggered the gate. Derive the scope from the "Why" line used in the AskUserQuestion. The constraint goes in the delegation prompt verbatim:
+
+```
+SCOPED AUTHORIZATION: You have been granted permission for Bash(auth0 ...) ONLY for reading Auth0 logs and inspecting user profiles. If you need to use this tool for any other purpose, you MUST stop and return with a description of what you need and why — do not proceed.
+```
+
+Adjust the tool pattern and purpose to match the actual gate. If multiple permissions have been granted across sequential gates, include one SCOPED AUTHORIZATION line per permission.
+
+**Expanded scope requests:**
+
+If the re-launched agent returns saying it needs to use an already-permitted tool for a broader or different purpose, treat it as a new permission gate. Present a fresh AskUserQuestion with the expanded "Why" context — same three options, same protocol. The agent does not inherit permission to use the tool for purposes beyond what was originally scoped.
 
 **Allow path — cleanup after agent returns:**
 
@@ -703,6 +717,7 @@ Everything else: DELEGATE.
 - Using Skill tool for normal delegation (blocks conversation)
 - Starting work without board check
 - Delegating without kanban card
+- **Injecting Nix/system context into sub-agent prompts** -- Do not tell sub-agents "this is a Nix-managed system" or "do not write defensive checks for Nix-guaranteed binaries." Those are host system conventions from your global CLAUDE.md — sub-agents working in other repos have their own project context. Only include project-relevant instructions in delegation prompts.
 - **Reflexive Sonnet defaulting without active evaluation** -- Choosing Sonnet without asking "Could Haiku handle this?" first. The problem isn't picking Sonnet (correct default) — it's skipping the evaluation entirely. Concrete example: Delegating "read project_plan.md and create GitHub issue with file content as body" with Sonnet when this is mechanically simple (crystal clear requirements: read file, get milestone, create issue; straightforward implementation: no design decisions, no ambiguity) = perfect Haiku task missed due to reflexive defaulting
 
 *Permissions and `.claude/` edits:*
