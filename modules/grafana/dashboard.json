@@ -36,6 +36,7 @@
       "id": 2,
       "type": "stat",
       "title": "Total Cost (Today)",
+      "description": "Total spend across all Claude Code sessions that started today. If this is climbing unexpectedly fast, check the Cost by Agent Type panel — a single Opus delegation or a runaway sidechain is usually the culprit.",
       "gridPos": {
         "x": 0,
         "y": 1,
@@ -106,6 +107,7 @@
       "id": 1,
       "type": "stat",
       "title": "Total Cost (All Time)",
+      "description": "Cumulative spend since metrics collection began. Use this as a baseline when estimating project budgets — compare against the Cost by Project panel to see which codebases consume the most.",
       "gridPos": {
         "x": 5,
         "y": 1,
@@ -176,6 +178,7 @@
       "id": 21,
       "type": "stat",
       "title": "Total Tokens (Today)",
+      "description": "Combined input and output tokens consumed today across all agents. A high token count relative to low cost suggests good cache utilization — check Cache Efficiency to confirm context is being reused rather than re-billed.",
       "gridPos": {
         "x": 10,
         "y": 1,
@@ -239,6 +242,7 @@
       "id": 20,
       "type": "stat",
       "title": "Total Tokens (All Time)",
+      "description": "Cumulative token volume since tracking began. Divide by Total Cost (All Time) to get an approximate effective cost-per-token — a rising cost-per-token over time suggests cache hit rates are degrading.",
       "gridPos": {
         "x": 15,
         "y": 1,
@@ -302,6 +306,7 @@
       "id": 3,
       "type": "stat",
       "title": "Sessions Today",
+      "description": "Number of distinct Claude Code sessions started today. More sessions than expected may indicate frequent restarts due to errors or context overflows — check Error Rate by Agent Type if this number seems high.",
       "gridPos": {
         "x": 20,
         "y": 1,
@@ -379,6 +384,7 @@
       "id": 4,
       "type": "timeseries",
       "title": "Cost Over Time",
+      "description": "Daily spend trend across all Claude Code sessions. Spikes usually indicate large Opus delegations or sessions with many turns — check the Cost by Agent Type panel to identify the driver.",
       "gridPos": {
         "x": 0,
         "y": 5,
@@ -441,6 +447,7 @@
       "id": 11,
       "type": "barchart",
       "title": "Cost by Kanban Session",
+      "description": "Cumulative spend per kanban session name (e.g., swift-falcon). If one session dwarfs the rest, inspect it in the Top 10 Expensive Sessions table to see which agents drove the cost.",
       "gridPos": {
         "x": 0,
         "y": 13,
@@ -502,6 +509,7 @@
       "id": 12,
       "type": "table",
       "title": "Top 10 Expensive Sessions",
+      "description": "The costliest individual Claude Code sessions, ranked by total spend. High agent count with moderate turns suggests well-parallelized work; low agent count with high turns suggests a single agent looped or struggled.",
       "gridPos": {
         "x": 12,
         "y": 13,
@@ -742,6 +750,7 @@
       "id": 6,
       "type": "barchart",
       "title": "Cost by Agent Type",
+      "description": "Total accumulated cost per agent role (e.g., swe-backend, scribe, staff-engineer). A role that costs far more than others is your primary cost driver — cross-reference with Turns by Agent Type to determine whether the cost is from many turns or expensive model choices.",
       "gridPos": {
         "x": 0,
         "y": 21,
@@ -803,6 +812,7 @@
       "id": 7,
       "type": "barchart",
       "title": "Cost by Model",
+      "description": "Total spend broken down by model family (haiku, sonnet, opus). If sonnet or haiku are unexpectedly high, routine tasks may be over-powered — use Agent x Model Usage to see which roles are driving each model's cost.",
       "gridPos": {
         "x": 8,
         "y": 21,
@@ -864,6 +874,7 @@
       "id": 8,
       "type": "barchart",
       "title": "Cost by Project",
+      "description": "Total spend per working directory (git project). A project that suddenly jumps in cost without a corresponding increase in throughput is worth investigating for inefficient delegation patterns.",
       "gridPos": {
         "x": 16,
         "y": 21,
@@ -939,6 +950,7 @@
       "id": 9,
       "type": "barchart",
       "title": "Token Breakdown",
+      "description": "Input, output, and cache-read token volumes stacked by model family. A small cache-read segment relative to input means context is being invalidated — check if CLAUDE.md or skill files changed recently.",
       "gridPos": {
         "x": 0,
         "y": 30,
@@ -1042,6 +1054,7 @@
       "id": 15,
       "type": "timeseries",
       "title": "Cache Efficiency Over Time",
+      "description": "Percentage of input tokens served from cache vs. fresh input, per day. Below 70% means context is being invalidated frequently — check if CLAUDE.md or skill files changed recently.",
       "gridPos": {
         "x": 12,
         "y": 30,
@@ -1137,6 +1150,7 @@
       "id": 10,
       "type": "barchart",
       "title": "Turns by Agent Type",
+      "description": "Total API round-trips accumulated per agent role. A role with high turns AND high cost is worth examining in Avg Turns per Session by Agent x Model to see if model selection could be optimized.",
       "gridPos": {
         "x": 0,
         "y": 39,
@@ -1198,6 +1212,7 @@
       "id": 5,
       "type": "timeseries",
       "title": "Session Timeline (Cost + Tool Calls)",
+      "description": "Each dot represents a session plotted by start time, showing cost, tool call count, and duration. Dots high on the cost axis with low tool calls suggest token-heavy reasoning without much action — a signal to tighten the task definition.",
       "gridPos": {
         "x": 12,
         "y": 39,
@@ -1329,6 +1344,7 @@
       "id": 13,
       "type": "table",
       "title": "Tool Usage Heatmap (by Agent)",
+      "description": "Call frequency and error count per tool, broken down by agent role. Red cells in the Errors column indicate a tool failing repeatedly — this often points to a permission gap or a prompt instructing the agent to use tools it is not allowed to run.",
       "gridPos": {
         "x": 0,
         "y": 47,
@@ -1527,6 +1543,7 @@
       "id": 22,
       "type": "table",
       "title": "Top Tools (All Agents Combined)",
+      "description": "Most-called tools across all agent types, ranked by volume. If WebSearch or WebFetch is unexpectedly high, check whether agents are fetching information that should already be in local documentation or Context7.",
       "gridPos": {
         "x": 0,
         "y": 57,
@@ -1627,6 +1644,7 @@
       "id": 24,
       "type": "barchart",
       "title": "Most Denied Tools",
+      "description": "Tools that were blocked by the permission system, ranked by denial count. Repeated denials for the same tool indicate an agent is attempting actions it is not authorized for — either the task prompt needs adjustment to stay within allowed scope, or the permission configuration needs to explicitly allow that tool for that workflow.",
       "gridPos": {
         "x": 12,
         "y": 57,
@@ -1727,6 +1745,7 @@
       "id": 16,
       "type": "barchart",
       "title": "Error Rate by Agent Type",
+      "description": "Percentage of tool calls that resulted in errors, per agent role. Above 15% (red threshold) suggests systemic issues — cross-reference with the Tool Usage Heatmap to identify which specific tools are failing.",
       "gridPos": {
         "x": 0,
         "y": 68,
@@ -1818,6 +1837,7 @@
       "id": 18,
       "type": "barchart",
       "title": "Latency Distribution by Agent Type",
+      "description": "Average turn-to-response latency in seconds per agent role. If haiku shows similar latency to sonnet, the speed advantage of the cheaper model is being lost — check token counts per turn.",
       "gridPos": {
         "x": 8,
         "y": 68,
@@ -1892,6 +1912,7 @@
       "id": 17,
       "type": "barchart",
       "title": "Cost per Tool Call by Agent",
+      "description": "Average dollar cost per tool call, per agent role. If an agent exceeds $0.10 per call (red threshold), consider splitting its tasks into smaller, more focused cards.",
       "gridPos": {
         "x": 16,
         "y": 68,
@@ -1983,6 +2004,7 @@
       "id": 14,
       "type": "barchart",
       "title": "Session Duration by Agent Type",
+      "description": "Average wall-clock time per session in seconds, broken down by agent role. Long sessions for leaf agents (e.g., scribe, swe-backend) may indicate tasks that are too large — consider splitting cards to reduce per-session scope.",
       "gridPos": {
         "x": 0,
         "y": 76,
@@ -2044,6 +2066,7 @@
       "id": 19,
       "type": "table",
       "title": "Turn Statistics by Agent Type",
+      "description": "Min, max, average, and p95 turn counts per agent role, with sample size. If p95 is much higher than the average, a small number of sessions are running very long — investigate them in the Top 10 Expensive Sessions table.",
       "gridPos": {
         "x": 12,
         "y": 76,
@@ -2527,7 +2550,7 @@
       "id": 26,
       "type": "table",
       "title": "Redo Rate by Agent x Model",
-      "description": "How often cards are sent back for rework after AC review fails, broken down by agent type and model. High redo rate = unreliable output. Use this to tune model selection — e.g., if haiku produces 40% redos for swe-backend but sonnet produces 5%, that's a signal to upgrade the default.",
+      "description": "How often cards are sent back for rework, broken down by agent type and model. Use this to tune model selection — if haiku produces far more redos than sonnet for the same agent, that's a signal to upgrade the default.",
       "gridPos": {
         "x": 0,
         "y": 95,
@@ -2943,7 +2966,7 @@
       "id": 28,
       "type": "timeseries",
       "title": "Throughput — Cards Done Per Day",
-      "description": "Daily card completion velocity. A rising trend means more work is flowing through to done. Gaps indicate days with no completions.",
+      "description": "Daily card completion velocity. A rising trend means more work is flowing through to done; gaps indicate days with no completions.",
       "gridPos": {
         "x": 0,
         "y": 116,
@@ -3149,7 +3172,7 @@
       "id": 31,
       "type": "table",
       "title": "First-Pass Completion Rate by Agent x Model",
-      "description": "Percentage of cards completed without any redos, broken down by agent and model. High first-pass rate means work lands clean. Low rate signals the agent-model combo needs recalibration — either the model is under-powered or the task scope is too broad.",
+      "description": "Percentage of cards completed without any redos, broken down by agent and model. A low rate signals the agent-model combo needs recalibration — either the model is under-powered or the task scope is too broad.",
       "gridPos": {
         "x": 12,
         "y": 132,
@@ -3514,7 +3537,14 @@
             "lineWidth": 1
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "card_count" },
+            "properties": [
+              { "id": "unit", "value": "short" }
+            ]
+          }
+        ]
       },
       "options": {
         "orientation": "horizontal",
@@ -3576,7 +3606,14 @@
             "lineWidth": 1
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "card_count" },
+            "properties": [
+              { "id": "unit", "value": "short" }
+            ]
+          }
+        ]
       },
       "options": {
         "orientation": "horizontal",
@@ -3602,7 +3639,7 @@
       "id": 36,
       "type": "barchart",
       "title": "AC Count vs Lead Time — Estimation Calibration",
-      "description": "Average completion time (minutes) grouped by number of acceptance criteria. More ACs should mean longer lead times — if the slope is flat, scope is consistently underestimated. Use this to calibrate Claude's complexity estimates against real completion data.",
+      "description": "Average completion time (minutes) grouped by number of acceptance criteria. If the slope is flat, scope is consistently underestimated — use this to calibrate complexity estimates against real completion data.",
       "gridPos": {
         "x": 0,
         "y": 165,
@@ -3684,6 +3721,10 @@
               {
                 "id": "displayName",
                 "value": "AC Count"
+              },
+              {
+                "id": "unit",
+                "value": "short"
               }
             ]
           }
@@ -3878,7 +3919,7 @@
       "id": 38,
       "type": "timeseries",
       "title": "Cumulative Flow Diagram",
-      "description": "Cards-in-each-column over time. Stacked areas show WIP distribution. A growing 'doing' or 'review' band signals a bottleneck. A rising 'done' band indicates throughput. Note: only cards with transition events appear here — historical cards moved before this tracking was enabled will not be included.",
+      "description": "Cards-in-each-column over time, stacked by status. A growing 'doing' or 'review' band signals a bottleneck — only cards with transition events appear, so historical cards are excluded.",
       "gridPos": {
         "x": 0,
         "y": 173,
