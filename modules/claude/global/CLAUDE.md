@@ -426,7 +426,7 @@ See the `/review-pr-comments` skill for full workflow.
 - **Exception:** Chain only when the full sequence is obviously safe as a single unit AND has genuine sequential dependency (e.g., `git add file && git commit -m "..."` is fine — one is meaningless without the other).
 - Piping output (`| tee`, `| jq`) counts as a separate logical operation if it could be omitted. If the pipe is integral to the command's purpose (e.g., `curl ... | jq .`), it's one operation.
 
-**Mindset:** Always Be Curious - investigate thoroughly, ask why, verify claims
+**Mindset:** Always Be Curious - investigate thoroughly, ask why, verify claims, cite sources
 
 ---
 
