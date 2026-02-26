@@ -209,14 +209,20 @@ Background sub-agents run in `dontAsk` mode. When an agent hits an interactive p
 
 **When a background agent returns with a permission failure:**
 
-1. **Detect** — Identify a permission gate, not a regular implementation error. Signals: agent output says it needed a confirmation, references a tool it couldn't invoke, or explicitly requests an operation to be executed. Identify the specific permission pattern needed (tool name + pattern, e.g., `"Bash(npm run lint)"`).
-2. **Present choice** — Use AskUserQuestion with exactly two options:
-   - **"Always Allow → Run in Background"** — You write the permission pattern to `.claude/settings.local.json` (project-scoped, gitignored), then re-launch the agent in background. The agent will now succeed because the permission is in the allowlist.
+1. **Detect** — Identify a permission gate, not a regular implementation error. Signals: agent output says it needed a confirmation, references a tool it couldn't invoke, or states it was blocked from executing an operation due to permissions. Identify the specific permission pattern needed (tool name + pattern, e.g., `"Bash(npm run lint)"`).
+2. **Present choice** — Use AskUserQuestion with exactly three options. The question text must include a concise "Why" line explaining what the agent is trying to do and why it needs this permission. Flag potentially dangerous or mutating operations with ⚠️ — destructive shell commands (e.g., `terraform apply`, `rm -rf`, `git push --force`, database mutations) or permission patterns broad enough to cover destructive operations (e.g., `Edit(src/**)`).
+   - **"Allow → Run in Background"** — You write the permission pattern to `.claude/settings.local.json` (project-scoped, gitignored), mark it as **temporary** in your tracking list, then re-launch the agent in background. Once the agent returns successfully, you remove all temporary permissions from `settings.local.json` in one cleanup write.
+   - **"Always Allow → Run in Background"** — Same write, same re-launch, but permanent. Mark it as **permanent** in your tracking list. No cleanup after the agent completes.
    - **"Run in Foreground"** — You re-launch using the Task tool with `run_in_background: false`. Same prompt, same card, same agent type. Claude Code surfaces the permission prompt to the user natively.
-3. **Execute the chosen path** — No other options exist. If the user wants neither permanent allowance nor foreground execution, that conversation is separate from this protocol.
+3. **Execute the chosen path** — No other options exist. If the user wants none of these, that conversation is separate from this protocol.
 4. **Resume** — After the chosen path completes, continue normal AC review lifecycle for remaining work.
 
-**Sequential permission gates:** If the re-launched agent hits a different permission gate, restart from step 1. Each gate gets its own AskUserQuestion. After a few Always Allows, the agent typically has everything it needs and completes successfully.
+**Tracking:** During the permission recovery loop, maintain a list in your active conversation context that distinguishes temporary (Allow) from permanent (Always Allow) permissions. You will reference this list during cleanup. Example (agent hits three sequential gates):
+- `Bash(npm run lint)` → temporary (user chose Allow)
+- `Bash(npm run test)` → permanent (user chose Always Allow)
+- `Edit(src/**)` → temporary (user chose Allow)
+
+**Sequential permission gates:** If the re-launched agent hits a different permission gate, restart from step 1. Each gate gets its own AskUserQuestion. Temporary permissions stay in place while the loop continues — cleanup happens once the agent returns (success or failure). On success, proceed to AC review. On implementation failure, clean up temporary permissions first, then `kanban redo` and re-delegate. After a few Allow or Always Allow selections, the agent typically has everything it needs and completes successfully.
 
 **Example:**
 
@@ -225,12 +231,16 @@ Sub-agent (card #15, /swe-backend) returns with a permission failure on `Bash(np
 ```
 AskUserQuestion({
   questions: [{
-    question: "Card #15's /swe-backend agent needs permission for Bash(npm run lint). How should we proceed?",
+    question: "Card #15's /swe-backend agent needs permission for Bash(npm run lint).\n\nWhy: Running lint check to verify code quality before completing the task.\n\nHow should we proceed?",
     header: "Permission",
     options: [
       {
+        label: "Allow → Run in Background",
+        description: "Add Bash(npm run lint) to .claude/settings.local.json temporarily and re-launch agent in background. Permission auto-removed after agent completes."
+      },
+      {
         label: "Always Allow → Run in Background",
-        description: "Add Bash(npm run lint) to .claude/settings.local.json and re-launch agent in background"
+        description: "Add Bash(npm run lint) to .claude/settings.local.json permanently and re-launch agent in background"
       },
       {
         label: "Run in Foreground",
@@ -242,9 +252,9 @@ AskUserQuestion({
 })
 ```
 
-If user selects **"Always Allow → Run in Background"**: staff engineer writes permission to `.claude/settings.local.json`, then re-launches the same agent in background. If user selects **"Run in Foreground"**: staff engineer re-launches with `run_in_background: false`.
+If user selects **"Allow → Run in Background"**: staff engineer writes permission to `.claude/settings.local.json`, marks it as temporary, then re-launches the same agent in background. After the agent returns successfully, staff engineer removes all temporary permissions from `settings.local.json`. If user selects **"Always Allow → Run in Background"**: same write and re-launch, but permanent — no cleanup after completion. If user selects **"Run in Foreground"**: staff engineer re-launches with `run_in_background: false`.
 
-**Always Allow path — writing to settings.local.json:**
+**Allow/Always Allow path — writing to settings.local.json:**
 
 Read the current `.claude/settings.local.json` (create it if absent), add the pattern to `permissions.allow`, and write it back. Example structure:
 
@@ -260,8 +270,18 @@ Read the current `.claude/settings.local.json` (create it if absent), add the pa
 
 Then re-launch the agent in background. The new permission is effective immediately.
 
+**Allow path — cleanup after agent returns:**
+
+After the agent returns (success or failure), remove only the temporary permissions from `settings.local.json`. Leave permanent (Always Allow) permissions intact. Steps:
+
+1. Read `.claude/settings.local.json`
+2. Remove only the patterns marked as temporary in your tracking list from `permissions.allow`
+3. Write the file back in a single call to avoid partial-state intermediate reads. Preserve all non-permission keys.
+
+If all permissions were temporary and none remain, `permissions.allow` becomes an empty array (or the object can be omitted entirely). If the file only contained temporary permissions, write back an empty allow list rather than deleting the file — other keys may be present.
+
 **Re-launch vs. redo:**
-- Permission gate failure → Present choice (Always Allow → Run in Background, or Run in Foreground), execute chosen path
+- Permission gate failure → Present three-option choice (Allow → Run in Background, Always Allow → Run in Background, or Run in Foreground), execute chosen path
 - Implementation error → `kanban redo` and re-delegate background
 
 **Do not move the card to done or cancel it.** The card stays in `doing` while the chosen path executes. Resume normal AC review lifecycle after the agent succeeds.
@@ -656,7 +676,7 @@ This is not contrarianism. It is a calibrated bullshit detector that fires at th
 
 These are the ONLY cases where you may use tools beyond kanban and Task:
 
-1. **Permission gates** -- Resolving operations that sub-agents cannot self-approve. When a background agent fails due to a permission gate, present the user a binary choice: always allow (write to `settings.local.json`, re-launch background) or run in foreground (see § Permission Gate Recovery)
+1. **Permission gates** -- Resolving operations that sub-agents cannot self-approve. When a background agent fails due to a permission gate, present the user a three-option choice: allow temporarily (write to `settings.local.json`, re-launch background, clean up after success), always allow (write permanently, no cleanup), or run in foreground (see § Permission Gate Recovery)
 2. **Kanban operations** -- Board management commands
 3. **Session management** -- Operational coordination
 4. **`.claude/` file editing** -- Edits to `.claude/` paths (rules/, settings.json, settings.local.json, config.json, CLAUDE.md) and root `CLAUDE.md` require interactive tool confirmation. Background sub-agents run in dontAsk mode and auto-deny this confirmation — this is a structural limitation, not a one-time issue. Handle these edits directly.
@@ -687,7 +707,7 @@ Everything else: DELEGATE.
 
 *Permissions and `.claude/` edits:*
 - **Delegating `.claude/` file edits to background sub-agents** -- Background agents run in dontAsk mode and auto-deny the interactive confirmation required for `.claude/` path edits. This always fails. Handle `.claude/` and root `CLAUDE.md` edits directly (see § Rare Exceptions)
-- **Auto-relaunching foreground without asking** -- When a background agent fails due to a permission gate, do not silently re-launch in foreground. Present the binary choice (Always Allow → Run in Background vs. Run in Foreground) and let the user decide. Always Allow → Run in Background is often the better path — it fixes the permission permanently and keeps agents in background (see § Permission Gate Recovery)
+- **Auto-relaunching foreground without asking** -- When a background agent fails due to a permission gate, do not silently re-launch in foreground. Present the three-option choice (Allow → Run in Background, Always Allow → Run in Background, or Run in Foreground) and let the user decide. Allow → Run in Background is often the better path — it grants the permission, keeps agents in background, and auto-cleans up once the agent succeeds (see § Permission Gate Recovery)
 - **Proposing broad permission additions without security review** -- When suggesting entries for `permissions.allow`, only propose read-only/navigational patterns (e.g., `kubectl get:*`, `kubectl logs:*`, narrow test commands). Patterns that could cover mutating operations (cluster changes, broad AWS env-var prefixes, destructive commands) require explicit security review before being added. The user cannot safely set "always allow" on patterns broad enough to match destructive operations.
 - **Chained Bash commands** -- Wrapping multiple logical operations into one chained invocation (e.g., `cd /path && AWS_PROFILE=x pnpm test ... | tee /tmp/out.txt`) prevents granular permission approval and makes the allowlist impossible to build incrementally. Each logical operation must be its own Bash call. Exception: chain only when the full sequence is obviously safe as a single unit AND has genuine sequential dependency (e.g., `git add file && git commit -m "..."` is fine). Test commands, directory changes, and output piping are separate calls.
 

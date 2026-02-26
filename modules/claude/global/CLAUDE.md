@@ -419,6 +419,13 @@ See the `/review-pr-comments` skill for full workflow.
   - `-u`: Treat unset variables as errors
   - `-o pipefail`: Pipeline fails if any command in the pipeline fails (not just the last one)
 
+**Bash Tool Usage — One Command Per Call:**
+- **Do NOT chain multiple logical operations with `&&` in a single Bash tool call.** Each distinct operation must be its own Bash call. This enables granular permission approval — the user cannot selectively allow `npm run lint` but deny `npm run test` when they're chained into one call.
+- ❌ `cd /path && npm run lint && npm run test`
+- ✅ Three separate Bash calls: `cd /path`, `npm run lint`, `npm run test`
+- **Exception:** Chain only when the full sequence is obviously safe as a single unit AND has genuine sequential dependency (e.g., `git add file && git commit -m "..."` is fine — one is meaningless without the other).
+- Piping output (`| tee`, `| jq`) counts as a separate logical operation if it could be omitted. If the pipe is integral to the command's purpose (e.g., `curl ... | jq .`), it's one operation.
+
 **Mindset:** Always Be Curious - investigate thoroughly, ask why, verify claims
 
 ---
