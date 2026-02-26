@@ -261,6 +261,20 @@ SCOPED AUTHORIZATION: You have been granted permission for Bash(auth0 ...) ONLY 
 
 Adjust the tool pattern and purpose to match the actual gate. If multiple permissions have been granted across sequential gates, include one SCOPED AUTHORIZATION line per permission.
 
+**Permission pattern format (`settings.json` context):**
+
+When writing patterns via `perm`, you are writing to `settings.local.json` — a `settings.json` context. These patterns use **space-wildcard** syntax. Source: [Claude Code permissions docs](https://code.claude.com/docs/en/permissions). (See also § Permission Pattern Format and § Critical Anti-Patterns for colon-related mistakes to avoid.)
+
+- `Bash(npm run lint)` — exact command match
+- `Bash(npm run test *)` — prefix match (any args after `test`)
+- `Bash(git pull *)` — git pull with any arguments
+- `Bash(git *)` — any git command
+- `Read(src/auth/**)` — files in auth directory
+
+**Word boundary:** A space before `*` enforces a word boundary. `Bash(git *)` matches `git status` but NOT `gitk`. `Bash(ls *)` matches `ls -la` but NOT `lsof`. Use this to avoid accidentally covering more commands than intended.
+
+**Do not use the deprecated colon syntax** (e.g., `Bash(git:*)`, `Bash(npm:*)`). The `:*` suffix is legacy — it is equivalent to ` *` in behavior but is deprecated per official docs and can cause SDK validation errors in recent versions. Anthropic's own tooling had to migrate off it for this reason. Always use space-wildcard format.
+
 **Expanded scope requests:**
 
 If the re-launched agent returns saying it needs to use an already-permitted tool for a broader or different purpose, treat it as a new permission gate. Present a fresh AskUserQuestion with the expanded "Why" context — same three options, same protocol. The agent does not inherit permission to use the tool for purposes beyond what was originally scoped.
@@ -700,6 +714,8 @@ Everything else: DELEGATE.
 - **Auto-relaunching foreground without asking** -- When a background agent fails due to a permission gate, do not silently re-launch in foreground. Present the three-option choice (Allow → Run in Background, Always Allow → Run in Background, or Run in Foreground) and let the user decide. Allow → Run in Background is often the better path — it grants the permission, keeps agents in background, and auto-cleans up once the agent succeeds (see § Permission Gate Recovery)
 - **Proposing broad permission additions without security review** -- When suggesting entries for `permissions.allow`, only propose read-only/navigational patterns (e.g., `kubectl get:*`, `kubectl logs:*`, narrow test commands). Patterns that could cover mutating operations (cluster changes, broad AWS env-var prefixes, destructive commands) require explicit security review before being added. The user cannot safely set "always allow" on patterns broad enough to match destructive operations.
 - **Chained Bash commands** -- Wrapping multiple logical operations into one chained invocation (e.g., `cd /path && AWS_PROFILE=x pnpm test ... | tee /tmp/out.txt`) prevents granular permission approval and makes the allowlist impossible to build incrementally. Each logical operation must be its own Bash call. Exception: chain only when the full sequence is obviously safe as a single unit AND has genuine sequential dependency (e.g., `git add file && git commit -m "..."` is fine). Test commands, directory changes, and output piping are separate calls.
+- **Using colon instead of space in settings.json permission wildcards** -- Writing colon-separated patterns (e.g., `Bash(npm:*)`) when writing to `settings.json` / `settings.local.json` via `perm`. Colon syntax is the `allowed-tools` frontmatter format used in skill/command files — not in settings files. Settings files use space-separated patterns: `Bash(npm run test *)`, `Bash(npm *)`. Using the wrong separator means the pattern silently fails to match, the agent stays blocked, and the permission gate never resolves. See § Permission Gate Recovery and § Permission Pattern Format for correct format and examples (see also the adjacent deprecated-syntax anti-pattern below).
+- **Using deprecated colon permission syntax** -- Writing `Bash(git:*)` or `Bash(npm:*)` (colon `:*` suffix) in settings files. The colon format is deprecated legacy syntax per [Claude Code permissions docs](https://code.claude.com/docs/en/permissions) and can cause SDK validation errors in recent versions. Always use space-wildcard format: `Bash(git *)`, `Bash(npm run test *)`. (See also § Using colon instead of space in settings.json permission wildcards and § Permission Pattern Format.)
 
 *Debugger-specific:*
 - **Delegating to /debugger without ledger write permission** -- Without `Write(.scratchpad/**)` and `Edit(.scratchpad/**)` in `~/.claude/settings.json` `permissions.allow`, the debugger's ledger writes silently fail and every round re-derives the same context. Verify both permissions exist before every debugger delegation.
