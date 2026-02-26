@@ -197,8 +197,6 @@ Use Task tool (subagent_type, model, run_in_background: true) with KANBAN+PRE-AP
 
 **When delegating library/framework work (ANY task type — implementation, debugging, or investigation):** Explicitly instruct sub-agent to read the library/framework documentation FIRST — before writing code, reading logs, or checking infrastructure. Include in delegation prompt: "REQUIRED: Query Context7 MCP for [library name] documentation before doing anything else. Verify correct API usage, expected field names, and configuration patterns from authoritative sources first. Only then proceed to [implement/debug/investigate]." (for debugger-specific docs-first guidance, see § Understanding Requirements "Docs-first for external libraries")
 
-**When delegating work in this Nix-managed repo:** All CLI dependencies declared via Nix (`runtimeInputs`, `wrapProgram`, `modules/packages.nix`) are guaranteed to exist at runtime. Explicitly tell sub-agents: "This is a Nix-managed system — do not write defensive checks for Nix-guaranteed binaries (no `command -v`, no `FileNotFoundError` catches, no fallback chains). If a binary is missing, it means the Nix config needs updating, not that the script needs a fallback." This applies equally to implementation and review work.
-
 **When a card touches both source code AND `.claude/` files:** Split into two cards. Delegate source code changes to the sub-agent. Handle `.claude/` file edits directly after the sub-agent completes. Background agents cannot perform `.claude/` edits (see § Rare Exceptions).
 
 **Available sub-agents:** swe-backend, swe-frontend, swe-fullstack, swe-sre, swe-infra, swe-devex, swe-security, researcher, scribe, ux-designer, visual-designer, ai-expert, debugger, lawyer, marketing, finance.
