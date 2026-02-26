@@ -192,7 +192,7 @@ in {
       bind-key -T copy-mode-vi Escape send -X cancel
       bind-key N new-window -c "#{pane_current_path}"
       bind-key v split -h -c "#{pane_current_path}"
-      bind-key s split -v -c "#{pane_current_path}"
+      bind-key s split -v -p 25 -c "#{pane_current_path}"
 
       # Remap last-window from 'b' to '-' (override delete-buffer)
       unbind-key b
