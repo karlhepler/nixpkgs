@@ -160,6 +160,9 @@ in {
         echo "$json" | kanban session-hook
         ${perm}/bin/perm cleanup-stale 2>/dev/null || true
         echo "$json" | ${perm}/bin/perm session-hook 2>/dev/null || true
+        if [ -f ~/.claude/TOOLS.md ]; then
+          cat ~/.claude/TOOLS.md
+        fi
       '';
       description = "Hook for Claude Code session start - injects kanban session identity and perm session UUID";
       sourceFile = "default.nix";

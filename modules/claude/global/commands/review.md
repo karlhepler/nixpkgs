@@ -10,9 +10,10 @@ allowed-tools:
   - Bash(kanban *)
   - Bash(prc *)
   - Bash(prr *)
-  - Bash(git worktree *)
   - Bash(git branch *)
   - Bash(git rev-parse *)
+  - Bash(workout-claude *)
+  - Bash(workout *)
 ---
 
 # Review Pull Request
@@ -39,14 +40,15 @@ Due to a known Claude Code bug ([GitHub #5140](https://github.com/anthropics/cla
 - `Bash(kanban *)`
 - `Bash(prc *)`
 - `Bash(prr *)`
-- `Bash(git worktree *)`
 - `Bash(git branch *)`
 - `Bash(git rev-parse *)`
+- `Bash(workout-claude *)`
+- `Bash(workout *)`
 
-This skill fetches PR diffs, posts unified GitHub reviews via `prr`, runs kanban operations for specialist cards, verifies inline comments via `prc`, and creates/removes git worktrees to give specialists full repository access. Without these permissions, operations silently fail in `dontAsk` mode.
+This skill fetches PR diffs, posts unified GitHub reviews via `prr`, runs kanban operations for specialist cards, verifies inline comments via `prc`, and creates git worktrees via `workout-claude` to give specialists full repository access. Without these permissions, operations silently fail in `dontAsk` mode.
 
 **If any are missing:** Stop immediately. Do not start work. Surface to the user:
-> "Blocked: One or more required permissions are missing from `permissions.allow`. Add `Bash(gh pr *)`, `Bash(gh api *)`, `Bash(kanban *)`, `Bash(prc *)`, `Bash(prr *)`, `Bash(git worktree *)`, `Bash(git branch *)`, and `Bash(git rev-parse *)` before running /review."
+> "Blocked: One or more required permissions are missing from `permissions.allow`. Add `Bash(gh pr *)`, `Bash(gh api *)`, `Bash(kanban *)`, `Bash(prc *)`, `Bash(prr *)`, `Bash(git branch *)`, `Bash(git rev-parse *)`, `Bash(workout-claude *)`, and `Bash(workout *)` before running /review."
 
 ## Phase 1 — Fetch PR Context
 
@@ -97,9 +99,13 @@ gh pr view <number> --json isCrossRepository --jq .isCrossRepository
 
   - If current branch != PR's `headRefName`:
     ```bash
-    git worktree add $HOME/worktrees/review-pr-<number>/ <headRefName>
+    # Create worktree + TMUX window via workout-claude
+    echo '[{"worktree": "<headRefName>", "prompt": "PR #<number>: <title> — checked out for specialist review"}]' | workout-claude staff
+
+    # Get the worktree path
+    worktree_path=$(workout <headRefName> 2>/dev/null | head -1 | sed "s/cd '//; s/'$//")
     ```
-    Set `repo_path = $HOME/worktrees/review-pr-<number>/`, `worktree_created = true`
+    Set `repo_path = worktree_path`, `worktree_created = true`
 
 ## Phase 2 — Detect Domains
 
@@ -362,15 +368,6 @@ Report back:
 - How many findings went into the review body (`body_count` from prr output)
 - Which specialists flagged concerns vs. LGTM
 - The overall review event (`event` from prr output)
-
-### Worktree Cleanup
-
-If `worktree_created` is true:
-```bash
-git worktree remove $HOME/worktrees/review-pr-<number>/ --force
-```
-
-Run this after the review is posted. Do not skip cleanup — stale worktrees accumulate and consume disk space.
 
 ## Critical Rules
 
