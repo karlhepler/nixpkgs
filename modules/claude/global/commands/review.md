@@ -10,6 +10,9 @@ allowed-tools:
   - Bash(kanban *)
   - Bash(prc *)
   - Bash(prr *)
+  - Bash(git worktree *)
+  - Bash(git branch *)
+  - Bash(git rev-parse *)
 ---
 
 # Review Pull Request
@@ -36,11 +39,14 @@ Due to a known Claude Code bug ([GitHub #5140](https://github.com/anthropics/cla
 - `Bash(kanban *)`
 - `Bash(prc *)`
 - `Bash(prr *)`
+- `Bash(git worktree *)`
+- `Bash(git branch *)`
+- `Bash(git rev-parse *)`
 
-This skill fetches PR diffs, posts unified GitHub reviews via `prr`, runs kanban operations for specialist cards, and verifies inline comments via `prc`. Without these permissions, operations silently fail in `dontAsk` mode.
+This skill fetches PR diffs, posts unified GitHub reviews via `prr`, runs kanban operations for specialist cards, verifies inline comments via `prc`, and creates/removes git worktrees to give specialists full repository access. Without these permissions, operations silently fail in `dontAsk` mode.
 
 **If any are missing:** Stop immediately. Do not start work. Surface to the user:
-> "Blocked: One or more required permissions are missing from `permissions.allow`. Add `Bash(gh pr *)`, `Bash(gh api *)`, `Bash(kanban *)`, `Bash(prc *)`, and `Bash(prr *)` before running /review."
+> "Blocked: One or more required permissions are missing from `permissions.allow`. Add `Bash(gh pr *)`, `Bash(gh api *)`, `Bash(kanban *)`, `Bash(prc *)`, `Bash(prr *)`, `Bash(git worktree *)`, `Bash(git branch *)`, and `Bash(git rev-parse *)` before running /review."
 
 ## Phase 1 — Fetch PR Context
 
@@ -57,6 +63,43 @@ Extract `{owner}/{repo}` for the Phase 5 API URL: use the `--repo` flag value if
 Extract changed file paths from diff header lines matching `+++ b/...`.
 
 Store PR metadata, `{owner}/{repo}`, and diff text in memory — all three are passed to each specialist and used in Phase 5.
+
+### Worktree Setup for Full Repository Context
+
+After fetching PR metadata, determine whether specialists can have full repository access:
+
+**If `--repo` flag was used (cross-repo review):**
+- Set `repo_path = null`, `worktree_created = false`
+- Specialists will receive the diff only
+
+**If same-repo review:**
+
+First, check whether the PR is from a fork:
+```bash
+gh pr view <number> --json isCrossRepository --jq .isCrossRepository
+```
+
+- If `isCrossRepository` is `true` (fork PR):
+  - Set `repo_path = null`, `worktree_created = false`
+  - Specialists will receive the diff only — note in each specialist prompt that this is a fork PR and full repository context is unavailable (diff-only review)
+
+- If `isCrossRepository` is `false` (same-repo branch):
+  ```bash
+  # Get current branch
+  git branch --show-current
+  ```
+
+  - If current branch == PR's `headRefName`:
+    ```bash
+    git rev-parse --show-toplevel
+    ```
+    Set `repo_path` to that output, `worktree_created = false`
+
+  - If current branch != PR's `headRefName`:
+    ```bash
+    git worktree add $HOME/worktrees/review-pr-<number>/ <headRefName>
+    ```
+    Set `repo_path = $HOME/worktrees/review-pr-<number>/`, `worktree_created = true`
 
 ## Phase 2 — Detect Domains
 
@@ -134,6 +177,41 @@ You are a {domain} specialist reviewing PR #{number}: {title}
 **Your Domain Focus ({domain}):**
 {domain-specific focus instructions — see below}
 
+**Full Repository Access:**
+{if repo_path is set:
+The complete PR branch is checked out at: `{repo_path}`
+
+You have full read access to the entire repository. Use it to:
+- Read surrounding code to understand context beyond the diff
+- Check existing patterns, conventions, and abstractions in the codebase
+- Look at tests to understand expected behavior and coverage gaps
+- Read local docs (README, docs/ folder) for project conventions
+- Understand import relationships and how changed code fits the larger system
+
+You are NOT limited to the diff. Treat the diff as the focal point, but use the full repository to give informed, contextual reviews.
+}
+{if repo_path is null:
+  {if --repo flag was used:
+**Note:** This PR is in a different repository (`--repo` flag). The repository is not checked out locally — review is based on the diff only.
+  }
+  {if fork PR:
+**Note:** This PR is from a forked repository. The fork branch is not available locally for worktree checkout — review is based on the diff only.
+  }
+}
+
+**Citation Requirement:**
+For any finding that references a best practice, standard, library API usage, or asserts that something "should be documented" — you MUST verify it and cite the source inline in your COMMENT text. Do not assert from memory.
+
+Acceptable sources (in priority order):
+1. Local docs: read `{repo_path}/docs/`, `{repo_path}/README.md`, CLAUDE.md, etc. (if repo_path is available)
+2. Context7 MCP: use `mcp__context7__resolve-library-id` then `mcp__context7__query-docs` to look up library/framework documentation
+3. Official online documentation: WebFetch the authoritative source URL
+
+Embed the citation naturally in your COMMENT:
+COMMENT: This approach can expose users to SQL injection (OWASP A03:2021 Injection — https://owasp.org/Top10/A03_2021-Injection/). Parameterized queries are the standard fix.
+
+Findings that are purely observational (e.g., "this variable is shadowed") do not require citation.
+
 **Tone:**
 Write findings in a collegial, curious tone. These are teammates, not suspects.
 - Frame observations as questions or suggestions before conclusions ("I noticed...", "Have you considered...", "Curious about...")
@@ -154,7 +232,7 @@ Write your complete findings to `.scratchpad/review-{number}-{domain}.md` using 
 FILE: path/to/file.go
 LINE: 42
 SEVERITY: blocking | concern | nit
-COMMENT: [Inline comment text — collegial tone, assume good intent]
+COMMENT: [Inline comment text — collegial tone, assume good intent — embed citations inline when referencing standards or library APIs]
 
 FILE: (none)
 LINE: (none)
@@ -198,16 +276,16 @@ Include the appropriate block in each specialist's prompt:
 
 ## Phase 4 — AC Review and Aggregate
 
-**Wait until all specialist `kanban review` calls complete before proceeding.**
+Phase 3 ends when all specialist Task agents have been launched. Phase 4 begins as specialists complete their work and call `kanban review <card>`.
 
-For each specialist card:
+**Pipeline (per specialist — do NOT wait for all specialists before starting any AC reviews):**
 
-1. **Wait for each specialist to move their card to review column before launching the AC reviewer.**
-2. Launch **all AC reviewers simultaneously in parallel** (one per specialist card, all in a single message) as background subagents (model: haiku, skill: ac-reviewer) with the specialist's `.scratchpad/review-<number>-<domain>.md` content as context
-3. After each AC reviewer returns: `kanban done <card> '<one-line summary>' --session <id>`
+1. Monitor the kanban board. As EACH specialist calls `kanban review <card>` (their card appears in the review column), IMMEDIATELY launch that specialist's AC reviewer — do not wait for other specialists to finish.
+2. Launch the AC reviewer as a background subagent (model: haiku, skill: ac-reviewer) with the specialist's `.scratchpad/review-<number>-<domain>.md` content as context.
+3. After the AC reviewer completes: `kanban done <card> '<one-line summary>' --session <id>`
 4. **If `kanban done` fails** (unchecked AC): `kanban redo <card> --session <id>`, re-launch that specialist once with the same prompt. If it fails after one retry (two total attempts), proceed without that specialist's findings and note the gap in the aggregated review body.
 
-**Do NOT aggregate or post until ALL specialist cards reach `kanban done` or have been retried and excluded.**
+**Do NOT proceed to aggregation until ALL specialist cards have reached `kanban done` or have been retried and excluded.**
 
 ### Read All Specialist Findings
 
@@ -284,6 +362,15 @@ Report back:
 - How many findings went into the review body (`body_count` from prr output)
 - Which specialists flagged concerns vs. LGTM
 - The overall review event (`event` from prr output)
+
+### Worktree Cleanup
+
+If `worktree_created` is true:
+```bash
+git worktree remove $HOME/worktrees/review-pr-<number>/ --force
+```
+
+Run this after the review is posted. Do not skip cleanup — stale worktrees accumulate and consume disk space.
 
 ## Critical Rules
 
