@@ -87,6 +87,37 @@ Replace `<subcommand>` with `burns` or `staff` depending on the active skill.
 - For multiple worktrees without context, build JSON with empty prompts: `[{"worktree": "branch1", "prompt": ""}, {"worktree": "branch2", "prompt": ""}]`
 - For single worktree, use `workout` command directly (not `workout-claude`)
 
+## Complex Prompts (Use Scratchpad)
+
+**CRITICAL: `tmux send-keys` cannot safely handle long prompts with shell special characters.**
+
+`workout-claude` passes the `prompt` field to each agent via `tmux send-keys`. Short, simple prompts work fine — but multi-line content, quotes, backticks, `$` variables, and braces will be **interpreted as shell commands** in the terminal instead of being injected as a prompt. The result is a corrupted or broken agent launch.
+
+**The rule:**
+- **Short, safe prompt** (no special characters, single line): Pass inline in the JSON `prompt` field.
+- **Complex or long prompt** (multi-line, quotes, backticks, `$`, braces, etc.): Write to a scratchpad file first, then reference the file path in a short safe prompt.
+
+**Pattern for complex prompts:**
+
+Step 1 — Write the full task context to a scratchpad Markdown file:
+```bash
+cat > .scratchpad/workout-task-feature-x.md << 'EOF'
+# Task: Feature X
+
+Full multi-line task context here, including quotes, code
+examples, and special characters — all stored safely in a file.
+EOF
+```
+
+Step 2 — Pass a short safe reference prompt in the JSON:
+```bash
+echo '[{"worktree": "feature-x", "prompt": "Read your task from: /absolute/path/.scratchpad/workout-task-feature-x.md"}]' | workout-claude staff
+```
+
+The agent receives the short reference prompt cleanly via `tmux send-keys`, then reads the full context from the file.
+
+**Use absolute paths** in the reference prompt — relative paths may not resolve correctly depending on where the agent's working directory starts.
+
 ## Cross-Repo Support
 
 To create a worktree in a **different repository** than the current one, add a `repo` field to any JSON entry:
