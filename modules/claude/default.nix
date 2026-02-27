@@ -111,11 +111,6 @@ let
     flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
   } (builtins.readFile ./prr.py);
 
-  # Claude Metrics Hook (tracks agent metrics on stop events)
-  claudeMetricsHookScript = pkgs.writers.writePython3Bin "claude-metrics-hook" {
-    flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
-  } (builtins.readFile ./claude-metrics-hook.py);
-
 in {
   # ============================================================================
   # Claude Code Configuration & Shell Applications
@@ -247,14 +242,6 @@ in {
         description = "Submit GitHub PR reviews with inline comments from a structured findings JSON file";
         mainProgram = "prr";
         homepage = "${builtins.toString ./.}/prr.py";
-      };
-    };
-
-    claude-metrics-hook = claudeMetricsHookScript // {
-      meta = {
-        description = "Hook for tracking agent metrics on stop events";
-        mainProgram = "claude-metrics-hook";
-        homepage = "${builtins.toString ./.}/claude-metrics-hook.py";
       };
     };
 

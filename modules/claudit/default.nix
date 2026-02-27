@@ -78,15 +78,20 @@ let
     provisioning = ${provisioningDir}
   '';
 
+  # Claude Metrics Hook (tracks agent metrics on stop events)
+  claudeMetricsHookScript = pkgs.writers.writePython3Bin "claude-metrics-hook" {
+    flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
+  } (builtins.readFile ./claude-metrics-hook.py);
+
 in {
   # ============================================================================
-  # Grafana - On-demand local metrics viewer
+  # Claudit - Claude Code metrics dashboard + metrics collection hook
   # ============================================================================
   # Run `claudit` to start Grafana on http://claudit.local:3200
   # Press SPACE to reopen browser, Ctrl+C to stop.
   # ============================================================================
 
-  _module.args.grafanaShellapps = {
+  _module.args.clauditShellapps = {
     claudit = shellApp {
       name = "claudit";
       runtimeInputs = [ pkgs.grafana pkgs.curl pkgs.sqlite ];
@@ -237,6 +242,14 @@ in {
       '';
       description = "Start on-demand Grafana server for Claude Code agent metrics (port 3200)";
       sourceFile = "default.nix";
+    };
+
+    claude-metrics-hook = claudeMetricsHookScript // {
+      meta = {
+        description = "Hook for tracking agent metrics on stop events";
+        mainProgram = "claude-metrics-hook";
+        homepage = "${builtins.toString ./.}/claude-metrics-hook.py";
+      };
     };
   };
 

@@ -15,8 +15,8 @@ in {
     ./modules/neovim      # Neovim editor + 30+ plugins
     ./modules/kanban      # Kanban CLI for agent coordination
 
-    # Grafana module (on-demand metrics viewer + claudit shellapp)
-    ./modules/grafana
+    # Claudit module (on-demand metrics viewer + claudit shellapp + metrics hook)
+    ./modules/claudit
 
     # Simple modules (no scripts)
     ./modules/packages.nix   # Packages + simple programs
@@ -36,7 +36,7 @@ in {
       // (config._module.args.neovimShellapps or {})
       // (config._module.args.tmuxShellapps or {})
       // (config._module.args.kanbanShellapps or {})
-      // (config._module.args.grafanaShellapps or {});
+      // (config._module.args.clauditShellapps or {});
 
     # Context7 API key for Claude MCP configuration
     # Set in overconfig.nix via: home.sessionVariables.CONTEXT7_API_KEY = "...";
