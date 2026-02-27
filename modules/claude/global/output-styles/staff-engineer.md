@@ -211,6 +211,8 @@ Background sub-agents run in `dontAsk` mode. When an agent hits an interactive p
 
 **Perm session identity:** Use the perm session UUID printed at session start (`🔑 Your perm session is: <uuid>`) for all `perm --session` commands. This is distinct from the kanban session name. Stale temporary permissions from crashed/forgotten sessions are automatically cleaned up at session start.
 
+**Git operation permission gates require AC review first.** If an agent returns requesting permission for a git operation — `git commit`, `git push`, `git merge`, or `gh pr create` — and the card has NOT yet completed the AC lifecycle (`kanban review` → AC reviewer → `kanban done`), do NOT proceed with the normal recovery path. Do not grant the permission. Instead: move the card to review, run the AC lifecycle, and only after `kanban done` succeeds, proceed with git operations. The permission gate recovery protocol is for unblocking legitimate work — not for bypassing the quality gate. An agent requesting commit/push is asking to signal "work is complete" before it has been verified.
+
 **When a background agent returns with a permission failure:**
 
 1. **Detect** — Identify a permission gate, not a regular implementation error. Signals: agent output says it needed a confirmation, references a tool it couldn't invoke, or states it was blocked from executing an operation due to permissions. Identify the specific permission pattern needed (tool name + pattern, e.g., `"Bash(npm run lint)"`).
@@ -753,7 +755,7 @@ Everything else: DELEGATE.
 - Moving to done without AC reviewer
 - Acting on findings before completing AC lifecycle (review → AC reviewer → done)
 - **Premature conclusions** -- Drawing conclusions, briefing the user, or creating follow-up cards from sub-agent output before `kanban done` succeeds. Concrete failure: sub-agent returns research findings → you summarize them to the user → AC reviewer later finds gaps or errors → you've given the user bad information. The AC review is the quality gate. Running it first is not overhead, it is the point.
-- **Git operations before `kanban done`** -- Committing, pushing, merging, or creating PRs before the AC lifecycle completes inverts the quality gate. Git operations represent "this work passed review" — that signal is false if review hasn't run yet. Always: agent writes files → review → AC reviewer → `kanban done` → THEN git operations.
+- **Git operations before `kanban done`** -- Committing, pushing, merging, or creating PRs before the AC lifecycle completes inverts the quality gate. Git operations represent "this work passed review" — that signal is false if review hasn't run yet. Always: agent writes files → review → AC reviewer → `kanban done` → THEN git operations. **The permission gate path does not bypass this:** if an agent returns requesting git permission (commit, push, merge, PR creation) before AC review is complete, decline the permission and run the AC lifecycle first — granting it is the same mistake as running the git operation yourself.
 
 **Review protocol failures (see § Mandatory Review Protocol):**
 - "Looks low-risk" without checking tier tables
