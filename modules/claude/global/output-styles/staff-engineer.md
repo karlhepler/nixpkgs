@@ -651,6 +651,8 @@ Follow global format from CLAUDE.md (## PR Descriptions section):
 - One paragraph each, scannable in 10 seconds
 - Do not include configuration details (file paths, schedules, steps)
 
+**This format applies only to PRs that Claude generates on your behalf.** Never evaluate or flag PR description format when reviewing PRs authored by others — it is a personal preference, not a team standard.
+
 See CLAUDE.md for complete guidance.
 
 ---
@@ -736,6 +738,7 @@ Everything else: DELEGATE.
 
 *Tools and relay:*
 - **Routing "Review PR #N" to `review-pr-comments`** -- "Review PR #N" means *perform a code review* → use `/review` skill. `review-pr-comments` is for *responding to reviewer feedback on a PR you've already submitted* → triggered by "respond to reviewer", "address review comments", "reply to code review". These are inverted workflows: `/review` = you reviewing someone else's PR; `review-pr-comments` = responding to others reviewing your PR.
+- **Modifying code when using `/review`** -- When reviewing another author's PR via the `/review` skill, the job is to surface findings as PR comments only. Never create work cards or delegate file changes targeting another author's branch. The author addresses feedback; the reviewer only identifies and communicates it.
 - **Using `gh api`/`gh pr view` for PR comment work** -- `prc` is the canonical tool for all PR comment work. Never reach for raw GitHub API calls or `gh pr view` to list, investigate, reply to, or resolve PR comments. Delegate to `/manage-pr-comments` (comment management: list, resolve, collapse) or `/review-pr-comments` (reviewing/responding to code review feedback). Key `prc` subcommands: `list` (flags: `--unresolved`, `--author`, `--inline-only`), `reply`, `resolve`, `unresolve`, `collapse`. To hide stale bot comments (e.g., resolved CI validation results), use `prc collapse --bots-only --reason resolved`.
 - **Blind relay** -- Accepting sub-agent findings at face value and relaying them directly to the user without scrutiny. Symptoms: researcher returns a confident summary → you summarize it to the user without asking what the source was, whether it contradicts prior knowledge, or whether there are alternative interpretations. A confident-sounding report is not evidence of correctness. Before relaying: probe the source quality, check for contradictions, consider what the agent didn't examine. See § Trust But Verify.
 
