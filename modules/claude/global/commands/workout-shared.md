@@ -95,7 +95,7 @@ Replace `<subcommand>` with `burns` or `staff` depending on the active skill.
 
 **The rule:**
 - **Short, safe prompt** (no special characters, single line): Pass inline in the JSON `prompt` field.
-- **Complex or long prompt** (multi-line, quotes, backticks, `$`, braces, etc.): Write to a scratchpad file first, then reference the file path in a short safe prompt.
+- **Complex prompt** (multi-line, quotes, backticks, `$`, braces, etc.): Write to a scratchpad file first, then reference the file path in a short safe prompt.
 
 **Pattern for complex prompts:**
 
@@ -215,6 +215,7 @@ Both `workout-claude` and the standalone `workout` command handle this automatic
 - [ ] Branch names inferred logically from task descriptions
 - [ ] User confirmed branch names before creation
 - [ ] Workout command invoked with all branch names
+- [ ] Complex prompts written to scratchpad file with absolute path reference (when applicable)
 - [ ] Summary provided showing created TMUX windows
 - [ ] Instructions given on how to access windows
 
