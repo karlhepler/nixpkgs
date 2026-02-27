@@ -101,7 +101,7 @@ When researching, investigating, or looking up information, ALWAYS follow this p
 
 **Skill:** A specialized capability loaded via Skill tool (markdown file in `~/.claude/commands/`)
 
-**Session ID:** 8-character hex identifier for Claude session (e.g., `08a88ad2`). Automatically injected at startup. Use with `--session` flag on kanban commands.
+**Session ID:** Friendly name identifier for Claude session (e.g., `clear-vale`, `swift-falcon`, `smart-bell`). Automatically injected at startup. Use with `--session` flag on kanban commands.
 
 **Card:** Kanban board work item with action (what), intent (why), and acceptance criteria (definition of done)
 
@@ -113,7 +113,7 @@ When researching, investigating, or looking up information, ALWAYS follow this p
 
 ## Skill Invocation
 
-When skills are invoked, the `$ARGUMENTS` placeholder (commonly seen at line 8-9 of skill files) is replaced at runtime with the specific task prompt provided by the coordinator.
+When skills are invoked, the `$ARGUMENTS` placeholder is replaced at runtime with the specific task prompt provided by the coordinator. The placeholder appears in the skill file following a "## Your Task" section header.
 
 **Example:**
 ```
@@ -478,7 +478,26 @@ See the `/review-pr-comments` skill for full workflow.
 
 **Reproducibility:** Same SHA always produces identical behavior. Tags can change behavior over time.
 
-### How to Get the Correct SHA
+### Using pinact (Preferred)
+
+`pinact` automates the entire SHA lookup and pinning process. Run it instead of manually constructing `git ls-remote` lookups.
+
+**Install:** pinact is managed via Nix — it's declared in `modules/packages.nix` and available after running `hms`.
+
+```bash
+# Pin all unpinned actions in workflow files
+pinact run
+
+# Update already-pinned actions to the latest release (maintains SHA format)
+pinact run -u         # or: pinact run -update
+
+# Validate all actions are pinned without modifying files (CI enforcement)
+pinact run --check
+```
+
+**Use `pinact run --check` in CI** to enforce the pinning policy — it exits non-zero if any action uses a mutable tag reference.
+
+### How to Get the Correct SHA (Manual / Fallback)
 
 **CRITICAL: Annotated tags have TWO SHAs:**
 - **Tag object SHA** (wrong - points to tag metadata)
@@ -510,9 +529,9 @@ git rev-parse v4.1.1  # Returns tag object SHA, not commit SHA
 ### Updating Actions
 
 When updating to a new version:
-1. Find the new version tag (e.g., `v4.2.0`)
-2. Get the commit SHA using `git ls-remote` (see above)
-3. Update both SHA and version comment
+1. *(Manual path only)* Find the new version tag (e.g., `v4.2.0`)
+2. Run `pinact run -u` to update all pinned actions automatically, **or** get the commit SHA manually using `git ls-remote` (see above)
+3. *(Manual path only)* Update both SHA and version comment
 4. Test the workflow
 
 **Example update:**

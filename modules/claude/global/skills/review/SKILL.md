@@ -1,9 +1,12 @@
 ---
 name: review
 description: Orchestrate a specialist team review of a GitHub PR. Auto-detects which domain experts to involve based on the diff and aggregates their findings into a structured PR review comment. Invoke when user says "review PR", "code review PR #N", "run a review on this PR", "get specialist review", or "review pull request".
-disable-model-invocation: true
 model: sonnet
 argument-hint: "[pr-number or url] [--repo owner/repo]"
+# allowed-tools grants permissions for THIS skill's own Claude invocation only.
+# It does NOT propagate to Task sub-agents spawned within the skill.
+# Sub-agent permissions must be pre-approved in the project's permissions.allow
+# (see Hard Prerequisites section below).
 allowed-tools:
   - Bash(gh pr *)
   - Bash(gh api *)
@@ -35,6 +38,7 @@ Parse `$ARGUMENTS` for:
 Due to a known Claude Code bug ([GitHub #5140](https://github.com/anthropics/claude-code/issues/5140)), global `~/.claude/settings.json` permissions are **not** inherited by projects with their own `permissions.allow` -- project settings replace globals entirely. To verify: read `.claude/settings.json` or `.claude/settings.local.json` in the project root and confirm each required permission appears in the `permissions.allow` array.
 
 **Required:**
+- `Read`
 - `Bash(gh pr *)`
 - `Bash(gh api *)`
 - `Bash(kanban *)`
@@ -165,6 +169,8 @@ Adapt the array to include only detected specialists. Note the card numbers retu
 
 ### Launch All Specialists in Parallel
 
+**Before constructing each specialist prompt:** fully resolve every `{if ...}` conditional block. Evaluate each condition against the actual context values collected in Phase 2. Replace each block with its inner text if the condition is true, or with nothing if false. Never pass an unresolved `{if ...}` marker to a specialist — the specialist receives only clean, literal text.
+
 In a **single message**, make one Task tool call per specialist (all in parallel). Each specialist receives:
 
 ```
@@ -185,6 +191,7 @@ You are a {domain} specialist reviewing PR #{number}: {title}
 {domain-specific focus instructions — see below}
 
 **Full Repository Access:**
+<!-- ORCHESTRATOR: Replace the block below with resolved text — never emit {if ...} markers literally in the final prompt. -->
 {if repo_path is set:
 The complete PR branch is checked out at: `{repo_path}`
 
@@ -207,17 +214,7 @@ You are NOT limited to the diff. Treat the diff as the focal point, but use the 
 }
 
 **Citation Requirement:**
-For any finding that references a best practice, standard, library API usage, or asserts that something "should be documented" — you MUST verify it and cite the source inline in your COMMENT text. Do not assert from memory.
-
-Acceptable sources (in priority order):
-1. Local docs: read `{repo_path}/docs/`, `{repo_path}/README.md`, CLAUDE.md, etc. (if repo_path is available)
-2. Context7 MCP: use `mcp__context7__resolve-library-id` then `mcp__context7__query-docs` to look up library/framework documentation
-3. Official online documentation: WebFetch the authoritative source URL
-
-Embed the citation naturally in your COMMENT:
-COMMENT: This approach can expose users to SQL injection (OWASP A03:2021 Injection — https://owasp.org/Top10/A03_2021-Injection/). Parameterized queries are the standard fix.
-
-Findings that are purely observational (e.g., "this variable is shadowed") do not require citation.
+For citation rules, acceptable sources, and examples, Read [review-citation-guide.md](review-citation-guide.md).
 
 **Tone and Scope:**
 Write as if you personally reviewed this code — direct, collegial, human.
@@ -259,36 +256,15 @@ When done: `kanban review #{card-number} --session {current-session}`
 
 ### Domain-Specific Focus Instructions
 
-Include the appropriate block in each specialist's prompt:
-
-**swe-backend:**
-> N+1 queries, error handling patterns, input validation, API contract consistency, race conditions, data modeling soundness, transaction boundaries
-
-**swe-frontend:**
-> Accessibility (WCAG 2.1 AA), React performance (unnecessary re-renders, missing memo), bundle size impact, error boundaries, mobile responsiveness, keyboard navigation
-
-**swe-security:**
-> Auth/authz gaps, injection vectors (XSS, SQLi, path traversal), PII exposure, credential handling, OWASP Top 10, privilege escalation, SSRF
-
-**swe-sre:**
-> Timeout/retry/circuit-breaker patterns, observability gaps (logging/metrics/tracing), resource leaks, graceful degradation, health check coverage
-
-**swe-devex:**
-> CI/CD correctness and security (pinned actions), test coverage adequacy, dependency pinning, build safety, documentation accuracy
-
-**swe-infra:**
-> IAM least-privilege, resource sizing, HA considerations, secret management (no hardcoded secrets), idempotency of provisioning
-
-**ai-expert:**
-> Prompt injection risk, model selection justification, context window efficiency, output validation, token cost implications, prompt file structure quality
+For domain-specific focus text to include under **Your Domain Focus ({domain}):** in each specialist's prompt, see [review-domains.md](review-domains.md).
 
 ## Phase 5 — AC Review and Aggregate
 
-Phase 4 ends when all specialist Task agents have been launched. Phase 5 begins as specialists complete their work and call `kanban review <card>`.
+Phase 4 ends when all specialist Task agents have been launched. Phase 5 runs **concurrently with ongoing specialist work** — do not wait for all specialists to finish before beginning this pipeline. As each specialist completes independently, process it immediately.
 
-**Pipeline (per specialist — do NOT wait for all specialists before starting any AC reviews):**
+**Pipeline (per specialist — fires as soon as that specialist's card enters the review column):**
 
-1. Monitor the kanban board. As EACH specialist calls `kanban review <card>` (their card appears in the review column), IMMEDIATELY launch that specialist's AC reviewer — do not wait for other specialists to finish.
+1. Monitor the kanban board continuously. The moment ANY specialist calls `kanban review <card>` (that card appears in the review column), IMMEDIATELY launch that specialist's AC reviewer — independent of how many other specialists are still running.
 2. Launch the AC reviewer as a background subagent (model: haiku, skill: ac-reviewer) with the specialist's `.scratchpad/review-<number>-<domain>.md` content as context.
 3. After the AC reviewer completes: `kanban done <card> '<one-line summary>' --session <id>`
 4. **If `kanban done` fails** (unchecked AC): `kanban redo <card> --session <id>`, re-launch that specialist once with the same prompt. If it fails after one retry (two total attempts), proceed without that specialist's findings and note the gap in the aggregated review body.
@@ -406,22 +382,8 @@ Report back:
 - Read `inline_count` and `body_count` directly from `prr`'s JSON output to confirm counts (no separate `prc list` call needed)
 - If inline comments are missing from `prr` output, check whether line numbers fell outside diff hunks and repost affected findings in the review body
 
-## Key Principles
-
-**Worktree is the review environment:**
-The worktree gives specialists full branch context. Create it first, hand off immediately. The current session's only job is setup and launch — not review work.
-
-**Auto-detection is a starting point, not gospel:**
-If the diff has an unusual structure, use judgment to add specialists the heuristics missed. The goal is coverage, not mechanical matching.
-
-**Parallelism is the point:**
-All specialists run simultaneously. Sequential delegation defeats the purpose. Launch all Task agents in one message.
-
-**The review body is a summary, not the review:**
-Inline comments are where the substance lives. The body — if needed at all — is 2-3 sentences of plain language context. Keep it human.
-
-**One review submission per PR invocation:**
-GitHub shows multiple reviews as cluttered history. Aggregate everything into a single POST, even if some specialists found nothing.
+**Detection is a starting point, not gospel:**
+- If the diff has an unusual structure, use judgment to add specialists the heuristics missed — the goal is coverage, not mechanical matching
 
 **AC review is not optional:**
-The lifecycle exists to verify specialist output quality. Do not shortcut it even when specialists look thorough.
+- The lifecycle exists to verify specialist output quality. Do not shortcut it even when specialists look thorough

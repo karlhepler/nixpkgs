@@ -898,6 +898,12 @@ EOF
       # Make copied files writable (Nix store files are read-only by default)
       $DRY_RUN_CMD chmod -R u+w ~/.claude/
 
+      # Remove stale files that have been migrated out of commands/ to skills/
+      # These are no longer deployed by the cp above but won't be auto-deleted
+      $DRY_RUN_CMD rm -f ~/.claude/commands/review.md
+      $DRY_RUN_CMD rm -f ~/.claude/commands/review-domains.md
+      $DRY_RUN_CMD rm -f ~/.claude/commands/review-citation-guide.md
+
       # Add generated TOOLS.md (use install to handle read-only destination from previous build)
       $DRY_RUN_CMD install -m 644 ${toolsMarkdown} ~/.claude/TOOLS.md
     '';

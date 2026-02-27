@@ -1,5 +1,35 @@
 { config, pkgs, lib, theme, shellapps, unstable, ... }:
 
+let
+  # pinact - GitHub Actions SHA-pinning CLI (not in nixpkgs)
+  # https://github.com/suzuki-shunsuke/pinact
+  pinact = pkgs.stdenv.mkDerivation {
+    pname = "pinact";
+    version = "3.9.0";
+
+    src = pkgs.fetchurl {
+      url = "https://github.com/suzuki-shunsuke/pinact/releases/download/v3.9.0/pinact_darwin_arm64.tar.gz";
+      sha256 = "09vrvpmxiaycn67k231rncw81jgplw7bnki45vqrxm9wd1m6iad6";
+    };
+
+    sourceRoot = ".";
+
+    installPhase = ''
+      mkdir -p $out/bin
+      cp pinact $out/bin/pinact
+      chmod +x $out/bin/pinact
+    '';
+
+    meta = {
+      description = "CLI tool to pin GitHub Actions workflow references to immutable commit SHAs";
+      homepage = "https://github.com/suzuki-shunsuke/pinact";
+      mainProgram = "pinact";
+      platforms = [ "aarch64-darwin" ];
+    };
+  };
+
+in
+
 {
   home.packages = with pkgs; [
     # === Core System Tools ===
@@ -25,6 +55,7 @@
     codeowners
     git-lfs
     unstable.gh  # GitHub CLI from unstable channel
+    pinact  # Pin GitHub Actions workflow references to immutable commit SHAs
 
     # === Security & Secrets Management ===
     _1password-cli  # 1Password command-line tool
