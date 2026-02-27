@@ -9,7 +9,7 @@ let
 
     src = pkgs.fetchurl {
       url = "https://github.com/suzuki-shunsuke/pinact/releases/download/v3.9.0/pinact_darwin_arm64.tar.gz";
-      sha256 = "09vrvpmxiaycn67k231rncw81jgplw7bnki45vqrxm9wd1m6iad6";
+      sha256 = "sha256-I8ik7aj9eUnIy7HP5vPQEnlAL+YgHpywqQRHpez974k=";
     };
 
     sourceRoot = ".";
