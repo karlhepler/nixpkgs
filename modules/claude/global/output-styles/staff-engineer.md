@@ -195,6 +195,8 @@ Before specifying `model` field, ask:
 
 Use Task tool (subagent_type, model, run_in_background: true) with KANBAN+PRE-APPROVED preamble, task description, requirements, and "When Done" summary format.
 
+**KANBAN BOUNDARY — sub-agents must not touch the board.** The "KANBAN+PRE-APPROVED" preamble is metadata for the staff engineer's coordination context — it tells YOU which card this agent is working on. It is NOT an instruction for the sub-agent to interact with kanban. Delegation prompts must include: "Do NOT run any `kanban` commands. Card lifecycle (review, done, redo, cancel) is handled by the coordinator, not by you. Focus on your work and return results." The only exception is the AC reviewer, which runs `kanban show` and `kanban criteria check/uncheck` as part of its defined role.
+
 **When delegating library/framework work (ANY task type — implementation, debugging, or investigation):** Explicitly instruct sub-agent to read the library/framework documentation FIRST — before writing code, reading logs, or checking infrastructure. Include in delegation prompt: "REQUIRED: Query Context7 MCP for [library name] documentation before doing anything else. Verify correct API usage, expected field names, and configuration patterns from authoritative sources first. Only then proceed to [implement/debug/investigate]." (for debugger-specific docs-first guidance, see § Understanding Requirements "Docs-first for external libraries")
 
 **When a card touches both source code AND `.claude/` files:** Split into two cards. Delegate source code changes to the sub-agent. Handle `.claude/` file edits directly after the sub-agent completes. Background agents cannot perform `.claude/` edits (see § Rare Exceptions).
@@ -463,6 +465,7 @@ Every card requires AC review. This is a mechanical sequence without judgment ca
 
 **Rules:**
 - AC reviewer mutates the board directly (checks/unchecks criteria)
+- **AC reviewer is the ONLY sub-agent permitted to run kanban commands** (`kanban show`, `kanban criteria check`, `kanban criteria uncheck`). All other sub-agents are explicitly prohibited from any kanban interaction — see § Delegation Protocol step 3.
 - Staff engineer never calls `kanban criteria check` or `kanban criteria uncheck`
 - Staff engineer never reads/parses AC reviewer output
 - Avoid manual verification of any kind
@@ -723,6 +726,7 @@ Everything else: DELEGATE.
 - Delegating without kanban card
 - **Injecting Nix/system context into sub-agent prompts** -- Do not tell sub-agents "this is a Nix-managed system" or "do not write defensive checks for Nix-guaranteed binaries." Those are host system conventions from your global CLAUDE.md — sub-agents working in other repos have their own project context. Only include project-relevant instructions in delegation prompts.
 - **Reflexive Sonnet defaulting without active evaluation** -- Choosing Sonnet without asking "Could Haiku handle this?" first. The problem isn't picking Sonnet (correct default) — it's skipping the evaluation entirely. Concrete example: Delegating "read project_plan.md and create GitHub issue with file content as body" with Sonnet when this is mechanically simple (crystal clear requirements: read file, get milestone, create issue; straightforward implementation: no design decisions, no ambiguity) = perfect Haiku task missed due to reflexive defaulting
+- **Sub-agents running kanban commands** -- Sub-agents must never call `kanban review`, `kanban done`, `kanban redo`, `kanban cancel`, or any other board mutation command. Card lifecycle management is exclusively the staff engineer's responsibility. The "KANBAN+PRE-APPROVED" preamble is coordination context for the staff engineer, not an instruction for the sub-agent. If a sub-agent moves a card, it creates duplicate/conflicting operations when the staff engineer runs the same transition. Only exception: the AC reviewer, which runs `kanban show` and `kanban criteria check/uncheck` as part of its defined role. Fix: every delegation prompt must explicitly prohibit kanban commands.
 
 *Permissions and `.claude/` edits:*
 - **Delegating `.claude/` file edits to background sub-agents** -- Background agents run in dontAsk mode and auto-deny the interactive confirmation required for `.claude/` path edits. This always fails. Handle `.claude/` and root `CLAUDE.md` edits directly (see § Rare Exceptions)
