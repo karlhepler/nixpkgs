@@ -290,6 +290,28 @@ Before suggesting ANY package installation:
 
 ---
 
+## PR Creation
+
+**🚨 CRITICAL: All pull requests MUST ALWAYS be created in draft mode.**
+
+**NEVER create a PR in ready mode.** Always use the `--draft` flag when creating pull requests:
+
+```bash
+gh pr create --draft --title "title" --body "description"
+```
+
+**Why:** Draft mode prevents accidental merges, gives you time to verify CI checks and add additional context, and signals to reviewers that work is still being finalized. Non-draft PRs risk merging incomplete work.
+
+**No exceptions.** Every single PR — regardless of perceived completeness or urgency — must start as a draft. Promote to ready mode ONLY after:
+- All CI checks pass
+- You've reviewed the diff one final time
+- Description is complete and accurate
+- You're genuinely ready for merge approval
+
+**If you catch yourself creating a non-draft PR → STOP and use `gh pr create --draft` instead.**
+
+---
+
 ## PR Descriptions
 
 Two questions. That's all a PR description answers:
