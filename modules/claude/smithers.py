@@ -1751,6 +1751,37 @@ def _show_card_and_notify(
     send_notification(notification_title, notification_message, sound)
 
 
+def _promote_from_draft_if_needed(pr_number: int) -> bool:
+    """Promote PR from draft to ready if it is currently in draft mode.
+
+    Returns True if a promotion was performed, False if the PR was already ready.
+    On gh CLI failure the error is logged and False is returned so the caller
+    continues with the normal ready-mode path.
+    """
+    code, stdout, _ = run_gh(["pr", "view", str(pr_number), "--json", "isDraft"])
+    if code != 0:
+        log(f"Warning: could not fetch draft status for PR #{pr_number} — skipping promotion check")
+        return False
+
+    try:
+        is_draft = json.loads(stdout).get("isDraft", False)
+    except json.JSONDecodeError:
+        log(f"Warning: could not parse draft status response — skipping promotion check")
+        return False
+
+    if not is_draft:
+        return False
+
+    log(f"PR was in draft — promoting to ready...")
+    promote_code, _, promote_err = run_gh(["pr", "ready", str(pr_number)])
+    if promote_code != 0:
+        log(f"Warning: gh pr ready exited {promote_code}: {promote_err.strip()} — continuing anyway")
+        return False
+
+    log(f"PR #{pr_number} promoted from draft to ready")
+    return True
+
+
 def _handle_pr_ready(
     pr_number: int,
     pr_url: str,
@@ -1765,7 +1796,8 @@ def _handle_pr_ready(
 ) -> None:
     """Handle the success path when no work is needed and PR is verified clean.
 
-    Attempts auto-merge if the PR is mergeable. Posts to Slack and sends a
+    Promotes the PR from draft to ready if needed, then attempts auto-merge
+    if the PR is approved and mergeable. Posts to Slack and sends a
     notification. Always exits with code 0.
 
     Args:
@@ -1780,6 +1812,19 @@ def _handle_pr_ready(
         bot_comments: Bot comment data
         max_ralph_invocations: Max Ralph invocations (used in fallback notification)
     """
+    # Promote draft → ready before any approval/merge logic.
+    # PRs are always created in draft mode; Smithers owns the transition.
+    _promote_from_draft_if_needed(pr_number)
+
+    # Fresh approval check — someone may have approved while the PR was still in draft,
+    # or while CI was running.  Do not rely on the pr_info snapshot from the start of
+    # this cycle.
+    fresh_info = get_pr_info(pr_number)
+    if fresh_info:
+        pr_info["is_approved"] = fresh_info.get("is_approved", pr_info.get("is_approved", False))
+        pr_info["isDraft"] = fresh_info.get("isDraft", False)
+        pr_info["reviewDecision"] = fresh_info.get("reviewDecision", pr_info.get("reviewDecision", ""))
+
     if is_pr_mergeable(pr_number):
         log("PR is approved and mergeable - auto-merging...")
         merge_success, merge_msg = auto_merge_pr(pr_number)
