@@ -623,9 +623,10 @@ Create → Delegate (Task, background) → AC review sequence → Done. If termi
 | `/finance` | Financial analysis | Unit economics, pricing, burn rate |
 | `/workout-staff` | Git worktree | Parallel branches (exception skill) |
 | `/workout-burns` | Worktree with burns | Parallel dev with Ralph (exception skill) |
+| `/review` | Full PR code review | Orchestrate specialist review — "review PR #N", "code review PR #N", "run a review on this PR", "review pull request", "get specialist review" |
 | `/manage-pr-comments` | PR comment management via `prc` | List, filter, resolve, collapse comment threads |
 | `smithers` (CLI) | Autonomous PR watcher (user-run, not invocable via Task/Skill) | See smithers note below |
-| `/review-pr-comments` | PR review response | Address reviewer comments, reply to code review |
+| `/review-pr-comments` | Respond to reviewer feedback | Reply to reviewer comments on a PR you submitted — NOT for performing a code review |
 
 **Smithers:** User-run CLI that polls CI, invokes Ralph via `burns` to fix failures, and auto-merges on green. When user mentions smithers, they are running it themselves -- offer troubleshooting help, not delegation. Usage: `smithers` (current branch), `smithers 123` (explicit PR), `smithers --expunge 123` (clean restart).
 
@@ -734,6 +735,7 @@ Everything else: DELEGATE.
 - **Debugger overconfidence relay** -- Treating debugger findings as conclusions and briefing the user with certainty. Debugger output is a hypothesis ledger, not a verdict. Before relaying to the user, check: are these findings framed as hypotheses with confidence levels? If the debugger used declarative language ("the problem is", "definitely", "guaranteed"), recalibrate before relaying. WRONG: "We found it — the bug is definitely X, Y, and Z." CORRECT: "Current leading hypothesis is X (confidence: high, supported by [evidence]). H-002 and H-003 are also Active Hypotheses at medium confidence. Next step: [experiment] to confirm." See § Trust But Verify.
 
 *Tools and relay:*
+- **Routing "Review PR #N" to `review-pr-comments`** -- "Review PR #N" means *perform a code review* → use `/review` skill. `review-pr-comments` is for *responding to reviewer feedback on a PR you've already submitted* → triggered by "respond to reviewer", "address review comments", "reply to code review". These are inverted workflows: `/review` = you reviewing someone else's PR; `review-pr-comments` = responding to others reviewing your PR.
 - **Using `gh api`/`gh pr view` for PR comment work** -- `prc` is the canonical tool for all PR comment work. Never reach for raw GitHub API calls or `gh pr view` to list, investigate, reply to, or resolve PR comments. Delegate to `/manage-pr-comments` (comment management: list, resolve, collapse) or `/review-pr-comments` (reviewing/responding to code review feedback). Key `prc` subcommands: `list` (flags: `--unresolved`, `--author`, `--inline-only`), `reply`, `resolve`, `unresolve`, `collapse`. To hide stale bot comments (e.g., resolved CI validation results), use `prc collapse --bots-only --reason resolved`.
 - **Blind relay** -- Accepting sub-agent findings at face value and relaying them directly to the user without scrutiny. Symptoms: researcher returns a confident summary → you summarize it to the user without asking what the source was, whether it contradicts prior knowledge, or whether there are alternative interpretations. A confident-sounding report is not evidence of correctness. Before relaying: probe the source quality, check for contradictions, consider what the agent didn't examine. See § Trust But Verify.
 
