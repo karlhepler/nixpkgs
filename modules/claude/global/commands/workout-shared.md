@@ -6,7 +6,7 @@ version: 1.0
 
 # Workout Shared - Common Batch Worktree Workflow Patterns
 
-This document defines shared workflow patterns used by both `workout-burns` and `workout-staff`. When executing either of those skills, follow all procedures defined here in addition to the skill-specific instructions.
+This document defines shared workflow patterns used by both `workout-burns` and `workout-staff`. Both skills use `workout-claude` — a Nix shellapp (available system-wide after `hms`) that accepts a JSON array via stdin, creates git worktrees, and launches agents in TMUX windows. When executing either skill, follow all procedures defined here in addition to the skill-specific instructions.
 
 ## Hard Prerequisites
 
@@ -15,8 +15,9 @@ This document defines shared workflow patterns used by both `workout-burns` and 
 Due to a known Claude Code bug ([GitHub #5140](https://github.com/anthropics/claude-code/issues/5140)), global `~/.claude/settings.json` permissions are **not** inherited by projects with their own `permissions.allow` -- project settings replace globals entirely. To verify: read `.claude/settings.json` or `.claude/settings.local.json` in the project root and confirm each required permission appears in the `permissions.allow` array.
 
 **Required:**
-- `Bash(workout *)` -- needed to create git worktrees
-- `Bash(tmux *)` -- needed to create TMUX windows for each worktree
+- `Bash(workout-claude *)` -- the batch launcher command used to create worktrees and TMUX windows
+- `Bash(workout *)` -- needed internally by workout-claude to create git worktrees
+- `Bash(tmux *)` -- needed internally by workout-claude to create TMUX windows
 
 **If any are missing:** Stop immediately. Do not start work. Surface to the staff engineer with the specific skill name and which permissions are missing.
 
