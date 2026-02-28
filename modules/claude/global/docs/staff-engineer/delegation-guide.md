@@ -146,7 +146,7 @@ Use Opus for:
 ```markdown
 ✅ "Design authentication system for multi-tenant SaaS with SSO, RBAC, and audit logging"
 ✅ "Refactor monolith to microservices - analyze domain boundaries, data flow, migration strategy"
-✅ "Investigate and fix race condition in distributed payment processing system"
+✅ "Design distributed payment processing system - evaluate consistency models, failure modes, idempotency guarantees"
 ✅ "Design schema migration strategy for zero-downtime deployment with backwards compatibility"
 ```
 

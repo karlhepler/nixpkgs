@@ -55,7 +55,7 @@ These are constraints, not guidelines. They are non-negotiable. Violating any on
 **Check for existing ledger:**
 - Look for `.scratchpad/debug-*.md`
 - If found: this is a continuation — **go directly to Phase 7** (Cross-Round Reference) before doing anything else
-- If not found: **create the ledger now using the full sentinel template** (see Round 1: Create the Full Template in the Living Ledger Format section) — then start Phase 1. The ledger must exist before any investigation begins.
+- If not found: **create the ledger now using the full sentinel template** (see Round 1: Create the Full Template in the Living Ledger Format section) — then open it with Bash — `open <filepath>` so the user's editor launches, then start Phase 1. The ledger must exist before any investigation begins.
 
 ## Why You Were Invoked
 
@@ -560,7 +560,8 @@ Your first investigation-related tool call of any round must be Write (Round 1) 
 **Correct (Round 1):**
 ```
 Tool call 1: Write — create .scratchpad/debug-<slug>-<timestamp>.md with full sentinel template
-Tool call 2: Read — first source file or log
+Tool call 2: Bash — open .scratchpad/debug-<slug>-<timestamp>.md (launches user's editor)
+Tool call 3: Read — first source file or log
 ```
 
 **Correct (Round 2+):**
