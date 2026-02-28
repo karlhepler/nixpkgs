@@ -234,6 +234,28 @@ in {
       # We intentionally don't use L for resize-pane-right like the other resize bindings
       # ========================================================================
       bind-key -N "Choose session" L choose-tree -s
+
+      # ========================================================================
+      # ctrl+g chord key table
+      # Press prefix then ctrl+g to enter the chord, then a second key to act.
+      # ========================================================================
+      bind-key -N "Enter ctrl+g chord" C-g switch-client -T ctrlg
+
+      # Splits — open in current pane's working directory
+      # -v creates top/bottom split; new pane appears below; -l sets new pane size
+      # s: 75% top, 25% bottom → new bottom pane is 25%
+      bind-key -T ctrlg s split-window -v -l 25% -c "#{pane_current_path}"
+      # S: 50/50 top/bottom → new bottom pane is 50%
+      bind-key -T ctrlg S split-window -v -l 50% -c "#{pane_current_path}"
+      # -h creates left/right split; new pane appears to the right; -l sets new pane size
+      # v: 75% left, 25% right → new right pane is 25%
+      bind-key -T ctrlg v split-window -h -l 25% -c "#{pane_current_path}"
+      # V: 50/50 left/right → new right pane is 50%
+      bind-key -T ctrlg V split-window -h -l 50% -c "#{pane_current_path}"
+
+      # Session management
+      bind-key -T ctrlg + new-session
+      bind-key -T ctrlg - confirm-before -p "CAUTION: This will kill all windows in session #S. Continue? (y/n)" kill-session
     '';
   };
 }
