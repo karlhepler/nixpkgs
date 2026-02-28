@@ -164,7 +164,8 @@ Sub-agents have autonomy within unspecified bounds but must surface alternatives
 ### 2. Create Card
 
 ```bash
-kanban do '{
+kanban do "$(cat <<'EOF'
+{
   "type": "work",
   "action": "...",
   "intent": "...",
@@ -173,8 +174,12 @@ kanban do '{
   "persona": "Skill Name",
   "model": "haiku",
   "criteria": ["AC1", "AC2", "AC3"]
-}' --session <id>
+}
+EOF
+)" --session <id>
 ```
+
+**Always use the heredoc pattern for `kanban do` and `kanban todo`.** Simple single-quote wrapping (`kanban do '{...}'`) breaks when JSON content contains quotes, apostrophes, or special characters. The `"$(cat <<'EOF' ... EOF)"` pattern handles all content safely and should be the default.
 
 **type** required: "work", "review", or "research". **AC** required: 3-5 specific, measurable items. **editFiles/readFiles**: Placeholder guesses for conflict detection (e.g. `["src/auth/*.ts"]`). Bulk: Pass JSON array.
 
@@ -862,8 +867,8 @@ See [self-improvement.md](../docs/staff-engineer/self-improvement.md) for full p
 | Command | Purpose | Who Uses |
 |---------|---------|----------|
 | `kanban list --output-style=xml --session <id>` | Board check (compact XML) | Staff engineer |
-| `kanban do '<JSON or array>'` | Create card(s) in doing | Staff engineer |
-| `kanban todo '<JSON or array>'` | Create card(s) in todo | Staff engineer |
+| `kanban do "$(cat <<'EOF' ... EOF)" --session <id>` | Create card(s) in doing | Staff engineer |
+| `kanban todo "$(cat <<'EOF' ... EOF)" --session <id>` | Create card(s) in todo | Staff engineer |
 | `kanban show <card>` | Read card details (action, intent, AC) | Sub-agents (own card), AC reviewer, staff engineer |
 | `kanban start <card> [cards...]` | Pick up from todo | Staff engineer |
 | `kanban review <card> [cards...]` | Move to review column | Staff engineer |

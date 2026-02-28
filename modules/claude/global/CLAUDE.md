@@ -16,6 +16,7 @@
 - [ ] **Git**: Using `karlhepler/` prefix for new branches?
 - [ ] **🚨 NO HOMEBREW**: Not suggesting OR mentioning brew install ANYWHERE?
 - [ ] **Context7**: Using external library/framework? Queried Context7 for authoritative docs BEFORE implementing?
+- [ ] **🔍 Search tools**: Using built-in Grep/Glob tools (preferred) or `rg`/`fd` via Bash? NOT `grep`/`find`?
 
 **If ANY unchecked, STOP and address first.**
 
@@ -110,6 +111,8 @@ When researching, investigating, or looking up information, ALWAYS follow this p
 **Review Card:** Card where AC verifies information returned (analysis, findings, recommendations)
 
 **Open:** When the user says "open X", Claude runs the macOS `open` command via Bash (e.g., `open file.txt`, `open https://example.com`). "Open" means launch/display, not read or process in Claude.
+
+---
 
 ## Skill Invocation
 
@@ -229,6 +232,8 @@ When delegating work via Task tool:
 
 **NEVER use `grep` or `find` in Bash.** When you need to search file contents or find files via the Bash tool, use `rg` and `fd` respectively. They are faster, have saner defaults, and are the standard tools in this environment.
 
+> **Prefer built-in tools over Bash:** Claude Code's built-in **Grep** and **Glob** tools are preferred over running `rg`/`fd` via Bash for most search tasks. Reserve Bash `rg`/`fd` for cases where built-in tools can't do the job (e.g., complex pipelines, post-processing output).
+
 ❌ **NEVER run via Bash:**
 ```bash
 grep -r "pattern" src/
@@ -258,24 +263,24 @@ fd -e py
 | `grep -c "pattern" file` | `rg -c "pattern" file` (count matches) |
 | `grep -v "pattern"` | `rg -v "pattern"` (invert match) |
 | `grep -A3 -B3 "pattern"` | `rg -C3 "pattern"` (context lines) |
-| `grep --include="*.ts" -r "pattern"` | `rg -t ts "pattern"` (file type filter) |
+| `grep --include="*.ts" -r "pattern"` | `rg -g '*.ts' "pattern"` (glob file filter) |
 | `grep -E "regex\|pattern"` | `rg "regex\|pattern"` (extended regex by default) |
 
-Key differences: `rg` is recursive by default, respects `.gitignore`, uses smart case (case-insensitive when pattern is all lowercase, case-sensitive otherwise).
+Key differences: `rg` is recursive by default, respects `.gitignore`, case-sensitive by default (use `-i` for case-insensitive, `-S` for smart case).
 
 **fd** — replaces `find`:
 | find | fd equivalent |
 |------|---------------|
 | `find . -name "*.ts"` | `fd -e ts` (extension filter) |
-| `find . -name "foo*"` | `fd "foo"` (pattern match, recursive by default) |
+| `find . -name "foo*"` | `fd "^foo"` (anchored regex prefix match, recursive by default) |
 | `find . -type f -name "*.py"` | `fd -e py` (files only is default) |
 | `find . -type d -name "src"` | `fd -t d "src"` (directories only) |
 | `find . -name "*.log" -delete` | `fd -e log -x rm {}` (execute command) |
-| `find . -path "*/test/*" -name "*.ts"` | `fd -e ts . test/` (search in directory) |
+| `find . -path "*/test/*" -name "*.ts"` | `fd -e ts --search-path test/` (restrict search to directory) |
 | `find . -maxdepth 2 -name "*.md"` | `fd -d 2 -e md` (max depth) |
-| `find . -newer file.txt` | `fd --changed-within 1d` (recent files) |
+| `find . -mtime -1` | `fd --changed-within 1d` (files modified in last day) |
 
-Key differences: `fd` is recursive by default, respects `.gitignore`, uses regex patterns (not globs), and has simpler syntax for common operations.
+Key differences: `fd` is recursive by default, respects `.gitignore`, uses regex patterns (not globs), and has simpler syntax for common operations. `-x` executes commands in parallel by default (unlike `find -exec`); use `--threads=1` for sequential execution.
 
 ### Self-Check Before Running Bash
 
@@ -467,8 +472,8 @@ When updating a PR description, **rewrite from scratch**. The description reflec
 
 **ALL branches MUST use `karlhepler/` prefix.**
 
-✓ `karlhepler/feature-name`
-✗ `feature-name` or `feature/name`
+✅ `karlhepler/feature-name`
+❌ `feature-name` or `feature/name`
 
 ---
 
