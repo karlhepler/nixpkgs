@@ -25,6 +25,7 @@ import sqlite3
 import subprocess
 import sys
 import termios
+import textwrap
 import threading
 import time
 import tty
@@ -932,12 +933,7 @@ def cmd_show(args) -> None:
     if criteria:
         output_lines.append("")
         output_lines.append(f"{dim_bold}  Acceptance Criteria{reset}")
-        output_lines.append(f"  [agent][reviewer]")
-        for i, criterion in enumerate(criteria, start=1):
-            agent_box = "✅" if criterion.get("agent_met", False) else "⬜"
-            reviewer_box = "✅" if criterion.get("reviewer_met", False) else "⬜"
-            text = criterion.get("text", "")
-            output_lines.append(f"  [{agent_box}][{reviewer_box}] {i}. {text}")
+        output_lines.extend(format_criteria_table(criteria, indent="  "))
 
     # Edit files section
     edit_files = card.get("editFiles") or card.get("writeFiles", [])
@@ -1323,6 +1319,86 @@ def calculate_lead_time(card: dict) -> float | None:
         return None
 
 
+def format_criteria_table(criteria: list, indent: str = "  ", terminal_width: int | None = None) -> list[str]:
+    """Render acceptance criteria as a formatted table.
+
+    Produces a scannable table with columns: #, Agent, Reviewer, Criterion.
+    Long criterion text wraps at the terminal boundary with continuation indent.
+
+    Args:
+        criteria: List of criterion dicts with keys: text, agent_met, reviewer_met.
+        indent: Leading whitespace for each table row (default 2 spaces).
+        terminal_width: Override terminal width detection (useful for fixed-width contexts).
+
+    Returns:
+        List of formatted lines (no trailing newline on any line).
+    """
+    if not criteria:
+        return []
+
+    if terminal_width is None:
+        terminal_width = shutil.get_terminal_size((120, 24)).columns
+
+    # Fixed column widths (display columns, accounting for emoji double-width)
+    # Emoji ✅ and ⬜ each occupy 2 display columns in monospace terminals.
+    # Visual:  " ✅  " = 1 space + 2-wide emoji + 2 spaces = 7 display cols
+    #          " ⬜  " = 1 space + 2-wide emoji + 2 spaces = 7 display cols
+    num_col_width = max(2, len(str(len(criteria))))  # right-aligned, e.g. " 1" or "10"
+    agent_col_width = 7   # " ✅  " or " ⬜  " — 7 display columns
+    rev_col_width = 7     # same
+    sep = "  "            # column separator (2 spaces)
+
+    # Calculate available width for criterion text
+    # Layout: indent + num + sep + agent + sep + rev + sep + criterion
+    prefix_width = len(indent) + num_col_width + len(sep) + agent_col_width + len(sep) + rev_col_width + len(sep)
+    criterion_width = max(20, terminal_width - prefix_width)
+
+    # Continuation indent for wrapped criterion lines (blank num/agent/rev columns)
+    blank_num = " " * num_col_width
+    blank_agent = " " * agent_col_width
+    blank_rev = " " * rev_col_width
+    continuation_prefix = f"{indent}{blank_num}{sep}{blank_agent}{sep}{blank_rev}{sep}"
+
+    lines = []
+
+    # Header row
+    header_num = "#".rjust(num_col_width)
+    header_agent = "Agent".center(agent_col_width)
+    header_rev = "Rev".center(rev_col_width)
+    header_criterion = "Criterion"
+    lines.append(f"{indent}{header_num}{sep}{header_agent}{sep}{header_rev}{sep}{header_criterion}")
+
+    # Separator row (dashes matching each column width)
+    sep_num = "─" * num_col_width
+    sep_agent = "─" * agent_col_width
+    sep_rev = "─" * rev_col_width
+    sep_criterion = "─" * min(criterion_width, len("Criterion"))
+    lines.append(f"{indent}{sep_num}{sep}{sep_agent}{sep}{sep_rev}{sep}{sep_criterion}")
+
+    for i, criterion in enumerate(criteria, start=1):
+        agent_met = criterion.get("agent_met", False)
+        reviewer_met = criterion.get("reviewer_met", False)
+
+        # Emoji cell: " ✅  " = 1 space + 2-display-col emoji + 2 spaces = 7 display cols
+        agent_cell = (" ✅  " if agent_met else " ⬜  ")
+        rev_cell   = (" ✅  " if reviewer_met else " ⬜  ")
+
+        num_cell = str(i).rjust(num_col_width)
+        text = criterion.get("text", "")
+
+        # Wrap long criterion text
+        wrapped_lines = textwrap.wrap(text, width=criterion_width, break_long_words=True) if text else [""]
+
+        # First line: full row
+        lines.append(f"{indent}{num_cell}{sep}{agent_cell}{sep}{rev_cell}{sep}{wrapped_lines[0]}")
+
+        # Continuation lines: blank num/status cells, only criterion text
+        for continuation in wrapped_lines[1:]:
+            lines.append(f"{continuation_prefix}{continuation}")
+
+    return lines
+
+
 def format_card_line(card: dict, num: str, show_session: bool = False, output_style: str = "simple", is_first_card: bool = True, column: str = "") -> str:
     """Format a single card for list/view output.
 
@@ -1409,14 +1485,10 @@ def format_card_line(card: dict, num: str, show_session: bool = False, output_st
     if output_style == "detail":
         criteria = card.get("criteria", [])
         if criteria:
+            table_lines = format_criteria_table(criteria, indent="    ")
             criteria_section = f"{dim}    Acceptance Criteria\n"
-            criteria_section += f"    [agent][reviewer]\n"
-            for i, criterion in enumerate(criteria, start=1):
-                agent_box = "✅" if criterion.get("agent_met", False) else "⬜"
-                reviewer_box = "✅" if criterion.get("reviewer_met", False) else "⬜"
-                text = criterion.get("text", "")
-                criteria_section += f"    [{agent_box}][{reviewer_box}] {i}. {text}\n"
-            criteria_section = criteria_section.rstrip("\n") + reset
+            criteria_section += "\n".join(table_lines)
+            criteria_section += reset
             sections.append(criteria_section)
 
     # Metadata section (type, persona, model) - show in "detail" style only

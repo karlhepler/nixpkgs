@@ -53,8 +53,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics WHERE date(recorded_at) = date('now')",
-          "queryText": "SELECT COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics WHERE date(recorded_at) = date('now')",
+          "rawQueryText": "SELECT COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics WHERE date(recorded_at, 'localtime') = date('now', 'localtime')",
+          "queryText": "SELECT COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics WHERE date(recorded_at, 'localtime') = date('now', 'localtime')",
           "queryType": "table",
           "timeColumns": [],
           "refId": "A"
@@ -195,8 +195,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT COALESCE(SUM(input_tokens + output_tokens), 0) as total_tokens FROM agent_metrics WHERE date(recorded_at) = date('now')",
-          "queryText": "SELECT COALESCE(SUM(input_tokens + output_tokens), 0) as total_tokens FROM agent_metrics WHERE date(recorded_at) = date('now')",
+          "rawQueryText": "SELECT COALESCE(SUM(input_tokens + output_tokens), 0) as total_tokens FROM agent_metrics WHERE date(recorded_at, 'localtime') = date('now', 'localtime')",
+          "queryText": "SELECT COALESCE(SUM(input_tokens + output_tokens), 0) as total_tokens FROM agent_metrics WHERE date(recorded_at, 'localtime') = date('now', 'localtime')",
           "queryType": "table",
           "timeColumns": [],
           "refId": "A"
@@ -323,8 +323,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT COUNT(DISTINCT session_id) as sessions FROM agent_metrics WHERE date(recorded_at) = date('now')",
-          "queryText": "SELECT COUNT(DISTINCT session_id) as sessions FROM agent_metrics WHERE date(recorded_at) = date('now')",
+          "rawQueryText": "SELECT COUNT(DISTINCT session_id) as sessions FROM agent_metrics WHERE date(recorded_at, 'localtime') = date('now', 'localtime')",
+          "queryText": "SELECT COUNT(DISTINCT session_id) as sessions FROM agent_metrics WHERE date(recorded_at, 'localtime') = date('now', 'localtime')",
           "queryType": "table",
           "timeColumns": [],
           "refId": "A"
@@ -401,8 +401,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT date(recorded_at) || 'T00:00:00Z' as time, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics WHERE recorded_at >= datetime($__from/1000, 'unixepoch') AND recorded_at <= datetime($__to/1000, 'unixepoch') GROUP BY date(recorded_at) ORDER BY time",
-          "queryText": "SELECT date(recorded_at) || 'T00:00:00Z' as time, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics WHERE recorded_at >= datetime($__from/1000, 'unixepoch') AND recorded_at <= datetime($__to/1000, 'unixepoch') GROUP BY date(recorded_at) ORDER BY time",
+          "rawQueryText": "SELECT date(recorded_at, 'localtime') || 'T00:00:00Z' as time, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics WHERE recorded_at >= datetime($__from/1000, 'unixepoch') AND recorded_at <= datetime($__to/1000, 'unixepoch') GROUP BY date(recorded_at, 'localtime') ORDER BY time",
+          "queryText": "SELECT date(recorded_at, 'localtime') || 'T00:00:00Z' as time, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics WHERE recorded_at >= datetime($__from/1000, 'unixepoch') AND recorded_at <= datetime($__to/1000, 'unixepoch') GROUP BY date(recorded_at, 'localtime') ORDER BY time",
           "queryType": "time series",
           "timeColumns": [
             "time"
@@ -1071,8 +1071,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT date(recorded_at) || 'T00:00:00Z' as time, COALESCE(AVG(cache_hit_ratio) * 100, 0) as cache_hit_pct FROM agent_metrics WHERE cache_hit_ratio > 0 AND recorded_at >= datetime($__from/1000, 'unixepoch') AND recorded_at <= datetime($__to/1000, 'unixepoch') GROUP BY date(recorded_at) ORDER BY time",
-          "queryText": "SELECT date(recorded_at) || 'T00:00:00Z' as time, COALESCE(AVG(cache_hit_ratio) * 100, 0) as cache_hit_pct FROM agent_metrics WHERE cache_hit_ratio > 0 AND recorded_at >= datetime($__from/1000, 'unixepoch') AND recorded_at <= datetime($__to/1000, 'unixepoch') GROUP BY date(recorded_at) ORDER BY time",
+          "rawQueryText": "SELECT date(recorded_at, 'localtime') || 'T00:00:00Z' as time, COALESCE(AVG(cache_hit_ratio) * 100, 0) as cache_hit_pct FROM agent_metrics WHERE cache_hit_ratio > 0 AND recorded_at >= datetime($__from/1000, 'unixepoch') AND recorded_at <= datetime($__to/1000, 'unixepoch') GROUP BY date(recorded_at, 'localtime') ORDER BY time",
+          "queryText": "SELECT date(recorded_at, 'localtime') || 'T00:00:00Z' as time, COALESCE(AVG(cache_hit_ratio) * 100, 0) as cache_hit_pct FROM agent_metrics WHERE cache_hit_ratio > 0 AND recorded_at >= datetime($__from/1000, 'unixepoch') AND recorded_at <= datetime($__to/1000, 'unixepoch') GROUP BY date(recorded_at, 'localtime') ORDER BY time",
           "queryType": "time series",
           "timeColumns": [
             "time"
@@ -2983,8 +2983,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT date(recorded_at) || 'T00:00:00Z' as time, COUNT(*) as cards_done FROM kanban_card_events WHERE event_type = 'done' AND recorded_at >= datetime($__from/1000, 'unixepoch') AND recorded_at <= datetime($__to/1000, 'unixepoch') GROUP BY date(recorded_at) ORDER BY time",
-          "queryText": "SELECT date(recorded_at) || 'T00:00:00Z' as time, COUNT(*) as cards_done FROM kanban_card_events WHERE event_type = 'done' AND recorded_at >= datetime($__from/1000, 'unixepoch') AND recorded_at <= datetime($__to/1000, 'unixepoch') GROUP BY date(recorded_at) ORDER BY time",
+          "rawQueryText": "SELECT date(recorded_at, 'localtime') || 'T00:00:00Z' as time, COUNT(*) as cards_done FROM kanban_card_events WHERE event_type = 'done' AND recorded_at >= datetime($__from/1000, 'unixepoch') AND recorded_at <= datetime($__to/1000, 'unixepoch') GROUP BY date(recorded_at, 'localtime') ORDER BY time",
+          "queryText": "SELECT date(recorded_at, 'localtime') || 'T00:00:00Z' as time, COUNT(*) as cards_done FROM kanban_card_events WHERE event_type = 'done' AND recorded_at >= datetime($__from/1000, 'unixepoch') AND recorded_at <= datetime($__to/1000, 'unixepoch') GROUP BY date(recorded_at, 'localtime') ORDER BY time",
           "queryType": "time series",
           "timeColumns": [
             "time"
@@ -3046,8 +3046,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT date(recorded_at) || 'T00:00:00Z' as time, SUM(CASE WHEN event_type='redo' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0) as redo_rate_pct FROM kanban_card_events WHERE recorded_at >= datetime($__from/1000, 'unixepoch') AND recorded_at <= datetime($__to/1000, 'unixepoch') GROUP BY date(recorded_at) ORDER BY time",
-          "queryText": "SELECT date(recorded_at) || 'T00:00:00Z' as time, SUM(CASE WHEN event_type='redo' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0) as redo_rate_pct FROM kanban_card_events WHERE recorded_at >= datetime($__from/1000, 'unixepoch') AND recorded_at <= datetime($__to/1000, 'unixepoch') GROUP BY date(recorded_at) ORDER BY time",
+          "rawQueryText": "SELECT date(recorded_at, 'localtime') || 'T00:00:00Z' as time, SUM(CASE WHEN event_type='redo' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0) as redo_rate_pct FROM kanban_card_events WHERE recorded_at >= datetime($__from/1000, 'unixepoch') AND recorded_at <= datetime($__to/1000, 'unixepoch') GROUP BY date(recorded_at, 'localtime') ORDER BY time",
+          "queryText": "SELECT date(recorded_at, 'localtime') || 'T00:00:00Z' as time, SUM(CASE WHEN event_type='redo' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0) as redo_rate_pct FROM kanban_card_events WHERE recorded_at >= datetime($__from/1000, 'unixepoch') AND recorded_at <= datetime($__to/1000, 'unixepoch') GROUP BY date(recorded_at, 'localtime') ORDER BY time",
           "queryType": "time series",
           "timeColumns": [
             "time"
@@ -3455,8 +3455,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT date(card_completed_at) || 'T00:00:00Z' as time, AVG((julianday(card_completed_at) - julianday(card_created_at)) * 24 * 60) as avg_lead_time_minutes FROM kanban_card_events WHERE event_type = 'done' AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL AND card_completed_at >= datetime($__from/1000, 'unixepoch') AND card_completed_at <= datetime($__to/1000, 'unixepoch') GROUP BY date(card_completed_at) ORDER BY time",
-          "queryText": "SELECT date(card_completed_at) || 'T00:00:00Z' as time, AVG((julianday(card_completed_at) - julianday(card_created_at)) * 24 * 60) as avg_lead_time_minutes FROM kanban_card_events WHERE event_type = 'done' AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL AND card_completed_at >= datetime($__from/1000, 'unixepoch') AND card_completed_at <= datetime($__to/1000, 'unixepoch') GROUP BY date(card_completed_at) ORDER BY time",
+          "rawQueryText": "SELECT date(card_completed_at, 'localtime') || 'T00:00:00Z' as time, AVG((julianday(card_completed_at) - julianday(card_created_at)) * 24 * 60) as avg_lead_time_minutes FROM kanban_card_events WHERE event_type = 'done' AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL AND card_completed_at >= datetime($__from/1000, 'unixepoch') AND card_completed_at <= datetime($__to/1000, 'unixepoch') GROUP BY date(card_completed_at, 'localtime') ORDER BY time",
+          "queryText": "SELECT date(card_completed_at, 'localtime') || 'T00:00:00Z' as time, AVG((julianday(card_completed_at) - julianday(card_created_at)) * 24 * 60) as avg_lead_time_minutes FROM kanban_card_events WHERE event_type = 'done' AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL AND card_completed_at >= datetime($__from/1000, 'unixepoch') AND card_completed_at <= datetime($__to/1000, 'unixepoch') GROUP BY date(card_completed_at, 'localtime') ORDER BY time",
           "queryType": "time series",
           "timeColumns": [
             "time"
@@ -3771,8 +3771,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT COALESCE(git_project, 'unknown') as project, COUNT(*) as completions, COUNT(DISTINCT date(card_completed_at)) as active_days FROM kanban_card_events WHERE event_type = 'done' AND git_project IS NOT NULL AND card_completed_at >= datetime($__from/1000, 'unixepoch') AND card_completed_at <= datetime($__to/1000, 'unixepoch') GROUP BY git_project ORDER BY completions DESC",
-          "queryText": "SELECT COALESCE(git_project, 'unknown') as project, COUNT(*) as completions, COUNT(DISTINCT date(card_completed_at)) as active_days FROM kanban_card_events WHERE event_type = 'done' AND git_project IS NOT NULL AND card_completed_at >= datetime($__from/1000, 'unixepoch') AND card_completed_at <= datetime($__to/1000, 'unixepoch') GROUP BY git_project ORDER BY completions DESC",
+          "rawQueryText": "SELECT COALESCE(git_project, 'unknown') as project, COUNT(*) as completions, COUNT(DISTINCT date(card_completed_at, 'localtime')) as active_days FROM kanban_card_events WHERE event_type = 'done' AND git_project IS NOT NULL AND card_completed_at >= datetime($__from/1000, 'unixepoch') AND card_completed_at <= datetime($__to/1000, 'unixepoch') GROUP BY git_project ORDER BY completions DESC",
+          "queryText": "SELECT COALESCE(git_project, 'unknown') as project, COUNT(*) as completions, COUNT(DISTINCT date(card_completed_at, 'localtime')) as active_days FROM kanban_card_events WHERE event_type = 'done' AND git_project IS NOT NULL AND card_completed_at >= datetime($__from/1000, 'unixepoch') AND card_completed_at <= datetime($__to/1000, 'unixepoch') GROUP BY git_project ORDER BY completions DESC",
           "queryType": "table",
           "timeColumns": [],
           "refId": "A"
@@ -3936,8 +3936,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "WITH dates AS (SELECT DISTINCT date(recorded_at) as d FROM kanban_card_events WHERE to_column IS NOT NULL AND recorded_at >= datetime($__from/1000, 'unixepoch') AND recorded_at <= datetime($__to/1000, 'unixepoch')), card_state AS (SELECT d.d as snap_date, e.card_number, e.to_column FROM dates d JOIN kanban_card_events e ON date(e.recorded_at) <= d.d AND e.to_column IS NOT NULL WHERE e.id = (SELECT MAX(id) FROM kanban_card_events WHERE card_number = e.card_number AND to_column IS NOT NULL AND date(recorded_at) <= d.d)) SELECT snap_date || 'T00:00:00Z' as time, SUM(CASE WHEN to_column = 'todo' THEN 1 ELSE 0 END) as todo, SUM(CASE WHEN to_column = 'doing' THEN 1 ELSE 0 END) as doing, SUM(CASE WHEN to_column = 'review' THEN 1 ELSE 0 END) as review, SUM(CASE WHEN to_column = 'done' THEN 1 ELSE 0 END) as done FROM card_state GROUP BY snap_date ORDER BY time",
-          "queryText": "WITH dates AS (SELECT DISTINCT date(recorded_at) as d FROM kanban_card_events WHERE to_column IS NOT NULL AND recorded_at >= datetime($__from/1000, 'unixepoch') AND recorded_at <= datetime($__to/1000, 'unixepoch')), card_state AS (SELECT d.d as snap_date, e.card_number, e.to_column FROM dates d JOIN kanban_card_events e ON date(e.recorded_at) <= d.d AND e.to_column IS NOT NULL WHERE e.id = (SELECT MAX(id) FROM kanban_card_events WHERE card_number = e.card_number AND to_column IS NOT NULL AND date(recorded_at) <= d.d)) SELECT snap_date || 'T00:00:00Z' as time, SUM(CASE WHEN to_column = 'todo' THEN 1 ELSE 0 END) as todo, SUM(CASE WHEN to_column = 'doing' THEN 1 ELSE 0 END) as doing, SUM(CASE WHEN to_column = 'review' THEN 1 ELSE 0 END) as review, SUM(CASE WHEN to_column = 'done' THEN 1 ELSE 0 END) as done FROM card_state GROUP BY snap_date ORDER BY time",
+          "rawQueryText": "WITH dates AS (SELECT DISTINCT date(recorded_at, 'localtime') as d FROM kanban_card_events WHERE to_column IS NOT NULL AND recorded_at >= datetime($__from/1000, 'unixepoch') AND recorded_at <= datetime($__to/1000, 'unixepoch')), card_state AS (SELECT d.d as snap_date, e.card_number, e.to_column FROM dates d JOIN kanban_card_events e ON date(e.recorded_at, 'localtime') <= d.d AND e.to_column IS NOT NULL WHERE e.id = (SELECT MAX(id) FROM kanban_card_events WHERE card_number = e.card_number AND to_column IS NOT NULL AND date(recorded_at, 'localtime') <= d.d)) SELECT snap_date || 'T00:00:00Z' as time, SUM(CASE WHEN to_column = 'todo' THEN 1 ELSE 0 END) as todo, SUM(CASE WHEN to_column = 'doing' THEN 1 ELSE 0 END) as doing, SUM(CASE WHEN to_column = 'review' THEN 1 ELSE 0 END) as review, SUM(CASE WHEN to_column = 'done' THEN 1 ELSE 0 END) as done FROM card_state GROUP BY snap_date ORDER BY time",
+          "queryText": "WITH dates AS (SELECT DISTINCT date(recorded_at, 'localtime') as d FROM kanban_card_events WHERE to_column IS NOT NULL AND recorded_at >= datetime($__from/1000, 'unixepoch') AND recorded_at <= datetime($__to/1000, 'unixepoch')), card_state AS (SELECT d.d as snap_date, e.card_number, e.to_column FROM dates d JOIN kanban_card_events e ON date(e.recorded_at, 'localtime') <= d.d AND e.to_column IS NOT NULL WHERE e.id = (SELECT MAX(id) FROM kanban_card_events WHERE card_number = e.card_number AND to_column IS NOT NULL AND date(recorded_at, 'localtime') <= d.d)) SELECT snap_date || 'T00:00:00Z' as time, SUM(CASE WHEN to_column = 'todo' THEN 1 ELSE 0 END) as todo, SUM(CASE WHEN to_column = 'doing' THEN 1 ELSE 0 END) as doing, SUM(CASE WHEN to_column = 'review' THEN 1 ELSE 0 END) as review, SUM(CASE WHEN to_column = 'done' THEN 1 ELSE 0 END) as done FROM card_state GROUP BY snap_date ORDER BY time",
           "queryType": "time series",
           "timeColumns": [
             "time"
@@ -4075,7 +4075,16 @@
     "from": "now-7d",
     "to": "now"
   },
-  "timepicker": {},
+  "timepicker": {
+    "quick_ranges": [
+      { "display": "Last 2 days",   "from": "now-2d",  "to": "now" },
+      { "display": "Last 7 days",   "from": "now-7d",  "to": "now" },
+      { "display": "Last 30 days",  "from": "now-30d", "to": "now" },
+      { "display": "Last 90 days",  "from": "now-90d", "to": "now" },
+      { "display": "Last 6 months", "from": "now-6M",  "to": "now" },
+      { "display": "Last 1 year",   "from": "now-1y",  "to": "now" }
+    ]
+  },
   "timezone": "browser",
   "title": "Claudit — Claude Code Agent Metrics",
   "uid": "claudit-dashboard",

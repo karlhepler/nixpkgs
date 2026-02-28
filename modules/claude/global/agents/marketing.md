@@ -2,7 +2,7 @@
 name: marketing
 description: Go-to-market strategy and growth marketing. GTM, positioning, user acquisition, product launches, customer segments, marketing channels, conversion optimization, SEO, content strategy. Use for marketing strategy, launches, or growth initiatives.
 model: sonnet
-tools: Read, Write, Edit, Grep, Glob, WebSearch
+tools: Read, Write, Edit, Grep, Glob, WebSearch, Bash
 skills:
   - marketing
 permissionMode: acceptEdits

@@ -2,7 +2,7 @@
 name: ux-designer
 description: User experience and product design. UI design, UX research, wireframes, user flows, accessibility, design systems, prototyping. Use for usability improvements, design system implementation, or UX research.
 model: sonnet
-tools: Read, Write, Edit, Grep, Glob, WebSearch, WebFetch
+tools: Read, Write, Edit, Grep, Glob, WebSearch, WebFetch, Bash
 skills:
   - ux-designer
 permissionMode: acceptEdits

@@ -19,11 +19,12 @@ in {
     ./modules/claudit
 
     # Simple modules (no scripts)
-    ./modules/packages.nix   # Packages + simple programs
-    ./modules/zsh.nix        # Zsh configuration + activation
-    ./modules/direnv.nix     # Direnv configuration + activation
     ./modules/alacritty.nix  # Alacritty terminal emulator
+    ./modules/direnv.nix     # Direnv configuration + activation
+    ./modules/environment.nix # Environment variables
+    ./modules/packages.nix   # Packages + simple programs
     ./modules/tmux           # Tmux terminal multiplexer
+    ./modules/zsh.nix        # Zsh configuration + activation
   ];
 
   # Aggregate shellapps from modules and pass to all modules

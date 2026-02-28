@@ -57,8 +57,7 @@ INPUT FORMAT (JSON via stdin):
 
 ENVIRONMENT:
   GITHUB_REPOS_ROOT  Root directory where repos are cloned.
-                     Set in overconfig.nix:
-                       home.sessionVariables.GITHUB_REPOS_ROOT = "/Users/you/github.com";
+                     Must be set as an environment variable.
                      Example value: /Users/karlhepler/github.com
                      Repos are resolved as $GITHUB_REPOS_ROOT/<org>/<repo>
 
@@ -102,7 +101,7 @@ WHAT HAPPENS:
   7. Reports success/failure
 
 REQUIREMENTS:
-  - GITHUB_REPOS_ROOT: Set in overconfig.nix
+  - GITHUB_REPOS_ROOT: Must be set as an environment variable
   - git: Repository cloning
   - gh: GitHub CLI for PR branch lookup
   - tmux: Window management
@@ -461,15 +460,13 @@ def main() -> None:
     repos_root = os.environ.get("GITHUB_REPOS_ROOT", "")
     if not repos_root:
         print("Error: GITHUB_REPOS_ROOT is not set.", file=sys.stderr)
-        print("Set it in overconfig.nix:", file=sys.stderr)
-        print('  home.sessionVariables.GITHUB_REPOS_ROOT = "/Users/you/github.com";', file=sys.stderr)
-        print("Then run hms to apply.", file=sys.stderr)
+        print("Please set GITHUB_REPOS_ROOT as an environment variable.", file=sys.stderr)
         sys.exit(1)
 
     repos_root = os.path.expanduser(repos_root)
     if not os.path.isdir(repos_root):
         print(f"Error: GITHUB_REPOS_ROOT does not exist: {repos_root}", file=sys.stderr)
-        print("Create the directory or update GITHUB_REPOS_ROOT in overconfig.nix.", file=sys.stderr)
+        print("Create the directory or set GITHUB_REPOS_ROOT to a valid path.", file=sys.stderr)
         sys.exit(1)
 
     if sys.stdin.isatty():
