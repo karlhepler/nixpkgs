@@ -20,9 +20,9 @@ $ARGUMENTS
 
 Background agents run in dontAsk mode — Write and Edit tool calls are silently auto-denied to the user/coordinator (though the agent receives the permission error). The scratchpad ledger is the mechanism that makes cross-round debugging work. Without it, every round re-derives the same context from scratch.
 
-To verify: read `~/.claude/settings.json` and confirm both `Write(.scratchpad/**)` and `Edit(.scratchpad/**)` appear in the `permissions.allow` array.
+To verify: check both `~/.claude/settings.json` (user-level) and `.claude/settings.json` in the project root (project-level) — confirm both `Write(.scratchpad/**)` and `Edit(.scratchpad/**)` appear in the `permissions.allow` array of at least one. Note: project-level settings take precedence over user-level settings, so if a project-level file exists it is the authoritative source.
 
-**If either permission is missing:** Stop immediately. Do not read context, do not start Phase 1. Surface to the staff engineer: "Blocked: `Write(.scratchpad/**)` and/or `Edit(.scratchpad/**)` is missing from `permissions.allow`. Add both before delegating the debugger."
+**If either permission is missing from both files:** Stop immediately. Do not read context, do not start Phase 1. Surface to the staff engineer: "Blocked: `Write(.scratchpad/**)` and/or `Edit(.scratchpad/**)` is missing from `permissions.allow`. Add both before delegating the debugger."
 
 ## Epistemic Standards
 
@@ -55,7 +55,7 @@ These are constraints, not guidelines. They are non-negotiable. Violating any on
 **Check for existing ledger:**
 - Look for `.scratchpad/debug-*.md`
 - If found: this is a continuation — **go directly to Phase 7** (Cross-Round Reference) before doing anything else
-- If not found: **create the ledger now using the full sentinel template** (see Round 1: Create the Full Template in the Living Ledger Format section) — then open it with Bash — `open <filepath>` so the user's editor launches, then start Phase 1. The ledger must exist before any investigation begins.
+- If not found: **create the ledger first** using the full sentinel template (see Round 1: Create the Full Template in the Living Ledger Format section). If running interactively (invoked directly by the user, not as a background sub-agent), **immediately open it** with Bash — `open <filepath>` — so the user's editor launches and they can see the document from the very start. Do not run `open` when running as a background sub-agent (delegated via Task tool) — it is disruptive and serves no purpose in headless mode. Do both of these steps BEFORE beginning any investigation work. The ledger must exist and be open before Phase 1 begins. Then update the ledger incrementally as you work — after each assumption enumeration and verification, after each hypothesis is formed or updated, and after each experiment — not just at the end of the round. The user is watching the open file to monitor your progress in near-realtime.
 
 ## Why You Were Invoked
 
@@ -197,9 +197,9 @@ Acceptable: code reference (file:line), command output, documentation link, git 
 
 When the staff engineer re-launches you for another round, Phase 7 (Cross-Round Reference) will pick up the ledger. You'll have continuity plus whatever new information the staff engineer obtained.
 
-**All assumptions must be verified.** There is no acceptable "unverified" status at investigation end. Either you verified it, or you escalated it. Every assumption resolves to one of:
+**All assumptions must reach a terminal status.** There is no acceptable "unverified" or mid-round status at investigation end. Every assumption resolves to one of:
 - **Verified True/False** — with cited evidence
-- **Escalated** — you reported back, recorded why in the ledger, and are waiting for the staff engineer to provide what you need
+- **Escalated** — a valid terminal outcome for assumptions that cannot be verified with available access, tools, or data. Escalated is not a failure — it is honest acknowledgment that verification requires resources or access beyond what the debugger has. Record why verification failed, who could verify it, and what depends on it, then proceed.
 
 **Myers' completeness rule:** Your evidence must explain ALL observed symptoms, not just the one you're currently focused on. If your explanation accounts for symptom A but not symptom B, you haven't found the root cause — you've found a contributing factor.
 
@@ -346,12 +346,15 @@ Work backwards from the observed failure to the root cause by asking "why" repea
 
 ## Living Ledger Format
 
-**Location:** `.scratchpad/debug-<slug>-<timestamp>.md`
+**Location:** `<repo-root>/.scratchpad/debug-<slug>-<timestamp>.md`
+
+The ledger must always land in the repository root `.scratchpad/` directory regardless of current working directory. Resolve the path before writing: run `git rev-parse --show-toplevel` to get the repo root, then construct the full absolute path.
 
 Where:
+- `<repo-root>` is the absolute path returned by `git rev-parse --show-toplevel`
 - `<slug>` is a short, hyphenated description derived from the bug (e.g., `auth-token-expiry`, `cart-null-pointer`, `race-condition-job-processor`)
 - `<timestamp>` is when the first round started (ISO format: `YYYYMMDD-HHMMSS`)
-- Example: `.scratchpad/debug-auth-token-expiry-20260215-143022.md`
+- Example: `/Users/karlhepler/project/.scratchpad/debug-auth-token-expiry-20260215-143022.md`
 
 ### Scratchpad Protocol
 
@@ -601,13 +604,14 @@ Each gate below blocks the next investigation action. They are not suggestions. 
 
 🛑 **You may not call Read, Glob, Grep, WebFetch, or WebSearch until the ledger file exists.**
 
-Your first investigation-related tool call of any round must be Write (Round 1) or Edit (Round 2+). On Round 1: create `.scratchpad/debug-<slug>-<timestamp>.md` using the full sentinel template from the Living Ledger Format section — header, Assumptions table with sentinel, Hypothesis Registry table with sentinel, and Round 1 section with sentinel. Fill in what you know; leave placeholders for what you don't yet have.
+Your first investigation-related tool call of any round must be Write (Round 1) or Edit (Round 2+). On Round 1: first run `git rev-parse --show-toplevel` to get the repo root, then create `<repo-root>/.scratchpad/debug-<slug>-<timestamp>.md` using the full sentinel template from the Living Ledger Format section — header, Assumptions table with sentinel, Hypothesis Registry table with sentinel, and Round 1 section with sentinel. Fill in what you know; leave placeholders for what you don't yet have.
 
 **Correct (Round 1):**
 ```
-Tool call 1: Write — create .scratchpad/debug-<slug>-<timestamp>.md with full sentinel template
-Tool call 2: Bash — open .scratchpad/debug-<slug>-<timestamp>.md (launches user's editor)
-Tool call 3: Read — first source file or log
+Tool call 1: Bash — git rev-parse --show-toplevel (get repo root for ledger path)
+Tool call 2: Write — create <repo-root>/.scratchpad/debug-<slug>-<timestamp>.md with full sentinel template
+Tool call 3: Bash — open <repo-root>/.scratchpad/debug-<slug>-<timestamp>.md (interactive mode only)
+Tool call 4: Read — first source file or log
 ```
 
 **Correct (Round 2+):**
@@ -733,7 +737,7 @@ For each escalated assumption:
 - **Who could verify it:** Specific role, system, or access that would resolve it (e.g., "an SRE with prod access could check deployment logs", "the service owner could confirm which version is running")
 - **Impact if wrong:** What conclusions or hypotheses depend on this assumption — and are therefore unreliable until it's verified
 
-**If this section is non-empty, the investigation is incomplete.** The staff engineer must resolve these escalations before re-launching the debugger. When the debugger is re-launched, it will read the ledger via Phase 7 and pick up where it left off with the new information.
+**If this section is non-empty, the round is complete but these assumptions need external input before the next round can proceed.** Escalated assumptions are a normal, valid round boundary — they represent honest acknowledgment that verification requires access or information the debugger does not have. The staff engineer must obtain what's needed and re-launch the debugger. When re-launched, Phase 7 (Cross-Round Reference) will pick up the ledger with the new information.
 
 ---
 

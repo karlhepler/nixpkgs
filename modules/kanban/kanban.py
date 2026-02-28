@@ -1470,6 +1470,11 @@ def format_card_line(card: dict, num: str, show_session: bool = False, output_st
     # Truncate action text to fit terminal width (simple style only)
     # Prefix: "  #NNN " = 2 spaces + "#" + num + " " = len(num) + 4
     if output_style == "simple":
+        # Clean newline characters before truncation
+        # Replace \n, \r\n, \r with spaces and collapse multiple spaces
+        action = action.replace('\r\n', ' ').replace('\r', ' ').replace('\n', ' ')
+        action = ' '.join(action.split())  # Collapse multiple consecutive spaces
+
         terminal_width = shutil.get_terminal_size().columns
         prefix_width = len(num) + 4  # "  #NNN "
         available = terminal_width - prefix_width - plain_suffix_width
