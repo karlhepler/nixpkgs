@@ -239,8 +239,8 @@ in {
       # S: 50/50 top/bottom → new bottom pane is 50%
       bind-key -N "Split vertically (50/50)" S split-window -v -c "#{pane_current_path}" -l "50%"
       # -h creates left/right split; new pane appears to the right; -l sets new pane size
-      # v: 67% left, 33% right → new right pane is 33%
-      bind-key -N "Split horizontally (33% right)" v split-window -h -c "#{pane_current_path}" -l "33%"
+      # v: 60% left, 40% right → new right pane is 40%
+      bind-key -N "Split horizontally (40% right)" v split-window -h -c "#{pane_current_path}" -l "40%"
       # V: 50/50 left/right → new right pane is 50%
       bind-key -N "Split horizontally (50/50)" V split-window -h -c "#{pane_current_path}" -l "50%"
 
