@@ -630,6 +630,10 @@ def make_card(
 ) -> dict:
     """Build a new card dict."""
     now = now_iso()
+    # Normalize persona to lowercase-kebab-case (e.g. "AI Expert" -> "ai-expert")
+    # but preserve the "unassigned" default unchanged.
+    if persona != "unassigned":
+        persona = persona.lower().replace(" ", "-")
     card = {
         "action": action,
         "intent": intent,
