@@ -137,7 +137,9 @@ Some skills intentionally lack agent definitions because they are exception or w
 
 **Card Creation:**
 - `kanban do '{"action":"...","intent":"..."}'`: Create card directly in doing (accepts single object or array)
+- `kanban do --file .scratchpad/kanban-card-<session>.json`: Create card from file (for complex cards with quotes or multi-field JSON)
 - `kanban todo '{"action":"...","intent":"..."}'`: Create card in todo (accepts single object or array)
+- `kanban todo --file .scratchpad/kanban-card-<session>.json`: Create card in todo from file
 - When full work queue is known, create ALL cards upfront (current batch in doing, rest in todo)
 
 **Card Transitions:**

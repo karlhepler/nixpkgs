@@ -736,6 +736,39 @@ def validate_and_build_card(data: dict, session: str | None) -> dict:
     return card
 
 
+def resolve_json_input(args) -> object:
+    """Resolve card JSON from either --file flag or inline positional argument.
+
+    Enforces mutual exclusion: exactly one of --file or positional json_data must
+    be provided. Returns the parsed JSON object or array.
+    """
+    json_file = getattr(args, "json_file", None)
+    json_data = getattr(args, "json_data", None)
+
+    if json_file and json_data:
+        print("Error: Cannot use both --file and a positional JSON argument simultaneously", file=sys.stderr)
+        sys.exit(1)
+
+    if json_file:
+        file_path = Path(json_file)
+        if not file_path.exists():
+            print(f"Error: File not found: {json_file}", file=sys.stderr)
+            sys.exit(1)
+        raw = file_path.read_text(encoding="utf-8")
+    elif json_data is not None:
+        raw = json_data
+    else:
+        print("Error: Provide card JSON as a positional argument or via --file <path>", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as e:
+        source = json_file if json_file else "<inline>"
+        print(f"Error: Invalid JSON from {source}: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
 def cmd_do(args) -> None:
     """Create card(s) directly in the doing column from JSON input.
 
@@ -743,11 +776,7 @@ def cmd_do(args) -> None:
     """
     root = get_root(args.root)
 
-    try:
-        data = json.loads(args.json_data)
-    except json.JSONDecodeError as e:
-        print(f"Error: Invalid JSON: {e}", file=sys.stderr)
-        sys.exit(1)
+    data = resolve_json_input(args)
 
     session = args.session if hasattr(args, "session") and args.session else get_current_session_id()
 
@@ -1920,11 +1949,7 @@ def cmd_todo(args) -> None:
     """
     root = get_root(args.root)
 
-    try:
-        data = json.loads(args.json_data)
-    except json.JSONDecodeError as e:
-        print(f"Error: Invalid JSON: {e}", file=sys.stderr)
-        sys.exit(1)
+    data = resolve_json_input(args)
 
     session = args.session if hasattr(args, "session") and args.session else get_current_session_id()
 
@@ -2565,7 +2590,8 @@ def main() -> None:
 
     # --- do ---
     p_do = subparsers.add_parser("do", parents=[parent_parser], help="Create card(s) in doing from JSON")
-    p_do.add_argument("json_data", help="JSON object or array of objects with action, intent, readFiles, editFiles")
+    p_do.add_argument("json_data", nargs="?", default=None, help="JSON object or array of objects with action, intent, readFiles, editFiles")
+    p_do.add_argument("--file", dest="json_file", metavar="PATH", help="Read card JSON from file instead of inline argument")
     add_session_flags(p_do)
 
     # --- show ---
@@ -2649,7 +2675,8 @@ def main() -> None:
 
     # --- Pure verbs: todo, review, done ---
     p_todo = subparsers.add_parser("todo", parents=[parent_parser], help="Create card(s) in todo from JSON")
-    p_todo.add_argument("json_data", help="JSON object or array of objects with action, intent, readFiles, editFiles")
+    p_todo.add_argument("json_data", nargs="?", default=None, help="JSON object or array of objects with action, intent, readFiles, editFiles")
+    p_todo.add_argument("--file", dest="json_file", metavar="PATH", help="Read card JSON from file instead of inline argument")
     add_session_flags(p_todo)
 
     p_review = subparsers.add_parser("review", parents=[parent_parser], help="Move card(s) to review")

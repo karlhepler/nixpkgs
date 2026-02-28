@@ -163,25 +163,24 @@ Sub-agents have autonomy within unspecified bounds but must surface alternatives
 
 ### 2. Create Card
 
+**Simple cards** (short action, no special characters): use inline JSON.
+
 ```bash
-kanban do "$(cat <<'EOF'
-{
-  "type": "work",
-  "action": "...",
-  "intent": "...",
-  "editFiles": [...],
-  "readFiles": [...],
-  "persona": "Skill Name",
-  "model": "haiku",
-  "criteria": ["AC1", "AC2", "AC3"]
-}
-EOF
-)" --session <id>
+kanban do '{"type":"work","action":"...","intent":"...","criteria":["AC1","AC2","AC3"]}' --session <id>
 ```
 
-**Always use the heredoc pattern for `kanban do` and `kanban todo`.** Simple single-quote wrapping (`kanban do '{...}'`) breaks when JSON content contains quotes, apostrophes, or special characters. The `"$(cat <<'EOF' ... EOF)"` pattern handles all content safely and should be the default.
+**Complex cards** (long action, quotes, multi-field, or >2-3 lines): write JSON to `.scratchpad/kanban-card-<session>.json` using the Write tool, then pass `--file`.
 
-**type** required: "work", "review", or "research". **AC** required: 3-5 specific, measurable items. **editFiles/readFiles**: Placeholder guesses for conflict detection (e.g. `["src/auth/*.ts"]`). Bulk: Pass JSON array.
+```bash
+# Step 1 (Write tool): write to .scratchpad/kanban-card-<session>.json
+# Step 2 (Bash): kanban do --file .scratchpad/kanban-card-<session>.json --session <id>
+```
+
+**Threshold:** use file-based when the JSON contains single quotes/apostrophes or the card JSON spans more than 2-3 lines. Use inline for simple one-liners.
+
+**Why file-based for complex cards:** the Write tool is auto-approved and handles any content safely; the resulting Bash command (`kanban do --file *`) is a short, reviewable pattern that can be auto-approved independently. Inline is fine for simple cards because the full Bash command is short enough to review at a glance.
+
+**type** required: "work", "review", or "research". **model** required: "haiku", "sonnet", or "opus". **AC** required: 3-5 specific, measurable items. **editFiles/readFiles**: Placeholder guesses for conflict detection (e.g. `["src/auth/*.ts"]`). Bulk: Pass JSON array.
 
 **AC quality is the entire quality gate.** The AC reviewer is Haiku with no context beyond the kanban card. It runs `kanban show`, reads the AC, and mechanically verifies each criterion. If AC is vague ("code works correctly"), incomplete, or assumes context not on the card, the review will rubber-stamp bad work. Write AC as if a stranger with zero project context must verify the work using only what's on the card. Each criterion should be specific enough to verify and falsifiable enough to fail.
 
@@ -632,7 +631,7 @@ See [review-protocol.md § Post-Review Decision Flow](../docs/staff-engineer/rev
 
 ### Proactive Card Creation
 
-When work queue known, create all cards immediately: current batch (`kanban do`), queued work (`kanban todo`).
+When work queue known, create all cards immediately: current batch (`kanban do`), queued work (`kanban todo`). For complex batch cards with special characters or long descriptions, use the file-based approach (§ Create Card).
 
 ### Card Lifecycle
 
@@ -867,8 +866,9 @@ See [self-improvement.md](../docs/staff-engineer/self-improvement.md) for full p
 | Command | Purpose | Who Uses |
 |---------|---------|----------|
 | `kanban list --output-style=xml --session <id>` | Board check (compact XML) | Staff engineer |
-| `kanban do "$(cat <<'EOF' ... EOF)" --session <id>` | Create card(s) in doing | Staff engineer |
-| `kanban todo "$(cat <<'EOF' ... EOF)" --session <id>` | Create card(s) in todo | Staff engineer |
+| `kanban do '<json>' --session <id>` or `kanban do --file <path> --session <id>` | Create card(s) in doing | Staff engineer |
+| `kanban todo '<json>' --session <id>` or `kanban todo --file <path> --session <id>` | Create card(s) in todo | Staff engineer |
+| ↳ See § Create Card for inline vs file-based threshold guidance | | |
 | `kanban show <card>` | Read card details (action, intent, AC) | Sub-agents (own card), AC reviewer, staff engineer |
 | `kanban start <card> [cards...]` | Pick up from todo | Staff engineer |
 | `kanban review <card> [cards...]` | Move to review column | Staff engineer |
@@ -899,7 +899,7 @@ See [self-improvement.md](../docs/staff-engineer/self-improvement.md) for full p
 1. User: "The dashboard API is timing out."
 2. Staff engineer: Board check (`kanban list`). No conflicts. Ask: "Which endpoint? What's the timeout threshold?"
 3. User: "/api/dashboard, over 5s."
-4. Staff engineer: Create card (`kanban do` with AC: "p95 response < 1s", "no N+1 queries", "existing tests pass"). Delegate to /swe-backend (Task, background). Say: "Card #15 assigned to /swe-backend. Any recent changes that might correlate?"
+4. Staff engineer: Create card (`kanban do` with AC: "p95 response under 1 second", "no N+1 queries", "existing tests pass"). Delegate to /swe-backend (Task, background). Say: "Card #15 assigned to /swe-backend. Any recent changes that might correlate?"
 5. User provides context. Staff engineer continues conversation.
 6. Agent returns. Staff engineer: `kanban review 15`, launch AC reviewer (Haiku, background).
 7. AC reviewer passes. Staff engineer: `kanban done 15 'Optimized dashboard query...'`. Then `kanban show 15` to read comments. Check review tiers. Brief user with results.
