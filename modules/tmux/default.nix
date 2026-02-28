@@ -191,16 +191,9 @@ in {
       bind-key -T copy-mode-vi MouseDragEnd1Pane send -X copy-selection
       bind-key -T copy-mode-vi Escape send -X cancel
       bind-key N new-window -c "#{pane_current_path}"
-      bind-key v split -h -c "#{pane_current_path}"
-      bind-key s split -v -p 25 -c "#{pane_current_path}"
 
-      # Remap last-window from 'b' to '-' (override delete-buffer)
+      # Unbind 'b' (was previously remapped; now unused)
       unbind-key b
-      unbind-key -
-      bind-key - last-window
-
-      # Create new session on prefix+S (will get random Simpsons name)
-      bind-key S new-session
 
       # customize status bar ---------------------------------------------------
       set-option -g status-position top
@@ -236,26 +229,24 @@ in {
       bind-key -N "Choose session" L choose-tree -s
 
       # ========================================================================
-      # ctrl+g chord key table
-      # Press prefix then ctrl+g to enter the chord, then a second key to act.
+      # Split and session bindings (prefix table)
       # ========================================================================
-      bind-key -N "Enter ctrl+g chord" C-g switch-client -T ctrlg
 
       # Splits — open in current pane's working directory
       # -v creates top/bottom split; new pane appears below; -l sets new pane size
       # s: 75% top, 25% bottom → new bottom pane is 25%
-      bind-key -T ctrlg s split-window -v -l 25% -c "#{pane_current_path}"
+      bind-key -N "Split vertically (25% bottom)" s split-window -v -c "#{pane_current_path}" -l "25%"
       # S: 50/50 top/bottom → new bottom pane is 50%
-      bind-key -T ctrlg S split-window -v -l 50% -c "#{pane_current_path}"
+      bind-key -N "Split vertically (50/50)" S split-window -v -c "#{pane_current_path}" -l "50%"
       # -h creates left/right split; new pane appears to the right; -l sets new pane size
       # v: 75% left, 25% right → new right pane is 25%
-      bind-key -T ctrlg v split-window -h -l 25% -c "#{pane_current_path}"
+      bind-key -N "Split horizontally (25% right)" v split-window -h -c "#{pane_current_path}" -l "25%"
       # V: 50/50 left/right → new right pane is 50%
-      bind-key -T ctrlg V split-window -h -l 50% -c "#{pane_current_path}"
+      bind-key -N "Split horizontally (50/50)" V split-window -h -c "#{pane_current_path}" -l "50%"
 
       # Session management
-      bind-key -T ctrlg + new-session
-      bind-key -T ctrlg - confirm-before -p "CAUTION: This will kill all windows in session #S. Continue? (y/n)" kill-session
+      bind-key -N "Create new session" + new-session
+      bind-key -N "Kill current session (with confirmation)" - confirm-before -p "CAUTION: This will kill all windows in session #S. Continue? (y/n)" kill-session
     '';
   };
 }
