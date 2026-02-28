@@ -29,6 +29,7 @@ import textwrap
 import threading
 import time
 import tty
+import unicodedata
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
@@ -1319,6 +1320,33 @@ def calculate_lead_time(card: dict) -> float | None:
         return None
 
 
+def _display_width(s: str) -> int:
+    """Return the number of terminal display columns occupied by string s.
+
+    Wide (W) and Fullwidth (F) characters occupy 2 columns each.
+    All other Unicode characters (Narrow, Neutral, Halfwidth, Ambiguous)
+    are treated as 1 column, matching typical Western terminal behavior.
+    """
+    width = 0
+    for c in s:
+        eaw = unicodedata.east_asian_width(c)
+        width += 2 if eaw in ('W', 'F') else 1
+    return width
+
+
+def _center_to_display_width(s: str, target: int, fill: str = ' ') -> str:
+    """Center string s within target display columns using fill character.
+
+    Unlike str.center(), this accounts for double-width Unicode characters
+    so the result occupies exactly target display columns.
+    """
+    current = _display_width(s)
+    padding = max(0, target - current)
+    left_pad = padding // 2
+    right_pad = padding - left_pad
+    return fill * left_pad + s + fill * right_pad
+
+
 def format_criteria_table(criteria: list, indent: str = "  ", terminal_width: int | None = None) -> list[str]:
     """Render acceptance criteria as a formatted table.
 
@@ -1339,13 +1367,13 @@ def format_criteria_table(criteria: list, indent: str = "  ", terminal_width: in
     if terminal_width is None:
         terminal_width = shutil.get_terminal_size((120, 24)).columns
 
-    # Fixed column widths (display columns, accounting for emoji double-width)
-    # Emoji ✅ and ⬜ each occupy 2 display columns in monospace terminals.
-    # Visual:  " ✅  " = 1 space + 2-wide emoji + 2 spaces = 7 display cols
-    #          " ⬜  " = 1 space + 2-wide emoji + 2 spaces = 7 display cols
+    # Fixed column widths in display columns.
+    # Emoji ✅ and ⬜ are double-width (W) characters occupying 2 display columns each.
+    # _center_to_display_width() ensures data cells align with header and separator
+    # regardless of how many bytes each character occupies in the string.
     num_col_width = max(2, len(str(len(criteria))))  # right-aligned, e.g. " 1" or "10"
-    agent_col_width = 7   # " ✅  " or " ⬜  " — 7 display columns
-    rev_col_width = 7     # same
+    agent_col_width = 7   # display columns for agent status cell
+    rev_col_width = 7     # display columns for reviewer status cell
     sep = "  "            # column separator (2 spaces)
 
     # Calculate available width for criterion text
@@ -1361,14 +1389,14 @@ def format_criteria_table(criteria: list, indent: str = "  ", terminal_width: in
 
     lines = []
 
-    # Header row
+    # Header row — narrow ASCII chars, str.center() is accurate for display width
     header_num = "#".rjust(num_col_width)
     header_agent = "Agent".center(agent_col_width)
     header_rev = "Rev".center(rev_col_width)
     header_criterion = "Criterion"
     lines.append(f"{indent}{header_num}{sep}{header_agent}{sep}{header_rev}{sep}{header_criterion}")
 
-    # Separator row (dashes matching each column width)
+    # Separator row — ─ is 1 display column, so count == display width
     sep_num = "─" * num_col_width
     sep_agent = "─" * agent_col_width
     sep_rev = "─" * rev_col_width
@@ -1379,9 +1407,12 @@ def format_criteria_table(criteria: list, indent: str = "  ", terminal_width: in
         agent_met = criterion.get("agent_met", False)
         reviewer_met = criterion.get("reviewer_met", False)
 
-        # Emoji cell: " ✅  " = 1 space + 2-display-col emoji + 2 spaces = 7 display cols
-        agent_cell = (" ✅  " if agent_met else " ⬜  ")
-        rev_cell   = (" ✅  " if reviewer_met else " ⬜  ")
+        # Center the emoji within agent_col_width display columns.
+        # ✅ and ⬜ are each 2 display columns wide; _center_to_display_width()
+        # adds the correct number of spaces so the cell occupies exactly
+        # agent_col_width display columns, matching header and separator.
+        agent_cell = _center_to_display_width("✅" if agent_met else "⬜", agent_col_width)
+        rev_cell   = _center_to_display_width("✅" if reviewer_met else "⬜", rev_col_width)
 
         num_cell = str(i).rjust(num_col_width)
         text = criterion.get("text", "")

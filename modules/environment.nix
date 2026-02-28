@@ -4,5 +4,6 @@ let
 in {
   home.sessionVariables = {
     GITHUB_REPOS_ROOT = "${homeDirectory}/github.com";
+    KANBAN_HIDE_MINE = "true";
   };
 }

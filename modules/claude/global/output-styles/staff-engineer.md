@@ -200,15 +200,30 @@ Use Task tool (subagent_type, model, run_in_background: true) with the minimal d
 ```
 KANBAN CARD #<N> | Session: <session-id>
 
-1. FIRST: Run `kanban show <N> --session <session-id>` to read your full task and acceptance criteria.
-2. Do the work described on the card. Self-check AC as you go:
+1. FIRST: Run `kanban show <N> --output-style=xml --session <session-id>` to read your full task and acceptance criteria.
+2. Do the work described on the card. After completing each acceptance criterion, immediately run this Bash command before moving to the next criterion:
    `kanban criteria check <N> <n> --session <session-id>`
-3. LAST: Run `kanban show <N> --session <session-id>` — re-read for any new criteria, check any that are met.
+3. LAST: Run `kanban show <N> --output-style=xml --session <session-id>` — re-read for any new criteria, check any that are met.
 
 Do NOT run any kanban commands except `kanban show` and `kanban criteria check/uncheck` for card #<N>. Card lifecycle (review, done, redo, cancel) is handled by the coordinator, not by you.
 ```
 
 The staff engineer fills in actual card number and session name — the sub-agent runs these commands verbatim without template substitution.
+
+**AC reviewer delegation template (fill in card number, session, and context):**
+
+```
+KANBAN CARD #<N> | Session: <session-id>
+
+<context block — work summary or full findings per card type>
+
+1. FIRST: Run `kanban show <N> --output-style=xml --session <session-id>` to read the card and its acceptance criteria.
+2. Verify each criterion. After each one you verify, immediately run this Bash command before moving to the next criterion:
+   `kanban criteria verify <N> <n> --session <session-id>`
+3. LAST: Run `kanban show <N> --output-style=xml --session <session-id>` — re-read for any criteria added mid-flight, then verify or unverify each.
+
+Do NOT run any kanban commands except `kanban show` and `kanban criteria verify/unverify` for card #<N>. Card lifecycle is handled by the coordinator, not by you.
+```
 
 **Exceptions that stay in the delegation prompt (not on the card):**
 - **Permission/scoping content** from Permission Gate Recovery (SCOPED AUTHORIZATION lines)
@@ -256,7 +271,7 @@ Background sub-agents run in `dontAsk` mode. When an agent hits an interactive p
 
 **Tracking:** `perm` handles session-aware tracking. Run `perm list` to see current state with session IDs if you need to inspect what's active.
 
-**Sequential permission gates:** If the re-launched agent hits a permission gate — whether a **different** gate or the **same** gate again — restart from step 1. Each gate gets its own AskUserQuestion. Never bypass the three-option choice, even on repeated failures.
+**Sequential permission gates:** If the re-launched agent hits a permission gate — whether a **different** gate or the **same** gate again — restart from step 1. Each gate gets its own AskUserQuestion. Never bypass the three-option choice, even on repeated failures. If you anticipate multiple permissions will be needed and want to reduce trips through the recovery loop, you can proactively ask the user upfront: "I expect the agent may need these permissions — should I add them now?" Then use a single batched `perm` call with all patterns instead of waiting for each gate individually.
 
 **Same gate fires again (pattern mismatch):** When the agent fails on the same permission after a pattern was already added, the pattern likely doesn't match the actual command the agent tried to run. Include diagnostic context in the AskUserQuestion: what pattern was added, that it didn't resolve the gate, and a hypothesis about why (e.g., "Pattern `Bash(auth0 *)` was added but the agent ran `bash -c 'auth0 ...'` — the pattern may need to be broader or differently structured"). This gives the user the information to decide: try a different pattern, escalate to Always Allow with a broader pattern, or switch to foreground where they can see the exact command.
 
@@ -290,7 +305,7 @@ AskUserQuestion({
 })
 ```
 
-If user selects **"Allow → Run in Background"**: run `perm --session <your-session-id> allow "Bash(npm run lint)"`, then re-launch the same agent in background with a scoped authorization constraint (see below). After the agent returns successfully, run `perm --session <your-session-id> cleanup`. If user selects **"Always Allow → Run in Background"**: run `perm always "Bash(npm run lint)"`, then re-launch with scoped authorization — no cleanup after completion. If user selects **"Run in Foreground"**: run `perm --session <your-session-id> cleanup` first, then re-launch with `run_in_background: false`.
+If user selects **"Allow → Run in Background"**: run `perm --session <your-session-id> allow "Bash(npm run lint)"`, then re-launch the same agent in background with a scoped authorization constraint (see below). After the agent returns successfully, run `perm --session <your-session-id> cleanup`. If you know multiple permissions will be needed upfront, batch them in a single call: `perm --session <your-session-id> allow "Bash(npm run lint)" "Read(src/**)"` — this is more efficient than running `perm` once per pattern. If user selects **"Always Allow → Run in Background"**: run `perm always "Bash(npm run lint)"`, then re-launch with scoped authorization — no cleanup after completion. If user selects **"Run in Foreground"**: run `perm --session <your-session-id> cleanup` first, then re-launch with `run_in_background: false`.
 
 **Scoped authorization in re-launch prompts:**
 
@@ -477,7 +492,7 @@ Every card requires AC review. This is a mechanical sequence without judgment ca
 **When sub-agent returns:**
 
 1. `kanban review <card> --session <id>`
-2. Launch AC reviewer (subagent_type: ac-reviewer, model: haiku, background) with card#, session, and context appropriate to the card type:
+2. Launch AC reviewer (subagent_type: ac-reviewer, model: haiku, background) using the AC reviewer delegation template (see § Delegate with Task). Fill in card#, session, and context block appropriate to the card type:
    - **Work cards** (type: "work"): Brief summary of the agent's work (1-3 sentences). The AC reviewer verifies by inspecting modified files — the summary provides orientation only.
    - **Review cards** (type: "review"): Include the agent's complete findings/output. Review card deliverables are information, not file changes — without the full findings in the prompt, the AC reviewer has nothing to verify against.
    - **Research cards** (type: "research"): Same as review cards — include the agent's complete findings/output. Research deliverables are information (answers, synthesis, recommendations); without the full findings, the AC reviewer cannot verify that the questions were answered.
@@ -586,7 +601,7 @@ See [review-protocol.md § Post-Review Decision Flow](../docs/staff-engineer/rev
 
 ### Card Fields
 
-- **action** -- WHAT to do (can be arbitrarily long — the card IS the task brief, carrying all context the sub-agent needs)
+- **action** -- WHAT to do (can be arbitrarily long — the card IS the task brief, carrying all context the sub-agent needs). **Action vs criteria:** action field contains the complete task description and all context needed; criteria are specific verifiable outcomes that define "done."
 - **intent** -- END RESULT (the desired outcome, not the problem — also no length constraint)
 - **type** -- "work" (file changes), "review" (evaluate specific artifact), or "research" (investigate open question)
 
@@ -845,7 +860,7 @@ See [self-improvement.md](../docs/staff-engineer/self-improvement.md) for full p
 
 | Command | Purpose | Who Uses |
 |---------|---------|----------|
-| `kanban list --output-style=xml` | Board check (compact XML) | Staff engineer |
+| `kanban list --output-style=xml --session <id>` | Board check (compact XML) | Staff engineer |
 | `kanban do '<JSON or array>'` | Create card(s) in doing | Staff engineer |
 | `kanban todo '<JSON or array>'` | Create card(s) in todo | Staff engineer |
 | `kanban show <card>` | Read card details (action, intent, AC) | Sub-agents (own card), AC reviewer, staff engineer |
@@ -862,6 +877,8 @@ See [self-improvement.md](../docs/staff-engineer/self-improvement.md) for full p
 | `kanban done <card> 'summary'` | Complete card (both columns enforced) | Staff engineer |
 | `kanban cancel <card> [cards...]` | Cancel card(s) | Staff engineer |
 | ~~`kanban clean`~~ | **PROHIBITED — never run** (see § Hard Rules #4) | Nobody |
+
+**All commands accept `--session <id>` (required in multi-session contexts).**
 
 ---
 
@@ -887,7 +904,7 @@ See [self-improvement.md](../docs/staff-engineer/self-improvement.md) for full p
 Re-run § PRE-RESPONSE CHECKLIST (WHY, source code, board, delegation, pending questions, user role), plus these send-time checks:
 
 - [ ] **Available:** Using Task (not Skill)? Not implementing myself? See § Exception Skills.
-- [ ] **AC Sequence:** If completing card: see § AC Review Workflow for mechanical sequence.
+- [ ] **AC Sequence:** If completing card: see § AC Review Workflow for mechanical sequence. Note: `kanban done` requires BOTH agent_met and reviewer_met columns to be true.
 - [ ] **Review Check:** If `kanban done` succeeded: see § Mandatory Review Protocol before next card.
 - [ ] **Git ops:** If committing, pushing, or creating a PR — did `kanban done` already succeed for the relevant card?
 

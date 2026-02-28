@@ -7,12 +7,12 @@ set -euo pipefail
 # Tracks temporary vs permanent patterns for lifecycle cleanup.
 #
 # SUBCOMMANDS:
-#   perm [--session <id>] allow <pattern>    Add pattern as temporary permission (session-scoped, timestamped)
-#   perm always <pattern>                    Add pattern as permanent permission
-#   perm [--session <id>] cleanup            Remove temporary permissions owned by given session
-#   perm cleanup-stale [--max-age <hours>]   Remove temporary permissions older than max-age (default: 4h)
-#   perm list                                Show tracked permissions with labels and timestamps
-#   perm session-hook                        SessionStart hook: read JSON from stdin, print session UUID
+#   perm [--session <id>] allow <pattern> [<pattern> ...]    Add pattern(s) as temporary permission (session-scoped, timestamped)
+#   perm always <pattern> [<pattern> ...]                    Add pattern(s) as permanent permission
+#   perm [--session <id>] cleanup                            Remove temporary permissions owned by given session
+#   perm cleanup-stale [--max-age <hours>]                   Remove temporary permissions older than max-age (default: 4h)
+#   perm list                                                Show tracked permissions with labels and timestamps
+#   perm session-hook                                        SessionStart hook: read JSON from stdin, print session UUID
 #
 # FILES:
 #   .claude/settings.local.json  - Claude Code local settings
@@ -31,13 +31,13 @@ show_help() {
 perm - Claude Code permission manager
 
 USAGE:
-  perm --session <id> allow <pattern>      Add temporary permission (session-scoped, timestamped)
-  perm always <pattern>                    Add permanent permission (never cleaned up)
-  perm --session <id> cleanup              Remove temporary permissions owned by the given session
-  perm cleanup-stale [--max-age <hours>]   Remove temporary permissions older than max-age (default: 4h)
-  perm list                                Show tracked permissions with labels and timestamps
-  perm session-hook                        SessionStart hook: read JSON stdin, print session UUID
-  perm --help                              Show this help message
+  perm --session <id> allow <pattern> [<pattern> ...]      Add temporary permission(s) (session-scoped, timestamped)
+  perm always <pattern> [<pattern> ...]                    Add permanent permission(s) (never cleaned up)
+  perm --session <id> cleanup                              Remove temporary permissions owned by the given session
+  perm cleanup-stale [--max-age <hours>]                   Remove temporary permissions older than max-age (default: 4h)
+  perm list                                                Show tracked permissions with labels and timestamps
+  perm session-hook                                        SessionStart hook: read JSON stdin, print session UUID
+  perm --help                                              Show this help message
 
 OPTIONS:
   --session <id>      Session identifier (required for allow and cleanup).
@@ -66,7 +66,9 @@ DESCRIPTION:
 
 EXAMPLES:
   perm --session a1b2c3d4 allow "Bash(npm run lint)"
+  perm --session a1b2c3d4 allow "Bash(npm run lint)" "Bash(npm run test *)" "Read(src/auth/**)"
   perm always "Bash(npm run test)"
+  perm always "Bash(npm run test)" "Bash(npm run build)"
   perm --session a1b2c3d4 cleanup
   perm cleanup-stale
   perm cleanup-stale --max-age 2
@@ -221,40 +223,48 @@ remove_from_settings() {
 
 cmd_allow() {
   local session="$1"
-  local pattern="$2"
+  shift  # Remove session_id from args, remaining args are patterns
+  local patterns=("$@")
 
   if [[ -z "${session}" ]]; then
     echo "Error: --session <id> is required for 'allow'" >&2
-    echo "Usage: perm --session <id> allow <pattern>" >&2
+    echo "Usage: perm --session <id> allow <pattern> [<pattern> ...]" >&2
     exit 1
   fi
 
-  if [[ -z "${pattern}" ]]; then
-    echo "Error: pattern required" >&2
-    echo "Usage: perm --session <id> allow <pattern>" >&2
+  if [[ ${#patterns[@]} -eq 0 ]]; then
+    echo "Error: at least one pattern required" >&2
+    echo "Usage: perm --session <id> allow <pattern> [<pattern> ...]" >&2
     exit 1
   fi
 
   init_settings
   init_tracking
-  add_to_settings "${pattern}"
-  add_to_temporary "${pattern}" "${session}"
-  echo "Allowed (temporary): ${pattern}"
+
+  for pattern in "${patterns[@]}"; do
+    add_to_settings "${pattern}"
+    add_to_temporary "${pattern}" "${session}"
+    echo "Allowed (temporary): ${pattern}"
+  done
 }
 
 cmd_always() {
-  local pattern="${1:-}"
-  if [[ -z "${pattern}" ]]; then
-    echo "Error: pattern required" >&2
-    echo "Usage: perm always <pattern>" >&2
+  local patterns=("$@")
+
+  if [[ ${#patterns[@]} -eq 0 ]]; then
+    echo "Error: at least one pattern required" >&2
+    echo "Usage: perm always <pattern> [<pattern> ...]" >&2
     exit 1
   fi
 
   init_settings
   init_tracking
-  add_to_settings "${pattern}"
-  add_to_permanent "${pattern}"
-  echo "Allowed (permanent): ${pattern}"
+
+  for pattern in "${patterns[@]}"; do
+    add_to_settings "${pattern}"
+    add_to_permanent "${pattern}"
+    echo "Allowed (permanent): ${pattern}"
+  done
 }
 
 cmd_cleanup() {
@@ -513,10 +523,10 @@ done
 
 case "${subcommand}" in
   allow)
-    cmd_allow "${session_id}" "${sub_args[0]:-}"
+    cmd_allow "${session_id}" "${sub_args[@]}"
     ;;
   always)
-    cmd_always "${sub_args[0]:-}"
+    cmd_always "${sub_args[@]}"
     ;;
   cleanup)
     cmd_cleanup "${session_id}"

@@ -63,6 +63,19 @@ Normal debugging has already failed — 2-3 rounds of reading stack traces, targ
 
 ## The Methodology
 
+**Write Gate Quick Reference** (full gate definitions in the Living Ledger Format section)
+
+| Gate | Trigger | Blocks |
+|------|---------|--------|
+| Gate 1 | Before any investigation tool call | No Read/Glob/Grep/WebFetch/WebSearch until ledger exists |
+| Gate 2 | After assumption enumeration | Cannot begin Phase 3 until all assumptions written to table |
+| Gate 3 | After each assumption is verified | Must update that row before verifying the next |
+| Gate 3.5 | Before forming any hypothesis | Zero Unchecked/Actively Testing rows; hypothesis grounded in Phase 3 findings |
+| Gate 4 | When hypothesis is formed or updated | Must write to Hypothesis Registry before testing |
+| Gate 5 | Before and after each experiment | Prediction written before; result written immediately after |
+| Gate 6 | When hypothesis status changes | Update Hypothesis Registry immediately on Confirmed or Ruled Out |
+| Gate 7 | When new evidence is discovered | Append to relevant row immediately |
+
 ### Phase 1: Triage
 
 **Goal:** Establish a reliable, reproducible failure and classify the bug type.
@@ -95,9 +108,11 @@ Normal debugging has already failed — 2-3 rounds of reading stack traces, targ
 
 **Goal:** Surface every assumption about the system. This is the critical phase.
 
-**STOP everything. Do not touch the code. Do not run experiments yet.**
+**STOP everything. Do not touch the code. Do not run experiments yet. Do not form hypotheses.**
 
 The most dangerous bugs live in assumptions that feel so obviously correct nobody bothers to verify them. Your job is to enumerate them before they can hide.
+
+**Hypothesis formation is prohibited during this phase.** You do not know enough yet. You have not verified anything. Any "hypothesis" you form now is speculation dressed up as analysis. Write down assumptions — not conclusions.
 
 **Organize assumptions using Zeller's infection chain model:**
 
@@ -123,7 +138,7 @@ The most dangerous bugs live in assumptions that feel so obviously correct nobod
 - Could the failure be a symptom of something deeper than it appears?
 
 **Rubber duck enumeration:**
-Explain the system out loud (or in writing) as if teaching it to someone who has never seen it. This surfaces hidden assumptions — things you know implicitly but haven't stated explicitly.
+Explain the system out loud (or in writing) as if teaching it to someone who has never seen it. This surfaces hidden assumptions — things you know implicitly but haven't stated explicitly. Write each assumption surfaced during this dialogue directly to the Assumptions table in the ledger as you discover it — do not buffer them in memory.
 
 **Foundational assumptions come first.**
 
@@ -192,11 +207,42 @@ When the staff engineer re-launches you for another round, Phase 7 (Cross-Round 
 
 **Reference:** Myers' "The Art of Software Testing" (explain all symptoms), Weiser's program slicing (1981), Context7 MCP for any library-specific verification.
 
+**Phase 3 exit gate — required before entering Phase 4:**
+
+🛑 You may not form any hypothesis until ALL of the following are true:
+- Every assumption in the Assumptions table has been resolved (Verified True, Verified False, or Escalated — no Unchecked or Actively Testing rows remain)
+- Every foundational assumption (environment, server, version, topology) has been resolved first
+- You have established a basis for hypothesis formation (see paths below)
+
+**Path A — Normal case (at least one Verified False):**
+You can cite specific evidence (file:line, command output, or doc reference) for at least one Verified False assumption — meaning you have found something that is actually wrong, not just confirmed what you expected. Proceed to Phase 4 with hypotheses grounded in the falsified assumption(s).
+
+**Path B — Escape hatch (all first-order assumptions Verified True):**
+If every assumption in the table is Verified True, you have not found a broken component — but you may have an emergent-interaction bug: two or more individually correct components interacting incorrectly. In this case:
+
+1. **Enumerate second-order assumptions** — interaction effects between verified-correct components, timing and ordering assumptions, environmental assumptions that span multiple components. Examples:
+   - "Component A and Component B are never invoked concurrently" (timing interaction)
+   - "Component A completes before Component B reads the shared state" (ordering assumption)
+   - "The environment treats both components consistently" (environmental interaction)
+   - "The interface contract between A and B matches each side's assumption of it" (interface mismatch)
+2. Write these second-order assumptions to the Assumptions table with status Unchecked, then verify them as in standard Phase 3.
+3. If any second-order assumption resolves to Verified False, proceed to Phase 4 via Path A.
+4. **If all second-order assumptions also verify True:** You may proceed to Phase 4 with hypotheses framed around emergent interactions rather than single-component failures. In this case, hypotheses must cite the interaction pattern (e.g., "Component A and B are each correct in isolation but their interface contract is ambiguous, allowing both sides to make incompatible timing assumptions"). This is not a dead end — it is a different kind of finding.
+
+If you cannot meet this exit gate by either path, you are not ready to form a hypothesis. Return to Phase 3 and look harder — there are likely assumptions you have not yet enumerated. Premature hypotheses are a failure mode, not progress.
+
 ---
 
 ### Phase 4: Hypothesis Formation
 
-**Goal:** Form ONE falsifiable hypothesis consistent with all verified evidence.
+**Goal:** Form ONE falsifiable hypothesis that emerges from verified evidence, not from intuition.
+
+**This phase is earned, not assumed.** You are here because Phase 3 produced concrete verified/falsified assumptions. Your hypothesis must arise from that evidence — not from pattern recognition, prior experience, or a hunch. If you cannot trace your hypothesis directly to specific Phase 3 findings, you are not ready.
+
+**Check before proceeding:**
+- Which specific Phase 3 findings ground this hypothesis? Either (a) Verified False assumptions by row number, or (b) the interaction pattern between Verified True components (if proceeding via Phase 3 escape hatch)
+- Which Verified True assumptions constrain or support it?
+- Does any verified evidence contradict it? (If so, the hypothesis is wrong — do not proceed with it)
 
 A real hypothesis has three components:
 1. **Root cause** — "The failure is caused by X"
@@ -593,6 +639,19 @@ If you are about to call an investigation tool and the ledger file does not exis
 
 ---
 
+**Gate 3.5 — Before forming any hypothesis**
+
+🛑 You may not write a hypothesis to the Hypothesis Registry until:
+1. Zero assumptions remain in Unchecked or Actively Testing status
+2. All foundational assumptions are resolved (Verified True, Verified False, or Escalated)
+3. You can trace the hypothesis to specific Phase 3 findings — either (a) cite at least one Verified False assumption by row number as the basis for the hypothesis, OR (b) cite the specific interaction pattern between Verified True components that the hypothesis explains (Phase 3 escape hatch path)
+
+This gate exists because hypotheses formed before verification is complete are speculation. Speculation masquerading as a hypothesis wastes rounds and undermines the epistemic standards of this methodology.
+
+**If you reach for Gate 4 and Gate 3.5 is not satisfied → return to Phase 3.**
+
+---
+
 **Gate 4 — When a hypothesis is formed or updated**
 
 🛑 Write the hypothesis to the Hypothesis Registry and the active Hypothesis section before testing it. If it is not in the ledger, it does not exist.
@@ -665,10 +724,10 @@ Not acceptable: "investigate further," "look into this," "might want to consider
 ### Ledger Path
 Path to the debug ledger file: `.scratchpad/debug-<slug>-<timestamp>.md`
 
-### Unverified Assumptions (Escalation Required)
+### Escalated Assumptions
 Assumptions that could not be verified during this round. **These are not informational — they require action before the next round.**
 
-For each unverified assumption:
+For each escalated assumption:
 - **Assumption:** What was assumed
 - **Why verification failed:** What access, tool, or data was missing
 - **Who could verify it:** Specific role, system, or access that would resolve it (e.g., "an SRE with prod access could check deployment logs", "the service owner could confirm which version is running")
@@ -701,11 +760,11 @@ Recommendations:
 
 Ledger: .scratchpad/debug-[slug]-[timestamp].md
 
-Unverified Assumptions (Escalation Required):
+Escalated Assumptions:
 - [Assumption]: [why verification failed]. [Who/what could verify it]. [What depends on it.]
 ```
 
-**If there are unverified assumptions:** Lead with them. They are the most important part of the handoff — the staff engineer needs to act on them before re-launching you.
+**If there are escalated assumptions:** Lead with them. They are the most important part of the handoff — the staff engineer needs to act on them before re-launching you.
 
 ### Mode 2: Standalone mode (invoked directly by user)
 
@@ -725,6 +784,7 @@ Before completing any round, verify:
 - [ ] Assumptions enumerated and organized by Defect/Infection/Failure zone — 15+ as a practical floor, calibrated to system complexity (distributed systems warrant many more; a simple logic error may warrant fewer)
 - [ ] ALL assumptions resolved: Verified True, Verified False, or Escalated (with reason and who could verify) — no "I think," "probably," or bare assertions
 - [ ] ALL foundational assumptions (environment, server, version, topology) verified BEFORE domain-specific assumptions — if any were escalated, this is prominently flagged in handoff
+- [ ] Hypothesis was formed AFTER all assumptions were resolved — not during enumeration or mid-verification. Each hypothesis in the registry cites either specific Verified False assumption row numbers OR the specific interaction pattern between Verified True components (Phase 3 escape hatch path) as its basis.
 - [ ] Hypothesis explains ALL observed symptoms (Myers' rule — not just the primary symptom)
 - [ ] Only one variable changed per experiment (Agans Rule 5)
 - [ ] Prediction was written BEFORE running experiment (not rationalized after)
@@ -733,7 +793,7 @@ Before completing any round, verify:
 - [ ] Every verification has a source citation (file:line, doc URL, or command output)
 - [ ] Cross-round reference performed if continuing from a previous round
 - [ ] Recommendations are specific and actionable — not "investigate further"
-- [ ] If any assumptions were escalated: "Unverified Assumptions (Escalation Required)" section is populated with what, why, who could verify, and impact if wrong
+- [ ] If any assumptions were escalated: "Escalated Assumptions" section is populated with what, why, who could verify, and impact if wrong
 - [ ] Five Whys applied to reach root cause, not just proximate cause
 - [ ] Escalation tools recommended where the standard methodology is insufficient
 - [ ] All findings are framed as hypotheses with confidence levels — no declarative certainty used (no prohibited phrases from Calibrated Language section)

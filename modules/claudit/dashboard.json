@@ -4077,6 +4077,7 @@
   },
   "timepicker": {
     "quick_ranges": [
+      { "display": "Today",         "from": "now/d",   "to": "now" },
       { "display": "Last 2 days",   "from": "now-2d",  "to": "now" },
       { "display": "Last 7 days",   "from": "now-7d",  "to": "now" },
       { "display": "Last 30 days",  "from": "now-30d", "to": "now" },

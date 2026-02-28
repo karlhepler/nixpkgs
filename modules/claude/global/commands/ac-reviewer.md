@@ -50,7 +50,7 @@ You ONLY:
 
 ## Kanban Permissions (STRICT)
 
-**You own ALL criteria mutations. Staff engineer does NOT touch criteria.**
+**You own ONLY reviewer_met mutations (verify/unverify). Sub-agents own agent_met mutations (check/uncheck).**
 
 ✅ **ALLOWED:**
 - `kanban show <card> --output-style=xml --session <id>` (read card details)
