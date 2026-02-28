@@ -1,504 +1,258 @@
-# Kanban CLI - Insertion Sort Workflow
+# Kanban CLI
 
-File-based kanban board system designed for multi-agent coordination using an insertion sort pattern.
+File-based kanban board for agent coordination. Cards are JSON files stored in column directories. Designed for multi-agent Claude Code sessions coordinated by a staff engineer.
 
-## Philosophy: Think Before You Add
+## Core Concepts
 
-This kanban system enforces **intentional prioritization** by requiring you to think about **where** a new card belongs in relation to existing work, just like insertion sort requires understanding the sorted list before inserting.
-
-## Column Semantics
-
-Understanding what each column represents helps agents coordinate effectively:
-
-### todo - Not Yet Started
-
-Work that needs to be done, organized in priority order (lowest number = highest priority). Cards here are **queued but not claimed**.
-
-**Move cards to todo when:**
-- New work is identified
-- Work becomes unblocked (move from blocked back to todo)
-- Work needs to be reprioritized
-
-**Don't use todo for:**
-- Work already in progress (use doing)
-- Work waiting on dependencies (use blocked)
-
-### doing - Active Work
-
-Work currently being executed by an agent or developer. Cards here are **claimed and in progress**.
-
-**Move cards to doing when:**
-- You start working on them (claim with `kanban move <card> doing`)
-- You actively resume work after interruption
-
-**Don't use doing for:**
-- Work you plan to start later (keep in todo until you actually start)
-- Work that's paused waiting for something (use blocked)
-
-**Best practice:** Limit doing cards per agent (1-3) to maintain focus.
-
-### blocked - Waiting on Dependencies
-
-Work that was started but cannot progress due to a **specific blocking reason**. Cards here are **paused with documented blockers**.
-
-**Move cards to blocked when:**
-- Waiting for external API/service/dependency
-- Waiting for user input or decision
-- Waiting for another card to complete first
-- Waiting for code review or approval
-- Waiting for CI/CD pipeline or deployment
-
-**Don't use blocked for:**
-- Work you haven't started yet (use todo)
-- Work that's just lower priority (adjust priority in todo instead)
-- Work you're actively doing (use doing)
-
-**Best practice:** Always add a comment explaining the blocker when moving to blocked:
-```bash
-kanban move 005 blocked
-kanban comment 005 "Blocked: Waiting for API key from ops team"
-```
-
-### done - Completed Work
-
-Work that's finished and verified. Cards here are **archived for history**.
-
-**Move cards to done when:**
-- Work is complete and tested
-- Pull request is merged
-- Task is verified by stakeholders
-
-**Use done for:**
-- Reference and learning (what's been accomplished)
-- Activity tracking and metrics
-- Historical context for similar future work
-
-**View completed work:**
-```bash
-kanban history              # All completed cards
-kanban history --since week # Last 7 days
-kanban list --show-done     # Include done in board view
-```
-
-### canceled - Abandoned or Obsolete Work
-
-Work that was not completed due to being abandoned, obsolete, or no longer needed.
-
-**Move cards to canceled when:**
-- Work in progress was abandoned (changed direction)
-- Todo items are no longer needed
-- Work was completed elsewhere (made obsolete)
-- Blocked work is no longer relevant
-
-**Best practice:** Add comment explaining why when moving to canceled
-
-**Distinction from done:**
-- done = Successfully completed and verified
-- canceled = Not completed (abandoned/obsolete/unneeded)
-
-**View canceled work:**
-```bash
-kanban canceled                      # View canceled cards
-kanban history --include-canceled    # Include canceled in history
-kanban list --show-canceled          # Include canceled in board view
-kanban list --show-all               # Include both done and canceled
-```
+- **Cards** are JSON files (`NNN.json`) containing action, intent, acceptance criteria, and comments
+- **Columns** are directories: `todo`, `doing`, `review`, `done`, `canceled`
+- **Sessions** scope cards to specific Claude Code sessions (auto-detected, friendly names like `swift-falcon`)
+- **Acceptance criteria** have dual columns: `agent_met` (self-checked by worker) and `reviewer_met` (verified by AC reviewer)
+- **Comments** are timestamped messages on cards — the structured channel for agents to communicate findings back to the coordinator
 
 ## Quick Start
 
 ```bash
-# Initialize board (auto-created in git root or current directory)
-kanban init
+# Board auto-initializes in .kanban/ at git root
 
-# See current state
-kanban list
+# Create a card in doing
+kanban do '{"type":"work","action":"Fix the auth bug","intent":"Users cannot log in","criteria":["Auth endpoint returns 200","Existing tests pass"]}' --session wise-cedar
 
-# Add first card to empty column (defaults to priority 1000)
-kanban add "Implement feature X" --persona Developer
+# Create a card in todo (queued)
+kanban todo '{"type":"research","action":"Investigate performance regression","intent":"Dashboard loads slowly","criteria":["Root cause identified","Recommendations documented as comments"]}' --session wise-cedar
 
-# Add another card - MUST specify position for non-empty todo
-kanban add "Fix critical bug" --top --persona Developer
-kanban add "Write docs" --bottom --persona Scribe
-kanban add "Add tests" --after 001 --persona Developer
+# Move todo card to doing
+kanban start 2 --session wise-cedar
 
-# View your work
-kanban todo           # View todo cards
-kanban doing          # View in-progress cards
-kanban next           # Get next card to work on
+# View board
+kanban list --output-style=xml --session wise-cedar
 
-# Work a card
-kanban move 001 doing
-kanban comment 001 "Started implementation"
-kanban move 001 done
+# View card details
+kanban show 1 --output-style=xml --session wise-cedar
 ```
 
-## Insertion Sort Workflow
-
-### The Pattern
-
-When adding a card to any column:
-
-1. **Read** - Run `kanban list` to see ALL existing cards and their priorities
-2. **Understand** - Comprehend the relative importance/urgency of existing cards
-3. **Determine** - Decide where your new card fits in the priority order
-4. **Position** - Use position flags to place the card correctly
-5. **Verify** - Check `kanban list` again to confirm proper placement
-
-### Why This Matters
-
-Like insertion sort examining a sorted array before inserting, this workflow forces you to:
-- **Consider context** - What's already queued?
-- **Make trade-offs** - Is this more important than existing work?
-- **Maintain order** - Keep the backlog prioritized, not just added to randomly
-- **Communicate intent** - Your position choice signals relative importance to other agents
-
-## Priority System
-
-### How Priority Works
-
-- **Lower number = Higher priority** (appears earlier in list)
-- **Priority 0** - Minimum allowed (no negatives)
-- **Priority 1000** - Default for first card in empty column (baseline)
-- **Spacing** - System uses increments of 5-10 to leave room for future insertions
-
-### Priority Assignment Rules
-
-| Scenario | Position Flag | Priority Assignment |
-|----------|---------------|---------------------|
-| Empty column, first card | (none) | 1000 (baseline) |
-| Non-empty todo | **REQUIRED** | Based on position |
-| `--top` | Insert at top | `min(existing) - 10`, floor at 0 |
-| `--bottom` | Insert at bottom | `max(existing) + 10` |
-| `--after <card>` | After specific card | `card_priority + 5` |
-| `--before <card>` | Before specific card | `card_priority - 5`, floor at 0 |
-
-### Example Priority Sequence
+## Card Lifecycle
 
 ```
-[   0] Fix production outage    (--top, went below previous min)
-[1000] Implement feature X       (first card, default baseline)
-[1005] Add tests for feature X   (--after 001)
-[2000] Write documentation       (--bottom on second add)
-[2010] Update README             (--bottom again)
+todo ──start──► doing ──review──► review ──(AC pass)──► done
+                  ▲                  │
+                  └────redo──────────┘
+                  │
+                  └──defer──► todo
+
+Any column ──cancel──► canceled
 ```
 
-## Position Flags
+## Commands
 
-### `--top` - Highest Priority
-
-Places card at the top of the column (earliest in work order).
+### Card Creation
 
 ```bash
-# Critical bug - needs immediate attention
-kanban add "Fix security vulnerability" --top --persona Developer
+# Create in doing (immediate work)
+kanban do '<JSON>' --session <id>
+
+# Create in todo (queued work)
+kanban todo '<JSON>' --session <id>
+
+# Bulk creation (pass JSON array)
+kanban do '[{...}, {...}]' --session <id>
 ```
 
-**Use when:** Card is more urgent than ALL existing cards.
+**Required JSON fields:**
+- `type` — `"work"`, `"review"`, or `"research"`
+- `action` — What to do (the task description, can be long)
+- `criteria` — Array of acceptance criteria strings (minimum 1)
 
-### `--bottom` - Lowest Priority
+**Optional JSON fields:**
+- `intent` — Why (the desired outcome)
+- `editFiles` / `readFiles` — File path hints for conflict detection
+- `persona` — Skill name (e.g., `"swe-backend"`)
+- `model` — `"haiku"`, `"sonnet"`, or `"opus"`
 
-Places card at the bottom of the column (latest in work order).
+### Card Transitions
 
 ```bash
-# Nice-to-have improvement
-kanban add "Refactor legacy code" --bottom --persona Developer
+kanban start <card> [card...]     # todo → doing
+kanban review <card> [card...]    # doing → review
+kanban redo <card>                # review → doing
+kanban defer <card> [card...]     # doing/review → todo
+kanban done <card> 'summary'     # review → done (requires all AC met)
+kanban cancel <card> [card...]   # any → canceled
+kanban cancel <card> --reason "why"
 ```
 
-**Use when:** Card is less urgent than ALL existing cards.
-
-### `--after <card>` - Relative Positioning
-
-Places card immediately after specified card.
+### Card Details
 
 ```bash
-# Implementation follows planning
-kanban add "Implement API endpoint" --after 001-design-api --persona Developer
+kanban show <card>                          # Terminal output
+kanban show <card> --output-style=xml       # XML output (for agents)
 ```
 
-**Use when:** Card has a natural dependency or sequence relationship.
+### Comments
 
-### `--before <card>` - Relative Positioning
-
-Places card immediately before specified card.
+Timestamped messages on cards. The primary channel for agents to communicate detailed findings, recommendations, and deliverable details back to the coordinator.
 
 ```bash
-# Testing must happen before deployment
-kanban add "Run integration tests" --before 005-deploy --persona Developer
+kanban comment <card> "text" --session <id>
 ```
 
-**Use when:** Card must happen before another specific card.
+Comments appear in `kanban show` output (both terminal and XML formats).
 
-## Common Workflows
+### Acceptance Criteria
 
-### Solo Work
+Also aliased as `kanban ac`.
 
 ```bash
-# Morning routine: Check board state
-kanban list
-
-# Add new tasks with priority consideration
-kanban add "Fix bug #123" --top
-kanban add "Update docs" --bottom
-
-# Get next work
-kanban next
-
-# Work the card
-kanban move 001 doing
-# ... do work ...
-kanban move 001 done
-
-# Repeat
-kanban next
+kanban criteria add <card> "criterion text"       # Add criterion
+kanban criteria remove <card> <n> "reason"        # Remove (with reason)
+kanban criteria check <card> <n>                  # Set agent_met
+kanban criteria uncheck <card> <n>                # Clear agent_met
+kanban criteria verify <card> <n>                 # Set reviewer_met
+kanban criteria unverify <card> <n>               # Clear reviewer_met
 ```
 
-### Multi-Agent Coordination
+`kanban done` requires BOTH `agent_met` AND `reviewer_met` on all criteria.
+
+### Board View
 
 ```bash
-# Each agent filters by session (auto-detected in Claude Code)
-kanban todo                    # See your session's todo cards
-kanban add "My task" --top     # Add to your session
-
-# Check what other agents are doing
-kanban doing --all-sessions
-
-# Avoid conflicts - check before claiming
-kanban list
-kanban move 003 doing  # Claim unclaimed card
+kanban list                                 # Simple terminal view
+kanban list --output-style=xml              # XML (for staff engineer)
+kanban list --output-style=detail           # Verbose terminal view
+kanban list --show-done                     # Include done column
+kanban list --show-canceled                 # Include canceled column
+kanban list --show-all                      # Include both
+kanban list --column doing,review           # Specific columns
+kanban list --since today                   # Date filter
+kanban list --session wise-cedar            # Session filter
 ```
 
-### Reprioritization
+### Watch Mode
+
+Any command supports `--watch` for live auto-refresh on file changes:
 
 ```bash
-# Emergency - bump card to top
-kanban top 005
-
-# Deprioritize - move to bottom
-kanban bottom 003
-
-# Fine-tuning - move up/down by small increments
-kanban up 002      # Decrease priority by 10
-kanban down 004    # Increase priority by 10
+kanban list --watch                         # Live board view
 ```
 
-## Session Isolation
+Interactive keys in watch mode: `?` toggle detail, `/` filter session, `#` filter card, `q` quit.
 
-Cards can be scoped to specific Claude Code sessions for parallel agent work:
+### Reporting
 
 ```bash
-# Add card to specific session
-kanban add "Agent-specific task" --session abc123 --top
-
-# View only current session's cards (auto-detected)
-kanban todo
-
-# View all sessions
-kanban todo --all-sessions
-
-# View specific session
-kanban todo --session abc123
+kanban report                               # All completed cards
+kanban report --from 2026-01-01             # Since date
+kanban report --to 2026-02-28              # Until date
+kanban report --output-style=xml            # XML format
 ```
-
-Session ID is auto-detected from environment when running in Claude Code.
-
-## Priority Best Practices
-
-### Do's
-
-- **Check first** - Always run `kanban list` before adding
-- **Think relative** - Consider where card fits among existing work
-- **Use spacing** - Position flags create appropriate gaps (5-10 priority units)
-- **Stay positive** - Priorities must be >= 0 (system validates this)
-- **Start high** - First card defaults to 1000, leaving room below
-
-### Don'ts
-
-- **Don't guess** - Don't add cards without reviewing existing priorities
-- **Don't append blindly** - Don't always use `--bottom` (consider importance!)
-- **Don't ignore order** - Priority order signals work sequence to other agents
-- **Don't assume** - Empty columns are fine with no position flag, but non-empty require it
-
-### When Priority Numbers Get Crowded
-
-If you run out of room between cards (e.g., priorities 1000, 1001, 1002):
-
-```bash
-# Option 1: Use --before or --after with existing small gaps
-kanban add "Urgent fix" --before 1001  # Creates priority 996
-
-# Option 2: Reprioritize entire column with larger spacing
-# (Manual operation - reorder existing cards to 1000, 2000, 3000, etc.)
-```
-
-The system uses increments of 5-10 specifically to avoid this issue in normal use.
-
-## Command Reference
 
 ### Board Management
 
 ```bash
-kanban init [path]              # Create board structure
-kanban list                     # Show full board overview
-kanban list --show-done         # Include done column
-kanban clear                    # Delete all cards (with confirmation)
-kanban clear --yes              # Skip confirmation
+kanban init [path]                          # Create board structure
+kanban clean                                # Trash cards (interactive confirmation)
+kanban clean <column>                       # Trash cards from specific column
+kanban clean --expunge                      # Trash cards + scratchpad
 ```
 
-### Card Operations
+Clean moves files to macOS Trash (recoverable via Finder "Put Back").
 
-```bash
-kanban add "title" [flags]      # Add card (see Position Flags above)
-kanban show <card>              # Display card contents
-kanban edit <card> [flags]      # Edit card content/metadata
-kanban delete <card>            # Delete card
-kanban comment <card> "msg"     # Add comment to card
-```
+## Session Management
 
-### Card Movement
+Sessions scope cards to specific Claude Code instances. Session IDs are friendly names (e.g., `wise-cedar`) mapped from UUIDs via `.kanban/sessions.json`.
 
-```bash
-kanban move <card> <column>     # Move to different column
-kanban top <card>               # Move to top of current column
-kanban bottom <card>            # Move to bottom of current column
-kanban up <card>                # Increase priority (decrease number by 10)
-kanban down <card>              # Decrease priority (increase number by 10)
-```
+- **Auto-detection:** `KANBAN_SESSION` env var > `USER` env var
+- **All commands accept** `--session <name>` to filter
+- **Session filtering flags:** `--only-mine`, `--show-mine`, `--hide-mine`
+- **Env override:** `KANBAN_HIDE_MINE=true` hides own cards by default
 
-### Viewing & Filtering
-
-```bash
-kanban todo                     # View todo column
-kanban doing                    # View doing column
-kanban blocked                  # View blocked column
-kanban done                     # View done column
-kanban canceled                 # View canceled column
-
-# Session filtering (for multi-agent work)
-kanban todo --session <id>      # Specific session
-kanban todo --all-sessions      # All sessions
-
-# Work selection
-kanban next                     # Get highest priority card
-kanban next --persona Developer # Filter by persona
-kanban next --skip 2            # Skip first 2 cards
-```
-
-### History
-
-```bash
-kanban history                  # Show all completed cards
-kanban history --since today    # Today's completions
-kanban history --since week     # Last 7 days
-kanban history --since 2024-01-01  # Since specific date
-```
-
-## Architecture
-
-### File Structure
+## File Structure
 
 ```
 .kanban/
 ├── todo/
-│   ├── 001-implement-feature-x.md
-│   └── 002-fix-bug.md
+│   └── 2.json
 ├── doing/
-│   └── 003-write-docs.md
-├── blocked/
+│   └── 1.json
+├── review/
 ├── done/
-│   └── 004-completed-task.md
-└── canceled/
-    └── 005-obsolete-feature.md
+│   └── 3.json
+├── canceled/
+├── archive/
+│   └── 2026-01/
+│       └── 4.json
+├── scratchpad/
+└── sessions.json
 ```
 
-### Card Format
+Cards older than 30 days in `done/` are auto-archived to `archive/YYYY-MM/`. Configure with `KANBAN_ARCHIVE_DAYS`.
 
-```markdown
----
-persona: Developer
-priority: 1000
-session: abc123
-created: 2024-01-01T12:00:00Z
-updated: 2024-01-01T13:00:00Z
----
+## Card JSON Format
 
-# Implement Feature X
-
-Task description here...
-
-## Activity
-- [2024-01-01 12:30] Started work
-- [2024-01-01 13:00] Completed implementation
+```json
+{
+  "action": "Fix the authentication bug in login endpoint",
+  "intent": "Users cannot log in after password reset",
+  "type": "work",
+  "readFiles": [],
+  "editFiles": ["src/auth/*.ts"],
+  "persona": "swe-backend",
+  "model": "sonnet",
+  "session": "wise-cedar",
+  "created": "2026-02-28T14:00:00Z",
+  "updated": "2026-02-28T15:30:00Z",
+  "criteria": [
+    {"text": "Auth endpoint returns 200 for valid credentials", "agent_met": true, "reviewer_met": true},
+    {"text": "Existing test suite passes", "agent_met": true, "reviewer_met": false}
+  ],
+  "comments": [
+    {"timestamp": "2026-02-28T15:00:00Z", "text": "Root cause: password hash comparison was using timing-unsafe equality"},
+    {"timestamp": "2026-02-28T15:25:00Z", "text": "Fixed with crypto.timingSafeEqual, added regression test"}
+  ],
+  "activity": [
+    {"timestamp": "2026-02-28T14:00:00Z", "message": "Created"},
+    {"timestamp": "2026-02-28T15:30:00Z", "message": "Completed"}
+  ]
+}
 ```
 
-## Integration with Claude Code
+## Agent Coordination Workflow
 
-The kanban CLI is designed for Claude Code agent coordination:
+The staff engineer coordinates; sub-agents execute. Sub-agents interact with cards via a limited set of commands:
 
-- **Auto-allowed** - Claude agents don't need permission prompts for kanban commands
-- **Session isolation** - Auto-detects session IDs from environment
-- **Shared filesystem** - Multiple agents coordinate via file-based cards
-- **Priority-driven** - `kanban next` ensures agents work highest priority items first
+**Sub-agents may use:**
+- `kanban show` — Read their card's task and AC
+- `kanban criteria check/uncheck` — Self-check AC as they complete work
+- `kanban comment` — Write findings, recommendations, and deliverable details
 
-### Typical Agent Usage
+**AC reviewer may use:**
+- `kanban show` — Read card, AC, and comments
+- `kanban criteria verify/unverify` — Independently verify each criterion
 
-```bash
-# Agent starts work
-kanban next --persona Developer
+**Staff engineer uses everything else** — card creation, transitions, lifecycle management.
 
-# Agent claims card
-kanban move <card> doing
+### Typical Flow
 
-# Agent adds progress notes
-kanban comment <card> "Implemented core logic"
-kanban comment <card> "Added tests"
-
-# Agent completes work
-kanban move <card> done
-
-# Agent gets next card
-kanban next --persona Developer
+```
+1. Staff engineer creates card (kanban do)
+2. Staff engineer delegates to sub-agent via Task tool
+3. Sub-agent reads card (kanban show), does work
+4. Sub-agent checks AC (kanban criteria check) and writes findings (kanban comment)
+5. Staff engineer moves to review (kanban review)
+6. AC reviewer reads card + comments (kanban show), verifies AC (kanban criteria verify)
+7. Staff engineer completes card (kanban done)
+8. Staff engineer reads comments (kanban show) and briefs user
 ```
 
-## Why Insertion Sort?
+## Metrics
 
-The insertion sort pattern enforces **intentional backlog management**:
+Card lifecycle events are written to `~/.claude/metrics/claude-metrics.db` (SQLite) for the claudit analytics dashboard. Events include: create, start, review, redo, defer, done, canceled.
 
-1. **Forces context** - Must look at existing work before adding
-2. **Prevents chaos** - Can't just append randomly to backlog
-3. **Maintains order** - Priority sequence is always clear
-4. **Signals intent** - Position choice communicates importance
-5. **Enables coordination** - Multiple agents can work from same prioritized queue
+## Environment Variables
 
-Just like insertion sort examines the sorted array before inserting, this workflow makes you examine the current backlog before adding new work.
-
-## Troubleshooting
-
-### "Error: Position required"
-
-You tried to add a card to a non-empty todo column without specifying position.
-
-**Solution:** Run `kanban list`, then add with `--top`, `--bottom`, `--after`, or `--before`.
-
-### "Error: Priority must be >= 0"
-
-You tried to create a card with negative priority (system prevented this).
-
-**Solution:** This should not happen in normal use. If it does, the system has protected you from invalid state.
-
-### Cards out of order
-
-Manually edited priority values or moved cards between columns.
-
-**Solution:** Use `kanban up/down/top/bottom` to adjust priorities within column.
-
-### Running out of priority space
-
-Too many cards with priorities too close together (e.g., 1000, 1001, 1002).
-
-**Solution:** System uses increments of 5-10 to prevent this. If it happens, manually reprioritize with larger spacing.
-
-## Related Documentation
-
-- Main project: `/Users/karlhepler/.config/nixpkgs/CLAUDE.md`
-- Module location: `/Users/karlhepler/.config/nixpkgs/modules/kanban/`
-- Command source: `/Users/karlhepler/.config/nixpkgs/modules/kanban/kanban.py`
+| Variable | Purpose |
+|----------|---------|
+| `KANBAN_ROOT` | Override board location |
+| `KANBAN_SESSION` | Override session detection |
+| `KANBAN_HIDE_MINE` | Hide own cards by default (`true`/`1`/`yes`) |
+| `KANBAN_ARCHIVE_DAYS` | Days before auto-archiving done cards (default: 30) |

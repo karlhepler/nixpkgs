@@ -1,7 +1,7 @@
 #compdef kanban
 
-# Zsh completion for kanban CLI
-# Provides tab completion for subcommands, card numbers, column names, and flags
+# Zsh completion for kanban CLI (v2 — JSON-based cards)
+# Provides tab completion for subcommands, card numbers, flags, and criteria subcommands
 
 _kanban() {
   local curcontext="$curcontext" state line
@@ -12,7 +12,6 @@ _kanban() {
   if [[ -n "$KANBAN_ROOT" ]]; then
     kanban_root="$KANBAN_ROOT"
   else
-    # Try git root first
     local git_root
     git_root=$(git rev-parse --show-toplevel 2>/dev/null)
     if [[ -n "$git_root" ]]; then
@@ -26,23 +25,26 @@ _kanban() {
   _kanban_cards() {
     local -a cards
     if [[ -d "$kanban_root" ]]; then
-      # Search all columns and archive for card files
-      for col in todo doing blocked done canceled archive/*; do
+      for col in todo doing review done canceled; do
         local col_path="$kanban_root/$col"
         if [[ -d "$col_path" ]]; then
-          for card in "$col_path"/*.md(N); do
-            local card_name=${card:t}
-            local card_num=${card_name%%[-]*}
-            local card_title=${card_name#*-}
-            card_title=${card_title%.md}
-            # Format: card_num:description
-            cards+=("$card_num:$card_title")
+          for card in "$col_path"/*.json(N); do
+            local card_num=${${card:t}%.json}
+            cards+=("$card_num:card in $col")
           done
         fi
       done
     fi
     _describe -t cards 'card number' cards
   }
+
+  # Common session flags
+  _kanban_session_flags=(
+    '--session[Filter by session ID]:session:'
+    '--only-mine[Show only current session cards]'
+    '--show-mine[Show mine (override KANBAN_HIDE_MINE)]'
+    '--hide-mine[Hide current session cards]'
+  )
 
   # Main command specification
   _arguments -C \
@@ -55,29 +57,23 @@ _kanban() {
       local -a commands
       commands=(
         'init:Create kanban board structure'
-        'add:Add a new card to the board'
-        'list:Show board overview (alias: ls)'
-        'ls:Show board overview (alias for list)'
+        'session-hook:Handle SessionStart hook (reads JSON from stdin)'
+        'do:Create card(s) in doing from JSON'
+        'todo:Create card(s) in todo from JSON'
         'show:Display card contents'
-        'move:Move card to a different column'
-        'delete:Delete a card'
-        'edit:Edit card content or metadata'
-        'comment:Add comment to card'
-        'up:Move card up in priority'
-        'down:Move card down in priority'
-        'top:Move card to top of column'
-        'bottom:Move card to bottom of column'
-        'history:Show completed cards'
-        'todo:View cards in todo column'
-        'doing:View cards in doing column'
-        'blocked:View cards in blocked column'
-        'done:View cards in done column'
-        'canceled:View cards in canceled column'
-        'nonce:Output session identifier for session detection'
-        'assign:Change or remove session ownership'
-        'criteria:Manage acceptance criteria (alias: ac)'
+        'start:Move card(s) from todo to doing'
+        'review:Move card(s) to review'
+        'done:Move card to done with summary'
+        'redo:Move card from review back to doing'
+        'defer:Move card(s) from doing/review to todo'
+        'cancel:Move card(s) to canceled'
+        'comment:Add timestamped comment to card'
+        'criteria:Manage acceptance criteria'
         'ac:Manage acceptance criteria (alias for criteria)'
-        'clear:Delete all cards from columns'
+        'list:Show board overview'
+        'ls:Show board overview (alias for list)'
+        'report:Generate reporting from completed cards'
+        'clean:Delete cards with user confirmation'
       )
       _describe -t commands 'kanban command' commands
       ;;
@@ -85,144 +81,126 @@ _kanban() {
       case $line[1] in
         init)
           _arguments \
-            '1:path:_directories' \
-            '--watch[Auto-refresh on changes]'
+            '1::path:_directories' \
+            '--watch[Auto-refresh on changes]' \
+            ${_kanban_session_flags[@]}
           ;;
-        add)
+        session-hook)
           _arguments \
-            '1:title:' \
-            '--persona[Persona for the card]:persona:' \
-            '--content[Card body content]:content:' \
-            '-c[Card body content]:content:' \
-            '--status[Starting column]:column:(todo doing blocked done canceled)' \
-            '--session[Session ID]:session:' \
-            '--no-session[Create card without session]' \
-            '--model[AI model]:model:(sonnet opus haiku)' \
-            '--top[Insert at top]' \
-            '--bottom[Insert at bottom]' \
-            '--after[Insert after card]:card:_kanban_cards' \
-            '--before[Insert before card]:card:_kanban_cards' \
-            '--watch[Auto-refresh on changes]'
+            '--watch[Auto-refresh on changes]' \
+            ${_kanban_session_flags[@]}
           ;;
-        delete|show|up|down|top|bottom)
+        do|todo)
+          _arguments \
+            '1:json_data:' \
+            '--watch[Auto-refresh on changes]' \
+            ${_kanban_session_flags[@]}
+          ;;
+        show)
           _arguments \
             '1:card:_kanban_cards' \
-            '--watch[Auto-refresh on changes]'
+            '--output-style[Output format]:style:(simple xml detail)' \
+            '--watch[Auto-refresh on changes]' \
+            ${_kanban_session_flags[@]}
           ;;
-        edit)
+        start|defer|cancel|review)
+          _arguments \
+            '*:card:_kanban_cards' \
+            '--watch[Auto-refresh on changes]' \
+            ${_kanban_session_flags[@]}
+          ;;
+        cancel)
+          _arguments \
+            '*:card:_kanban_cards' \
+            '--reason[Cancellation reason]:reason:' \
+            '--watch[Auto-refresh on changes]' \
+            ${_kanban_session_flags[@]}
+          ;;
+        redo)
           _arguments \
             '1:card:_kanban_cards' \
-            '--content[New card body content]:content:' \
-            '-c[New card body content]:content:' \
-            '--persona[Update persona]:persona:' \
-            '--append[Append to content]' \
-            '-a[Append to content]' \
-            '--watch[Auto-refresh on changes]'
+            '--watch[Auto-refresh on changes]' \
+            ${_kanban_session_flags[@]}
           ;;
-        move)
+        done)
           _arguments \
             '1:card:_kanban_cards' \
-            '2:column:(todo doing blocked done canceled)' \
-            '--watch[Auto-refresh on changes]'
+            '2::message:' \
+            '--watch[Auto-refresh on changes]' \
+            ${_kanban_session_flags[@]}
           ;;
         comment)
           _arguments \
             '1:card:_kanban_cards' \
-            '2:message:' \
-            '--watch[Auto-refresh on changes]'
-          ;;
-        history)
-          _arguments \
-            '--since[Filter by date]:date:(today yesterday week month)' \
-            '--until[Filter until date]:date:' \
-            '--include-canceled[Include canceled cards]' \
-            '--session[Filter by session]:session:' \
-            '--only-mine[Show only current session]' \
-            '--show-mine[Show current session (override KANBAN_HIDE_MINE)]' \
-            '--hide-mine[Hide current session]' \
-            '--watch[Auto-refresh on changes]'
+            '2:text:' \
+            '--watch[Auto-refresh on changes]' \
+            ${_kanban_session_flags[@]}
           ;;
         list|ls)
           _arguments \
+            '--column[Filter column(s)]:column:(todo doing review done canceled)' \
             '--show-done[Include done column]' \
             '--show-canceled[Include canceled column]' \
             '--show-all[Include done and canceled columns]' \
-            '--session[Filter by session]:session:' \
-            '--only-mine[Show only current session]' \
-            '--show-mine[Show current session (override KANBAN_HIDE_MINE)]' \
-            '--hide-mine[Hide current session]' \
+            '--output-style[Output format]:style:(simple xml detail)' \
             '--since[Filter by date]:date:(today yesterday week month)' \
             '--until[Filter until date]:date:' \
+            '--watch[Auto-refresh on changes]' \
+            ${_kanban_session_flags[@]}
+          ;;
+        report)
+          _arguments \
+            '--from[Start date (YYYY-MM-DD)]:date:' \
+            '--to[End date (YYYY-MM-DD)]:date:' \
+            '--output-style[Output format]:style:(human xml)' \
             '--watch[Auto-refresh on changes]'
           ;;
-        todo|doing|blocked|done|canceled)
+        clean)
           _arguments \
-            '--session[Filter by session]:session:' \
-            '--only-mine[Show only current session]' \
-            '--show-mine[Show current session (override KANBAN_HIDE_MINE)]' \
-            '--hide-mine[Hide current session]' \
-            '--since[Filter by date]:date:(today yesterday week month)' \
-            '--until[Filter until date]:date:' \
-            '--watch[Auto-refresh on changes]'
-          ;;
-        nonce)
-          _arguments \
-            '--watch[Auto-refresh on changes]'
-          ;;
-        assign)
-          _arguments \
-            '1:card:_kanban_cards' \
-            '--session[Assign to session]:session:' \
-            '--no-session[Remove session]' \
-            '--from[Bulk reassignment source]:session:' \
-            '--to[Bulk reassignment target]:session:' \
-            '--yes[Skip confirmation]' \
-            '-y[Skip confirmation]' \
+            '1::column:(todo doing review done canceled)' \
+            '--expunge[Also delete scratchpad contents]' \
             '--watch[Auto-refresh on changes]'
           ;;
         criteria|ac)
-          # Dispatch to criteria subcommand completions
-          local -a subcommands
-          subcommands=(
-            'add:Add acceptance criterion'
-            'remove:Remove acceptance criterion'
-            'check:Mark criterion as met'
-            'uncheck:Mark criterion as unmet'
-            'verify:Mark criterion as reviewer-verified'
-            'unverify:Clear reviewer verification'
-          )
-          _describe -t subcommands 'criteria subcommand' subcommands
-
-          # Handle subcommand arguments
-          local subcommand="$line[2]"
-          case $subcommand in
-            add)
-              _arguments \
-                '1:card:_kanban_cards' \
-                '2:text:' \
-                '--session[Session ID]:session:'
-              ;;
-            remove)
-              _arguments \
-                '1:card:_kanban_cards' \
-                '2:criterion_number:' \
-                '3:reason:' \
-                '--session[Session ID]:session:'
-              ;;
-            check|uncheck|verify|unverify)
-              _arguments \
-                '1:card:_kanban_cards' \
-                '*:criterion_indices:' \
-                '--session[Session ID]:session:'
-              ;;
-          esac
-          ;;
-        clear)
-          _arguments \
-            '*:columns:(todo doing blocked done canceled)' \
-            '--yes[Skip confirmation]' \
-            '-y[Skip confirmation]' \
-            '--watch[Auto-refresh on changes]'
+          # Handle criteria subcommands
+          if (( CURRENT == 2 )); then
+            local -a subcommands
+            subcommands=(
+              'add:Add acceptance criterion'
+              'remove:Remove acceptance criterion'
+              'check:Mark criterion as met (agent_met)'
+              'uncheck:Mark criterion as unmet (clears agent_met)'
+              'verify:Mark criterion as reviewer-verified (reviewer_met)'
+              'unverify:Clear reviewer verification (clears reviewer_met)'
+            )
+            _describe -t subcommands 'criteria subcommand' subcommands
+          else
+            local subcmd="$line[2]"
+            case $subcmd in
+              add)
+                _arguments \
+                  '2:card:_kanban_cards' \
+                  '3:text:' \
+                  '--watch[Auto-refresh on changes]' \
+                  ${_kanban_session_flags[@]}
+                ;;
+              remove)
+                _arguments \
+                  '2:card:_kanban_cards' \
+                  '3:criterion number:' \
+                  '4:reason:' \
+                  '--watch[Auto-refresh on changes]' \
+                  ${_kanban_session_flags[@]}
+                ;;
+              check|uncheck|verify|unverify)
+                _arguments \
+                  '2:card:_kanban_cards' \
+                  '*:criterion indices:' \
+                  '--watch[Auto-refresh on changes]' \
+                  ${_kanban_session_flags[@]}
+                ;;
+            esac
+          fi
           ;;
       esac
       ;;

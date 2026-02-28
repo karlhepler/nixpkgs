@@ -952,6 +952,28 @@ def cmd_show(args) -> None:
         for f in sorted(read_files):
             output_lines.append(f"  {f}")
 
+    # Comments section
+    comments = card.get("comments", [])
+    if comments:
+        output_lines.append("")
+        output_lines.append(f"{dim_bold}  Comments{reset}")
+        for comment in comments:
+            ts = comment.get("timestamp", "")
+            text = comment.get("text", "")
+            if ts:
+                try:
+                    ts_display = parse_iso(ts).strftime("%Y-%m-%d %H:%M")
+                except ValueError:
+                    ts_display = ts[:16]
+            else:
+                ts_display = "unknown"
+            output_lines.append(f"  {dim_bold}[{ts_display}]{reset}")
+            # Wrap comment text at ~78 chars with 2-space indent
+            for paragraph in text.replace("\\n", "\n").split("\n"):
+                wrapped = textwrap.wrap(paragraph, width=78) if paragraph.strip() else [""]
+                for line in wrapped:
+                    output_lines.append(f"  {line}")
+
     # Footer with metadata
     output_lines.append("")
     session = card.get("session", "")
@@ -1018,6 +1040,21 @@ def cmd_cancel(args) -> None:
             print(f"Canceled: #{num} — {reason}")
         else:
             print(f"Canceled: #{num}")
+
+
+def cmd_comment(args) -> None:
+    """Add a timestamped comment to a card."""
+    root = get_root(args.root)
+    card_path = find_card(root, args.card)
+    card = read_card(card_path)
+
+    if "comments" not in card:
+        card["comments"] = []
+
+    card["comments"].append({"timestamp": now_iso(), "text": args.text})
+    card["updated"] = now_iso()
+    write_card(card_path, card)
+    print(f"Comment added to #{card_number(card_path)}")
 
 
 def cmd_criteria_add(args) -> None:
@@ -1262,6 +1299,17 @@ def format_card_xml(card: dict, num: str, col: str, include_details: bool = Fals
         for f in sorted(read_files):
             xml_parts.append(f"    <f>{esc(f)}</f>")
         xml_parts.append("  </read-files>")
+
+    # Comments (only in show/details mode)
+    if include_details:
+        comments = card.get("comments", [])
+        if comments:
+            xml_parts.append("  <comments>")
+            for comment in comments:
+                timestamp = esc(comment.get("timestamp", ""))
+                text = esc(comment.get("text", ""))
+                xml_parts.append(f'    <comment ts="{timestamp}">{text}</comment>')
+            xml_parts.append("  </comments>")
 
     # Activity (only in show/details mode)
     if include_details:
@@ -2543,6 +2591,12 @@ def main() -> None:
     p_start.add_argument("card", nargs="+", help="Card number(s)")
     add_session_flags(p_start)
 
+    # --- comment ---
+    p_comment = subparsers.add_parser("comment", parents=[parent_parser], help="Add timestamped comment to card")
+    p_comment.add_argument("card", help="Card number")
+    p_comment.add_argument("text", help="Comment text")
+    add_session_flags(p_comment)
+
     # --- criteria (with subcommands) ---
     p_criteria = subparsers.add_parser("criteria", parents=[parent_parser], help="Manage acceptance criteria", aliases=["ac"])
     criteria_subparsers = p_criteria.add_subparsers(dest="criteria_command", help="Criteria subcommands")
@@ -2628,6 +2682,7 @@ def main() -> None:
         "review": cmd_review,
         "done": cmd_done,
         "cancel": cmd_cancel,
+        "comment": cmd_comment,
         "redo": cmd_redo,
         "defer": cmd_defer,
         "start": cmd_start,

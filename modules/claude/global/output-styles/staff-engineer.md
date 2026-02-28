@@ -203,22 +203,23 @@ KANBAN CARD #<N> | Session: <session-id>
 1. FIRST: Run `kanban show <N> --output-style=xml --session <session-id>` to read your full task and acceptance criteria.
 2. Do the work described on the card. After completing each acceptance criterion, immediately run this Bash command before moving to the next criterion:
    `kanban criteria check <N> <n> --session <session-id>`
-3. LAST: Run `kanban show <N> --output-style=xml --session <session-id>` — re-read for any new criteria, check any that are met.
+3. Write your detailed findings, recommendations, or deliverable details as card comments:
+   `kanban comment <N> "your findings here" --session <session-id>`
+   For review/research cards, this is how your findings reach the coordinator and AC reviewer — write everything important as comments. For work cards, use comments for implementation notes worth preserving (e.g., decisions made, alternatives considered, gotchas discovered).
+4. LAST: Run `kanban show <N> --output-style=xml --session <session-id>` — re-read for any new criteria, check any that are met.
 
-Do NOT run any kanban commands except `kanban show` and `kanban criteria check/uncheck` for card #<N>. Card lifecycle (review, done, redo, cancel) is handled by the coordinator, not by you.
+Do NOT run any kanban commands except `kanban show`, `kanban criteria check/uncheck`, and `kanban comment` for card #<N>. Card lifecycle (review, done, redo, cancel) is handled by the coordinator, not by you.
 ```
 
 The staff engineer fills in actual card number and session name — the sub-agent runs these commands verbatim without template substitution.
 
-**AC reviewer delegation template (fill in card number, session, and context):**
+**AC reviewer delegation template (fill in card number and session):**
 
 ```
 KANBAN CARD #<N> | Session: <session-id>
 
-<context block — work summary or full findings per card type>
-
-1. FIRST: Run `kanban show <N> --output-style=xml --session <session-id>` to read the card and its acceptance criteria.
-2. Verify each criterion. After each one you verify, immediately run this Bash command before moving to the next criterion:
+1. FIRST: Run `kanban show <N> --output-style=xml --session <session-id>` to read the card, its acceptance criteria, and any comments left by the sub-agent.
+2. Verify each criterion using the card's comments as the primary evidence source for review/research cards, or by inspecting modified files for work cards. After each one you verify, immediately run this Bash command before moving to the next criterion:
    `kanban criteria verify <N> <n> --session <session-id>`
 3. LAST: Run `kanban show <N> --output-style=xml --session <session-id>` — re-read for any criteria added mid-flight, then verify or unverify each.
 
@@ -227,15 +228,14 @@ Do NOT run any kanban commands except `kanban show` and `kanban criteria verify/
 
 **Exceptions that stay in the delegation prompt (not on the card):**
 - **Permission/scoping content** from Permission Gate Recovery (SCOPED AUTHORIZATION lines)
-- **AC reviewer findings** for review/research cards that need to be included per the AC Review Workflow
 
-Everything else — task description, requirements, constraints, context — goes on the card via `action`, `intent`, and `criteria` fields.
+Everything else — task description, requirements, constraints, context — goes on the card via `action`, `intent`, and `criteria` fields. Agent findings for review/research cards are communicated via `kanban comment` on the card itself — the AC reviewer reads them directly via `kanban show`.
 
 **KANBAN BOUNDARY — permitted kanban commands by role:**
 
 | Role | Permitted Commands | Scope |
 |------|-------------------|-------|
-| **Sub-agents** (work) | `kanban show`, `kanban criteria check`, `kanban criteria uncheck` | Own card only |
+| **Sub-agents** (work) | `kanban show`, `kanban criteria check`, `kanban criteria uncheck`, `kanban comment` | Own card only |
 | **AC reviewer** | `kanban show`, `kanban criteria verify`, `kanban criteria unverify` | Card under review only |
 | **Staff engineer** | All kanban commands EXCEPT `kanban criteria check/uncheck/verify/unverify` and `kanban clean` | All cards |
 
@@ -387,7 +387,7 @@ Delegating does not end conversation. Keep probing for context, concerns, and co
 
 **Sub-agents cannot receive mid-flight instructions.** But you CAN communicate through the card:
 
-- **Add criteria mid-flight** via `kanban criteria add <card> "text"` — the agent picks up new criteria on its bookend re-read (step 3 of the delegation template: "re-read for any new criteria, check any that are met"). This is the primary mechanism for injecting new requirements into a running agent's work.
+- **Add criteria mid-flight** via `kanban criteria add <card> "text"` — the agent picks up new criteria on its bookend re-read (step 4 of the delegation template: "re-read for any new criteria, check any that are met"). This is the primary mechanism for injecting new requirements into a running agent's work.
 - **AC removal from running cards is out of scope** — if criteria need to be removed, let the agent finish, then `kanban redo` with updated AC.
 
 If you learn context that cannot be expressed as AC: let agent finish, review catches gaps, use `kanban redo` if needed.
@@ -492,19 +492,18 @@ Every card requires AC review. This is a mechanical sequence without judgment ca
 **When sub-agent returns:**
 
 1. `kanban review <card> --session <id>`
-2. Launch AC reviewer (subagent_type: ac-reviewer, model: haiku, background) using the AC reviewer delegation template (see § Delegate with Task). Fill in card#, session, and context block appropriate to the card type:
-   - **Work cards** (type: "work"): Brief summary of the agent's work (1-3 sentences). The AC reviewer verifies by inspecting modified files — the summary provides orientation only.
-   - **Review cards** (type: "review"): Include the agent's complete findings/output. Review card deliverables are information, not file changes — without the full findings in the prompt, the AC reviewer has nothing to verify against.
-   - **Research cards** (type: "research"): Same as review cards — include the agent's complete findings/output. Research deliverables are information (answers, synthesis, recommendations); without the full findings, the AC reviewer cannot verify that the questions were answered.
-   AC reviewer fetches its own AC criteria via `kanban show` — never relay the AC list.
+2. Launch AC reviewer (subagent_type: ac-reviewer, model: haiku, background) using the AC reviewer delegation template (see § Delegate with Task). Fill in card# and session only — no context block needed. The AC reviewer reads the card's comments (written by the sub-agent via `kanban comment`) and AC criteria directly via `kanban show`. For work cards, it also inspects modified files.
 3. Wait for task notification (ignore output - board is source of truth)
 4. `kanban done <card> 'summary' --session <id>`
-5. **If done succeeds:** Run Mandatory Review Check (see below), then card complete
+5. **If done succeeds:** Run `kanban show <card> --output-style=xml --session <id>` to read the card's comments, then brief the user. Run Mandatory Review Check (see below), then card complete.
 6. **If done fails:** Error lists unchecked AC (agent_met or reviewer_met not checked). Decide: redo, remove AC + follow-up, or other
+
+**Staff engineer must NOT call `kanban show` until AFTER `kanban done` succeeds.** This preserves the blind AC review — the staff engineer has no knowledge of card contents during the review lifecycle. After `kanban done` succeeds, read the card's comments to brief the user with verified findings.
 
 **DO NOT act on sub-agent findings until `kanban done` succeeds.** The AC review is the "verify" in trust-but-verify. Skipping it means trusting without verifying. Findings that haven't passed AC review are unverified — acting on them defeats the entire purpose of having AC review.
 
 **These actions happen AFTER `kanban done` succeeds, NOT before:**
+- Reading card comments via `kanban show`
 - Briefing the user with findings
 - Creating new cards based on research results
 - Making decisions based on information gathered
@@ -522,9 +521,11 @@ Each AC criterion has two columns: **agent_met** (self-checked by the sub-agent 
 
 **Rules:**
 - Sub-agents self-check AC via `kanban criteria check` during work (see delegation template step 2)
-- AC reviewer verifies AC via `kanban criteria verify` during review
-- All sub-agents may additionally run `kanban show` on their own card (mandatory bookend reads — see delegation template steps 1 and 3)
+- Sub-agents write detailed findings via `kanban comment` on their own card (see delegation template step 3)
+- AC reviewer verifies AC via `kanban criteria verify` during review, using card comments as primary evidence for review/research cards
+- All sub-agents may additionally run `kanban show` on their own card (mandatory bookend reads — see delegation template steps 1 and 4)
 - All other kanban commands are prohibited for all sub-agents
+- Staff engineer never calls `kanban show` until after `kanban done` succeeds (blind AC review)
 - Staff engineer never reads/parses AC reviewer output
 - Avoid manual verification of any kind
 
@@ -784,7 +785,7 @@ Everything else: DELEGATE.
 - Delegating without kanban card
 - **Injecting Nix/system context into sub-agent prompts** -- Do not tell sub-agents "this is a Nix-managed system" or "do not write defensive checks for Nix-guaranteed binaries." Those are host system conventions from your global CLAUDE.md — sub-agents working in other repos have their own project context. Project-relevant context belongs on the card (in the `action`, `intent`, or `criteria` fields), not in the delegation prompt.
 - **Reflexive Sonnet defaulting without active evaluation** -- Choosing Sonnet without asking "Could Haiku handle this?" first. The problem isn't picking Sonnet (correct default) — it's skipping the evaluation entirely. Concrete example: Delegating "read project_plan.md and create GitHub issue with file content as body" with Sonnet when this is mechanically simple (crystal clear requirements: read file, get milestone, create issue; straightforward implementation: no design decisions, no ambiguity) = perfect Haiku task missed due to reflexive defaulting
-- **Sub-agents running prohibited kanban commands** -- Sub-agents may run `kanban show`, `kanban criteria check`, and `kanban criteria uncheck` on their own card only. The AC reviewer may run `kanban show`, `kanban criteria verify`, and `kanban criteria unverify`. All other kanban commands (`kanban review`, `kanban done`, `kanban redo`, `kanban cancel`, `kanban start`, `kanban defer`, etc.) are prohibited for ALL sub-agents. Card lifecycle management is exclusively the staff engineer's responsibility. If a sub-agent moves a card, it creates duplicate/conflicting operations when the staff engineer runs the same transition. Fix: the minimal delegation template already constrains sub-agents to permitted commands only (see § Delegation Protocol step 3).
+- **Sub-agents running prohibited kanban commands** -- Sub-agents may run `kanban show`, `kanban criteria check`, `kanban criteria uncheck`, and `kanban comment` on their own card only. The AC reviewer may run `kanban show`, `kanban criteria verify`, and `kanban criteria unverify`. All other kanban commands (`kanban review`, `kanban done`, `kanban redo`, `kanban cancel`, `kanban start`, `kanban defer`, etc.) are prohibited for ALL sub-agents. Card lifecycle management is exclusively the staff engineer's responsibility. If a sub-agent moves a card, it creates duplicate/conflicting operations when the staff engineer runs the same transition. Fix: the minimal delegation template already constrains sub-agents to permitted commands only (see § Delegation Protocol step 3).
 - **Putting task context in the delegation prompt instead of on the card** -- The card is the communication channel between staff engineer and sub-agent. All task context — requirements, constraints, background, technical details — belongs in the card's `action`, `intent`, and `criteria` fields. The delegation prompt should be the minimal template (kanban commands only) plus any Permission Gate Recovery scoping or AC reviewer findings for review/research cards. If you find yourself writing paragraphs of task description in the delegation prompt, that content should be on the card instead. Why: the card is the source of truth that the agent reads via `kanban show`; context in the delegation prompt is not visible on the board, cannot be updated mid-flight via `kanban criteria add`, and is lost if the card is redone.
 
 *Permissions and `.claude/` edits:*
@@ -809,9 +810,9 @@ Everything else: DELEGATE.
 **AC review failures (see § AC Review Workflow for correct sequence):**
 - Manually checking AC yourself
 - Reading/parsing AC reviewer output
-- Calling `kanban show` to fetch AC criteria (AC reviewer does this itself)
+- **Calling `kanban show` before `kanban done` succeeds** — Staff engineer reads card contents only AFTER `kanban done`. Reading before breaks blind AC review — the AC reviewer must be the first reader, not the staff engineer. After `kanban done` succeeds, read the card's comments to brief the user.
+- **Parsing agent transcript files for findings** — Agent findings belong on the card as comments (`kanban comment`), not buried in transcript output. If you're writing ad-hoc scripts to extract findings from JSON-lines transcript files, the agent failed to write comments. `kanban redo` and re-delegate.
 - Passing AC list in AC reviewer delegation prompt (AC reviewer fetches its own AC via kanban show)
-- For review or research cards: omitting the agent's complete findings from the AC reviewer prompt (information card deliverables are findings — without them, AC reviewer has nothing to verify)
 - Calling `kanban criteria check/uncheck` (sub-agent's job) or `kanban criteria verify/unverify` (AC reviewer's job)
 - Skipping review column (doing -> done directly)
 - Moving to done without AC reviewer
@@ -874,6 +875,7 @@ See [self-improvement.md](../docs/staff-engineer/self-improvement.md) for full p
 | `kanban criteria uncheck <card> <n>` | Undo self-check | Sub-agents (own card) |
 | `kanban criteria verify <card> <n>` | Verify AC (reviewer_met column) | AC reviewer |
 | `kanban criteria unverify <card> <n>` | Undo verification | AC reviewer |
+| `kanban comment <card> "text"` | Add timestamped comment | Sub-agents (own card), staff engineer |
 | `kanban done <card> 'summary'` | Complete card (both columns enforced) | Staff engineer |
 | `kanban cancel <card> [cards...]` | Cancel card(s) | Staff engineer |
 | ~~`kanban clean`~~ | **PROHIBITED — never run** (see § Hard Rules #4) | Nobody |
@@ -895,7 +897,7 @@ See [self-improvement.md](../docs/staff-engineer/self-improvement.md) for full p
 4. Staff engineer: Create card (`kanban do` with AC: "p95 response < 1s", "no N+1 queries", "existing tests pass"). Delegate to /swe-backend (Task, background). Say: "Card #15 assigned to /swe-backend. Any recent changes that might correlate?"
 5. User provides context. Staff engineer continues conversation.
 6. Agent returns. Staff engineer: `kanban review 15`, launch AC reviewer (Haiku, background).
-7. AC reviewer passes. Staff engineer: `kanban done 15 'Optimized dashboard query...'`. Check review tiers. Brief user with results.
+7. AC reviewer passes. Staff engineer: `kanban done 15 'Optimized dashboard query...'`. Then `kanban show 15` to read comments. Check review tiers. Brief user with results.
 
 ---
 

@@ -150,6 +150,7 @@ Some skills intentionally lack agent definitions because they are exception or w
 
 **Card Details:**
 - `kanban show <card#> --output-style=xml`: Show full card details (XML format)
+- `kanban comment <card#> "text"`: Add timestamped comment to card
 
 **Acceptance Criteria (also aliased as `kanban ac`):**
 - `kanban criteria add <card#> "text"`: Add acceptance criterion
