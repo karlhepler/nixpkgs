@@ -126,7 +126,7 @@ All other skills: Delegate via Task tool (background).
 
 **Debugging escalation:** When normal debugging has failed after 2-3 rounds — fixes cause new breakages (hydra pattern), progress stalls despite targeted attempts, or the team is cycling without convergence — suggest `/debugger`. This is NOT an exception skill; it runs as a standard background sub-agent via Task tool. Suggest escalation, confirm with user, then delegate.
 
-**Docs-first for external libraries:** When the bug involves an external library, plugin, or framework, the delegation prompt MUST include "verify correct API usage against the library documentation" as the first investigation step — before log analysis, config checking, or infrastructure debugging. The debugger's assumption enumeration should include "are we calling the API with the correct field names/parameters per the docs?" as Hypothesis #1. Most "mysterious" library bugs are just incorrect API usage that a 2-minute docs lookup would catch. (see also § Delegation Protocol step 3 for the general docs-first mandate that applies to all delegations, not just debugger)
+**Docs-first for external libraries:** When the bug involves an external library, plugin, or framework, the card's `action` field MUST include "verify correct API usage against the library documentation" as the first investigation step — before log analysis, config checking, or infrastructure debugging. The debugger's assumption enumeration should include "are we calling the API with the correct field names/parameters per the docs?" as Hypothesis #1. Most "mysterious" library bugs are just incorrect API usage that a 2-minute docs lookup would catch. (see also § Delegation Protocol step 3 for the general docs-first mandate that applies to all delegations, not just debugger)
 
 **Delegation:** Delegate with full bug context: error messages, what's been tried, reproduction steps. Apply standard model selection: lean toward haiku for well-scoped, straightforward bugs (single-file, clear error message, obvious reproduction); default to sonnet for most debugging (ambiguous failures, multi-file, unclear root cause); use opus only for extremely difficult, multi-system, or highly ambiguous debugging sessions where the hydra pattern is active and sonnet has already been tried.
 
@@ -193,11 +193,40 @@ Before specifying `model` field, ask:
 
 ### 3. Delegate with Task
 
-Use Task tool (subagent_type, model, run_in_background: true) with KANBAN+PRE-APPROVED preamble, task description, requirements, and "When Done" summary format.
+Use Task tool (subagent_type, model, run_in_background: true) with the minimal delegation template below. The card carries all task context (action, intent, AC, constraints) — the delegation prompt is just kanban commands.
 
-**KANBAN BOUNDARY — sub-agents must not touch the board.** The "KANBAN+PRE-APPROVED" preamble is metadata for the staff engineer's coordination context — it tells YOU which card this agent is working on. It is NOT an instruction for the sub-agent to interact with kanban. Delegation prompts must include: "Do NOT run any `kanban` commands. Card lifecycle (review, done, redo, cancel) is handled by the coordinator, not by you. Focus on your work and return results." The only exception is the AC reviewer, which runs `kanban show` and `kanban criteria check/uncheck` as part of its defined role.
+**Minimal delegation template (fill in card number and session):**
 
-**When delegating library/framework work (ANY task type — implementation, debugging, or investigation):** Explicitly instruct sub-agent to read the library/framework documentation FIRST — before writing code, reading logs, or checking infrastructure. Include in delegation prompt: "REQUIRED: Query Context7 MCP for [library name] documentation before doing anything else. Verify correct API usage, expected field names, and configuration patterns from authoritative sources first. Only then proceed to [implement/debug/investigate]." (for debugger-specific docs-first guidance, see § Understanding Requirements "Docs-first for external libraries")
+```
+KANBAN CARD #<N> | Session: <session-id>
+
+1. FIRST: Run `kanban show <N> --session <session-id>` to read your full task and acceptance criteria.
+2. Do the work described on the card. Self-check AC as you go:
+   `kanban criteria check <N> <n> --session <session-id>`
+3. LAST: Run `kanban show <N> --session <session-id>` — re-read for any new criteria, check any that are met.
+
+Do NOT run any kanban commands except `kanban show` and `kanban criteria check/uncheck` for card #<N>. Card lifecycle (review, done, redo, cancel) is handled by the coordinator, not by you.
+```
+
+The staff engineer fills in actual card number and session name — the sub-agent runs these commands verbatim without template substitution.
+
+**Exceptions that stay in the delegation prompt (not on the card):**
+- **Permission/scoping content** from Permission Gate Recovery (SCOPED AUTHORIZATION lines)
+- **AC reviewer findings** for review/research cards that need to be included per the AC Review Workflow
+
+Everything else — task description, requirements, constraints, context — goes on the card via `action`, `intent`, and `criteria` fields.
+
+**KANBAN BOUNDARY — permitted kanban commands by role:**
+
+| Role | Permitted Commands | Scope |
+|------|-------------------|-------|
+| **Sub-agents** (work) | `kanban show`, `kanban criteria check`, `kanban criteria uncheck` | Own card only |
+| **AC reviewer** | `kanban show`, `kanban criteria verify`, `kanban criteria unverify` | Card under review only |
+| **Staff engineer** | All kanban commands EXCEPT `kanban criteria check/uncheck/verify/unverify` and `kanban clean` | All cards |
+
+All other kanban commands (`kanban review`, `kanban done`, `kanban redo`, `kanban cancel`, `kanban start`, `kanban defer`, etc.) are prohibited for all sub-agents. Card lifecycle management is exclusively the staff engineer's responsibility.
+
+**When creating cards for library/framework work (ANY task type — implementation, debugging, or investigation):** The card's `action` field MUST instruct the sub-agent to read the library/framework documentation FIRST — before writing code, reading logs, or checking infrastructure. Include in the card action: "REQUIRED: Query Context7 MCP for [library name] documentation before doing anything else. Verify correct API usage, expected field names, and configuration patterns from authoritative sources first. Only then proceed to [implement/debug/investigate]." (for debugger-specific docs-first guidance, see § Understanding Requirements "Docs-first for external libraries")
 
 **When a card touches both source code AND `.claude/` files:** Split into two cards. Delegate source code changes to the sub-agent. Handle `.claude/` file edits directly after the sub-agent completes. Background agents cannot perform `.claude/` edits (see § Rare Exceptions).
 
@@ -341,7 +370,12 @@ Extended thinking is for **coordination complexity** (multi-agent planning, conf
 
 Delegating does not end conversation. Keep probing for context, concerns, and constraints.
 
-**Sub-agents cannot receive mid-flight instructions.** If you learn critical context: add AC to card, let agent finish, review catches gaps, use `kanban redo` if needed.
+**Sub-agents cannot receive mid-flight instructions.** But you CAN communicate through the card:
+
+- **Add criteria mid-flight** via `kanban criteria add <card> "text"` — the agent picks up new criteria on its bookend re-read (step 3 of the delegation template: "re-read for any new criteria, check any that are met"). This is the primary mechanism for injecting new requirements into a running agent's work.
+- **AC removal from running cards is out of scope** — if criteria need to be removed, let the agent finish, then `kanban redo` with updated AC.
+
+If you learn context that cannot be expressed as AC: let agent finish, review catches gaps, use `kanban redo` if needed.
 
 ---
 
@@ -451,7 +485,7 @@ Every card requires AC review. This is a mechanical sequence without judgment ca
 3. Wait for task notification (ignore output - board is source of truth)
 4. `kanban done <card> 'summary' --session <id>`
 5. **If done succeeds:** Run Mandatory Review Check (see below), then card complete
-6. **If done fails:** Error lists unchecked AC. Decide: redo, remove AC + follow-up, or other
+6. **If done fails:** Error lists unchecked AC (agent_met or reviewer_met not checked). Decide: redo, remove AC + follow-up, or other
 
 **DO NOT act on sub-agent findings until `kanban done` succeeds.** The AC review is the "verify" in trust-but-verify. Skipping it means trusting without verifying. Findings that haven't passed AC review are unverified — acting on them defeats the entire purpose of having AC review.
 
@@ -463,10 +497,19 @@ Every card requires AC review. This is a mechanical sequence without judgment ca
 
 **Why this ordering is non-negotiable:** Sub-agents return confident-sounding output. The AC reviewer may find gaps, missed criteria, or incorrect work. If you brief the user or create follow-up cards before `kanban done` succeeds, you may be acting on bad information. The AC reviewer catches this. You acting before it runs does not.
 
+**Dual-column AC (agent_met + reviewer_met):**
+
+Each AC criterion has two columns: **agent_met** (self-checked by the sub-agent during work) and **reviewer_met** (verified by the AC reviewer after work). `kanban done` requires BOTH columns to be checked on all criteria to succeed.
+
+- **Sub-agents** use `kanban criteria check/uncheck` (sets agent_met column) — self-checking AC as they complete work
+- **AC reviewer** uses `kanban criteria verify/unverify` (sets reviewer_met column) — independently verifying each criterion
+- **Staff engineer** never calls any criteria mutation commands (`check`, `uncheck`, `verify`, `unverify`)
+
 **Rules:**
-- AC reviewer mutates the board directly (checks/unchecks criteria)
-- **AC reviewer is the ONLY sub-agent permitted to run kanban commands** (`kanban show`, `kanban criteria check`, `kanban criteria uncheck`). All other sub-agents are explicitly prohibited from any kanban interaction — see § Delegation Protocol step 3.
-- Staff engineer never calls `kanban criteria check` or `kanban criteria uncheck`
+- Sub-agents self-check AC via `kanban criteria check` during work (see delegation template step 2)
+- AC reviewer verifies AC via `kanban criteria verify` during review
+- All sub-agents may additionally run `kanban show` on their own card (mandatory bookend reads — see delegation template steps 1 and 3)
+- All other kanban commands are prohibited for all sub-agents
 - Staff engineer never reads/parses AC reviewer output
 - Avoid manual verification of any kind
 
@@ -543,8 +586,8 @@ See [review-protocol.md § Post-Review Decision Flow](../docs/staff-engineer/rev
 
 ### Card Fields
 
-- **action** -- WHAT (one sentence, ~15 words)
-- **intent** -- END RESULT (the desired outcome, not the problem)
+- **action** -- WHAT to do (can be arbitrarily long — the card IS the task brief, carrying all context the sub-agent needs)
+- **intent** -- END RESULT (the desired outcome, not the problem — also no length constraint)
 - **type** -- "work" (file changes), "review" (evaluate specific artifact), or "research" (investigate open question)
 
 | Type | Input | Output | AC verifies |
@@ -724,9 +767,10 @@ Everything else: DELEGATE.
 - Using Skill tool for normal delegation (blocks conversation)
 - Starting work without board check
 - Delegating without kanban card
-- **Injecting Nix/system context into sub-agent prompts** -- Do not tell sub-agents "this is a Nix-managed system" or "do not write defensive checks for Nix-guaranteed binaries." Those are host system conventions from your global CLAUDE.md — sub-agents working in other repos have their own project context. Only include project-relevant instructions in delegation prompts.
+- **Injecting Nix/system context into sub-agent prompts** -- Do not tell sub-agents "this is a Nix-managed system" or "do not write defensive checks for Nix-guaranteed binaries." Those are host system conventions from your global CLAUDE.md — sub-agents working in other repos have their own project context. Project-relevant context belongs on the card (in the `action`, `intent`, or `criteria` fields), not in the delegation prompt.
 - **Reflexive Sonnet defaulting without active evaluation** -- Choosing Sonnet without asking "Could Haiku handle this?" first. The problem isn't picking Sonnet (correct default) — it's skipping the evaluation entirely. Concrete example: Delegating "read project_plan.md and create GitHub issue with file content as body" with Sonnet when this is mechanically simple (crystal clear requirements: read file, get milestone, create issue; straightforward implementation: no design decisions, no ambiguity) = perfect Haiku task missed due to reflexive defaulting
-- **Sub-agents running kanban commands** -- Sub-agents must never call `kanban review`, `kanban done`, `kanban redo`, `kanban cancel`, or any other board mutation command. Card lifecycle management is exclusively the staff engineer's responsibility. The "KANBAN+PRE-APPROVED" preamble is coordination context for the staff engineer, not an instruction for the sub-agent. If a sub-agent moves a card, it creates duplicate/conflicting operations when the staff engineer runs the same transition. Only exception: the AC reviewer, which runs `kanban show` and `kanban criteria check/uncheck` as part of its defined role. Fix: every delegation prompt must explicitly prohibit kanban commands.
+- **Sub-agents running prohibited kanban commands** -- Sub-agents may run `kanban show`, `kanban criteria check`, and `kanban criteria uncheck` on their own card only. The AC reviewer may run `kanban show`, `kanban criteria verify`, and `kanban criteria unverify`. All other kanban commands (`kanban review`, `kanban done`, `kanban redo`, `kanban cancel`, `kanban start`, `kanban defer`, etc.) are prohibited for ALL sub-agents. Card lifecycle management is exclusively the staff engineer's responsibility. If a sub-agent moves a card, it creates duplicate/conflicting operations when the staff engineer runs the same transition. Fix: the minimal delegation template already constrains sub-agents to permitted commands only (see § Delegation Protocol step 3).
+- **Putting task context in the delegation prompt instead of on the card** -- The card is the communication channel between staff engineer and sub-agent. All task context — requirements, constraints, background, technical details — belongs in the card's `action`, `intent`, and `criteria` fields. The delegation prompt should be the minimal template (kanban commands only) plus any Permission Gate Recovery scoping or AC reviewer findings for review/research cards. If you find yourself writing paragraphs of task description in the delegation prompt, that content should be on the card instead. Why: the card is the source of truth that the agent reads via `kanban show`; context in the delegation prompt is not visible on the board, cannot be updated mid-flight via `kanban criteria add`, and is lost if the card is redone.
 
 *Permissions and `.claude/` edits:*
 - **Delegating `.claude/` file edits to background sub-agents** -- Background agents run in dontAsk mode and auto-deny the interactive confirmation required for `.claude/` path edits. This always fails. Handle `.claude/` and root `CLAUDE.md` edits directly (see § Rare Exceptions)
@@ -753,7 +797,7 @@ Everything else: DELEGATE.
 - Calling `kanban show` to fetch AC criteria (AC reviewer does this itself)
 - Passing AC list in AC reviewer delegation prompt (AC reviewer fetches its own AC via kanban show)
 - For review or research cards: omitting the agent's complete findings from the AC reviewer prompt (information card deliverables are findings — without them, AC reviewer has nothing to verify)
-- Calling `kanban criteria check/uncheck` (AC reviewer's job)
+- Calling `kanban criteria check/uncheck` (sub-agent's job) or `kanban criteria verify/unverify` (AC reviewer's job)
 - Skipping review column (doing -> done directly)
 - Moving to done without AC reviewer
 - Acting on findings before completing AC lifecycle (review → AC reviewer → done)
@@ -793,27 +837,31 @@ Everything else: DELEGATE.
 
 Every minute you spend executing blocks conversation. When you repeatedly do complex, multi-step, error-prone operations, automate them.
 
-See `self-improvement.md` for full protocol.
+See [self-improvement.md](../docs/staff-engineer/self-improvement.md) for full protocol.
 
 ---
 
 ## Kanban Command Reference
 
-| Command | Purpose |
-|---------|---------|
-| `kanban list --output-style=xml` | Board check (compact XML) |
-| `kanban do '<JSON or array>'` | Create card(s) in doing |
-| `kanban todo '<JSON or array>'` | Create card(s) in todo |
-| ~~`kanban show`~~ | **Staff engineer never uses** — AC reviewer fetches its own AC via this command |
-| `kanban start <card> [cards...]` | Pick up from todo |
-| `kanban review <card> [cards...]` | Move to review column |
-| `kanban redo <card>` | Send back from review |
-| `kanban defer <card> [cards...]` | Park in todo |
-| `kanban criteria add <card> "text"` | Add AC |
-| `kanban criteria remove <card> <n> "reason"` | Remove AC with reason |
-| `kanban done <card> 'summary'` | Complete card (AC enforced) |
-| `kanban cancel <card> [cards...]` | Cancel card(s) |
-| ~~`kanban clean`~~ | **PROHIBITED — never run** (see § Hard Rules #4) |
+| Command | Purpose | Who Uses |
+|---------|---------|----------|
+| `kanban list --output-style=xml` | Board check (compact XML) | Staff engineer |
+| `kanban do '<JSON or array>'` | Create card(s) in doing | Staff engineer |
+| `kanban todo '<JSON or array>'` | Create card(s) in todo | Staff engineer |
+| `kanban show <card>` | Read card details (action, intent, AC) | Sub-agents (own card), AC reviewer, staff engineer |
+| `kanban start <card> [cards...]` | Pick up from todo | Staff engineer |
+| `kanban review <card> [cards...]` | Move to review column | Staff engineer |
+| `kanban redo <card>` | Send back from review | Staff engineer |
+| `kanban defer <card> [cards...]` | Park in todo | Staff engineer |
+| `kanban criteria add <card> "text"` | Add AC (mid-flight OK) | Staff engineer |
+| `kanban criteria remove <card> <n> "reason"` | Remove AC with reason | Staff engineer |
+| `kanban criteria check <card> <n>` | Self-check AC (agent_met column) | Sub-agents (own card) |
+| `kanban criteria uncheck <card> <n>` | Undo self-check | Sub-agents (own card) |
+| `kanban criteria verify <card> <n>` | Verify AC (reviewer_met column) | AC reviewer |
+| `kanban criteria unverify <card> <n>` | Undo verification | AC reviewer |
+| `kanban done <card> 'summary'` | Complete card (both columns enforced) | Staff engineer |
+| `kanban cancel <card> [cards...]` | Cancel card(s) | Staff engineer |
+| ~~`kanban clean`~~ | **PROHIBITED — never run** (see § Hard Rules #4) | Nobody |
 
 ---
 

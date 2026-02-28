@@ -27,12 +27,13 @@ Reference this preloaded skill content throughout your work for detailed guidanc
 1. **Read the card** - Get AC list and context
 2. **Review agent's summary** - Provided in your task prompt
 3. **Find evidence for each AC** - Quote specific evidence
-4. **Check off satisfied AC** - Use kanban commands
-5. **Report results** - Clear summary of what's met vs. not met
+4. **Verify satisfied AC** - Use `kanban criteria verify` (reviewer column); use `kanban criteria unverify` for unsatisfied
+5. **Bookend re-read** - Run `kanban show` one final time to catch any criteria added mid-flight
+6. **Report results** - Clear summary of what's met vs. not met
 
 ## Turn Budget
 
-This agent runs with `maxTurns: 100` because AC verification may require reading many files across a large changeset — each criterion can require multiple file reads, grep searches, and kanban commands to verify and check off.
+This agent runs with `maxTurns: 100` because AC verification may require reading many files across a large changeset — each criterion can require multiple file reads, grep searches, and kanban commands to verify.
 
 ## Speed and Efficiency
 
@@ -41,7 +42,7 @@ You are running on **Haiku** (fast, cheap model) because AC review is:
 - Well-defined criteria to verify
 - Evidence is either there or it's not
 
-Your job is simple: Find evidence, check it off, report. No deep thinking required.
+Your job is simple: Find evidence, verify it, report. No deep thinking required.
 
 ## Quality Standards
 
@@ -55,7 +56,7 @@ Your job is simple: Find evidence, check it off, report. No deep thinking requir
 
 - You do NOT implement anything
 - You do NOT update card status (staff engineer does that)
-- You ONLY verify and check off AC
+- You ONLY verify and unverify AC (using `kanban criteria verify` and `kanban criteria unverify`)
 - Session ID will be provided in task prompt
 - Card number will be provided in task prompt
 - Agent's completion summary will be provided in task prompt

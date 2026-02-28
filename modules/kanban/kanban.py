@@ -20,6 +20,7 @@ import json
 import os
 import re
 import select
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -230,9 +231,31 @@ def get_root(args_root: str | None, auto_init: bool = True) -> Path:
 # Card I/O (JSON format)
 # =============================================================================
 
+def migrate_criteria(card: dict) -> bool:
+    """Migrate old single-column criteria (met) to dual-column (agent_met, reviewer_met).
+
+    Returns True if migration was performed and the card should be persisted.
+    """
+    criteria = card.get("criteria")
+    if not criteria:
+        return False
+
+    migrated = False
+    for criterion in criteria:
+        if "met" in criterion and "agent_met" not in criterion:
+            criterion["agent_met"] = criterion.pop("met")
+            criterion["reviewer_met"] = False
+            migrated = True
+
+    return migrated
+
+
 def read_card(path: Path) -> dict:
-    """Read a JSON card file."""
-    return json.loads(path.read_text())
+    """Read a JSON card file, transparently migrating old criteria schema if needed."""
+    card = json.loads(path.read_text())
+    if migrate_criteria(card):
+        write_card(path, card)
+    return card
 
 
 def write_card(path: Path, card: dict) -> None:
@@ -589,7 +612,6 @@ def cmd_session_hook(args) -> None:
     # One-time cleanup of legacy nonce directory
     legacy = Path("/tmp/kanban-nonces")
     if legacy.exists():
-        import shutil
         shutil.rmtree(legacy, ignore_errors=True)
 
 
@@ -622,7 +644,7 @@ def make_card(
 
     # Add acceptance criteria if provided
     if criteria:
-        card["criteria"] = [{"text": c, "met": False} for c in criteria]
+        card["criteria"] = [{"text": c, "agent_met": False, "reviewer_met": False} for c in criteria]
 
     return card
 
@@ -910,10 +932,12 @@ def cmd_show(args) -> None:
     if criteria:
         output_lines.append("")
         output_lines.append(f"{dim_bold}  Acceptance Criteria{reset}")
+        output_lines.append(f"  [agent][reviewer]")
         for i, criterion in enumerate(criteria, start=1):
-            checkbox = "✅" if criterion.get("met", False) else "⬜"
+            agent_box = "✅" if criterion.get("agent_met", False) else "⬜"
+            reviewer_box = "✅" if criterion.get("reviewer_met", False) else "⬜"
             text = criterion.get("text", "")
-            output_lines.append(f"  {checkbox} {i}. {text}")
+            output_lines.append(f"  [{agent_box}][{reviewer_box}] {i}. {text}")
 
     # Edit files section
     edit_files = card.get("editFiles") or card.get("writeFiles", [])
@@ -1009,7 +1033,7 @@ def cmd_criteria_add(args) -> None:
     if "criteria" not in card:
         card["criteria"] = []
 
-    card["criteria"].append({"text": args.text, "met": False})
+    card["criteria"].append({"text": args.text, "agent_met": False, "reviewer_met": False})
     card["updated"] = now_iso()
     write_card(card_path, card)
     print(f"Added criterion to #{card_number(card_path)}: {args.text}")
@@ -1056,8 +1080,22 @@ def cmd_criteria_remove(args) -> None:
     print(f"Reason: {args.reason}")
 
 
+def _find_criterion_idx(criteria: list, criterion_arg: str) -> int | None:
+    """Find a criterion's 0-based index by 1-based integer or text prefix."""
+    if str(criterion_arg).isdigit():
+        idx = int(criterion_arg) - 1
+        if 0 <= idx < len(criteria):
+            return idx
+    else:
+        search_text = str(criterion_arg).lower()
+        for i, c in enumerate(criteria):
+            if c.get("text", "").lower().startswith(search_text):
+                return i
+    return None
+
+
 def cmd_criteria_check(args) -> None:
-    """Mark acceptance criterion(s) as met."""
+    """Mark acceptance criterion(s) as met (sets agent_met)."""
     root = get_root(args.root)
     card_path = find_card(root, args.card)
     card = read_card(card_path)
@@ -1068,25 +1106,12 @@ def cmd_criteria_check(args) -> None:
         sys.exit(1)
 
     for criterion_arg in args.n:
-        # Find criterion by 1-based index or text prefix match
-        criterion_idx = None
-        if str(criterion_arg).isdigit():
-            idx = int(criterion_arg) - 1  # Convert to 0-based
-            if 0 <= idx < len(criteria):
-                criterion_idx = idx
-        else:
-            # Text prefix match (case insensitive)
-            search_text = str(criterion_arg).lower()
-            for i, c in enumerate(criteria):
-                if c.get("text", "").lower().startswith(search_text):
-                    criterion_idx = i
-                    break
-
+        criterion_idx = _find_criterion_idx(criteria, criterion_arg)
         if criterion_idx is None:
             print(f"Error: No criterion found matching '{criterion_arg}'", file=sys.stderr)
             sys.exit(1)
 
-        criteria[criterion_idx]["met"] = True
+        criteria[criterion_idx]["agent_met"] = True
         print(f"✅ Checked: {criteria[criterion_idx]['text']}")
 
     card["updated"] = now_iso()
@@ -1094,7 +1119,7 @@ def cmd_criteria_check(args) -> None:
 
 
 def cmd_criteria_uncheck(args) -> None:
-    """Mark acceptance criterion(s) as unmet."""
+    """Mark acceptance criterion(s) as unmet (clears agent_met)."""
     root = get_root(args.root)
     card_path = find_card(root, args.card)
     card = read_card(card_path)
@@ -1105,26 +1130,61 @@ def cmd_criteria_uncheck(args) -> None:
         sys.exit(1)
 
     for criterion_arg in args.n:
-        # Find criterion by 1-based index or text prefix match
-        criterion_idx = None
-        if str(criterion_arg).isdigit():
-            idx = int(criterion_arg) - 1  # Convert to 0-based
-            if 0 <= idx < len(criteria):
-                criterion_idx = idx
-        else:
-            # Text prefix match (case insensitive)
-            search_text = str(criterion_arg).lower()
-            for i, c in enumerate(criteria):
-                if c.get("text", "").lower().startswith(search_text):
-                    criterion_idx = i
-                    break
-
+        criterion_idx = _find_criterion_idx(criteria, criterion_arg)
         if criterion_idx is None:
             print(f"Error: No criterion found matching '{criterion_arg}'", file=sys.stderr)
             sys.exit(1)
 
-        criteria[criterion_idx]["met"] = False
+        criteria[criterion_idx]["agent_met"] = False
         print(f"⬜ Unchecked: {criteria[criterion_idx]['text']}")
+
+    card["updated"] = now_iso()
+    write_card(card_path, card)
+
+
+def cmd_criteria_verify(args) -> None:
+    """Mark acceptance criterion(s) as reviewer-verified (sets reviewer_met)."""
+    root = get_root(args.root)
+    card_path = find_card(root, args.card)
+    card = read_card(card_path)
+
+    criteria = card.get("criteria", [])
+    if not criteria:
+        print(f"Error: Card #{card_number(card_path)} has no acceptance criteria", file=sys.stderr)
+        sys.exit(1)
+
+    for criterion_arg in args.n:
+        criterion_idx = _find_criterion_idx(criteria, criterion_arg)
+        if criterion_idx is None:
+            print(f"Error: No criterion found matching '{criterion_arg}'", file=sys.stderr)
+            sys.exit(1)
+
+        criteria[criterion_idx]["reviewer_met"] = True
+        print(f"[✅] Verified: {criteria[criterion_idx]['text']}")
+
+    card["updated"] = now_iso()
+    write_card(card_path, card)
+
+
+def cmd_criteria_unverify(args) -> None:
+    """Clear reviewer verification on acceptance criterion(s) (clears reviewer_met)."""
+    root = get_root(args.root)
+    card_path = find_card(root, args.card)
+    card = read_card(card_path)
+
+    criteria = card.get("criteria", [])
+    if not criteria:
+        print(f"Error: Card #{card_number(card_path)} has no acceptance criteria", file=sys.stderr)
+        sys.exit(1)
+
+    for criterion_arg in args.n:
+        criterion_idx = _find_criterion_idx(criteria, criterion_arg)
+        if criterion_idx is None:
+            print(f"Error: No criterion found matching '{criterion_arg}'", file=sys.stderr)
+            sys.exit(1)
+
+        criteria[criterion_idx]["reviewer_met"] = False
+        print(f"[⬜] Unverified: {criteria[criterion_idx]['text']}")
 
     card["updated"] = now_iso()
     write_card(card_path, card)
@@ -1137,6 +1197,8 @@ def cmd_criteria_dispatch(args) -> None:
         "remove": cmd_criteria_remove,
         "check": cmd_criteria_check,
         "uncheck": cmd_criteria_uncheck,
+        "verify": cmd_criteria_verify,
+        "unverify": cmd_criteria_unverify,
     }
     handler = subcommand_map.get(args.criteria_command)
     if handler:
@@ -1182,9 +1244,10 @@ def format_card_xml(card: dict, num: str, col: str, include_details: bool = Fals
         if criteria:
             xml_parts.append("  <acceptance-criteria>")
             for criterion in criteria:
-                met = "true" if criterion.get("met", False) else "false"
+                agent_met = "true" if criterion.get("agent_met", False) else "false"
+                reviewer_met = "true" if criterion.get("reviewer_met", False) else "false"
                 text = esc(criterion.get("text", ""))
-                xml_parts.append(f'    <ac met="{met}">{text}</ac>')
+                xml_parts.append(f'    <ac agent-met="{agent_met}" reviewer-met="{reviewer_met}">{text}</ac>')
             xml_parts.append("  </acceptance-criteria>")
 
     # Edit files
@@ -1284,15 +1347,35 @@ def format_card_line(card: dict, num: str, show_session: bool = False, output_st
         prefix = "\n"
 
     session = card.get("session", "")
-    session_suffix = f" {dim}({session[:8]}){reset}" if (session and show_session) else ""
-    line = f"{prefix}  #{num} {card.get('action', '[NO ACTION]')}{session_suffix}"
+    action = card.get("action", "[NO ACTION]")
 
-    # Add lead time for done cards
+    # Compute plain-text suffix widths before applying ANSI codes
+    plain_session_suffix = f" ({session[:8]})" if (session and show_session) else ""
+    plain_lead_time_suffix = ""
+    lead_time_str = None
     if column == "done":
         lead_time_seconds = calculate_lead_time(card)
         if lead_time_seconds is not None:
             lead_time_str = format_lead_time(lead_time_seconds)
-            line += f" {dim}({lead_time_str}){reset}"
+            plain_lead_time_suffix = f" ({lead_time_str})"
+    plain_suffix_width = len(plain_session_suffix) + len(plain_lead_time_suffix)
+
+    # Truncate action text to fit terminal width (simple style only)
+    # Prefix: "  #NNN " = 2 spaces + "#" + num + " " = len(num) + 4
+    if output_style == "simple":
+        terminal_width = shutil.get_terminal_size().columns
+        prefix_width = len(num) + 4  # "  #NNN "
+        available = terminal_width - prefix_width - plain_suffix_width
+        if available >= 20 and len(action) > available:
+            action = action[:available - 3] + "..."
+
+    # Build ANSI-decorated suffixes after truncation
+    session_suffix = f" {dim}({session[:8]}){reset}" if (session and show_session) else ""
+    line = f"{prefix}  #{num} {action}{session_suffix}"
+
+    # Add lead time for done cards
+    if lead_time_str is not None:
+        line += f" {dim}({lead_time_str}){reset}"
 
     # Simple style: title only
     if output_style == "simple":
@@ -1327,10 +1410,12 @@ def format_card_line(card: dict, num: str, show_session: bool = False, output_st
         criteria = card.get("criteria", [])
         if criteria:
             criteria_section = f"{dim}    Acceptance Criteria\n"
+            criteria_section += f"    [agent][reviewer]\n"
             for i, criterion in enumerate(criteria, start=1):
-                checkbox = "✅" if criterion.get("met", False) else "⬜"
+                agent_box = "✅" if criterion.get("agent_met", False) else "⬜"
+                reviewer_box = "✅" if criterion.get("reviewer_met", False) else "⬜"
                 text = criterion.get("text", "")
-                criteria_section += f"    {checkbox} {i}. {text}\n"
+                criteria_section += f"    [{agent_box}][{reviewer_box}] {i}. {text}\n"
             criteria_section = criteria_section.rstrip("\n") + reset
             sections.append(criteria_section)
 
@@ -1751,16 +1836,24 @@ def cmd_done(args) -> None:
     card = read_card(card_path)
     num = card_number(card_path)
 
-    # Block if acceptance criteria are unmet
+    # Block if any acceptance criteria have either column unmet
     criteria = card.get("criteria", [])
     if criteria:
-        unmet = [c for c in criteria if not c.get("met", False)]
-        if unmet:
-            print(f"🛑 Cannot complete card #{num} — {len(unmet)} of {len(criteria)} acceptance criteria unmet:", file=sys.stderr)
+        incomplete = [
+            (i, c) for i, c in enumerate(criteria, start=1)
+            if not c.get("agent_met", False) or not c.get("reviewer_met", False)
+        ]
+        if incomplete:
+            total_incomplete = len(incomplete)
+            print(f"🛑 Cannot complete card #{num} — {total_incomplete} of {len(criteria)} acceptance criteria incomplete:", file=sys.stderr)
+            print(f"  {'[agent]':<8} {'[reviewer]':<10}  criterion", file=sys.stderr)
             for i, criterion in enumerate(criteria, start=1):
-                if not criterion.get("met", False):
-                    print(f"  ⬜ {i}. {criterion.get('text', '')}", file=sys.stderr)
-            print(f"\nCheck items with: kanban criteria check {num} <n>", file=sys.stderr)
+                agent_box = "✅" if criterion.get("agent_met", False) else "⬜"
+                reviewer_box = "✅" if criterion.get("reviewer_met", False) else "⬜"
+                text = criterion.get("text", "")
+                print(f"  [{agent_box}]     [{reviewer_box}]       {i}. {text}", file=sys.stderr)
+            print(f"\nAgent checks: kanban criteria check {num} <n>", file=sys.stderr)
+            print(f"Reviewer verification: kanban criteria verify {num} <n>", file=sys.stderr)
             sys.exit(1)
 
     # Append completion message to activity
@@ -2362,10 +2455,20 @@ def main() -> None:
     p_criteria_check.add_argument("n", nargs="+", help="Criterion index(es) (1-based) or text prefix(es)")
     add_session_flags(p_criteria_check)
 
-    p_criteria_uncheck = criteria_subparsers.add_parser("uncheck", parents=[parent_parser], help="Mark criterion as unmet")
+    p_criteria_uncheck = criteria_subparsers.add_parser("uncheck", parents=[parent_parser], help="Mark criterion as unmet (clears agent_met)")
     p_criteria_uncheck.add_argument("card", help="Card number")
     p_criteria_uncheck.add_argument("n", nargs="+", help="Criterion index(es) (1-based) or text prefix(es)")
     add_session_flags(p_criteria_uncheck)
+
+    p_criteria_verify = criteria_subparsers.add_parser("verify", parents=[parent_parser], help="Mark criterion as reviewer-verified (sets reviewer_met)")
+    p_criteria_verify.add_argument("card", help="Card number")
+    p_criteria_verify.add_argument("n", nargs="+", help="Criterion index(es) (1-based) or text prefix(es)")
+    add_session_flags(p_criteria_verify)
+
+    p_criteria_unverify = criteria_subparsers.add_parser("unverify", parents=[parent_parser], help="Clear reviewer verification (clears reviewer_met)")
+    p_criteria_unverify.add_argument("card", help="Card number")
+    p_criteria_unverify.add_argument("n", nargs="+", help="Criterion index(es) (1-based) or text prefix(es)")
+    add_session_flags(p_criteria_unverify)
 
     # --- list / ls ---
     for alias in ["list", "ls"]:

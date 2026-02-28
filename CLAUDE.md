@@ -93,6 +93,7 @@ Some skills intentionally lack agent definitions because they are exception or w
 
 - **Exception skills** (learn, workout-burns, workout-staff, project-planner) — Run via Skill tool directly, not delegated as background sub-agents. These are specialized capabilities invoked for specific use cases, not general-purpose team members.
 - **Workflow skills** (manage-pr-comments, review-pr-comments) — Run via Skill tool with specific CLI tooling integration. These coordinate external processes and don't fit the standard team member pattern.
+- **Multi-file skills** (review) — Live in `skills/<name>/SKILL.md` instead of `commands/<name>.md` because they have supporting files (e.g., `skills/review/review-citation-guide.md`, `skills/review/review-domains.md`). Deployed via `default.nix` skill copy rules, not the standard commands glob. No agent definition — invoked via Skill tool directly.
 
 **Important:** The "Adding a team member" process (skill + agent) applies to standard delegatable team members only, not these exceptions. When updating or adding skills, distinguish between standard delegatable skills and exception/workflow skills.
 

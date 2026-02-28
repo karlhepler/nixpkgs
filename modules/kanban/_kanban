@@ -75,6 +75,8 @@ _kanban() {
         'canceled:View cards in canceled column'
         'nonce:Output session identifier for session detection'
         'assign:Change or remove session ownership'
+        'criteria:Manage acceptance criteria (alias: ac)'
+        'ac:Manage acceptance criteria (alias for criteria)'
         'clear:Delete all cards from columns'
       )
       _describe -t commands 'kanban command' commands
@@ -177,6 +179,43 @@ _kanban() {
             '--yes[Skip confirmation]' \
             '-y[Skip confirmation]' \
             '--watch[Auto-refresh on changes]'
+          ;;
+        criteria|ac)
+          # Dispatch to criteria subcommand completions
+          local -a subcommands
+          subcommands=(
+            'add:Add acceptance criterion'
+            'remove:Remove acceptance criterion'
+            'check:Mark criterion as met'
+            'uncheck:Mark criterion as unmet'
+            'verify:Mark criterion as reviewer-verified'
+            'unverify:Clear reviewer verification'
+          )
+          _describe -t subcommands 'criteria subcommand' subcommands
+
+          # Handle subcommand arguments
+          local subcommand="$line[2]"
+          case $subcommand in
+            add)
+              _arguments \
+                '1:card:_kanban_cards' \
+                '2:text:' \
+                '--session[Session ID]:session:'
+              ;;
+            remove)
+              _arguments \
+                '1:card:_kanban_cards' \
+                '2:criterion_number:' \
+                '3:reason:' \
+                '--session[Session ID]:session:'
+              ;;
+            check|uncheck|verify|unverify)
+              _arguments \
+                '1:card:_kanban_cards' \
+                '*:criterion_indices:' \
+                '--session[Session ID]:session:'
+              ;;
+          esac
           ;;
         clear)
           _arguments \
