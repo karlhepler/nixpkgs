@@ -1,6 +1,6 @@
 # Claude Code Guidelines
 
-> **Tools:** See [TOOLS.md](./TOOLS.md). Use `rg` not `grep`, `fd` not `find`, custom git utilities.
+> **Tools:** See [TOOLS.md](./TOOLS.md). **🚨 Use `rg` not `grep`, `fd` not `find`** (see § Use `rg` and `fd`). Custom git utilities available.
 
 > **Context7 MCP:** When working with external libraries/frameworks, query Context7 MCP for authoritative documentation before implementing.
 
@@ -220,6 +220,69 @@ When delegating work via Task tool:
 - Standard library first
 - Well-maintained open-source libraries
 - Build custom only when nothing else works
+
+---
+
+## 🚨 Use `rg` and `fd` — NEVER `grep` or `find` 🚨
+
+**CRITICAL: This system uses ripgrep (`rg`) and fd (`fd`). Both are Nix-guaranteed.**
+
+**NEVER use `grep` or `find` in Bash.** When you need to search file contents or find files via the Bash tool, use `rg` and `fd` respectively. They are faster, have saner defaults, and are the standard tools in this environment.
+
+❌ **NEVER run via Bash:**
+```bash
+grep -r "pattern" src/
+grep -rn "TODO" .
+find . -name "*.ts"
+find . -type f -name "*.py"
+```
+
+✅ **ALWAYS use instead:**
+```bash
+rg "pattern" src/
+rg -n "TODO" .
+fd -e ts
+fd -e py
+```
+
+### Quick Syntax Reference
+
+**rg (ripgrep)** — replaces `grep`:
+| grep | rg equivalent |
+|------|---------------|
+| `grep -r "pattern" dir/` | `rg "pattern" dir/` (recursive by default) |
+| `grep -rn "pattern"` | `rg -n "pattern"` (line numbers) |
+| `grep -ri "pattern"` | `rg -i "pattern"` (case insensitive) |
+| `grep -rl "pattern"` | `rg -l "pattern"` (files only) |
+| `grep -rw "word"` | `rg -w "word"` (word boundary) |
+| `grep -c "pattern" file` | `rg -c "pattern" file` (count matches) |
+| `grep -v "pattern"` | `rg -v "pattern"` (invert match) |
+| `grep -A3 -B3 "pattern"` | `rg -C3 "pattern"` (context lines) |
+| `grep --include="*.ts" -r "pattern"` | `rg -t ts "pattern"` (file type filter) |
+| `grep -E "regex\|pattern"` | `rg "regex\|pattern"` (extended regex by default) |
+
+Key differences: `rg` is recursive by default, respects `.gitignore`, uses smart case (case-insensitive when pattern is all lowercase, case-sensitive otherwise).
+
+**fd** — replaces `find`:
+| find | fd equivalent |
+|------|---------------|
+| `find . -name "*.ts"` | `fd -e ts` (extension filter) |
+| `find . -name "foo*"` | `fd "foo"` (pattern match, recursive by default) |
+| `find . -type f -name "*.py"` | `fd -e py` (files only is default) |
+| `find . -type d -name "src"` | `fd -t d "src"` (directories only) |
+| `find . -name "*.log" -delete` | `fd -e log -x rm {}` (execute command) |
+| `find . -path "*/test/*" -name "*.ts"` | `fd -e ts . test/` (search in directory) |
+| `find . -maxdepth 2 -name "*.md"` | `fd -d 2 -e md` (max depth) |
+| `find . -newer file.txt` | `fd --changed-within 1d` (recent files) |
+
+Key differences: `fd` is recursive by default, respects `.gitignore`, uses regex patterns (not globs), and has simpler syntax for common operations.
+
+### Self-Check Before Running Bash
+
+Before running ANY search or file-finding Bash command:
+1. Does my command start with `grep`? → REWRITE with `rg`
+2. Does my command start with `find`? → REWRITE with `fd`
+3. Am I piping `find` into `grep`? → Likely one `rg` or `fd` command handles both
 
 ---
 
