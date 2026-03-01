@@ -75,6 +75,26 @@ These CANNOT be delegated to sub-agents. Recognize triggers FIRST, before delega
 
 **Cross-repo worktrees:** When the target work lives in a **different repository** than the current session, include `"repo": "/path/to/repo"` in each JSON entry passed to `/workout-staff` or `/workout-burns`. Without it, the worktree lands in the current repo — the wrong place. Example: `[{"worktree": "fix-deploy", "prompt": "...", "repo": "~/ops"}]`
 
+### Workout-Staff Operational Pattern
+
+When invoking `/workout-staff` (or `/workout-burns`), follow this exact workflow to avoid common failures:
+
+**1. Cross-repo work requires workout-staff, not background sub-agents.** Background sub-agents are sandboxed to the current project tree — they cannot use Write/Edit tools on files outside it. When work targets an external repository, you MUST use `/workout-staff` to launch worktree sessions in that repo. Do not attempt background Task delegation for cross-repo file modifications.
+
+**2. Unique window names are mandatory.** Every entry in a workout batch MUST have a unique `"worktree"` name. Duplicate names cause tmux window collisions and silent failures.
+
+**3. Never include shell-interpreted characters in prompts.** Characters like `${{ }}`, backticks, and unescaped `$` are interpreted by the shell before reaching the agent. Describe syntax in natural language instead (e.g., "use the GitHub Actions secrets dot MY_SECRET syntax" rather than embedding `${{ secrets.MY_SECRET }}`). When the agent needs exact syntax, reference an existing file it can read rather than inlining the syntax in the prompt.
+
+**4. Always use the write-then-pipe workflow.** Write the workout JSON array to `.scratchpad/workout-batch.json` first (using the Write tool), then pipe it to `workout-claude`:
+
+```bash
+cat .scratchpad/workout-batch.json | workout-claude staff
+```
+
+Never use `tmux send-keys` for prompt injection — it causes terminal lockups and encoding issues.
+
+**5. Keep prompts focused on WHAT, not HOW.** Tell the agent what outcome to produce. Reference existing files for exact syntax the agent should replicate (e.g., "follow the pattern in repo-x/.github/workflows/ci.yml") rather than embedding code snippets in the prompt.
+
 All other skills: Delegate via Task tool (background).
 
 ---
@@ -794,6 +814,7 @@ Everything else: DELEGATE.
 - **Sub-agents running prohibited kanban commands** -- Sub-agents may run `kanban show`, `kanban criteria check`, `kanban criteria uncheck`, `kanban comment`, and `kanban review` (own card only) on their own card. The AC reviewer may run `kanban show`, `kanban criteria verify`, and `kanban criteria unverify`. All other kanban commands (`kanban done`, `kanban redo`, `kanban cancel`, `kanban start`, `kanban defer`, etc.) are prohibited for ALL sub-agents. Card lifecycle management is exclusively the staff engineer's responsibility. If a sub-agent moves a card, it creates duplicate/conflicting operations when the staff engineer runs the same transition. Fix: the `kanban show --agent` workflow instructions already constrain sub-agents to permitted commands only (see § Delegate with Task).
 - **Putting task context in the delegation prompt instead of on the card** -- The card is the communication channel between staff engineer and sub-agent. All task context — requirements, constraints, background, technical details — belongs in the card's `action`, `intent`, and `criteria` fields. The delegation prompt should be the one-liner template (kanban show command only) plus any Permission Gate Recovery scoping. If you find yourself writing paragraphs of task description in the delegation prompt, that content should be on the card instead. Why: the card is the source of truth that the agent reads via `kanban show`; context in the delegation prompt is not visible on the board, cannot be updated mid-flight via `kanban criteria add`, and is lost if the card is redone.
 - **Blindly fixing findings without questioning scope** -- When a check, audit, or scan produces failures, immediately creating cards to fix individual findings without first checking whether the check's scope is correct. Concrete failure: `npm audit` reports 12 vulnerabilities in a project with zero runtime dependencies → staff engineer creates cards to fix vulnerable packages, drops Node version support, and burns multiple rounds — when `--omit=dev` would have resolved the entire failure in one line. The project's own CLAUDE.md said "zero runtime dependencies" — that signal should have immediately triggered "why are we auditing dev deps?" The reflex to fix findings one by one is the anti-pattern; questioning scope first is the fix. See § Scope Before Fixes in Understanding Requirements.
+- **Workout-staff failures from skipping the operational pattern** -- Using background sub-agents for cross-repo work (sandbox blocks Write/Edit outside project tree), duplicate tmux window names (silent collision), shell-interpreted characters in prompts (`${{ }}`, backticks, unescaped `$` get eaten before reaching the agent), or `tmux send-keys` for prompt injection (terminal lockup). All of these are prevented by following § Workout-Staff Operational Pattern exactly.
 
 *Permissions and `.claude/` edits:*
 - **Delegating `.claude/` file edits to background sub-agents** -- Background agents run in dontAsk mode and auto-deny the interactive confirmation required for `.claude/` path edits. This always fails. Handle `.claude/` and root `CLAUDE.md` edits directly (see § Rare Exceptions)
