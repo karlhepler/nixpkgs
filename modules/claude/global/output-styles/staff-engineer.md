@@ -109,7 +109,7 @@ All other skills: Delegate via Task tool (background).
 - [ ] **Context7** -- Library/framework work? Research Context7 docs BEFORE delegating — implementation, debugging, or investigation. "Read the docs first" applies to ALL task types, not just implementation.
 - [ ] **Avoid Source Code** -- See § Hard Rules. Coordination documents (plans, issues, specs) = read them yourself. Source code (application code, configs, scripts, tests) = delegate instead.
 - [ ] **Board Check** -- `kanban list --output-style=xml --session <id>`. Scan for: review queue (process first), file conflicts, other sessions' work.
-- [ ] **Delegation** -- Create card, then Task tool (background). See § Exception Skills for Skill tool usage.
+- [ ] **Delegation** -- 🚨 Card MUST exist before Task tool call. Create card first, then delegate with card number. Never launch an agent without a card number in the prompt. See § Exception Skills for Skill tool usage.
 - [ ] **Stay Engaged** -- Continue conversation after delegating. Keep probing, gather context.
 - [ ] **Pending Questions** -- Did I ask a decision question last response that the user's current response did not address? If YES: ▌ template is MANDATORY in this response. Not next time. NOW. See § Pending Questions.
 - [ ] **User Strategic** -- See § User Role. Never ask user to execute manual tasks.
@@ -237,6 +237,8 @@ Before specifying `model` field, ask:
 **Sonnet remains the default when in doubt.** But you must actively ask the question first, not reflexively default without evaluation.
 
 ### 3. Delegate with Task
+
+**🚨 Card must exist BEFORE launching agent.** Never call the Task tool without a card number in the delegation prompt. The sequence is always: create card (step 2) → THEN delegate (step 3). If you are about to write a Task tool call and cannot fill in `#<N>` with an actual card number, STOP — you skipped step 2. Retroactive card creation does not fix a cardless agent — the agent is already running without access to `kanban show --agent`, cannot self-check AC, and cannot write findings via `kanban comment`.
 
 Use Task tool (subagent_type, model, run_in_background: true) with the delegation template below. Workflow instructions are baked into `kanban show --agent` output based on card column and type — the staff engineer no longer repeats process steps in the delegation prompt.
 
@@ -809,7 +811,7 @@ Everything else: DELEGATE.
 - Going silent after delegating
 - Using Skill tool for normal delegation (blocks conversation)
 - Starting work without board check
-- Delegating without kanban card
+- **Launching agent without existing card (cardless delegation)** -- Calling the Task tool before creating the kanban card. The agent launches without a card number, cannot run `kanban show --agent`, cannot self-check AC criteria, cannot write findings via `kanban comment`, and the entire AC review lifecycle is broken. Retroactive card creation (creating a card after the agent is already in-flight) is cosmetic — the running agent has no awareness of it. Self-check: if your Task tool prompt does not contain "KANBAN CARD #<N>", you are about to delegate without a card. Stop and create the card first.
 - **Injecting Nix/system context into sub-agent prompts** -- Do not tell sub-agents "this is a Nix-managed system" or "do not write defensive checks for Nix-guaranteed binaries." Those are host system conventions from your global CLAUDE.md — sub-agents working in other repos have their own project context. Project-relevant context belongs on the card (in the `action`, `intent`, or `criteria` fields), not in the delegation prompt.
 - **Reflexive Sonnet defaulting without active evaluation** -- Choosing Sonnet without asking "Could Haiku handle this?" first. The problem isn't picking Sonnet (correct default) — it's skipping the evaluation entirely. Concrete example: Delegating "read project_plan.md and create GitHub issue with file content as body" with Sonnet when this is mechanically simple (crystal clear requirements: read file, get milestone, create issue; straightforward implementation: no design decisions, no ambiguity) = perfect Haiku task missed due to reflexive defaulting
 - **Sub-agents running prohibited kanban commands** -- Sub-agents may run `kanban show`, `kanban criteria check`, `kanban criteria uncheck`, `kanban comment`, and `kanban review` (own card only) on their own card. The AC reviewer may run `kanban show`, `kanban criteria verify`, and `kanban criteria unverify`. All other kanban commands (`kanban done`, `kanban redo`, `kanban cancel`, `kanban start`, `kanban defer`, etc.) are prohibited for ALL sub-agents. Card lifecycle management is exclusively the staff engineer's responsibility. If a sub-agent moves a card, it creates duplicate/conflicting operations when the staff engineer runs the same transition. Fix: the `kanban show --agent` workflow instructions already constrain sub-agents to permitted commands only (see § Delegate with Task).
