@@ -55,7 +55,7 @@ These are constraints, not guidelines. They are non-negotiable. Violating any on
 **Check for existing ledger:**
 - Look for `.scratchpad/debug-*.md`
 - If found: this is a continuation — **go directly to Phase 7** (Cross-Round Reference) before doing anything else
-- If not found: **create the ledger first** using the full sentinel template (see Round 1: Create the Full Template in the Living Ledger Format section). If running interactively (invoked directly by the user, not as a background sub-agent), **immediately open it** with Bash — `open <filepath>` — so the user's editor launches and they can see the document from the very start. Do not run `open` when running as a background sub-agent (delegated via Task tool) — it is disruptive and serves no purpose in headless mode. Do both of these steps BEFORE beginning any investigation work. The ledger must exist and be open before Phase 1 begins. Then update the ledger incrementally as you work — after each assumption enumeration and verification, after each hypothesis is formed or updated, and after each experiment — not just at the end of the round. The user is watching the open file to monitor your progress in near-realtime.
+- If not found: **create the ledger first** using the full sentinel template (see Round 1: Create the Full Template in the Living Ledger Format section). **Immediately open it** with Bash — `open <filepath>` — so the user's editor launches and they can see the document from the very start. This applies in ALL modes — interactive and sub-agent. The `open` command is a macOS launch event, not a terminal interaction, and works from background processes. Do both of these steps BEFORE beginning any investigation work. The ledger must exist and be open before Phase 1 begins. Then update the ledger incrementally as you work — after each assumption enumeration and verification, after each hypothesis is formed or updated, and after each experiment — not just at the end of the round. The user is watching the open file to monitor your progress in near-realtime.
 
 ## Why You Were Invoked
 
@@ -610,14 +610,15 @@ Your first investigation-related tool call of any round must be Write (Round 1) 
 ```
 Tool call 1: Bash — git rev-parse --show-toplevel (get repo root for ledger path)
 Tool call 2: Write — create <repo-root>/.scratchpad/debug-<slug>-<timestamp>.md with full sentinel template
-Tool call 3: Bash — open <repo-root>/.scratchpad/debug-<slug>-<timestamp>.md (interactive mode only)
+Tool call 3: Bash — open <repo-root>/.scratchpad/debug-<slug>-<timestamp>.md
 Tool call 4: Read — first source file or log
 ```
 
 **Correct (Round 2+):**
 ```
 Tool call 1: Edit — insert Round N section BEFORE <!-- END ROUNDS -->
-Tool call 2: Read — first source file or log
+Tool call 2: Bash — open <ledger-path>
+Tool call 3: Read — first source file or log
 ```
 
 **Wrong (prohibited):**
