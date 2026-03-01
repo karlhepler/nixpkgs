@@ -168,18 +168,53 @@ pattern_in_permanent() {
   jq --arg p "${pattern}" '.permanent | index($p) != null' "${_tracking_file}"
 }
 
-# Add a pattern to settings.local.json permissions.allow (idempotent)
-add_to_settings() {
+# For Bash patterns, generate the colon-syntax equivalent for sub-agent compatibility.
+# Claude Code's sub-agent permission checker may match against either format.
+# Space-wildcard: Bash(npm run test *)  →  Colon: Bash(npm:run:test:*)
+# Non-Bash patterns return empty (no colon variant needed).
+bash_colon_variant() {
   local pattern="$1"
-  local already_in_settings
-  already_in_settings="$(pattern_in_settings "${pattern}")"
 
-  if [[ "${already_in_settings}" == "true" ]]; then
+  # Only Bash patterns need a colon variant
+  if [[ "${pattern}" != Bash\(* ]]; then
     return
   fi
 
-  jq --arg p "${pattern}" '.permissions.allow += [$p]' "${_settings_file}" > "${_settings_file}.tmp"
-  mv "${_settings_file}.tmp" "${_settings_file}"
+  # Extract content between Bash( and )
+  local inner="${pattern#Bash(}"
+  inner="${inner%)}"
+
+  # Replace spaces with colons
+  local colon_inner="${inner// /:}"
+
+  echo "Bash(${colon_inner})"
+}
+
+# Add a pattern to settings.local.json permissions.allow (idempotent).
+# For Bash patterns, writes both space-wildcard and colon formats.
+add_to_settings() {
+  local pattern="$1"
+  local colon_variant
+  colon_variant="$(bash_colon_variant "${pattern}")"
+
+  if [[ -n "${colon_variant}" && "${colon_variant}" != "${pattern}" ]]; then
+    # Add both canonical and colon variant (idempotent)
+    jq --arg p "${pattern}" --arg c "${colon_variant}" '
+      .permissions.allow |=
+        (if index($p) then . else . + [$p] end) |
+      .permissions.allow |=
+        (if index($c) then . else . + [$c] end)
+    ' "${_settings_file}" > "${_settings_file}.tmp"
+    mv "${_settings_file}.tmp" "${_settings_file}"
+  else
+    local already_in_settings
+    already_in_settings="$(pattern_in_settings "${pattern}")"
+    if [[ "${already_in_settings}" == "true" ]]; then
+      return
+    fi
+    jq --arg p "${pattern}" '.permissions.allow += [$p]' "${_settings_file}" > "${_settings_file}.tmp"
+    mv "${_settings_file}.tmp" "${_settings_file}"
+  fi
 }
 
 # Add session claim with timestamp to the temporary pattern (idempotent, updates timestamp)
@@ -213,11 +248,22 @@ add_to_permanent() {
   mv "${_tracking_file}.tmp" "${_tracking_file}"
 }
 
-# Remove a pattern from settings.local.json permissions.allow
+# Remove a pattern from settings.local.json permissions.allow.
+# For Bash patterns, removes both space-wildcard and colon formats.
 remove_from_settings() {
   local pattern="$1"
-  jq --arg p "${pattern}" '.permissions.allow = [.permissions.allow[] | select(. != $p)]' \
-    "${_settings_file}" > "${_settings_file}.tmp"
+  local colon_variant
+  colon_variant="$(bash_colon_variant "${pattern}")"
+
+  if [[ -n "${colon_variant}" && "${colon_variant}" != "${pattern}" ]]; then
+    # Remove both canonical and colon variant in one pass
+    jq --arg p "${pattern}" --arg c "${colon_variant}" \
+      '.permissions.allow = [.permissions.allow[] | select(. != $p and . != $c)]' \
+      "${_settings_file}" > "${_settings_file}.tmp"
+  else
+    jq --arg p "${pattern}" '.permissions.allow = [.permissions.allow[] | select(. != $p)]' \
+      "${_settings_file}" > "${_settings_file}.tmp"
+  fi
   mv "${_settings_file}.tmp" "${_settings_file}"
 }
 

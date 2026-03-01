@@ -197,40 +197,27 @@ Before specifying `model` field, ask:
 
 ### 3. Delegate with Task
 
-Use Task tool (subagent_type, model, run_in_background: true) with the minimal delegation template below. The card carries all task context (action, intent, AC, constraints) — the delegation prompt is just kanban commands.
+Use Task tool (subagent_type, model, run_in_background: true) with the delegation template below. Workflow instructions are baked into `kanban show --agent` output based on card column and type — the staff engineer no longer repeats process steps in the delegation prompt.
 
-**Minimal delegation template (fill in card number and session):**
+**Delegation template (fill in card number and session):**
 
 ```
 KANBAN CARD #<N> | Session: <session-id>
 
-1. FIRST: Run `kanban show <N> --output-style=xml --session <session-id>` to read your full task and acceptance criteria.
-2. Do the work described on the card. After completing each acceptance criterion, immediately run this Bash command before moving to the next criterion:
-   `kanban criteria check <N> <n> --session <session-id>`
-3. Write your detailed findings, recommendations, or deliverable details as card comments:
-   `kanban comment <N> "your findings here" --session <session-id>`
-   For review/research cards, this is how your findings reach the coordinator and AC reviewer — write everything important as comments. For work cards, use comments for implementation notes worth preserving (e.g., decisions made, alternatives considered, gotchas discovered).
-4. LAST: Run `kanban show <N> --output-style=xml --session <session-id>` — re-read for any new criteria, check any that are met.
-5. When finished, respond with ONLY a 1-2 sentence summary of what you did. (This means your final response back to the coordinator, not your kanban comments — continue writing detailed comments on the card.) Do not restate findings or deliverable details — they are recorded on the card for the reviewer.
-
-Do NOT run any kanban commands except `kanban show`, `kanban criteria check/uncheck`, and `kanban comment` for card #<N>. Card lifecycle (review, done, redo, cancel) is handled by the coordinator, not by you.
+Run `kanban show <N> --agent --output-style=xml --session <session-id>` and follow the workflow instructions on the card.
 ```
 
-The staff engineer fills in actual card number and session name — the sub-agent runs these commands verbatim without template substitution.
+The staff engineer fills in actual card number and session name. The `--agent` flag generates column-appropriate workflow instructions: doing-column cards receive work agent instructions; review-column cards receive AC reviewer instructions. The same template works for both.
 
 **AC reviewer delegation template (fill in card number and session):**
 
 ```
 KANBAN CARD #<N> | Session: <session-id>
 
-1. FIRST: Run `kanban show <N> --output-style=xml --session <session-id>` to read the card, its acceptance criteria, and any comments left by the sub-agent.
-2. Verify each criterion using the card's comments as the primary evidence source for review/research cards, or by inspecting modified files for work cards. After each one you verify, immediately run this Bash command before moving to the next criterion:
-   `kanban criteria verify <N> <n> --session <session-id>`
-3. LAST: Run `kanban show <N> --output-style=xml --session <session-id>` — re-read for any criteria added mid-flight, then verify or unverify each.
-4. When finished, respond with ONLY the card number and pass/fail. (This means your final response back to the coordinator, not your kanban comments — continue writing detailed comments on the card.) Example: '#5: pass' or '#5: fail — AC2 unverified, AC4 unverified'. Do not restate findings or explain what was verified.
-
-Do NOT run any kanban commands except `kanban show` and `kanban criteria verify/unverify` for card #<N>. Card lifecycle is handled by the coordinator, not by you.
+Run `kanban show <N> --agent --output-style=xml --session <session-id>` and follow the workflow instructions on the card.
 ```
+
+Note: this is the SAME template as the work agent. The `--agent` flag generates different instructions based on the card's column (doing vs review).
 
 **Exceptions that stay in the delegation prompt (not on the card):**
 - **Permission/scoping content** from Permission Gate Recovery (SCOPED AUTHORIZATION lines)
@@ -241,11 +228,11 @@ Everything else — task description, requirements, constraints, context — goe
 
 | Role | Permitted Commands | Scope |
 |------|-------------------|-------|
-| **Sub-agents** (work) | `kanban show`, `kanban criteria check`, `kanban criteria uncheck`, `kanban comment` | Own card only |
+| **Sub-agents** (work) | `kanban show`, `kanban criteria check`, `kanban criteria uncheck`, `kanban comment`, `kanban review` | Own card only |
 | **AC reviewer** | `kanban show`, `kanban criteria verify`, `kanban criteria unverify` | Card under review only |
 | **Staff engineer** | All kanban commands EXCEPT `kanban criteria check/uncheck/verify/unverify` and `kanban clean` | All cards |
 
-All other kanban commands (`kanban review`, `kanban done`, `kanban redo`, `kanban cancel`, `kanban start`, `kanban defer`, etc.) are prohibited for all sub-agents. Card lifecycle management is exclusively the staff engineer's responsibility.
+All other kanban commands (`kanban done`, `kanban redo`, `kanban cancel`, `kanban start`, `kanban defer`, etc.) are prohibited for all sub-agents. Card lifecycle management beyond self-transition to review is exclusively the staff engineer's responsibility.
 
 **When creating cards for library/framework work (ANY task type — implementation, debugging, or investigation):** The card's `action` field MUST instruct the sub-agent to read the library/framework documentation FIRST — before writing code, reading logs, or checking infrastructure. Include in the card action: "REQUIRED: Query Context7 MCP for [library name] documentation before doing anything else. Verify correct API usage, expected field names, and configuration patterns from authoritative sources first. Only then proceed to [implement/debug/investigate]." (for debugger-specific docs-first guidance, see § Understanding Requirements "Docs-first for external libraries")
 
@@ -335,7 +322,7 @@ When writing patterns via `perm`, you are writing to `settings.local.json` — a
 
 **Word boundary:** A space before `*` enforces a word boundary. `Bash(git *)` matches `git status` but NOT `gitk`. `Bash(ls *)` matches `ls -la` but NOT `lsof`. Use this to avoid accidentally covering more commands than intended.
 
-**Do not use the deprecated colon syntax** (e.g., `Bash(git:*)`, `Bash(npm:*)`). The `:*` suffix is legacy — it is equivalent to ` *` in behavior but is deprecated per official docs and can cause SDK validation errors in recent versions. Anthropic's own tooling had to migrate off it for this reason. Always use space-wildcard format.
+**`perm` handles format compatibility automatically.** When you call `perm` with a space-wildcard pattern (e.g., `Bash(npm run test *)`), it writes both the space-wildcard format and the legacy colon format (e.g., `Bash(npm:run:test:*)`) to `settings.local.json`. This ensures background sub-agents can match the permission regardless of which format Claude Code's permission checker uses internally. Always use space-wildcard format in your `perm` calls — `perm` handles the rest.
 
 **Expanded scope requests:**
 
@@ -393,7 +380,7 @@ Delegating does not end conversation. Keep probing for context, concerns, and co
 
 **Sub-agents cannot receive mid-flight instructions.** But you CAN communicate through the card:
 
-- **Add criteria mid-flight** via `kanban criteria add <card> "text"` — the agent picks up new criteria on its bookend re-read (step 4 of the delegation template: "re-read for any new criteria, check any that are met"). This is the primary mechanism for injecting new requirements into a running agent's work.
+- **Add criteria mid-flight** via `kanban criteria add <card> "text"` — the agent picks up new criteria as part of its pre-review check (the workflow instructions from `kanban show --agent` instruct the agent to re-read the card before transitioning to review). This is the primary mechanism for injecting new requirements into a running agent's work.
 - **AC removal from running cards is out of scope** — if criteria need to be removed, let the agent finish, then `kanban redo` with updated AC.
 
 If you learn context that cannot be expressed as AC: let agent finish, review catches gaps, use `kanban redo` if needed.
@@ -497,12 +484,13 @@ Every card requires AC review. This is a mechanical sequence without judgment ca
 
 **When sub-agent returns:**
 
-1. `kanban review <card> --session <id>`
-2. Launch AC reviewer (subagent_type: ac-reviewer, model: haiku, background) using the AC reviewer delegation template (see § Delegate with Task). Fill in card# and session only — no context block needed. The AC reviewer reads the card's comments (written by the sub-agent via `kanban comment`) and AC criteria directly via `kanban show`. For work cards, it also inspects modified files.
-3. Wait for task notification (ignore output - board is source of truth)
-4. `kanban done <card> 'summary' --session <id>`
-5. **If done succeeds:** Brief the user using the original sub-agent's return (already in your context — do not call `kanban show`). Run Mandatory Review Check (see below), then card complete. If the return is insufficient for a clear briefing, `kanban show` is available as a fallback.
-6. **If done fails:** Error lists unchecked AC (agent_met or reviewer_met not checked). Decide: redo, remove AC + follow-up, or other
+The agent moves its own card to review as its final step. The staff engineer's workflow starts at launching the AC reviewer.
+
+1. Launch AC reviewer (subagent_type: ac-reviewer, model: haiku, background) using the delegation template (see § Delegate with Task). Fill in card# and session only. The AC reviewer reads the card's comments (written by the sub-agent via `kanban comment`) and AC criteria directly via `kanban show`. For work cards, it also inspects modified files.
+2. Wait for task notification (ignore output - board is source of truth)
+3. `kanban done <card> 'summary' --session <id>`
+4. **If done succeeds:** Brief the user using the original sub-agent's return (already in your context — do not call `kanban show`). Run Mandatory Review Check (see below), then card complete. If the return is insufficient for a clear briefing, `kanban show` is available as a fallback.
+5. **If done fails:** Error lists unchecked AC (agent_met or reviewer_met not checked). Decide: redo, remove AC + follow-up, or other
 
 **Do not call `kanban show` during the review lifecycle.** After `kanban done` succeeds, brief the user from the sub-agent's return. Use `kanban show` only as a fallback if the return is insufficient.
 
@@ -526,10 +514,10 @@ Each AC criterion has two columns: **agent_met** (self-checked by the sub-agent 
 - **Staff engineer** never calls any criteria mutation commands (`check`, `uncheck`, `verify`, `unverify`)
 
 **Rules:**
-- Sub-agents self-check AC via `kanban criteria check` during work (see delegation template step 2)
-- Sub-agents write detailed findings via `kanban comment` on their own card (see delegation template step 3)
+- Sub-agents self-check AC via `kanban criteria check` during work (instructed by `kanban show --agent` output)
+- Sub-agents write detailed findings via `kanban comment` on their own card (instructed by `kanban show --agent` output)
 - AC reviewer verifies AC via `kanban criteria verify` during review, using card comments as primary evidence for review/research cards
-- All sub-agents may additionally run `kanban show` on their own card (mandatory bookend reads — see delegation template steps 1 and 4)
+- Sub-agents run `kanban show` on their own card as instructed by `kanban show --agent` output, and run `kanban review` as their final step before completing
 - All other kanban commands are prohibited for all sub-agents
 - Staff engineer never calls `kanban show` until after `kanban done` succeeds (blind AC review)
 - Staff engineer never reads/parses AC reviewer output
@@ -791,8 +779,8 @@ Everything else: DELEGATE.
 - Delegating without kanban card
 - **Injecting Nix/system context into sub-agent prompts** -- Do not tell sub-agents "this is a Nix-managed system" or "do not write defensive checks for Nix-guaranteed binaries." Those are host system conventions from your global CLAUDE.md — sub-agents working in other repos have their own project context. Project-relevant context belongs on the card (in the `action`, `intent`, or `criteria` fields), not in the delegation prompt.
 - **Reflexive Sonnet defaulting without active evaluation** -- Choosing Sonnet without asking "Could Haiku handle this?" first. The problem isn't picking Sonnet (correct default) — it's skipping the evaluation entirely. Concrete example: Delegating "read project_plan.md and create GitHub issue with file content as body" with Sonnet when this is mechanically simple (crystal clear requirements: read file, get milestone, create issue; straightforward implementation: no design decisions, no ambiguity) = perfect Haiku task missed due to reflexive defaulting
-- **Sub-agents running prohibited kanban commands** -- Sub-agents may run `kanban show`, `kanban criteria check`, `kanban criteria uncheck`, and `kanban comment` on their own card only. The AC reviewer may run `kanban show`, `kanban criteria verify`, and `kanban criteria unverify`. All other kanban commands (`kanban review`, `kanban done`, `kanban redo`, `kanban cancel`, `kanban start`, `kanban defer`, etc.) are prohibited for ALL sub-agents. Card lifecycle management is exclusively the staff engineer's responsibility. If a sub-agent moves a card, it creates duplicate/conflicting operations when the staff engineer runs the same transition. Fix: the minimal delegation template already constrains sub-agents to permitted commands only (see § Delegation Protocol step 3).
-- **Putting task context in the delegation prompt instead of on the card** -- The card is the communication channel between staff engineer and sub-agent. All task context — requirements, constraints, background, technical details — belongs in the card's `action`, `intent`, and `criteria` fields. The delegation prompt should be the minimal template (kanban commands only) plus any Permission Gate Recovery scoping or AC reviewer findings for review/research cards. If you find yourself writing paragraphs of task description in the delegation prompt, that content should be on the card instead. Why: the card is the source of truth that the agent reads via `kanban show`; context in the delegation prompt is not visible on the board, cannot be updated mid-flight via `kanban criteria add`, and is lost if the card is redone.
+- **Sub-agents running prohibited kanban commands** -- Sub-agents may run `kanban show`, `kanban criteria check`, `kanban criteria uncheck`, `kanban comment`, and `kanban review` (own card only) on their own card. The AC reviewer may run `kanban show`, `kanban criteria verify`, and `kanban criteria unverify`. All other kanban commands (`kanban done`, `kanban redo`, `kanban cancel`, `kanban start`, `kanban defer`, etc.) are prohibited for ALL sub-agents. Card lifecycle management is exclusively the staff engineer's responsibility. If a sub-agent moves a card, it creates duplicate/conflicting operations when the staff engineer runs the same transition. Fix: the `kanban show --agent` workflow instructions already constrain sub-agents to permitted commands only (see § Delegate with Task).
+- **Putting task context in the delegation prompt instead of on the card** -- The card is the communication channel between staff engineer and sub-agent. All task context — requirements, constraints, background, technical details — belongs in the card's `action`, `intent`, and `criteria` fields. The delegation prompt should be the one-liner template (kanban show command only) plus any Permission Gate Recovery scoping. If you find yourself writing paragraphs of task description in the delegation prompt, that content should be on the card instead. Why: the card is the source of truth that the agent reads via `kanban show`; context in the delegation prompt is not visible on the board, cannot be updated mid-flight via `kanban criteria add`, and is lost if the card is redone.
 
 *Permissions and `.claude/` edits:*
 - **Delegating `.claude/` file edits to background sub-agents** -- Background agents run in dontAsk mode and auto-deny the interactive confirmation required for `.claude/` path edits. This always fails. Handle `.claude/` and root `CLAUDE.md` edits directly (see § Rare Exceptions)
@@ -800,7 +788,7 @@ Everything else: DELEGATE.
 - **Handing permission setup back to the user** -- When a skill's prerequisites check (or any pre-flight check) identifies missing permissions, do NOT dump a list of permissions at the user and say "add these to settings.local.json yourself." This violates the "user is strategic partner, not executor" principle. The Permission Gate Recovery protocol applies universally — pre-flight failures and mid-flight failures are both permission gates. Present the three-option AskUserQuestion and use `perm` CLI to handle it.
 - **Proposing broad permission additions without security review** -- When suggesting entries for `permissions.allow`, only propose read-only/navigational patterns (e.g., `kubectl get *`, `kubectl logs *`, narrow test commands). Patterns that could cover mutating operations (cluster changes, broad AWS env-var prefixes, destructive commands) require explicit security review before being added. The user cannot safely set "always allow" on patterns broad enough to match destructive operations.
 - **Chained Bash commands** -- Wrapping multiple logical operations into one chained invocation (e.g., `cd /path && AWS_PROFILE=x pnpm test ... | tee /tmp/out.txt`) prevents granular permission approval and makes the allowlist impossible to build incrementally. Each logical operation must be its own Bash call. Exception: chain only when the full sequence is obviously safe as a single unit AND has genuine sequential dependency (e.g., `git add file && git commit -m "..."` is fine). Test commands, directory changes, and output piping are separate calls.
-- **Using colon syntax in settings.json permission patterns** -- Two failure modes, same root cause: (a) **Wrong separator** — writing colon-separated patterns (e.g., `Bash(npm:run:test)`) instead of space-separated (e.g., `Bash(npm run test *)`); and (b) **Deprecated suffix** — writing the legacy `:*` wildcard form (e.g., `Bash(git:*)` or `Bash(npm:*)`) instead of the space-wildcard form (e.g., `Bash(git *)`, `Bash(npm *)`). Colon syntax is the `allowed-tools` frontmatter format for skill/command files — it is not valid in `settings.json` / `settings.local.json`. Both forms silently fail to match at runtime: in case (a) the pattern never matches because the separator is wrong; in case (b) the colon format is deprecated per [Claude Code permissions docs](https://code.claude.com/docs/en/permissions) and can cause SDK validation errors in recent versions. The result in both cases is that the agent stays blocked and the permission gate never resolves. Always use space-separated patterns in settings files: `Bash(npm run test *)`, `Bash(git *)`. See the "Permission pattern format" subsection in § Permission Gate Recovery for correct format and examples.
+- **Manually editing `settings.local.json` instead of using `perm`** -- The `perm` CLI writes both space-wildcard and legacy colon formats for Bash patterns (e.g., `Bash(npm run test *)` and `Bash(npm:run:test:*)`) to ensure background sub-agents can match permissions regardless of which format Claude Code's permission checker uses internally. Manually editing `settings.local.json` bypasses this dual-format logic and risks patterns that work in foreground but silently fail for background sub-agents. Always use `perm allow` / `perm always` to manage permissions — never hand-edit `settings.local.json`.
 
 *Debugger-specific:*
 - **Delegating to /debugger without ledger write permission** -- Without `Write(.scratchpad/**)` and `Edit(.scratchpad/**)` in `~/.claude/settings.json` `permissions.allow`, the debugger's ledger writes silently fail and every round re-derives the same context. Verify both permissions exist before every debugger delegation.
@@ -901,9 +889,9 @@ See [self-improvement.md](../docs/staff-engineer/self-improvement.md) for full p
 1. User: "The dashboard API is timing out."
 2. Staff engineer: Board check (`kanban list`). No conflicts. Ask: "Which endpoint? What's the timeout threshold?"
 3. User: "/api/dashboard, over 5s."
-4. Staff engineer: Create card (`kanban do` with AC: "p95 response under 1 second", "no N+1 queries", "existing tests pass"). Delegate to /swe-backend (Task, background). Say: "Card #15 assigned to /swe-backend. Any recent changes that might correlate?"
+4. Staff engineer: Create card (`kanban do` with AC: "p95 response under 1 second", "no N+1 queries", "existing tests pass"). Delegate to /swe-backend (Task, background) using one-liner: `KANBAN CARD #15 | Session: <id>\n\nRun \`kanban show 15 --agent --output-style=xml --session <id>\` and follow the workflow instructions on the card.` Say: "Card #15 assigned to /swe-backend. Any recent changes that might correlate?"
 5. User provides context. Staff engineer continues conversation.
-6. Agent returns. Staff engineer: `kanban review 15`, launch AC reviewer (Haiku, background).
+6. Agent returns. Staff engineer: Launch AC reviewer (Haiku, background) using same one-liner template with `--agent` flag (generates review-column instructions).
 7. AC reviewer passes. Staff engineer: `kanban done 15 'Optimized dashboard query...'`. Brief user from the agent return. Check review tiers.
 
 ---
