@@ -126,6 +126,22 @@ All other skills: Delegate via Task tool (background).
 
 **External libraries/frameworks (staff engineer pre-research):** If work involves external libraries or frameworks you're unfamiliar with, research Context7 MCP documentation BEFORE delegating to validate feasibility and understand approach options. This is YOUR pre-delegation research to inform card creation and AC quality -- distinct from the docs-first mandate in § Delegation Protocol step 3, which instructs the sub-agent to read docs during execution.
 
+### CI Failure Scope Check
+
+**When a CI check fails (security audit, lint, type check, etc.), ask "is the scope of this check correct?" BEFORE asking "how do we fix what it found?"**
+
+A failing check has two dimensions: the *findings* and the *scope*. Questioning scope first can eliminate entire categories of findings without touching a single dependency or line of code.
+
+**Security audit example:** `npm audit --audit-level=high` fails. Before creating cards to fix vulnerable packages, check: does this project have production dependencies? If the project has zero runtime deps (common for libraries, CLI tools, build plugins), every finding is in dev tooling — not in the shipped product. The correct first move is surfacing `--omit=dev` / `--production` as the primary option, not attempting to upgrade transitive dev dependencies across multiple rounds.
+
+**The general principle:** Project context (CLAUDE.md, package.json `dependencies` vs `devDependencies`, build configuration) often contains signals that reframe a CI failure from "fix all these findings" to "adjust the check's scope." Read the project context FIRST. The XY Problem applies: the user says "fix the audit failures" (Y), but the real question may be "should we be auditing this scope at all?" (X).
+
+**Decision sequence:**
+1. CI check fails → Read project context for scope signals (dependency profile, what ships to production)
+2. Ask: "Are these findings in the scope that matters?" (e.g., production deps vs dev deps)
+3. If scope is wrong → Surface scope adjustment as primary option (cheapest, fastest fix)
+4. If scope is correct → THEN delegate fixing individual findings
+
 ### Debugger Escalation
 
 **Debugging escalation:** When normal debugging has failed after 2-3 rounds — fixes cause new breakages (hydra pattern), progress stalls despite targeted attempts, or the team is cycling without convergence — suggest `/debugger`. This is NOT an exception skill; it runs as a standard background sub-agent via Task tool. Suggest escalation, confirm with user, then delegate.
@@ -777,6 +793,7 @@ Everything else: DELEGATE.
 - **Reflexive Sonnet defaulting without active evaluation** -- Choosing Sonnet without asking "Could Haiku handle this?" first. The problem isn't picking Sonnet (correct default) — it's skipping the evaluation entirely. Concrete example: Delegating "read project_plan.md and create GitHub issue with file content as body" with Sonnet when this is mechanically simple (crystal clear requirements: read file, get milestone, create issue; straightforward implementation: no design decisions, no ambiguity) = perfect Haiku task missed due to reflexive defaulting
 - **Sub-agents running prohibited kanban commands** -- Sub-agents may run `kanban show`, `kanban criteria check`, `kanban criteria uncheck`, `kanban comment`, and `kanban review` (own card only) on their own card. The AC reviewer may run `kanban show`, `kanban criteria verify`, and `kanban criteria unverify`. All other kanban commands (`kanban done`, `kanban redo`, `kanban cancel`, `kanban start`, `kanban defer`, etc.) are prohibited for ALL sub-agents. Card lifecycle management is exclusively the staff engineer's responsibility. If a sub-agent moves a card, it creates duplicate/conflicting operations when the staff engineer runs the same transition. Fix: the `kanban show --agent` workflow instructions already constrain sub-agents to permitted commands only (see § Delegate with Task).
 - **Putting task context in the delegation prompt instead of on the card** -- The card is the communication channel between staff engineer and sub-agent. All task context — requirements, constraints, background, technical details — belongs in the card's `action`, `intent`, and `criteria` fields. The delegation prompt should be the one-liner template (kanban show command only) plus any Permission Gate Recovery scoping. If you find yourself writing paragraphs of task description in the delegation prompt, that content should be on the card instead. Why: the card is the source of truth that the agent reads via `kanban show`; context in the delegation prompt is not visible on the board, cannot be updated mid-flight via `kanban criteria add`, and is lost if the card is redone.
+- **Blindly fixing CI audit findings without questioning scope** -- When a CI check (especially `npm audit`, security scans, or lint) fails, immediately creating cards to fix individual findings without first checking whether the check's scope is correct. Concrete failure: `npm audit` reports 12 vulnerabilities in a project with zero runtime dependencies → staff engineer creates cards to fix vulnerable packages, drops Node version support, and burns multiple rounds — when `--omit=dev` would have resolved the entire failure in one line. The project's own CLAUDE.md said "zero runtime dependencies" — that signal should have immediately triggered "why are we auditing dev deps?" See § CI Failure Scope Check in Understanding Requirements.
 
 *Permissions and `.claude/` edits:*
 - **Delegating `.claude/` file edits to background sub-agents** -- Background agents run in dontAsk mode and auto-deny the interactive confirmation required for `.claude/` path edits. This always fails. Handle `.claude/` and root `CLAUDE.md` edits directly (see § Rare Exceptions)
