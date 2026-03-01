@@ -15,6 +15,7 @@ ENVIRONMENT VARIABLES:
 """
 
 import argparse
+import fnmatch
 import html
 import json
 import os
@@ -112,6 +113,39 @@ def get_git_root() -> Path | None:
         return Path(result.stdout.strip())
     except (subprocess.CalledProcessError, FileNotFoundError):
         return None
+
+
+def capture_git_baseline() -> list[str] | None:
+    """Capture currently modified files via git diff --name-only.
+
+    Returns a list of modified file paths relative to the git root, or None if
+    git is unavailable or the command fails. An empty list means no files are
+    currently modified.
+    """
+    git_root = get_git_root()
+    if git_root is None:
+        return None
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--name-only"],
+            capture_output=True, text=True, check=True,
+            cwd=str(git_root),
+        )
+        files = [f for f in result.stdout.splitlines() if f.strip()]
+        return files
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+
+
+def file_matches_edit_files(filepath: str, edit_files: list[str]) -> bool:
+    """Check if filepath matches any entry in the editFiles allowlist.
+
+    Supports exact path matches and glob patterns (e.g., src/auth/*.ts).
+    """
+    for pattern in edit_files:
+        if fnmatch.fnmatch(filepath, pattern):
+            return True
+    return False
 
 
 def now_iso() -> str:
@@ -784,6 +818,23 @@ def cmd_do(args) -> None:
     git_root = get_git_root()
     git_project = os.path.basename(git_root) if git_root else None
 
+    # Capture git baseline once for all cards in this batch (same point-in-time snapshot).
+    # Only used when a card has editFiles — lazy enough that we skip if no card needs it.
+    _baseline_cache: list[str] | None | str = "uncached"  # sentinel to defer capture
+
+    def get_baseline() -> list[str] | None:
+        nonlocal _baseline_cache
+        if _baseline_cache == "uncached":
+            _baseline_cache = capture_git_baseline()
+        return _baseline_cache
+
+    def attach_baseline(card: dict) -> None:
+        """Attach _baseline_modified to card if it has editFiles."""
+        if card.get("editFiles"):
+            baseline = get_baseline()
+            if baseline is not None:
+                card["_baseline_modified"] = baseline
+
     # Detect array vs object
     if isinstance(data, list):
         # Bulk creation: validate all cards first (fail fast)
@@ -795,14 +846,16 @@ def cmd_do(args) -> None:
             card = validate_and_build_card(card_data, session)
             cards.append(card)
 
-        # All validation passed — create all cards
+        # All validation passed — attach baselines and create all cards
         for card in cards:
+            attach_baseline(card)
             num = create_card_in_column(root, "doing", card)
             write_kanban_event(card, str(num), "create", to_column="doing", git_project=git_project)
             print(num)
     elif isinstance(data, dict):
         # Single card creation (existing behavior)
         card = validate_and_build_card(data, session)
+        attach_baseline(card)
         num = create_card_in_column(root, "doing", card)
         write_kanban_event(card, str(num), "create", to_column="doing", git_project=git_project)
         print(num)
@@ -2038,6 +2091,23 @@ def cmd_todo(args) -> None:
     git_root = get_git_root()
     git_project = os.path.basename(git_root) if git_root else None
 
+    # Capture git baseline once for all cards in this batch (same point-in-time snapshot).
+    # Only used when a card has editFiles — lazy enough that we skip if no card needs it.
+    _baseline_cache: list[str] | None | str = "uncached"  # sentinel to defer capture
+
+    def get_baseline() -> list[str] | None:
+        nonlocal _baseline_cache
+        if _baseline_cache == "uncached":
+            _baseline_cache = capture_git_baseline()
+        return _baseline_cache
+
+    def attach_baseline(card: dict) -> None:
+        """Attach _baseline_modified to card if it has editFiles."""
+        if card.get("editFiles"):
+            baseline = get_baseline()
+            if baseline is not None:
+                card["_baseline_modified"] = baseline
+
     # Detect array vs object
     if isinstance(data, list):
         # Bulk creation: validate all cards first (fail fast)
@@ -2049,14 +2119,16 @@ def cmd_todo(args) -> None:
             card = validate_and_build_card(card_data, session)
             cards.append(card)
 
-        # All validation passed — create all cards
+        # All validation passed — attach baselines and create all cards
         for card in cards:
+            attach_baseline(card)
             num = create_card_in_column(root, "todo", card)
             write_kanban_event(card, str(num), "create", to_column="todo", git_project=git_project)
             print(num)
     elif isinstance(data, dict):
         # Single card creation (existing behavior)
         card = validate_and_build_card(data, session)
+        attach_baseline(card)
         num = create_card_in_column(root, "todo", card)
         write_kanban_event(card, str(num), "create", to_column="todo", git_project=git_project)
         print(num)
@@ -2073,6 +2145,16 @@ def cmd_review(args) -> None:
     # Pre-compute git_project once to avoid N redundant git subprocesses in bulk loops
     git_root = get_git_root()
     git_project = os.path.basename(git_root) if git_root else None
+
+    # Capture current git diff once for all cards in this review batch.
+    # Lazily initialized so we skip the subprocess entirely if no card needs it.
+    _current_modified_cache: list[str] | None | str = "uncached"  # sentinel
+
+    def get_current_modified() -> list[str] | None:
+        nonlocal _current_modified_cache
+        if _current_modified_cache == "uncached":
+            _current_modified_cache = capture_git_baseline()
+        return _current_modified_cache
 
     failed = False
     for card_num in card_numbers:
@@ -2101,6 +2183,25 @@ def cmd_review(args) -> None:
                 print(f"\nRun `kanban criteria check {num} <n>` to mark criteria as met before moving to review.", file=sys.stderr)
                 failed = True
                 continue
+
+        # Enforce file scope if the card has both editFiles and _baseline_modified.
+        # Cards without either field are skipped for backward compatibility.
+        edit_files = card.get("editFiles", [])
+        baseline = card.get("_baseline_modified")
+        if edit_files and baseline is not None:
+            current_modified = get_current_modified()
+            if current_modified is not None:
+                baseline_set = set(baseline)
+                new_modifications = [f for f in current_modified if f not in baseline_set]
+                out_of_scope = [f for f in new_modifications if not file_matches_edit_files(f, edit_files)]
+                if out_of_scope:
+                    print(f"Error: Cannot move #{num} to review — files modified outside editFiles scope:", file=sys.stderr)
+                    for f in out_of_scope:
+                        print(f"  {f}", file=sys.stderr)
+                    print(f"\nAllowed files: {edit_files}", file=sys.stderr)
+                    print(f"\nRevert out-of-scope changes or update the card's editFiles field.", file=sys.stderr)
+                    failed = True
+                    continue
 
         card["updated"] = now_iso()
         write_card(card_path, card)
