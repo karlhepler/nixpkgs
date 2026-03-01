@@ -124,6 +124,10 @@ All other skills: Delegate via Task tool (background).
 
 **Multi-week initiatives:** Suggest `/project-planner` (exception skill - confirm first).
 
+**External libraries/frameworks (staff engineer pre-research):** If work involves external libraries or frameworks you're unfamiliar with, research Context7 MCP documentation BEFORE delegating to validate feasibility and understand approach options. This is YOUR pre-delegation research to inform card creation and AC quality -- distinct from the docs-first mandate in § Delegation Protocol step 3, which instructs the sub-agent to read docs during execution.
+
+### Debugger Escalation
+
 **Debugging escalation:** When normal debugging has failed after 2-3 rounds — fixes cause new breakages (hydra pattern), progress stalls despite targeted attempts, or the team is cycling without convergence — suggest `/debugger`. This is NOT an exception skill; it runs as a standard background sub-agent via Task tool. Suggest escalation, confirm with user, then delegate.
 
 **Docs-first for external libraries:** When the bug involves an external library, plugin, or framework, the card's `action` field MUST include "verify correct API usage against the library documentation" as the first investigation step — before log analysis, config checking, or infrastructure debugging. The debugger's assumption enumeration should include "are we calling the API with the correct field names/parameters per the docs?" as Hypothesis #1. Most "mysterious" library bugs are just incorrect API usage that a 2-minute docs lookup would catch. (see also § Delegation Protocol step 3 for the general docs-first mandate that applies to all delegations, not just debugger)
@@ -133,8 +137,6 @@ All other skills: Delegate via Task tool (background).
 **Pre-delegation check:** Before delegating to /debugger, verify both `Write(.scratchpad/**)` and `Edit(.scratchpad/**)` are in `~/.claude/settings.json` `permissions.allow`. These permissions are pre-configured globally via Nix activation and should normally always be present. The check is a safety net for edge cases (incomplete `hms` run, first-time setup). If either permission is absent, add it first; without them, ledger writes fail silently and the cross-round reference capability is lost.
 
 **When the debugger returns:** Act on prioritized recommendations first, read the ledger only if recommendations are insufficient, and fire another round if needed (the debugger detects existing ledgers and continues via cross-round reference). Relay findings as hypotheses with confidence levels — not as certainties. See § Trust But Verify and the Debugger overconfidence relay anti-pattern in § Critical Anti-Patterns.
-
-**External libraries/frameworks (staff engineer pre-research):** If work involves external libraries or frameworks you're unfamiliar with, research Context7 MCP documentation BEFORE delegating to validate feasibility and understand approach options. This is YOUR pre-delegation research to inform card creation and AC quality -- distinct from the docs-first mandate in § Delegation Protocol step 3, which instructs the sub-agent to read docs during execution.
 
 ### When Sub-Agents Discover Alternatives
 
@@ -180,7 +182,9 @@ kanban do '{"type":"work","action":"...","intent":"...","criteria":["AC1","AC2",
 
 **Why file-based for complex cards:** the Write tool is auto-approved and handles any content safely; the resulting Bash command (`kanban do --file *`) is a short, reviewable pattern that can be auto-approved independently. Inline is fine for simple cards because the full Bash command is short enough to review at a glance.
 
-**type** required: "work", "review", or "research". **model** required: "haiku", "sonnet", or "opus". **AC** required: 3-5 specific, measurable items. **editFiles/readFiles**: Placeholder guesses for conflict detection (e.g. `["src/auth/*.ts"]`). Bulk: Pass JSON array.
+**type** required: "work", "review", or "research". **model** required: "haiku", "sonnet", or "opus". **AC** required: 3-5 specific, measurable items. **editFiles/readFiles**: Enforced allowlist of files the agent is permitted to modify (e.g. `["src/auth/*.ts"]`). Agents cannot move to review if they modified files outside this list. Supports glob patterns. Note: glob patterns use Python fnmatch where `*` matches path separators (`/`) — so `src/*.ts` matches files at any depth under `src/`, not just direct children. This is more permissive than shell glob behavior. Be accurate — these are not placeholder guesses, they define the actual scope boundary. Bulk: Pass JSON array.
+
+**editFiles recovery:** If an agent returns blocked by editFiles enforcement, update the card's `editFiles` field to include the needed file, then re-delegate. Alternatively, `kanban redo` the card with corrected `editFiles`.
 
 **AC quality is the entire quality gate.** The AC reviewer is Haiku with no context beyond the kanban card. It runs `kanban show`, reads the AC, and mechanically verifies each criterion. If AC is vague ("code works correctly"), incomplete, or assumes context not on the card, the review will rubber-stamp bad work. Write AC as if a stranger with zero project context must verify the work using only what's on the card. Each criterion should be specific enough to verify and falsifiable enough to fail.
 
@@ -207,17 +211,7 @@ KANBAN CARD #<N> | Session: <session-id>
 Run `kanban show <N> --agent --output-style=xml --session <session-id>` and follow the workflow instructions on the card.
 ```
 
-The staff engineer fills in actual card number and session name. The `--agent` flag generates column-appropriate workflow instructions: doing-column cards receive work agent instructions; review-column cards receive AC reviewer instructions. The same template works for both.
-
-**AC reviewer delegation template (fill in card number and session):**
-
-```
-KANBAN CARD #<N> | Session: <session-id>
-
-Run `kanban show <N> --agent --output-style=xml --session <session-id>` and follow the workflow instructions on the card.
-```
-
-Note: this is the SAME template as the work agent. The `--agent` flag generates different instructions based on the card's column (doing vs review).
+The staff engineer fills in actual card number and session name. Use the same template structure for both work agents and AC reviewers — the `--agent` flag on `kanban show` adapts the workflow instructions based on the card's column and type.
 
 **Exceptions that stay in the delegation prompt (not on the card):**
 - **Permission/scoping content** from Permission Gate Recovery (SCOPED AUTHORIZATION lines)
@@ -230,7 +224,7 @@ Everything else — task description, requirements, constraints, context — goe
 |------|-------------------|-------|
 | **Sub-agents** (work) | `kanban show`, `kanban criteria check`, `kanban criteria uncheck`, `kanban comment`, `kanban review` | Own card only |
 | **AC reviewer** | `kanban show`, `kanban criteria verify`, `kanban criteria unverify` | Card under review only |
-| **Staff engineer** | All kanban commands EXCEPT `kanban criteria check/uncheck/verify/unverify` and `kanban clean` | All cards |
+| **Staff engineer** | All kanban commands EXCEPT per-criterion mutation commands (check/uncheck/verify/unverify) and `kanban clean`. Staff engineer CAN use `kanban criteria add` and `kanban criteria remove`. | All cards |
 
 All other kanban commands (`kanban done`, `kanban redo`, `kanban cancel`, `kanban start`, `kanban defer`, etc.) are prohibited for all sub-agents. Card lifecycle management beyond self-transition to review is exclusively the staff engineer's responsibility.
 
@@ -608,8 +602,10 @@ See [review-protocol.md § Post-Review Decision Flow](../docs/staff-engineer/rev
 
 **Choosing between review and research:** Use **review** when delegating evaluation of a specific known artifact (code, PR, document, security posture). Use **research** when delegating open-ended investigation of a question or problem space where the answer isn't known upfront.
 
+**Research card AC examples:** For research cards, acceptance criteria must be falsifiable statements about the investigative outcome. Examples: "Root cause of timeout identified with supporting evidence", "At least 3 alternative approaches documented with trade-offs", "Library compatibility with Node 20 confirmed or denied with version-specific evidence", "Performance bottleneck isolated to specific function with benchmark data".
+
 - **criteria** -- 3-5 specific, measurable outcomes
-- **editFiles/readFiles** -- Placeholder guesses for conflict detection
+- **editFiles/readFiles** -- Enforced allowlist of files the agent can modify (glob patterns supported). Kanban review transition is rejected if agent modified files outside this list. Must be accurate, not placeholder guesses.
 
 ### Redo vs New Card
 
@@ -898,7 +894,7 @@ See [self-improvement.md](../docs/staff-engineer/self-improvement.md) for full p
 
 ## BEFORE SENDING -- Final Verification
 
-Re-run § PRE-RESPONSE CHECKLIST (WHY, source code, board, delegation, pending questions, user role), plus these send-time checks:
+The § PRE-RESPONSE CHECKLIST runs at response planning time (before you start working). These send-time checks run as final verification right before sending: Re-run § PRE-RESPONSE CHECKLIST (WHY, source code, board, delegation, pending questions, user role), plus these send-time checks:
 
 - [ ] **Available:** Using Task (not Skill)? Not implementing myself? See § Exception Skills.
 - [ ] **AC Sequence:** If completing card: see § AC Review Workflow for mechanical sequence. Note: `kanban done` requires BOTH agent_met and reviewer_met columns to be true.

@@ -116,25 +116,66 @@ def get_git_root() -> Path | None:
 
 
 def capture_git_baseline() -> list[str] | None:
-    """Capture currently modified files via git diff --name-only.
+    """Capture currently modified files (staged and unstaged) via git diff.
 
-    Returns a list of modified file paths relative to the git root, or None if
-    git is unavailable or the command fails. An empty list means no files are
-    currently modified.
+    Returns a deduplicated list of modified file paths relative to the git root,
+    or None if git is unavailable or the command fails. An empty list means no
+    files are currently modified. Both unstaged (git diff --name-only) and staged
+    (git diff --cached --name-only) modifications are included.
     """
     git_root = get_git_root()
     if git_root is None:
         return None
     try:
-        result = subprocess.run(
+        unstaged = subprocess.run(
             ["git", "diff", "--name-only"],
             capture_output=True, text=True, check=True,
             cwd=str(git_root),
         )
-        files = [f for f in result.stdout.splitlines() if f.strip()]
-        return files
+        staged = subprocess.run(
+            ["git", "diff", "--cached", "--name-only"],
+            capture_output=True, text=True, check=True,
+            cwd=str(git_root),
+        )
+        unstaged_files = [f for f in unstaged.stdout.splitlines() if f.strip()]
+        staged_files = [f for f in staged.stdout.splitlines() if f.strip()]
+        # Union of both sets, preserving order (unstaged first, then any staged-only)
+        seen: set[str] = set(unstaged_files)
+        combined = list(unstaged_files)
+        for f in staged_files:
+            if f not in seen:
+                combined.append(f)
+                seen.add(f)
+        return combined
     except (subprocess.CalledProcessError, FileNotFoundError):
         return None
+
+
+# =============================================================================
+# Baseline caching helpers (shared between cmd_do and cmd_todo)
+# =============================================================================
+
+def _get_cached_baseline(cache: list) -> list[str] | None:
+    """Lazily capture git baseline, caching result in a 1-element mutable list.
+
+    cache must be initialized as ["uncached"] before first call. Subsequent calls
+    return the cached value without re-running git.
+    """
+    if cache[0] == "uncached":
+        cache[0] = capture_git_baseline()
+    return cache[0]
+
+
+def _attach_baseline(card: dict, cache: list) -> None:
+    """Attach _baseline_modified to card if it has editFiles.
+
+    Uses the shared cache to avoid redundant git subprocess calls across a batch.
+    cache must be initialized as ["uncached"] before first call.
+    """
+    if card.get("editFiles"):
+        baseline = _get_cached_baseline(cache)
+        if baseline is not None:
+            card["_baseline_modified"] = baseline
 
 
 def file_matches_edit_files(filepath: str, edit_files: list[str]) -> bool:
@@ -820,20 +861,7 @@ def cmd_do(args) -> None:
 
     # Capture git baseline once for all cards in this batch (same point-in-time snapshot).
     # Only used when a card has editFiles — lazy enough that we skip if no card needs it.
-    _baseline_cache: list[str] | None | str = "uncached"  # sentinel to defer capture
-
-    def get_baseline() -> list[str] | None:
-        nonlocal _baseline_cache
-        if _baseline_cache == "uncached":
-            _baseline_cache = capture_git_baseline()
-        return _baseline_cache
-
-    def attach_baseline(card: dict) -> None:
-        """Attach _baseline_modified to card if it has editFiles."""
-        if card.get("editFiles"):
-            baseline = get_baseline()
-            if baseline is not None:
-                card["_baseline_modified"] = baseline
+    _baseline_cache = ["uncached"]  # mutable 1-element list used by _get_cached_baseline
 
     # Detect array vs object
     if isinstance(data, list):
@@ -848,14 +876,14 @@ def cmd_do(args) -> None:
 
         # All validation passed — attach baselines and create all cards
         for card in cards:
-            attach_baseline(card)
+            _attach_baseline(card, _baseline_cache)
             num = create_card_in_column(root, "doing", card)
             write_kanban_event(card, str(num), "create", to_column="doing", git_project=git_project)
             print(num)
     elif isinstance(data, dict):
         # Single card creation (existing behavior)
         card = validate_and_build_card(data, session)
-        attach_baseline(card)
+        _attach_baseline(card, _baseline_cache)
         num = create_card_in_column(root, "doing", card)
         write_kanban_event(card, str(num), "create", to_column="doing", git_project=git_project)
         print(num)
@@ -934,6 +962,10 @@ def cmd_start(args) -> None:
     git_root = get_git_root()
     git_project = os.path.basename(git_root) if git_root else None
 
+    # Lazily-captured baseline, refreshed per card if needed.
+    # 1-element mutable list used as a cache container; reset per card that needs refresh.
+    _baseline_cache = ["uncached"]
+
     failed = False
     for card_num in card_numbers:
         try:
@@ -947,6 +979,17 @@ def cmd_start(args) -> None:
                 continue
 
             card = read_card(card_path)
+
+            # Refresh the baseline when starting a todo card that has editFiles.
+            # The baseline captured at card creation (kanban todo) may be stale by
+            # the time the card is picked up — refresh it now so enforcement in
+            # cmd_review uses an accurate pre-work snapshot.
+            if card.get("editFiles"):
+                _baseline_cache = ["uncached"]  # force fresh capture for this card
+                fresh_baseline = _get_cached_baseline(_baseline_cache)
+                if fresh_baseline is not None:
+                    card["_baseline_modified"] = fresh_baseline
+
             card["updated"] = now_iso()
             write_card(card_path, card)
             write_kanban_event(card, num, "start", from_column="todo", to_column="doing", git_project=git_project)
@@ -2093,20 +2136,7 @@ def cmd_todo(args) -> None:
 
     # Capture git baseline once for all cards in this batch (same point-in-time snapshot).
     # Only used when a card has editFiles — lazy enough that we skip if no card needs it.
-    _baseline_cache: list[str] | None | str = "uncached"  # sentinel to defer capture
-
-    def get_baseline() -> list[str] | None:
-        nonlocal _baseline_cache
-        if _baseline_cache == "uncached":
-            _baseline_cache = capture_git_baseline()
-        return _baseline_cache
-
-    def attach_baseline(card: dict) -> None:
-        """Attach _baseline_modified to card if it has editFiles."""
-        if card.get("editFiles"):
-            baseline = get_baseline()
-            if baseline is not None:
-                card["_baseline_modified"] = baseline
+    _baseline_cache = ["uncached"]  # mutable 1-element list used by _get_cached_baseline
 
     # Detect array vs object
     if isinstance(data, list):
@@ -2121,14 +2151,14 @@ def cmd_todo(args) -> None:
 
         # All validation passed — attach baselines and create all cards
         for card in cards:
-            attach_baseline(card)
+            _attach_baseline(card, _baseline_cache)
             num = create_card_in_column(root, "todo", card)
             write_kanban_event(card, str(num), "create", to_column="todo", git_project=git_project)
             print(num)
     elif isinstance(data, dict):
         # Single card creation (existing behavior)
         card = validate_and_build_card(data, session)
-        attach_baseline(card)
+        _attach_baseline(card, _baseline_cache)
         num = create_card_in_column(root, "todo", card)
         write_kanban_event(card, str(num), "create", to_column="todo", git_project=git_project)
         print(num)
