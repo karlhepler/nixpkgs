@@ -1026,12 +1026,16 @@ def generate_workflow_instructions(card: dict, num: str, col: str, session: str)
     if col == "doing":
         lines = ["## Workflow Instructions", ""]
 
+        # Prominent warning block — must be first thing the agent sees
+        lines.append("⚠️ REQUIRED BEFORE FINISHING: You MUST post findings via `kanban comment` and self-check each AC via `kanban criteria check` BEFORE running `kanban review`. Without these, the AC reviewer has NO evidence to verify your work and review WILL fail.")
+        lines.append("")
+
         # Type-based instruction line for research/review cards
         if card_type == "research":
-            lines.append("This is a research card. Write your detailed findings as card comments — the AC reviewer uses these as primary evidence for verification.")
+            lines.append("This is a **research** card. Your ONLY deliverable is card comments — there are no file changes for the AC reviewer to inspect. If you do not run `kanban comment`, your work is invisible and unrecoverable.")
             lines.append("")
         elif card_type == "review":
-            lines.append("This is a review card. Write your assessment and findings as card comments — the AC reviewer uses these as primary evidence for verification.")
+            lines.append("This is a **review** card. Your ONLY deliverable is card comments — there are no file changes for the AC reviewer to inspect. If you do not run `kanban comment`, your work is invisible and unrecoverable.")
             lines.append("")
 
         lines.append("1. Do the work described on this card.")
@@ -1039,7 +1043,14 @@ def generate_workflow_instructions(card: dict, num: str, col: str, session: str)
         lines.append(f"   `kanban criteria check {num} {{n}}{session_flag}`")
         lines.append("3. Write detailed findings or implementation notes as card comments:")
         lines.append(f"   `kanban comment {num} \"your findings\"{session_flag}`")
-        lines.append("4. When all criteria are met, move the card to review:")
+        lines.append("")
+        lines.append("── Pre-Review Checklist (MANDATORY) ──────────────────")
+        lines.append("Before running `kanban review`, verify:")
+        lines.append(f"□ Every AC criterion checked via `kanban criteria check {num} {{n}}{session_flag}`")
+        lines.append(f"□ Findings/results posted via `kanban comment {num} \"...\"{session_flag}` (at least one comment required)")
+        lines.append("If either is missing, the review will fail.")
+        lines.append("")
+        lines.append("4. When all criteria are met AND the checklist above is satisfied, move the card to review:")
         lines.append(f"   `kanban review {num}{session_flag}`")
         lines.append("   If this fails, the error will list unchecked criteria — address them and try again.")
         lines.append("5. When finished, respond to the coordinator with ONLY a 1-2 sentence summary of what you did. (This means your final response — not kanban comments. Continue writing detailed comments on the card.) Do not restate findings or deliverable details.")
