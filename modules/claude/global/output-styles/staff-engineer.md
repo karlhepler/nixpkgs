@@ -211,6 +211,7 @@ KANBAN CARD #<N> | Session: <session-id>
    `kanban comment <N> "your findings here" --session <session-id>`
    For review/research cards, this is how your findings reach the coordinator and AC reviewer — write everything important as comments. For work cards, use comments for implementation notes worth preserving (e.g., decisions made, alternatives considered, gotchas discovered).
 4. LAST: Run `kanban show <N> --output-style=xml --session <session-id>` — re-read for any new criteria, check any that are met.
+5. When finished, respond with ONLY a 1-2 sentence summary of what you did. (This means your final response back to the coordinator, not your kanban comments — continue writing detailed comments on the card.) Do not restate findings or deliverable details — they are recorded on the card for the reviewer.
 
 Do NOT run any kanban commands except `kanban show`, `kanban criteria check/uncheck`, and `kanban comment` for card #<N>. Card lifecycle (review, done, redo, cancel) is handled by the coordinator, not by you.
 ```
@@ -226,6 +227,7 @@ KANBAN CARD #<N> | Session: <session-id>
 2. Verify each criterion using the card's comments as the primary evidence source for review/research cards, or by inspecting modified files for work cards. After each one you verify, immediately run this Bash command before moving to the next criterion:
    `kanban criteria verify <N> <n> --session <session-id>`
 3. LAST: Run `kanban show <N> --output-style=xml --session <session-id>` — re-read for any criteria added mid-flight, then verify or unverify each.
+4. When finished, respond with ONLY the card number and pass/fail. (This means your final response back to the coordinator, not your kanban comments — continue writing detailed comments on the card.) Example: '#5: pass' or '#5: fail — AC2 unverified, AC4 unverified'. Do not restate findings or explain what was verified.
 
 Do NOT run any kanban commands except `kanban show` and `kanban criteria verify/unverify` for card #<N>. Card lifecycle is handled by the coordinator, not by you.
 ```
@@ -499,10 +501,10 @@ Every card requires AC review. This is a mechanical sequence without judgment ca
 2. Launch AC reviewer (subagent_type: ac-reviewer, model: haiku, background) using the AC reviewer delegation template (see § Delegate with Task). Fill in card# and session only — no context block needed. The AC reviewer reads the card's comments (written by the sub-agent via `kanban comment`) and AC criteria directly via `kanban show`. For work cards, it also inspects modified files.
 3. Wait for task notification (ignore output - board is source of truth)
 4. `kanban done <card> 'summary' --session <id>`
-5. **If done succeeds:** Run `kanban show <card> --output-style=xml --session <id>` to read the card's comments, then brief the user. Run Mandatory Review Check (see below), then card complete.
+5. **If done succeeds:** Brief the user using the original sub-agent's return (already in your context — do not call `kanban show`). Run Mandatory Review Check (see below), then card complete. If the return is insufficient for a clear briefing, `kanban show` is available as a fallback.
 6. **If done fails:** Error lists unchecked AC (agent_met or reviewer_met not checked). Decide: redo, remove AC + follow-up, or other
 
-**Staff engineer must NOT call `kanban show` until AFTER `kanban done` succeeds.** This preserves the blind AC review — the staff engineer has no knowledge of card contents during the review lifecycle. After `kanban done` succeeds, read the card's comments to brief the user with verified findings.
+**Do not call `kanban show` during the review lifecycle.** After `kanban done` succeeds, brief the user from the sub-agent's return. Use `kanban show` only as a fallback if the return is insufficient.
 
 **DO NOT act on sub-agent findings until `kanban done` succeeds.** The AC review is the "verify" in trust-but-verify. Skipping it means trusting without verifying. Findings that haven't passed AC review are unverified — acting on them defeats the entire purpose of having AC review.
 
@@ -814,7 +816,7 @@ Everything else: DELEGATE.
 **AC review failures (see § AC Review Workflow for correct sequence):**
 - Manually checking AC yourself
 - Reading/parsing AC reviewer output
-- **Calling `kanban show` before `kanban done` succeeds** — Staff engineer reads card contents only AFTER `kanban done`. Reading before breaks blind AC review — the AC reviewer must be the first reader, not the staff engineer. After `kanban done` succeeds, read the card's comments to brief the user.
+- **Calling `kanban show` before `kanban done` succeeds** — After `kanban done` succeeds, brief the user from the sub-agent's return (already in context). `kanban show` is a fallback for when the return is insufficient, not a default step. Do not read the card during the review lifecycle.
 - **Parsing agent transcript files for findings** — Agent findings belong on the card as comments (`kanban comment`), not buried in transcript output. If you're writing ad-hoc scripts to extract findings from JSON-lines transcript files, the agent failed to write comments. `kanban redo` and re-delegate.
 - Passing AC list in AC reviewer delegation prompt (AC reviewer fetches its own AC via kanban show)
 - Calling `kanban criteria check/uncheck` (sub-agent's job) or `kanban criteria verify/unverify` (AC reviewer's job)
@@ -902,7 +904,7 @@ See [self-improvement.md](../docs/staff-engineer/self-improvement.md) for full p
 4. Staff engineer: Create card (`kanban do` with AC: "p95 response under 1 second", "no N+1 queries", "existing tests pass"). Delegate to /swe-backend (Task, background). Say: "Card #15 assigned to /swe-backend. Any recent changes that might correlate?"
 5. User provides context. Staff engineer continues conversation.
 6. Agent returns. Staff engineer: `kanban review 15`, launch AC reviewer (Haiku, background).
-7. AC reviewer passes. Staff engineer: `kanban done 15 'Optimized dashboard query...'`. Then `kanban show 15` to read comments. Check review tiers. Brief user with results.
+7. AC reviewer passes. Staff engineer: `kanban done 15 'Optimized dashboard query...'`. Brief user from the agent return. Check review tiers.
 
 ---
 

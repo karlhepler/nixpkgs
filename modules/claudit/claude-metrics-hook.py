@@ -191,7 +191,7 @@ CREATE TABLE IF NOT EXISTS kanban_card_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     card_number TEXT NOT NULL,
     event_type TEXT NOT NULL,
-    persona TEXT,
+    agent TEXT,
     model TEXT,
     kanban_session TEXT,
     recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
@@ -209,7 +209,7 @@ CREATE TABLE IF NOT EXISTS kanban_card_events (
 # Both files must stay in sync — changes here require matching changes there.
 CREATE_INDEX_KANBAN_CARD_EVENTS_SQL = [
     "CREATE INDEX IF NOT EXISTS idx_kanban_card_events_event_type ON kanban_card_events (event_type)",
-    "CREATE INDEX IF NOT EXISTS idx_kanban_card_events_persona ON kanban_card_events (persona)",
+    "CREATE INDEX IF NOT EXISTS idx_kanban_card_events_agent ON kanban_card_events (agent)",
     "CREATE INDEX IF NOT EXISTS idx_kanban_card_events_recorded_at ON kanban_card_events (recorded_at)",
 ]
 

@@ -448,7 +448,7 @@ CREATE TABLE IF NOT EXISTS kanban_card_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     card_number TEXT NOT NULL,
     event_type TEXT NOT NULL,
-    persona TEXT,
+    agent TEXT,
     model TEXT,
     kanban_session TEXT,
     recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
@@ -466,7 +466,7 @@ CREATE TABLE IF NOT EXISTS kanban_card_events (
 # Both files must stay in sync — changes here require matching changes there.
 _CREATE_KANBAN_CARD_EVENTS_INDEX_SQL = [
     "CREATE INDEX IF NOT EXISTS idx_kanban_card_events_event_type ON kanban_card_events (event_type)",
-    "CREATE INDEX IF NOT EXISTS idx_kanban_card_events_persona ON kanban_card_events (persona)",
+    "CREATE INDEX IF NOT EXISTS idx_kanban_card_events_agent ON kanban_card_events (agent)",
     "CREATE INDEX IF NOT EXISTS idx_kanban_card_events_recorded_at ON kanban_card_events (recorded_at)",
 ]
 
@@ -531,7 +531,7 @@ def write_kanban_event(
             conn.execute(
                 """
                 INSERT INTO kanban_card_events (
-                    card_number, event_type, persona, model, kanban_session,
+                    card_number, event_type, agent, model, kanban_session,
                     card_created_at, card_completed_at, card_type, ac_count, git_project,
                     from_column, to_column
                 )
@@ -540,7 +540,7 @@ def write_kanban_event(
                 (
                     card_num,
                     event_type,
-                    card.get("persona"),
+                    card.get("agent"),
                     card.get("model"),
                     card.get("session"),
                     card.get("created"),
@@ -622,7 +622,7 @@ def make_card(
     intent: str = "",
     read_files: list[str] | None = None,
     edit_files: list[str] | None = None,
-    persona: str = "unassigned",
+    agent: str = "unassigned",
     model: str | None = None,
     session: str | None = None,
     criteria: list[str] | None = None,
@@ -630,17 +630,17 @@ def make_card(
 ) -> dict:
     """Build a new card dict."""
     now = now_iso()
-    # Normalize persona to lowercase-kebab-case (e.g. "AI Expert" -> "ai-expert")
+    # Normalize agent to lowercase-kebab-case (e.g. "AI Expert" -> "ai-expert")
     # but preserve the "unassigned" default unchanged.
-    if persona != "unassigned":
-        persona = persona.lower().replace(" ", "-")
+    if agent != "unassigned":
+        agent = agent.lower().replace(" ", "-")
     card = {
         "action": action,
         "intent": intent,
         "type": card_type,
         "readFiles": read_files or [],
         "editFiles": edit_files or [],
-        "persona": persona,
+        "agent": agent,
         "model": model,
         "session": session,
         "created": now,
@@ -710,7 +710,7 @@ def validate_and_build_card(data: dict, session: str | None) -> dict:
         intent=data.get("intent", ""),
         read_files=data.get("readFiles", []),
         edit_files=data.get("editFiles", []),
-        persona=data.get("persona", "unassigned"),
+        agent=data.get("agent", "unassigned"),
         model=data.get("model"),
         session=session,
         criteria=criteria if all(isinstance(c, str) for c in criteria) else None,
@@ -1010,7 +1010,7 @@ def cmd_show(args) -> None:
     # Footer with metadata
     output_lines.append("")
     session = card.get("session", "")
-    persona = card.get("persona", "unassigned")
+    agent = card.get("agent", "unassigned")
     model = card.get("model")
     card_type = card.get("type", "work")
     created = card.get("created", "")
@@ -1026,8 +1026,8 @@ def cmd_show(args) -> None:
     footer_parts.append(f"Type: {card_type}")
     if session:
         footer_parts.append(f"Session: {session[:8]}")
-    if persona and persona != "unassigned":
-        footer_parts.append(f"Persona: {persona}")
+    if agent and agent != "unassigned":
+        footer_parts.append(f"Agent: {agent}")
     if model:
         footer_parts.append(f"Model: {model}")
     footer_parts.append(f"Created: {created_date}")
@@ -1608,15 +1608,15 @@ def format_card_line(card: dict, num: str, show_session: bool = False, output_st
             criteria_section += reset
             sections.append(criteria_section)
 
-    # Metadata section (type, persona, model) - show in "detail" style only
+    # Metadata section (type, agent, model) - show in "detail" style only
     if output_style == "detail":
         metadata_parts = []
         card_type = card.get("type", "work")
-        persona = card.get("persona")
+        agent = card.get("agent")
         model = card.get("model")
         metadata_parts.append(f"Type: {card_type}")
-        if persona and persona != "unassigned":
-            metadata_parts.append(f"Persona: {persona}")
+        if agent and agent != "unassigned":
+            metadata_parts.append(f"Agent: {agent}")
         if model:
             metadata_parts.append(f"Model: {model}")
 
