@@ -823,6 +823,12 @@ def cmd_redo(args) -> None:
         sys.exit(1)
 
     card = read_card(card_path)
+
+    # Reset agent_met flags so the agent must re-verify their work.
+    # reviewer_met flags are intentionally preserved — they are managed by the AC reviewer.
+    for criterion in card.get("criteria", []):
+        criterion["agent_met"] = False
+
     card["activity"].append({
         "timestamp": now_iso(),
         "message": "Sent back for rework (AC review failed)",
@@ -909,6 +915,55 @@ def cmd_start(args) -> None:
         sys.exit(1)
 
 
+def generate_workflow_instructions(card: dict, num: str, col: str, session: str) -> str:
+    """Generate workflow instructions for an agent based on card column and type.
+
+    Returns empty string for columns where no instructions apply (todo, done, canceled).
+    """
+    if col not in ("doing", "review"):
+        return ""
+
+    card_type = card.get("type", "work")
+    session_str = session or ""
+    session_flag = f" --session {session_str}" if session_str else ""
+
+    if col == "doing":
+        lines = ["## Workflow Instructions", ""]
+
+        # Type-based instruction line for research/review cards
+        if card_type == "research":
+            lines.append("This is a research card. Write your detailed findings as card comments — the AC reviewer uses these as primary evidence for verification.")
+            lines.append("")
+        elif card_type == "review":
+            lines.append("This is a review card. Write your assessment and findings as card comments — the AC reviewer uses these as primary evidence for verification.")
+            lines.append("")
+
+        lines.append("1. Do the work described on this card.")
+        lines.append(f"2. After completing each acceptance criterion, immediately run:")
+        lines.append(f"   `kanban criteria check {num} {{n}}{session_flag}`")
+        lines.append("3. Write detailed findings or implementation notes as card comments:")
+        lines.append(f"   `kanban comment {num} \"your findings\"{session_flag}`")
+        lines.append("4. When all criteria are met, move the card to review:")
+        lines.append(f"   `kanban review {num}{session_flag}`")
+        lines.append("   If this fails, the error will list unchecked criteria — address them and try again.")
+        lines.append("5. When finished, respond to the coordinator with ONLY a 1-2 sentence summary of what you did. (This means your final response — not kanban comments. Continue writing detailed comments on the card.) Do not restate findings or deliverable details.")
+        lines.append("")
+        lines.append(f"Do NOT run any kanban commands except `kanban show`, `kanban criteria check/uncheck`, `kanban comment`, and `kanban review` for card #{num}. Card lifecycle is handled by the coordinator.")
+
+        return "\n".join(lines)
+
+    # col == "review"
+    lines = ["## Workflow Instructions", ""]
+    lines.append("1. Verify each acceptance criterion. For review/research cards, use card comments as primary evidence. For work cards, inspect modified files.")
+    lines.append("2. After verifying each criterion, immediately run:")
+    lines.append(f"   `kanban criteria verify {num} {{n}}{session_flag}`")
+    lines.append("3. When finished, respond to the coordinator with ONLY the card number and pass/fail. (This means your final response — not kanban comments.) Example: " + f"'#{num}: pass' or '#{num}: fail — AC2 unverified'. Do not restate findings.")
+    lines.append("")
+    lines.append(f"Do NOT run any kanban commands except `kanban show` and `kanban criteria verify/unverify` for card #{num}. Card lifecycle is handled by the coordinator.")
+
+    return "\n".join(lines)
+
+
 def cmd_show(args) -> None:
     """Display card contents."""
     root = get_root(args.root)
@@ -917,9 +972,14 @@ def cmd_show(args) -> None:
     col = card_path.parent.name
     num = card_number(card_path)
 
+    # Resolve session for workflow instructions: prefer explicit --session arg, then card's own session
+    agent_flag = getattr(args, "agent", False)
+    session_for_workflow = (getattr(args, "session", None) or card.get("session") or "")
+    workflow_text = generate_workflow_instructions(card, num, col, session_for_workflow) if agent_flag else ""
+
     # Claude XML output style
     if getattr(args, "output_style", None) == "xml":
-        print(format_card_xml(card, num, col, include_details=True))
+        print(format_card_xml(card, num, col, include_details=True, workflow_text=workflow_text))
         return
 
     # Build human-friendly terminal output (simple or detail)
@@ -1033,6 +1093,13 @@ def cmd_show(args) -> None:
     footer_parts.append(f"Created: {created_date}")
 
     output_lines.append(f"{bold}{' · '.join(footer_parts)}{reset}")
+
+    # Append workflow instructions if --agent flag was provided
+    if workflow_text:
+        output_lines.append("")
+        output_lines.append("---")
+        output_lines.append("")
+        output_lines.append(workflow_text)
 
     # Send through pager
     use_pager("\n".join(output_lines) + "\n")
@@ -1279,7 +1346,7 @@ def cmd_criteria_dispatch(args) -> None:
 # List and view commands
 # =============================================================================
 
-def format_card_xml(card: dict, num: str, col: str, include_details: bool = False) -> str:
+def format_card_xml(card: dict, num: str, col: str, include_details: bool = False, workflow_text: str = "") -> str:
     """Format a single card as XML.
 
     Args:
@@ -1287,14 +1354,22 @@ def format_card_xml(card: dict, num: str, col: str, include_details: bool = Fals
         num: Card number string
         col: Column/status name
         include_details: Include intent, AC, and activity (for show command)
+        workflow_text: Optional workflow instructions markdown (from --agent flag); wrapped in <workflow> element
     """
     esc = html.escape
     session = card.get("session", "")
     action = card.get("action", "")
     card_type = card.get("type", "work")
+    agent = card.get("agent", "")
+    model = card.get("model", "")
 
     # Card opening tag with attributes
-    xml_parts = [f'<card num="{esc(num)}" session="{esc(session)}" status="{esc(col)}" type="{esc(card_type)}">']
+    card_attrs = f'num="{esc(num)}" session="{esc(session)}" status="{esc(col)}" type="{esc(card_type)}"'
+    if agent:
+        card_attrs += f' agent="{esc(agent)}"'
+    if model:
+        card_attrs += f' model="{esc(model)}"'
+    xml_parts = [f"<card {card_attrs}>"]
 
     # Action (always included as child element)
     xml_parts.append(f"  <action>{esc(action)}</action>")
@@ -1354,6 +1429,12 @@ def format_card_xml(card: dict, num: str, col: str, include_details: bool = Fals
                 message = esc(event.get("message", ""))
                 xml_parts.append(f'    <event ts="{timestamp}">{message}</event>')
             xml_parts.append("  </activity>")
+
+    # Workflow instructions (only when --agent flag is provided)
+    if workflow_text:
+        xml_parts.append(f"  <workflow>")
+        xml_parts.append(workflow_text)
+        xml_parts.append("  </workflow>")
 
     xml_parts.append("</card>")
     return "\n".join(xml_parts)
@@ -1993,6 +2074,7 @@ def cmd_review(args) -> None:
     git_root = get_git_root()
     git_project = os.path.basename(git_root) if git_root else None
 
+    failed = False
     for card_num in card_numbers:
         card_path = find_card(root, card_num)
         col = card_path.parent.name
@@ -2003,6 +2085,23 @@ def cmd_review(args) -> None:
             continue
 
         card = read_card(card_path)
+
+        # Block if any acceptance criteria have agent_met unset
+        criteria = card.get("criteria", [])
+        if criteria:
+            unchecked = [
+                (i, c) for i, c in enumerate(criteria, start=1)
+                if not c.get("agent_met", False)
+            ]
+            if unchecked:
+                print(f"Error: Cannot move #{num} to review — unchecked acceptance criteria:", file=sys.stderr)
+                for i, criterion in unchecked:
+                    text = criterion.get("text", "")
+                    print(f"  AC {i}: {text}", file=sys.stderr)
+                print(f"\nRun `kanban criteria check {num} <n>` to mark criteria as met before moving to review.", file=sys.stderr)
+                failed = True
+                continue
+
         card["updated"] = now_iso()
         write_card(card_path, card)
         write_kanban_event(card, num, "review", from_column=col, to_column="review", git_project=git_project)
@@ -2011,6 +2110,9 @@ def cmd_review(args) -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
         card_path.rename(target)
         print(f"Moved: #{num} -> review/")
+
+    if failed:
+        sys.exit(1)
 
 
 def cmd_done(args) -> None:
@@ -2598,6 +2700,7 @@ def main() -> None:
     p_show = subparsers.add_parser("show", parents=[parent_parser], help="Display card contents")
     p_show.add_argument("card", help="Card number")
     p_show.add_argument("--output-style", choices=["simple", "xml", "detail"], help="Output style: xml (structured XML for machine parsing)")
+    p_show.add_argument("--agent", action="store_true", default=False, help="Append auto-generated workflow instructions for the agent based on card column and type")
     add_session_flags(p_show)
 
     # --- cancel ---
