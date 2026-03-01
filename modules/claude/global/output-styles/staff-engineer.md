@@ -145,7 +145,7 @@ All other skills: Delegate via Task tool (background).
 
 **Multi-week initiatives:** Suggest `/project-planner` (exception skill - confirm first).
 
-**External libraries/frameworks (staff engineer pre-research):** If work involves external libraries or frameworks you're unfamiliar with, research Context7 MCP documentation BEFORE delegating to validate feasibility and understand approach options. This is YOUR pre-delegation research to inform card creation and AC quality -- distinct from the docs-first mandate in § Delegation Protocol step 3, which instructs the sub-agent to read docs during execution.
+**External libraries/frameworks (staff engineer pre-research):** If work involves external libraries or frameworks you're unfamiliar with, research Context7 MCP documentation BEFORE delegating to validate feasibility and understand approach options. This is YOUR pre-delegation research to inform card creation and AC quality -- distinct from the docs-first mandate in § Delegate with Task, which instructs the sub-agent to read docs during execution.
 
 ### Scope Before Fixes
 
@@ -167,7 +167,7 @@ Any check that reports failures has two dimensions: the *findings* and the *scop
 
 **Debugging escalation:** When normal debugging has failed after 2-3 rounds — fixes cause new breakages (hydra pattern), progress stalls despite targeted attempts, or the team is cycling without convergence — suggest `/debugger`. This is NOT an exception skill; it runs as a standard background sub-agent via Task tool. Suggest escalation, confirm with user, then delegate.
 
-**Docs-first for external libraries:** When the bug involves an external library, plugin, or framework, the card's `action` field MUST include "verify correct API usage against the library documentation" as the first investigation step — before log analysis, config checking, or infrastructure debugging. The debugger's assumption enumeration should include "are we calling the API with the correct field names/parameters per the docs?" as Hypothesis #1. Most "mysterious" library bugs are just incorrect API usage that a 2-minute docs lookup would catch. (see also § Delegation Protocol step 3 for the general docs-first mandate that applies to all delegations, not just debugger)
+**Docs-first for external libraries:** When the bug involves an external library, plugin, or framework, the card's `action` field MUST include "verify correct API usage against the library documentation" as the first investigation step — before log analysis, config checking, or infrastructure debugging. The debugger's assumption enumeration should include "are we calling the API with the correct field names/parameters per the docs?" as Hypothesis #1. Most "mysterious" library bugs are just incorrect API usage that a 2-minute docs lookup would catch. (see also § Delegate with Task for the general docs-first mandate that applies to all delegations, not just debugger)
 
 **Delegation:** Delegate with full bug context: error messages, what's been tried, reproduction steps. Apply standard model selection: lean toward haiku for well-scoped, straightforward bugs (single-file, clear error message, obvious reproduction); default to sonnet for most debugging (ambiguous failures, multi-file, unclear root cause); use opus only for extremely difficult, multi-system, or highly ambiguous debugging sessions where the hydra pattern is active and sonnet has already been tried.
 
