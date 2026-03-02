@@ -269,7 +269,7 @@ kanban do '{"type":"work","action":"...","intent":"...","criteria":["AC1","AC2",
 
 **🚨 Card must exist BEFORE launching agent.** Never call the Task tool without a card number in the delegation prompt. The sequence is always: create card (step 3) → THEN delegate (step 4). If you are about to write a Task tool call and cannot fill in `#<N>` with an actual card number, STOP — you skipped step 3. Retroactive card creation does not fix a cardless agent — the agent is already running without access to `kanban show --agent`, cannot self-check AC, and cannot write findings via `kanban comment`.
 
-Use Task tool (subagent_type, model, run_in_background: true) with the appropriate delegation template below. The work/research template includes explicit kanban workflow steps that agents MUST complete before finishing — comment, criteria check, review. These steps appear directly in the delegation prompt to prevent agents from deprioritizing them. The `kanban show --agent` command provides task context (action, intent, AC); workflow enforcement is in the prompt itself.
+Use Task tool (subagent_type, model, run_in_background: true) with the appropriate delegation template below. The work/research template uses a **two-part contract** structure: Part 1 is the task, Part 2 is the kanban workflow (comment, criteria check, review). Both parts are framed as equally required — agents cannot treat workflow steps as optional afterthoughts. The `kanban show --agent` command provides task context (action, intent, AC); workflow enforcement is in the prompt itself.
 
 **Pre-delegation kanban permissions:**
 
@@ -280,14 +280,17 @@ Kanban command permissions are automatically managed by the kanban CLI. When a c
 ```
 KANBAN CARD #<N> | Session: <session-id>
 
-Run `kanban show <N> --agent --output-style=xml --session <session-id>` to read your task and complete it.
+⚠️ TWO-PART CONTRACT — both parts required. Task alone is NOT complete.
 
-BEFORE YOU FINISH — mandatory steps (in this order):
+PART 1 — Complete your task:
+Run `kanban show <N> --agent --output-style=xml --session <session-id>` to read and execute your task.
+
+PART 2 — Kanban workflow (execute ALL steps, in order, after task work):
 1. Post findings: `kanban comment <N> "your detailed findings" --session <session-id>`
-2. Self-check each AC criterion you met: `kanban criteria check <N> <criterion#> --session <session-id>`
+2. Self-check AC: `kanban criteria check <N> <criterion#> --session <session-id>` (for EACH criterion you met)
 3. Move to review: `kanban review <N> --session <session-id>`
 
-A SubagentStop hook enforces these steps — you will be blocked if incomplete.
+⛔ You are NOT done until Part 2 is complete. A SubagentStop hook enforces this — skip any step and you WILL be blocked.
 ```
 
 **Delegation template for AC reviewers (fill in card number and session):**
@@ -298,7 +301,7 @@ KANBAN CARD #<N> | Session: <session-id>
 Run `kanban show <N> --agent --output-style=xml --session <session-id>` and follow the review workflow instructions on the card. Use `kanban criteria verify` (not check) for each criterion.
 ```
 
-The staff engineer fills in actual card number and session name. Work/research agents get explicit workflow enforcement to prevent deprioritization of kanban steps. AC reviewers get a minimal template — the `--agent` flag on `kanban show` provides review-specific instructions, and the `criteria verify` mention ensures correct hook detection.
+The staff engineer fills in actual card number and session name. Work/research agents get the two-part contract template — Part 1 (task) and Part 2 (kanban workflow) are framed as equal obligations with enforcement bookends (⚠️ top, ⛔ bottom). AC reviewers get a minimal template — the `--agent` flag on `kanban show` provides review-specific instructions, and the `criteria verify` mention ensures correct hook detection.
 
 **Exceptions that stay in the delegation prompt (not on the card):**
 - **Permission/scoping content** from Permission Gate Recovery (SCOPED AUTHORIZATION lines)
