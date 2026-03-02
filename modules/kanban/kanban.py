@@ -15,7 +15,6 @@ ENVIRONMENT VARIABLES:
 """
 
 import argparse
-import fnmatch
 import html
 import json
 import os
@@ -113,80 +112,6 @@ def get_git_root() -> Path | None:
         return Path(result.stdout.strip())
     except (subprocess.CalledProcessError, FileNotFoundError):
         return None
-
-
-def capture_git_baseline() -> list[str] | None:
-    """Capture currently modified files (staged and unstaged) via git diff.
-
-    Returns a deduplicated list of modified file paths relative to the git root,
-    or None if git is unavailable or the command fails. An empty list means no
-    files are currently modified. Both unstaged (git diff --name-only) and staged
-    (git diff --cached --name-only) modifications are included.
-    """
-    git_root = get_git_root()
-    if git_root is None:
-        return None
-    try:
-        unstaged = subprocess.run(
-            ["git", "diff", "--name-only"],
-            capture_output=True, text=True, check=True,
-            cwd=str(git_root),
-        )
-        staged = subprocess.run(
-            ["git", "diff", "--cached", "--name-only"],
-            capture_output=True, text=True, check=True,
-            cwd=str(git_root),
-        )
-        unstaged_files = [f for f in unstaged.stdout.splitlines() if f.strip()]
-        staged_files = [f for f in staged.stdout.splitlines() if f.strip()]
-        # Union of both sets, preserving order (unstaged first, then any staged-only)
-        seen: set[str] = set(unstaged_files)
-        combined = list(unstaged_files)
-        for f in staged_files:
-            if f not in seen:
-                combined.append(f)
-                seen.add(f)
-        return combined
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return None
-
-
-# =============================================================================
-# Baseline caching helpers (shared between cmd_do and cmd_todo)
-# =============================================================================
-
-def _get_cached_baseline(cache: list) -> list[str] | None:
-    """Lazily capture git baseline, caching result in a 1-element mutable list.
-
-    cache must be initialized as ["uncached"] before first call. Subsequent calls
-    return the cached value without re-running git.
-    """
-    if cache[0] == "uncached":
-        cache[0] = capture_git_baseline()
-    return cache[0]
-
-
-def _attach_baseline(card: dict, cache: list) -> None:
-    """Attach _baseline_modified to card if it has editFiles.
-
-    Uses the shared cache to avoid redundant git subprocess calls across a batch.
-    cache must be initialized as ["uncached"] before first call.
-    """
-    if card.get("editFiles"):
-        baseline = _get_cached_baseline(cache)
-        if baseline is not None:
-            card["_baseline_modified"] = baseline
-
-
-def file_matches_edit_files(filepath: str, edit_files: list[str]) -> bool:
-    """Check if filepath matches any entry in the editFiles allowlist.
-
-    Supports exact path matches and glob patterns (e.g., src/auth/*.ts).
-    """
-    for pattern in edit_files:
-        if fnmatch.fnmatch(filepath, pattern):
-            return True
-    return False
 
 
 def now_iso() -> str:
@@ -702,6 +627,7 @@ def make_card(
     session: str | None = None,
     criteria: list[str] | None = None,
     card_type: str = "work",
+    file_changes_expected: bool | None = None,
 ) -> dict:
     """Build a new card dict."""
     now = now_iso()
@@ -722,6 +648,10 @@ def make_card(
         "updated": now,
         "activity": [{"timestamp": now, "message": "Created"}],
     }
+
+    # fileChangesExpected is only stored on work cards
+    if card_type == "work" and file_changes_expected is not None:
+        card["fileChangesExpected"] = file_changes_expected
 
     # Add acceptance criteria if provided
     if criteria:
@@ -776,6 +706,18 @@ def validate_and_build_card(data: dict, session: str | None) -> dict:
             print(f"Error: {field} must be an array, got {type(val).__name__}", file=sys.stderr)
             sys.exit(1)
 
+    # Validate fileChangesExpected for work cards (required boolean)
+    file_changes_expected: bool | None = None
+    if card_type == "work":
+        fce_raw = data.get("fileChangesExpected")
+        if fce_raw is None:
+            print("Error: JSON must include 'fileChangesExpected' field (boolean) for work cards", file=sys.stderr)
+            sys.exit(1)
+        if not isinstance(fce_raw, bool):
+            print(f"Error: 'fileChangesExpected' must be a boolean (true or false), got {type(fce_raw).__name__}", file=sys.stderr)
+            sys.exit(1)
+        file_changes_expected = fce_raw
+
     # Parse criteria from JSON (support both "criteria" and "ac" shorthand)
     criteria = data.get("criteria") or data.get("ac", [])
 
@@ -790,6 +732,7 @@ def validate_and_build_card(data: dict, session: str | None) -> dict:
         session=session,
         criteria=criteria if all(isinstance(c, str) for c in criteria) else None,
         card_type=card_type,
+        file_changes_expected=file_changes_expected,
     )
 
     # If criteria came as full objects (with text/met), use them directly
@@ -859,10 +802,6 @@ def cmd_do(args) -> None:
     git_root = get_git_root()
     git_project = os.path.basename(git_root) if git_root else None
 
-    # Capture git baseline once for all cards in this batch (same point-in-time snapshot).
-    # Only used when a card has editFiles — lazy enough that we skip if no card needs it.
-    _baseline_cache = ["uncached"]  # mutable 1-element list used by _get_cached_baseline
-
     # Detect array vs object
     if isinstance(data, list):
         # Bulk creation: validate all cards first (fail fast)
@@ -874,16 +813,14 @@ def cmd_do(args) -> None:
             card = validate_and_build_card(card_data, session)
             cards.append(card)
 
-        # All validation passed — attach baselines and create all cards
+        # All validation passed — create all cards
         for card in cards:
-            _attach_baseline(card, _baseline_cache)
             num = create_card_in_column(root, "doing", card)
             write_kanban_event(card, str(num), "create", to_column="doing", git_project=git_project)
             print(num)
     elif isinstance(data, dict):
         # Single card creation (existing behavior)
         card = validate_and_build_card(data, session)
-        _attach_baseline(card, _baseline_cache)
         num = create_card_in_column(root, "doing", card)
         write_kanban_event(card, str(num), "create", to_column="doing", git_project=git_project)
         print(num)
@@ -962,10 +899,6 @@ def cmd_start(args) -> None:
     git_root = get_git_root()
     git_project = os.path.basename(git_root) if git_root else None
 
-    # Lazily-captured baseline, refreshed per card if needed.
-    # 1-element mutable list used as a cache container; reset per card that needs refresh.
-    _baseline_cache = ["uncached"]
-
     failed = False
     for card_num in card_numbers:
         try:
@@ -979,17 +912,6 @@ def cmd_start(args) -> None:
                 continue
 
             card = read_card(card_path)
-
-            # Refresh the baseline when starting a todo card that has editFiles.
-            # The baseline captured at card creation (kanban todo) may be stale by
-            # the time the card is picked up — refresh it now so enforcement in
-            # cmd_review uses an accurate pre-work snapshot.
-            if card.get("editFiles"):
-                _baseline_cache = ["uncached"]  # force fresh capture for this card
-                fresh_baseline = _get_cached_baseline(_baseline_cache)
-                if fresh_baseline is not None:
-                    card["_baseline_modified"] = fresh_baseline
-
             card["updated"] = now_iso()
             write_card(card_path, card)
             write_kanban_event(card, num, "start", from_column="todo", to_column="doing", git_project=git_project)
@@ -1015,6 +937,10 @@ def generate_workflow_instructions(card: dict, num: str, col: str, session: str)
     """Generate workflow instructions for an agent based on card column and type.
 
     Returns empty string for columns where no instructions apply (todo, done, canceled).
+    Produces distinct output for 6 type x column variants:
+      doing: work(true), work(false), research, review
+      review: work(true), work(false), research, review
+    All variants include command disambiguation and strict adherence blocks.
     """
     if col not in ("doing", "review"):
         return ""
@@ -1023,37 +949,56 @@ def generate_workflow_instructions(card: dict, num: str, col: str, session: str)
     session_str = session or ""
     session_flag = f" --session {session_str}" if session_str else ""
 
+    # For backward compatibility: work cards without fileChangesExpected treat as true
+    file_changes_expected = card.get("fileChangesExpected", True)
+
     if col == "doing":
         lines = ["## Workflow Instructions", ""]
 
-        # Prominent warning block — must be first thing the agent sees
+        # Strict adherence block — must appear at the top
+        lines.append("You MUST follow these instructions exactly. Do not skip steps, reorder steps, or improvise alternatives. The kanban workflow is a contract — deviating from it causes cascading failures for the coordinator and AC reviewer.")
+        lines.append("")
+
+        # Prominent warning block
         lines.append("⚠️ REQUIRED BEFORE FINISHING: You MUST post findings via `kanban comment` and self-check each AC via `kanban criteria check` BEFORE running `kanban review`. Without these, the AC reviewer has NO evidence to verify your work and review WILL fail.")
         lines.append("")
 
-        # Type-based instruction line for research/review cards
-        if card_type == "research":
-            lines.append("This is a **research** card. Your ONLY deliverable is card comments — there are no file changes for the AC reviewer to inspect. If you do not run `kanban comment`, your work is invisible and unrecoverable.")
+        # Type-specific deliverable block
+        if card_type == "work" and file_changes_expected:
+            lines.append("You MUST produce file changes. If you move to review without changing files, review WILL fail.")
+            lines.append("")
+        elif card_type == "work" and not file_changes_expected:
+            lines.append("This is an operational work card. Your deliverable may be external changes (e.g., ran a CLI command, called an API, created infrastructure) rather than file edits. Document exactly what commands you ran and their outputs as kanban comments.")
+            lines.append("")
+        elif card_type == "research":
+            lines.append("Your ONLY deliverable is card comments. No file changes expected. If you do not run `kanban comment`, your work is invisible and unrecoverable.")
             lines.append("")
         elif card_type == "review":
-            lines.append("This is a **review** card. Your ONLY deliverable is card comments — there are no file changes for the AC reviewer to inspect. If you do not run `kanban comment`, your work is invisible and unrecoverable.")
+            lines.append("Your ONLY deliverable is card comments containing assessment. No file changes expected. If you do not run `kanban comment`, your work is invisible and unrecoverable.")
             lines.append("")
 
+        # Command disambiguation — emphatic, always present
+        lines.append("Command disambiguation:")
+        lines.append(f"  Use `kanban criteria check` — the agent self-check command.")
+        lines.append(f"  Do NOT use `kanban criteria verify` — that is the AC reviewer command. Using the wrong command will corrupt the review process.")
+        lines.append("")
+
         lines.append("1. Do the work described on this card.")
-        lines.append(f"2. After completing each acceptance criterion, immediately run:")
-        lines.append(f"   `kanban criteria check {num} {{n}}{session_flag}`")
+        lines.append("2. After completing each acceptance criterion, immediately run:")
+        lines.append(f"   `kanban criteria check {num} <N>{session_flag}`  (replace N with criterion number: 1, 2, 3...)")
         lines.append("3. Write detailed findings or implementation notes as card comments:")
         lines.append(f"   `kanban comment {num} \"your findings\"{session_flag}`")
         lines.append("")
         lines.append("── Pre-Review Checklist (MANDATORY) ──────────────────")
         lines.append("Before running `kanban review`, verify:")
-        lines.append(f"□ Every AC criterion checked via `kanban criteria check {num} {{n}}{session_flag}`")
+        lines.append(f"□ Every AC criterion checked via `kanban criteria check {num} <N>{session_flag}`  (replace N with criterion number: 1, 2, 3...)")
         lines.append(f"□ Findings/results posted via `kanban comment {num} \"...\"{session_flag}` (at least one comment required)")
         lines.append("If either is missing, the review will fail.")
         lines.append("")
         lines.append("4. When all criteria are met AND the checklist above is satisfied, move the card to review:")
         lines.append(f"   `kanban review {num}{session_flag}`")
         lines.append("   If this fails, the error will list unchecked criteria — address them and try again.")
-        lines.append("5. When finished, respond to the coordinator with ONLY a 1-2 sentence summary of what you did. (This means your final response — not kanban comments. Continue writing detailed comments on the card.) Do not restate findings or deliverable details.")
+        lines.append("5. When finished, respond to the coordinator with ONLY a 1-2 sentence summary. Your final response (the text you return at the end) should be brief. Continue writing detailed notes as kanban comments throughout. Do not restate findings or deliverable details.")
         lines.append("")
         lines.append(f"Do NOT run any kanban commands except `kanban show`, `kanban criteria check/uncheck`, `kanban comment`, and `kanban review` for card #{num}. Card lifecycle is handled by the coordinator.")
 
@@ -1061,10 +1006,31 @@ def generate_workflow_instructions(card: dict, num: str, col: str, session: str)
 
     # col == "review"
     lines = ["## Workflow Instructions", ""]
-    lines.append("1. Verify each acceptance criterion. For review/research cards, use card comments as primary evidence. For work cards, inspect modified files.")
+
+    # Strict adherence block
+    lines.append("You MUST follow these instructions exactly. Do not skip steps, reorder steps, or improvise alternatives.")
+    lines.append("")
+
+    # Command disambiguation — emphatic, always present
+    lines.append("Command disambiguation:")
+    lines.append("  Use `kanban criteria verify` — the AC reviewer command.")
+    lines.append("  Do NOT use `kanban criteria check` — that is the agent self-check command. Using the wrong command will corrupt the review process.")
+    lines.append("")
+
+    # Type-specific verification guidance (inlined into step 1 below)
+    if card_type == "work" and file_changes_expected:
+        step1 = "1. Verify each acceptance criterion by inspecting the modified files. If no files were changed, mark as fail."
+    elif card_type == "work" and not file_changes_expected:
+        step1 = "1. Verify each acceptance criterion via card comments — the deliverable is external changes, not file modifications."
+    elif card_type == "research":
+        step1 = "1. Verify each acceptance criterion by reading card comments containing findings."
+    else:  # card_type == "review"
+        step1 = "1. Verify each acceptance criterion by reading card comments containing assessment."
+
+    lines.append(step1)
     lines.append("2. After verifying each criterion, immediately run:")
-    lines.append(f"   `kanban criteria verify {num} {{n}}{session_flag}`")
-    lines.append("3. When finished, respond to the coordinator with ONLY the card number and pass/fail. (This means your final response — not kanban comments.) Example: " + f"'#{num}: pass' or '#{num}: fail — AC2 unverified'. Do not restate findings.")
+    lines.append(f"   `kanban criteria verify {num} <N>{session_flag}`  (replace N with criterion number: 1, 2, 3...)")
+    lines.append("3. When finished, respond to the coordinator with ONLY the card number and pass/fail. Your final response should be the summary — not kanban comments. Example: " + f"'#{num}: pass' or '#{num}: fail — AC2 unverified'. Do not restate findings.")
     lines.append("")
     lines.append(f"Do NOT run any kanban commands except `kanban show` and `kanban criteria verify/unverify` for card #{num}. Card lifecycle is handled by the coordinator.")
 
@@ -1151,6 +1117,13 @@ def cmd_show(args) -> None:
         output_lines.append(f"{dim_bold}  Read Files{reset}")
         for f in sorted(read_files):
             output_lines.append(f"  {f}")
+
+    # fileChangesExpected section (work cards only)
+    if card.get("type", "work") == "work" and "fileChangesExpected" in card:
+        output_lines.append("")
+        fce_label = "Yes" if card["fileChangesExpected"] else "No"
+        output_lines.append(f"{dim_bold}  File Changes Expected{reset}")
+        output_lines.append(f"  {fce_label}")
 
     # Comments section
     comments = card.get("comments", [])
@@ -1498,6 +1471,11 @@ def format_card_xml(card: dict, num: str, col: str, include_details: bool = Fals
                 text = esc(criterion.get("text", ""))
                 xml_parts.append(f'    <ac agent-met="{agent_met}" reviewer-met="{reviewer_met}">{text}</ac>')
             xml_parts.append("  </acceptance-criteria>")
+
+    # fileChangesExpected (work cards only, shown in details mode)
+    if include_details and card.get("type", "work") == "work" and "fileChangesExpected" in card:
+        fce_val = "true" if card["fileChangesExpected"] else "false"
+        xml_parts.append(f"  <file-changes-expected>{fce_val}</file-changes-expected>")
 
     # Edit files
     edit_files = card.get("editFiles") or card.get("writeFiles", [])
@@ -2145,10 +2123,6 @@ def cmd_todo(args) -> None:
     git_root = get_git_root()
     git_project = os.path.basename(git_root) if git_root else None
 
-    # Capture git baseline once for all cards in this batch (same point-in-time snapshot).
-    # Only used when a card has editFiles — lazy enough that we skip if no card needs it.
-    _baseline_cache = ["uncached"]  # mutable 1-element list used by _get_cached_baseline
-
     # Detect array vs object
     if isinstance(data, list):
         # Bulk creation: validate all cards first (fail fast)
@@ -2160,16 +2134,14 @@ def cmd_todo(args) -> None:
             card = validate_and_build_card(card_data, session)
             cards.append(card)
 
-        # All validation passed — attach baselines and create all cards
+        # All validation passed — create all cards
         for card in cards:
-            _attach_baseline(card, _baseline_cache)
             num = create_card_in_column(root, "todo", card)
             write_kanban_event(card, str(num), "create", to_column="todo", git_project=git_project)
             print(num)
     elif isinstance(data, dict):
         # Single card creation (existing behavior)
         card = validate_and_build_card(data, session)
-        _attach_baseline(card, _baseline_cache)
         num = create_card_in_column(root, "todo", card)
         write_kanban_event(card, str(num), "create", to_column="todo", git_project=git_project)
         print(num)
@@ -2186,16 +2158,6 @@ def cmd_review(args) -> None:
     # Pre-compute git_project once to avoid N redundant git subprocesses in bulk loops
     git_root = get_git_root()
     git_project = os.path.basename(git_root) if git_root else None
-
-    # Capture current git diff once for all cards in this review batch.
-    # Lazily initialized so we skip the subprocess entirely if no card needs it.
-    _current_modified_cache: list[str] | None | str = "uncached"  # sentinel
-
-    def get_current_modified() -> list[str] | None:
-        nonlocal _current_modified_cache
-        if _current_modified_cache == "uncached":
-            _current_modified_cache = capture_git_baseline()
-        return _current_modified_cache
 
     failed = False
     for card_num in card_numbers:
@@ -2224,25 +2186,6 @@ def cmd_review(args) -> None:
                 print(f"\nRun `kanban criteria check {num} <n>` to mark criteria as met before moving to review.", file=sys.stderr)
                 failed = True
                 continue
-
-        # Enforce file scope if the card has both editFiles and _baseline_modified.
-        # Cards without either field are skipped for backward compatibility.
-        edit_files = card.get("editFiles", [])
-        baseline = card.get("_baseline_modified")
-        if edit_files and baseline is not None:
-            current_modified = get_current_modified()
-            if current_modified is not None:
-                baseline_set = set(baseline)
-                new_modifications = [f for f in current_modified if f not in baseline_set]
-                out_of_scope = [f for f in new_modifications if not file_matches_edit_files(f, edit_files)]
-                if out_of_scope:
-                    print(f"Error: Cannot move #{num} to review — files modified outside editFiles scope:", file=sys.stderr)
-                    for f in out_of_scope:
-                        print(f"  {f}", file=sys.stderr)
-                    print(f"\nAllowed files: {edit_files}", file=sys.stderr)
-                    print(f"\nRevert out-of-scope changes or update the card's editFiles field.", file=sys.stderr)
-                    failed = True
-                    continue
 
         card["updated"] = now_iso()
         write_card(card_path, card)

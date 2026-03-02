@@ -219,9 +219,7 @@ kanban do '{"type":"work","action":"...","intent":"...","criteria":["AC1","AC2",
 
 **Why file-based for complex cards:** the Write tool is auto-approved and handles any content safely; the resulting Bash command (`kanban do --file *`) is a short, reviewable pattern that can be auto-approved independently. Inline is fine for simple cards because the full Bash command is short enough to review at a glance.
 
-**type** required: "work", "review", or "research". **model** required: "haiku", "sonnet", or "opus". **AC** required: 3-5 specific, measurable items. **editFiles/readFiles**: Enforced allowlist of files the agent is permitted to modify (e.g. `["src/auth/*.ts"]`). Agents cannot move to review if they modified files outside this list. Supports glob patterns. Note: glob patterns use Python fnmatch where `*` matches path separators (`/`) — so `src/*.ts` matches files at any depth under `src/`, not just direct children. This is more permissive than shell glob behavior. Be accurate — these are not placeholder guesses, they define the actual scope boundary. Bulk: Pass JSON array.
-
-**editFiles recovery:** If an agent returns blocked by editFiles enforcement, update the card's `editFiles` field to include the needed file, then re-delegate. Alternatively, `kanban redo` the card with corrected `editFiles`.
+**type** required: "work", "review", or "research". **model** required: "haiku", "sonnet", or "opus". **AC** required: 3-5 specific, measurable items. **editFiles/readFiles**: Coordination metadata showing which files the agent intends to modify (e.g. `["src/auth/*.ts"]`). Displayed on card so staff engineers across sessions can see file overlap. Supports glob patterns. Note: glob patterns use Python fnmatch where `*` matches path separators (`/`) — so `src/*.ts` matches files at any depth under `src/`, not just direct children. This is more permissive than shell glob behavior. Be accurate — these are not placeholder guesses, they define the actual scope boundary. Bulk: Pass JSON array. **fileChangesExpected**: Required boolean for work cards indicating whether the card should produce file changes. The staff engineer must explicitly set this at card creation time. No default — validation fails if missing on work cards. Ignored for research/review cards.
 
 **AC quality is the entire quality gate.** The AC reviewer is Haiku with no context beyond the kanban card. It runs `kanban show`, reads the AC, and mechanically verifies each criterion. If AC is vague ("code works correctly"), incomplete, or assumes context not on the card, the review will rubber-stamp bad work. Write AC as if a stranger with zero project context must verify the work using only what's on the card. Each criterion should be specific enough to verify and falsifiable enough to fail.
 
@@ -635,7 +633,7 @@ See [review-protocol.md § Post-Review Decision Flow](../docs/staff-engineer/rev
 
 | Type | Input | Output | AC verifies |
 |------|-------|--------|-------------|
-| work | task to implement | file changes | changes present in files |
+| work | task to implement | file changes | changes present in files (fileChangesExpected must be explicitly set for work cards) |
 | review | specific artifact to evaluate | assessment/judgment | findings returned |
 | research | open question or problem space | findings/synthesis/recommendation | questions were answered |
 
@@ -644,7 +642,8 @@ See [review-protocol.md § Post-Review Decision Flow](../docs/staff-engineer/rev
 **Research card AC examples:** For research cards, acceptance criteria must be falsifiable statements about the investigative outcome. Examples: "Root cause of timeout identified with supporting evidence", "At least 3 alternative approaches documented with trade-offs", "Library compatibility with Node 20 confirmed or denied with version-specific evidence", "Performance bottleneck isolated to specific function with benchmark data".
 
 - **criteria** -- 3-5 specific, measurable outcomes
-- **editFiles/readFiles** -- Enforced allowlist of files the agent can modify (glob patterns supported). Kanban review transition is rejected if agent modified files outside this list. Must be accurate, not placeholder guesses.
+- **editFiles/readFiles** -- Coordination metadata showing which files the agent intends to modify (glob patterns supported). Displayed on card for cross-session file overlap detection. Must be accurate, not placeholder guesses.
+- **fileChangesExpected** -- Required boolean for work cards indicating whether file changes are expected. Ignored for research/review cards.
 
 ### Redo vs New Card
 
