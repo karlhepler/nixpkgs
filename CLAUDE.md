@@ -169,6 +169,32 @@ Some skills intentionally lack agent definitions because they are exception or w
 - `KANBAN_SESSION=custom-id`: Override session detection (for burns/smithers)
 - Session mappings stored in `.kanban/sessions.json`
 
+### Kanban Command Reference
+
+| Command | Purpose | Who Uses |
+|---------|---------|----------|
+| `kanban list --output-style=xml --session <id>` | Board check (compact XML) | Staff engineer |
+| `kanban do '<json>' --session <id>` or `kanban do --file <path> --session <id>` | Create card(s) in doing | Staff engineer |
+| `kanban todo '<json>' --session <id>` or `kanban todo --file <path> --session <id>` | Create card(s) in todo | Staff engineer |
+| *(See § Create Card for inline vs file-based threshold guidance)* | | |
+| `kanban show <card>` | Read card details (action, intent, AC) | Sub-agents (own card), AC reviewer, staff engineer |
+| `kanban start <card> [cards...]` | Pick up from todo | Staff engineer |
+| `kanban review <card> [cards...]` | Move to review column | Staff engineer |
+| `kanban redo <card>` | Send back from review | Staff engineer |
+| `kanban defer <card> [cards...]` | Park in todo | Staff engineer |
+| `kanban criteria add <card> "text"` | Add AC (mid-flight OK) | Staff engineer |
+| `kanban criteria remove <card> <n> "reason"` | Remove AC with reason | Staff engineer |
+| `kanban criteria check <card> <n>` | Self-check AC (agent_met column) | Sub-agents (own card) |
+| `kanban criteria uncheck <card> <n>` | Undo self-check | Sub-agents (own card) |
+| `kanban criteria verify <card> <n>` | Verify AC (reviewer_met column) | AC reviewer |
+| `kanban criteria unverify <card> <n>` | Undo verification | AC reviewer |
+| `kanban comment <card> "text"` | Add timestamped comment | Sub-agents (own card), staff engineer |
+| `kanban done <card> 'summary'` | Complete card (both columns enforced) | Staff engineer |
+| `kanban cancel <card> [cards...]` | Cancel card(s) | Staff engineer |
+| ~~`kanban clean`~~ | **PROHIBITED — never run** | Nobody |
+
+**All commands accept `--session <id>` (required in multi-session contexts).**
+
 ## Critical Requirements
 
 1. **🚨 NEVER HOMEBREW**: Do NOT suggest, recommend, or implement Homebrew. EVER. All packages MUST be managed through Nix (nixpkgs/nixpkgs-unstable) or direct binary downloads. See prohibition above.
@@ -357,6 +383,35 @@ Both files made git-invisible by `hms` after first run. Backups linked via `*.la
 - Business: finance, lawyer, marketing
 - Special: workout-burns, workout-staff, project-planner
 
+## Your Team
+
+| Skill | What They Do | When to Use |
+|-------|--------------|-------------|
+| `/ac-reviewer` | AC verification (Haiku) | AUTOMATIC after every card review |
+| `/researcher` | Multi-source investigation | Research, verify, fact-check |
+| `/scribe` | Documentation | Docs, README, API docs, guides |
+| `/ux-designer` | User experience | UI design, UX research, wireframes |
+| `/project-planner` | Project planning | Multi-week efforts (exception skill) |
+| `/visual-designer` | Visual design | Branding, graphics, design system |
+| `/swe-frontend` | React/Next.js UI | Components, CSS, accessibility |
+| `/swe-backend` | Server-side | APIs, databases, microservices |
+| `/swe-fullstack` | End-to-end features | Full-stack, rapid prototyping |
+| `/swe-sre` | Reliability | SLIs/SLOs, monitoring, incidents |
+| `/swe-infra` | Cloud infrastructure | K8s, Terraform, IaC |
+| `/swe-devex` | Developer productivity | CI/CD, build systems, testing |
+| `/swe-security` | Security assessment | Vulnerabilities, threat models |
+| `/ai-expert` | AI/ML and prompts | Prompt engineering, Claude optimization |
+| `/debugger` | Systematic debugging | Complex bugs resisting 2-3 rounds of normal fixes (escalation only) |
+| `/lawyer` | Legal documents | Contracts, privacy, ToS, GDPR |
+| `/marketing` | Go-to-market | GTM, positioning, SEO |
+| `/finance` | Financial analysis | Unit economics, pricing, burn rate |
+| `/workout-staff` | Git worktree | Parallel branches (exception skill) |
+| `/workout-burns` | Worktree with burns | Parallel dev with Ralph (exception skill) |
+| `/review` | Full PR code review | Orchestrate specialist review of an **existing PR** — ONLY when user explicitly references a PR: "review PR #N", "code review PR #N", "review pull request". NOT triggered by user confirming Mandatory Review Protocol recommendations. |
+| `/manage-pr-comments` | PR comment management via `prc` | List, filter, resolve, collapse comment threads |
+| `smithers` (CLI) | Autonomous PR watcher (user-run, not invocable via Task/Skill) | See smithers note in staff-engineer output style |
+| `/review-pr-comments` | Respond to reviewer feedback | Reply to reviewer comments on a PR you submitted — NOT for performing a code review |
+
 ## Reference Documentation
 
 **User setup:** See README.md for installation and daily usage procedures.
@@ -371,3 +426,13 @@ Both files made git-invisible by `hms` after first run. Backups linked via `*.la
 - `nix search nixpkgs <package>`: Search packages
 
 **Implementation details:** See source files in `modules/` directories for specific configurations (theme, LSP, activation hooks, etc).
+
+## External References
+
+Supporting documentation for the staff engineer output style:
+
+- [delegation-guide.md](modules/claude/global/docs/staff-engineer/delegation-guide.md) - Permission handling, model selection patterns
+- [parallel-patterns.md](modules/claude/global/docs/staff-engineer/parallel-patterns.md) - Parallel execution examples
+- [edge-cases.md](modules/claude/global/docs/staff-engineer/edge-cases.md) - Interruptions, partial completion, review disagreements
+- [review-protocol.md](modules/claude/global/docs/staff-engineer/review-protocol.md) - Mandatory reviews, approval criteria, conflict resolution
+- [self-improvement.md](modules/claude/global/docs/staff-engineer/self-improvement.md) - Automate your own toil

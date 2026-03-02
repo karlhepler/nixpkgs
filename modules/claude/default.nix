@@ -331,6 +331,7 @@ in {
             # Kanban CLI (agent coordination)
             "Bash(kanban)"
             "Bash(kanban *)"
+            "Bash(kanban:*)"
 
             # Perm CLI (permission lifecycle management)
             "Bash(perm)"
