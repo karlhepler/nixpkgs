@@ -25,7 +25,7 @@ import xml.etree.ElementTree as ET
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-BLOCK_SENTINEL = "STOP — you have unchecked acceptance criteria on card #"
+BLOCK_SENTINEL = "STOP — incomplete kanban workflow on card #"
 
 
 # ---------------------------------------------------------------------------
@@ -137,6 +137,28 @@ def parse_unchecked_criteria(xml_text):
     return unchecked
 
 
+def parse_card_column(xml_text):
+    """Parse the card's status (column) from kanban XML output."""
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return None
+    card_el = root if root.tag == "card" else root.find(".//card")
+    if card_el is not None:
+        return card_el.get("status")
+    return None
+
+
+def has_agent_comments(xml_text):
+    """Check if the card has any comments (agent findings)."""
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return False
+    comments = root.findall(".//comment")
+    return len(comments) > 0
+
+
 def post_warning_comment(card_number, session_id, last_message=""):
     """
     Post a warning comment to the card when the agent is let through on retry.
@@ -146,8 +168,8 @@ def post_warning_comment(card_number, session_id, last_message=""):
     silently swallowed.
     """
     base = (
-        "WARNING: Agent completed without self-checking all acceptance criteria."
-        " AC review will need to catch gaps."
+        "WARNING: Agent completed without finishing all kanban workflow steps"
+        " (comment/criteria check/review). AC review will need to catch gaps."
     )
     if last_message:
         excerpt = last_message[:200]
@@ -175,27 +197,43 @@ def post_warning_comment(card_number, session_id, last_message=""):
         pass
 
 
-def build_block_reason(card_number, session_id, unchecked):
+def build_block_reason(card_number, session_id, unchecked, comments_present, column):
     """
-    Build the human-readable blocking reason string listing each unchecked
-    criterion with the exact command to check it off.
+    Build the human-readable blocking reason string listing all incomplete
+    workflow steps: findings comment, AC self-checks, and review transition.
     """
     lines = [
-        f"{BLOCK_SENTINEL}{card_number}. Before finishing, you MUST run these commands:",
+        f"{BLOCK_SENTINEL}{card_number}. Before finishing, you MUST complete these steps:",
         "",
     ]
+
+    # Step 1: Post findings (if no comments yet)
+    if not comments_present:
+        lines.append(
+            f'kanban comment {card_number} "your detailed findings here" --session {session_id}'
+        )
+        lines.append("  # Post your findings/summary as a card comment")
+        lines.append("")
+
+    # Step 2: Check unchecked AC criteria
     for ac in unchecked:
         lines.append(
             f"kanban criteria check {card_number} {ac['n']} --session {session_id}"
         )
         if ac["text"]:
             lines.append(f"  # Criterion: {ac['text'][:120]}")
-    lines += [
-        "",
-        f'Also write your findings as a card comment: kanban comment {card_number} "your findings" --session {session_id}',
-        "",
-        "Then you may finish.",
-    ]
+    if unchecked:
+        lines.append("")
+
+    # Step 3: Move to review (if not already there)
+    if column and column not in ("review", "done"):
+        lines.append(
+            f"kanban review {card_number} --session {session_id}"
+        )
+        lines.append("  # Move card to review column (must be last step)")
+        lines.append("")
+
+    lines.append("Run ALL commands above in order. Then you may finish.")
     return "\n".join(lines)
 
 
@@ -224,10 +262,11 @@ def main():
     #
     # COUPLING POINT: This string match detects AC reviewer agents vs
     # work/research agents.  The phrase 'criteria verify' comes directly from
-    # the AC reviewer delegation template defined in staff-engineer.md
-    # (§ 'AC reviewer delegation template').  If that template ever changes its
-    # wording (e.g. renames the command), this detection must be updated to
-    # match, otherwise AC reviewers will be incorrectly subjected to enforcement.
+    # the AC reviewer delegation template in staff-engineer.md
+    # (§ 'Delegation template for AC reviewers').  If that template ever
+    # changes its wording (e.g. renames the command), this detection must be
+    # updated to match, otherwise AC reviewers will be incorrectly subjected
+    # to enforcement.
     if "criteria verify" in first_human:
         return
 
@@ -250,11 +289,25 @@ def main():
     if not xml_text:
         return
 
+    # Check ALL completion requirements in one pass.
+    # Combined check matters because retry protection (stop_hook_active) only
+    # allows one retry — all missing steps must be communicated at once.
     unchecked = parse_unchecked_criteria(xml_text)
-    if not unchecked:
+    comments_present = has_agent_comments(xml_text)
+    column = parse_card_column(xml_text)
+
+    needs_block = (
+        bool(unchecked)
+        or not comments_present
+        or (column is not None and column not in ("review", "done"))
+    )
+
+    if not needs_block:
         return
 
-    reason = build_block_reason(card_number, session_id, unchecked)
+    reason = build_block_reason(
+        card_number, session_id, unchecked, comments_present, column
+    )
     block_response = json.dumps({"decision": "block", "reason": reason})
     sys.stdout.write(block_response)
     sys.stdout.flush()

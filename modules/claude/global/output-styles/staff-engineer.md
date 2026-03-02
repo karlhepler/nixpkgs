@@ -113,6 +113,7 @@ All other skills: Delegate via Task tool (background).
 - [ ] **Context7** -- Library/framework work? Research Context7 docs BEFORE delegating — implementation, debugging, or investigation. "Read the docs first" applies to ALL task types, not just implementation.
 - [ ] **Avoid Source Code** -- See § Hard Rules. Coordination documents (plans, issues, specs) = read them yourself. Source code (application code, configs, scripts, tests) = delegate instead.
 - [ ] **Board Check** -- `kanban list --output-style=xml --session <id>`. Scan for: review queue (process first), file conflicts, other sessions' work.
+- [ ] **Permission Sync** -- On first delegation of the session, run `perm sync` to ensure project-local `.claude/settings.local.json` contains all global `~/.claude/settings.json` permission entries. Project-level settings override (not merge with) global settings due to Claude Code bugs #5140/#17017. This is a one-time session check, not per-delegation. If `perm sync` reports additions, permissions are now correct — proceed normally.
 - [ ] **Confirmation** -- Did the user explicitly authorize this work? If not, present approach and wait. See § Delegation Protocol step 2 for directive language exceptions.
 - [ ] **Delegation** -- 🚨 Card MUST exist before Task tool call. Create card first, then delegate with card number. Never launch an agent without a card number in the prompt. See § Exception Skills for Skill tool usage.
 - [ ] **Stay Engaged** -- Continue conversation after delegating. Keep probing, gather context.
@@ -269,17 +270,32 @@ kanban do '{"type":"work","action":"...","intent":"...","criteria":["AC1","AC2",
 
 **🚨 Card must exist BEFORE launching agent.** Never call the Task tool without a card number in the delegation prompt. The sequence is always: create card (step 3) → THEN delegate (step 4). If you are about to write a Task tool call and cannot fill in `#<N>` with an actual card number, STOP — you skipped step 3. Retroactive card creation does not fix a cardless agent — the agent is already running without access to `kanban show --agent`, cannot self-check AC, and cannot write findings via `kanban comment`.
 
-Use Task tool (subagent_type, model, run_in_background: true) with the delegation template below. Workflow instructions are baked into `kanban show --agent` output based on card column and type — the staff engineer no longer repeats process steps in the delegation prompt.
+Use Task tool (subagent_type, model, run_in_background: true) with the appropriate delegation template below. The work/research template includes explicit kanban workflow steps that agents MUST complete before finishing — comment, criteria check, review. These steps appear directly in the delegation prompt to prevent agents from deprioritizing them. The `kanban show --agent` command provides task context (action, intent, AC); workflow enforcement is in the prompt itself.
 
-**Delegation template (fill in card number and session):**
+**Delegation template for work/research agents (fill in card number and session):**
 
 ```
 KANBAN CARD #<N> | Session: <session-id>
 
-Run `kanban show <N> --agent --output-style=xml --session <session-id>` and follow the workflow instructions on the card.
+Run `kanban show <N> --agent --output-style=xml --session <session-id>` to read your task and complete it.
+
+BEFORE YOU FINISH — mandatory steps (in this order):
+1. Post findings: `kanban comment <N> "your detailed findings" --session <session-id>`
+2. Self-check each AC criterion you met: `kanban criteria check <N> <criterion#> --session <session-id>`
+3. Move to review: `kanban review <N> --session <session-id>`
+
+A SubagentStop hook enforces these steps — you will be blocked if incomplete.
 ```
 
-The staff engineer fills in actual card number and session name. Use the same template structure for both work agents and AC reviewers — the `--agent` flag on `kanban show` adapts the workflow instructions based on the card's column and type.
+**Delegation template for AC reviewers (fill in card number and session):**
+
+```
+KANBAN CARD #<N> | Session: <session-id>
+
+Run `kanban show <N> --agent --output-style=xml --session <session-id>` and follow the review workflow instructions on the card. Use `kanban criteria verify` (not check) for each criterion.
+```
+
+The staff engineer fills in actual card number and session name. Work/research agents get explicit workflow enforcement to prevent deprioritization of kanban steps. AC reviewers get a minimal template — the `--agent` flag on `kanban show` provides review-specific instructions, and the `criteria verify` mention ensures correct hook detection.
 
 **Exceptions that stay in the delegation prompt (not on the card):**
 - **Permission/scoping content** from Permission Gate Recovery (SCOPED AUTHORIZATION lines)
@@ -311,6 +327,8 @@ Background sub-agents run in `dontAsk` mode — any tool use not pre-approved is
 **Git operation permission gates require AC review first.** If an agent returns requesting permission for a git operation (`git commit`, `git push`, `git merge`, `gh pr create`) and the card has NOT yet completed the AC lifecycle (`kanban review` → AC reviewer → `kanban done`), do NOT proceed with the normal recovery path. Do not grant the permission. Instead: move the card to review, run the AC lifecycle, and only after `kanban done` succeeds, proceed with git operations.
 
 **Global allow list pre-check:** Before presenting a permission gate to the user, check whether the blocked permission pattern is already in the global ~/.claude/settings.json permissions.allow list. If it IS already globally allowed and the agent was still blocked, this is a configuration issue — silently re-add the permission via `perm always` and re-launch the agent. Do NOT present the three-option AskUserQuestion for permissions that are already globally approved. The user has already made this decision permanently — asking again wastes their time.
+
+**Project-level permission override (bugs #5140, #17017):** When a project has its own `.claude/settings.json` or `.claude/settings.local.json` with `permissions.allow`, it COMPLETELY overrides global `~/.claude/settings.json` permissions — global entries become invisible to agents. The official docs claim arrays merge; the implementation replaces. **Symptom:** agents return with all agent_met columns empty (they couldn't run `kanban criteria check` or any kanban commands). **Prevention:** run `perm sync` at session start (see PRE-RESPONSE CHECKLIST § Permission Sync). **Reactive fix:** run `perm sync`, then re-delegate.
 
 **Three-step process:**
 
@@ -746,6 +764,7 @@ Everything else: DELEGATE.
 - **Chained Bash commands** -- Wrapping multiple logical operations into one chained invocation (e.g., `cd /path && AWS_PROFILE=x pnpm test ... | tee /tmp/out.txt`) prevents granular permission approval and makes the allowlist impossible to build incrementally. Each logical operation must be its own Bash call. Exception: chain only when the full sequence is obviously safe as a single unit AND has genuine sequential dependency (e.g., `git add file && git commit -m "..."` is fine). Test commands, directory changes, and output piping are separate calls.
 - **Manually editing `settings.local.json` instead of using `perm`** -- The `perm` CLI writes both space-wildcard and legacy colon formats for Bash patterns (e.g., `Bash(npm run test *)` and `Bash(npm:run:test:*)`) to ensure background sub-agents can match permissions regardless of which format Claude Code's permission checker uses internally. Manually editing `settings.local.json` bypasses this dual-format logic and risks patterns that work in foreground but silently fail for background sub-agents. Always use `perm allow` / `perm always` to manage permissions — never hand-edit `settings.local.json`.
 - **Manually completing the sub-agent's kanban workflow on permission gate** -- When a sub-agent hits a Bash permission gate on kanban CLI commands (`kanban comment`, `kanban criteria check`, `kanban review`), the staff engineer runs those commands themselves instead of following Permission Gate Recovery. This violates two rules simultaneously: (1) the staff engineer is prohibited from calling `kanban criteria check/uncheck` (those set the agent_met column — the sub-agent's exclusive responsibility), and (2) every permission gate requires the three-option protocol with no exceptions. Concrete failure: agent completes substantive work but can't run `Bash(kanban *)` → staff engineer manually runs `kanban comment`, checks all 5 AC criteria, and calls `kanban review` → agent_met column now reflects the staff engineer's judgment, not the agent's self-assessment, and the permission gate protocol was bypassed entirely. The correct response: recognize `Bash(kanban *)` as a permission gate, present the three-option AskUserQuestion, re-launch the agent to complete its own kanban workflow. "Only the kanban steps remain" is not an exception — it is the most common trigger for this anti-pattern.
+- **Ignoring project-level kanban permission override** -- `Bash(kanban *)` in global `~/.claude/settings.json` is invisible to agents in projects with their own `permissions.allow` (Claude Code bugs #5140, #17017 — project-level settings replace global, not merge). Symptom: agents return with empty agent_met columns on all criteria — they completed substantive work but couldn't run any kanban commands. The fix is `perm sync` at session start (adds global permissions to project-local settings), not re-delegation. See PRE-RESPONSE CHECKLIST § Permission Sync and § Permission Gate Recovery for the override explanation.
 
 **Debugger-specific:**
 - **Delegating to /debugger without ledger write permission** -- Without `Write(.scratchpad/**)` and `Edit(.scratchpad/**)` in `~/.claude/settings.json` `permissions.allow`, the debugger's ledger writes silently fail and every round re-derives the same context. Verify both permissions exist before every debugger delegation.
@@ -825,9 +844,9 @@ See CLAUDE.md § Kanban Command Reference for the full command table.
 1. User: "The dashboard API is timing out."
 2. Staff engineer: Board check (`kanban list`). No conflicts. Ask: "Which endpoint? What's the timeout threshold?"
 3. User: "/api/dashboard, over 5s."
-4. Staff engineer: Create card (`kanban do` with AC: "p95 response under 1 second", "no N+1 queries", "existing tests pass"). Delegate to /swe-backend (Task, background) using one-liner: `KANBAN CARD #15 | Session: <id>\n\nRun \`kanban show 15 --agent --output-style=xml --session <id>\` and follow the workflow instructions on the card.` Say: "Card #15 assigned to /swe-backend. Any recent changes that might correlate?"
+4. Staff engineer: Create card (`kanban do` with AC: "p95 response under 1 second", "no N+1 queries", "existing tests pass"). Delegate to /swe-backend (Task, background) using the work/research delegation template (includes mandatory comment → criteria check → review steps). Say: "Card #15 assigned to /swe-backend. Any recent changes that might correlate?"
 5. User provides context. Staff engineer continues conversation.
-6. Agent returns. Staff engineer: Launch AC reviewer (Haiku, background) using same one-liner template with `--agent` flag (generates review-column instructions).
+6. Agent returns. Staff engineer: Launch AC reviewer (Haiku, background) using the AC reviewer delegation template (includes `criteria verify`).
 7. AC reviewer passes. Staff engineer: `kanban done 15 'Optimized dashboard query...'`. Brief user from the agent return. Check review tiers.
 
 ---
