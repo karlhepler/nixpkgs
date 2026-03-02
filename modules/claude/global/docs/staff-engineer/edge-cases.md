@@ -40,11 +40,11 @@ underway (card #16)."
 **What to do:**
 - **Move card to review** - `kanban review <card#>` FIRST (always required)
 - **Launch AC reviewer** - AC reviewer fetches card details (`kanban show`) and evaluates which criteria are satisfied
-- **AC reviewer checks/unchecks criteria** - Only the AC reviewer calls `kanban criteria check/uncheck` (never staff engineer)
+- **AC reviewer verifies/unverifies criteria** - Only the AC reviewer calls `kanban criteria verify/unverify` (sets `reviewer_met` column); sub-agents use `kanban criteria check/uncheck` (sets `agent_met` column); staff engineer never calls per-criterion mutation commands
 - **For remaining items** - Two paths:
-  - **Resume work**: `kanban redo <card#>`, new agent picks up remaining unchecked AC
+  - **Resume work**: `kanban redo <card#>`, new agent picks up remaining unverified AC
   - **Follow-up card**: If scope changed, create new card with remaining work
-- **Never mark done with unchecked AC** - The CLI enforces this
+- **Never mark done with unverified AC** - The CLI enforces this
 
 **Example:**
 ```
@@ -55,18 +55,18 @@ You:
 2. [Launch AC reviewer for card #20]
 
 AC Reviewer:
-1. kanban show 20            # Fetch card details and AC list
-2. kanban criteria check 20 1  # "API endpoint implemented" - satisfied
-3. kanban criteria check 20 2  # "Tests passing" - satisfied
-4. Returns: "AC #3 'Deployed to staging' still unchecked - deployment blocked"
+1. kanban show 20              # Fetch card details and AC list
+2. kanban criteria verify 20 1 # "API endpoint implemented" - satisfied
+3. kanban criteria verify 20 2 # "Tests passing" - satisfied
+4. Returns: "AC #3 'Deployed to staging' still unverified - deployment blocked"
 
 You:
 5. Execute deployment (handle permission gate)
 6. [Launch AC reviewer again after deployment]
 
 AC Reviewer:
-7. kanban criteria check 20 3  # Now satisfied
-8. Returns: "All AC checked"
+7. kanban criteria verify 20 3 # Now satisfied
+8. Returns: "All AC verified"
 
 You:
 9. kanban done 20 'JWT auth implemented, tested, deployed'
@@ -74,7 +74,8 @@ You:
 
 **Anti-pattern:**
 - Moving directly from doing to done (skipping review)
-- Staff engineer calling `kanban show` or `kanban criteria check/uncheck` directly
+- Staff engineer calling `kanban show` or `kanban criteria check/uncheck/verify/unverify` directly
+- AC reviewer using `kanban criteria check/uncheck` (those are for sub-agents only)
 - Creating new card instead of resuming when AC are clear
 
 ---
@@ -288,6 +289,88 @@ You: Resume agent: "Don't use --force. Create new commit instead."
 - Blindly executing destructive operations without user confirmation
 - Blocking on trivial permission gates you could approve
 - Not providing alternative direction when rejecting approach
+
+---
+
+## Sub-Agent Alternative Discovery
+
+**Scenario:** Agent discovers a different tool, library, or approach than what the card's `action` field specifies.
+
+**Decision rule:** If the card's `action` field specifies a tool/approach and the agent discovers a different one, the agent stops and surfaces for approval. Sub-agents have autonomy within unspecified bounds but must surface alternatives that affect card deliverables.
+
+### Autonomy vs Approval Boundaries
+
+**Sub-agents have autonomy over:**
+- Implementation details not specified in the card (e.g., which helper functions to extract, how to structure internal logic)
+- Equivalent techniques that produce identical outcomes (e.g., using `Array.from()` vs spread syntax for array conversion)
+- Minor tooling choices within the same ecosystem when the card doesn't specify (e.g., which testing assertion library to use when the card only says "write tests")
+- Error handling patterns, logging verbosity, code organization within their delegated scope
+
+**Sub-agents must surface and stop when:**
+- The card's `action` specifies a named library/framework and a different one would be used (e.g., card says "use Passport.js" but agent wants NextAuth.js)
+- The card's `action` specifies a named tool and a different one would be used (e.g., card says "use PostgreSQL" but agent discovers the app uses SQLite)
+- The alternative changes the deliverable scope or external interface in a way the card doesn't anticipate
+- Continuing with the discovery would require modifying files outside the card's `editFiles` scope
+
+### Surfacing Workflow
+
+When a sub-agent discovers an alternative that requires approval, it follows these 6 steps:
+
+1. **Stop work** — Do not proceed with the alternative or the originally specified approach
+2. **Document discovery** — Write a `kanban comment` explaining what was found and why it differs from the card's specification (include relevant context: what the card specifies, what was discovered, why they conflict)
+3. **State choice clearly** — In the comment, explicitly state: "Discovered alternative: [X]. Card specifies: [Y]. Waiting for approval to proceed with [X] or confirmation to proceed with [Y]."
+4. **Move to review** — Run `kanban review <card#>` so the staff engineer sees the card is blocked
+5. **Return to staff engineer** — Return with a summary of the discovery and the comment number where full context is documented
+6. **Wait for decision** — Do not attempt partial work or workarounds; the staff engineer decides and re-delegates with updated direction
+
+### Examples
+
+**Requires approval — named library swap:**
+```
+Card action: "Add authentication using Passport.js with JWT strategy"
+Agent discovers: The codebase already has NextAuth.js configured with active sessions
+
+Agent:
+1. Stop work
+2. kanban comment 55 "Discovered NextAuth.js already configured in the codebase (see
+   src/auth/config.ts). Card specifies Passport.js. Adding Passport.js alongside
+   NextAuth.js would create a second auth system. Waiting for approval to proceed
+   with NextAuth.js JWT integration or confirmation to add Passport.js as specified."
+3. kanban review 55
+4. Returns: "Blocked — see card #55 comment. Auth library conflict found."
+```
+
+**Does not require approval — unspecified library choice:**
+```
+Card action: "Write unit tests for the UserService class"
+Agent discovers: No testing library is installed yet
+
+Agent: Selects Jest (standard for the stack), installs it, writes tests.
+No surfacing needed — card didn't specify a testing library.
+```
+
+**Does not require approval — equivalent technique:**
+```
+Card action: "Implement date formatting for the invoice display"
+Agent discovers: date-fns is installed; the card doesn't specify which date library to use
+
+Agent: Uses date-fns since it's already available. No surfacing needed —
+card didn't specify a library, and using an existing dependency is the correct choice.
+```
+
+### Detecting Undisclosed Alternatives During AC Review
+
+When the AC reviewer evaluates completed work, they should flag silent approach swaps — cases where the agent used a different tool or library than specified without surfacing for approval.
+
+**Signals to look for:**
+- Card specifies a named library but imports show a different one
+- Card specifies a named tool but the implementation uses an alternative
+- Work is complete but the specified approach is nowhere in the diff
+
+**What to do when detected:**
+- Mark the relevant AC as unverified (`kanban criteria unverify <card#> <n>`)
+- Add a comment: "Silent approach swap detected — card specified [X] but implementation uses [Y]. Approval was not obtained. This AC cannot be verified until the approach is approved or corrected."
+- Return findings to staff engineer; do not approve work with undisclosed substitutions
 
 ---
 

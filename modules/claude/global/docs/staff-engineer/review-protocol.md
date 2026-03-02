@@ -584,6 +584,218 @@ Staff Engineer:
 
 ---
 
+## Prompt File Reviews
+
+Prompt files (output-styles/\*.md, commands/\*.md, agents/\*.md, CLAUDE.md, hooks/\*.md) require AI Expert review in two distinct parts. Both parts must complete before approving the work card.
+
+### Part 1: Delta Review
+
+Evaluate only the specific changes made. The goal is to verify the edits are sound in isolation before examining the whole.
+
+**Audit checklist — Delta Quality:**
+
+- [ ] **Clarity**: Are the new/changed instructions unambiguous? Could they be interpreted multiple ways?
+- [ ] **Consistency**: Do changes use the same terminology, tone, and formatting as the rest of the file?
+- [ ] **Integration**: Do changes fit naturally with surrounding content, or do they create friction?
+- [ ] **Examples**: If examples were added/changed, are they concrete, accurate, and non-misleading?
+- [ ] **Anti-patterns**: If anti-patterns were added, are they actually wrong (not just style preference)?
+- [ ] **Decision trees / checklists**: Are conditions mutually exclusive and collectively exhaustive?
+- [ ] **No new contradictions**: Do any new instructions conflict with existing instructions in the file?
+- [ ] **Goal achieved**: Do the changes accomplish their stated purpose?
+
+**Model selection — Part 1:**
+- Haiku: delta is small and clearly bounded (a few lines, explicit location, no architectural changes)
+- Sonnet: default for all other delta reviews
+
+### Part 2: Full-File Quality Audit
+
+Re-read the entire file and evaluate against current Claude best practices. Small deltas can mask accumulated technical debt — this audit catches issues that exist independent of the specific changes.
+
+**Audit checklist — Full-File Best Practices:**
+
+**Structure and organization:**
+- [ ] Critical instructions are front-loaded (Claude weighs early content more heavily)
+- [ ] Sections have clear, descriptive headers
+- [ ] Logical flow: context → rules → examples → edge cases
+- [ ] No orphaned sections that don't connect to the overall purpose
+
+**Instruction quality:**
+- [ ] Instructions describe outcomes (WHAT), not just implementation steps (HOW) where appropriate
+- [ ] Language is precise and unambiguous throughout — no vague directives ("be better", "handle carefully")
+- [ ] Active voice, present tense preferred
+- [ ] No contradicting instructions anywhere in the file (e.g., "always do X" in one section, "avoid X" in another)
+
+**Examples and anti-patterns:**
+- [ ] Examples are concrete and representative of real scenarios
+- [ ] Anti-pattern examples clearly illustrate why they fail
+- [ ] Before/after comparisons are meaningfully different (not just cosmetic)
+- [ ] Examples don't accidentally model bad behavior
+
+**Claude 4.x compatibility:**
+- [ ] Avoids instructing Claude to use `<thinking>` tags to trigger extended thinking (extended thinking is an API parameter, not XML markup)
+- [ ] No "AI slop" patterns in example outputs (overly enthusiastic language, generic praise, emoji overuse)
+- [ ] Communication style guidance reflects Claude 4.6 directness (concise, fact-based, active voice)
+
+**Prompt hygiene:**
+- [ ] No duplicate instructions across sections
+- [ ] No stale content that references removed features or outdated workflows
+- [ ] Decision criteria are unambiguous (no "use judgment" where a rule would work)
+- [ ] Length is proportional to purpose — no over-documentation of trivial behaviors
+
+**Model selection — Part 2:**
+- Sonnet: default — most prompt files have been reviewed many times; a small delta audit is an iteration, not a fresh review
+- Opus: only when the delta is large (20+ lines) or architectural — new sections added, major restructure, or core behavior changes
+
+### Review Result Format for Prompt Files
+
+Return findings from both parts together:
+
+```
+PART 1 — DELTA REVIEW: [APPROVE / CHANGES REQUIRED]
+
+Delta assessment: [Specific analysis of the changes]
+
+Issues (if any):
+- [Issue] at [Location]: [Current] → [Required]. Why: [Impact]
+
+PART 2 — FULL-FILE AUDIT: [APPROVE / CHANGES REQUIRED]
+
+Overall assessment: [1-2 sentence summary]
+
+Issues (if any):
+- [Issue] at [Section/Line]: [What's wrong and why it matters]
+
+Verdict: [APPROVE both parts / CHANGES REQUIRED — address before marking done]
+```
+
+---
+
+## Post-Review Decision Flow
+
+When review cards complete, the staff engineer must examine findings before proceeding. This is not optional — even non-blocking findings require a user decision.
+
+### Step-by-Step Process
+
+**Step 1: Collect all review outcomes**
+
+Read every completed review card. Categorize each finding:
+- **Blocking**: Cannot ship — security vulnerability, broken functionality, critical correctness issue
+- **Non-blocking**: Can ship — suggestion, minor improvement, style preference
+- **Approved clean**: No issues found
+
+**Step 2: Determine overall status**
+
+| Outcome | Action |
+|---------|--------|
+| All approved clean | Surface summary to user, proceed to commit/PR |
+| Non-blocking findings only | Surface findings to user — "Fix now or proceed as-is?" |
+| Any blocking finding | Surface findings to user — cannot proceed until addressed |
+
+**Step 3: Surface findings to user**
+
+Format the finding summary clearly:
+- State the finding (what was found)
+- State the severity (blocking or non-blocking)
+- State the options (fix now, defer to follow-up, proceed as-is)
+- Ask for a decision
+
+Do NOT make the code quality decision yourself. Do NOT silently proceed past findings. Do NOT assume non-blocking means proceed.
+
+**Step 4: Execute user decision**
+
+| User decision | Staff engineer action |
+|---------------|----------------------|
+| Fix now | Create new work card for the fix, add review card if needed, complete before marking original done |
+| Proceed as-is | Mark original card done, note findings in completion summary |
+| Defer to follow-up | Create new todo card capturing the finding, mark original done |
+
+**Step 5: Close the loop**
+
+After the user decides, confirm action taken: "Proceeding as-is. Marked #42 done. Findings noted in summary." or "Created #47 to address the security finding before shipping."
+
+### Example 1: All Reviews Approve (Clean Pass)
+
+```
+Work card #88: "Add --dry-run flag to deploy script"
+Review cards:
+  #89 (DevEx peer): APPROVE — Flag implemented correctly, help text clear, no side effects
+  #90 (Security): APPROVE — No credential exposure, dry-run properly isolated from production
+
+Staff engineer to user:
+"Both reviews approved with no issues. Deploy script now has --dry-run support.
+Ready to commit and push?"
+```
+
+User says yes → commit, push, mark #88 done.
+
+### Example 2: Non-Blocking Finding (User Decides)
+
+```
+Work card #72: "Update kanban output-style prompt for compact XML"
+Review cards:
+  #73 (AI Expert - Delta): APPROVE — Changes are clear and consistent
+  #74 (AI Expert - Full Audit): APPROVE WITH SUGGESTIONS
+    - Section ordering puts examples before rules (suboptimal for Claude 4.x front-loading)
+    - Duplicate instruction in §Output Format and §Board Check sections (minor)
+    - No blocking issues
+
+Staff engineer to user:
+"Reviews complete. Card #74 flagged two non-blocking items:
+1. Example placement: Examples appear before rules — Claude 4.x benefits from front-loading rules first
+2. Duplicate instruction: Output format rules appear in two sections
+
+Both are non-blocking — the prompt works as-is. Options:
+A. Fix now (I'll create a card, ~15 min)
+B. Proceed as-is (ship now, address later)
+C. Defer (I'll create a todo card for cleanup)
+
+Which do you prefer?"
+```
+
+User chooses B → Mark #72 done. Note findings in completion summary.
+User chooses A → Create work card #77 for fixes, create review card #78, complete both before marking #72 done.
+User chooses C → Create todo card #77 ("Clean up output-style prompt non-blocking findings from #74"), mark #72 done.
+
+### Example 3: Blocking Finding (Cannot Proceed)
+
+```
+Work card #65: "Add OAuth token refresh to API client"
+Review cards:
+  #66 (Backend peer): APPROVE WITH SUGGESTION — Add retry backoff on 429 responses
+  #67 (Security): CHANGES REQUIRED (BLOCKING)
+    - Refresh tokens stored in localStorage (vulnerable to XSS)
+    - No token expiry validation before use
+    - CRITICAL: Must fix before shipping
+
+Staff engineer to user:
+"Security review (#67) flagged blocking issues that prevent shipping:
+1. Token storage: Refresh tokens in localStorage are vulnerable to XSS — must use httpOnly cookies or secure server-side storage
+2. Missing expiry check: Tokens used without validating expiry first — can send expired tokens to API
+
+Backend peer (#66) approved with one non-blocking suggestion (retry backoff on 429s).
+
+Security issues must be addressed before this ships. I'll create a work card to fix the blocking items.
+Should I also include the retry backoff fix (non-blocking) in the same card, or handle it separately?"
+```
+
+Staff engineer creates work card for security fixes, security re-review card. After re-review approves, surfaces to user to confirm ship.
+
+### Common Mistakes
+
+**Silently ignoring non-blocking findings:**
+Staff engineer must surface ALL findings — the user decides what to do, not the coordinator.
+
+**Proceeding past blocking findings:**
+A blocking finding is not a suggestion. It stops the current work until resolved or the user explicitly accepts the risk.
+
+**Creating fix work without user approval:**
+Even obvious fixes require user awareness. "I'll just fix it" is a scope decision that belongs to the user.
+
+**Conflating reviewer suggestions with requirements:**
+"APPROVE WITH SUGGESTIONS" means the work is shippable. Suggestions are optional improvements, not required changes.
+
+---
+
 ## References
 
 - See `delegation-guide.md` for permission handling and model selection
