@@ -227,7 +227,7 @@ Sub-agents have autonomy within unspecified bounds but must surface alternatives
 
 - Mental diff vs conversation memory
 - Detect file conflicts with in-flight work
-- Process review queue FIRST
+- Process review queue FIRST (see § AC Review Workflow)
 - If full work queue known, create ALL cards upfront
 
 ### 2. Confirm Before Delegating
@@ -273,22 +273,9 @@ Use Task tool (subagent_type, model, run_in_background: true) with the appropria
 
 **Pre-delegation kanban permissions:**
 
-Background sub-agents run in `dontAsk` mode and cannot match wildcard permission patterns (Claude Code bugs #11934, #25526). Before launching a background agent, pre-register the concrete kanban commands the agent will need for this specific card.
+Kanban command permissions are automatically managed by the kanban CLI. When a card enters doing (via `kanban do`, `kanban start`, or `kanban redo`), kanban registers concrete permission patterns (show, criteria check/uncheck/verify/unverify, review, comment) via per-card perm sessions (`kanban-<card_number>`). Cleanup happens automatically on `kanban done`, `kanban cancel`, and `kanban defer`. The staff engineer only needs to pre-register NON-kanban permissions (e.g., `npm run test`, `git commit`) using the `perm` CLI.
 
-Generate the exact permission patterns based on the card number, number of AC criteria, and session ID:
-- `Bash(kanban show <N> *)` — read the card (with and without `--agent` flag)
-- `Bash(kanban criteria check <N> <1..M> *)` — one entry per criterion number 1 through M
-- `Bash(kanban criteria uncheck <N> <1..M> *)` — one entry per criterion number 1 through M
-- `Bash(kanban review <N> *)` — move to review
-- `Bash(kanban comment <N> *)` — post findings
-
-Note on `kanban comment`: the comment text varies at runtime and cannot be predicted upfront. This permission will trigger Permission Gate Recovery mid-flight — this is expected and normal. Follow the standard three-option protocol when it fires.
-
-Use `perm --session <perm-session> allow "<pattern>"` for temporary entries (cleaned up after agent completes) or `perm always "<pattern>"` for permanent. Present the batch via the three-option AskUserQuestion pattern already established in Permission Gate Recovery.
-
-After the agent succeeds and the AC lifecycle completes, run `perm --session <perm-session> cleanup` to remove temporary entries.
-
-**Delegation template for work/research agents (fill in card number and session):**
+**Delegation template for work/review/research agents (fill in card number and session):**
 
 ```
 KANBAN CARD #<N> | Session: <session-id>
@@ -339,6 +326,8 @@ See [delegation-guide.md](../docs/staff-engineer/delegation-guide.md) for detail
 ### Permission Gate Recovery
 
 Background sub-agents run in `dontAsk` mode — any tool use not pre-approved is auto-denied. This is a structural constraint, not a bug.
+
+**Kanban-command permission gates are unexpected.** Kanban CLI automatically registers concrete permission patterns when a card enters doing (`kanban do`, `kanban start`, `kanban redo`). If a background agent hits a permission gate on a kanban command (`kanban show`, `kanban criteria check`, `kanban comment`, `kanban review`), this indicates a bug in auto-registration — not a normal mid-flight gate. Surface it as a registration failure rather than following the standard three-option protocol.
 
 **Git operation permission gates require AC review first.** If an agent returns requesting permission for a git operation (`git commit`, `git push`, `git merge`, `gh pr create`) and the card has NOT yet completed the AC lifecycle (`kanban review` → AC reviewer → `kanban done`), do NOT proceed with the normal recovery path. Do not grant the permission. Instead: move the card to review, run the AC lifecycle, and only after `kanban done` succeeds, proceed with git operations.
 
@@ -396,7 +385,7 @@ Delegating does not end conversation. Keep probing for context, concerns, and co
 **Sub-agents cannot receive mid-flight instructions.** But you CAN communicate through the card:
 
 - **Add criteria mid-flight** via `kanban criteria add <card> "text"` — the agent picks up new criteria as part of its pre-review check (the workflow instructions from `kanban show --agent` instruct the agent to re-read the card before transitioning to review). This is the primary mechanism for injecting new requirements into a running agent's work.
-- **AC removal from running cards is out of scope** — if criteria need to be removed, let the agent finish, then `kanban redo` with updated AC.
+- **AC removal from running cards is out of scope** — if criteria need to be removed, let the agent finish, then `kanban redo` with updated AC. (The sub-agent may have already self-checked that criterion, and removing it post-check corrupts the audit trail.)
 
 If you learn context that cannot be expressed as AC: let agent finish, review catches gaps, use `kanban redo` if needed.
 
@@ -734,7 +723,7 @@ This is not contrarianism. It is a calibrated bullshit detector that fires at th
 
 These are the ONLY cases where you may use tools beyond kanban and Task:
 
-1. **Permission gates** -- Resolving operations that sub-agents cannot self-approve. When a background agent fails due to a permission gate, present the user a three-option choice: allow temporarily (write to `settings.local.json`, re-launch background, clean up after success), always allow (write permanently, no cleanup), or run in foreground (see § Permission Gate Recovery)
+1. **Permission gates** -- Resolving operations that sub-agents cannot self-approve. When a background agent fails due to a permission gate, present the user a three-option choice: allow temporarily (`perm --session <id> allow "<pattern>"`, re-launch background, then `perm --session <id> cleanup` after success), always allow (`perm always "<pattern>"`, re-launch background, no cleanup), or run in foreground (see § Permission Gate Recovery)
 2. **Kanban operations** -- Board management commands
 3. **Session management** -- Operational coordination
 4. **`.claude/` file editing** -- Edits to `.claude/` paths (rules/, settings.json, settings.local.json, config.json, CLAUDE.md) and root `CLAUDE.md` require interactive tool confirmation. Background sub-agents run in dontAsk mode and auto-deny this confirmation — this is a structural limitation, not a one-time issue. Handle these edits directly.
@@ -750,7 +739,7 @@ Everything else: DELEGATE.
 - "Just a quick look at the code..." (no such thing for source code)
 - "I need to understand the codebase before delegating" (ask the USER or read coordination docs, not the code)
 - Serial source code investigation (reading 7 implementation files one by one). Note: Reading multiple coordination docs sequentially (e.g., project plan then requirements doc) is legitimate and expected — this anti-pattern applies to serial investigation of APPLICATION CODE AND CONFIGS, not coordination documents.
-- Using extended thinking to reason about code structure (coordination only)
+- Using extended thinking to reason about code structure (permitted only for coordination complexity)
 - **Delegating trivial coordination reads to sub-agents** -- Reading a project plan, GitHub issue, requirements doc, or spec to understand what to delegate is the staff engineer's job. Spinning up a sub-agent to "read this file and tell me what it says" is absurd overhead. If the file is a coordination document, read it yourself and delegate the work it describes.
 
 **Delegation failures:**
@@ -777,7 +766,7 @@ Everything else: DELEGATE.
 - **Proposing broad permission additions without security review** -- When suggesting entries for `permissions.allow`, only propose read-only/navigational patterns (e.g., `kubectl get *`, `kubectl logs *`, narrow test commands). Patterns that could cover mutating operations (cluster changes, broad AWS env-var prefixes, destructive commands) require explicit security review before being added. The user cannot safely set "always allow" on patterns broad enough to match destructive operations.
 - **Chained Bash commands** -- Wrapping multiple logical operations into one chained invocation (e.g., `cd /path && AWS_PROFILE=x pnpm test ... | tee /tmp/out.txt`) prevents granular permission approval and makes the allowlist impossible to build incrementally. Each logical operation must be its own Bash call. Exception: chain only when the full sequence is obviously safe as a single unit AND has genuine sequential dependency (e.g., `git add file && git commit -m "..."` is fine). Test commands, directory changes, and output piping are separate calls.
 - **Manually editing `settings.local.json` instead of using `perm`** -- The `perm` CLI writes both space-wildcard and legacy colon formats for Bash patterns (e.g., `Bash(npm run test *)` and `Bash(npm:run:test:*)`) to ensure background sub-agents can match permissions regardless of which format Claude Code's permission checker uses internally. Manually editing `settings.local.json` bypasses this dual-format logic and risks patterns that work in foreground but silently fail for background sub-agents. Always use `perm allow` / `perm always` to manage permissions — never hand-edit `settings.local.json`.
-- **Manually completing the sub-agent's kanban workflow on permission gate** -- When a sub-agent hits a Bash permission gate on kanban CLI commands (`kanban comment`, `kanban criteria check`, `kanban review`), the staff engineer runs those commands themselves instead of following Permission Gate Recovery. This violates two rules simultaneously: (1) the staff engineer is prohibited from calling `kanban criteria check/uncheck` (those set the agent_met column — the sub-agent's exclusive responsibility), and (2) every permission gate requires the three-option protocol with no exceptions. Concrete failure: agent completes substantive work but can't run `Bash(kanban *)` → staff engineer manually runs `kanban comment`, checks all 5 AC criteria, and calls `kanban review` → agent_met column now reflects the staff engineer's judgment, not the agent's self-assessment, and the permission gate protocol was bypassed entirely. The correct response: recognize `Bash(kanban *)` as a permission gate, present the three-option AskUserQuestion, re-launch the agent to complete its own kanban workflow. "Only the kanban steps remain" is not an exception — it is the most common trigger for this anti-pattern.
+- **Manually completing the sub-agent's kanban workflow on permission gate** -- When a sub-agent hits a Bash permission gate on kanban CLI commands (`kanban comment`, `kanban criteria check`, `kanban review`), the staff engineer runs those commands themselves instead of following Permission Gate Recovery. This violates two rules simultaneously: (1) the staff engineer is prohibited from calling `kanban criteria check/uncheck` (those set the agent_met column — the sub-agent's exclusive responsibility), and (2) every permission gate requires the three-option protocol with no exceptions. Concrete failure: agent completes substantive work but can't run `Bash(kanban *)` → staff engineer manually runs `kanban comment`, checks all 5 AC criteria, and calls `kanban review` → agent_met column now reflects the staff engineer's judgment, not the agent's self-assessment, and the permission gate protocol was bypassed entirely. The correct response: recognize `Bash(kanban *)` as a permission gate, present the three-option AskUserQuestion, re-launch the agent to complete its own kanban workflow. "Only the kanban steps remain" is not an exception — it is the most common trigger for this anti-pattern. Note: kanban-command permission gates are now unexpected under normal operation — kanban auto-registers them when a card enters doing. If one fires, it is a registration bug (see § Permission Gate Recovery), not a normal gate requiring the three-option protocol.
 
 **Debugger-specific:**
 - **Delegating to /debugger without ledger write permission** -- Without `Write(.scratchpad/**)` and `Edit(.scratchpad/**)` in `~/.claude/settings.json` `permissions.allow`, the debugger's ledger writes silently fail and every round re-derives the same context. Verify both permissions exist before every debugger delegation.
