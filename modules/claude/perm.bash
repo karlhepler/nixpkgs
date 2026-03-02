@@ -12,7 +12,6 @@ set -euo pipefail
 #   perm [--session <id>] cleanup                            Remove temporary permissions owned by given session
 #   perm cleanup-stale [--max-age <hours>]                   Remove temporary permissions older than max-age (default: 4h)
 #   perm list                                                Show tracked permissions with labels and timestamps
-#   perm sync                                                Sync global permissions into project-local settings (additive)
 #   perm session-hook                                        SessionStart hook: read JSON from stdin, print session UUID
 #
 # FILES:
@@ -37,7 +36,6 @@ USAGE:
   perm --session <id> cleanup                              Remove temporary permissions owned by the given session
   perm cleanup-stale [--max-age <hours>]                   Remove temporary permissions older than max-age (default: 4h)
   perm list                                                Show tracked permissions with labels and timestamps
-  perm sync                                                Sync global permissions into project-local settings (additive)
   perm session-hook                                        SessionStart hook: read JSON stdin, print session UUID
   perm --help                                              Show this help message
 
@@ -66,12 +64,6 @@ DESCRIPTION:
   session-hook reads Claude Code SessionStart JSON from stdin and
   prints the session UUID for use with --session flags.
 
-  sync reads global ~/.claude/settings.json permissions.allow and
-  adds any missing entries to the project-local settings.local.json.
-  Purely additive — never removes existing local entries.  Workaround
-  for Claude Code bugs #5140/#17017 where project-level permissions
-  override (not merge with) global permissions.
-
 EXAMPLES:
   perm --session a1b2c3d4 allow "Bash(npm run lint)"
   perm --session a1b2c3d4 allow "Bash(npm run lint)" "Bash(npm run test *)" "Read(src/auth/**)"
@@ -81,7 +73,6 @@ EXAMPLES:
   perm cleanup-stale
   perm cleanup-stale --max-age 2
   perm list
-  perm sync
 
 EOF
 }
@@ -454,53 +445,6 @@ cmd_cleanup_stale() {
   fi
 }
 
-cmd_sync() {
-  local global_settings="$HOME/.claude/settings.json"
-
-  if [[ ! -f "${global_settings}" ]]; then
-    echo "No global settings found at ${global_settings}."
-    return
-  fi
-
-  # Read global permissions.allow array
-  local global_allow
-  global_allow="$(jq -r '.permissions.allow // [] | .[]' "${global_settings}")" || true
-
-  if [[ -z "${global_allow}" ]]; then
-    echo "No global permissions.allow entries found."
-    return
-  fi
-
-  init_settings
-  init_tracking
-
-  local added_count=0
-  local total_count=0
-
-  while IFS= read -r pattern; do
-    total_count=$((total_count + 1))
-
-    # Check if already in project-local settings
-    local already_present
-    already_present="$(pattern_in_settings "${pattern}")"
-
-    if [[ "${already_present}" == "true" ]]; then
-      continue
-    fi
-
-    # Add to project-local settings and track as permanent
-    add_to_settings "${pattern}"
-    add_to_permanent "${pattern}"
-    added_count=$((added_count + 1))
-  done <<< "${global_allow}"
-
-  if [[ "${added_count}" -eq 0 ]]; then
-    echo "Already in sync (${total_count} global entries all present locally)."
-  else
-    echo "Synced ${added_count} global permission(s) into project-local settings (${total_count} total checked)."
-  fi
-}
-
 cmd_session_hook() {
   # Read JSON from stdin (Claude Code SessionStart hook format)
   local json
@@ -585,7 +529,7 @@ while [[ $# -gt 0 ]]; do
       show_help
       exit 0
       ;;
-    allow|always|cleanup|cleanup-stale|list|sync|session-hook)
+    allow|always|cleanup|cleanup-stale|list|session-hook)
       subcommand="$1"
       shift
       break
@@ -638,9 +582,6 @@ case "${subcommand}" in
     ;;
   list)
     cmd_list
-    ;;
-  sync)
-    cmd_sync
     ;;
   session-hook)
     cmd_session_hook

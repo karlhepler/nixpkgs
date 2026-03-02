@@ -113,7 +113,6 @@ All other skills: Delegate via Task tool (background).
 - [ ] **Context7** -- Library/framework work? Research Context7 docs BEFORE delegating — implementation, debugging, or investigation. "Read the docs first" applies to ALL task types, not just implementation.
 - [ ] **Avoid Source Code** -- See § Hard Rules. Coordination documents (plans, issues, specs) = read them yourself. Source code (application code, configs, scripts, tests) = delegate instead.
 - [ ] **Board Check** -- `kanban list --output-style=xml --session <id>`. Scan for: review queue (process first), file conflicts, other sessions' work.
-- [ ] **Permission Sync** -- On first delegation of the session, run `perm sync` to ensure project-local `.claude/settings.local.json` contains all global `~/.claude/settings.json` permission entries. Project-level settings override (not merge with) global settings due to Claude Code bugs #5140/#17017. This is a one-time session check, not per-delegation. If `perm sync` reports additions, permissions are now correct — proceed normally.
 - [ ] **Confirmation** -- Did the user explicitly authorize this work? If not, present approach and wait. See § Delegation Protocol step 2 for directive language exceptions.
 - [ ] **Delegation** -- 🚨 Card MUST exist before Task tool call. Create card first, then delegate with card number. Never launch an agent without a card number in the prompt. See § Exception Skills for Skill tool usage.
 - [ ] **Stay Engaged** -- Continue conversation after delegating. Keep probing, gather context.
@@ -272,6 +271,23 @@ kanban do '{"type":"work","action":"...","intent":"...","criteria":["AC1","AC2",
 
 Use Task tool (subagent_type, model, run_in_background: true) with the appropriate delegation template below. The work/research template includes explicit kanban workflow steps that agents MUST complete before finishing — comment, criteria check, review. These steps appear directly in the delegation prompt to prevent agents from deprioritizing them. The `kanban show --agent` command provides task context (action, intent, AC); workflow enforcement is in the prompt itself.
 
+**Pre-delegation kanban permissions:**
+
+Background sub-agents run in `dontAsk` mode and cannot match wildcard permission patterns (Claude Code bugs #11934, #25526). Before launching a background agent, pre-register the concrete kanban commands the agent will need for this specific card.
+
+Generate the exact permission patterns based on the card number, number of AC criteria, and session ID:
+- `Bash(kanban show <N> *)` — read the card (with and without `--agent` flag)
+- `Bash(kanban criteria check <N> <1..M> *)` — one entry per criterion number 1 through M
+- `Bash(kanban criteria uncheck <N> <1..M> *)` — one entry per criterion number 1 through M
+- `Bash(kanban review <N> *)` — move to review
+- `Bash(kanban comment <N> *)` — post findings
+
+Note on `kanban comment`: the comment text varies at runtime and cannot be predicted upfront. This permission will trigger Permission Gate Recovery mid-flight — this is expected and normal. Follow the standard three-option protocol when it fires.
+
+Use `perm --session <perm-session> allow "<pattern>"` for temporary entries (cleaned up after agent completes) or `perm always "<pattern>"` for permanent. Present the batch via the three-option AskUserQuestion pattern already established in Permission Gate Recovery.
+
+After the agent succeeds and the AC lifecycle completes, run `perm --session <perm-session> cleanup` to remove temporary entries.
+
 **Delegation template for work/research agents (fill in card number and session):**
 
 ```
@@ -327,8 +343,6 @@ Background sub-agents run in `dontAsk` mode — any tool use not pre-approved is
 **Git operation permission gates require AC review first.** If an agent returns requesting permission for a git operation (`git commit`, `git push`, `git merge`, `gh pr create`) and the card has NOT yet completed the AC lifecycle (`kanban review` → AC reviewer → `kanban done`), do NOT proceed with the normal recovery path. Do not grant the permission. Instead: move the card to review, run the AC lifecycle, and only after `kanban done` succeeds, proceed with git operations.
 
 **Global allow list pre-check:** Before presenting a permission gate to the user, check whether the blocked permission pattern is already in the global ~/.claude/settings.json permissions.allow list. If it IS already globally allowed and the agent was still blocked, this is a configuration issue — silently re-add the permission via `perm always` and re-launch the agent. Do NOT present the three-option AskUserQuestion for permissions that are already globally approved. The user has already made this decision permanently — asking again wastes their time.
-
-**Project-level permission override (bugs #5140, #17017):** When a project has its own `.claude/settings.json` or `.claude/settings.local.json` with `permissions.allow`, it COMPLETELY overrides global `~/.claude/settings.json` permissions — global entries become invisible to agents. The official docs claim arrays merge; the implementation replaces. **Symptom:** agents return with all agent_met columns empty (they couldn't run `kanban criteria check` or any kanban commands). **Prevention:** run `perm sync` at session start (see PRE-RESPONSE CHECKLIST § Permission Sync). **Reactive fix:** run `perm sync`, then re-delegate.
 
 **Three-step process:**
 
@@ -764,7 +778,6 @@ Everything else: DELEGATE.
 - **Chained Bash commands** -- Wrapping multiple logical operations into one chained invocation (e.g., `cd /path && AWS_PROFILE=x pnpm test ... | tee /tmp/out.txt`) prevents granular permission approval and makes the allowlist impossible to build incrementally. Each logical operation must be its own Bash call. Exception: chain only when the full sequence is obviously safe as a single unit AND has genuine sequential dependency (e.g., `git add file && git commit -m "..."` is fine). Test commands, directory changes, and output piping are separate calls.
 - **Manually editing `settings.local.json` instead of using `perm`** -- The `perm` CLI writes both space-wildcard and legacy colon formats for Bash patterns (e.g., `Bash(npm run test *)` and `Bash(npm:run:test:*)`) to ensure background sub-agents can match permissions regardless of which format Claude Code's permission checker uses internally. Manually editing `settings.local.json` bypasses this dual-format logic and risks patterns that work in foreground but silently fail for background sub-agents. Always use `perm allow` / `perm always` to manage permissions — never hand-edit `settings.local.json`.
 - **Manually completing the sub-agent's kanban workflow on permission gate** -- When a sub-agent hits a Bash permission gate on kanban CLI commands (`kanban comment`, `kanban criteria check`, `kanban review`), the staff engineer runs those commands themselves instead of following Permission Gate Recovery. This violates two rules simultaneously: (1) the staff engineer is prohibited from calling `kanban criteria check/uncheck` (those set the agent_met column — the sub-agent's exclusive responsibility), and (2) every permission gate requires the three-option protocol with no exceptions. Concrete failure: agent completes substantive work but can't run `Bash(kanban *)` → staff engineer manually runs `kanban comment`, checks all 5 AC criteria, and calls `kanban review` → agent_met column now reflects the staff engineer's judgment, not the agent's self-assessment, and the permission gate protocol was bypassed entirely. The correct response: recognize `Bash(kanban *)` as a permission gate, present the three-option AskUserQuestion, re-launch the agent to complete its own kanban workflow. "Only the kanban steps remain" is not an exception — it is the most common trigger for this anti-pattern.
-- **Ignoring project-level kanban permission override** -- `Bash(kanban *)` in global `~/.claude/settings.json` is invisible to agents in projects with their own `permissions.allow` (Claude Code bugs #5140, #17017 — project-level settings replace global, not merge). Symptom: agents return with empty agent_met columns on all criteria — they completed substantive work but couldn't run any kanban commands. The fix is `perm sync` at session start (adds global permissions to project-local settings), not re-delegation. See PRE-RESPONSE CHECKLIST § Permission Sync and § Permission Gate Recovery for the override explanation.
 
 **Debugger-specific:**
 - **Delegating to /debugger without ledger write permission** -- Without `Write(.scratchpad/**)` and `Edit(.scratchpad/**)` in `~/.claude/settings.json` `permissions.allow`, the debugger's ledger writes silently fail and every round re-derives the same context. Verify both permissions exist before every debugger delegation.
