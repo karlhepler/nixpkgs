@@ -46,6 +46,14 @@ V6 additions:
   This fixes "no such column" errors in Grafana dashboard panels that query
   these columns (DORA metrics, flow tracking, estimation calibration panels).
 
+V7 additions:
+- New: last_seen_at TIMESTAMP column on agent_metrics. Updated to
+  CURRENT_TIMESTAMP on every UPSERT so long-running sessions (recorded_at
+  from a prior day) are still captured by today-filter dashboard queries.
+- Migration: existing databases gain last_seen_at via ALTER TABLE ... ADD COLUMN
+  (no-op if already present), then backfilled from recorded_at for all rows
+  where last_seen_at IS NULL.
+
 Never exits non-zero — all errors are swallowed silently to avoid disrupting
 Claude Code's hook pipeline.
 """
@@ -148,6 +156,7 @@ CREATE TABLE IF NOT EXISTS agent_metrics (
     tool_calls INTEGER DEFAULT 0,
     tool_errors INTEGER DEFAULT 0,
     is_sidechain INTEGER NOT NULL DEFAULT 0,
+    last_seen_at TIMESTAMP,
     UNIQUE(session_id, agent_id, role, model)
 )
 """
@@ -253,6 +262,14 @@ V4_MIGRATION_SQL = [
     "ALTER TABLE agent_metrics ADD COLUMN git_branch TEXT",
     "ALTER TABLE agent_metrics ADD COLUMN is_sidechain INTEGER NOT NULL DEFAULT 0",
 ]
+
+# V7 migration: add last_seen_at column to agent_metrics for databases that
+# predate V7.  The backfill sets last_seen_at = recorded_at for rows that lack
+# a value so today-filter dashboard queries (which use last_seen_at) correctly
+# capture sessions that were recorded before this column existed.
+# OperationalError ("duplicate column name") is caught and ignored — idempotent.
+V7_MIGRATION_SQL = "ALTER TABLE agent_metrics ADD COLUMN last_seen_at TIMESTAMP"
+V7_BACKFILL_SQL = "UPDATE agent_metrics SET last_seen_at = recorded_at WHERE last_seen_at IS NULL"
 
 DB_PATH = Path.home() / ".claude" / "metrics" / "claude-metrics.db"
 
@@ -670,6 +687,15 @@ def open_db() -> sqlite3.Connection:
         except sqlite3.OperationalError:
             pass
 
+    # V7 migration: add last_seen_at column (no-op if already present), then
+    # backfill existing rows from recorded_at so today-filter queries work on
+    # sessions that predate this column.
+    try:
+        conn.execute(V7_MIGRATION_SQL)
+    except sqlite3.OperationalError:
+        pass
+    conn.execute(V7_BACKFILL_SQL)
+
     for idx_sql in CREATE_INDEX_SQL:
         conn.execute(idx_sql)
 
@@ -724,8 +750,8 @@ def write_metrics(
                 cost_usd,
                 duration_seconds, avg_turn_latency_seconds,
                 cache_hit_ratio, tool_calls, tool_errors,
-                is_sidechain
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                is_sidechain, last_seen_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(session_id, agent_id, role, model) DO UPDATE SET
                 working_directory = excluded.working_directory,
                 kanban_session = excluded.kanban_session,
@@ -743,7 +769,8 @@ def write_metrics(
                 cache_hit_ratio = excluded.cache_hit_ratio,
                 tool_calls = excluded.tool_calls,
                 tool_errors = excluded.tool_errors,
-                is_sidechain = excluded.is_sidechain
+                is_sidechain = excluded.is_sidechain,
+                last_seen_at = CURRENT_TIMESTAMP
             """,
             (
                 session_id,
