@@ -255,6 +255,13 @@ kanban do '{"type":"work","action":"...","intent":"...","criteria":["AC1","AC2",
 
 **Threshold:** use file-based when the JSON contains single quotes/apostrophes or the card JSON spans more than 2-3 lines. Use inline for simple one-liners.
 
+**Multiple complex cards:** write all cards as a JSON array to a single file and make one `kanban do/todo --file` call — not a separate file and invocation per card.
+
+```bash
+# Step 1 (Write tool): write to .scratchpad/kanban-cards-<session>.json as a JSON array: [card1, card2, ...]
+# Step 2 (Bash): kanban do --file .scratchpad/kanban-cards-<session>.json --session <id>
+```
+
 **Why file-based for complex cards:** the Write tool is auto-approved and handles any content safely; the resulting Bash command (`kanban do --file *`) is a short, reviewable pattern that can be auto-approved independently. Inline is fine for simple cards because the full Bash command is short enough to review at a glance.
 
 **type** required: "work", "review", or "research". **model** required: "haiku", "sonnet", or "opus". **AC** required: 3-5 specific, measurable items. **editFiles/readFiles**: Coordination metadata showing which files the agent intends to modify (e.g. `["src/auth/*.ts"]`). Displayed on card so staff engineers across sessions can see file overlap. Supports glob patterns.
