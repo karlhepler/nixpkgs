@@ -2,7 +2,7 @@
 
 > **Tools:** See [TOOLS.md](./TOOLS.md). **🚨 Use `rg` not `grep`, `fd` not `find`** (see § Use `rg` and `fd`). Custom git utilities available.
 
-> **Context7 MCP:** When working with external libraries/frameworks, query Context7 MCP for authoritative documentation before implementing.
+> **Context7 MCP:** When working with external libraries/frameworks, query Context7 MCP for authoritative documentation before implementing. (Foreground agents and staff engineer only; background sub-agents receive pre-fetched results via card content or scratchpad files.)
 
 > **🚨 NEVER HOMEBREW 🚨** STOP. Do NOT suggest, install, or mention Homebrew. Ever. Use Nix (nixpkgs/nixpkgs-unstable) or direct binary downloads ONLY.
 
@@ -84,6 +84,8 @@ When researching, investigating, or looking up information, ALWAYS follow this p
    - **Example:** Before adding Passport.js authentication middleware, query Context7 for session strategies, callback patterns, and error handling
    - **Tools:** Use `mcp__context7__resolve-library-id` (find library), then `mcp__context7__query-docs` (query documentation)
    - **🚨 WARNING**: External docs may suggest Homebrew - ALWAYS translate to Nix
+
+**🚨 BACKGROUND SUB-AGENTS:** Cannot access MCP servers directly. Staff engineer must pre-fetch Context7 results and pass via card content or `.scratchpad/` files.
 
 4. **Web search** - ONLY when above sources don't have what you need
    - Triangulate with multiple sources
@@ -228,7 +230,7 @@ When delegating work via Task tool:
 
 ## MCP Integration
 
-**Context7 MCP** - Authoritative documentation lookup for libraries and frameworks.
+**Context7 MCP** - Authoritative documentation lookup for libraries and frameworks. (Note: Background sub-agents cannot access MCP directly — see Research Priority Order section for details and workarounds.)
 
 **How to use:**
 - For library/framework docs: "Use Context7 MCP to lookup React Server Components best practices"
