@@ -415,15 +415,15 @@
           "unit": "currencyUSD",
           "decimals": 4,
           "custom": {
-            "lineWidth": 2,
-            "fillOpacity": 20,
-            "gradientMode": "opacity",
-            "spanNulls": true,
+            "lineWidth": 1,
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "spanNulls": false,
             "insertNulls": false,
             "showPoints": "never",
             "pointSize": 5,
             "drawStyle": "line",
-            "lineInterpolation": "smooth"
+            "lineInterpolation": "stepAfter"
           },
           "color": {
             "mode": "palette-classic"
@@ -3061,15 +3061,15 @@
           "decimals": 1,
           "min": 0,
           "custom": {
-            "lineWidth": 2,
-            "fillOpacity": 10,
+            "lineWidth": 1,
+            "fillOpacity": 80,
             "gradientMode": "none",
-            "spanNulls": true,
+            "spanNulls": false,
             "insertNulls": false,
-            "showPoints": "auto",
+            "showPoints": "never",
             "pointSize": 5,
             "drawStyle": "line",
-            "lineInterpolation": "smooth"
+            "lineInterpolation": "stepAfter"
           },
           "color": {
             "mode": "palette-classic"
