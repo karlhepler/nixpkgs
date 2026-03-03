@@ -382,7 +382,7 @@
     },
     {
       "id": 4,
-      "type": "timeseries",
+      "type": "barchart",
       "title": "Cost Over Time",
       "description": "Daily spend trend across all Claude Code sessions. Spikes usually indicate large Opus delegations or sessions with many turns — check the Cost by Agent Type panel to identify the driver.",
       "gridPos": {
@@ -414,24 +414,24 @@
         "defaults": {
           "unit": "currencyUSD",
           "decimals": 4,
-          "custom": {
-            "lineWidth": 1,
-            "fillOpacity": 80,
-            "gradientMode": "none",
-            "spanNulls": false,
-            "insertNulls": false,
-            "showPoints": "never",
-            "pointSize": 5,
-            "drawStyle": "line",
-            "lineInterpolation": "stepAfter"
-          },
           "color": {
             "mode": "palette-classic"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 1
           }
         },
         "overrides": []
       },
       "options": {
+        "orientation": "auto",
+        "xTickLabelRotation": 0,
+        "xTickLabelMaxLength": 0,
+        "groupWidth": 0.7,
+        "barWidth": 0.97,
+        "barRadius": 0,
+        "fullHighlight": false,
         "tooltip": {
           "mode": "single",
           "sort": "none"
@@ -440,7 +440,8 @@
           "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
-        }
+        },
+        "xField": "time"
       }
     },
     {
@@ -2964,7 +2965,7 @@
     },
     {
       "id": 28,
-      "type": "timeseries",
+      "type": "barchart",
       "title": "Throughput — Cards Done Per Day",
       "description": "Daily card completion velocity. A rising trend means more work is flowing through to done; gaps indicate days with no completions.",
       "gridPos": {
@@ -2996,24 +2997,24 @@
         "defaults": {
           "unit": "short",
           "decimals": 0,
-          "custom": {
-            "lineWidth": 1,
-            "fillOpacity": 80,
-            "gradientMode": "none",
-            "spanNulls": false,
-            "insertNulls": false,
-            "showPoints": "never",
-            "pointSize": 5,
-            "drawStyle": "bars",
-            "lineInterpolation": "linear"
-          },
           "color": {
             "mode": "palette-classic"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 1
           }
         },
         "overrides": []
       },
       "options": {
+        "orientation": "auto",
+        "xTickLabelRotation": 0,
+        "xTickLabelMaxLength": 0,
+        "groupWidth": 0.7,
+        "barWidth": 0.97,
+        "barRadius": 0,
+        "fullHighlight": false,
         "tooltip": {
           "mode": "single",
           "sort": "none"
@@ -3022,12 +3023,13 @@
           "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
-        }
+        },
+        "xField": "time"
       }
     },
     {
       "id": 29,
-      "type": "timeseries",
+      "type": "barchart",
       "title": "Redo Rate Over Time",
       "description": "Percentage of all kanban events that were redos, by day. A declining trend means quality is improving — fewer cards are being sent back for rework.",
       "gridPos": {
@@ -3060,19 +3062,12 @@
           "unit": "percent",
           "decimals": 1,
           "min": 0,
-          "custom": {
-            "lineWidth": 1,
-            "fillOpacity": 80,
-            "gradientMode": "none",
-            "spanNulls": false,
-            "insertNulls": false,
-            "showPoints": "never",
-            "pointSize": 5,
-            "drawStyle": "line",
-            "lineInterpolation": "stepAfter"
-          },
           "color": {
             "mode": "palette-classic"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 1
           },
           "thresholds": {
             "mode": "absolute",
@@ -3095,6 +3090,13 @@
         "overrides": []
       },
       "options": {
+        "orientation": "auto",
+        "xTickLabelRotation": 0,
+        "xTickLabelMaxLength": 0,
+        "groupWidth": 0.7,
+        "barWidth": 0.97,
+        "barRadius": 0,
+        "fullHighlight": false,
         "tooltip": {
           "mode": "single",
           "sort": "none"
@@ -3103,7 +3105,8 @@
           "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
-        }
+        },
+        "xField": "time"
       }
     },
     {
