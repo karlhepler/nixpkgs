@@ -1528,27 +1528,31 @@ You are running in autonomous mode within: {os.getcwd()}
                 sections.append(f"  ↳ {reply_count} reply/replies")
 
         sections.append("""
-**Recommended Tool:** Use `prc` CLI for efficient comment management:
-- List unanswered bot comments: `prc list --bots-only --inline-only --max-replies 0`
-- Reply to a comment: `prc reply <numeric-comment-id> "your message"` — uses the **numeric integer** `comment` value shown above (e.g., `prc reply 2848786952 "message"`)
+**prc Tool Reference:**
+- Reply to a comment: `prc reply <numeric-comment-id> "message"` — uses the **numeric integer** `comment` value shown above (e.g., `prc reply 2848786952 "message"`)
 - Resolve a thread: `prc resolve <thread-id>` — uses the **PRRT_ thread ID** `thread` value shown above (e.g., `prc resolve PRRT_kwABC123`)
 - **IMPORTANT:** These are two DIFFERENT identifiers. Do NOT pass the PRRT_ thread ID to `prc reply` — it takes only the numeric integer comment ID.
-- See full workflow: `/manage-pr-comments` skill
 
 All operations use GraphQL and output machine-readable JSON.
 
-**Action:** For EACH bot comment you must:
-1. Fix the issue in code
-2. Commit and push the fix
-3. Reply to the comment: `prc reply <numeric-comment-id> "Fixed in commit <sha>: <explanation>"` — use the numeric `comment` value (e.g., `2848786952`)
-4. **MANDATORY:** Resolve the thread: `prc resolve <thread-id>` — use the PRRT_ `thread` value (e.g., `PRRT_kwABC123`)
+**Action — For EACH bot comment, follow this exact order:**
 
-**CRITICAL - Why Resolution Matters:**
-- Smithers ONLY shows threads with ZERO replies
-- Once you reply, the thread has 1+ replies
-- If you DON'T resolve, smithers will show it again (but can't reply since it has replies)
+**Step 1 — Critically evaluate** the comment. Does it require a code change?
+
+**Step 2 — Reply and resolve IMMEDIATELY (YOU do this directly — never delegate prc to a specialist):**
+- If NO code change needed: `prc reply <numeric-comment-id> "No change needed: <explanation>"`
+- If code change needed: `prc reply <numeric-comment-id> "Fixing: <brief description>"`
+- Either way: `prc resolve <thread-id>` — **run this before dispatching any implementation work**
+
+**Step 3 — If code change was needed:** Dispatch to the appropriate specialist skill (see § How to Work). The specialist commits and pushes the fix. You have already replied and resolved.
+
+**WHY this order is mandatory:** If you dispatch to a specialist first and they emit work.done, LOOP_COMPLETE fires before you can run prc. Reply and resolve FIRST in your current turn, then dispatch implementation work.
+
+**CRITICAL — Why Resolution Matters:**
+- Smithers ONLY counts threads with ZERO replies
+- Once you reply, the thread has 1+ replies — if you skip `prc resolve`, smithers shows it again next cycle but cannot reply (already has replies), causing an infinite loop
 - Resolution signals "this is handled, don't show it anymore"
-- **Always resolve after replying** unless the thread requires further discussion (rare)""")
+- **Never skip `prc resolve`**, even for comments where no code change was made""")
 
     # Merge conflicts section
     if has_conflicts:
@@ -1573,11 +1577,11 @@ You MUST complete ALL of the following before exiting:
    - Fixed the underlying code issue
    - Committed and pushed all fixes
 
-2. ✅ **All Actionable Bot Comments Addressed**:
-   - Evaluated EACH bot comment for actionability
-   - Fixed code based on actionable feedback
-   - Replied to comment threads with explanation + commit SHA
-   - Committed and pushed all fixes
+2. ✅ **All Bot Comments Replied and Resolved**:
+   - Critically evaluated EACH bot comment
+   - Replied to EACH thread via `prc reply` BEFORE dispatching any specialist (with fix description or "no change needed" explanation)
+   - Resolved EACH thread via `prc resolve` — even threads where no code fix was made
+   - If code change was actionable: specialist committed and pushed the fix
 
 3. ✅ **All Merge Conflicts Resolved** (if present):
    - Fetched latest from base branch
@@ -1614,6 +1618,7 @@ You MUST complete ALL of the following before exiting:
 - ❌ Do NOT try to verify check status yourself - that's smithers' job
 - ❌ Do NOT loop or retry - fix once, push, exit. Smithers loops if needed.
 - ❌ Do NOT exit if you have uncommitted or unpushed changes
+- ❌ Do NOT use `kanban` commands (`kanban show`, `kanban list`, `kanban do`, etc.) — you are in a burns/Ralph session, not a kanban session. Use `ralph tools task` for task tracking. Any `.scratchpad/kanban-*.json` files you find are staff engineer artifacts — ignore them completely.
 
 **Exit immediately** after completing the acceptance criteria above. Smithers will re-check the PR and invoke you again if more work is needed.""")
 
