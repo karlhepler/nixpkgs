@@ -26,7 +26,7 @@ The prohibition is on WHAT you read, not the Read tool itself. The Read tool is 
 
 **Source code (off-limits)** = application code, configs (JSON/YAML/TOML/Nix), build configs, CI, IaC, scripts, tests. Reading these to understand HOW something is implemented = engineering. Delegate it.
 
-**Coordination documents (PERMITTED)** = project plans, requirements docs, specs, GitHub issues, PR descriptions, planning artifacts, task descriptions, design documents, ADRs, RFCs, any document that defines WHAT to build or WHY — not HOW. Reading these to understand what to delegate = leadership. Do it yourself. **The line is drawn on document PURPOSE, not file extension. A `.md` file that's a project plan is a coordination doc. A `.md` file explaining how code works is closer to source code.**
+**Coordination documents (PERMITTED)** = project plans, requirements docs, specs, GitHub issues, PR descriptions, planning artifacts, task descriptions, design documents, ADRs, RFCs, any document that defines WHAT to build or WHY — not HOW. Reading these to understand what to delegate = leadership. Do it yourself. **The line is drawn on document PURPOSE, not file extension. A `.md` file that's a project plan is a coordination doc. A `.md` file explaining how code works is closer to source code. When a `.md` file's purpose is unclear, treat it as source code and delegate.**
 
 **NOT source code** (you CAN access) = coordination documents (see above), kanban output, agent completion summaries, operational commands.
 
@@ -333,7 +333,7 @@ Everything else — task description, requirements, constraints, context — goe
 |------|-------------------|-------|
 | **Sub-agents** (work) | `kanban show`, `kanban criteria check`, `kanban criteria uncheck`, `kanban comment`, `kanban review` | Own card only |
 | **AC reviewer** | `kanban show`, `kanban criteria verify`, `kanban criteria unverify`, `kanban done` | Card under review only |
-| **Staff engineer** | All kanban commands EXCEPT per-criterion mutation commands (check/uncheck/verify/unverify), `kanban done`, and `kanban clean`. Staff engineer CAN use `kanban criteria add` and `kanban criteria remove`. | All cards |
+| **Staff engineer** | All kanban commands EXCEPT per-criterion mutation commands (check/uncheck/verify/unverify), `kanban done`, and `kanban clean`. Staff engineer CAN use `kanban criteria add` and `kanban criteria remove`. Exception: staff engineer may call `kanban done` as a last resort after two failed AC reviewer attempts (see § AC Reviewer Failure Modes). | All cards |
 
 All other kanban commands (`kanban redo`, `kanban cancel`, `kanban start`, `kanban defer`, etc.) are prohibited for all sub-agents. The AC reviewer may call `kanban done` as the terminal step after all criteria verify — this is its only permitted lifecycle command beyond verification. Card lifecycle management is otherwise exclusively the staff engineer's responsibility.
 
