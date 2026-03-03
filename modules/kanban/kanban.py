@@ -571,6 +571,7 @@ def _register_card_permissions(card_num: str, criteria_count: int) -> None:
       - Bash(kanban criteria check/uncheck/verify/unverify <N> <M> *) for each criterion M
       - Bash(kanban review <N> *)
       - Bash(kanban comment <N> *)
+      - Bash(kanban done <N> *)
 
     Best-effort: perm failures are logged to stderr but never block the kanban command.
     Silent on stdout.
@@ -580,6 +581,7 @@ def _register_card_permissions(card_num: str, criteria_count: int) -> None:
         f"Bash(kanban show {card_num} *)",
         f"Bash(kanban review {card_num} *)",
         f"Bash(kanban comment {card_num} *)",
+        f"Bash(kanban done {card_num} *)",
     ]
     for m in range(1, criteria_count + 1):
         patterns.append(f"Bash(kanban criteria check {card_num} {m} *)")
@@ -1302,6 +1304,13 @@ def cmd_show(args) -> None:
 
     # Send through pager
     use_pager("\n".join(output_lines) + "\n")
+
+
+def cmd_status(args) -> None:
+    """Print only the column name of a card (e.g. doing, review, todo, done)."""
+    root = get_root(args.root)
+    card_path = find_card(root, args.card)
+    print(card_path.parent.name)
 
 
 def cmd_cancel(args) -> None:
@@ -2937,6 +2946,11 @@ def main() -> None:
     p_show.add_argument("--agent", action="store_true", default=False, help="Append auto-generated workflow instructions for the agent based on card column and type")
     add_session_flags(p_show)
 
+    # --- status ---
+    p_status = subparsers.add_parser("status", parents=[parent_parser], help="Print only the column name of a card (e.g. doing, review, todo)")
+    p_status.add_argument("card", help="Card number")
+    add_session_flags(p_status)
+
     # --- cancel ---
     p_cancel = subparsers.add_parser("cancel", parents=[parent_parser], help="Move card(s) to canceled column")
     p_cancel.add_argument("card", nargs="+", help="Card number(s)")
@@ -3057,6 +3071,7 @@ def main() -> None:
         "list": cmd_list,
         "ls": cmd_list,
         "show": cmd_show,
+        "status": cmd_status,
         "report": cmd_report,
         "clean": cmd_clean,
         "criteria": cmd_criteria_dispatch,
