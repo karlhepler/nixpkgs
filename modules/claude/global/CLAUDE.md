@@ -134,7 +134,7 @@ When researching, investigating, or looking up information, ALWAYS follow this p
 | `kanban criteria verify <card> <n>` | Verify AC (reviewer_met column) | AC reviewer |
 | `kanban criteria unverify <card> <n>` | Undo verification | AC reviewer |
 | `kanban comment <card> "text"` | Add timestamped comment | Sub-agents (own card), staff engineer |
-| `kanban done <card> 'summary'` | Complete card (both columns enforced) | Staff engineer |
+| `kanban done <card> 'summary'` | Complete card (both columns enforced) | AC reviewer (staff engineer: last-resort fallback only) |
 | `kanban cancel <card> [cards...]` | Cancel card(s) | Staff engineer |
 | ~~`kanban clean`~~ | **PROHIBITED — never run** | Nobody |
 
@@ -647,16 +647,25 @@ When updating to a new version:
 
 ---
 
-## Dangerous Operations (Require User Permission)
+## Dangerous Operations
+
+This section covers two categories: operations that are outright prohibited (never run them) and operations that require user approval before running.
+
+### Outright Prohibitions (Never Run)
+
+Claude agents must NEVER run these commands under any circumstances. Do not ask for permission — the answer is always no.
+
+- `kanban clean` - **PROHIBITED** — never run. Use `kanban cancel` instead.
+- `kanban clean --expunge` - **PROHIBITED** — never run.
+- `kanban clean <column>` - **PROHIBITED** — never run.
+- `perm reset` - **USER-ONLY — Claude agents must NEVER call this.** Nukes ALL entries from `permissions.allow`. Interactive only — reads confirmation from `/dev/tty` to prevent automated invocation. Run by the user directly when a full permission slate wipe is needed.
+
+### Ask-First Operations (Require User Approval)
 
 **CRITICAL: Claude Code must NEVER run these commands without explicit user approval.**
 
 These operations are destructive and cannot be undone. Always ask the user for permission BEFORE running them.
 
-**Commands requiring permission:**
-- `kanban clean` - **PROHIBITED for staff engineer** — never run under any circumstances. Use `kanban cancel` instead.
-- `kanban clean --expunge` - **PROHIBITED for staff engineer** — never run under any circumstances.
-- `kanban clean <column>` - **PROHIBITED for staff engineer** — never run under any circumstances.
 - `hms --expunge` - Removes stale Home Manager generations (dangerous)
 - `git reset --hard` - Discards local changes permanently
 - `git push --force` - Overwrites remote history

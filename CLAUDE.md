@@ -433,6 +433,7 @@ Both files made git-invisible by `hms` after first run. Backups linked via `*.la
 
 Supporting documentation for the staff engineer output style:
 
+- [anti-patterns.md](modules/claude/global/docs/staff-engineer/anti-patterns.md) - Common coordination failure modes with concrete examples
 - [delegation-guide.md](modules/claude/global/docs/staff-engineer/delegation-guide.md) - Permission handling, model selection patterns
 - [parallel-patterns.md](modules/claude/global/docs/staff-engineer/parallel-patterns.md) - Parallel execution examples
 - [edge-cases.md](modules/claude/global/docs/staff-engineer/edge-cases.md) - Interruptions, partial completion, review disagreements

@@ -36,6 +36,7 @@ USAGE:
   perm --session <id> cleanup                              Remove temporary permissions owned by the given session
   perm cleanup-stale [--max-age <hours>]                   Remove temporary permissions older than max-age (default: 4h)
   perm list                                                Show tracked permissions with labels and timestamps
+  perm reset                                               Nuke ALL entries from permissions.allow (interactive, user-only)
   perm session-hook                                        SessionStart hook: read JSON stdin, print session UUID
   perm --help                                              Show this help message
 
@@ -472,6 +473,35 @@ cmd_session_hook() {
   echo "🔑 Your perm session is: ${session_id}"
 }
 
+cmd_reset() {
+  init_settings
+
+  local current_count
+  current_count="$(jq '.permissions.allow | length' "${_settings_file}")"
+
+  if [[ "${current_count}" -eq 0 ]]; then
+    echo "permissions.allow is already empty. Nothing to reset."
+    return
+  fi
+
+  echo "This will remove ALL ${current_count} entries from permissions.allow in:"
+  echo "  ${_settings_file}"
+  echo
+  printf "Are you sure? [y/N]: "
+
+  local response
+  read -r response < /dev/tty
+
+  if [[ "${response}" != "y" && "${response}" != "Y" ]]; then
+    echo "Aborted. No changes made."
+    return
+  fi
+
+  jq '.permissions.allow = []' "${_settings_file}" > "${_settings_file}.tmp"
+  mv "${_settings_file}.tmp" "${_settings_file}"
+  echo "Reset: removed ${current_count} permission(s) from permissions.allow."
+}
+
 cmd_list() {
   init_tracking
 
@@ -529,7 +559,7 @@ while [[ $# -gt 0 ]]; do
       show_help
       exit 0
       ;;
-    allow|always|cleanup|cleanup-stale|list|session-hook)
+    allow|always|cleanup|cleanup-stale|list|reset|session-hook)
       subcommand="$1"
       shift
       break
@@ -582,6 +612,9 @@ case "${subcommand}" in
     ;;
   list)
     cmd_list
+    ;;
+  reset)
+    cmd_reset
     ;;
   session-hook)
     cmd_session_hook
