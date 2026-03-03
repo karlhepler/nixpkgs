@@ -407,7 +407,8 @@
           "timeColumns": [
             "time"
           ],
-          "refId": "A"
+          "refId": "A",
+          "interval": "1d"
         }
       ],
       "fieldConfig": {
@@ -2989,7 +2990,8 @@
           "timeColumns": [
             "time"
           ],
-          "refId": "A"
+          "refId": "A",
+          "interval": "1d"
         }
       ],
       "fieldConfig": {
@@ -3052,7 +3054,8 @@
           "timeColumns": [
             "time"
           ],
-          "refId": "A"
+          "refId": "A",
+          "interval": "1d"
         }
       ],
       "fieldConfig": {
@@ -3914,151 +3917,6 @@
         ]
       },
       "transformations": []
-    },
-    {
-      "id": 38,
-      "type": "timeseries",
-      "title": "Cumulative Flow Diagram",
-      "description": "Cards-in-each-column over time, stacked by status. A growing 'doing' or 'review' band signals a bottleneck — only cards with transition events appear, so historical cards are excluded.",
-      "gridPos": {
-        "x": 0,
-        "y": 173,
-        "w": 24,
-        "h": 10
-      },
-      "datasource": {
-        "type": "frser-sqlite-datasource",
-        "uid": "claude-metrics-sqlite"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "frser-sqlite-datasource",
-            "uid": "claude-metrics-sqlite"
-          },
-          "rawQueryText": "WITH dates AS (SELECT DISTINCT date(recorded_at, 'localtime') as d FROM kanban_card_events WHERE to_column IS NOT NULL AND CAST(strftime('%s', recorded_at) AS INTEGER) >= $__from/1000 AND CAST(strftime('%s', recorded_at) AS INTEGER) <= $__to/1000), card_state AS (SELECT d.d as snap_date, e.card_number, e.to_column FROM dates d JOIN kanban_card_events e ON date(e.recorded_at, 'localtime') <= d.d AND e.to_column IS NOT NULL WHERE e.id = (SELECT MAX(id) FROM kanban_card_events WHERE card_number = e.card_number AND to_column IS NOT NULL AND date(recorded_at, 'localtime') <= d.d)) SELECT snap_date || 'T00:00:00Z' as time, SUM(CASE WHEN to_column = 'todo' THEN 1 ELSE 0 END) as todo, SUM(CASE WHEN to_column = 'doing' THEN 1 ELSE 0 END) as doing, SUM(CASE WHEN to_column = 'review' THEN 1 ELSE 0 END) as review, SUM(CASE WHEN to_column = 'done' THEN 1 ELSE 0 END) as done FROM card_state GROUP BY snap_date ORDER BY time",
-          "queryText": "WITH dates AS (SELECT DISTINCT date(recorded_at, 'localtime') as d FROM kanban_card_events WHERE to_column IS NOT NULL AND CAST(strftime('%s', recorded_at) AS INTEGER) >= $__from/1000 AND CAST(strftime('%s', recorded_at) AS INTEGER) <= $__to/1000), card_state AS (SELECT d.d as snap_date, e.card_number, e.to_column FROM dates d JOIN kanban_card_events e ON date(e.recorded_at, 'localtime') <= d.d AND e.to_column IS NOT NULL WHERE e.id = (SELECT MAX(id) FROM kanban_card_events WHERE card_number = e.card_number AND to_column IS NOT NULL AND date(recorded_at, 'localtime') <= d.d)) SELECT snap_date || 'T00:00:00Z' as time, SUM(CASE WHEN to_column = 'todo' THEN 1 ELSE 0 END) as todo, SUM(CASE WHEN to_column = 'doing' THEN 1 ELSE 0 END) as doing, SUM(CASE WHEN to_column = 'review' THEN 1 ELSE 0 END) as review, SUM(CASE WHEN to_column = 'done' THEN 1 ELSE 0 END) as done FROM card_state GROUP BY snap_date ORDER BY time",
-          "queryType": "time series",
-          "timeColumns": [
-            "time"
-          ],
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "decimals": 0,
-          "min": 0,
-          "custom": {
-            "lineWidth": 1,
-            "fillOpacity": 60,
-            "gradientMode": "none",
-            "spanNulls": true,
-            "insertNulls": false,
-            "showPoints": "never",
-            "pointSize": 5,
-            "drawStyle": "line",
-            "lineInterpolation": "smooth",
-            "stacking": {
-              "mode": "normal",
-              "group": "A"
-            }
-          },
-          "color": {
-            "mode": "palette-classic"
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "todo"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Todo"
-              },
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "blue",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "doing"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Doing"
-              },
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "yellow",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "review"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Review"
-              },
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "orange",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "done"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Done"
-              },
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "green",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "options": {
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        },
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        }
-      }
     }
   ],
   "refresh": "30s",
