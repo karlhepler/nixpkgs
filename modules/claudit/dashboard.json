@@ -407,8 +407,7 @@
           "timeColumns": [
             "time"
           ],
-          "refId": "A",
-          "interval": "1d"
+          "refId": "A"
         }
       ],
       "fieldConfig": {
@@ -2761,8 +2760,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT role, model_family, COUNT(*) as sessions, SUM(turns) as total_turns, ROUND(CAST(SUM(turns) AS REAL) / NULLIF(COUNT(*), 0), 1) as avg_turns_per_session FROM agent_metrics WHERE role != 'parent' AND is_sidechain = 0 AND CAST(strftime('%s', recorded_at) AS INTEGER) >= $__from/1000 AND CAST(strftime('%s', recorded_at) AS INTEGER) <= $__to/1000 GROUP BY role, model_family ORDER BY avg_turns_per_session DESC",
-          "queryText": "SELECT role, model_family, COUNT(*) as sessions, SUM(turns) as total_turns, ROUND(CAST(SUM(turns) AS REAL) / NULLIF(COUNT(*), 0), 1) as avg_turns_per_session FROM agent_metrics WHERE role != 'parent' AND is_sidechain = 0 AND CAST(strftime('%s', recorded_at) AS INTEGER) >= $__from/1000 AND CAST(strftime('%s', recorded_at) AS INTEGER) <= $__to/1000 GROUP BY role, model_family ORDER BY avg_turns_per_session DESC",
+          "rawQueryText": "SELECT role, model_family, COUNT(*) as sessions, SUM(turns) as total_turns, ROUND(CAST(SUM(turns) AS REAL) / NULLIF(COUNT(*), 0), 1) as avg_turns_per_session FROM agent_metrics WHERE role != 'parent' AND (is_sidechain = 0 OR is_sidechain IS NULL) AND CAST(strftime('%s', recorded_at) AS INTEGER) >= $__from/1000 AND CAST(strftime('%s', recorded_at) AS INTEGER) <= $__to/1000 GROUP BY role, model_family ORDER BY avg_turns_per_session DESC",
+          "queryText": "SELECT role, model_family, COUNT(*) as sessions, SUM(turns) as total_turns, ROUND(CAST(SUM(turns) AS REAL) / NULLIF(COUNT(*), 0), 1) as avg_turns_per_session FROM agent_metrics WHERE role != 'parent' AND (is_sidechain = 0 OR is_sidechain IS NULL) AND CAST(strftime('%s', recorded_at) AS INTEGER) >= $__from/1000 AND CAST(strftime('%s', recorded_at) AS INTEGER) <= $__to/1000 GROUP BY role, model_family ORDER BY avg_turns_per_session DESC",
           "queryType": "table",
           "timeColumns": [],
           "refId": "A"
@@ -2990,8 +2989,7 @@
           "timeColumns": [
             "time"
           ],
-          "refId": "A",
-          "interval": "1d"
+          "refId": "A"
         }
       ],
       "fieldConfig": {
@@ -3054,8 +3052,7 @@
           "timeColumns": [
             "time"
           ],
-          "refId": "A",
-          "interval": "1d"
+          "refId": "A"
         }
       ],
       "fieldConfig": {
