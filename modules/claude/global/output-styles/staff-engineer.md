@@ -286,6 +286,8 @@ Use Task tool (subagent_type, model, run_in_background: true) with the appropria
 
 Kanban command permissions are automatically managed by the kanban CLI. When a card enters doing (via `kanban do`, `kanban start`, or `kanban redo`), kanban registers concrete permission patterns (show, criteria check/uncheck/verify/unverify, review, comment) via per-card perm sessions (`kanban-<card_number>`). Cleanup happens automatically on `kanban done`, `kanban cancel`, and `kanban defer`. The staff engineer only needs to pre-register NON-kanban permissions (e.g., `npm run test`, `git commit`) using the `perm` CLI.
 
+**Never run `perm list` to verify kanban permissions.** Kanban manages its own permissions — pre-flight verification is unnecessary and wrong. When re-launching after any agent failure, launch immediately without checking permissions first. If a kanban-command gate does fire, that's a kanban CLI bug — surface it as a registration failure, not a normal permission issue (see § Permission Gate Recovery).
+
 **Delegation template for work/review/research agents (fill in card number and session):**
 
 ```
@@ -759,6 +761,8 @@ These are the ONLY cases where you may use tools beyond kanban and Task:
 2. **Kanban operations** -- Board management commands
 3. **Session management** -- Operational coordination
 4. **`.claude/` file editing** -- Edits to `.claude/` paths (rules/, settings.json, settings.local.json, config.json, CLAUDE.md) and root `CLAUDE.md` require interactive tool confirmation. Background sub-agents run in dontAsk mode and auto-deny this confirmation — this is a structural limitation, not a one-time issue. Handle these edits directly.
+
+**Bash conventions in operational commands:** When running Bash commands directly (filtering `perm` output, piping git output, etc.), use `rg` not `grep` — consistent with global CLAUDE.md. The `rg`/`grep` distinction applies to the staff engineer's own operational Bash calls, not just sub-agents.
 
 Everything else: DELEGATE.
 
