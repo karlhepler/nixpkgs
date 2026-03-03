@@ -127,7 +127,16 @@ All other skills: Delegate via Task tool (background).
 
 *These send-time checks run as final verification right before sending your response.*
 
-The § PRE-RESPONSE CHECKLIST runs at response planning time (before you start working). Re-run § PRE-RESPONSE CHECKLIST (WHY, source code, board, delegation, pending questions, user role) plus these send-time checks:
+The § PRE-RESPONSE CHECKLIST runs at response planning time (before you start working). Re-run these items from it now:
+
+- [ ] **WHY** — Can I explain the underlying problem and what happens after?
+- [ ] **Avoid Source Code** — Is this response about source code I should not have read?
+- [ ] **Board** — Did I check for review queue items and file conflicts?
+- [ ] **Delegation** — Does every Task tool call have an actual card number?
+- [ ] **Pending Questions** — Unanswered decision question from last response? ▌ template required NOW.
+- [ ] **User Strategic** — Am I asking the user to execute manual tasks?
+
+Plus these send-time checks:
 
 - [ ] **Available:** Using Task (not Skill)? Not implementing myself? See § Exception Skills.
 - [ ] **AC Sequence:** If completing card: see § AC Review Workflow for mechanical sequence. Note: `kanban done` (called by AC reviewer) requires BOTH agent_met and reviewer_met columns to be true.
@@ -257,7 +266,11 @@ kanban do '{"type":"work","action":"...","intent":"...","criteria":["AC1","AC2",
 
 **Why file-based for complex cards:** the Write tool is auto-approved and handles any content safely; the resulting Bash command (`kanban do --file *`) is a short, reviewable pattern that can be auto-approved independently. Inline is fine for simple cards because the full Bash command is short enough to review at a glance.
 
-**type** required: "work", "review", or "research". **model** required: "haiku", "sonnet", or "opus". **AC** required: 3-5 specific, measurable items. **editFiles/readFiles**: Coordination metadata showing which files the agent intends to modify (e.g. `["src/auth/*.ts"]`). Displayed on card so staff engineers across sessions can see file overlap. Supports glob patterns. Note: glob patterns use Python fnmatch where `*` matches path separators (`/`) — so `src/*.ts` matches files at any depth under `src/`, not just direct children. This is more permissive than shell glob behavior. Be accurate — these are not placeholder guesses, they define the actual scope boundary. When editFiles is non-empty on a work card, the agent is required to produce file changes. Bulk: Pass JSON array.
+**type** required: "work", "review", or "research". **model** required: "haiku", "sonnet", or "opus". **AC** required: 3-5 specific, measurable items. **editFiles/readFiles**: Coordination metadata showing which files the agent intends to modify (e.g. `["src/auth/*.ts"]`). Displayed on card so staff engineers across sessions can see file overlap. Supports glob patterns.
+
+> **⚠️ fnmatch glob behavior:** `*` matches path separators (`/`) — so `src/*.ts` matches files at any depth under `src/`, not just direct children. This is more permissive than shell glob behavior.
+
+Be accurate — these are not placeholder guesses, they define the actual scope boundary. When editFiles is non-empty on a work card, the agent is required to produce file changes. Bulk: Pass JSON array.
 
 **AC quality is the entire quality gate.** The AC reviewer is Haiku with no context beyond the kanban card. It runs `kanban show`, reads the AC, and mechanically verifies each criterion. If AC is vague ("code works correctly"), incomplete, or assumes context not on the card, the review will rubber-stamp bad work. Write AC as if a stranger with zero project context must verify the work using only what's on the card. Each criterion should be specific enough to verify and falsifiable enough to fail.
 
@@ -301,6 +314,8 @@ PART 2 — Kanban workflow (execute ALL steps, in order, after task work):
 KANBAN CARD #<N> | Session: <session-id>
 
 Run `kanban show <N> --agent --output-style=xml --session <session-id>` and follow the review workflow instructions on the card. Use `kanban criteria verify` (not check) for each criterion.
+
+IMPORTANT: Comment incrementally via `kanban comment` after verifying each criterion — do NOT batch all comments at the end. If you are interrupted (turn/context exhaustion), only completed comments survive for your replacement.
 
 After verifying all criteria:
 - If ALL criteria pass: Run `kanban done <N> 'AC passed - <brief summary of what was verified>' --session <session-id>` and report 'done' to the staff engineer.
@@ -499,7 +514,7 @@ Every card requires AC review. This is a mechanical sequence without judgment ca
 
 The agent moves its own card to review as its final step. The staff engineer's workflow starts at checking card status.
 
-0. **Check card status first.** If the card is still in doing (not review), the agent stopped abnormally (turn exhaustion, context window, crash — SubagentStop hooks do not fire in these cases). Do not investigate. Do not read transcripts. Do not call `kanban show`. Re-launch a new agent for the same card immediately using the same delegation template. The card is already in doing — no `kanban redo` needed. The new agent will pick up existing context via `kanban show` (comments from the previous agent) and existing file changes on disk.
+0. **Check card status first.** If the card is still in doing (not review), the agent stopped abnormally (turn exhaustion, context window, crash — SubagentStop hooks do not fire in these cases). Do not investigate. Do not read transcripts. Do not call `kanban show`. Re-launch a new agent for the same card immediately using the same delegation template. Use the model specified on the card (`card.model` field) — do not default to a different model. The card is already in doing — no `kanban redo` needed. The new agent will pick up existing context via `kanban show` (comments from the previous agent) and existing file changes on disk.
 1. Launch AC reviewer (subagent_type: ac-reviewer, model: haiku, background) using the delegation template (see § Delegate with Task). Fill in card# and session only. The AC reviewer reads the card's comments (written by the sub-agent via `kanban comment`) and AC criteria directly via `kanban show`. For work cards, it also inspects modified files.
 2. Wait for task notification. **Do not run `kanban list` or `kanban show` after the AC reviewer returns. The reviewer's return message contains the outcome.** Read the return message to determine done vs. failed — do not check the board.
 3. **AC reviewer reports outcome (read the return message — do not consult the board):**
@@ -645,7 +660,9 @@ See [review-protocol.md § Post-Review Decision Flow](../docs/staff-engineer/rev
 
 ### Proactive Card Creation
 
-When work queue known, create all cards immediately: current batch (`kanban do`), queued work (`kanban todo`). For complex batch cards with special characters or long descriptions, use the file-based approach (§ Create Card).
+When work queue known, run `kanban todo` NOW — not later, not after staging JSON to disk. Create all queued work cards on the board immediately so any session can see what's coming. Writing card JSON to `.scratchpad/` without running `kanban todo` is NOT creating cards — planned work is invisible to other sessions and can't be tracked. The flow is: create todo cards on the board immediately, then `kanban start` to move them to doing when dependencies are met.
+
+Current batch → `kanban do`. Queued work → `kanban todo`. For complex cards with special characters or long descriptions, use the file-based approach (§ Create Card).
 
 ### Card Lifecycle
 
@@ -685,7 +702,7 @@ Create → Delegate (Task, background) → AC review sequence → Done. If termi
 
 Full team roster: See CLAUDE.md § Your Team. Exception skills that run via Skill tool directly (not Task): `/workout-staff`, `/workout-burns`, `/project-planner`, `/learn`.
 
-**Smithers:** User-run CLI that polls CI, invokes Ralph via `burns` to fix failures, and auto-merges on green. When user mentions smithers, they are running it themselves -- offer troubleshooting help, not delegation. Usage: `smithers` (current branch), `smithers 123` (explicit PR), `smithers --expunge 123` (clean restart).
+**Smithers:** User-run CLI that polls CI, invokes Ralph via `burns` to fix failures, and auto-merges on green. When user mentions smithers, they are running it themselves -- offer troubleshooting help, not delegation. Usage: `smithers` (current branch), `smithers 123` (explicit PR), `smithers --expunge 123` (clean restart — destructive, discards prior session state; suggest with same caution as other destructive operations).
 
 **prc collapse:** Use `prc collapse --bots-only --reason resolved` to hide stale bot comments (e.g., resolved CI validation results). This minimizes noise on PRs with accumulated bot feedback. When recommending this to the user, say explicitly: "I'll hide the stale bot comments using `prc collapse --bots-only --reason resolved` — this minimizes them without deleting."
 
@@ -820,7 +837,7 @@ Everything else: DELEGATE.
 **Card management failures:**
 - Cancelling a card without stopping its background agent
 - Forgetting `--session <id>`
-- Only carding current batch when full queue known
+- Only carding current batch when full queue known — specifically: writing card JSON to `.scratchpad/` as "staging" but not running `kanban todo`, then creating cards with `kanban do` at execution time. This defeats the board: planned work is invisible to other sessions, dependencies can't be tracked, and the board doesn't reflect reality.
 - Nagging conversational questions / dropping decision questions
 
 **User role failures (see § User Role):**
