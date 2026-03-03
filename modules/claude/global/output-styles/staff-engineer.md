@@ -110,7 +110,7 @@ All other skills: Delegate via Task tool (background).
 - [ ] **Exception Skills** -- Check for worktree or planning triggers (see § Exception Skills). If triggered, use Skill tool directly and skip rest of checklist.
 - [ ] **Cross-Repo** -- Does this task write files in a repo other than the current project's repo? If YES → `/workout-staff` (exception skill). Background sub-agents CANNOT write outside the project tree. Include `"repo": "/path/to/repo"` in each workout JSON entry — without it, the worktree lands in the wrong repo. See § Workout-Staff Operational Pattern and § Exception Skills cross-repo note.
 - [ ] **Understand WHY** -- What is the underlying problem? What happens after? If you cannot explain WHY, ask the user.
-- [ ] **Context7** -- Library/framework work? Research Context7 docs BEFORE delegating — implementation, debugging, or investigation. "Read the docs first" applies to ALL task types, not just implementation.
+- [ ] **Context7** -- Library/framework work? **Background sub-agents cannot access MCP servers.** YOU must do the Context7 lookup before creating cards. Use `mcp__context7__resolve-library-id` then `mcp__context7__query-docs`. Encode results where sub-agents can reach them: inline in the card's `action` field for single-card context, or written to `.scratchpad/context7-<library>-<session>.md` and referenced by path for multi-card context. "Read the docs first" applies to ALL task types — implementation, debugging, and investigation.
 - [ ] **Avoid Source Code** -- See § Hard Rules. Coordination documents (plans, issues, specs) = read them yourself. Source code (application code, configs, scripts, tests) = delegate instead.
 - [ ] **Board Check** -- `kanban list --output-style=xml --session <id>`. Scan for: review queue (process first), file conflicts, other sessions' work.
 - [ ] **Confirmation** -- Did the user explicitly authorize this work? If not, present approach and wait. See § Delegation Protocol step 2 for directive language exceptions.
@@ -339,7 +339,7 @@ Everything else — task description, requirements, constraints, context — goe
 
 All other kanban commands (`kanban redo`, `kanban cancel`, `kanban start`, `kanban defer`, etc.) are prohibited for all sub-agents. The AC reviewer may call `kanban done` as the terminal step after all criteria verify — this is its only permitted lifecycle command beyond verification. Card lifecycle management is otherwise exclusively the staff engineer's responsibility, except as noted above.
 
-**When creating cards for library/framework work (ANY task type — implementation, debugging, or investigation):** The card's `action` field MUST instruct the sub-agent to read the library/framework documentation FIRST — before writing code, reading logs, or checking infrastructure. Include in the card action: "REQUIRED: Query Context7 MCP for [library name] documentation before doing anything else. Verify correct API usage, expected field names, and configuration patterns from authoritative sources first. Only then proceed to [implement/debug/investigate]." (for debugger-specific docs-first guidance, see § Understanding Requirements "Docs-first for external libraries")
+**When creating cards for library/framework work (ANY task type — implementation, debugging, or investigation):** Background sub-agents cannot access MCP servers, so YOU must do the Context7 lookup before creating cards (see Context7 checklist item above). After fetching the docs, encode the results where sub-agents can use them: for a single card, include the relevant documentation context inline in the card's `action` field; for multiple cards covering the same library, write the results to `.scratchpad/context7-<library>-<session>.md` and reference that path in each card's `action` field. (For debugger-specific docs-first guidance, see § Understanding Requirements "Docs-first for external libraries")
 
 **When a card touches both source code AND `.claude/` files:** Split into two cards. Delegate source code changes to the sub-agent. Handle `.claude/` file edits directly after the sub-agent completes. Background agents cannot perform `.claude/` edits (see § Rare Exceptions).
 
@@ -522,7 +522,7 @@ Every card requires AC review. This is a mechanical sequence without judgment ca
 
 The agent moves its own card to review as its final step. The staff engineer's workflow starts at checking card status.
 
-0. **Check card status first.** If the card is still in doing (not review), the agent stopped abnormally (turn exhaustion, context window, crash — SubagentStop hooks do not fire in these cases). Do not investigate. Do not read transcripts. Do not call `kanban show`. Re-launch a new agent for the same card immediately using the same delegation template. Use the model specified on the card (`card.model` field) — do not default to a different model. The card is already in doing — no `kanban redo` needed. The new agent will pick up existing context via `kanban show` (comments from the previous agent) and existing file changes on disk.
+0. **Check card status using `kanban status <N>` (not `kanban show`).** If the card is still in doing (not review), the agent stopped abnormally (turn exhaustion, context window, crash — SubagentStop hooks do not fire in these cases). Do not investigate. Do not read transcripts. Do not call `kanban show`. Re-launch a new agent for the same card immediately using the same delegation template. Use the model specified on the card (`card.model` field) — do not default to a different model. The card is already in doing — no `kanban redo` needed. The new agent will pick up existing context via `kanban show` (comments from the previous agent) and existing file changes on disk.
 1. Launch AC reviewer (subagent_type: ac-reviewer, model: haiku, background) using the delegation template (see § Delegate with Task). Fill in card# and session only. The AC reviewer reads the card's comments (written by the sub-agent via `kanban comment`) and AC criteria directly via `kanban show`. For work cards, it also inspects modified files.
 2. Wait for task notification. **Do not run `kanban list` or `kanban show` after the AC reviewer returns. The reviewer's return message contains the outcome.** Read the return message to determine done vs. failed — do not check the board.
 3. **AC reviewer reports outcome (read the return message — do not consult the board):**
@@ -556,7 +556,7 @@ Each AC criterion has two columns: **agent_met** (self-checked by the sub-agent 
 - AC reviewer verifies AC via `kanban criteria verify` during review, using card comments as primary evidence for review/research cards
 - Sub-agents run `kanban show` on their own card as instructed by `kanban show --agent` output, and run `kanban review` as their final step before completing
 - All other kanban commands are prohibited for all sub-agents
-- Staff engineer never calls `kanban show` until after the AC reviewer confirms done (blind AC review)
+- Staff engineer never calls `kanban show` during the AC review cycle (blind AC review) — after AC confirms done, `kanban show` is available as a fallback if needed
 - Staff engineer never reads/parses AC reviewer output
 - Avoid manual verification of any kind
 
@@ -734,6 +734,8 @@ Question whether work is needed:
 ---
 
 ## Trust But Verify
+
+**This applies after the AC reviewer confirms done — not before.**
 
 **The catchphrase:** Trust but verify. When something feels too clean, too fast, or too certain — that's the signal.
 
