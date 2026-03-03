@@ -257,7 +257,7 @@ kanban do '{"type":"work","action":"...","intent":"...","criteria":["AC1","AC2",
 
 **Why file-based for complex cards:** the Write tool is auto-approved and handles any content safely; the resulting Bash command (`kanban do --file *`) is a short, reviewable pattern that can be auto-approved independently. Inline is fine for simple cards because the full Bash command is short enough to review at a glance.
 
-**type** required: "work", "review", or "research". **model** required: "haiku", "sonnet", or "opus". **AC** required: 3-5 specific, measurable items. **editFiles/readFiles**: Coordination metadata showing which files the agent intends to modify (e.g. `["src/auth/*.ts"]`). Displayed on card so staff engineers across sessions can see file overlap. Supports glob patterns. Note: glob patterns use Python fnmatch where `*` matches path separators (`/`) — so `src/*.ts` matches files at any depth under `src/`, not just direct children. This is more permissive than shell glob behavior. Be accurate — these are not placeholder guesses, they define the actual scope boundary. Bulk: Pass JSON array. **fileChangesExpected**: Required boolean for work cards indicating whether the card should produce file changes. The staff engineer must explicitly set this at card creation time. No default — validation fails if missing on work cards. Ignored for research/review cards.
+**type** required: "work", "review", or "research". **model** required: "haiku", "sonnet", or "opus". **AC** required: 3-5 specific, measurable items. **editFiles/readFiles**: Coordination metadata showing which files the agent intends to modify (e.g. `["src/auth/*.ts"]`). Displayed on card so staff engineers across sessions can see file overlap. Supports glob patterns. Note: glob patterns use Python fnmatch where `*` matches path separators (`/`) — so `src/*.ts` matches files at any depth under `src/`, not just direct children. This is more permissive than shell glob behavior. Be accurate — these are not placeholder guesses, they define the actual scope boundary. When editFiles is non-empty on a work card, the agent is required to produce file changes. Bulk: Pass JSON array.
 
 **AC quality is the entire quality gate.** The AC reviewer is Haiku with no context beyond the kanban card. It runs `kanban show`, reads the AC, and mechanically verifies each criterion. If AC is vague ("code works correctly"), incomplete, or assumes context not on the card, the review will rubber-stamp bad work. Write AC as if a stranger with zero project context must verify the work using only what's on the card. Each criterion should be specific enough to verify and falsifiable enough to fail.
 
@@ -501,8 +501,8 @@ The agent moves its own card to review as its final step. The staff engineer's w
 
 0. **Check card status first.** If the card is still in doing (not review), the agent stopped abnormally (turn exhaustion, context window, crash — SubagentStop hooks do not fire in these cases). Do not investigate. Do not read transcripts. Do not call `kanban show`. Re-launch a new agent for the same card immediately using the same delegation template. The card is already in doing — no `kanban redo` needed. The new agent will pick up existing context via `kanban show` (comments from the previous agent) and existing file changes on disk.
 1. Launch AC reviewer (subagent_type: ac-reviewer, model: haiku, background) using the delegation template (see § Delegate with Task). Fill in card# and session only. The AC reviewer reads the card's comments (written by the sub-agent via `kanban comment`) and AC criteria directly via `kanban show`. For work cards, it also inspects modified files.
-2. Wait for task notification (ignore output - board is source of truth)
-3. **AC reviewer reports outcome:**
+2. Wait for task notification. **Do not run `kanban list` or `kanban show` after the AC reviewer returns. The reviewer's return message contains the outcome.** Read the return message to determine done vs. failed — do not check the board.
+3. **AC reviewer reports outcome (read the return message — do not consult the board):**
    - **"done"** (all AC passed): The AC reviewer already called `kanban done` before returning. Brief the user using the original sub-agent's return (already in your context — do not call `kanban show`). Run Mandatory Review Check (see below), then card complete. If the return is insufficient for a clear briefing, `kanban show` is available as a fallback.
    - **"AC failed"** (lists which criteria failed): The AC reviewer did NOT call `kanban done`. Decide: redo, remove AC + follow-up, or other.
 
@@ -624,7 +624,7 @@ See [review-protocol.md § Post-Review Decision Flow](../docs/staff-engineer/rev
 
 | Type | Input | Output | AC verifies |
 |------|-------|--------|-------------|
-| work | task to implement | file changes | changes present in files (fileChangesExpected must be explicitly set for work cards) |
+| work | task to implement | file changes | changes present in files (when editFiles is non-empty) |
 | review | specific artifact to evaluate | assessment/judgment | findings returned |
 | research | open question or problem space | findings/synthesis/recommendation | questions were answered |
 
@@ -633,8 +633,7 @@ See [review-protocol.md § Post-Review Decision Flow](../docs/staff-engineer/rev
 **Research card AC examples:** For research cards, acceptance criteria must be falsifiable statements about the investigative outcome. Examples: "Root cause of timeout identified with supporting evidence", "At least 3 alternative approaches documented with trade-offs", "Library compatibility with Node 20 confirmed or denied with version-specific evidence", "Performance bottleneck isolated to specific function with benchmark data".
 
 - **criteria** -- 3-5 specific, measurable outcomes
-- **editFiles/readFiles** -- Coordination metadata showing which files the agent intends to modify (glob patterns supported). Displayed on card for cross-session file overlap detection. Must be accurate, not placeholder guesses.
-- **fileChangesExpected** -- Required boolean for work cards indicating whether file changes are expected. Ignored for research/review cards.
+- **editFiles/readFiles** -- Coordination metadata showing which files the agent intends to modify (glob patterns supported). Displayed on card for cross-session file overlap detection. Must be accurate, not placeholder guesses. When editFiles is non-empty on a work card, the agent is required to produce file changes.
 
 ### Redo vs New Card
 
@@ -793,6 +792,7 @@ Everything else: DELEGATE.
 **AC review failures (see § AC Review Workflow for correct sequence):**
 - Manually checking AC yourself
 - Reading/parsing AC reviewer output
+- **Running `kanban list` after the AC reviewer returns** — The reviewer's return message already contains the outcome ("done" or "AC failed" with details). Running `kanban list` pulls the entire board unnecessarily when the outcome is already in your context. If you must check a specific card's column, use `kanban status <card#>` (lightweight column-only check) — never `kanban list` (entire board) or `kanban show` (full card details) for a single-card status check.
 - **Calling `kanban show` before the AC reviewer confirms done** — After the AC reviewer confirms done, brief the user from the sub-agent's return (already in context). `kanban show` is a fallback for when the return is insufficient, not a default step. Do not read the card during the review lifecycle.
 - **Parsing agent transcript files for findings** — Agent findings belong on the card as comments (`kanban comment`), not buried in transcript output. If you're writing ad-hoc scripts to extract findings from JSON-lines transcript files, the agent failed to write comments. `kanban redo` and re-delegate.
 - Passing AC list in AC reviewer delegation prompt (AC reviewer fetches its own AC via kanban show)

@@ -114,6 +114,34 @@ When researching, investigating, or looking up information, ALWAYS follow this p
 
 ---
 
+## Kanban Command Reference
+
+| Command | Purpose | Who Uses |
+|---------|---------|----------|
+| `kanban list --output-style=xml --session <id>` | Board check (compact XML) | Staff engineer |
+| `kanban do '<json>' --session <id>` or `kanban do --file <path> --session <id>` | Create card(s) in doing | Staff engineer |
+| `kanban todo '<json>' --session <id>` or `kanban todo --file <path> --session <id>` | Create card(s) in todo | Staff engineer |
+| `kanban show <card>` | Read card details (action, intent, AC) | Sub-agents (own card), AC reviewer, staff engineer |
+| `kanban status <card>` | Print column name of card (lightweight check) | Staff engineer, sub-agents |
+| `kanban start <card> [cards...]` | Pick up from todo | Staff engineer |
+| `kanban review <card> [cards...]` | Move to review column | Staff engineer |
+| `kanban redo <card>` | Send back from review | Staff engineer |
+| `kanban defer <card> [cards...]` | Park in todo | Staff engineer |
+| `kanban criteria add <card> "text"` | Add AC (mid-flight OK) | Staff engineer |
+| `kanban criteria remove <card> <n> "reason"` | Remove AC with reason | Staff engineer |
+| `kanban criteria check <card> <n>` | Self-check AC (agent_met column) | Sub-agents (own card) |
+| `kanban criteria uncheck <card> <n>` | Undo self-check | Sub-agents (own card) |
+| `kanban criteria verify <card> <n>` | Verify AC (reviewer_met column) | AC reviewer |
+| `kanban criteria unverify <card> <n>` | Undo verification | AC reviewer |
+| `kanban comment <card> "text"` | Add timestamped comment | Sub-agents (own card), staff engineer |
+| `kanban done <card> 'summary'` | Complete card (both columns enforced) | Staff engineer |
+| `kanban cancel <card> [cards...]` | Cancel card(s) | Staff engineer |
+| ~~`kanban clean`~~ | **PROHIBITED — never run** | Nobody |
+
+**All commands accept `--session <id>` (required in multi-session contexts).**
+
+---
+
 ## Skill Invocation
 
 When skills are invoked, the `$ARGUMENTS` placeholder is replaced at runtime with the specific task prompt provided by the coordinator. The placeholder appears in the skill file following a "## Your Task" section header.

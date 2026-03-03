@@ -152,6 +152,7 @@ Some skills intentionally lack agent definitions because they are exception or w
 
 **Card Details:**
 - `kanban show <card#> --output-style=xml`: Show full card details (XML format)
+- `kanban status <card#>`: Print column name of card (lightweight check)
 - `kanban comment <card#> "text"`: Add timestamped comment to card
 
 **Acceptance Criteria (also aliased as `kanban ac`):**
@@ -178,6 +179,7 @@ Some skills intentionally lack agent definitions because they are exception or w
 | `kanban todo '<json>' --session <id>` or `kanban todo --file <path> --session <id>` | Create card(s) in todo | Staff engineer |
 | *(See § Create Card for inline vs file-based threshold guidance)* | | |
 | `kanban show <card>` | Read card details (action, intent, AC) | Sub-agents (own card), AC reviewer, staff engineer |
+| `kanban status <card>` | Print column name of card (lightweight check) | Staff engineer, sub-agents |
 | `kanban start <card> [cards...]` | Pick up from todo | Staff engineer |
 | `kanban review <card> [cards...]` | Move to review column | Staff engineer |
 | `kanban redo <card>` | Send back from review | Staff engineer |
