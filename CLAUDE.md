@@ -129,7 +129,7 @@ Some skills intentionally lack agent definitions because they are exception or w
 - `q "question"`: Quick Claude question (haiku model - fastest)
 - `qq "question"`: Claude question (sonnet model - balanced)
 - `qqq "question"`: Complex Claude question (opus model - most capable)
-- `burns "prompt"` or `burns file.md`: Run Ralph Orchestrator with Ralph Coordinator output style — source: `modules/claude/burns.py`
+- `burns "prompt"` or `burns file.md`: Run Ralph Orchestrator with Monty Burns coordinator hat (multi-hat YAML assembled at Nix build time) — source: `modules/claude/burns.py`
 - `smithers` or `smithers <PR>`: Autonomous PR watcher (monitors checks, fixes issues, handles bot comments) — source: `modules/claude/smithers.py`
 - `prc`: PR comment management tool (list, reply, resolve, collapse) — source: `modules/claude/prc.py`; see `/manage-pr-comments` skill for usage documentation
 
@@ -167,7 +167,7 @@ Some skills intentionally lack agent definitions because they are exception or w
 **Session Management:**
 - Session identity injected automatically via SessionStart hook (friendly names like `swift-falcon`)
 - `--session <name>`: Pass session ID on commands (Claude does this automatically)
-- `KANBAN_SESSION=custom-id`: Override session detection (for burns/smithers)
+- `BURNS_SESSION=1`: Environment variable set by burns to suppress kanban session instructions (Burns uses Ralph's memory system instead of kanban)
 - Session mappings stored in `.kanban/sessions.json`
 
 ### Kanban Command Reference
@@ -177,7 +177,6 @@ Some skills intentionally lack agent definitions because they are exception or w
 | `kanban list --output-style=xml --session <id>` | Board check (compact XML) | Staff engineer |
 | `kanban do '<json>' --session <id>` or `kanban do --file <path> --session <id>` | Create card(s) in doing | Staff engineer |
 | `kanban todo '<json>' --session <id>` or `kanban todo --file <path> --session <id>` | Create card(s) in todo | Staff engineer |
-| *(See § Create Card for inline vs file-based threshold guidance)* | | |
 | `kanban show <card>` | Read card details (action, intent, AC) | Sub-agents (own card), AC reviewer, staff engineer |
 | `kanban status <card>` | Print column name of card (lightweight check) | Staff engineer, sub-agents |
 | `kanban start <card> [cards...]` | Pick up from todo | Staff engineer |
@@ -376,6 +375,22 @@ Both files made git-invisible by `hms` after first run. Backups linked via `*.la
 - Metrics collection: `modules/claude/claude-metrics-hook.py` (captures metrics via Claude Code metrics hook)
 - Displays: Total cost (today/all-time), token breakdown (input/output/cache), cost by kanban session, turn statistics by agent type, tool usage heat map (by tool and agent)
 - Access via Grafana interface (configured in Home Manager)
+
+## Burns and Ralph Architecture
+
+**Build-time Assembly:**
+Burns uses a multi-hat YAML configuration assembled at Nix build time. The Ralph orchestrator invokes a composite YAML formed from:
+- `modules/claude/global/hats/wrapper.yml.tmpl` - Ralph event-loop wrapper
+- `modules/claude/global/hats/monty-burns.yml.tmpl` - Monty Burns coordinator hat
+- 8 specialist skill hats (swe-backend, swe-frontend, swe-fullstack, swe-infra, swe-devex, swe-sre, swe-security, researcher)
+
+The assembled YAML path is substituted at build time in `modules/claude/default.nix`.
+
+**Tiered Review Protocol:**
+The mandatory review protocol that determines when work requires review is defined in `modules/claude/global/hats/monty-burns.yml.tmpl` (lines 86-114, "On work.done" section). Three tiers: Tier 1 (mandatory: auth/authz, financial, infra, PII DB, CI/CD), Tier 2 (high-risk: API endpoints, third-party, performance, migrations, deps, shell scripts), Tier 3 (recommended: UI, monitoring, large refactors). The protocol activates when a specialist emits 'work.done' event.
+
+**Ralph vs. Kanban:**
+Ralph is a self-contained event-loop orchestrator with its own memory system. Kanban is the human-facing coordination layer for staff engineers. These systems are separate. When burns runs, it sets `BURNS_SESSION=1` to suppress kanban session instructions — injecting kanban context would confuse the model. Ralph uses its internal memory system (`ralph tools memory`) instead of kanban cards.
 
 **Available skills:**
 - Engineering: swe-backend, swe-frontend, swe-fullstack, swe-devex, swe-infra, swe-security, swe-sre

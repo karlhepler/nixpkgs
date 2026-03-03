@@ -222,6 +222,8 @@ When delegating work via Task tool:
 - Use `model: opus` for architectural or highly complex work
 - If unsure between Haiku and Sonnet → Choose Sonnet
 
+**Note on Ralph:** When Ralph invokes specialist agents via burns, model selection is determined by the specialist hat YAML configuration (`modules/claude/global/hats/*.yml.tmpl`), not by this guidance. Each specialist hat specifies its own model choice via the `cli.backend` field in the hat YAML.
+
 ---
 
 ## MCP Integration

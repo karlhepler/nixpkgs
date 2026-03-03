@@ -2227,7 +2227,7 @@ def main_loop_iteration(
     # Prepare environment with Ralph configuration
     env = os.environ.copy()
 
-    burns_cmd = ["burns", "--pr", str(pr_number)]
+    burns_cmd = ["burns", "--pr", str(pr_number), "--no-reviews"]
     if debug:
         burns_cmd.append("--debug")
     burns_cmd.append(prompt_file)
