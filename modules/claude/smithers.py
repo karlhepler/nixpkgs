@@ -1910,20 +1910,20 @@ def main():
 
     args = parser.parse_args()
 
-    # Expunge .ralph memory directory if requested
+    # Expunge .ralph and .agent memory directories if requested
     if args.expunge:
-        ralph_dir = ".ralph"
-        if os.path.exists(ralph_dir):
-            print("Expunging .ralph memory...", flush=True)
-            result = subprocess.run(["trash", ralph_dir], check=False)
-            if result.returncode != 0:
-                print(
-                    f"Warning: trash command exited with code {result.returncode}. "
-                    "Continuing anyway.",
-                    file=sys.stderr,
-                    flush=True
-                )
-        # .ralph does not exist — silently continue
+        for directory in [".ralph", ".agent"]:
+            if os.path.exists(directory):
+                print(f"Expunging {directory} memory...", flush=True)
+                result = subprocess.run(["trash", directory], check=False)
+                if result.returncode != 0:
+                    print(
+                        f"Warning: trash command exited with code {result.returncode} for {directory}. "
+                        "Continuing anyway.",
+                        file=sys.stderr,
+                        flush=True
+                    )
+            # Directory does not exist — silently continue
 
     # Determine max iterations: CLI flag > env var > default
     max_ralph_invocations = args.max_ralph_iterations
