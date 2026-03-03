@@ -906,6 +906,11 @@ def cmd_do(args) -> None:
         print(f"Error: JSON must be an object or array, got {type(data).__name__}", file=sys.stderr)
         sys.exit(1)
 
+    # Delete the --file input after successful card creation so it never pre-exists on next use
+    json_file = getattr(args, "json_file", None)
+    if json_file:
+        os.remove(json_file)
+
 
 def cmd_redo(args) -> None:
     """Move card from review back to doing."""
@@ -2282,6 +2287,11 @@ def cmd_todo(args) -> None:
     else:
         print(f"Error: JSON must be an object or array, got {type(data).__name__}", file=sys.stderr)
         sys.exit(1)
+
+    # Delete the --file input after successful card creation so it never pre-exists on next use
+    json_file = getattr(args, "json_file", None)
+    if json_file:
+        os.remove(json_file)
 
 
 def cmd_review(args) -> None:
