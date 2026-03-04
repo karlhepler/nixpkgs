@@ -18,10 +18,10 @@ Options:
                                 Priority: CLI flag > env var > default
     --debug                     Enable Ralph diagnostics mode (sets RALPH_DIAGNOSTICS=1)
                                 Generates detailed JSONL logs in .ralph/diagnostics/
-    --no-reviews                Skip the mandatory tiered review protocol; Monty Burns will
-                                emit LOOP_COMPLETE immediately after work.done without routing
-                                to any review specialists. Intended for use by smithers where
-                                review cycles are unnecessary overhead.
+    --no-reviews                Skip the mandatory tiered review protocol; uses the Smithers
+                                coordinator hat which emits LOOP_COMPLETE immediately after
+                                work.done without routing to any review specialists. Intended
+                                for use by smithers where review cycles are unnecessary overhead.
 """
 
 import argparse
@@ -31,11 +31,10 @@ import shutil
 import signal
 import subprocess
 import sys
-import tempfile
 import time
 
-# Path to Ralph Coordinator hat YAML (substituted by Nix at build time)
-RALPH_COORDINATOR_HAT = "RALPH_COORDINATOR_HAT_YAML"
+monty_burns_hat_yaml = "MONTY_BURNS_HAT_YAML"  # replaced at build time
+smithers_hat_yaml = "SMITHERS_HAT_YAML"  # replaced at build time
 DEFAULT_MAX_ITERATIONS = 20
 
 
@@ -212,86 +211,18 @@ def clean_stale_tool_results(working_dir: str) -> None:
         )
 
 
-def create_no_reviews_hat(hat_path: str) -> str:
-    """Create a temporary hat YAML with the tiered review protocol removed.
-
-    Reads the Monty Burns hat YAML from hat_path, replaces the 'On work.done'
-    behavior section so that Monty Burns emits LOOP_COMPLETE immediately after
-    work.done rather than routing to review specialists.
-
-    Returns the path to a temporary file containing the patched hat YAML.
-    The caller is responsible for deleting the temp file when done.
-
-    Args:
-        hat_path: Path to the original Ralph Coordinator hat YAML.
-
-    Returns:
-        Path to the temporary patched hat YAML file.
-    """
-    with open(hat_path, 'r') as f:
-        hat_content = f.read()
-
-    # Replace the 'On `work.done`' section with a no-reviews version.
-    # The original section starts with '## On `work.done`' and ends just before
-    # '## On `research.done`'. We replace the entire block including the review
-    # tables with a directive to emit LOOP_COMPLETE directly.
-    no_reviews_work_done = """\
-          ## On `work.done`
-
-          Reviews are suppressed for this session (--no-reviews mode).
-          Emit `LOOP_COMPLETE` immediately without routing to any review specialists.
-
-          ```bash
-          ralph emit "LOOP_COMPLETE" "Work complete. Reviews suppressed."
-          ```
-
-"""
-
-    original_section_start = "          ## On `work.done`"
-    original_section_end = "          ## On `research.done`"
-
-    start_idx = hat_content.find(original_section_start)
-    end_idx = hat_content.find(original_section_end)
-
-    if start_idx == -1 or end_idx == -1:
-        # Hat structure has changed — fall back to original hat to avoid silent breakage
-        print(
-            "Warning: --no-reviews: could not locate review protocol section in hat YAML. "
-            "Falling back to full hat (reviews will run).",
-            file=sys.stderr
-        )
-        return None
-
-    patched_content = (
-        hat_content[:start_idx]
-        + no_reviews_work_done
-        + hat_content[end_idx:]
-    )
-
-    tmp = tempfile.NamedTemporaryFile(
-        mode='w',
-        suffix='.yml',
-        prefix='burns-no-reviews-hat-',
-        delete=False
-    )
-    try:
-        tmp.write(patched_content)
-        tmp.flush()
-        return tmp.name
-    except Exception:
-        tmp.close()
-        os.unlink(tmp.name)
-        raise
-    finally:
-        tmp.close()
-
-
 def main():
     """Main entry point."""
-    # Validate Nix substitution occurred (check if hat file exists)
-    if not os.path.isfile(RALPH_COORDINATOR_HAT):
+    # Validate Nix substitution occurred (check if hat files exist)
+    if not os.path.isfile(monty_burns_hat_yaml):
         print(
-            f"Error: Ralph Coordinator hat not found at: {RALPH_COORDINATOR_HAT}",
+            f"Error: Monty Burns hat not found at: {monty_burns_hat_yaml}",
+            file=sys.stderr
+        )
+        sys.exit(1)
+    if not os.path.isfile(smithers_hat_yaml):
+        print(
+            f"Error: Smithers hat not found at: {smithers_hat_yaml}",
             file=sys.stderr
         )
         sys.exit(1)
@@ -328,7 +259,7 @@ def main():
         action="store_true",
         default=False,
         dest="no_reviews",
-        help="Skip mandatory tiered review protocol; Monty Burns emits LOOP_COMPLETE immediately after work.done"
+        help="Skip mandatory tiered review protocol; uses Smithers coordinator hat that emits LOOP_COMPLETE immediately after work.done"
     )
 
     args = parser.parse_args()
@@ -393,14 +324,11 @@ You are running in autonomous mode within: {working_dir}
 **If you need to access files outside this directory, STOP and document the blocker.**
 """
 
-    # Determine hat path: use patched no-reviews hat if requested, otherwise use the original
-    no_reviews_hat_path = None
+    # Determine hat path: use smithers lightweight coordinator if --no-reviews, otherwise Monty Burns
     if args.no_reviews:
-        no_reviews_hat_path = create_no_reviews_hat(RALPH_COORDINATOR_HAT)
-        # If patching failed (returned None), fall back to original hat
-        hat_path = no_reviews_hat_path if no_reviews_hat_path is not None else RALPH_COORDINATOR_HAT
+        hat_path = smithers_hat_yaml
     else:
-        hat_path = RALPH_COORDINATOR_HAT
+        hat_path = monty_burns_hat_yaml
 
     # Build ralph command with constructed prompt
     cmd = [
@@ -440,13 +368,6 @@ You are running in autonomous mode within: {working_dir}
             pass  # Already killed, just cleanup
         print("✓ Ralph terminated", file=sys.stderr)
         sys.exit(130)  # Standard exit code for SIGINT (128 + 2)
-    finally:
-        # Clean up the temporary no-reviews hat file if we created one
-        if no_reviews_hat_path is not None and os.path.exists(no_reviews_hat_path):
-            try:
-                os.unlink(no_reviews_hat_path)
-            except OSError:
-                pass
 
 
 if __name__ == "__main__":

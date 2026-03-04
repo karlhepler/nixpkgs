@@ -81,6 +81,25 @@ let
       (builtins.readFile ./global/hats/wrapper.yml.tmpl)
   );
 
+  # Smithers-specific hat assembly: 8 specialists (Ralph handles loop termination itself)
+  smithersHatContent = lib.concatStrings [
+    (processTemplate ./global/hats/swe-backend.yml.tmpl  (processSkillFile ./global/commands/swe-backend.md))
+    (processTemplate ./global/hats/swe-frontend.yml.tmpl (processSkillFile ./global/commands/swe-frontend.md))
+    (processTemplate ./global/hats/swe-fullstack.yml.tmpl (processSkillFile ./global/commands/swe-fullstack.md))
+    (processTemplate ./global/hats/swe-devex.yml.tmpl    (processSkillFile ./global/commands/swe-devex.md))
+    (processTemplate ./global/hats/swe-infra.yml.tmpl    (processSkillFile ./global/commands/swe-infra.md))
+    (processTemplate ./global/hats/swe-security.yml.tmpl (processSkillFile ./global/commands/swe-security.md))
+    (processTemplate ./global/hats/swe-sre.yml.tmpl      (processSkillFile ./global/commands/swe-sre.md))
+    (processTemplate ./global/hats/researcher.yml.tmpl   (processSkillFile ./global/commands/researcher.md))
+  ];
+
+  smithersHatYaml = pkgs.writeText "smithers-hat.yml" (
+    builtins.replaceStrings
+      [ "HATS_PLACEHOLDER" ]
+      [ smithersHatContent ]
+      (builtins.readFile ./global/hats/wrapper.yml.tmpl)
+  );
+
   # Python environment for smithers with required packages
   smithersPython = pkgs.python3.withPackages (ps: with ps; [
     wcwidth   # Unicode display width calculation for terminal formatting
@@ -91,8 +110,8 @@ let
   burnsScript = pkgs.writers.writePython3Bin "burns" {
     flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
   } (builtins.replaceStrings
-    ["RALPH_COORDINATOR_HAT_YAML"]
-    ["${montyBurnsHatYaml}"]
+    ["MONTY_BURNS_HAT_YAML" "SMITHERS_HAT_YAML"]
+    ["${montyBurnsHatYaml}" "${smithersHatYaml}"]
     (builtins.readFile ./burns.py));
 
   # Smithers Python CLI (token-efficient PR watcher)

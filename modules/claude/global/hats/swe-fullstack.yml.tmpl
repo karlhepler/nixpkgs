@@ -28,9 +28,11 @@
       - lint: pass (run the project's linter)
       - typecheck: pass (if applicable to the project's language)
 
-      Store detailed output in memory first:
+      Before emitting your completion event, store key facts in memory:
       ```bash
-      ralph tools memory add "implementation details: [what you built and test results]" -t context
+      ralph tools memory add "completed_task=[1-sentence description of what was built/fixed]" -t context
+      ralph tools memory add "commit_sha=$(git rev-parse HEAD)" -t context
+      ralph tools memory add "backpressure=[tests: pass/fail, lint: pass/fail, typecheck: pass/fail/n/a]" -t context
       ```
 
       Include evidence in the payload: "tests: pass, lint: pass, typecheck: pass"

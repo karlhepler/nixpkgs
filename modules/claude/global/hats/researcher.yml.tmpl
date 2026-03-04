@@ -21,9 +21,10 @@
       - sources: cited (claims backed by verifiable sources)
       - synthesis: complete (findings summarized, not just raw data)
 
-      Store detailed findings in memory first:
+      Before emitting your completion event, store key facts in memory:
       ```bash
-      ralph tools memory add "research findings: [detailed summary]" -t context
+      ralph tools memory add "completed_research=[1-sentence description of what was researched]" -t context
+      ralph tools memory add "research_summary=[2-3 sentence summary of findings]" -t context
       ```
 
       ## Constraints
