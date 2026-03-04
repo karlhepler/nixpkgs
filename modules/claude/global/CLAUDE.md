@@ -662,7 +662,7 @@ Claude agents must NEVER run these commands under any circumstances. Do not ask 
 - `kanban clean` - **PROHIBITED** — never run. Use `kanban cancel` instead.
 - `kanban clean --expunge` - **PROHIBITED** — never run.
 - `kanban clean <column>` - **PROHIBITED** — never run.
-- `perm reset` - **USER-ONLY — Claude agents must NEVER call this.** Nukes ALL entries from `permissions.allow`. Interactive only — reads confirmation from `/dev/tty` to prevent automated invocation. Run by the user directly when a full permission slate wipe is needed.
+- `perm nuke` - **USER-ONLY — Claude agents must NEVER call this.** Nukes ALL entries from `permissions.allow`. Interactive only — reads confirmation from `/dev/tty` to prevent automated invocation. Run by the user directly when a full permission slate wipe is needed.
 
 ### Ask-First Operations (Require User Approval)
 
