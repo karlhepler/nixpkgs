@@ -123,8 +123,100 @@ HELP_EOF
           if [[ "''${answer}" =~ ^[Yy]$ ]]; then
             rm -f "''${METRICS_DB}"
             echo "Database deleted, recreating schema..."
-            # Recreate the database schema immediately by invoking the hook with init payload
-            echo "{\"session_id\":\"init\",\"transcript_path\":\"/dev/null\",\"stop_hook_active\":false}" | claude-metrics-hook
+            # Recreate the database schema immediately via direct sqlite3 (no hook invocation)
+            sqlite3 "''${METRICS_DB}" <<'SQL_EOF'
+PRAGMA journal_mode=WAL;
+PRAGMA busy_timeout=5000;
+
+CREATE TABLE IF NOT EXISTS agent_metrics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    agent_id TEXT NOT NULL DEFAULT '',
+    role TEXT NOT NULL,
+    recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    working_directory TEXT,
+    kanban_session TEXT,
+    git_branch TEXT,
+    model TEXT NOT NULL,
+    model_family TEXT NOT NULL,
+    turns INTEGER NOT NULL DEFAULT 0,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_creation_5m_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_creation_1h_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+    cost_usd REAL NOT NULL DEFAULT 0.0,
+    duration_seconds REAL DEFAULT 0.0,
+    avg_turn_latency_seconds REAL DEFAULT 0.0,
+    cache_hit_ratio REAL DEFAULT 0.0,
+    tool_calls INTEGER DEFAULT 0,
+    tool_errors INTEGER DEFAULT 0,
+    is_sidechain INTEGER NOT NULL DEFAULT 0,
+    last_seen_at TIMESTAMP,
+    UNIQUE(session_id, agent_id, role, model)
+);
+
+CREATE TABLE IF NOT EXISTS agent_tool_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    agent_id TEXT NOT NULL DEFAULT '',
+    role TEXT NOT NULL,
+    recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    tool_name TEXT NOT NULL,
+    call_count INTEGER NOT NULL DEFAULT 0,
+    error_count INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(session_id, agent_id, role, tool_name)
+);
+
+CREATE TABLE IF NOT EXISTS permission_denials (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    agent_id TEXT NOT NULL DEFAULT '',
+    role TEXT NOT NULL,
+    recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    tool_name TEXT NOT NULL,
+    tool_input TEXT,
+    tool_use_id TEXT,
+    kanban_session TEXT,
+    UNIQUE(session_id, tool_use_id)
+);
+
+CREATE TABLE IF NOT EXISTS kanban_card_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    card_number TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    agent TEXT,
+    model TEXT,
+    kanban_session TEXT,
+    recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    card_created_at TEXT,
+    card_completed_at TEXT,
+    card_type TEXT,
+    ac_count INTEGER,
+    git_project TEXT,
+    from_column TEXT,
+    to_column TEXT,
+    persona TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_kanban_card_events_event_type ON kanban_card_events (event_type);
+CREATE INDEX IF NOT EXISTS idx_kanban_card_events_agent ON kanban_card_events (agent);
+CREATE INDEX IF NOT EXISTS idx_kanban_card_events_recorded_at ON kanban_card_events (recorded_at);
+
+CREATE INDEX IF NOT EXISTS idx_agent_metrics_session_id ON agent_metrics (session_id);
+CREATE INDEX IF NOT EXISTS idx_agent_metrics_recorded_at ON agent_metrics (recorded_at);
+CREATE INDEX IF NOT EXISTS idx_agent_metrics_role ON agent_metrics (role);
+CREATE INDEX IF NOT EXISTS idx_agent_metrics_model_family ON agent_metrics (model_family);
+CREATE INDEX IF NOT EXISTS idx_agent_metrics_kanban_session ON agent_metrics (kanban_session);
+CREATE INDEX IF NOT EXISTS idx_agent_metrics_git_branch ON agent_metrics (git_branch);
+CREATE INDEX IF NOT EXISTS idx_agent_metrics_is_sidechain ON agent_metrics (is_sidechain);
+CREATE INDEX IF NOT EXISTS idx_tool_usage_session_id ON agent_tool_usage (session_id);
+CREATE INDEX IF NOT EXISTS idx_tool_usage_tool_name ON agent_tool_usage (tool_name);
+CREATE INDEX IF NOT EXISTS idx_tool_usage_role ON agent_tool_usage (role);
+CREATE INDEX IF NOT EXISTS idx_permission_denials_session_id ON permission_denials (session_id);
+CREATE INDEX IF NOT EXISTS idx_permission_denials_tool_name ON permission_denials (tool_name);
+CREATE INDEX IF NOT EXISTS idx_permission_denials_kanban_session ON permission_denials (kanban_session);
+SQL_EOF
             echo "Database recreated with correct schema."
           else
             echo "Aborted."
