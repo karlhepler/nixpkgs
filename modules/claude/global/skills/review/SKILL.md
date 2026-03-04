@@ -217,13 +217,13 @@ You are NOT limited to the diff. Treat the diff as the focal point, but use the 
 For citation rules, acceptable sources, and examples, Read [review-citation-guide.md](review-citation-guide.md).
 
 **Tone and Scope:**
-Write as if you personally reviewed this code — direct, collegial, human.
-- One paragraph per inline finding — no more
-- If a finding is borderline or minor, cut it entirely. Only include findings worth surfacing to the author
-- No severity labels in the COMMENT text itself — severity belongs in the SEVERITY field only
-- No specialist attribution in comments — they will be posted as a unified review
-- Assume the author was deliberate — ask why before calling something wrong
-- Flag issues clearly but without condescension
+You are reviewing a trusted colleague's work. Your goal is to help this PR succeed — not to audit it. Approach every finding with curiosity and respect. Assume the author was deliberate and had a reason.
+- **Comment length:** 1–3 sentences per inline finding. If a comment covers multiple distinct points or is pushing 3 sentences, use bullets instead. Include reasoning only when it adds real value — authors can often infer it themselves.
+- **No severity label prefixes** in comment text — `[blocking]`, `[concern]`, `[nit]`, etc. Severity belongs in the SEVERITY field only. Never.
+- **No chain-of-thought** — state the observation, optionally note why it matters, done. No "I confirmed this by reviewing..." explanations.
+- **No specialist attribution** — comments are posted as a unified review. No `[swe-security]` or similar.
+- **Default to COMMENT severity** — only use blocking for genuinely high-risk issues: regressions, security vulnerabilities, or data loss.
+- **When in doubt, leave it out** — if a finding is borderline or minor, cut it entirely.
 
 **Required Output Format:**
 Write your complete findings to `.scratchpad/review-{number}-{domain}.md` using this structure:
@@ -236,18 +236,18 @@ Write your complete findings to `.scratchpad/review-{number}-{domain}.md` using 
 
 FILE: path/to/file.go
 LINE: 42
-SEVERITY: blocking | concern
-COMMENT: [Inline comment text — one paragraph, plain language, no severity label prefix, no specialist attribution, cite sources inline when referencing standards]
+SEVERITY: blocking | concern | comment
+COMMENT: [Inline comment text — 1–3 sentences, plain language, no severity label prefix, no specialist attribution. Use bullets if multiple distinct points. Cite sources inline when referencing standards.]
 
-FILE: (none)
-LINE: (none)
-SEVERITY: concern
-COMMENT: [Overall finding with no specific location — goes in review body]
+### Overall Observations
+[Findings with no specific file or line location — e.g. architecture concerns, missing test coverage patterns, cross-cutting issues. These will be folded into the review body as bullet points, NOT posted as inline comments. Write each as a short plain-language statement — no severity prefixes.]
+
+- [observation]
 
 ### Summary
 [1-2 sentences]
 
-If no findings in your domain, return `✅ LGTM` with a one-line summary. No findings block needed.
+If no findings in your domain, return `✅ LGTM` with a one-line summary. No findings or observations block needed.
 
 **Kanban:**
 Your card number is #{card-number}. Session is {current-session}.
@@ -289,7 +289,10 @@ The review body must read as if one developer wrote it — no headers, no specia
 {If any specialist found blocking or concern-level issues:
 Write 2–3 sentences in plain language summarizing the key concerns. No "## Expert Code Review" header.
 No "Reviewed by:" line. No "Inline comments: N" metadata. No specialist names. Sounds like a
-developer who read the PR.}
+developer who read the PR.
+
+If any specialist included Overall Observations (null-path findings), append them after the summary
+as a flat bullet list — one bullet per finding, plain language, no severity label prefixes.}
 
 {If all specialists returned LGTM: leave the body empty.}
 ```
@@ -302,19 +305,20 @@ In addition to the `.md` summary, write `.scratchpad/review-<number>.json` with 
 
 ```json
 {
-  "body": "<aggregated review body — plain text, no headers, no attribution, or empty string if all LGTM>",
+  "body": "<aggregated review body — 2–3 sentence summary followed by null-path findings as bullet points, or empty string if all LGTM>",
   "comments": [
-    {"path": "src/auth/login.go", "line": 42, "severity": "blocking", "body": "Have you considered..."},
-    {"path": null, "line": null, "severity": "concern", "body": "Overall finding — no specific location"}
+    {"path": "src/auth/login.go", "line": 42, "severity": "blocking", "body": "Have you considered..."}
   ]
 }
 ```
 
-Aggregate all specialist FILE/LINE/SEVERITY/COMMENT findings into the `comments` array. Findings with `FILE: (none)` become `{"path": null, "line": null, ...}` entries.
+Aggregate all specialist FILE/LINE/SEVERITY/COMMENT findings (those with actual file paths) into the `comments` array.
+
+**🚨 Never put null-path findings in `comments`.** Entries with `path: null` are silently dropped or mishandled by `prr`. Instead, fold all null-path findings (from specialists' "Overall Observations" sections) directly into the `body` field as bullet points appended after the summary text.
 
 **Comment body rules:**
 - Use the specialist's COMMENT text verbatim — do not prepend severity labels (`[blocking]`, `[concern]`) or specialist attribution (`[swe-security]`)
-- The comment body must be plain text only: one paragraph, developer voice
+- The comment body must be plain text only: 1–3 sentences or bullets, developer voice
 
 ## Phase 6 — Post Review
 
@@ -334,7 +338,7 @@ Override the event explicitly if needed:
 prr submit <pr-number> --findings .scratchpad/review-<pr-number>.json --event REQUEST_CHANGES
 ```
 
-**Note on line numbers:** GitHub's review API requires the line number to be within the diff hunk. If a specialist's line number falls outside the diff, edit the findings JSON to set `path: null` and `line: null` for that comment before submitting so it becomes a body-level observation.
+**Note on line numbers:** GitHub's review API requires the line number to be within the diff hunk. If a specialist's line number falls outside the diff, remove that entry from the `comments` array and fold the comment text into the `body` field manually as a bullet point — do not set `path: null` and `line: null`, as null-path entries in `comments` are silently dropped by `prr`.
 
 ### Verify and Report
 
