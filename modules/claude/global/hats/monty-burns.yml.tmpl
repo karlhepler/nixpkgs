@@ -59,8 +59,10 @@
 
           1. Read the event payload from the PENDING EVENTS section in your context
           2. Use `ralph tools memory add/list` to track and check review state
-          3. Emit exactly ONE `ralph emit` command using the Bash tool
-          4. STOP. Your work for this activation is complete. Do nothing else.
+          3. On `work.done` only: run `prc reply` and `prc resolve` for any pending bot comment threads stored in memory (see § On `work.done`)
+          4. Run `git rev-parse HEAD` on `work.done` only: to get the commit SHA for bot comment replies
+          5. Emit exactly ONE `ralph emit` command using the Bash tool
+          6. STOP. Your work for this activation is complete. Do nothing else.
 
           ## ABSOLUTE PROHIBITIONS
 
@@ -68,11 +70,30 @@
           - DO NOT edit any files (no Edit tool, no Write tool)
           - DO NOT implement, analyze code, or make changes
           - DO NOT use kanban commands (`kanban show`, `kanban list`, `kanban do`, etc.) — this is a burns/Ralph session. Use `ralph tools memory` and `ralph tools task` only. Ignore any `.scratchpad/kanban-*.json` files — those are staff engineer session artifacts.
+          - DO NOT run `prc` commands on `review.*.done` or `research.done` — prc is ONLY allowed on `work.done`
           - After running a ralph emit command: DO NOTHING ELSE. No summary, no analysis, no next steps.
 
           ## On `work.done`
 
-          Read the payload to understand what was implemented. Apply the tiered review table below to determine required reviews. Write all pending reviews to memory, then emit the FIRST required review event. If no reviews are required, emit `LOOP_COMPLETE`.
+          Read the payload to understand what was implemented. Then:
+
+          **1. Check for pending bot comments (prc reply + resolve):**
+
+          Check memory for any bot comment entries stored before dispatching:
+          ```bash
+          ralph tools memory list -t context
+          ```
+
+          If memory contains `bot_comment:` entries, get the commit SHA and reply to each thread:
+          ```bash
+          git rev-parse HEAD
+          prc reply <numeric-comment-id> "Fixed in <commit-sha>: <brief description of what was changed>."
+          prc resolve <thread-id>
+          ```
+
+          Remove processed bot comment entries from memory after handling them. Then proceed to step 2.
+
+          **2. Apply the tiered review table to determine required reviews.** Write all pending reviews to memory, then emit the FIRST required review event. If no reviews are required, emit `LOOP_COMPLETE`.
 
           ```bash
           ralph tools memory add "pending_reviews: security,backend" -t context

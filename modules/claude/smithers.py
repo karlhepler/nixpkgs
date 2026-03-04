@@ -1539,14 +1539,19 @@ All operations use GraphQL and output machine-readable JSON.
 
 **Step 1 — Critically evaluate** the comment. Does it require a code change?
 
-**Step 2 — Reply and resolve IMMEDIATELY (YOU do this directly — never delegate prc to a specialist):**
-- If NO code change needed: `prc reply <numeric-comment-id> "No change needed: <explanation>"`
-- If code change needed: `prc reply <numeric-comment-id> "Fixing: <brief description>"`
-- Either way: `prc resolve <thread-id>` — **run this before dispatching any implementation work**
+**Step 2 — If NO code change needed:** Reply and resolve immediately (no specialist needed):
+- `prc reply <numeric-comment-id> "No change needed: <explanation>"`
+- `prc resolve <thread-id>`
 
-**Step 3 — If code change was needed:** Dispatch to the appropriate specialist skill (see § How to Work). The specialist commits and pushes the fix. You have already replied and resolved.
+**Step 3 — If code change IS needed:** Store the bot comment identifiers in ralph memory, then dispatch to the appropriate specialist skill (see § How to Work):
+```bash
+ralph tools memory add "bot_comment: thread_id=<PRRT_...> comment_id=<numeric-id> description=<brief description of what needs fixing>" -t context
+```
+After storing to memory, dispatch to the specialist. Monty Burns will reply with the commit hash and resolve the thread after the specialist's work.done fires.
 
-**WHY this order is mandatory:** If you dispatch to a specialist first and they emit work.done, LOOP_COMPLETE fires before you can run prc. Reply and resolve FIRST in your current turn, then dispatch implementation work.
+**WHY this order matters:**
+- If no code change needed: handle it immediately — no work.done will fire
+- If code change needed: the commit hash does not exist yet. Storing thread IDs in memory lets Monty Burns reply with the actual commit SHA after the fix is committed.
 
 **CRITICAL — Why Resolution Matters:**
 - Smithers ONLY counts threads with ZERO replies
@@ -1579,9 +1584,9 @@ You MUST complete ALL of the following before exiting:
 
 2. ✅ **All Bot Comments Replied and Resolved**:
    - Critically evaluated EACH bot comment
-   - Replied to EACH thread via `prc reply` BEFORE dispatching any specialist (with fix description or "no change needed" explanation)
-   - Resolved EACH thread via `prc resolve` — even threads where no code fix was made
-   - If code change was actionable: specialist committed and pushed the fix
+   - If no code change needed: replied and resolved immediately via `prc reply` and `prc resolve`
+   - If code change needed: stored thread IDs to ralph memory and dispatched specialist — Monty Burns will reply with commit hash and resolve after work.done fires
+   - All threads resolved (either immediately or after specialist work)
 
 3. ✅ **All Merge Conflicts Resolved** (if present):
    - Fetched latest from base branch
