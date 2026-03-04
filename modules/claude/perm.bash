@@ -12,6 +12,7 @@ set -euo pipefail
 #   perm [--session <id>] cleanup                            Remove temporary permissions owned by given session
 #   perm cleanup-stale [--max-age <hours>]                   Remove temporary permissions older than max-age (default: 4h)
 #   perm list                                                Show tracked permissions with labels and timestamps
+#   perm nuke                                                Nuke ALL entries from permissions.allow (interactive, user-only)
 #   perm session-hook                                        SessionStart hook: read JSON from stdin, print session UUID
 #
 # FILES:
@@ -36,7 +37,7 @@ USAGE:
   perm --session <id> cleanup                              Remove temporary permissions owned by the given session
   perm cleanup-stale [--max-age <hours>]                   Remove temporary permissions older than max-age (default: 4h)
   perm list                                                Show tracked permissions with labels and timestamps
-  perm reset                                               Nuke ALL entries from permissions.allow (interactive, user-only)
+  perm nuke                                                Nuke ALL entries from permissions.allow (interactive, user-only)
   perm session-hook                                        SessionStart hook: read JSON stdin, print session UUID
   perm --help                                              Show this help message
 
@@ -169,53 +170,16 @@ pattern_in_permanent() {
   jq --arg p "${pattern}" '.permanent | index($p) != null' "${_tracking_file}"
 }
 
-# For Bash patterns, generate the colon-syntax equivalent for sub-agent compatibility.
-# Claude Code's sub-agent permission checker may match against either format.
-# Space-wildcard: Bash(npm run test *)  →  Colon: Bash(npm:run:test:*)
-# Non-Bash patterns return empty (no colon variant needed).
-bash_colon_variant() {
-  local pattern="$1"
-
-  # Only Bash patterns need a colon variant
-  if [[ "${pattern}" != Bash\(* ]]; then
-    return
-  fi
-
-  # Extract content between Bash( and )
-  local inner="${pattern#Bash(}"
-  inner="${inner%)}"
-
-  # Replace spaces with colons
-  local colon_inner="${inner// /:}"
-
-  echo "Bash(${colon_inner})"
-}
-
 # Add a pattern to settings.local.json permissions.allow (idempotent).
-# For Bash patterns, writes both space-wildcard and colon formats.
 add_to_settings() {
   local pattern="$1"
-  local colon_variant
-  colon_variant="$(bash_colon_variant "${pattern}")"
-
-  if [[ -n "${colon_variant}" && "${colon_variant}" != "${pattern}" ]]; then
-    # Add both canonical and colon variant (idempotent)
-    jq --arg p "${pattern}" --arg c "${colon_variant}" '
-      .permissions.allow |=
-        (if index($p) then . else . + [$p] end) |
-      .permissions.allow |=
-        (if index($c) then . else . + [$c] end)
-    ' "${_settings_file}" > "${_settings_file}.tmp"
-    mv "${_settings_file}.tmp" "${_settings_file}"
-  else
-    local already_in_settings
-    already_in_settings="$(pattern_in_settings "${pattern}")"
-    if [[ "${already_in_settings}" == "true" ]]; then
-      return
-    fi
-    jq --arg p "${pattern}" '.permissions.allow += [$p]' "${_settings_file}" > "${_settings_file}.tmp"
-    mv "${_settings_file}.tmp" "${_settings_file}"
+  local already_in_settings
+  already_in_settings="$(pattern_in_settings "${pattern}")"
+  if [[ "${already_in_settings}" == "true" ]]; then
+    return
   fi
+  jq --arg p "${pattern}" '.permissions.allow += [$p]' "${_settings_file}" > "${_settings_file}.tmp"
+  mv "${_settings_file}.tmp" "${_settings_file}"
 }
 
 # Add session claim with timestamp to the temporary pattern (idempotent, updates timestamp)
@@ -250,21 +214,10 @@ add_to_permanent() {
 }
 
 # Remove a pattern from settings.local.json permissions.allow.
-# For Bash patterns, removes both space-wildcard and colon formats.
 remove_from_settings() {
   local pattern="$1"
-  local colon_variant
-  colon_variant="$(bash_colon_variant "${pattern}")"
-
-  if [[ -n "${colon_variant}" && "${colon_variant}" != "${pattern}" ]]; then
-    # Remove both canonical and colon variant in one pass
-    jq --arg p "${pattern}" --arg c "${colon_variant}" \
-      '.permissions.allow = [.permissions.allow[] | select(. != $p and . != $c)]' \
-      "${_settings_file}" > "${_settings_file}.tmp"
-  else
-    jq --arg p "${pattern}" '.permissions.allow = [.permissions.allow[] | select(. != $p)]' \
-      "${_settings_file}" > "${_settings_file}.tmp"
-  fi
+  jq --arg p "${pattern}" '.permissions.allow = [.permissions.allow[] | select(. != $p)]' \
+    "${_settings_file}" > "${_settings_file}.tmp"
   mv "${_settings_file}.tmp" "${_settings_file}"
 }
 
@@ -473,14 +426,14 @@ cmd_session_hook() {
   echo "🔑 Your perm session is: ${session_id}"
 }
 
-cmd_reset() {
+cmd_nuke() {
   init_settings
 
   local current_count
   current_count="$(jq '.permissions.allow | length' "${_settings_file}")"
 
   if [[ "${current_count}" -eq 0 ]]; then
-    echo "permissions.allow is already empty. Nothing to reset."
+    echo "permissions.allow is already empty. Nothing to nuke."
     return
   fi
 
@@ -499,7 +452,7 @@ cmd_reset() {
 
   jq '.permissions.allow = []' "${_settings_file}" > "${_settings_file}.tmp"
   mv "${_settings_file}.tmp" "${_settings_file}"
-  echo "Reset: removed ${current_count} permission(s) from permissions.allow."
+  echo "Nuked: removed ${current_count} permission(s) from permissions.allow."
 }
 
 cmd_list() {
@@ -559,7 +512,7 @@ while [[ $# -gt 0 ]]; do
       show_help
       exit 0
       ;;
-    allow|always|cleanup|cleanup-stale|list|reset|session-hook)
+    allow|always|cleanup|cleanup-stale|list|nuke|session-hook)
       subcommand="$1"
       shift
       break
@@ -613,8 +566,8 @@ case "${subcommand}" in
   list)
     cmd_list
     ;;
-  reset)
-    cmd_reset
+  nuke)
+    cmd_nuke
     ;;
   session-hook)
     cmd_session_hook
