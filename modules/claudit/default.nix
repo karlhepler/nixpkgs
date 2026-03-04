@@ -124,6 +124,7 @@ HELP_EOF
             rm -f "''${METRICS_DB}"
             echo "Database deleted, recreating schema..."
             # Recreate the database schema immediately via direct sqlite3 (no hook invocation)
+            mkdir -p "$(dirname "''${METRICS_DB}")"
             sqlite3 "''${METRICS_DB}" <<'SQL_EOF'
 PRAGMA journal_mode=WAL;
 PRAGMA busy_timeout=5000;
@@ -131,9 +132,9 @@ PRAGMA busy_timeout=5000;
 CREATE TABLE IF NOT EXISTS agent_metrics (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id TEXT NOT NULL,
-    agent_id TEXT NOT NULL DEFAULT '',
+    agent_id TEXT NOT NULL DEFAULT "",
     role TEXT NOT NULL,
-    recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    recorded_at TEXT NOT NULL DEFAULT (strftime("%Y-%m-%dT%H:%M:%SZ", "now")),
     working_directory TEXT,
     kanban_session TEXT,
     git_branch TEXT,
@@ -159,9 +160,9 @@ CREATE TABLE IF NOT EXISTS agent_metrics (
 CREATE TABLE IF NOT EXISTS agent_tool_usage (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id TEXT NOT NULL,
-    agent_id TEXT NOT NULL DEFAULT '',
+    agent_id TEXT NOT NULL DEFAULT "",
     role TEXT NOT NULL,
-    recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    recorded_at TEXT NOT NULL DEFAULT (strftime("%Y-%m-%dT%H:%M:%SZ", "now")),
     tool_name TEXT NOT NULL,
     call_count INTEGER NOT NULL DEFAULT 0,
     error_count INTEGER NOT NULL DEFAULT 0,
@@ -171,9 +172,9 @@ CREATE TABLE IF NOT EXISTS agent_tool_usage (
 CREATE TABLE IF NOT EXISTS permission_denials (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id TEXT NOT NULL,
-    agent_id TEXT NOT NULL DEFAULT '',
+    agent_id TEXT NOT NULL DEFAULT "",
     role TEXT NOT NULL,
-    recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    recorded_at TEXT NOT NULL DEFAULT (strftime("%Y-%m-%dT%H:%M:%SZ", "now")),
     tool_name TEXT NOT NULL,
     tool_input TEXT,
     tool_use_id TEXT,
@@ -188,7 +189,7 @@ CREATE TABLE IF NOT EXISTS kanban_card_events (
     agent TEXT,
     model TEXT,
     kanban_session TEXT,
-    recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    recorded_at TEXT NOT NULL DEFAULT (strftime("%Y-%m-%dT%H:%M:%SZ", "now")),
     card_created_at TEXT,
     card_completed_at TEXT,
     card_type TEXT,
