@@ -53,8 +53,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics WHERE date(last_seen_at, 'localtime') = date('now', 'localtime')",
-          "queryText": "SELECT COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics WHERE date(last_seen_at, 'localtime') = date('now', 'localtime')",
+          "rawQueryText": "SELECT COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics WHERE date(COALESCE(last_seen_at, recorded_at), 'localtime') = date('now', 'localtime')",
+          "queryText": "SELECT COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics WHERE date(COALESCE(last_seen_at, recorded_at), 'localtime') = date('now', 'localtime')",
           "queryType": "table",
           "timeColumns": [],
           "refId": "A"
@@ -195,8 +195,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT COALESCE(SUM(input_tokens + output_tokens), 0) as total_tokens FROM agent_metrics WHERE date(last_seen_at, 'localtime') = date('now', 'localtime')",
-          "queryText": "SELECT COALESCE(SUM(input_tokens + output_tokens), 0) as total_tokens FROM agent_metrics WHERE date(last_seen_at, 'localtime') = date('now', 'localtime')",
+          "rawQueryText": "SELECT COALESCE(SUM(input_tokens + output_tokens), 0) as total_tokens FROM agent_metrics WHERE date(COALESCE(last_seen_at, recorded_at), 'localtime') = date('now', 'localtime')",
+          "queryText": "SELECT COALESCE(SUM(input_tokens + output_tokens), 0) as total_tokens FROM agent_metrics WHERE date(COALESCE(last_seen_at, recorded_at), 'localtime') = date('now', 'localtime')",
           "queryType": "table",
           "timeColumns": [],
           "refId": "A"
@@ -323,8 +323,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT COUNT(DISTINCT session_id) as sessions FROM agent_metrics WHERE date(last_seen_at, 'localtime') = date('now', 'localtime')",
-          "queryText": "SELECT COUNT(DISTINCT session_id) as sessions FROM agent_metrics WHERE date(last_seen_at, 'localtime') = date('now', 'localtime')",
+          "rawQueryText": "SELECT COUNT(DISTINCT session_id) as sessions FROM agent_metrics WHERE date(COALESCE(last_seen_at, recorded_at), 'localtime') = date('now', 'localtime')",
+          "queryText": "SELECT COUNT(DISTINCT session_id) as sessions FROM agent_metrics WHERE date(COALESCE(last_seen_at, recorded_at), 'localtime') = date('now', 'localtime')",
           "queryType": "table",
           "timeColumns": [],
           "refId": "A"

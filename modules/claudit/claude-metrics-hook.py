@@ -62,6 +62,7 @@ import json
 import os
 import sqlite3
 import sys
+import traceback
 from datetime import datetime
 from pathlib import Path
 
@@ -905,6 +906,9 @@ def main() -> None:
 if __name__ == "__main__":
     try:
         main()
-    except Exception:
-        # Never exit non-zero — hook must not disrupt Claude Code
-        pass
+    except Exception as exc:
+        # Never exit non-zero — hook must not disrupt Claude Code.
+        # Print to stderr so failures are visible in Claude Code logs
+        # rather than being silently discarded.
+        print(f"claude-metrics-hook error: {exc}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
