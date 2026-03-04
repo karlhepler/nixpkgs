@@ -101,6 +101,19 @@ in {
         GRAFANA_PID=""
         METRICS_DB="''${HOME}/.claude/metrics/claude-metrics.db"
 
+        # --- Handle help flags ---
+        if [[ "''${1:-}" == "--help" ]] || [[ "''${1:-}" == "-h" ]]; then
+          cat <<'HELP_EOF'
+Usage: claudit [subcommand]
+
+Subcommands:
+  nuke       Delete the entire metrics database file (recreated fresh on next hook invocation)
+
+Run claudit with no arguments to start the Grafana dashboard.
+HELP_EOF
+          exit 0
+        fi
+
         # --- Handle nuke subcommand ---
         if [[ "''${1:-}" == "nuke" ]]; then
           echo "This will permanently delete the entire claudit metrics database."
