@@ -792,10 +792,6 @@ in {
 
           # Block kubectl write/destructive commands (admin permissions - never auto-approve)
           block = [
-            # Kanban destructive commands (always prompt for confirmation)
-            "Bash(kanban clean)"
-            "Bash(kanban clean *)"
-
             # AWS ECR credential commands (returns 12-hour auth tokens)
             "Bash(aws ecr get-login-password *)"
 
