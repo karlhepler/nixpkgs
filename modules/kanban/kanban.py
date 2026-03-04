@@ -458,7 +458,8 @@ CREATE TABLE IF NOT EXISTS kanban_card_events (
     ac_count INTEGER,
     git_project TEXT,
     from_column TEXT,
-    to_column TEXT
+    to_column TEXT,
+    persona TEXT
 )
 """
 
@@ -484,6 +485,15 @@ _V6_KANBAN_MIGRATION_SQL = [
     "ALTER TABLE kanban_card_events ADD COLUMN git_project TEXT",
     "ALTER TABLE kanban_card_events ADD COLUMN from_column TEXT",
     "ALTER TABLE kanban_card_events ADD COLUMN to_column TEXT",
+]
+
+# V8 migration: add persona column to kanban_card_events for databases that
+# predate V8. OperationalError ("duplicate column name") is caught and ignored —
+# idempotent.
+# NOTE: This migration is intentionally duplicated in modules/claude/claude-metrics-hook.py
+# Both files must stay in sync — changes here require matching changes there.
+_V8_KANBAN_MIGRATION_SQL = [
+    "ALTER TABLE kanban_card_events ADD COLUMN persona TEXT",
 ]
 
 def write_kanban_event(
@@ -528,14 +538,20 @@ def write_kanban_event(
                     conn.execute(alter_sql)
                 except sqlite3.OperationalError:
                     pass
+            # V8 migration: add persona column absent in pre-V8 databases.
+            for alter_sql in _V8_KANBAN_MIGRATION_SQL:
+                try:
+                    conn.execute(alter_sql)
+                except sqlite3.OperationalError:
+                    pass
             conn.execute(
                 """
                 INSERT INTO kanban_card_events (
                     card_number, event_type, agent, model, kanban_session,
                     card_created_at, card_completed_at, card_type, ac_count, git_project,
-                    from_column, to_column
+                    from_column, to_column, persona
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     card_num,
@@ -550,6 +566,7 @@ def write_kanban_event(
                     git_project,
                     from_column,
                     to_column,
+                    card.get("persona"),
                 ),
             )
             conn.commit()

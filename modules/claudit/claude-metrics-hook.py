@@ -46,6 +46,13 @@ V6 additions:
   This fixes "no such column" errors in Grafana dashboard panels that query
   these columns (DORA metrics, flow tracking, estimation calibration panels).
 
+V8 additions:
+- New: persona TEXT column on kanban_card_events. Captures the agent skill/hat
+  that completed the card (e.g. swe-backend, swe-devex). Used by Grafana panels
+  to group completions, redo rate, and lead time by agent persona.
+- Migration: existing databases gain persona via ALTER TABLE ... ADD COLUMN
+  (no-op if already present).
+
 V7 additions:
 - New: last_seen_at TIMESTAMP column on agent_metrics. Updated to
   CURRENT_TIMESTAMP on every UPSERT so long-running sessions (recorded_at
@@ -211,7 +218,8 @@ CREATE TABLE IF NOT EXISTS kanban_card_events (
     ac_count INTEGER,
     git_project TEXT,
     from_column TEXT,
-    to_column TEXT
+    to_column TEXT,
+    persona TEXT
 )
 """
 
@@ -237,6 +245,15 @@ V6_KANBAN_MIGRATION_SQL = [
     "ALTER TABLE kanban_card_events ADD COLUMN git_project TEXT",
     "ALTER TABLE kanban_card_events ADD COLUMN from_column TEXT",
     "ALTER TABLE kanban_card_events ADD COLUMN to_column TEXT",
+]
+
+# V8 migration: add persona column to kanban_card_events for databases that
+# predate V8. OperationalError ("duplicate column name") is caught and ignored —
+# idempotent.
+# NOTE: This migration is intentionally duplicated in modules/kanban/kanban.py
+# Both files must stay in sync — changes here require matching changes there.
+V8_KANBAN_MIGRATION_SQL = [
+    "ALTER TABLE kanban_card_events ADD COLUMN persona TEXT",
 ]
 
 
@@ -674,6 +691,14 @@ def open_db() -> sqlite3.Connection:
     # ALTER TABLE ADD COLUMN is safe to retry — OperationalError is raised if the
     # column already exists, which we silently ignore.
     for alter_sql in V6_KANBAN_MIGRATION_SQL:
+        try:
+            conn.execute(alter_sql)
+        except sqlite3.OperationalError:
+            pass
+
+    # V8 migration: add persona column to kanban_card_events for databases that
+    # predate V8.
+    for alter_sql in V8_KANBAN_MIGRATION_SQL:
         try:
             conn.execute(alter_sql)
         except sqlite3.OperationalError:
