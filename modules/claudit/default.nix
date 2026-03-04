@@ -108,7 +108,7 @@ in {
           read -r answer
           if [[ "''${answer}" =~ ^[Yy]$ ]]; then
             if [[ -f "''${METRICS_DB}" ]]; then
-              sqlite3 "''${METRICS_DB}" "DELETE FROM agent_metrics; DELETE FROM agent_tool_usage;"
+              sqlite3 "''${METRICS_DB}" "DELETE FROM agent_metrics; DELETE FROM agent_tool_usage; DELETE FROM permission_denials; DELETE FROM kanban_card_events;"
               echo "All metrics data deleted."
             else
               echo "No database found at ''${METRICS_DB}. Nothing to delete."
