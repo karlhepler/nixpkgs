@@ -247,6 +247,10 @@ in {
       # Session management
       bind-key -N "Create new session" + new-session
       bind-key -N "Kill current session (with confirmation)" - confirm-before -p "CAUTION: This will kill all windows in session #S. Continue? (y/n)" kill-session
+
+      # Session navigation
+      bind-key -N "Next session" ) switch-client -n
+      bind-key -N "Previous session" ( switch-client -p
     '';
   };
 }
