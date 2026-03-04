@@ -117,12 +117,15 @@ HELP_EOF
         # --- Handle nuke subcommand ---
         if [[ "''${1:-}" == "nuke" ]]; then
           echo "This will permanently delete the entire claudit metrics database."
-          echo "The database will be recreated with the correct schema on next hook invocation."
+          echo "The database will be recreated with the correct schema immediately."
           printf "Continue? [y/N] "
           read -r answer
           if [[ "''${answer}" =~ ^[Yy]$ ]]; then
             rm -f "''${METRICS_DB}"
-            echo "Database deleted. It will be recreated with correct schema on next use."
+            echo "Database deleted, recreating schema..."
+            # Recreate the database schema immediately by invoking the hook with init payload
+            echo "{\"session_id\":\"init\",\"transcript_path\":\"/dev/null\",\"stop_hook_active\":false}" | claude-metrics-hook
+            echo "Database recreated with correct schema."
           else
             echo "Aborted."
           fi
