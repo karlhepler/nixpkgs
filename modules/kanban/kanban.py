@@ -560,100 +560,6 @@ def write_kanban_event(
 
 
 # =============================================================================
-# Permission management helpers
-# =============================================================================
-
-def _register_card_permissions(card_num: str, criteria_count: int) -> None:
-    """Register kanban-command permissions for a card entering the doing column.
-
-    Creates a perm session 'kanban-<N>' and registers:
-      - Bash(kanban show <N> *)
-      - Bash(kanban criteria check/uncheck/verify/unverify <N> <M> *) for each criterion M
-      - Bash(kanban review <N> *)
-      - Bash(kanban comment <N> *)
-      - Bash(kanban done <N> *)
-
-    Best-effort: perm failures are logged to stderr but never block the kanban command.
-    Silent on stdout.
-    """
-    session_id = f"kanban-{card_num}"
-    patterns = [
-        f"Bash(kanban show {card_num} *)",
-        f"Bash(kanban review {card_num} *)",
-        f"Bash(kanban comment {card_num} *)",
-        f"Bash(kanban done {card_num} *)",
-    ]
-    for m in range(1, criteria_count + 1):
-        patterns.append(f"Bash(kanban criteria check {card_num} {m} *)")
-        patterns.append(f"Bash(kanban criteria uncheck {card_num} {m} *)")
-        patterns.append(f"Bash(kanban criteria verify {card_num} {m} *)")
-        patterns.append(f"Bash(kanban criteria unverify {card_num} {m} *)")
-
-    try:
-        result = subprocess.run(
-            ["perm", "--session", session_id, "allow"] + patterns,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if result.returncode != 0:
-            print(f"warning: perm returned {result.returncode}", file=sys.stderr)
-    except Exception as e:
-        print(f"Warning: perm registration failed for card #{card_num}: {e}", file=sys.stderr)
-
-
-def _cleanup_card_permissions(card_num: str) -> None:
-    """Remove kanban-command permissions for a card leaving active state.
-
-    Calls 'perm --session kanban-<N> cleanup' to remove the card's temporary permissions.
-
-    Best-effort: perm failures are logged to stderr but never block the kanban command.
-    Silent on stdout.
-    """
-    session_id = f"kanban-{card_num}"
-    try:
-        result = subprocess.run(
-            ["perm", "--session", session_id, "cleanup"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if result.returncode != 0:
-            print(f"warning: perm returned {result.returncode}", file=sys.stderr)
-    except Exception as e:
-        print(f"Warning: perm cleanup failed for card #{card_num}: {e}", file=sys.stderr)
-
-
-def _register_criterion_permissions(card_num: str, criterion_num: int) -> None:
-    """Register 4 permission patterns for a newly added criterion.
-
-    Used by 'kanban criteria add' to extend permissions mid-flight for the
-    new criterion without re-registering the full card session.
-
-    Best-effort: perm failures are logged to stderr but never block the kanban command.
-    Silent on stdout.
-    """
-    session_id = f"kanban-{card_num}"
-    patterns = [
-        f"Bash(kanban criteria check {card_num} {criterion_num} *)",
-        f"Bash(kanban criteria uncheck {card_num} {criterion_num} *)",
-        f"Bash(kanban criteria verify {card_num} {criterion_num} *)",
-        f"Bash(kanban criteria unverify {card_num} {criterion_num} *)",
-    ]
-    try:
-        result = subprocess.run(
-            ["perm", "--session", session_id, "allow"] + patterns,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if result.returncode != 0:
-            print(f"warning: perm returned {result.returncode}", file=sys.stderr)
-    except Exception as e:
-        print(f"Warning: perm registration failed for criterion #{criterion_num} on card #{card_num}: {e}", file=sys.stderr)
-
-
-# =============================================================================
 # Commands
 # =============================================================================
 
@@ -893,14 +799,12 @@ def cmd_do(args) -> None:
         for card in cards:
             num = create_card_in_column(root, "doing", card)
             write_kanban_event(card, str(num), "create", to_column="doing", git_project=git_project)
-            _register_card_permissions(str(num), len(card.get("criteria", [])))
             print(num)
     elif isinstance(data, dict):
         # Single card creation (existing behavior)
         card = validate_and_build_card(data, session)
         num = create_card_in_column(root, "doing", card)
         write_kanban_event(card, str(num), "create", to_column="doing", git_project=git_project)
-        _register_card_permissions(str(num), len(card.get("criteria", [])))
         print(num)
     else:
         print(f"Error: JSON must be an object or array, got {type(data).__name__}", file=sys.stderr)
@@ -942,10 +846,6 @@ def cmd_redo(args) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     card_path.rename(target)
 
-    # Idempotent re-registration: cleanup stale session then re-register with current criteria count
-    _cleanup_card_permissions(num)
-    _register_card_permissions(num, len(card.get("criteria", [])))
-
     print(f"Redo: #{num} — moved back to doing")
 
 
@@ -971,7 +871,6 @@ def cmd_defer(args) -> None:
         card["updated"] = now_iso()
         write_card(card_path, card)
         write_kanban_event(card, num, "defer", from_column=col, to_column="todo", git_project=git_project)
-        _cleanup_card_permissions(num)
 
         target = root / "todo" / card_path.name
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -1004,7 +903,6 @@ def cmd_start(args) -> None:
             card["updated"] = now_iso()
             write_card(card_path, card)
             write_kanban_event(card, num, "start", from_column="todo", to_column="doing", git_project=git_project)
-            _register_card_permissions(num, len(card.get("criteria", [])))
 
             target = root / "doing" / card_path.name
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -1325,7 +1223,6 @@ def cmd_cancel(args) -> None:
         write_card(card_path, card)
 
         write_kanban_event(card, num, "canceled", from_column=col, to_column="canceled", git_project=git_project)
-        _cleanup_card_permissions(num)
 
         target_path = root / "canceled" / card_path.name
         target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1357,7 +1254,6 @@ def cmd_criteria_add(args) -> None:
     """Add acceptance criterion to card."""
     root = get_root(args.root)
     card_path = find_card(root, args.card)
-    col = card_path.parent.name
     card = read_card(card_path)
 
     # Initialize criteria list if it doesn't exist
@@ -1365,22 +1261,16 @@ def cmd_criteria_add(args) -> None:
         card["criteria"] = []
 
     card["criteria"].append({"text": args.text, "agent_met": False, "reviewer_met": False})
-    new_criterion_num = len(card["criteria"])  # 1-based index of the newly added criterion
     card["updated"] = now_iso()
     write_card(card_path, card)
     num = card_number(card_path)
     print(f"Added criterion to #{num}: {args.text}")
-    # Only register permissions if the card is actively worked on (doing or review).
-    # Registering for todo/done cards would create orphan patterns with no active session.
-    if col in ("doing", "review"):
-        _register_criterion_permissions(num, new_criterion_num)
 
 
 def cmd_criteria_remove(args) -> None:
     """Remove acceptance criterion from card."""
     root = get_root(args.root)
     card_path = find_card(root, args.card)
-    col = card_path.parent.name
     card = read_card(card_path)
 
     criteria = card.get("criteria", [])
@@ -1417,14 +1307,6 @@ def cmd_criteria_remove(args) -> None:
     num = card_number(card_path)
     print(f"Removed criterion from #{num}: {removed_text}")
     print(f"Reason: {args.reason}")
-
-    # Clean up stale permission patterns for the removed criterion by doing a
-    # full cleanup-then-re-register. perm has no per-pattern remove subcommand,
-    # so this mirrors the same idempotent approach used by 'kanban redo'.
-    # Only needed when the card is actively worked on (doing or review).
-    if col in ("doing", "review"):
-        _cleanup_card_permissions(num)
-        _register_card_permissions(num, len(criteria))
 
 
 def _find_criterion_idx(criteria: list, criterion_arg: str) -> int | None:
@@ -2382,7 +2264,6 @@ def cmd_done(args) -> None:
     write_card(card_path, card)
 
     write_kanban_event(card, num, "done", card_completed_at=card["updated"], from_column=col, to_column="done")
-    _cleanup_card_permissions(num)
     target = root / "done" / card_path.name
     target.parent.mkdir(parents=True, exist_ok=True)
     card_path.rename(target)
