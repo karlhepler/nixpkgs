@@ -101,18 +101,15 @@ in {
         GRAFANA_PID=""
         METRICS_DB="''${HOME}/.claude/metrics/claude-metrics.db"
 
-        # --- Handle --expunge flag ---
-        if [[ "''${1:-}" == "--expunge" ]]; then
-          echo "This will permanently delete all claudit metrics data."
+        # --- Handle nuke subcommand ---
+        if [[ "''${1:-}" == "nuke" ]]; then
+          echo "This will permanently delete the entire claudit metrics database."
+          echo "The database will be recreated with the correct schema on next hook invocation."
           printf "Continue? [y/N] "
           read -r answer
           if [[ "''${answer}" =~ ^[Yy]$ ]]; then
-            if [[ -f "''${METRICS_DB}" ]]; then
-              sqlite3 "''${METRICS_DB}" "DELETE FROM agent_metrics; DELETE FROM agent_tool_usage; DELETE FROM permission_denials; DELETE FROM kanban_card_events;"
-              echo "All metrics data deleted."
-            else
-              echo "No database found at ''${METRICS_DB}. Nothing to delete."
-            fi
+            rm -f "''${METRICS_DB}"
+            echo "Database deleted. It will be recreated with correct schema on next use."
           else
             echo "Aborted."
           fi
