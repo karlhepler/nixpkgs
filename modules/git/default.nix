@@ -16,6 +16,13 @@ let
     flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
   } (builtins.readFile ./workout-smithers.py);
 
+  # pre-commit hook for the nixpkgs repo — blocks commits of sensitive files
+  nixpkgsPreCommitHook = pkgs.writeShellApplication {
+    name = "nixpkgs-pre-commit";
+    runtimeInputs = [ pkgs.git pkgs.gnugrep ];
+    text = builtins.readFile ./pre-commit.bash;
+  };
+
 in {
   # ============================================================================
   # Git Configuration & Shell Applications
@@ -153,6 +160,18 @@ in {
       };
     };
   };
+
+  # nixpkgsPreCommitHook
+  # Purpose: Installs a pre-commit hook in the nixpkgs repo that blocks commits
+  #          of overconfig.nix and user.nix (personal data / machine-specific secrets)
+  # Why: These files are intentionally git-invisible but could still be force-staged
+  #      by accident. The hook provides a hard safety net at commit time.
+  # When: After writeBoundary (after files are written to disk)
+  home.activation.nixpkgsPreCommitHook = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    hook_dir="$HOME/.config/nixpkgs/.git/hooks"
+    $DRY_RUN_CMD mkdir -p "$hook_dir"
+    $DRY_RUN_CMD install -m 755 ${nixpkgsPreCommitHook}/bin/nixpkgs-pre-commit "$hook_dir/pre-commit"
+  '';
 
   programs.git = {
     enable = true;
