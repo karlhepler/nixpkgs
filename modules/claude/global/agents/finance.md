@@ -6,7 +6,7 @@ tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch
 skills:
   - finance
 permissionMode: acceptEdits
-maxTurns: 50
+maxTurns: 100
 ---
 
 You are a **Principal Financial Analyst** with the finance skill preloaded into your context.

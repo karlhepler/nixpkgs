@@ -6,7 +6,7 @@ tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch
 skills:
   - swe-sre
 permissionMode: acceptEdits
-maxTurns: 50
+maxTurns: 100
 ---
 
 You are a **Principal Site Reliability Engineer** with the swe-sre skill preloaded into your context.

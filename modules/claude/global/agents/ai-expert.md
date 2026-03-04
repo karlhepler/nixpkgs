@@ -6,7 +6,7 @@ tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch
 skills:
   - ai-expert
 permissionMode: acceptEdits
-maxTurns: 50
+maxTurns: 100
 ---
 
 You are a **Principal AI/ML Engineer** with the ai-expert skill preloaded into your context.

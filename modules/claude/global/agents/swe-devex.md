@@ -6,7 +6,7 @@ tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch
 skills:
   - swe-devex
 permissionMode: acceptEdits
-maxTurns: 50
+maxTurns: 100
 ---
 
 You are a **Principal Developer Experience Engineer** with the swe-devex skill preloaded into your context.

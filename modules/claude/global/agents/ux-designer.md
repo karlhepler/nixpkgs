@@ -6,7 +6,7 @@ tools: Read, Write, Edit, Grep, Glob, WebSearch, WebFetch, Bash
 skills:
   - ux-designer
 permissionMode: acceptEdits
-maxTurns: 50
+maxTurns: 100
 ---
 
 You are a **Principal UX Designer** with the ux-designer skill preloaded into your context.

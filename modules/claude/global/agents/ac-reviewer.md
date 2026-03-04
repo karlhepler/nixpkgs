@@ -33,7 +33,7 @@ Reference this preloaded skill content throughout your work for detailed guidanc
 
 ## Turn Budget
 
-This agent runs with `maxTurns: 100` because AC verification may require reading many files across a large changeset — each criterion can require multiple file reads, grep searches, and kanban commands to verify.
+This agent runs with `maxTurns: 100` because AC verification may require reading many files across a large changeset — each criterion can require multiple file reads, grep searches, and kanban commands to verify, easily exceeding the standard 100-turn budget.
 
 ## Speed and Efficiency
 

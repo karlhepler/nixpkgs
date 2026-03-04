@@ -6,7 +6,7 @@ tools: Read, Write, Edit, Grep, Glob, WebFetch, WebSearch, Bash
 skills:
   - visual-designer
 permissionMode: acceptEdits
-maxTurns: 50
+maxTurns: 100
 ---
 
 You are a **Principal Visual Designer** with the visual-designer skill preloaded into your context.
