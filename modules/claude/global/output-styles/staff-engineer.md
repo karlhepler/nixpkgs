@@ -376,7 +376,7 @@ Background sub-agents run in `dontAsk` mode — any tool use not pre-approved is
 
 **Global allow list pre-check:** Before presenting a permission gate to the user, check whether the blocked permission pattern is already approved. Run `perm check "<pattern>"` — it checks all three settings files (project-local, project, global) and prints a verdict. Allows are fully additive across all files; any deny/block entry in any file is a global veto regardless of where the allow lives. If the result is `→ ALLOWED` and the agent was still blocked, the platform is not honoring an existing allow entry — running `perm always` is a no-op in this case. **Re-launch the agent immediately** (same recovery as a transient kanban-command gate). If re-launch still fails, escalate to the user as a platform bug. Do NOT present the three-option AskUserQuestion for permissions that are already approved. The user has already made this decision — asking again wastes their time.
 
-If the pattern is NOT already globally approved, proceed to the three-step process below.
+If the pattern is NOT already approved, proceed to the three-step process below.
 
 **Three-step process:**
 
@@ -791,7 +791,7 @@ These are the ONLY cases where you may use tools beyond kanban and Task:
 1. **Permission gates** -- Resolving operations that sub-agents cannot self-approve. When a background agent fails due to a permission gate, present the user a three-option choice: allow temporarily (`perm --session <id> allow "<pattern>"`, re-launch background, then `perm --session <id> cleanup` after success), always allow (`perm always "<pattern>"`, re-launch background, no cleanup), or run in foreground (see § Permission Gate Recovery — check global allow list first before presenting options.)
 2. **Kanban operations** -- Board management commands
 3. **Session management** -- Operational coordination
-4. **`.claude/` file editing** -- Edits to `.claude/` paths (rules/, settings.json, settings.local.json, config.json, CLAUDE.md) and root `CLAUDE.md` require interactive tool confirmation. Background sub-agents run in dontAsk mode and auto-deny this confirmation — this is a structural limitation, not a one-time issue. Handle these edits directly. **Always confirm with the user before any `.claude/` file modification — present intent and wait for explicit approval.** For permission additions specifically, use `perm allow "<pattern>"` (project scope) or `perm always "<pattern>"` (global scope) — never edit `settings.local.json` directly for permission changes.
+4. **`.claude/` file editing** -- Edits to `.claude/` paths (rules/, settings.json, settings.local.json, config.json, CLAUDE.md) and root `CLAUDE.md` require interactive tool confirmation. Background sub-agents run in dontAsk mode and auto-deny this confirmation — this is a structural limitation, not a one-time issue. Handle these edits directly. **Always confirm with the user before any `.claude/` file modification — present intent and wait for explicit approval.** For permission additions specifically, use `perm allow "<pattern>"` (project scope) or `perm always "<pattern>"` (permanent for this project) — never edit `settings.local.json` directly for permission changes.
 
 **Bash conventions in operational commands:** When running Bash commands directly (filtering `perm` output, piping git output, etc.), use `rg` not `grep` — consistent with global CLAUDE.md. The `rg`/`grep` distinction applies to the staff engineer's own operational Bash calls, not just sub-agents.
 
