@@ -252,6 +252,8 @@ brew install colima  # ❌ FORBIDDEN
 3. Run `hms` to deploy
 4. Skill automatically discovered in `~/.claude/commands/`
 
+Note: If adding a team member skill (not a standalone workflow skill), also create an agent definition — see Team Member Terminology section above.
+
 **Update Nix dependencies:**
 1. `nix flake update` (updates flake.lock)
 2. `hms` to apply

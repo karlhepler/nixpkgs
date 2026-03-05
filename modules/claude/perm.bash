@@ -535,6 +535,10 @@ fi
 sub_args=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    -h|--help)
+      show_help
+      exit 0
+      ;;
     --max-age)
       if [[ $# -lt 2 ]]; then
         echo "Error: --max-age requires an argument" >&2
