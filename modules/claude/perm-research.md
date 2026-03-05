@@ -209,7 +209,9 @@ using the `deny` key only. The `block` key behavior vs. `deny` key behavior is u
 they may have different semantics (e.g., `block` = unoverridable managed-policy-level veto,
 `deny` = overridable by higher-priority allow).
 
-### Unresolved: Why Did the Researcher Fail Earlier This Session?
+### Resolved: Why Did the Researcher Fail Earlier This Session?
+
+> **Root cause confirmed 2026-03-04.** See [Root Cause Confirmed (2026-03-04)](#root-cause-confirmed-2026-03-04) below.
 
 The researcher agent (card #546, run_in_background: true) was denied on `kanban comment 546`
 despite `Bash(kanban *)` being globally allowed. Systematic follow-up experiments eliminated
@@ -222,11 +224,54 @@ all plausible hypotheses:
 | Agent type (researcher) has restrictions | Card #549 researcher | ❌ Succeeded |
 | Corrupt settings.local.json blocks global | Deliberate corruption test | ❌ Succeeded |
 
-**Conclusion: The failure cannot be reproduced and has no identified root cause.** It was
-likely a transient Claude Code platform bug, a session initialization issue (note: 20 stale
-permissions were cleaned up at this session's start), or a bug in an older version that has
-since been fixed. The same failure pattern was observed across prior sessions (#443, #446)
-suggesting it was environmental, not random. Current behavior is correct.
+At the time, the failure could not be reproduced. Root cause was subsequently identified as
+a hardcoded security check in Claude Code that fires on `$()` command substitution patterns
+in Bash strings — independent of the permission allow/deny system. See confirmed findings below.
+
+---
+
+## Root Cause Confirmed (2026-03-04)
+
+Investigation completed 2026-03-04 during session strong-heron (card #630). The confirmed
+root cause of background agent `kanban comment` failures is a **hardcoded security check in
+Claude Code** — entirely separate from the permission allow/deny system.
+
+### Confirmed Findings
+
+1. **Claude Code performs a hardcoded security check for `$()` command substitution patterns
+   in Bash command strings.** This check is built into the Claude Code runtime and is not
+   configurable via settings files.
+
+2. **This check fires regardless of `Bash(kanban *)` being globally allowed.** It is a
+   separate security interlock that runs before (or alongside) the permission allow/deny
+   evaluation. A command can be in the allow list and still be blocked by this check.
+
+3. **Both escaped `\$()` and unescaped `$()` trigger the check.** Attempting to escape the
+   `$()` pattern does not bypass the security interlock. Both forms are caught.
+
+4. **Background agents in `dontAsk` mode are auto-denied when this check fires.** Interactive
+   sessions would normally prompt the user for approval; background agents have no such path
+   and receive an automatic denial instead.
+
+5. **Single quotes inside single-quoted strings cause shell parse errors (exit code 1 with
+   "unmatched quote").** When a `kanban comment` body contains a single quote and the command
+   is assembled with single-quote delimiters, the shell parser fails before Claude Code's
+   security check even runs.
+
+6. **The fix is `--file` support on `kanban comment`.** Agents write comment content via the
+   Write tool (file I/O, no shell parsing, no command substitution patterns), then pass the
+   file path: `kanban comment 630 --file .scratchpad/comment-630.txt --session strong-heron`.
+   This avoids both the hardcoded security check and the single-quote shell parse error.
+
+### Why Earlier Experiments Succeeded
+
+The Group 4 experiments (simple `touch` commands) and the card #549 researcher test both
+succeeded because their Bash strings contained no `$()` patterns. The security check is
+not triggered by wildcard patterns, spaces, or other special characters — only by `$()`.
+This is why the failures appeared inconsistent and hypothesis-resistant during the initial
+investigation.
+
+---
 
 ### Per-Card Registration May Be Redundant
 

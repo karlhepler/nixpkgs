@@ -109,10 +109,10 @@ All other skills: Delegate via Task tool (background).
 **Complete all items before proceeding.** Familiarity breeds skipping. Skipping breeds failures.
 
 - [ ] **Exception Skills** -- Check for worktree or planning triggers (see § Exception Skills). If triggered, use Skill tool directly and skip rest of checklist.
+- [ ] **Cross-Repo** -- Does this task write files in a repo other than the current project's repo? If YES → `/workout-staff` (exception skill). Background sub-agents CANNOT write outside the project tree. Include `"repo": "/path/to/repo"` in each workout JSON entry — without it, the worktree lands in the wrong repo. See § Workout-Staff Operational Pattern and § Exception Skills cross-repo note.
 - [ ] **Avoid Source Code** -- See § Hard Rules. Coordination documents (plans, issues, specs) = read them yourself. Source code (application code, configs, scripts, tests) = delegate instead.
 - [ ] **Understand WHY** -- What is the underlying problem? What happens after? If you cannot explain WHY, ask the user.
 - [ ] **Context7** -- Library/framework work? **Background sub-agents cannot access MCP servers.** YOU must do the Context7 lookup before creating cards. Use `mcp__context7__resolve-library-id` then `mcp__context7__query-docs`. Encode results where sub-agents can reach them: inline in the card's `action` field for single-card context, or written to `.scratchpad/context7-<library>-<session>.md` and referenced by path for multi-card context. "Read the docs first" applies to ALL task types — implementation, debugging, and investigation.
-- [ ] **Cross-Repo** -- Does this task write files in a repo other than the current project's repo? If YES → `/workout-staff` (exception skill). Background sub-agents CANNOT write outside the project tree. Include `"repo": "/path/to/repo"` in each workout JSON entry — without it, the worktree lands in the wrong repo. See § Workout-Staff Operational Pattern and § Exception Skills cross-repo note.
 - [ ] **Board Check** -- `kanban list --output-style=xml --session <id>`. Scan for: review queue (process first), file conflicts, other sessions' work.
 - [ ] **Confirmation** -- Did the user explicitly authorize this work? If not, present approach and wait. See § Delegation Protocol step 2 for directive language exceptions.
 - [ ] **Delegation** -- 🚨 Card MUST exist before Task tool call. Create card first, then delegate with card number. Never launch an agent without a card number in the prompt. See § Exception Skills for Skill tool usage.
@@ -307,7 +307,9 @@ Run `kanban show <N> --agent --output-style=xml --session <session-id>` to read 
 IMPORTANT: Comment incrementally via `kanban comment` after each significant milestone — do NOT batch all comments at the end. If you are a research/review agent, your comments ARE your work product. If you are a work agent, your file changes persist but comments provide context. If you are interrupted (turn/context exhaustion), only completed comments and file changes survive for your replacement.
 
 PART 2 — Kanban workflow (execute ALL steps, in order, after task work):
-1. Post findings: `kanban comment <N> "your detailed findings" --session <session-id>`
+1. Post findings:
+   - Plain text with no code or shell syntax: `kanban comment <N> "your detailed findings" --session <session-id>`
+   - Complex comments (containing code, shell syntax, $() patterns, or special characters): write to `.scratchpad/comment-<N>.md` first, then `kanban comment <N> --file .scratchpad/comment-<N>.md --session <session-id>` (the --file flag auto-deletes the input file after reading — no manual cleanup needed)
 2. Self-check AC: `kanban criteria check <N> <criterion#> --session <session-id>` (for EACH criterion you met)
 3. Move to review: `kanban review <N> --session <session-id>`
 
@@ -361,7 +363,7 @@ Background sub-agents run in `dontAsk` mode — any tool use not pre-approved is
 
 **Git operation permission gates require AC review first.** If an agent returns requesting permission for a git operation (`git commit`, `git push`, `git merge`, `gh pr create`) and the card has NOT yet completed the AC lifecycle (`kanban review` → AC reviewer → `kanban done`), do NOT proceed with the normal recovery path. Do not grant the permission. Instead: move the card to review, run the AC lifecycle, and only after the AC reviewer confirms done, proceed with git operations.
 
-**Global allow list pre-check:** Before presenting a permission gate to the user, check whether the blocked permission pattern is already in the global ~/.claude/settings.json permissions.allow list. To check: run `jq '.permissions.allow[]' ~/.claude/settings.json` — this prints every globally-allowed pattern. If the blocked pattern appears in that list and the agent was still blocked, the platform is not honoring an existing allow entry — running `perm always` is a no-op in this case. Re-launch the agent immediately (same recovery as a transient kanban-command gate). If re-launch still fails, escalate to the user as a platform bug. Do NOT present the three-option AskUserQuestion for permissions that are already globally approved. The user has already made this decision permanently — asking again wastes their time.
+**Global allow list pre-check:** Before presenting a permission gate to the user, check whether the blocked permission pattern is already in the global ~/.claude/settings.json permissions.allow list. Only `~/.claude/settings.json` (global) is checked here — not project-level `settings.local.json`, which contains session-scoped temporary permissions managed by the `perm` CLI, not permanent user decisions. The global file is the only place where permanent allow decisions live. To check: run `jq '.permissions.allow[]' ~/.claude/settings.json` — this prints every globally-allowed pattern. If the blocked pattern appears in that list and the agent was still blocked, the platform is not honoring an existing allow entry — running `perm always` is a no-op in this case. Re-launch the agent immediately (same recovery as a transient kanban-command gate). If re-launch still fails, escalate to the user as a platform bug. Do NOT present the three-option AskUserQuestion for permissions that are already globally approved. The user has already made this decision permanently — asking again wastes their time.
 
 If the pattern is NOT already globally approved, proceed to the three-step process below.
 
@@ -578,7 +580,7 @@ Each AC criterion has two columns: **agent_met** (self-checked by the sub-agent 
 
 **If AC reviewer hits a permission gate:** Follow the standard Permission Gate Recovery protocol (see § Permission Gate Recovery). Present the three-option AskUserQuestion and re-launch the AC reviewer after resolving the gate.
 
-**If AC reviewer crashes or returns unintelligible output:** Re-launch the AC reviewer (same card, same prompt). If it fails a second time, the staff engineer may manually run `kanban done` — this is the ONE exception where the staff engineer calls `kanban done` directly, bypassing the AC reviewer, but ONLY after two failed reviewer attempts. This is a last resort.
+**If AC reviewer crashes or returns unintelligible output:** Re-launch the AC reviewer (same card, same prompt). If it fails a second time, the staff engineer may manually run `kanban done` — this is the ONE exception where the staff engineer calls `kanban done` directly, bypassing the AC reviewer, but ONLY after two consecutive failed AC reviewer attempts. This is a last resort.
 
 ---
 

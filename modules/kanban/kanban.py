@@ -995,6 +995,8 @@ def generate_workflow_instructions(card: dict, num: str, col: str, session: str)
         lines.append("2. Write detailed findings or implementation notes as card comments:")
         lines.append(f"   `kanban comment {num} \"your findings\"{session_flag}`")
         lines.append("")
+        lines.append(f"NOTE: If your comment text contains $(), backticks, or shell-special characters, write it to .scratchpad/comment-{num}.md first, then use `kanban comment {num} --file .scratchpad/comment-{num}.md{session_flag}`. For simple text, inline is fine.")
+        lines.append("")
         lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
         lines.append("CRITICAL: MANDATORY AC SELF-CHECK — DO NOT SKIP")
         lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -1258,13 +1260,43 @@ def cmd_comment(args) -> None:
     card_path = find_card(root, args.card)
     card = read_card(card_path)
 
+    comment_file = getattr(args, "comment_file", None)
+    text = getattr(args, "text", None)
+
+    if comment_file and text:
+        print("Error: Cannot use both --file and a positional text argument simultaneously", file=sys.stderr)
+        sys.exit(1)
+
+    if comment_file:
+        file_path = Path(comment_file)
+        if not file_path.exists():
+            print(f"Error: File not found: {comment_file}", file=sys.stderr)
+            sys.exit(1)
+        try:
+            comment_text = file_path.read_text(encoding="utf-8")
+        except OSError as e:
+            print(f"Error: cannot read comment file: {comment_file}: {e}", file=sys.stderr)
+            sys.exit(1)
+        if not comment_text.strip():
+            print(f"Error: comment file is empty: {comment_file}", file=sys.stderr)
+            sys.exit(1)
+    elif text is not None:
+        comment_text = text
+    else:
+        print("Error: Provide comment text as a positional argument or via --file <path>", file=sys.stderr)
+        sys.exit(1)
+
     if "comments" not in card:
         card["comments"] = []
 
-    card["comments"].append({"timestamp": now_iso(), "text": args.text})
+    card["comments"].append({"timestamp": now_iso(), "text": comment_text})
     card["updated"] = now_iso()
     write_card(card_path, card)
     print(f"Comment added to #{card_number(card_path)}")
+
+    # Delete the --file input after successful comment so it never pre-exists on next use
+    if comment_file:
+        os.remove(comment_file)
 
 
 def cmd_criteria_add(args) -> None:
@@ -2860,7 +2892,8 @@ def main() -> None:
     # --- comment ---
     p_comment = subparsers.add_parser("comment", parents=[parent_parser], help="Add timestamped comment to card")
     p_comment.add_argument("card", help="Card number")
-    p_comment.add_argument("text", help="Comment text")
+    p_comment.add_argument("text", nargs="?", default=None, help="Comment text (omit when using --file)")
+    p_comment.add_argument("--file", dest="comment_file", metavar="PATH", help="Read comment text from file instead of inline argument")
     add_session_flags(p_comment)
 
     # --- criteria (with subcommands) ---
