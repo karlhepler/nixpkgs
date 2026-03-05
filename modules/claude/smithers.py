@@ -56,6 +56,13 @@ TERMINAL_STATES = {
     "action_required", "timed_out"  # Don't forget these terminal states
 }
 
+# Conclusions that trigger fail-fast exit from the polling loop.
+# When any check reaches one of these states, there is no point waiting for
+# remaining in-progress checks — Ralph should be invoked immediately.
+# "cancelled" is intentionally excluded: a cancelled check does not indicate
+# a fixable CI failure and should not interrupt the wait.
+FAIL_FAST_CONCLUSIONS = {"failure", "timed_out", "action_required", "startup_failure"}
+
 # Workflow failure tracking (in-memory for current run)
 # Structure: {commit_sha: {workflow_name: {"count": int, "last_failure": timestamp}}}
 WORKFLOW_FAILURE_TRACKER = {}
@@ -259,6 +266,23 @@ def check_is_terminal(check: dict) -> bool:
 def all_checks_terminal(checks: list) -> bool:
     """Check if all checks are in terminal state."""
     return all(check_is_terminal(c) for c in checks)
+
+
+def find_fail_fast_check(checks: list) -> dict | None:
+    """Return the first check that warrants an immediate fail-fast exit, or None.
+
+    A check triggers fail-fast when its bucket is "fail" or its state matches
+    one of FAIL_FAST_CONCLUSIONS. "cancelled" (bucket "cancel") is explicitly
+    excluded — a cancelled check does not indicate a fixable CI failure.
+    """
+    for check in checks:
+        bucket = check.get("bucket", "").lower()
+        state = check.get("state", "").lower()
+        if bucket == "cancel":
+            continue
+        if bucket == "fail" or state in FAIL_FAST_CONCLUSIONS:
+            return check
+    return None
 
 
 def get_failed_checks(checks: list) -> list:
@@ -1648,7 +1672,15 @@ def work_needed(failed_checks: list, has_conflicts: bool, owner: str, repo: str,
 
 
 def wait_for_checks(pr_number: int, owner: str = None, repo: str = None) -> tuple:
-    """Wait for all checks to reach terminal state OR actionable bot comments detected.
+    """Wait for all checks to reach terminal state, fail-fast on any failure, or return
+    early when actionable bot comments are detected.
+
+    Short-circuit rules (in priority order):
+    1. Actionable bot comments found → return immediately (bot_comments_found=True)
+    2. Any check with a fail-fast conclusion (failure, timed_out, action_required,
+       startup_failure) → return immediately so Ralph can be invoked without waiting
+       for remaining in-progress checks.  cancelled is excluded.
+    3. All checks terminal → normal completion.
 
     Args:
         pr_number: PR number to check
@@ -1657,7 +1689,7 @@ def wait_for_checks(pr_number: int, owner: str = None, repo: str = None) -> tupl
 
     Returns:
         tuple: (checks, bot_comments_found) where:
-        - checks: List of check results (may be incomplete if bot comments found)
+        - checks: List of check results (may be incomplete if early return)
         - bot_comments_found: True if actionable bot comments caused early return
     """
     log("Waiting for CI checks to complete...")
@@ -1685,6 +1717,20 @@ def wait_for_checks(pr_number: int, owner: str = None, repo: str = None) -> tupl
                 pending = [c for c in checks if not check_is_terminal(c)]
                 log(f"🤖 {actionable_count} actionable bot comment(s) detected - interrupting check wait ({len(pending)} checks still pending)")
                 return (checks, True)
+
+        # Fail-fast: if any check has already failed, there is no point waiting
+        # for the remaining in-progress checks.  Invoke Ralph immediately.
+        fail_fast_check = find_fail_fast_check(checks)
+        if fail_fast_check:
+            pending = [c for c in checks if not check_is_terminal(c)]
+            check_name = fail_fast_check.get("name", "unknown")
+            check_state = fail_fast_check.get("state", fail_fast_check.get("bucket", "unknown"))
+            log(
+                f"Check '{check_name}' concluded with '{check_state}' — "
+                f"short-circuiting wait loop immediately "
+                f"({len(pending)} check(s) still in progress)"
+            )
+            return (checks, False)
 
         terminal_count = sum(1 for c in checks if check_is_terminal(c))
         total = len(checks)
