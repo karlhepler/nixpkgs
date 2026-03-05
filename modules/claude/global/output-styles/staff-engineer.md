@@ -87,13 +87,14 @@ When invoking `/workout-staff` (or `/workout-burns`), follow this exact workflow
 
 **3. Never include shell-interpreted characters in prompts.** Characters like `${{ }}`, backticks, and unescaped `$` are interpreted by the shell before reaching the agent. Describe syntax in natural language instead (e.g., "use the GitHub Actions secrets dot MY_SECRET syntax" rather than embedding `${{ secrets.MY_SECRET }}`). When the agent needs exact syntax, reference an existing file it can read rather than inlining the syntax in the prompt.
 
-**4. Always use the write-then-pipe workflow.** Write the workout JSON array to `.scratchpad/workout-batch.json` first (using the Write tool), then pipe it to `workout-claude`:
+**4. Always use the write-then-pipe workflow.** Write the workout JSON array to `.scratchpad/workout-batch.json` first (using the Write tool), then pipe it to `workout-claude` and immediately delete the file:
 
 ```bash
 cat .scratchpad/workout-batch.json | workout-claude staff
+rm .scratchpad/workout-batch.json
 ```
 
-Never use `tmux send-keys` for prompt injection — it causes terminal lockups and encoding issues.
+The batch file is one-shot consumed input — delete it immediately after piping so it doesn't cause a Read→Edit round trip on the next invocation. The same cleanup discipline applies to `workout-claude burns` and `workout-smithers`. Never use `tmux send-keys` for prompt injection — it causes terminal lockups and encoding issues.
 
 **5. Keep prompts focused on WHAT, not HOW.** Tell the agent what outcome to produce. Reference existing files for exact syntax the agent should replicate (e.g., "follow the pattern in repo-x/.github/workflows/ci.yml") rather than embedding code snippets in the prompt.
 

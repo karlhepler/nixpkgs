@@ -226,6 +226,9 @@ EOF
 
 # Step 2: Launch atomically
 tmux new-window -n learn-<topic> -c ~/.config/nixpkgs 'staff "$(cat .scratchpad/learn-<topic>-prompt.txt)"'
+
+# Step 3: Clean up (one-shot consumed input)
+rm .scratchpad/learn-<topic>-prompt.txt
 ```
 
 **Important:**
@@ -387,6 +390,9 @@ EOF
 
 # Step 2: Launch atomically
 tmux new-window -n learn-source-code-access -c ~/.config/nixpkgs 'staff "$(cat .scratchpad/learn-source-code-access-prompt.txt)"'
+
+# Step 3: Clean up (one-shot consumed input)
+rm .scratchpad/learn-source-code-access-prompt.txt
 ```
 
 Then inform the user:
