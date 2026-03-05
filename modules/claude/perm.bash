@@ -12,6 +12,7 @@ set -euo pipefail
 #   perm [--session <id>] cleanup                            Remove temporary permissions owned by given session
 #   perm cleanup-stale [--max-age <hours>]                   Remove temporary permissions older than max-age (default: 4h)
 #   perm list                                                Show tracked permissions with labels and timestamps
+#   perm check <pattern>                                     Check if pattern is approved across all settings files
 #   perm nuke                                                Nuke ALL entries from permissions.allow (interactive, user-only)
 #   perm session-hook                                        SessionStart hook: read JSON from stdin, print session UUID
 #
@@ -37,6 +38,7 @@ USAGE:
   perm --session <id> cleanup                              Remove temporary permissions owned by the given session
   perm cleanup-stale [--max-age <hours>]                   Remove temporary permissions older than max-age (default: 4h)
   perm list                                                Show tracked permissions with labels and timestamps
+  perm check <pattern>                                     Check if pattern is approved across all settings files
   perm nuke                                                Nuke ALL entries from permissions.allow (interactive, user-only)
   perm session-hook                                        SessionStart hook: read JSON stdin, print session UUID
   perm --help                                              Show this help message
@@ -75,6 +77,8 @@ EXAMPLES:
   perm cleanup-stale
   perm cleanup-stale --max-age 2
   perm list
+  perm check "Bash(kanban *)"
+  perm check "Write(.scratchpad/**)"
 
 EOF
 }
@@ -491,6 +495,103 @@ cmd_list() {
   fi
 }
 
+cmd_check() {
+  local pattern="${1:-}"
+
+  if [[ -z "${pattern}" ]]; then
+    echo "Error: pattern required" >&2
+    echo "Usage: perm check <pattern>" >&2
+    exit 1
+  fi
+
+  echo "Checking: ${pattern}"
+  echo ""
+
+  local found_allow=false
+  local found_deny=false
+
+  # Determine git repo root (gracefully handle non-repo context)
+  local repo_root=""
+  repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || true
+
+  # 1. Project-local: .claude/settings.local.json
+  if [[ -n "${repo_root}" ]]; then
+    local local_file="${repo_root}/.claude/settings.local.json"
+    if [[ -f "${local_file}" ]]; then
+      local in_local_allow
+      in_local_allow="$(jq --arg p "${pattern}" '.permissions.allow // [] | index($p) != null' "${local_file}")"
+      if [[ "${in_local_allow}" == "true" ]]; then
+        printf "  ✓ local   .claude/settings.local.json\n"
+        found_allow=true
+      else
+        printf "  ✗ local   .claude/settings.local.json\n"
+      fi
+      local in_local_deny
+      in_local_deny="$(jq --arg p "${pattern}" '(.permissions.deny // []) + (.permissions.block // []) | index($p) != null' "${local_file}")"
+      if [[ "${in_local_deny}" == "true" ]]; then
+        printf "  ⚠ deny/block  local   .claude/settings.local.json\n"
+        found_deny=true
+      fi
+    else
+      printf "  - local   .claude/settings.local.json [not found]\n"
+    fi
+
+    # 2. Project: .claude/settings.json
+    local project_file="${repo_root}/.claude/settings.json"
+    if [[ -f "${project_file}" ]]; then
+      local in_project_allow
+      in_project_allow="$(jq --arg p "${pattern}" '.permissions.allow // [] | index($p) != null' "${project_file}")"
+      if [[ "${in_project_allow}" == "true" ]]; then
+        printf "  ✓ project .claude/settings.json\n"
+        found_allow=true
+      else
+        printf "  ✗ project .claude/settings.json\n"
+      fi
+      local in_project_deny
+      in_project_deny="$(jq --arg p "${pattern}" '(.permissions.deny // []) + (.permissions.block // []) | index($p) != null' "${project_file}")"
+      if [[ "${in_project_deny}" == "true" ]]; then
+        printf "  ⚠ deny/block  project .claude/settings.json\n"
+        found_deny=true
+      fi
+    else
+      printf "  - project .claude/settings.json [not found]\n"
+    fi
+  else
+    printf "  - local   .claude/settings.local.json [not in a git repo]\n"
+    printf "  - project .claude/settings.json [not in a git repo]\n"
+  fi
+
+  # 3. Global: ~/.claude/settings.json
+  local global_file="${HOME}/.claude/settings.json"
+  if [[ -f "${global_file}" ]]; then
+    local in_global_allow
+    in_global_allow="$(jq --arg p "${pattern}" '.permissions.allow // [] | index($p) != null' "${global_file}")"
+    if [[ "${in_global_allow}" == "true" ]]; then
+      printf "  ✓ global  ~/.claude/settings.json\n"
+      found_allow=true
+    else
+      printf "  ✗ global  ~/.claude/settings.json\n"
+    fi
+    local in_global_deny
+    in_global_deny="$(jq --arg p "${pattern}" '(.permissions.deny // []) + (.permissions.block // []) | index($p) != null' "${global_file}")"
+    if [[ "${in_global_deny}" == "true" ]]; then
+      printf "  ⚠ deny/block  global  ~/.claude/settings.json\n"
+      found_deny=true
+    fi
+  else
+    printf "  - global  ~/.claude/settings.json [not found]\n"
+  fi
+
+  echo ""
+  if [[ "${found_deny}" == "true" ]]; then
+    echo "→ DENIED  (deny/block found — overrides all allows globally)"
+  elif [[ "${found_allow}" == "true" ]]; then
+    echo "→ ALLOWED"
+  else
+    echo "→ NOT ALLOWED"
+  fi
+}
+
 # Parse global --session flag and subcommand.
 # Accepted forms:
 #   perm --session <id> <subcommand> [args...]
@@ -512,7 +613,7 @@ while [[ $# -gt 0 ]]; do
       show_help
       exit 0
       ;;
-    allow|always|cleanup|cleanup-stale|list|nuke|session-hook)
+    allow|always|cleanup|cleanup-stale|list|check|nuke|session-hook)
       subcommand="$1"
       shift
       break
@@ -569,6 +670,9 @@ case "${subcommand}" in
     ;;
   list)
     cmd_list
+    ;;
+  check)
+    cmd_check "${sub_args[0]:-}"
     ;;
   nuke)
     cmd_nuke
