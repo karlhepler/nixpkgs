@@ -135,6 +135,11 @@ let
     flakeIgnore = [ "E265" "E501" "W503" "W504" ];
   } (builtins.readFile ./kanban-ac-hook.py);
 
+  # Claude Inspect — CLI for introspecting Claude session metrics
+  claudeInspectScript = pkgs.writers.writePython3Bin "claude-inspect" {
+    flakeIgnore = [ "E226" "E265" "E501" "F541" "W503" "W504" ];
+  } (builtins.readFile ./claude-inspect.py);
+
 in {
   # ============================================================================
   # Claude Code Configuration & Shell Applications
@@ -282,6 +287,14 @@ in {
         description = "SubagentStop hook that blocks sub-agents with unchecked kanban acceptance criteria";
         mainProgram = "kanban-ac-hook";
         homepage = "${builtins.toString ./.}/kanban-ac-hook.py";
+      };
+    };
+
+    claude-inspect = claudeInspectScript // {
+      meta = {
+        description = "Introspect Claude session metrics from the SQLite metrics DB (token usage, cost, tool calls, card events)";
+        mainProgram = "claude-inspect";
+        homepage = "${builtins.toString ./.}/claude-inspect.py";
       };
     };
   };
@@ -773,6 +786,9 @@ in {
             # Category C - node / python3 (version query only; -e/-p/-c excluded)
             "Bash(node --version *)"
             "Bash(python3 --version *)"
+
+            # Claude Code metrics introspection CLI
+            "Bash(claude-inspect *)"
 
           ];
 
