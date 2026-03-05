@@ -938,137 +938,6 @@ def cmd_start(args) -> None:
         sys.exit(1)
 
 
-def generate_workflow_instructions(card: dict, num: str, col: str, session: str) -> str:
-    """Generate workflow instructions for an agent based on card column and type.
-
-    Returns empty string for columns where no instructions apply (todo, done, canceled).
-    Produces distinct output for 6 type x column variants:
-      doing: work(editFiles), work(no editFiles), research, review
-      review: work(editFiles), work(no editFiles), research, review
-    All variants include command disambiguation and strict adherence blocks.
-    """
-    if col not in ("doing", "review"):
-        return ""
-
-    card_type = card.get("type", "work")
-    session_str = session or ""
-    session_flag = f" --session {session_str}" if session_str else ""
-
-    edit_files = card.get("editFiles", [])
-
-    if col == "doing":
-        lines = ["## Workflow Instructions", ""]
-
-        # Strict adherence block — must appear at the top
-        lines.append("You MUST follow these instructions exactly. Do not skip steps, reorder steps, or improvise alternatives. The kanban workflow is a contract — deviating from it causes cascading failures for the coordinator and AC reviewer.")
-        lines.append("")
-
-        # Prominent warning block
-        lines.append("⚠️ REQUIRED BEFORE FINISHING: You MUST post findings via `kanban comment` and self-check each AC via `kanban criteria check` BEFORE running `kanban review`. Without these, the AC reviewer has NO evidence to verify your work and review WILL fail.")
-        lines.append("")
-
-        # Permission denial reporting block
-        lines.append(f"PERMISSION DENIAL: If any command you attempt is denied or blocked, immediately stop and report: (1) the exact command that was denied, (2) the tool name and full command string (e.g., Bash(kanban comment {num} \"text\" --session my-session)). Do not ask for approval yourself — report the denial so the staff engineer can resolve it and re-launch you.")
-        lines.append("")
-
-        # Type-specific deliverable block
-        if card_type == "work" and edit_files:
-            lines.append("You MUST produce file changes. If you move to review without changing files, review WILL fail.")
-            lines.append("")
-        elif card_type == "work" and not edit_files:
-            lines.append("This is an operational work card. Your deliverable may be external changes (e.g., ran a CLI command, called an API, created infrastructure) rather than file edits. Document exactly what commands you ran and their outputs as kanban comments.")
-            lines.append("")
-        elif card_type == "research":
-            lines.append("Your ONLY deliverable is card comments. No file changes expected. If you do not run `kanban comment`, your work is invisible and unrecoverable.")
-            lines.append("")
-        elif card_type == "review":
-            lines.append("Your ONLY deliverable is card comments containing assessment. No file changes expected. If you do not run `kanban comment`, your work is invisible and unrecoverable.")
-            lines.append("")
-
-        # Command disambiguation — emphatic, always present
-        lines.append("Command disambiguation:")
-        lines.append(f"  Use `kanban criteria check` — the agent self-check command.")
-        lines.append(f"  Do NOT use `kanban criteria verify` — that is the AC reviewer command. Using the wrong command will corrupt the review process.")
-        lines.append("")
-
-        lines.append("1. Do the work described on this card.")
-        lines.append("2. Write detailed findings or implementation notes as card comments:")
-        lines.append(f"   `kanban comment {num} \"your findings\"{session_flag}`")
-        lines.append("")
-        lines.append(f"NOTE: If your comment text contains $(), backticks, or shell-special characters, write it to .scratchpad/comment-{num}.md first, then use `kanban comment {num} --file .scratchpad/comment-{num}.md{session_flag}`. For simple text, inline is fine.")
-        lines.append("")
-        lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        lines.append("CRITICAL: MANDATORY AC SELF-CHECK — DO NOT SKIP")
-        lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        lines.append("")
-        lines.append("After completing ALL work and BEFORE running `kanban review`, you MUST:")
-        lines.append("")
-        lines.append(f"  3a. Re-read the card to see all acceptance criteria:")
-        lines.append(f"      `kanban show {num}{session_flag} --output-style=xml`")
-        lines.append("")
-        lines.append(f"  3b. For EACH acceptance criterion your work satisfies, run:")
-        lines.append(f"      `kanban criteria check {num} <N>{session_flag}`  (replace N with criterion number: 1, 2, 3...)")
-        lines.append(f"      Run this command once per criterion. Do NOT skip any.")
-        lines.append("")
-        lines.append(f"  3c. Verify ALL criteria show agent_met=true before proceeding.")
-        lines.append(f"      If any are unchecked, check them now — `kanban review` WILL FAIL")
-        lines.append(f"      if agent_met is unchecked. Do NOT move to review with unchecked criteria.")
-        lines.append("")
-        lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        lines.append("")
-        lines.append("── Pre-Review Checklist (MANDATORY) ──────────────────")
-        lines.append("Before running `kanban review`, verify ALL of the following:")
-        lines.append(f"□ Every AC criterion checked via `kanban criteria check {num} <N>{session_flag}`  (replace N with criterion number: 1, 2, 3...)")
-        lines.append(f"□ Re-read the card and confirmed all criteria show agent_met=true")
-        lines.append(f"□ Findings/results posted via `kanban comment {num} \"...\"{session_flag}` (at least one comment required)")
-        lines.append("If any are missing, the review will fail.")
-        lines.append("")
-        lines.append("4. When all criteria are checked AND the checklist above is satisfied, move the card to review:")
-        lines.append(f"   `kanban review {num}{session_flag}`")
-        lines.append("   If this fails, the error will list unchecked criteria — check them and try again.")
-        lines.append("5. When finished, respond to the coordinator with ONLY a 1-2 sentence summary. Your final response (the text you return at the end) should be brief. Continue writing detailed notes as kanban comments throughout. Do not restate findings or deliverable details.")
-        lines.append("")
-        lines.append(f"Do NOT run any kanban commands except `kanban show`, `kanban criteria check/uncheck`, `kanban comment`, and `kanban review` for card #{num}. Card lifecycle is handled by the coordinator.")
-
-        return "\n".join(lines)
-
-    # col == "review"
-    lines = ["## Workflow Instructions", ""]
-
-    # Strict adherence block
-    lines.append("You MUST follow these instructions exactly. Do not skip steps, reorder steps, or improvise alternatives.")
-    lines.append("")
-
-    # Permission denial reporting block
-    lines.append(f"PERMISSION DENIAL: If any command you attempt is denied or blocked, immediately stop and report: (1) the exact command that was denied, (2) the tool name and full command string (e.g., Bash(kanban comment {num} \"text\" --session my-session)). Do not ask for approval yourself — report the denial so the staff engineer can resolve it and re-launch you.")
-    lines.append("")
-
-    # Command disambiguation — emphatic, always present
-    lines.append("Command disambiguation:")
-    lines.append("  Use `kanban criteria verify` — the AC reviewer command.")
-    lines.append("  Do NOT use `kanban criteria check` — that is the agent self-check command. Using the wrong command will corrupt the review process.")
-    lines.append("")
-
-    # Type-specific verification guidance (inlined into step 1 below)
-    if card_type == "work" and edit_files:
-        step1 = "1. Verify each acceptance criterion by inspecting the modified files. If no files were changed, mark as fail."
-    elif card_type == "work" and not edit_files:
-        step1 = "1. Verify each acceptance criterion via card comments — the deliverable is external changes, not file modifications."
-    elif card_type == "research":
-        step1 = "1. Verify each acceptance criterion by reading card comments containing findings."
-    else:  # card_type == "review"
-        step1 = "1. Verify each acceptance criterion by reading card comments containing assessment."
-
-    lines.append(step1)
-    lines.append("2. After verifying each criterion, immediately run:")
-    lines.append(f"   `kanban criteria verify {num} <N>{session_flag}`  (replace N with criterion number: 1, 2, 3...)")
-    lines.append("3. When finished, follow your delegation prompt for final disposition (e.g., kanban done). Your final response should be the summary — not kanban comments. Example: " + f"'#{num}: pass' or '#{num}: fail — AC2 unverified'. Do not restate findings.")
-    lines.append("")
-    lines.append(f"Do NOT run any kanban commands except `kanban show`, `kanban criteria verify/unverify`, and any commands specified in your delegation prompt for card #{num}.")
-
-    return "\n".join(lines)
-
-
 def cmd_show(args) -> None:
     """Display card contents."""
     root = get_root(args.root)
@@ -1077,14 +946,9 @@ def cmd_show(args) -> None:
     col = card_path.parent.name
     num = card_number(card_path)
 
-    # Resolve session for workflow instructions: prefer explicit --session arg, then card's own session
-    agent_flag = getattr(args, "agent", False)
-    session_for_workflow = (getattr(args, "session", None) or card.get("session") or "")
-    workflow_text = generate_workflow_instructions(card, num, col, session_for_workflow) if agent_flag else ""
-
     # Claude XML output style
     if getattr(args, "output_style", None) == "xml":
-        print(format_card_xml(card, num, col, include_details=True, workflow_text=workflow_text))
+        print(format_card_xml(card, num, col, include_details=True))
         return
 
     # Build human-friendly terminal output (simple or detail)
@@ -1198,13 +1062,6 @@ def cmd_show(args) -> None:
     footer_parts.append(f"Created: {created_date}")
 
     output_lines.append(f"{bold}{' · '.join(footer_parts)}{reset}")
-
-    # Append workflow instructions if --agent flag was provided
-    if workflow_text:
-        output_lines.append("")
-        output_lines.append("---")
-        output_lines.append("")
-        output_lines.append(workflow_text)
 
     # Send through pager
     use_pager("\n".join(output_lines) + "\n")
@@ -1501,7 +1358,7 @@ def cmd_criteria_dispatch(args) -> None:
 # List and view commands
 # =============================================================================
 
-def format_card_xml(card: dict, num: str, col: str, include_details: bool = False, workflow_text: str = "") -> str:
+def format_card_xml(card: dict, num: str, col: str, include_details: bool = False) -> str:
     """Format a single card as XML.
 
     Args:
@@ -1509,7 +1366,6 @@ def format_card_xml(card: dict, num: str, col: str, include_details: bool = Fals
         num: Card number string
         col: Column/status name
         include_details: Include intent, AC, and activity (for show command)
-        workflow_text: Optional workflow instructions markdown (from --agent flag); wrapped in <workflow> element
     """
     esc = html.escape
     session = card.get("session", "")
@@ -1584,12 +1440,6 @@ def format_card_xml(card: dict, num: str, col: str, include_details: bool = Fals
                 message = esc(event.get("message", ""))
                 xml_parts.append(f'    <event ts="{timestamp}">{message}</event>')
             xml_parts.append("  </activity>")
-
-    # Workflow instructions (only when --agent flag is provided)
-    if workflow_text:
-        xml_parts.append(f"  <workflow>")
-        xml_parts.append(workflow_text)
-        xml_parts.append("  </workflow>")
 
     xml_parts.append("</card>")
     return "\n".join(xml_parts)
@@ -2860,7 +2710,6 @@ def main() -> None:
     p_show = subparsers.add_parser("show", parents=[parent_parser], help="Display card contents")
     p_show.add_argument("card", help="Card number")
     p_show.add_argument("--output-style", choices=["simple", "xml", "detail"], help="Output style: xml (structured XML for machine parsing)")
-    p_show.add_argument("--agent", action="store_true", default=False, help="Append auto-generated workflow instructions for the agent based on card column and type")
     add_session_flags(p_show)
 
     # --- status ---
