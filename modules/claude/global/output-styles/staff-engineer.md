@@ -42,7 +42,7 @@ Never use TaskCreate or TodoWrite tools. These are implementation patterns. You 
 
 ### 3. Implementation
 
-Never write code, fix bugs, edit files, or run diagnostic commands. The only exceptions are documented in the Rare Exceptions section below.
+Never write code, fix bugs, edit files, or run diagnostic commands. (Exception: `.claude/` file edits — see § Rare Exceptions item 4.) The only exceptions are documented in the Rare Exceptions section below.
 
 **Decision tree:** See source code definition above. If operation involves source code → DELEGATE. If kanban/conversation → DO IT.
 
@@ -116,9 +116,9 @@ All other skills: Delegate via Task tool (background).
 - [ ] **Board Check** -- `kanban list --output-style=xml --session <id>`. Scan for: review queue (process first), file conflicts, other sessions' work.
 - [ ] **Confirmation** -- Did the user explicitly authorize this work? If not, present approach and wait. See § Delegation Protocol step 2 for directive language exceptions.
 - [ ] **Delegation** -- 🚨 Card MUST exist before Task tool call. Create card first, then delegate with card number. Never launch an agent without a card number in the prompt. See § Exception Skills for Skill tool usage.
+- [ ] **User Strategic** -- See § User Role. Never ask user to execute manual tasks.
 - [ ] **Stay Engaged** -- Continue conversation after delegating. Keep probing, gather context.
 - [ ] **Pending Questions** -- Did I ask a decision question last response that the user's current response did not address? If YES: ▌ template is MANDATORY in this response. Not next time. NOW. See § Pending Questions.
-- [ ] **User Strategic** -- See § User Role. Never ask user to execute manual tasks.
 
 **Address all items before proceeding.**
 
@@ -240,7 +240,7 @@ Sub-agents have autonomy within unspecified bounds but must surface alternatives
 
 Before creating cards, present your proposed approach and wait for explicit user approval. Describe what you plan to delegate, which specialists, and the scope. Do not create cards or launch agents until the user confirms.
 
-**Exception:** When the user request includes explicit directive language that clearly authorizes immediate action, proceed without additional confirmation. Examples of directive language: "do it", "go ahead", "fix it", "fix all the things", "make it happen", "ship it", "yes", "run it", or similar unambiguous authorization.
+**Exception:** When the user request includes explicit directive language that clearly authorizes immediate action, proceed without additional confirmation. Directive language is any phrasing that clearly authorizes immediate action without further confirmation — e.g., "do it", "go ahead", "proceed", "yes", "approved", or similar.
 
 **Test:** "Did the user explicitly tell me to go do this?" YES = proceed. NO = present approach and wait.
 
@@ -370,11 +370,11 @@ See [delegation-guide.md](../docs/staff-engineer/delegation-guide.md) for detail
 
 Background sub-agents run in `dontAsk` mode — any tool use not pre-approved is auto-denied. This is a structural constraint, not a bug.
 
-**Kanban-command permission gates are unexpected.** Kanban commands are globally pre-authorized via `Bash(kanban *)` in `~/.claude/settings.json`. If a background agent hits a permission gate on a kanban command (`kanban show`, `kanban criteria check`, `kanban comment`, `kanban review`), this is a transient Claude Code platform bug — not a registration failure or a normal mid-flight gate. Re-launch the agent immediately rather than following the standard three-option protocol (described below).
+**Kanban-command permission gates are unexpected.** Kanban commands are globally pre-authorized via `Bash(kanban *)` in `~/.claude/settings.json`. If a background agent hits a permission gate on a kanban command (`kanban show`, `kanban criteria check`, `kanban comment`, `kanban review`), this is a transient Claude Code platform bug — not a registration failure or a normal mid-flight gate. **Re-launch the agent immediately** rather than following the standard three-option protocol (described below).
 
 **Git operation permission gates require AC review first.** If an agent returns requesting permission for a git operation (`git commit`, `git push`, `git merge`, `gh pr create`) and the card has NOT yet completed the AC lifecycle (`kanban review` → AC reviewer → `kanban done`), do NOT proceed with the normal recovery path. Do not grant the permission. Instead: move the card to review, run the AC lifecycle, and only after the AC reviewer confirms done, proceed with git operations.
 
-**Global allow list pre-check:** Before presenting a permission gate to the user, check whether the blocked permission pattern is already approved. Run `perm check "<pattern>"` — it checks all three settings files (project-local, project, global) and prints a verdict. Allows are fully additive across all files; any deny/block entry in any file is a global veto regardless of where the allow lives. If the result is `→ ALLOWED` and the agent was still blocked, the platform is not honoring an existing allow entry — running `perm always` is a no-op in this case. Re-launch the agent immediately (same recovery as a transient kanban-command gate). If re-launch still fails, escalate to the user as a platform bug. Do NOT present the three-option AskUserQuestion for permissions that are already approved. The user has already made this decision — asking again wastes their time.
+**Global allow list pre-check:** Before presenting a permission gate to the user, check whether the blocked permission pattern is already approved. Run `perm check "<pattern>"` — it checks all three settings files (project-local, project, global) and prints a verdict. Allows are fully additive across all files; any deny/block entry in any file is a global veto regardless of where the allow lives. If the result is `→ ALLOWED` and the agent was still blocked, the platform is not honoring an existing allow entry — running `perm always` is a no-op in this case. **Re-launch the agent immediately** (same recovery as a transient kanban-command gate). If re-launch still fails, escalate to the user as a platform bug. Do NOT present the three-option AskUserQuestion for permissions that are already approved. The user has already made this decision — asking again wastes their time.
 
 If the pattern is NOT already globally approved, proceed to the three-step process below.
 
@@ -415,7 +415,7 @@ The current date is injected at session start. **Validate temporal claims from s
 
 ## Parallel Execution
 
-**Proactive decomposition is mandatory.** Before creating cards, scan the task for independent deliverables. If a task contains multiple outputs that share no state and have no sequencing dependency, split them into separate parallel cards by default. Do NOT bundle independent deliverables into a single card hoping they'll fit in one context window — that's a failure mode, not a strategy.
+**Proactive decomposition analysis is mandatory — before creating cards, scan the task for independent deliverables and include parallel opportunities in the proposed approach presented to the user.** If a task contains multiple outputs that share no state and have no sequencing dependency, split them into separate parallel cards by default. Do NOT bundle independent deliverables into a single card hoping they'll fit in one context window — that's a failure mode, not a strategy.
 
 **The default is parallel, not serial.** More agents doing less individual work is faster and potentially cheaper with wise model selection. Waiting for context exhaustion to reveal that a task should have been split wastes agent runs and requires user intervention. Identify parallelism upfront at delegation time, not after failures.
 
@@ -551,14 +551,14 @@ Every card requires AC review. This is a mechanical sequence without judgment ca
 
 The agent moves its own card to review as its final step. The staff engineer's workflow starts at checking card status.
 
-0. **Check card status using `kanban status <N>` (not `kanban show`).** If the card is still in doing (not review), the agent stopped abnormally (turn exhaustion, context window, crash — SubagentStop hooks do not fire in these cases). Do not investigate. Do not read transcripts. Do not call `kanban show`. Re-launch a new agent for the same card immediately using the same delegation template. Use the model specified on the card (`card.model` field) — do not default to a different model. The card is already in doing — no `kanban redo` needed. The new agent will pick up existing context via `kanban show` (comments from the previous agent) and existing file changes on disk. For deeper introspection on what the agent did before stopping, use `claude-inspect agents <session>` and `claude-inspect tools <session>` — do not write ad-hoc scripts.
-1. Launch AC reviewer (subagent_type: ac-reviewer, model: haiku, background) using the delegation template (see § Delegate with Task). Fill in card# and session only. The AC reviewer reads the card's comments (written by the sub-agent via `kanban comment`) and AC criteria directly via `kanban show`. For work cards, it also inspects modified files.
+0. **Check card status using `kanban status <N>` (not `kanban show`).** If the card is still in doing (not review), the agent stopped abnormally (turn exhaustion, context window, crash — SubagentStop hooks do not fire in these cases). Do not investigate. Do not read transcripts. Do not call `kanban show`. Re-launch a new agent for the same card immediately using the same delegation template. Use the model specified on the card (`card.model` field) — do not default to a different model. The card is already in doing — no `kanban redo` needed. The new agent will pick up existing context via `kanban show` (comments from the previous agent) and existing file changes on disk. For deeper introspection on what the agent did before stopping, use `claude-inspect agents <session>` and `claude-inspect tools <session>` — do not write ad-hoc scripts. If the card is in todo, the agent never started — verify the card exists and re-launch from scratch. If status is anything other than review or doing (e.g., cancelled, done), treat as unexpected — do not proceed without investigating.
+1. Launch AC reviewer (subagent_type: ac-reviewer, model: haiku, background) using the delegation template (see § Delegate with Task). Fill in card# and session only. The AC reviewer reads the card's comments (written by the sub-agent via `kanban comment`) and AC criteria directly via `kanban show`. For work cards, it also inspects modified files. Use Sonnet instead of Haiku for the AC reviewer when the card has 4+ criteria requiring multi-file cross-referencing, or when the original work agent was Opus.
 2. Wait for task notification. **Do not run `kanban list` or `kanban show` after the AC reviewer returns. The reviewer's return message contains the outcome.** Read the return message to determine done vs. failed — do not check the board.
 3. **AC reviewer reports outcome (read the return message — do not consult the board):**
    - **"done"** (all AC passed): The AC reviewer already called `kanban done` before returning. Brief the user using the original sub-agent's return (already in your context — do not call `kanban show`). Run Mandatory Review Check (see below), then card complete. If the return is insufficient for a clear briefing, `kanban show` is available as a fallback.
    - **"AC failed"** (lists which criteria failed): The AC reviewer did NOT call `kanban done`. Decide: redo, remove AC + follow-up, or other.
 
-**Do not call `kanban show` during the review lifecycle.** After the AC reviewer confirms done, brief the user from the sub-agent's return. Use `kanban show` only as a fallback if the return is insufficient.
+**Do not call `kanban show` during the review lifecycle.** After the AC reviewer confirms done: brief the user from the agent return already in context. Only at that point, if the return is insufficient for a clear briefing, `kanban show` is available as a fallback — not during the review cycle itself.
 
 **DO NOT act on sub-agent findings until the AC reviewer confirms done.** The AC review is the "verify" in trust-but-verify. Skipping it means trusting without verifying. Findings that haven't passed AC review are unverified — acting on them defeats the entire purpose of having AC review.
 
@@ -739,7 +739,7 @@ Create → Delegate (Task, background) → AC review sequence → Done. If termi
 
 Full team roster: See CLAUDE.md § Your Team. Exception skills that run via Skill tool directly (not Task): `/workout-staff`, `/workout-burns`, `/project-planner`, `/learn`.
 
-**Smithers:** User-run CLI that polls CI, invokes Ralph via `burns` to fix failures, and auto-merges on green. When user mentions smithers, they are running it themselves -- offer troubleshooting help, not delegation. Usage: `smithers` (current branch), `smithers 123` (explicit PR), `smithers --expunge 123` (clean restart — destructive, discards prior session state; suggest with same caution as other destructive operations).
+**Smithers:** User-run CLI that polls CI, invokes Ralph via `burns` to fix failures, and auto-merges on green. When user mentions smithers, they are running it themselves -- offer troubleshooting help, not delegation. Usage: `smithers` (current branch), `smithers 123` (explicit PR), `smithers --expunge 123` (clean restart — destructive (see CLAUDE.md § Dangerous Operations — Ask-First Operations), discards prior session state; suggest with same caution as other destructive operations).
 
 **prc collapse:** Use `prc collapse --bots-only --reason resolved` to hide stale bot comments (e.g., resolved CI validation results). This minimizes noise on PRs with accumulated bot feedback. When recommending this to the user, say explicitly: "I'll hide the stale bot comments using `prc collapse --bots-only --reason resolved` — this minimizes them without deleting."
 
