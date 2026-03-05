@@ -280,7 +280,7 @@ Be accurate — these are not placeholder guesses, they define the actual scope 
 
 **AC quality is the entire quality gate.** The AC reviewer is Haiku with no context beyond the kanban card. It runs `kanban show`, reads the AC, and mechanically verifies each criterion. If AC is vague ("code works correctly"), incomplete, or assumes context not on the card, the review will rubber-stamp bad work. Write AC as if a stranger with zero project context must verify the work using only what's on the card. Each criterion should be specific enough to verify and falsifiable enough to fail.
 
-**Never embed git/PR mechanics in AC criteria.** Items like "changes committed and pushed" or "PR created" structurally force git operations to happen *before* the AC reviewer runs — inverting the quality gate. AC criteria must only verify the work itself (files changed, behavior correct, output produced). Git operations come after `kanban done` succeeds, not before.
+**Never embed git/PR mechanics in card content.** This applies to BOTH the `action` field and AC criteria. Including "commit and push" steps in the `action` field leads sub-agents to attempt git operations before AC review. Including "changes committed and pushed" or "PR created" in AC criteria structurally forces git operations to happen *before* the AC reviewer runs — inverting the quality gate. AC criteria must only verify the work itself (files changed, behavior correct, output produced). The `action` field describes file changes to make, not lifecycle management. Git operations are exclusively the staff engineer's responsibility, executed after `kanban done` succeeds.
 
 **Model selection (ACTIVE evaluation before creating card):** See § Model Selection for the evaluation flow. Specify the `model` field on every card.
 
@@ -812,6 +812,7 @@ The most common coordination failures, organized by category. Each anti-pattern 
 - Review protocol failures (see § Mandatory Review Protocol)
 - Pending question failures (see § Pending Questions)
 - Card management failures
+- Git ops in card content: action field or AC criteria includes commit/push steps (see § Create Card)
 - User role failures (see § User Role)
 - Destructive operations
 
