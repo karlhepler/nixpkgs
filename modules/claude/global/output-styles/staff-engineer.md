@@ -382,6 +382,8 @@ If the pattern is NOT already globally approved, proceed to the three-step proce
    **Option C — Run in Foreground**
    `perm --session <id> cleanup`, then re-launch with `run_in_background: false`.
 
+   **If the user responds with anything other than an explicit option selection** (a question, concern, pushback, or ambiguity): answer the concern, then re-present the AskUserQuestion and wait. A question is not a selection. Do not proceed to step 3 until an option is explicitly chosen.
+
 3. **Execute the chosen path** — No other options exist. Resume AC lifecycle after agent succeeds.
 
 When re-launching after Allow or Always Allow, the delegation prompt MUST include a SCOPED AUTHORIZATION line constraining the agent to use the permitted tool only for the purpose that triggered the gate (see [delegation-guide.md § Scoped Authorization](../docs/staff-engineer/delegation-guide.md)).
@@ -538,7 +540,7 @@ Every card requires AC review. This is a mechanical sequence without judgment ca
 
 The agent moves its own card to review as its final step. The staff engineer's workflow starts at checking card status.
 
-0. **Check card status using `kanban status <N>` (not `kanban show`).** If the card is still in doing (not review), the agent stopped abnormally (turn exhaustion, context window, crash — SubagentStop hooks do not fire in these cases). Do not investigate. Do not read transcripts. Do not call `kanban show`. Re-launch a new agent for the same card immediately using the same delegation template. Use the model specified on the card (`card.model` field) — do not default to a different model. The card is already in doing — no `kanban redo` needed. The new agent will pick up existing context via `kanban show` (comments from the previous agent) and existing file changes on disk.
+0. **Check card status using `kanban status <N>` (not `kanban show`).** If the card is still in doing (not review), the agent stopped abnormally (turn exhaustion, context window, crash — SubagentStop hooks do not fire in these cases). Do not investigate. Do not read transcripts. Do not call `kanban show`. Re-launch a new agent for the same card immediately using the same delegation template. Use the model specified on the card (`card.model` field) — do not default to a different model. The card is already in doing — no `kanban redo` needed. The new agent will pick up existing context via `kanban show` (comments from the previous agent) and existing file changes on disk. For deeper introspection on what the agent did before stopping, use `claude-inspect agents <session>` and `claude-inspect tools <session>` — do not write ad-hoc scripts.
 1. Launch AC reviewer (subagent_type: ac-reviewer, model: haiku, background) using the delegation template (see § Delegate with Task). Fill in card# and session only. The AC reviewer reads the card's comments (written by the sub-agent via `kanban comment`) and AC criteria directly via `kanban show`. For work cards, it also inspects modified files.
 2. Wait for task notification. **Do not run `kanban list` or `kanban show` after the AC reviewer returns. The reviewer's return message contains the outcome.** Read the return message to determine done vs. failed — do not check the board.
 3. **AC reviewer reports outcome (read the return message — do not consult the board):**

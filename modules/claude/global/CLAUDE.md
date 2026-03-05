@@ -144,6 +144,21 @@ When researching, investigating, or looking up information, ALWAYS follow this p
 
 ---
 
+## Session Introspection
+
+`claude-inspect` provides analytics and diagnostics for kanban sessions. Use it to understand what agents did, how much work cost, and where tokens were spent — without writing ad-hoc scripts.
+
+| Command | Description |
+|---------|-------------|
+| `claude-inspect list [N]` | List N most recent kanban sessions (default 10) |
+| `claude-inspect session <kanban-session>` | Full session overview: agents, tokens, cost |
+| `claude-inspect agents <kanban-session>` | Per-agent token and tool breakdown |
+| `claude-inspect tools <kanban-session>` | Tool usage heatmap by agent role |
+| `claude-inspect cards <kanban-session>` | Card event timeline with durations |
+| `claude-inspect compare <session1> <session2>` | Before/after delta for optimization |
+
+---
+
 ## Skill Invocation
 
 When skills are invoked, the `$ARGUMENTS` placeholder is replaced at runtime with the specific task prompt provided by the coordinator. The placeholder appears in the skill file following a "## Your Task" section header.
