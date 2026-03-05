@@ -444,6 +444,8 @@ Ralph is a self-contained event-loop orchestrator with its own memory system. Ka
 
 **Implementation details:** See source files in `modules/` directories for specific configurations (theme, LSP, activation hooks, etc).
 
+**Permission system research:** See `modules/claude/perm-research.md` for empirical findings on how Claude Code permission settings files merge, how the `perm` CLI works, and why background sub-agent kanban permission gates fire (or don't).
+
 ## External References
 
 Supporting documentation for the staff engineer output style:

@@ -289,9 +289,9 @@ Use Task tool (subagent_type, model, run_in_background: true) with the appropria
 
 **Pre-delegation kanban permissions:**
 
-Kanban command permissions are automatically managed by the kanban CLI. When a card enters doing (via `kanban do`, `kanban start`, or `kanban redo`), kanban registers concrete permission patterns (show, criteria check/uncheck/verify/unverify, review, comment) via per-card perm sessions (`kanban-<card_number>`). Cleanup happens automatically on `kanban done`, `kanban cancel`, and `kanban defer`. The staff engineer only needs to pre-register NON-kanban permissions (e.g., `npm run test`, `git commit`) using the `perm` CLI.
+Kanban commands are globally pre-authorized via `Bash(kanban *)` in `~/.claude/settings.json`. No per-card registration or cleanup is needed — the global allow entry covers all kanban subcommands for all agents. The staff engineer only needs to pre-register NON-kanban permissions (e.g., `npm run test`, `git commit`) using the `perm` CLI.
 
-**Never run `perm list` to verify kanban permissions.** Kanban manages its own permissions — pre-flight verification is unnecessary and wrong. When re-launching after any agent failure, launch immediately without checking permissions first. If a kanban-command gate does fire, that's a kanban CLI bug — surface it as a registration failure, not a normal permission issue (see § Permission Gate Recovery).
+**Never run `perm list` to verify kanban permissions.** Kanban commands are globally pre-authorized — pre-flight verification is unnecessary and wrong. When re-launching after any agent failure, launch immediately without checking permissions first. If a kanban-command gate does fire, that's a transient platform bug — re-launch the agent immediately, not a normal permission issue (see § Permission Gate Recovery).
 
 **Delegation template for work/review/research agents (fill in card number and session):**
 
@@ -356,7 +356,7 @@ See [delegation-guide.md](../docs/staff-engineer/delegation-guide.md) for detail
 
 Background sub-agents run in `dontAsk` mode — any tool use not pre-approved is auto-denied. This is a structural constraint, not a bug.
 
-**Kanban-command permission gates are unexpected.** Kanban CLI automatically registers concrete permission patterns when a card enters doing (`kanban do`, `kanban start`, `kanban redo`). If a background agent hits a permission gate on a kanban command (`kanban show`, `kanban criteria check`, `kanban comment`, `kanban review`), this indicates a bug in auto-registration — not a normal mid-flight gate. Surface it as a registration failure rather than following the standard three-option protocol.
+**Kanban-command permission gates are unexpected.** Kanban commands are globally pre-authorized via `Bash(kanban *)` in `~/.claude/settings.json`. If a background agent hits a permission gate on a kanban command (`kanban show`, `kanban criteria check`, `kanban comment`, `kanban review`), this is a transient Claude Code platform bug — not a registration failure or a normal mid-flight gate. Re-launch the agent immediately rather than following the standard three-option protocol.
 
 **Git operation permission gates require AC review first.** If an agent returns requesting permission for a git operation (`git commit`, `git push`, `git merge`, `gh pr create`) and the card has NOT yet completed the AC lifecycle (`kanban review` → AC reviewer → `kanban done`), do NOT proceed with the normal recovery path. Do not grant the permission. Instead: move the card to review, run the AC lifecycle, and only after the AC reviewer confirms done, proceed with git operations.
 
@@ -394,6 +394,12 @@ The current date is injected at session start. **Validate temporal claims from s
 ---
 
 ## Parallel Execution
+
+**Proactive decomposition is mandatory.** Before creating cards, scan the task for independent deliverables. If a task contains multiple outputs that share no state and have no sequencing dependency, split them into separate parallel cards by default. Do NOT bundle independent deliverables into a single card hoping they'll fit in one context window — that's a failure mode, not a strategy.
+
+**The default is parallel, not serial.** More agents doing less individual work is faster and potentially cheaper with wise model selection. Waiting for context exhaustion to reveal that a task should have been split wastes agent runs and requires user intervention. Identify parallelism upfront at delegation time, not after failures.
+
+**Test:** "Does this card contain multiple independently completable outputs?" YES → split into N parallel cards, launch simultaneously.
 
 **Launch multiple agents simultaneously.** Multiple Task calls in SAME message = parallel. Sequential messages = sequential.
 
