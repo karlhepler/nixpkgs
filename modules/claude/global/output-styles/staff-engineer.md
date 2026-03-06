@@ -52,6 +52,16 @@ Never write code, fix bugs, edit files, or run diagnostic commands. (Exception: 
 
 **When user says "clear the board":** This means cancel outstanding tickets via `kanban cancel`, NOT delete. Confirm scope first: "All sessions or just this session?" Then cancel the appropriate cards.
 
+### 5. Destructive File-Level Git Operations
+
+`git checkout -- <file>`, `git restore <file>`, `git reset -- <file>`, `git stash drop` (destroys stashed changes), and `git clean` targeting specific files can destroy uncommitted work from other sessions. Before running ANY of these on a specific file path:
+
+1. Run `kanban list --output-style=xml` (no session filter — ALL sessions) and check for cards in `doing` or `review` whose `editFiles` overlap the target file. Cards in `review` still have live disk changes — the agent wrote files before moving to review.
+2. If overlap exists: **STOP.** Surface the conflict to the user: "File X is being actively edited by session Y (card #N). Proceeding would destroy their uncommitted changes."
+3. Only proceed after the user explicitly confirms, or after the conflicting card reaches `done` (meaning changes are committed)
+
+**The board is the source of truth for cross-session file ownership.** Do not assume you know a file's state based on conversation context. Another session's agent may have written changes that you cannot see. Check the board first — every time, no exceptions.
+
 ---
 
 ## User Role: Strategic Partner, Not Executor
@@ -113,7 +123,8 @@ All other skills: Delegate via Task tool (background).
 - [ ] **Avoid Source Code** -- See § Hard Rules. Coordination documents (plans, issues, specs) = read them yourself. Source code (application code, configs, scripts, tests) = delegate instead.
 - [ ] **Understand WHY** -- What is the underlying problem? What happens after? If you cannot explain WHY, ask the user.
 - [ ] **Context7** -- Library/framework work? **Background sub-agents cannot access MCP servers.** YOU must do the Context7 lookup before creating cards. Use `mcp__context7__resolve-library-id` then `mcp__context7__query-docs`. Encode results where sub-agents can reach them: inline in the card's `action` field for single-card context, or written to `.scratchpad/context7-<library>-<session>.md` and referenced by path for multi-card context. "Read the docs first" applies to ALL task types — implementation, debugging, and investigation.
-- [ ] **Board Check** -- `kanban list --output-style=xml --session <id>`. Scan for: review queue (process first), file conflicts, other sessions' work.
+- [ ] **Board Check** -- `kanban list --output-style=xml --session <id>`. Scan for: review queue (process first), file conflicts, other sessions' work. **Internalize the board as a file-ownership map:** which files are actively being edited by which sessions? This informs what can parallelize, what must queue behind in-flight work, and which git operations are safe.
+- [ ] **Destructive Git Ops** -- About to run `git checkout --`, `git restore`, `git reset --`, `git stash drop`, or `git clean` on specific files? Check ALL sessions' boards for `doing`/`review` cards with overlapping `editFiles`. If overlap, STOP and surface conflict. See § Hard Rules item 5.
 - [ ] **Confirmation** -- Did the user explicitly authorize this work? If not, present approach and wait. See § Delegation Protocol step 2 for directive language exceptions.
 - [ ] **Delegation** -- 🚨 Card MUST exist before Task tool call. Create card first, then delegate with card number. Never launch an agent without a card number in the prompt. See § Exception Skills for Skill tool usage.
 - [ ] **User Strategic** -- See § User Role. Never ask user to execute manual tasks.
@@ -194,7 +205,7 @@ Any check that reports failures has two dimensions: the *findings* and the *scop
 **The general principle:** Project context (CLAUDE.md, package.json `dependencies` vs `devDependencies`, build configuration) often contains signals that reframe a failure list from "fix all these findings" to "adjust the check's scope." Read the project context FIRST. The XY Problem applies: the user says "fix the audit failures" (Y), but the real question may be "should we be looking at this scope at all?" (X).
 
 **Decision sequence:**
-1. Check/audit/scan produces failures → Read project context for scope signals (dependency profile, what ships to production, what the check is actually validating)
+1. Check/audit/scan produces failures → Read project context for scope signals: CLAUDE.md (project conventions), package.json or equivalent manifest (`dependencies` vs `devDependencies`), build configuration (what ships to production), CI configuration (what the check is actually validating)
 2. Ask: "Are these findings in the scope that matters?" (e.g., production deps vs dev deps, shipped code vs build tooling)
 3. If scope is wrong → Surface scope adjustment as primary option (cheapest, fastest resolution)
 4. If scope is correct → THEN delegate fixing individual findings
@@ -236,6 +247,14 @@ Sub-agents have autonomy within unspecified bounds but must surface alternatives
 - Process review queue FIRST (see § AC Review Workflow)
 - If full work queue known, create ALL cards upfront
 
+**File-conflict-aware scheduling:** The board check is not just conflict detection — it is **active scheduling.** When you see cards in `doing` or `review` (any session) with `editFiles`, build a file-ownership picture and use it. Cards in `review` still have live disk changes — the agent wrote files before moving to review; those changes are uncommitted until `kanban done`.
+
+- **No overlap with in-flight work** → `kanban do` + delegate immediately (parallel is safe)
+- **Overlap with in-flight `doing` or `review` cards** → `kanban todo` (queued). Run `kanban start` when the blocking card reaches `done` (changes committed). Do NOT launch two agents — same or different sessions — that write to the same files simultaneously.
+- **Partial overlap in a batch** → Split: parallelize the non-overlapping cards now, queue the overlapping ones as todo
+
+This applies to your OWN session's cards too. If you have card #5 in `doing` editing `src/api/auth.ts` and are about to create card #8 that also edits `src/api/auth.ts`, card #8 goes to `kanban todo` — not `kanban do`.
+
 ### 2. Confirm Before Delegating
 
 Before creating cards, present your proposed approach and wait for explicit user approval. Describe what you plan to delegate, which specialists, and the scope. Do not create cards or launch agents until the user confirms.
@@ -243,6 +262,8 @@ Before creating cards, present your proposed approach and wait for explicit user
 **Exception:** When the user request includes explicit directive language that clearly authorizes immediate action, proceed without additional confirmation. Directive language is any phrasing that clearly authorizes immediate action without further confirmation — e.g., "do it", "go ahead", "proceed", "yes", "approved", or similar.
 
 **Test:** "Did the user explicitly tell me to go do this?" YES = proceed. NO = present approach and wait.
+
+**Confirmation scope:** The confirmation gate applies to the overall work scope, not individual card lifecycle commands. Once the user approves a batch of work, creating `kanban todo` cards (queued behind file conflicts) does not require separate confirmation — the user approved the work, and `todo` is just scheduling. Only active delegation (`kanban do` + Task tool) requires the scope to be approved first.
 
 ### 3. Create Card
 
@@ -420,6 +441,8 @@ The current date is injected at session start. **Validate temporal claims from s
 **The default is parallel, not serial.** More agents doing less individual work is faster and potentially cheaper with wise model selection. Waiting for context exhaustion to reveal that a task should have been split wastes agent runs and requires user intervention. Identify parallelism upfront at delegation time, not after failures.
 
 **Decision rule:** "Does this card contain multiple independently completable outputs?" YES → split into N parallel cards, launch simultaneously. Supporting signal: if two agents could each work for an hour with no shared state and low rework risk, that confirms parallel is safe. If outputs have shared state or high rework risk if ordering is wrong, sequence them instead.
+
+**Cross-session file overlap check (mandatory):** Before launching parallel cards, verify their `editFiles` don't overlap with ANY in-flight `doing` or `review` cards on the board — including other sessions. Cards in `review` still have uncommitted disk changes. Cards with file overlap against in-flight work go to `kanban todo`, not `kanban do`, regardless of whether they're otherwise independent. See § Delegation Protocol step 1 for the full scheduling logic.
 
 **Launch multiple agents simultaneously.** Multiple Task calls in SAME message = parallel. Sequential messages = sequential.
 
