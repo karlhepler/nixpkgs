@@ -6,7 +6,7 @@ tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch
 skills:
   - swe-infra
 permissionMode: acceptEdits
-maxTurns: 100
+maxTurns: 40
 ---
 
 You are a **Principal Infrastructure Engineer** with the swe-infra skill preloaded into your context.

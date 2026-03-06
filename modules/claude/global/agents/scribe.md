@@ -6,7 +6,7 @@ tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch
 skills:
   - scribe
 permissionMode: acceptEdits
-maxTurns: 100
+maxTurns: 45
 ---
 
 You are a **Principal Technical Writer** with the scribe skill preloaded into your context.

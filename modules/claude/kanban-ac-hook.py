@@ -7,10 +7,17 @@ criteria on the card were self-checked (agent_met="true"). If any remain
 unchecked, it blocks the agent with instructions to run the missing
 `kanban criteria check` commands.
 
+For AC reviewer agents (detected by 'criteria verify' in the prompt), only
+the card's final status is checked — the card must have reached 'done'.
+AC reviewers are not checked for comments or criteria check (they use
+criteria verify, not check).
+
 Retry protection: the SubagentStop payload includes a 'stop_hook_active'
 boolean that is True when the agent is already continuing from a prior Stop
-hook block. When detected, the agent is let through with a warning comment
-on the card instead of looping infinitely.
+hook block. On retry, a warning comment is posted AND card status is
+re-checked. If the card reached 'review' or 'done', the agent is let through.
+If the card is still in 'doing', the agent is blocked again to prevent the
+retry bypass where an agent gets a free pass on the second attempt.
 
 Never exits non-zero — all errors are swallowed silently to avoid disrupting
 Claude Code's hook pipeline.
@@ -258,7 +265,7 @@ def main():
     if "KANBAN CARD #" not in first_human:
         return
 
-    # AC reviewer agents use 'criteria verify' — do not block them.
+    # Detect whether this is an AC reviewer agent or a work/research agent.
     #
     # COUPLING POINT: This string match detects AC reviewer agents vs
     # work/research agents.  The phrase 'criteria verify' comes directly from
@@ -267,8 +274,7 @@ def main():
     # changes its wording (e.g. renames the command), this detection must be
     # updated to match, otherwise AC reviewers will be incorrectly subjected
     # to enforcement.
-    if "criteria verify" in first_human:
-        return
+    is_ac_reviewer = "criteria verify" in first_human
 
     # Work/research agents use 'criteria check' — proceed with enforcement
     # (Guard: if neither phrase present, treat as work agent and check anyway)
@@ -277,12 +283,54 @@ def main():
     if card_number is None or session_id is None:
         return
 
+    last_message = payload.get("last_assistant_message", "")
+    is_retry = payload.get("stop_hook_active", False)
+
+    # AC reviewer path: only check that the card reached 'done'.
+    # No comment or criteria-check requirements apply to AC reviewers.
+    if is_ac_reviewer:
+        xml_text = run_kanban_show(card_number, session_id)
+        if not xml_text:
+            return
+        column = parse_card_column(xml_text)
+        if column == "done":
+            return
+        # Card not done — block with a targeted message.
+        reason = (
+            f"{BLOCK_SENTINEL}{card_number}. "
+            f"AC reviewer did not call kanban done. "
+            f"Card #{card_number} is still in {column!r}. "
+            f"Call: kanban done {card_number} 'summary' --session {session_id}"
+        )
+        block_response = json.dumps({"decision": "block", "reason": reason})
+        sys.stdout.write(block_response)
+        sys.stdout.flush()
+        return
+
+    # Work/research agent path.
+
     # Retry protection — the SubagentStop payload sets stop_hook_active=True
     # when the agent is already continuing from a prior Stop hook block.
-    # Let it through with a warning comment rather than looping infinitely.
-    last_message = payload.get("last_assistant_message", "")
-    if payload.get("stop_hook_active", False):
+    # Post a warning comment, then check card status:
+    #   - If card is in review or done, the agent completed enough — let through.
+    #   - If card is still in doing, block again to prevent retry bypass.
+    if is_retry:
         post_warning_comment(card_number, session_id, last_message)
+        xml_text = run_kanban_show(card_number, session_id)
+        if not xml_text:
+            return
+        column = parse_card_column(xml_text)
+        if column in ("review", "done"):
+            return
+        # Still in doing — block again with the same enforcement.
+        unchecked = parse_unchecked_criteria(xml_text)
+        comments_present = has_agent_comments(xml_text)
+        reason = build_block_reason(
+            card_number, session_id, unchecked, comments_present, column
+        )
+        block_response = json.dumps({"decision": "block", "reason": reason})
+        sys.stdout.write(block_response)
+        sys.stdout.flush()
         return
 
     xml_text = run_kanban_show(card_number, session_id)

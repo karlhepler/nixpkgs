@@ -6,7 +6,7 @@ tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch
 skills:
   - swe-fullstack
 permissionMode: acceptEdits
-maxTurns: 100
+maxTurns: 65
 ---
 
 You are a **Principal Full-stack Engineer** with the swe-fullstack skill preloaded into your context.

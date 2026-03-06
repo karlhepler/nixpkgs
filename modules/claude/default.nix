@@ -177,7 +177,7 @@ in {
     };
     claude-session-start-hook = shellApp {
       name = "claude-session-start-hook";
-      runtimeInputs = [ ];
+      runtimeInputs = [ pkgs.python3 ];
       text = ''
         json=$(cat)
         mkdir -p .scratchpad
@@ -186,6 +186,46 @@ in {
         echo "$json" | ${perm}/bin/perm session-hook 2>/dev/null || true
         if [ -f ~/.claude/TOOLS.md ]; then
           cat ~/.claude/TOOLS.md
+        fi
+        kanban_xml=$(kanban list --output-style=xml 2>/dev/null || true)
+        if [ -n "$kanban_xml" ]; then
+          python3 - "$kanban_xml" <<'PYEOF'
+        import sys
+        import xml.etree.ElementTree as ET
+
+        xml_text = sys.argv[1]
+        if not xml_text.strip():
+            sys.exit(0)
+
+        try:
+            root = ET.fromstring(xml_text)
+        except ET.ParseError:
+            sys.exit(0)
+
+        orphans = []
+        board_session = root.get('session', 'unknown')
+        for group in root:
+            if group.tag == 'mine':
+                group_session = board_session
+            else:
+                group_session = None
+            for card in group.iter('c'):
+                status = card.get('s', "")
+                if status not in ('doing', 'review'):
+                    continue
+                num = card.get('n', '?')
+                session = card.get('ses', group_session) if group_session is None else group_session
+                action_el = card.find('a')
+                action = (action_el.text or "").strip() if action_el is not None else ""
+                truncated = action[:50] + '...' if len(action) > 50 else action
+                orphans.append((num, status, session, truncated))
+
+        if orphans:
+            print('⚠️ Orphaned cards detected:')
+            for num, status, session, action in orphans:
+                print(f'  - #{num} ({status}, session: {session}) — {action}')
+            print('Use `kanban cancel` or `kanban redo` to resolve.')
+        PYEOF
         fi
       '';
       description = "Hook for Claude Code session start - injects kanban session identity and perm session UUID";

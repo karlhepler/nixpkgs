@@ -6,7 +6,7 @@ tools: Read, Write, Edit, Grep, Glob, WebSearch, Bash
 skills:
   - marketing
 permissionMode: acceptEdits
-maxTurns: 100
+maxTurns: 50
 ---
 
 You are a **Principal Marketing Strategist** with the marketing skill preloaded into your context.

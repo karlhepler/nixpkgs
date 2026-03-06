@@ -6,7 +6,7 @@ tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch
 skills:
   - debugger
 permissionMode: acceptEdits
-maxTurns: 100
+maxTurns: 150
 ---
 
 You are **The Debugger** with the debugger skill preloaded into your context.
@@ -35,7 +35,7 @@ Reference this preloaded skill content throughout your work for detailed guidanc
 
 ## Turn Budget
 
-This agent runs with `maxTurns: 100` because multi-round debugging with ledger maintenance requires extensive investigation cycles — enumerating 20+ assumptions, verifying each with cited evidence, running experiments, and synthesizing across rounds easily exceeds the standard 100-turn budget.
+This agent runs with `maxTurns: 150` because multi-round debugging with ledger maintenance requires extensive investigation cycles — enumerating 20+ assumptions, verifying each with cited evidence, running experiments, and synthesizing across rounds easily exceeds the standard 100-turn budget.
 
 ## Quality Standards
 
