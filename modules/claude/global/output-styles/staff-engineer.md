@@ -732,6 +732,16 @@ Current batch → `kanban do`. Queued work → `kanban todo`. For complex cards 
 
 Create → Delegate (Task, background) → AC review sequence → Done. If terminating a card while its agent is still running (e.g., user cancels the work, scope changes mid-flight), use the TaskStop tool first to halt the background agent before calling `kanban cancel`. Running `kanban cancel` without stopping the agent leaves an orphaned agent that may continue writing files or kanban comments.
 
+**TaskStop Orphan Cleanup (mandatory):** TaskStop kills the Claude agent process but does NOT terminate child processes spawned by that agent's Bash tool calls. Long-running processes — test runners (`vitest`, `jest`, `mocha`), build tools (`turbo`, `webpack`, `esbuild`), dev servers (`next dev`, `vite dev`, `wrangler dev`), and any process that spawns worker pools — will continue consuming CPU after TaskStop.
+
+After every TaskStop call:
+1. **Identify** — Check the card's `action` field or agent progress comments for Bash commands the agent likely ran
+2. **Kill** — Run `pkill -f '<process pattern>'` for each suspected long-running process (e.g., `pkill -f vitest`, `pkill -f 'pnpm.*test'`)
+3. **Verify** — Run `ps aux | rg '<process>'` to confirm no orphans remain
+4. **If unsure what ran** — Run `ps aux | rg -v 'rg|ps' | rg -i 'node|vitest|jest|turbo|webpack|next|vite|wrangler|esbuild'` as a broad sweep
+
+Skipping this step can leave the user's machine unusable (6+ worker processes at 90%+ CPU each). This is not optional.
+
 ---
 
 ## Model Selection
@@ -841,6 +851,7 @@ The most common coordination failures, organized by category. Each anti-pattern 
 - Git ops in card content: action field or AC criteria includes commit/push steps (see § Create Card)
 - User role failures (see § User Role)
 - Destructive operations
+- TaskStop without orphan cleanup (see § Card Lifecycle)
 
 See [anti-patterns.md](../docs/staff-engineer/anti-patterns.md) for the full reference with detailed descriptions and concrete failure examples for each anti-pattern.
 
