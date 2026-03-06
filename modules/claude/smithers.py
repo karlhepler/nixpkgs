@@ -1152,6 +1152,56 @@ def post_to_slack_webhook(pr_url: str, pr_info: dict) -> None:
         pass
 
 
+def push_unpushed_commits() -> bool:
+    """Push any commits that exist locally but have not been pushed to the remote.
+
+    Uses `git log @{u}..` to detect commits ahead of the upstream tracking branch.
+    If unpushed commits are found, runs `git push` and verifies the exit code.
+
+    Returns:
+        True if there were unpushed commits and the push succeeded.
+        False if there was nothing to push.
+
+    Raises:
+        RuntimeError: If git push fails (non-zero exit code).
+    """
+    # Check for unpushed commits
+    result = subprocess.run(
+        ["git", "log", "@{u}..", "--oneline"],
+        capture_output=True,
+        text=True,
+        check=False
+    )
+
+    if result.returncode != 0:
+        # No upstream configured or other git error — log and skip
+        log(f"🟡 Could not check for unpushed commits (git log @{{u}}.. failed): {result.stderr.strip()}")
+        return False
+
+    unpushed = result.stdout.strip()
+    if not unpushed:
+        return False  # Nothing to push
+
+    commit_lines = [line for line in unpushed.splitlines() if line]
+    log(f"🔼 Found {len(commit_lines)} unpushed commit(s) — pushing before proceeding:")
+    for line in commit_lines:
+        log(f"   {line}")
+
+    push_result = subprocess.run(
+        ["git", "push"],
+        capture_output=True,
+        text=True,
+        check=False
+    )
+
+    if push_result.returncode != 0:
+        error_output = push_result.stderr.strip() or push_result.stdout.strip()
+        raise RuntimeError(f"git push failed (exit {push_result.returncode}): {error_output}")
+
+    log("✓ Push succeeded — all commits are on remote")
+    return True
+
+
 def audit_ralph_execution() -> None:
     """Audit Ralph's execution for prohibited command patterns.
 
@@ -2187,6 +2237,15 @@ def main_loop_iteration(
             # This gives smithers a full budget to handle the newly discovered work
             return (False, True)  # ralph_invoked=False, should_restart=True
 
+        # Guard: refuse to declare done if local commits have not been pushed.
+        # A skipped push would leave the PR missing fixes while smithers exits
+        # successfully — the bug this guard prevents.
+        try:
+            push_unpushed_commits()
+        except RuntimeError as e:
+            log(f"🚨 Push failed before declaring PR done — aborting: {e}")
+            raise
+
         # Still clean after verification - safe to exit
         elapsed = time.time() - start_time
         _handle_pr_ready(
@@ -2335,6 +2394,15 @@ def main_loop_iteration(
 
     # Post-execution security audit
     audit_ralph_execution()
+
+    # Guard: ensure Ralph's fix was pushed before re-checking the PR.
+    # If commits are local-only, bot comment replies and CI checks cannot reflect
+    # the fix, so a push here is required before the next cycle runs.
+    try:
+        push_unpushed_commits()
+    except RuntimeError as e:
+        log(f"🚨 Push failed after Ralph execution — aborting cycle: {e}")
+        raise
 
     # Small delay before re-checking to let GitHub update
     time.sleep(5)
