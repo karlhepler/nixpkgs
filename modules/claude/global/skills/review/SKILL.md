@@ -8,6 +8,7 @@ argument-hint: "[pr-number or url] [--repo owner/repo]"
 # Sub-agent permissions must be pre-approved in the project's permissions.allow
 # (see Hard Prerequisites section below).
 allowed-tools:
+  - Read
   - Bash(gh pr *)
   - Bash(gh api *)
   - Bash(kanban *)
@@ -30,6 +31,14 @@ $ARGUMENTS
 Parse `$ARGUMENTS` for:
 - PR number (e.g., `123`) or URL (e.g., `https://github.com/owner/repo/pulls/123`)
 - Optional `--repo owner/repo` flag for cross-repo reviews (if omitted, use current repo)
+
+**If no PR number or URL is provided in `$ARGUMENTS`:** Auto-detect from the current branch before doing anything else:
+
+```bash
+gh pr view --json number,url
+```
+
+Use the returned `number` as the PR to review. If this command fails (e.g., the current branch has no associated PR), stop immediately and tell the user: "No PR found for the current branch. Pass a PR number or URL directly."
 
 ## Hard Prerequisites
 
@@ -216,10 +225,13 @@ You are NOT limited to the diff. Treat the diff as the focal point, but use the 
 **Citation Requirement:**
 For citation rules, acceptable sources, and examples, Read [review-citation-guide.md](review-citation-guide.md).
 
-**Tone and Scope:**
-You are reviewing a trusted colleague's work. Your goal is to help this PR succeed — not to audit it. Approach every finding with curiosity and respect. Assume the author was deliberate and had a reason.
-- **Comment length:** 1–3 sentences per inline finding. If a comment covers multiple distinct points or is pushing 3 sentences, use bullets instead. Include reasoning only when it adds real value — authors can often infer it themselves.
-- **No severity label prefixes** in comment text — `[blocking]`, `[concern]`, `[nit]`, etc. Severity belongs in the SEVERITY field only. Never.
+**Reviewer Orientation:**
+You are on the author's side. Your job is to help confirm that intent is carried through and to catch things that might bite them — not to audit or gatekeep. Assume the author was deliberate and had a reason. Approach every finding with curiosity and respect.
+
+**Tone and Format (applies to all output — inline comments and body-level findings alike):**
+- **1–3 sentences max** per inline finding. Use line breaks to stay readable. If a comment covers multiple distinct points, use bullets instead of one dense paragraph.
+- **Genuinely curious when uncertain** — "did you mean to...?", "is this intentional?", "wondering if this could..." Sound like a friend whose PR you want to help land.
+- **No severity label prefixes** in comment text — never write `[blocking]`, `[concern]`, `[nit]`, or any square-bracket qualifier. Severity belongs in the SEVERITY field only.
 - **No chain-of-thought** — state the observation, optionally note why it matters, done. No "I confirmed this by reviewing..." explanations.
 - **No specialist attribution** — comments are posted as a unified review. No `[swe-security]` or similar.
 - **Default to COMMENT severity** — only use blocking for genuinely high-risk issues: regressions, security vulnerabilities, or data loss.
@@ -245,7 +257,7 @@ COMMENT: [Inline comment text — 1–3 sentences, plain language, no severity l
 - [observation]
 
 ### Summary
-[1-2 sentences]
+[1–3 sentences]
 
 If no findings in your domain, return `✅ LGTM` with a one-line summary. No findings or observations block needed.
 
@@ -285,16 +297,20 @@ Phase 4 ends when all specialist Task agents have been launched. Phase 5 runs **
 
 The review body must read as if one developer wrote it — no headers, no specialist attribution, no tooling metadata.
 
+**Tone rules — no exceptions:**
+- No openers like "The core logic is sound", "Overall this looks good, but...", or "X concerns worth discussing before merging"
+- No audit framing — this is not a formal assessment, it's a colleague talking to you
+- No `## Expert Code Review` header, no `**Reviewed by:**` line, no `**Inline comments: N**` metadata
+- If everything looks good: one sentence saying so — or leave the body empty
+- If there's something to flag: say it directly and naturally, like you're Slacking the author
+
 ```
 {If any specialist found blocking or concern-level issues:
-Write 2–3 sentences in plain language summarizing the key concerns. No "## Expert Code Review" header.
-No "Reviewed by:" line. No "Inline comments: N" metadata. No specialist names. Sounds like a
-developer who read the PR.
+Write 1–3 sentences in plain, conversational language about what's worth looking at.
+If there are null-path findings (Overall Observations), append them as a flat bullet list after
+the prose — one bullet per finding, plain language, no severity label prefixes.}
 
-If any specialist included Overall Observations (null-path findings), append them after the summary
-as a flat bullet list — one bullet per finding, plain language, no severity label prefixes.}
-
-{If all specialists returned LGTM: leave the body empty.}
+{If all specialists returned LGTM: leave the body empty string "".}
 ```
 
 Write the aggregated review body to `.scratchpad/review-<number>.md` before posting.
@@ -305,7 +321,7 @@ In addition to the `.md` summary, write `.scratchpad/review-<number>.json` with 
 
 ```json
 {
-  "body": "<aggregated review body — 2–3 sentence summary followed by null-path findings as bullet points, or empty string if all LGTM>",
+  "body": "<aggregated review body — 1–3 sentence conversational summary followed by null-path findings as bullet points, or empty string if all LGTM>",
   "comments": [
     {"path": "src/auth/login.go", "line": 42, "severity": "blocking", "body": "Have you considered..."}
   ]
@@ -331,6 +347,12 @@ prr submit <pr-number> --findings .scratchpad/review-<pr-number>.json
 ```
 
 `prr` handles all mechanics: loading the findings JSON, fetching the head commit SHA, separating inline vs body-level comments, auto-determining the event from severity fields, and posting the review via the GitHub REST API.
+
+**All-LGTM case:** When all specialists returned LGTM (body is `""` and `comments` array is empty), submit an explicit APPROVE event:
+
+```bash
+prr submit <pr-number> --findings .scratchpad/review-<pr-number>.json --event APPROVE
+```
 
 Override the event explicitly if needed:
 

@@ -198,8 +198,7 @@ def cmd_submit(args: argparse.Namespace) -> Dict:
     if body_comments:
         body_lines = [body]
         for c in body_comments:
-            severity = c.get("severity", "concern").upper()
-            body_lines.append(f"**[{severity}]** {c['body']}")
+            body_lines.append(c['body'])
         body = "\n\n".join(body_lines)
 
     # Determine review event
@@ -208,12 +207,11 @@ def cmd_submit(args: argparse.Namespace) -> Dict:
     # Build REST payload
     payload_comments = []
     for c in inline_comments:
-        severity = c.get("severity", "concern").upper()
         payload_comments.append({
             "path": c["path"],
             "line": c["line"],
             "side": c.get("side", "RIGHT"),
-            "body": f"**[{severity}]** {c['body']}",
+            "body": c['body'],
         })
 
     payload = {
