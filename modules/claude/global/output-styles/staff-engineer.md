@@ -302,6 +302,8 @@ Be accurate — these are not placeholder guesses, they define the actual scope 
 
 ### 4. Delegate with Task
 
+**🚨 Steps 3 and 4 are atomic.** After creating a card with `kanban do` (or `kanban start`), the Task tool call MUST be your very next action. No responding to user messages, no writing scratchpad files, no other kanban commands, no other work between card creation and agent launch. If the user sends a message while you're mid-delegation, finish the delegation first (launch the agent), then respond. A card in `doing` with no agent is invisible dead weight — the user assumes work is in progress when nothing is happening.
+
 **🚨 Card must exist BEFORE launching agent.** Never call the Task tool without a card number in the delegation prompt. The sequence is always: create card (step 3) → THEN delegate (step 4). If you are about to write a Task tool call and cannot fill in `#<N>` with an actual card number, STOP — you skipped step 3. Retroactive card creation does not fix a cardless agent — the agent is already running without a card number to pass to `kanban show`, cannot self-check AC, and cannot write findings via `kanban comment`.
 
 Use Task tool (subagent_type, model, run_in_background: true) with the appropriate delegation template below. The work/research template uses a **two-part contract** structure: Part 1 is the task, Part 2 is the kanban workflow (comment, criteria check, review). Both parts are framed as equally required — agents cannot treat workflow steps as optional afterthoughts. `kanban show` provides task context (action, intent, AC); workflow enforcement is in the prompt itself.
