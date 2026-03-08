@@ -156,6 +156,8 @@ When researching, investigating, or looking up information, ALWAYS follow this p
 | `claude-inspect tools <kanban-session>` | Tool usage heatmap by agent role |
 | `claude-inspect cards <kanban-session>` | Card event timeline with durations |
 | `claude-inspect compare <session1> <session2>` | Before/after delta for optimization |
+| `claude-inspect estimate [--type TYPE] [--model MODEL] [--batch N] [--json]` | Card completion time estimates (P50/P75/P90) from historical data |
+| `claude-inspect throughput [kanban-session]` | Cards completed per hour (session or aggregate) |
 
 ---
 

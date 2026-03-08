@@ -12,12 +12,17 @@ Commands:
   cards <kanban-session>           Card event timeline
   compare <session1> <session2>    Delta view (before/after optimization)
   list [N]                         Recent kanban sessions (default: 10)
+  estimate [--type TYPE] [--model MODEL] [--batch N]
+                                   Card completion time estimates from historical data
+  throughput [kanban-session]      Cards completed per hour
 """
 
 import argparse
+import math
 import os
 import sqlite3
 import sys
+from datetime import datetime
 from typing import Any, List, Optional, Tuple
 
 
@@ -392,7 +397,7 @@ def cmd_cards(kanban_session: str) -> None:
             duration = "-"
             if r["card_created_at"] and r["card_completed_at"]:
                 try:
-                    from datetime import datetime
+
                     created = datetime.fromisoformat(str(r["card_created_at"]).replace("Z", "+00:00"))
                     completed = datetime.fromisoformat(str(r["card_completed_at"]).replace("Z", "+00:00"))
                     delta = completed - created
@@ -543,6 +548,285 @@ def cmd_list(n: int) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Command: estimate
+# ---------------------------------------------------------------------------
+
+def _percentile(sorted_values: List[float], p: float) -> float:
+    """Compute the p-th percentile (0-100) from a sorted list of values."""
+    if not sorted_values:
+        return 0.0
+    k = (len(sorted_values) - 1) * (p / 100.0)
+    f = math.floor(k)
+    c = math.ceil(k)
+    if f == c:
+        return sorted_values[int(k)]
+    return sorted_values[f] * (c - k) + sorted_values[c] * (k - f)
+
+
+def cmd_estimate(card_type: Optional[str], model: Optional[str], batch: int, json_output: bool) -> None:
+    """Card completion time estimates based on historical data."""
+    conn = connect()
+    try:
+        # Build query with optional filters
+        conditions = ["event_type = 'done'", "card_created_at IS NOT NULL", "card_completed_at IS NOT NULL"]
+        params: list = []
+
+        if card_type:
+            conditions.append("card_type = ?")
+            params.append(card_type)
+        if model:
+            conditions.append("model = ?")
+            params.append(model)
+
+        where = " AND ".join(conditions)
+
+        rows_raw = conn.execute(
+            f"""
+            SELECT
+                card_type,
+                model,
+                (julianday(card_completed_at) - julianday(card_created_at)) * 24 * 60 as minutes
+            FROM kanban_card_events
+            WHERE {where}
+            ORDER BY card_type, model
+            """,
+            params,
+        ).fetchall()
+
+        if not rows_raw:
+            filters = []
+            if card_type:
+                filters.append(f"type={card_type}")
+            if model:
+                filters.append(f"model={model}")
+            filter_str = ", ".join(filters) if filters else "none"
+            print(f"No completed card data found (filters: {filter_str})")
+            return
+
+        # Group by (card_type, model)
+        groups: dict[tuple, list[float]] = {}
+        for r in rows_raw:
+            key = (r["card_type"] or "unknown", r["model"] or "unknown")
+            minutes = float(r["minutes"])
+            if minutes < 0:
+                continue
+            groups.setdefault(key, []).append(minutes)
+
+        if not groups:
+            print("No valid durations found (all filtered as negative — possible clock skew)")
+            return
+
+        # Sort each group for percentile calculation
+        for key in groups:
+            groups[key].sort()
+
+        if json_output:
+            import json as json_mod
+            result: dict = {}
+            for (ct, mdl), values in sorted(groups.items()):
+                bucket_key = f"{ct}/{mdl}"
+                p50 = _percentile(values, 50)
+                p75 = _percentile(values, 75)
+                p90 = _percentile(values, 90)
+                entry = {
+                    "n": len(values),
+                    "p50_minutes": round(p50, 1),
+                    "p75_minutes": round(p75, 1),
+                    "p90_minutes": round(p90, 1),
+                    "min_minutes": round(values[0], 1),
+                    "max_minutes": round(values[-1], 1),
+                }
+                if batch > 1:
+                    entry["batch_size"] = batch
+                    entry["batch_p90_minutes"] = round(p90, 1)
+                    entry["note"] = "parallel cards — wall clock equals single card time"
+                result[bucket_key] = entry
+            print(json_mod.dumps(result, indent=2))
+            return
+
+        # Human-readable output
+        print("Card Completion Estimates (from historical data)")
+        print()
+
+        headers = ["Type/Model", "N", "P50", "P75", "P90", "Min", "Max"]
+        rows = []
+        for (ct, mdl), values in sorted(groups.items()):
+            p50 = _percentile(values, 50)
+            p75 = _percentile(values, 75)
+            p90 = _percentile(values, 90)
+            rows.append([
+                f"{ct}/{mdl}",
+                str(len(values)),
+                f"{p50:.1f}m",
+                f"{p75:.1f}m",
+                f"{p90:.1f}m",
+                f"{values[0]:.1f}m",
+                f"{values[-1]:.1f}m",
+            ])
+        print_table(headers, rows)
+
+        if batch > 1:
+            print()
+            print(f"Batch estimate ({batch} parallel cards):")
+            print(f"  Wall-clock time equals single card P90 (parallel execution).")
+            # Show the slowest P90 across all groups as the batch estimate
+            max_p90 = max(_percentile(v, 90) for v in groups.values())
+            print(f"  Estimated wall-clock: ~{max_p90:.1f}m")
+
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Command: throughput
+# ---------------------------------------------------------------------------
+
+def cmd_throughput(kanban_session: Optional[str]) -> None:
+    """Cards completed per hour, optionally filtered by session."""
+    conn = connect()
+    try:
+        if kanban_session:
+            # Session-specific throughput
+            rows_raw = conn.execute(
+                """
+                SELECT
+                    card_type,
+                    COUNT(*) as completed,
+                    MIN(card_created_at) as first_created,
+                    MAX(card_completed_at) as last_completed
+                FROM kanban_card_events
+                WHERE kanban_session = ? AND event_type = 'done'
+                    AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL
+                GROUP BY card_type
+                """,
+                (kanban_session,),
+            ).fetchall()
+
+            if not rows_raw:
+                print(f"No completed cards found for session: {kanban_session}")
+                return
+
+            # Overall session span
+            span = conn.execute(
+                """
+                SELECT
+                    MIN(card_created_at) as first_created,
+                    MAX(card_completed_at) as last_completed,
+                    COUNT(*) as total_completed
+                FROM kanban_card_events
+                WHERE kanban_session = ? AND event_type = 'done'
+                    AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL
+                """,
+                (kanban_session,),
+            ).fetchone()
+
+            print(f"Throughput: {kanban_session}")
+            print()
+
+            if span and span["first_created"] and span["last_completed"]:
+
+                first = datetime.fromisoformat(str(span["first_created"]).replace("Z", "+00:00"))
+                last = datetime.fromisoformat(str(span["last_completed"]).replace("Z", "+00:00"))
+                span_hours = (last - first).total_seconds() / 3600
+                if span_hours > 0:
+                    rate = span["total_completed"] / span_hours
+                    print(f"  Session span: {span_hours:.1f}h")
+                    print(f"  Cards completed: {span['total_completed']}")
+                    print(f"  Overall rate: {rate:.1f} cards/hour")
+                else:
+                    print(f"  Cards completed: {span['total_completed']}")
+                    print(f"  Session span: <1 minute")
+            print()
+
+            headers = ["Type", "Completed", "Rate (cards/hr)"]
+            rows = []
+            for r in rows_raw:
+
+                if r["first_created"] and r["last_completed"]:
+                    first = datetime.fromisoformat(str(r["first_created"]).replace("Z", "+00:00"))
+                    last = datetime.fromisoformat(str(r["last_completed"]).replace("Z", "+00:00"))
+                    span_hours = (last - first).total_seconds() / 3600
+                    rate = r["completed"] / span_hours if span_hours > 0 else 0
+                    rows.append([
+                        fmt_str(r["card_type"]),
+                        str(r["completed"]),
+                        f"{rate:.1f}",
+                    ])
+                else:
+                    rows.append([
+                        fmt_str(r["card_type"]),
+                        str(r["completed"]),
+                        "-",
+                    ])
+            print_table(headers, rows)
+
+        else:
+            # Aggregate throughput across all sessions
+            rows_raw = conn.execute(
+                """
+                SELECT
+                    kanban_session,
+                    COUNT(*) as completed,
+                    MIN(card_created_at) as first_created,
+                    MAX(card_completed_at) as last_completed
+                FROM kanban_card_events
+                WHERE event_type = 'done'
+                    AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL
+                    AND kanban_session IS NOT NULL AND kanban_session != ''
+                GROUP BY kanban_session
+                ORDER BY MAX(card_completed_at) DESC
+                LIMIT 20
+                """,
+            ).fetchall()
+
+            if not rows_raw:
+                print("No completed cards found.")
+                return
+
+            print("Throughput by Session (last 20)")
+            print()
+
+            headers = ["Session", "Cards", "Span", "Rate (cards/hr)"]
+            rows = []
+            for r in rows_raw:
+
+                if r["first_created"] and r["last_completed"]:
+                    first = datetime.fromisoformat(str(r["first_created"]).replace("Z", "+00:00"))
+                    last = datetime.fromisoformat(str(r["last_completed"]).replace("Z", "+00:00"))
+                    span_hours = (last - first).total_seconds() / 3600
+                    if span_hours > 0:
+                        rate = r["completed"] / span_hours
+                        if span_hours >= 1:
+                            span_str = f"{span_hours:.1f}h"
+                        else:
+                            span_str = f"{span_hours * 60:.0f}m"
+                        rows.append([
+                            fmt_str(r["kanban_session"]),
+                            str(r["completed"]),
+                            span_str,
+                            f"{rate:.1f}",
+                        ])
+                    else:
+                        rows.append([
+                            fmt_str(r["kanban_session"]),
+                            str(r["completed"]),
+                            "<1m",
+                            "-",
+                        ])
+                else:
+                    rows.append([
+                        fmt_str(r["kanban_session"]),
+                        str(r["completed"]),
+                        "-",
+                        "-",
+                    ])
+            print_table(headers, rows)
+
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -560,6 +844,12 @@ Examples:
   claude-inspect tools kind-vale
   claude-inspect cards kind-vale
   claude-inspect compare kind-vale swift-falcon
+  claude-inspect estimate
+  claude-inspect estimate --type work --model sonnet
+  claude-inspect estimate --type work --batch 5
+  claude-inspect estimate --json
+  claude-inspect throughput
+  claude-inspect throughput kind-vale
 """,
     )
 
@@ -590,6 +880,17 @@ Examples:
     list_parser = subparsers.add_parser("list", help="List recent kanban sessions")
     list_parser.add_argument("n", nargs="?", type=int, default=10, help="Number of sessions to show (default: 10)")
 
+    # estimate
+    estimate_parser = subparsers.add_parser("estimate", help="Card completion time estimates from historical data")
+    estimate_parser.add_argument("--type", dest="card_type", choices=["work", "review", "research"], help="Filter by card type")
+    estimate_parser.add_argument("--model", help="Filter by model (e.g., sonnet, haiku, opus)")
+    estimate_parser.add_argument("--batch", type=int, default=1, help="Estimate wall-clock for N parallel cards (default: 1)")
+    estimate_parser.add_argument("--json", dest="json_output", action="store_true", help="Output as JSON (for programmatic consumption)")
+
+    # throughput
+    throughput_parser = subparsers.add_parser("throughput", help="Cards completed per hour")
+    throughput_parser.add_argument("kanban_session", nargs="?", help="Kanban session name (omit for aggregate)")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -609,6 +910,10 @@ Examples:
             cmd_compare(args.session1, args.session2)
         elif args.command == "list":
             cmd_list(args.n)
+        elif args.command == "estimate":
+            cmd_estimate(args.card_type, args.model, args.batch, args.json_output)
+        elif args.command == "throughput":
+            cmd_throughput(args.kanban_session)
         else:
             print(f"Unknown command: {args.command}", file=sys.stderr)
             sys.exit(1)

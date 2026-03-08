@@ -567,6 +567,28 @@ N. **End of Project Status Report** (required — always last)
 - Deliverable doesn't contribute to achieving OBJECTIVE (cut it)
 - Missing "End of Project Status Report" (mandatory for all projects)
 
+#### Estimation (data-driven)
+
+When estimating timelines for deliverables, use `claude-inspect estimate` to ground estimates in real historical data. Never guess or use human-scale estimates for agent card execution — agent execution time is fundamentally different from human-scale effort.
+
+Run `claude-inspect estimate --json` to get P50/P75/P90 completion times by card type and model. Use these to build realistic timelines:
+
+- Each deliverable decomposes into N cards (work, review, research)
+- Cards within a deliverable can often run in parallel
+- Wall-clock time for parallel cards = batch P90 from `--batch N` (not N times single-card P90)
+- Sequential dependencies add: card1 P90 + card2 P90
+
+**Example estimation for a deliverable with 4 parallel work cards + 1 sequential review:**
+```
+claude-inspect estimate --type work --model sonnet --batch 4
+# → P90: ~12.6m for the parallel batch
+claude-inspect estimate --type review --model sonnet
+# → P90: ~7.3m for the review
+# Total: ~20m wall-clock for this deliverable
+```
+
+Include the estimate summary in the plan document for each deliverable. This replaces gut-feel timelines with evidence-based projections.
+
 **Critical tests:**
 - "Is this necessary? Would we fail to achieve OBJECTIVE without it?" (If no → cut)
 - "Are these sufficient? If we delivered all, would we achieve OBJECTIVE?" (If no → add)
@@ -669,6 +691,7 @@ Build a fast local test execution system (<5 minutes) and flaky test detection s
    - Run full test suite in <5 minutes locally
    - Automatic test parallelization (run tests in parallel)
    - Intelligent test selection (only run tests affected by changes)
+   - *Estimate: 3 work cards + 1 review (parallel batch) → P90: ~20m wall-clock*
 
 2. **Flaky Test Detection and Quarantine**
    - Auto-detect flaky tests (inconsistent pass/fail on same code)
@@ -874,6 +897,7 @@ Build a code review checklist system with automated reminders and quality tracki
 10. **Convert assumptions** - Apply filter: Can team affect this? Convert to deliverables when possible
 11. **Monitoring Feasibility Check for ASSUMPTIONS** - For EVERY "How to Monitor": Can we collect this data TODAY? Annotate inline: `<br>✅ *(exists)*` OR `<br>⚠️ [missing] → **Deliverable #N**`
 12. **Define DELIVERABLES** - What outputs achieve the objective?
+12a. **Estimate deliverables** - Run `claude-inspect estimate` to ground each deliverable timeline in historical data. Include P90 projection in the plan document.
 13. **Add End of Project Status Report** - Mandatory final deliverable for accountability (include HOW to verify/monitor instructions)
 14. **CREATE THE PLAN DOCUMENT** - Write the full plan to `.scratchpad/project-plan-<slug>.md`. Open it with `open <filepath>`. Tell the user it's ready.
 15. **Sufficient and necessary test** - Are deliverables enough? Is each required? Update the document if changes needed.
@@ -1017,9 +1041,10 @@ Before marking work complete:
 12. **MONITORING FEASIBILITY CHECK applied** - For EVERY "How to Monitor": Annotated inline with `<br>✅ *(exists)*` OR `<br>⚠️ [missing] → **Deliverable #N**`?
 13. **DELIVERABLES scoped** - Clear acceptance criteria? Prefer simple/existing/boring?
 14. **END OF PROJECT STATUS REPORT included** - Mandatory final deliverable with HOW to verify/monitor instructions?
-15. **Sufficient test passed** - Deliverables together achieve OBJECTIVE?
-16. **Necessary test passed** - Each deliverable required? Removed gold-plating?
-17. **CAUSAL CHECK validated** - DELIVERABLES + ASSUMPTIONS → OBJECTIVE → GOAL? SUCCESS verifies?
+15. **DELIVERABLE ESTIMATES included** - Ran `claude-inspect estimate` and added P90 projections to each deliverable?
+16. **Sufficient test passed** - Deliverables together achieve OBJECTIVE?
+17. **Necessary test passed** - Each deliverable required? Removed gold-plating?
+18. **CAUSAL CHECK validated** - DELIVERABLES + ASSUMPTIONS → OBJECTIVE → GOAL? SUCCESS verifies?
 
 **If any verification fails, fix before completing.**
 

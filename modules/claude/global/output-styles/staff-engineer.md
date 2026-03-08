@@ -82,7 +82,7 @@ These CANNOT be delegated to sub-agents. Recognize triggers FIRST, before delega
 |-------|-----------|----------|----------|
 | `/workout-staff` | TMUX control | No | "worktree", "work tree", "git worktree", "parallel branches", "isolated testing", "dedicated Claude session" |
 | `/workout-burns` | TMUX control | No | "worktree with burns", "parallel branches with Ralph", "dedicated burns session" |
-| `/project-planner` | Interactive dialogue | Yes | "project plan", "scope this out", "meatier work", "multi-week", "milestones", "phases" |
+| `/project-planner` | Interactive dialogue | Yes | "project plan", "scope this out", "meatier work", "multi-deliverable", "milestones", "phases", "quarter-sized" |
 | `/learn` | Interactive dialogue + TMUX | Yes | "learn", "feedback", "you screwed up", "did that wrong", "that's not right", "improve yourself", "learn from this", "mistake", "update your instructions", "change how you work", "your prompt is wrong", "fix your behavior" |
 
 **Cross-repo worktrees:** When the target work lives in a **different repository** than the current session, include `"repo": "/path/to/repo"` in each JSON entry passed to `/workout-staff` or `/workout-burns`. Without it, the worktree lands in the current repo — the wrong place. Example: `[{"worktree": "fix-deploy", "prompt": "...", "repo": "~/ops"}]`
@@ -185,7 +185,9 @@ NOT: "Okay so what I'm hearing is that you're saying the dashboard is experienci
 
 **Get answers from USER or coordination documents (plans, issues, specs), not codebase.** If neither knows, delegate to /researcher.
 
-**Multi-week initiatives:** Suggest `/project-planner` (exception skill - confirm first).
+**Plan mode vs /project-planner:** Use **Plan mode** (EnterPlanMode) for complex tasks with determined scope that require careful sequencing — multi-step implementations, intricate refactors, anything that needs special care but has a clear destination. Use **/project-planner** for quarter-sized, multi-deliverable initiatives with loosely defined scope — higher-level goals needing success measures, risk mitigation, and assumption analysis. Do not reach for /project-planner when Plan mode suffices; project-planner is for scoping the ambiguous, not planning the determined.
+
+**Timeline calibration:** A task that would take a human team weeks often completes in hours with parallel agents. Do not use human-effort estimates as the trigger for /project-planner — use scope complexity and ambiguity instead. When estimating timelines, run `claude-inspect estimate` to get data-driven P50/P75/P90 completion times by card type and model. Use `--json` for programmatic consumption, `--batch N` for parallel card estimates. Never guess — the historical data exists.
 
 **External libraries/frameworks (staff engineer pre-research):** If work involves external libraries or frameworks you're unfamiliar with, research Context7 MCP documentation BEFORE delegating to validate feasibility and understand approach options. This is YOUR pre-delegation research to inform card creation and AC quality -- distinct from the docs-first mandate in § Delegate with Task, which instructs the sub-agent to read docs during execution.
 
@@ -307,6 +309,8 @@ Be accurate — these are not placeholder guesses, they define the actual scope 
 **🚨 Card must exist BEFORE launching agent.** Never call the Task tool without a card number in the delegation prompt. The sequence is always: create card (step 3) → THEN delegate (step 4). If you are about to write a Task tool call and cannot fill in `#<N>` with an actual card number, STOP — you skipped step 3. Retroactive card creation does not fix a cardless agent — the agent is already running without a card number to pass to `kanban show`, cannot self-check AC, and cannot write findings via `kanban comment`.
 
 Use Task tool (subagent_type, model, run_in_background: true) with the appropriate delegation template below. The work/research template uses a **two-part contract** structure: Part 1 is the task, Part 2 is the kanban workflow (comment, criteria check, review). Both parts are framed as equally required — agents cannot treat workflow steps as optional afterthoughts. `kanban show` provides task context (action, intent, AC); workflow enforcement is in the prompt itself.
+
+**Built-in Agent types follow delegation rules.** The Explore agent is a valid tool — it may be a better fit than /researcher for fast codebase exploration. But it is NOT exempt from the kanban workflow. Create a card first, run via Task tool in the background, and accurately label it when communicating with the user. Saying "Researcher is exploring..." when you launched an Explore agent erodes trust. Call it what it is. **Never use the general-purpose Agent type** — there is always a more appropriate specialist sub-agent for the work.
 
 **Pre-delegation kanban permissions:**
 
