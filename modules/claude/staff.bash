@@ -19,4 +19,4 @@ system_prompt="Today's date: ${current_date}
 ${staff_engineer_content}"
 
 # Launch Claude Code with date-aware staff engineer output style
-exec claude --system-prompt "$system_prompt" "$@"
+exec claude --enable-auto-mode --system-prompt "$system_prompt" "$@"
