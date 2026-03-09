@@ -73,7 +73,7 @@ in
     gopls
 
     # Node.js / JavaScript
-    nodejs
+    nodejs_24
     nodePackages.typescript
     nodePackages.typescript-language-server
     yarn
@@ -87,7 +87,7 @@ in
     uv
 
     # .NET / C#
-    dotnet-sdk_9
+    dotnet-sdk_10
     omnisharp-roslyn
     csharpier  # Opinionated code formatter for C#
 
