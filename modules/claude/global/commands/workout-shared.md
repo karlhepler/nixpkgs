@@ -54,7 +54,8 @@ When the user describes features or tasks without explicit branch names:
 1. **Present the inferred branch names** to the user
 2. **Show what will be created** (full branch names with `karlhepler/` prefix)
 3. **Show what agent will run** in each window (burns or staff, per the active skill)
-4. **Wait for explicit approval** before running the command
+4. **Validate cross-repo entries** — for any worktree whose work lives in a different repo, confirm the `repo` field is present. If missing, stop and add it before proceeding.
+5. **Wait for explicit approval** before running the command
 
 **Only proceed if user confirms with "yes" or equivalent affirmative response.**
 
@@ -120,6 +121,12 @@ The agent receives the short reference prompt cleanly via `tmux send-keys`, then
 **Use absolute paths** in the reference prompt — relative paths may not resolve correctly depending on where the agent's working directory starts.
 
 ## Cross-Repo Support
+
+**🚨 SILENT FAILURE: Omitting `repo` when target work lives in a different repository creates worktrees in the WRONG repo.**
+
+`workout-claude` creates worktrees relative to the repo it is run from. Without a `repo` field, every entry lands in the current repo — regardless of where the target files actually live. The staff instances will launch, appear healthy, and produce zero useful results because they cannot find or modify files in the target repository. There is no `base_dir` or other field that substitutes for `repo`.
+
+**Pre-flight self-check (run before writing JSON):** For each worktree entry, ask: "Does this work live in the current repo?" If NO → `repo` field is required.
 
 To create a worktree in a **different repository** than the current one, add a `repo` field to any JSON entry:
 
