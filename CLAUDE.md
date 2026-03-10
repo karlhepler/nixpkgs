@@ -448,6 +448,12 @@ Ralph is a self-contained event-loop orchestrator with its own memory system. Ka
 
 **Permission system research:** See `modules/claude/perm-research.md` for empirical findings on how Claude Code permission settings files merge, how the `perm` CLI works, and why background sub-agent kanban permission gates fire (or don't).
 
+**perm CLI mechanics (authoritative summary):**
+- `perm allow <pattern> --session <id>` and `perm always <pattern> --session <id>` both write the permission pattern to `.claude/settings.local.json` — that file never contains a session ID.
+- `--session` is an ownership key recorded only in `.claude/.perm-tracking.json`.
+- The sole difference between `allow` and `always` is in `.perm-tracking.json`: `allow` creates a temporary, session-scoped claim (removable via cleanup); `always` creates a permanent entry that survives cleanup.
+- Rule of thumb: `settings.local.json` = what is permitted; `.perm-tracking.json` = who owns it and for how long.
+
 ## External References
 
 Supporting documentation for the staff engineer output style:

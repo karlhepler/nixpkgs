@@ -46,6 +46,7 @@ USAGE:
 OPTIONS:
   --session <id>      Session identifier (required for allow and cleanup).
                       Use the perm session UUID printed at session start.
+                      Controls ownership in .claude/.perm-tracking.json only — NOT written to settings.local.json.
   --max-age <hours>   Maximum age in hours for cleanup-stale (default: 4).
 
 DESCRIPTION:
@@ -54,6 +55,8 @@ DESCRIPTION:
 
   Tracking is stored in .claude/.perm-tracking.json to distinguish
   temporary permissions (granted for a session) from permanent ones.
+  The --session flag identifies the owner of a temporary claim in the
+  tracking file and is never written to settings.local.json.
 
   Temporary permissions are session-scoped and timestamped. Multiple
   sessions can hold the same temporary permission; cleanup only removes
