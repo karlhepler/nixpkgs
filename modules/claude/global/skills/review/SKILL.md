@@ -67,6 +67,17 @@ This skill fetches PR diffs, posts unified GitHub reviews via `prr`, runs kanban
 
 **This is the first thing that happens.** The goal is to give specialists full branch context by running the review inside a dedicated worktree. The current session creates that environment and steps back.
 
+### Worktree Handoff Guard
+
+**Check the session startup message first.** If the IMPORTANT instruction injected at the top of this conversation contains ANY of the following signals:
+- "You are already in the correct git worktree"
+- "Do all your work in this directory"
+- "Do NOT create new branches or new worktrees"
+
+**→ Skip Phase 1 entirely. Proceed directly to Phase 2.**
+
+The startup instruction is the authoritative override. A previous `/review` invocation already performed the handoff — this session IS the worktree session. Branch name string comparison is irrelevant; running worktree logic again would create an infinite handoff loop.
+
 ### Determine Review Mode
 
 **If `--repo` flag was used (cross-repo review):**
