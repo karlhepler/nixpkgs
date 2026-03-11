@@ -249,7 +249,7 @@ stk_rebase() {
 
   local is_untracked is_not_in_history
   rg -qi 'untracked' "$stderr_file" 2>/dev/null && is_untracked=1 || is_untracked=0
-  rg -qi 'not in the history' "$stderr_file" 2>/dev/null && is_not_in_history=1 || is_not_in_history=0
+  rg -qi 'not in( the)? history' "$stderr_file" 2>/dev/null && is_not_in_history=1 || is_not_in_history=0
 
   if [[ "$is_untracked" -eq 0 && "$is_not_in_history" -eq 0 ]]; then
     cat "$stderr_file" >&2
@@ -268,7 +268,15 @@ stk_rebase() {
     git rebase "$parent_branch" >&2
   fi
 
-  gt move --onto "$parent_branch"
+  local retry_stderr
+  retry_stderr="$(mktemp)"
+  if gt move --onto "$parent_branch" 2>"$retry_stderr"; then
+    rm -f "$retry_stderr"
+    return 0
+  fi
+  cat "$retry_stderr" >&2
+  rm -f "$retry_stderr"
+  return 1
 }
 
 # If there are uncommitted changes, present a fzf picker offering:
