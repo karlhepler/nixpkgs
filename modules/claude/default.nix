@@ -106,18 +106,24 @@ let
     requests  # HTTP requests for Slack webhook posting
   ]);
 
+  # Shared process-tree utilities (injected into both burns and smithers at build time)
+  processUtils = builtins.readFile ./process_utils.py;
+
   # Burns Python CLI (Ralph with Ralph Coordinator output style)
   burnsScript = pkgs.writers.writePython3Bin "burns" {
     flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
   } (builtins.replaceStrings
-    ["MONTY_BURNS_HAT_YAML" "SMITHERS_HAT_YAML"]
-    ["${montyBurnsHatYaml}" "${smithersHatYaml}"]
+    ["MONTY_BURNS_HAT_YAML" "SMITHERS_HAT_YAML" "# PROCESS_UTILS_PLACEHOLDER — get_all_descendants and kill_process_tree\n# are injected here at build time from process_utils.py by default.nix."]
+    ["${montyBurnsHatYaml}" "${smithersHatYaml}" processUtils]
     (builtins.readFile ./burns.py));
 
   # Smithers Python CLI (token-efficient PR watcher)
   smithersScript = pkgs.writeScriptBin "smithers" ''
     #!${smithersPython}/bin/python3
-    ${builtins.readFile ./smithers.py}
+    ${builtins.replaceStrings
+      ["# PROCESS_UTILS_PLACEHOLDER — get_all_descendants and kill_process_tree\n# are injected here at build time from process_utils.py by default.nix."]
+      [processUtils]
+      (builtins.readFile ./smithers.py)}
   '';
 
   # PRC Python CLI (PR comment management using GraphQL)

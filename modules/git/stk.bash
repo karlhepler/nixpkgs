@@ -32,19 +32,20 @@ show_help() {
   echo "stk - Stacked PR workflow with Graphite CLI and git worktrees"
   echo
   echo "USAGE:"
-  echo "  stk                    Rebase the current stack (gt restack)"
-  echo "  stk restack            Rebase the current stack (explicit alias)"
-  echo "  stk work               Open interactive worktree picker"
-  echo "  stk work <branch>      Create graphite branch + worktree"
-  echo "  stk log                Show graphite stack log (gt log)"
-  echo "  stk pull               Sync with remote (gt sync)"
-  echo "  stk status             Show stack position then working tree state"
-  echo "  stk pr [draft]         Create draft PR or convert ready→draft"
-  echo "  stk pr ready           Create ready PR or promote draft→ready"
-  echo "  stk pr close [comment] Close PR with optional comment"
-  echo "  stk pr merge           Merge PR (squash)"
-  echo "  stk pr view [args]     View current branch PR (gh pr view passthrough)"
-  echo "  stk -h, --help         Show this help"
+  echo "  stk                          Rebase the current stack (gt restack)"
+  echo "  stk restack                  Rebase the current stack (explicit alias)"
+  echo "  stk rebase <parent-branch>   Change parent branch and restack"
+  echo "  stk work                     Open interactive worktree picker"
+  echo "  stk work <branch>            Create graphite branch + worktree"
+  echo "  stk log                      Show graphite stack log (gt log)"
+  echo "  stk pull                     Sync with remote (gt sync)"
+  echo "  stk status                   Show stack position then working tree state"
+  echo "  stk pr [draft]               Create draft PR or convert ready→draft"
+  echo "  stk pr ready                 Create ready PR or promote draft→ready"
+  echo "  stk pr close [comment]       Close PR with optional comment"
+  echo "  stk pr merge                 Merge PR (squash)"
+  echo "  stk pr view [args]           View current branch PR (gh pr view passthrough)"
+  echo "  stk -h, --help               Show this help"
   echo
   echo "DESCRIPTION:"
   echo "  Combines Graphite CLI stacked PRs with the workout worktree system."
@@ -58,6 +59,10 @@ show_help() {
   echo "  # Rebase the whole stack after amending a parent branch"
   echo "  stk"
   echo "  stk restack"
+  echo
+  echo "  # Change this branch's parent and restack onto it"
+  echo "  stk rebase main"
+  echo "  stk rebase karlhepler/other-feature"
   echo
   echo "  # Open the interactive worktree picker"
   echo "  stk work"
@@ -224,6 +229,59 @@ stk_pr_merge() {
   gh pr merge --squash
 }
 
+# Change the current branch's Graphite parent and restack onto it.
+# Usage: stk_rebase <parent-branch>
+stk_rebase() {
+  local parent_branch="$1"
+
+  echo "Updating Graphite parent to '$parent_branch'..." >&2
+  gt modify --base "$parent_branch"
+
+  echo "Restacking onto '$parent_branch'..." >&2
+  run_gt restack
+
+  echo >&2
+  run_gt log
+}
+
+# If there are uncommitted changes, present a fzf picker offering:
+#   1. Commit first, then stack
+#   2. Stack anyway
+#   3. Quit
+# Returns 0 to proceed with branch creation, 1 to abort.
+guard_uncommitted_changes() {
+  local dirty
+  dirty="$(git status --porcelain)"
+  if [[ -z "$dirty" ]]; then
+    return 0
+  fi
+
+  local choice
+  choice="$(printf 'Commit first, then stack\nStack anyway\nQuit' \
+    | fzf --prompt="Uncommitted changes detected. Choose: " \
+          --height=~10 \
+          --no-info \
+          --no-sort)"
+
+  case "$choice" in
+    "Commit first, then stack")
+      local commit_msg
+      read -r -p "Commit message [WIP]: " commit_msg
+      commit_msg="${commit_msg:-WIP}"
+      git add -A
+      git commit -m "$commit_msg"
+      return 0
+      ;;
+    "Stack anyway")
+      return 0
+      ;;
+    "Quit"|"")
+      echo "Aborted." >&2
+      return 1
+      ;;
+  esac
+}
+
 # Ensure the repo is initialized with Graphite
 ensure_gt_init() {
   local graphite_config
@@ -283,6 +341,14 @@ case "$1" in
   restack)
     run_gt restack
     ;;
+  rebase)
+    if [[ $# -lt 2 ]]; then
+      echo "Error: 'stk rebase' requires a parent branch name." >&2
+      echo "Usage: stk rebase <parent-branch>" >&2
+      exit 1
+    fi
+    stk_rebase "$2"
+    ;;
   work)
     shift
     if [[ $# -eq 0 ]]; then
@@ -291,6 +357,9 @@ case "$1" in
       workout
     else
       branch_name="$1"
+
+      # Guard: if there are uncommitted changes, ask the user what to do
+      guard_uncommitted_changes || exit 0
 
       # Ensure graphite is initialized for this repo
       ensure_gt_init
@@ -463,19 +532,20 @@ case "$1" in
     echo "Open a staff session to extend stk with new capabilities." >&2
     echo
     echo "Available stk subcommands:" >&2
-    echo "  stk               Restack downstream branches" >&2
-    echo "  stk restack       Restack downstream branches (explicit alias)" >&2
-    echo "  stk work          Open interactive worktree picker" >&2
-    echo "  stk work <branch> Create stacked worktree (auto-inits graphite)" >&2
-    echo "  stk pull          Sync with main + restack" >&2
-    echo "  stk log           Stack status with PR states" >&2
-    echo "  stk status        Stack position + working tree" >&2
-    echo "  stk pr            Create/convert to draft PR" >&2
-    echo "  stk pr draft      Create draft or convert ready to draft" >&2
-    echo "  stk pr ready      Create ready or promote draft to ready" >&2
-    echo "  stk pr close      Close PR (optional comment)" >&2
-    echo "  stk pr merge      Merge PR" >&2
-    echo "  stk pr view       View PR (passthrough to gh pr view)" >&2
+    echo "  stk                        Restack downstream branches" >&2
+    echo "  stk restack                Restack downstream branches (explicit alias)" >&2
+    echo "  stk rebase <parent-branch> Change parent branch and restack" >&2
+    echo "  stk work                   Open interactive worktree picker" >&2
+    echo "  stk work <branch>          Create stacked worktree (auto-inits graphite)" >&2
+    echo "  stk pull                   Sync with main + restack" >&2
+    echo "  stk log                    Stack status with PR states" >&2
+    echo "  stk status                 Stack position + working tree" >&2
+    echo "  stk pr                     Create/convert to draft PR" >&2
+    echo "  stk pr draft               Create draft or convert ready to draft" >&2
+    echo "  stk pr ready               Create ready or promote draft to ready" >&2
+    echo "  stk pr close               Close PR (optional comment)" >&2
+    echo "  stk pr merge               Merge PR" >&2
+    echo "  stk pr view                View PR (passthrough to gh pr view)" >&2
     exit 1
     ;;
 esac
