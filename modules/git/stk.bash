@@ -6,7 +6,7 @@ set -euo pipefail
 # - `stk work <branch>`: auto-inits graphite, creates branch, creates worktree inline
 # - `stk work` (no args): delegates to workout for interactive picker
 # - `stk log`: gt log
-# - `stk pull`: gt sync
+# - `stk sync`: gt sync
 #
 # NOTE: Requires shell wrapper function to change directory in parent shell.
 # A `stk()` wrapper is defined in modules/zsh.nix (mirrors the workout wrapper):
@@ -38,7 +38,7 @@ show_help() {
   echo "  stk work                     Open interactive worktree picker"
   echo "  stk work <branch>            Create graphite branch + worktree"
   echo "  stk log                      Show graphite stack log (gt log)"
-  echo "  stk pull                     Sync with remote (gt sync)"
+  echo "  stk sync                     Sync with remote (gt sync)"
   echo "  stk status                   Show stack position then working tree state"
   echo "  stk pr [draft]               Create draft PR or convert ready→draft"
   echo "  stk pr ready                 Create ready PR or promote draft→ready"
@@ -77,7 +77,7 @@ show_help() {
   echo "  stk status"
   echo
   echo "  # Sync with remote and clean up merged branches"
-  echo "  stk pull"
+  echo "  stk sync"
   echo
   echo "  # Create a draft PR (or convert existing ready PR to draft)"
   echo "  stk pr"
@@ -527,7 +527,7 @@ case "$1" in
     run_gt log
     git status
     ;;
-  pull)
+  sync)
     run_gt sync
     ;;
   pr)
@@ -580,7 +580,7 @@ case "$1" in
     echo "  stk rebase <parent-branch> Change parent branch and restack" >&2
     echo "  stk work                   Open interactive worktree picker" >&2
     echo "  stk work <branch>          Create stacked worktree (auto-inits graphite)" >&2
-    echo "  stk pull                   Sync with main + restack" >&2
+    echo "  stk sync                   Sync with main + restack" >&2
     echo "  stk log                    Stack status with PR states" >&2
     echo "  stk status                 Stack position + working tree" >&2
     echo "  stk pr                     Create/convert to draft PR" >&2

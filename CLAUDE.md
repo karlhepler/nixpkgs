@@ -133,7 +133,7 @@ amend commit → stk → amend next commit → stk → ...
 
 **Before Submitting:**
 ```
-stk pull → stk → stk pr
+stk sync → stk → stk pr
 ```
 
 Each stacked PR is automatically tracked with current CI/CD status visible via `stk log`.
@@ -143,7 +143,7 @@ Each stacked PR is automatically tracked with current CI/CD status visible via `
 - `stk`: No args — restack (propagate parent branch changes via `gt restack`)
 - `stk log`: Show stack status with PR statuses (`gt log`)
 - `stk status`: Show stack position then working tree state (`gt log` followed by `git status`)
-- `stk pull`: Pull latest main and rebase entire stack (`gt sync`)
+- `stk sync`: Pull latest main and rebase entire stack (`gt sync`)
 - `stk pr` / `stk pr draft`: Create draft PR (no PR exists) or convert ready→draft (PR exists)
 - `stk pr ready`: Create ready PR (no PR exists) or promote draft→ready (PR exists)
 - `stk pr close [comment]`: Close the current branch's PR with an optional comment
