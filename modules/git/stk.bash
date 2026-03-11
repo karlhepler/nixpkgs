@@ -319,7 +319,8 @@ ensure_tracked() {
   if [[ -n "$parent" ]]; then
     gt track --parent "$parent" >&2
   else
-    gt track >&2
+    echo "Error: branch is not tracked by Graphite. Run 'stk rebase <parent-branch>' to set its parent." >&2
+    return 1
   fi
 }
 
