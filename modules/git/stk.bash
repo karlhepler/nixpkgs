@@ -2,8 +2,9 @@
 set -euo pipefail
 
 # stk: Stacked PR workflow using Graphite CLI integrated with workout worktrees
-# - No args: gt restack
-# - `stk <branch>`: auto-inits graphite if needed, creates graphite branch, creates worktree
+# - No args / stk restack: gt restack
+# - `stk work <branch>`: auto-inits graphite, creates branch, creates worktree inline
+# - `stk work` (no args): delegates to workout for interactive picker
 # - `stk log`: gt log
 # - `stk pull`: gt sync
 #
@@ -32,7 +33,9 @@ show_help() {
   echo
   echo "USAGE:"
   echo "  stk                    Rebase the current stack (gt restack)"
-  echo "  stk <branch>           Create graphite branch + worktree"
+  echo "  stk restack            Rebase the current stack (explicit alias)"
+  echo "  stk work               Open interactive worktree picker"
+  echo "  stk work <branch>      Create graphite branch + worktree"
   echo "  stk log                Show graphite stack log (gt log)"
   echo "  stk pull               Sync with remote (gt sync)"
   echo "  stk status             Show stack position then working tree state"
@@ -45,8 +48,8 @@ show_help() {
   echo
   echo "DESCRIPTION:"
   echo "  Combines Graphite CLI stacked PRs with the workout worktree system."
-  echo "  'stk <branch>' is identical muscle memory to 'workout <branch>',"
-  echo "  but automatically registers the branch in Graphite."
+  echo "  'stk work <branch>' creates a Graphite-tracked branch and opens a worktree."
+  echo "  'stk work' with no arguments opens the interactive worktree picker."
   echo
   echo "  Auto-initializes Graphite if the repo has not been initialized"
   echo "  (.git/.graphite_repo_config does not exist). Defaults trunk to main."
@@ -54,9 +57,13 @@ show_help() {
   echo "EXAMPLES:"
   echo "  # Rebase the whole stack after amending a parent branch"
   echo "  stk"
+  echo "  stk restack"
+  echo
+  echo "  # Open the interactive worktree picker"
+  echo "  stk work"
   echo
   echo "  # Create a new stacked branch with worktree"
-  echo "  stk karlhepler/my-feature"
+  echo "  stk work karlhepler/my-feature"
   echo
   echo "  # Show graphite stack structure"
   echo "  stk log"
@@ -103,7 +110,7 @@ stk_pr_draft() {
   local pr_json
   if ! pr_json="$(get_pr_state)"; then
     echo "No PR found for current branch. Creating draft PR..." >&2
-    gt submit --draft
+    run_gt submit --draft
     return
   fi
 
@@ -135,7 +142,7 @@ stk_pr_ready() {
   local pr_json
   if ! pr_json="$(get_pr_state)"; then
     echo "No PR found for current branch. Creating ready PR..." >&2
-    gt submit
+    run_gt submit
     return
   fi
 
@@ -228,9 +235,44 @@ ensure_gt_init() {
   fi
 }
 
-# No args: restack
+# Run a gt command with automatic branch tracking on untracked-branch errors.
+# If the command fails with an "untracked" error, auto-runs:
+#   gt track --parent <trunk>
+# using the same trunk detection already in this script, then retries once.
+# All other failures propagate normally.
+#
+# Usage: run_gt <gt-subcommand> [args...]
+run_gt() {
+  local stderr_file
+  stderr_file="$(mktemp)"
+
+  if gt "$@" 2>"$stderr_file"; then
+    rm -f "$stderr_file"
+    return 0
+  fi
+  local gt_exit=$?
+
+  if rg -qi 'not tracked|untracked' "$stderr_file"; then
+    cat "$stderr_file" >&2
+    rm -f "$stderr_file"
+
+    local trunk
+    trunk="$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')"
+    echo "Branch not tracked by Graphite. Running: gt track --parent $trunk" >&2
+    gt track --parent "$trunk"
+    gt "$@"
+    return
+  fi
+
+  cat "$stderr_file" >&2
+  rm -f "$stderr_file"
+  return $gt_exit
+}
+
+# No args: restack (with auto-track fallback for untracked branches)
 if [[ $# -eq 0 ]]; then
-  exec gt restack
+  run_gt restack
+  exit $?
 fi
 
 case "$1" in
@@ -238,15 +280,143 @@ case "$1" in
     show_help
     exit 0
     ;;
+  restack)
+    run_gt restack
+    ;;
+  work)
+    shift
+    if [[ $# -eq 0 ]]; then
+      # No branch arg: delegate to workout for the interactive picker.
+      # workout outputs a cd command that the shell wrapper in zsh.nix evals.
+      workout
+    else
+      branch_name="$1"
+
+      # Ensure graphite is initialized for this repo
+      ensure_gt_init
+
+      # Create the graphite-tracked branch non-interactively
+      run_gt create "$branch_name" >&2
+
+      # Inline worktree creation (mirrors workout <branch> logic).
+      # Get remote URL and extract org/repo
+      remote_url="$(git remote get-url origin)"
+
+      # Extract org/repo from URL (handles both SSH and HTTPS)
+      # git@github.com:org/repo.git -> org/repo
+      # https://github.com/org/repo.git -> org/repo
+      org_repo="$(echo "$remote_url" | sed -E 's#.*[:/]([^/]+/[^/]+)\.git$#\1#')"
+
+      if [[ -z "$org_repo" ]]; then
+        echo "Error: Could not extract org/repo from remote URL: $remote_url" >&2
+        exit 1
+      fi
+
+      # Security: Reject path traversal attempts in org/repo
+      if [[ "$org_repo" == *".."* ]]; then
+        echo "Error: Invalid org/repo path detected (contains '..'): $org_repo" >&2
+        exit 1
+      fi
+
+      worktree_root="${WORKTREE_ROOT:-$HOME/worktrees}"
+      worktree_path="$worktree_root/$org_repo/$branch_name"
+
+      # Check if branch is already checked out in any worktree
+      existing_worktree=$(git worktree list --porcelain | awk -v branch="refs/heads/$branch_name" '
+        /^worktree / { path = substr($0, 10) }
+        /^branch / && $0 ~ branch { print path; exit }
+      ')
+
+      if [[ -n "$existing_worktree" ]]; then
+        # Branch is checked out somewhere
+        if [[ "$existing_worktree" =~ ^$worktree_root/ ]]; then
+          # Already in a managed worktree — just navigate there
+          echo "cd '$existing_worktree'"
+        else
+          # Branch is in primary repo — check if trunk (trunk stays in primary repo)
+          git remote set-head origin -a >/dev/null 2>&1 || true
+          trunk_branch="$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')"
+
+          if [[ "$branch_name" == "$trunk_branch" ]]; then
+            echo "cd '$existing_worktree'"
+          else
+            # Non-trunk branch in primary repo — move it to a worktree
+            echo "Branch '$branch_name' is checked out in primary repo. Moving to worktree..." >&2
+
+            worktree_path="$worktree_root/$org_repo/$branch_name"
+            mkdir -p "$(dirname "$worktree_path")"
+
+            (
+              cd "$existing_worktree" || exit 1
+
+              has_changes=false
+              if [[ -n "$(git status --porcelain)" ]]; then
+                echo "Stashing uncommitted changes..." >&2
+                git stash push -u -m "stk work: moving to worktree" >&2
+                has_changes=true
+              fi
+
+              echo "Switching primary repo to trunk..." >&2
+              git trunk --no-pull >&2
+
+              echo "Creating worktree at $worktree_path..." >&2
+              git worktree add "$worktree_path" "$branch_name" >&2
+
+              if [[ "$has_changes" == "true" ]]; then
+                echo "Restoring uncommitted changes in worktree..." >&2
+                (cd "$worktree_path" && git stash pop) >&2
+              fi
+            ) || exit 1
+
+            echo "cd '$worktree_path'"
+
+            # Run post-switch hook if present
+            git_dir="$(git rev-parse --git-dir 2>/dev/null)"
+            if [[ -f "$git_dir" ]]; then
+              real_git_dir="$(grep '^gitdir:' "$git_dir" | cut -d' ' -f2)"
+              git_dir="${real_git_dir%/worktrees/*}"
+            fi
+            hook_path="$git_dir/workout-hooks/post-switch"
+            if [[ -f "$hook_path" && -x "$hook_path" ]]; then
+              hook_path="$(cd "$(dirname "$hook_path")" && pwd)/$(basename "$hook_path")"
+              echo "'$hook_path'"
+            fi
+          fi
+        fi
+      elif [[ -d "$worktree_path" ]]; then
+        # Worktree directory already exists at expected path — just navigate
+        echo "cd '$worktree_path'"
+      else
+        # New worktree: graphite already created the branch via run_gt create above.
+        # The branch now exists, so use git worktree add without -b.
+        mkdir -p "$(dirname "$worktree_path")"
+        git worktree add "$worktree_path" "$branch_name" >&2
+
+        echo "cd '$worktree_path'"
+
+        # Run post-switch hook if present
+        git_dir="$(git rev-parse --git-dir 2>/dev/null)"
+        if [[ -f "$git_dir" ]]; then
+          real_git_dir="$(grep '^gitdir:' "$git_dir" | cut -d' ' -f2)"
+          git_dir="${real_git_dir%/worktrees/*}"
+        fi
+        hook_path="$git_dir/workout-hooks/post-switch"
+        if [[ -f "$hook_path" && -x "$hook_path" ]]; then
+          hook_path="$(cd "$(dirname "$hook_path")" && pwd)/$(basename "$hook_path")"
+          echo "'$hook_path'"
+        fi
+      fi
+    fi
+    ;;
   log)
-    exec gt log
+    run_gt log
     ;;
   status)
-    gt log
+    run_gt log
     git status
     ;;
   pull)
-    exec gt sync
+    run_gt sync
     ;;
   pr)
     shift
@@ -286,16 +456,17 @@ case "$1" in
         ;;
     esac
     ;;
-  -*)
-    # Unrecognized flag
-    echo "Error: Unknown option: $1" >&2
+  *)
+    echo "Error: Unknown subcommand: $1" >&2
     echo
-    echo "This is not a valid stk command... yet. Want to add it?" >&2
+    echo "This is not a valid stk subcommand... yet. Want to add it?" >&2
     echo "Open a staff session to extend stk with new capabilities." >&2
     echo
-    echo "Available stk commands:" >&2
-    echo "  stk <branch>      Create stacked worktree (auto-inits graphite)" >&2
+    echo "Available stk subcommands:" >&2
     echo "  stk               Restack downstream branches" >&2
+    echo "  stk restack       Restack downstream branches (explicit alias)" >&2
+    echo "  stk work          Open interactive worktree picker" >&2
+    echo "  stk work <branch> Create stacked worktree (auto-inits graphite)" >&2
     echo "  stk pull          Sync with main + restack" >&2
     echo "  stk log           Stack status with PR states" >&2
     echo "  stk status        Stack position + working tree" >&2
@@ -306,17 +477,5 @@ case "$1" in
     echo "  stk pr merge      Merge PR" >&2
     echo "  stk pr view       View PR (passthrough to gh pr view)" >&2
     exit 1
-    ;;
-  *)
-    branch_name="$1"
-
-    # Ensure graphite is initialized for this repo
-    ensure_gt_init
-
-    # Create the graphite-tracked branch non-interactively
-    gt create "$branch_name" >&2
-
-    # Create the worktree (workout binary outputs cd command to stdout)
-    workout "$branch_name"
     ;;
 esac
