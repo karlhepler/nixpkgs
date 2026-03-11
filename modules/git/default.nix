@@ -133,6 +133,13 @@ in {
       description = "Delete a git worktree";
       sourceFile = "workout-delete.bash";
     };
+    stk = shellApp {
+      name = "stk";
+      runtimeInputs = [ pkgs.graphite-cli pkgs.git workout ];
+      text = builtins.readFile ./stk.bash;
+      description = "Stacked PR workflow: no-args restacks, <branch> auto-inits Graphite and creates branch + worktree";
+      sourceFile = "stk.bash";
+    };
     workout-claude = workoutClaudeScript // {
       meta = {
         description = "Batch worktree creation with JSON input and per-worktree Claude command prompt injection";

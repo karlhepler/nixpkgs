@@ -122,6 +122,28 @@ Some skills intentionally lack agent definitions because they are exception or w
 - `workout -`: Toggle to previous worktree location
 - `groot`: Navigate to git repository root
 
+#### Stacked PR Workflow
+
+For PRs that form a logical dependency chain (e.g., API endpoint, then CLI command, then documentation):
+
+**Inner Loop (development):**
+```
+amend commit → stk → amend next commit → stk → ...
+```
+
+**Before Submitting:**
+```
+stk sync → stk → gt submit --draft
+```
+
+Each stacked PR is automatically tracked with current CI/CD status visible via `stk log`.
+
+**Stacked PR Commands:**
+- `stk <branch>`: Create a stacked PR worktree (graphite-aware). Auto-inits graphite if needed, creates branch in the stack, creates worktree.
+- `stk`: No args — restack (propagate parent branch changes via `gt restack`)
+- `stk log`: Show stack status with PR statuses (`gt log`)
+- `stk sync`: Pull latest main and rebase entire stack (`gt sync`)
+
 ### Claude Code Helpers
 
 > **These are shellapps defined in this repo.** To extend or modify them, edit their source in `modules/claude/` and run `hms`. Do NOT edit deployed copies directly.
@@ -373,8 +395,8 @@ Both files made git-invisible by `hms` after first run. Backups linked via `*.la
 
 **Analytics Dashboard (claudit):**
 - Grafana-based dashboard for Claude Code usage analytics (user nickname: "claudit")
-- Dashboard definition: `modules/grafana/dashboard.json`
-- Metrics collection: `modules/claude/claude-metrics-hook.py` (captures metrics via Claude Code metrics hook)
+- Dashboard definition: `modules/claudit/dashboard.json`
+- Metrics collection: `modules/claudit/claude-metrics-hook.py` (captures metrics via Claude Code metrics hook)
 - Displays: Total cost (today/all-time), token breakdown (input/output/cache), cost by kanban session, turn statistics by agent type, tool usage heat map (by tool and agent)
 - Access via Grafana interface (configured in Home Manager)
 
