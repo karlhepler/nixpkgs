@@ -5,7 +5,7 @@ set -euo pipefail
 # - No args: gt restack
 # - `stk <branch>`: auto-inits graphite if needed, creates graphite branch, creates worktree
 # - `stk log`: gt log
-# - `stk sync`: gt sync
+# - `stk pull`: gt sync
 #
 # NOTE: Requires shell wrapper function to change directory in parent shell.
 # A `stk()` wrapper is defined in modules/zsh.nix (mirrors the workout wrapper):
@@ -34,7 +34,7 @@ show_help() {
   echo "  stk                    Rebase the current stack (gt restack)"
   echo "  stk <branch>           Create graphite branch + worktree"
   echo "  stk log                Show graphite stack log (gt log)"
-  echo "  stk sync               Sync with remote (gt sync)"
+  echo "  stk pull               Sync with remote (gt sync)"
   echo "  stk -h, --help         Show this help"
   echo
   echo "DESCRIPTION:"
@@ -56,7 +56,7 @@ show_help() {
   echo "  stk log"
   echo
   echo "  # Sync with remote and clean up merged branches"
-  echo "  stk sync"
+  echo "  stk pull"
 }
 
 # Ensure the repo is initialized with Graphite
@@ -83,7 +83,7 @@ case "$1" in
   log)
     exec gt log
     ;;
-  sync)
+  pull)
     exec gt sync
     ;;
   -*)

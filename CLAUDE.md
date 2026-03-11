@@ -133,7 +133,7 @@ amend commit → stk → amend next commit → stk → ...
 
 **Before Submitting:**
 ```
-stk sync → stk → gt submit --draft
+stk pull → stk → gt submit --draft
 ```
 
 Each stacked PR is automatically tracked with current CI/CD status visible via `stk log`.
@@ -142,7 +142,7 @@ Each stacked PR is automatically tracked with current CI/CD status visible via `
 - `stk <branch>`: Create a stacked PR worktree (graphite-aware). Auto-inits graphite if needed, creates branch in the stack, creates worktree.
 - `stk`: No args — restack (propagate parent branch changes via `gt restack`)
 - `stk log`: Show stack status with PR statuses (`gt log`)
-- `stk sync`: Pull latest main and rebase entire stack (`gt sync`)
+- `stk pull`: Pull latest main and rebase entire stack (`gt sync`)
 
 ### Claude Code Helpers
 
