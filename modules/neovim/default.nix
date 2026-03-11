@@ -56,7 +56,6 @@
         (builtins.readFile ./lua/lsp/csharp.lua)
         (builtins.readFile ./lua/lsp/bash.lua)
         (builtins.readFile ./lua/lsp/godot.lua)
-        (builtins.readFile ./lua/lsp/haskell.lua)
         (builtins.readFile ./lua/lsp/nix.lua)
       ]);
   };

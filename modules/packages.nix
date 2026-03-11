@@ -91,12 +91,6 @@ in
     omnisharp-roslyn
     csharpier  # Opinionated code formatter for C#
 
-    # Haskell
-    ghc  # Glasgow Haskell Compiler
-    cabal-install  # Cabal installation tool for managing Haskell software
-    stack  # A cross-platform program for developing Haskell projects
-    haskell-language-server  # Haskell language server
-
     # Ruby
     ruby
 

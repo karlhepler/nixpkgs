@@ -1015,7 +1015,7 @@ EOF
     # Official plugins (from claude-plugins-official marketplace):
     #   pyright-lsp, typescript-lsp, gopls-lsp, rust-analyzer-lsp, ruby-lsp
     # Custom local plugins (from ~/.claude/lsp-plugins/, deployed by claudeGlobal):
-    #   yaml-lsp, bash-lsp, haskell-lsp, nix-lsp, starlark-lsp, helm-lsp
+    #   yaml-lsp, bash-lsp, nix-lsp, starlark-lsp, helm-lsp
     claudePlugins = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       plugins_file=~/.claude/plugins/installed_plugins.json
       marketplace_sha="bd041495bd2a1f3e21317f37277b2f5aa152b759"
@@ -1086,7 +1086,6 @@ EOF
       declare -A custom_plugins
       custom_plugins["yaml-lsp"]=~/.claude/lsp-plugins/yaml-lsp
       custom_plugins["bash-lsp"]=~/.claude/lsp-plugins/bash-lsp
-      custom_plugins["haskell-lsp"]=~/.claude/lsp-plugins/haskell-lsp
       custom_plugins["nix-lsp"]=~/.claude/lsp-plugins/nix-lsp
       custom_plugins["starlark-lsp"]=~/.claude/lsp-plugins/starlark-lsp
       custom_plugins["helm-lsp"]=~/.claude/lsp-plugins/helm-lsp
