@@ -126,9 +126,9 @@ Some skills intentionally lack agent definitions because they are exception or w
 
 For PRs that form a logical dependency chain (e.g., API endpoint, then CLI command, then documentation):
 
-**Inner Loop (development):**
+**Inner Loop (per branch):**
 ```
-amend commit → stk → amend next commit → stk → ...
+make changes → amend commit → stk → repeat
 ```
 
 **Before Submitting:**
@@ -138,17 +138,25 @@ stk sync → stk → stk pr
 
 Each stacked PR is automatically tracked with current CI/CD status visible via `stk log`.
 
+**Does NOT require Graphite auth token.** All remote operations use `gh` CLI. Graphite (`gt`) is used only for local stack tracking and restack operations.
+
 **Stacked PR Commands:**
-- `stk <branch>`: Create a stacked PR worktree (graphite-aware). Auto-inits graphite if needed, creates branch in the stack, creates worktree.
-- `stk`: No args — restack (propagate parent branch changes via `gt restack`)
-- `stk log`: Show stack status with PR statuses (`gt log`)
-- `stk status`: Show stack position then working tree state (`gt log` followed by `git status`)
-- `stk sync`: Pull latest main and rebase entire stack (`gt sync`)
-- `stk pr` / `stk pr draft`: Create draft PR (no PR exists) or convert ready→draft (PR exists)
-- `stk pr ready`: Create ready PR (no PR exists) or promote draft→ready (PR exists)
+- `stk work <branch>`: Create a Graphite-tracked branch stacked on the current branch, then create a dedicated worktree at `~/worktrees/<org>/<repo>/<branch>`. Auto-inits Graphite if needed.
+- `stk work`: No branch arg — open interactive worktree picker.
+- `stk` / `stk restack`: No args — restack all downstream branches (`gt restack`). Errors with a helpful message if the current branch is untracked by Graphite (run `stk rebase <parent>` to fix).
+- `stk rebase <parent-branch>`: Fix a branch's parent. Runs `git rebase <parent>` then `gt move --onto <parent>`. Required when the graphite parent is wrong or the branch was created outside the stk workflow.
+- `stk log`: Show stack structure with PR statuses (`gt log`)
+- `stk status`: Show stack position then working tree state
+- `stk sync`: Pull latest trunk into current branch (`git sync`) then restack the entire stack (`gt restack`). Does NOT require Graphite auth.
+- `stk pr` / `stk pr draft`: Create draft PR (no PR exists) or convert ready→draft (PR exists). Uses `gh pr create --draft --fill --base <graphite-parent>`.
+- `stk pr ready`: Create ready PR (no PR exists) or promote draft→ready (PR exists).
 - `stk pr close [comment]`: Close the current branch's PR with an optional comment
 - `stk pr merge`: Merge the current branch's PR (squash merge)
 - `stk pr view [args...]`: View current branch's PR details (passthrough to `gh pr view`)
+
+**Branch naming:** All stk branches must use `karlhepler/` prefix (e.g., `stk work karlhepler/my-feature`).
+
+**Worktree location:** `~/worktrees/<org>/<repo>/<branch>` (e.g., `~/worktrees/mazedesignhq/maze-monorepo/karlhepler/my-feature`).
 
 ### Claude Code Helpers
 
