@@ -35,6 +35,10 @@ show_help() {
   echo "  stk <branch>           Create graphite branch + worktree"
   echo "  stk log                Show graphite stack log (gt log)"
   echo "  stk pull               Sync with remote (gt sync)"
+  echo "  stk pr [draft]         Create draft PR or convert ready→draft"
+  echo "  stk pr ready           Create ready PR or promote draft→ready"
+  echo "  stk pr close [comment] Close PR with optional comment"
+  echo "  stk pr merge           Merge PR (squash)"
   echo "  stk -h, --help         Show this help"
   echo
   echo "DESCRIPTION:"
@@ -57,6 +61,152 @@ show_help() {
   echo
   echo "  # Sync with remote and clean up merged branches"
   echo "  stk pull"
+  echo
+  echo "  # Create a draft PR (or convert existing ready PR to draft)"
+  echo "  stk pr"
+  echo
+  echo "  # Promote draft PR to ready for review"
+  echo "  stk pr ready"
+  echo
+  echo "  # Close PR with an optional comment"
+  echo "  stk pr close 'Superseded by #456'"
+  echo
+  echo "  # Merge PR as squash commit"
+  echo "  stk pr merge"
+}
+
+# Get current PR state as JSON: {state, isDraft}
+# Returns empty string and non-zero exit if no PR exists for the current branch.
+get_pr_state() {
+  gh pr view --json state,isDraft --jq '{state: .state, isDraft: .isDraft}' 2>/dev/null
+}
+
+# Convert a ready PR to draft. Tries --undo flag first (newer gh), falls back to
+# convert-to-draft (older gh).
+convert_to_draft() {
+  if gh pr ready --help 2>&1 | rg -q -- '--undo'; then
+    gh pr ready --undo
+  else
+    gh pr convert-to-draft
+  fi
+}
+
+stk_pr_draft() {
+  local pr_json
+  if ! pr_json="$(get_pr_state)"; then
+    echo "No PR found for current branch. Creating draft PR..." >&2
+    gt submit --draft
+    return
+  fi
+
+  local state is_draft
+  state="$(echo "$pr_json" | jq -r '.state')"
+  is_draft="$(echo "$pr_json" | jq -r '.isDraft')"
+
+  case "$state" in
+    MERGED)
+      echo "PR is already merged. Nothing to do." >&2
+      return 0
+      ;;
+    CLOSED)
+      echo "PR is closed. Nothing to do." >&2
+      return 0
+      ;;
+  esac
+
+  if [[ "$is_draft" == "true" ]]; then
+    echo "PR is already a draft." >&2
+    return 0
+  fi
+
+  echo "Converting PR to draft..." >&2
+  convert_to_draft
+}
+
+stk_pr_ready() {
+  local pr_json
+  if ! pr_json="$(get_pr_state)"; then
+    echo "No PR found for current branch. Creating ready PR..." >&2
+    gt submit
+    return
+  fi
+
+  local state is_draft
+  state="$(echo "$pr_json" | jq -r '.state')"
+  is_draft="$(echo "$pr_json" | jq -r '.isDraft')"
+
+  case "$state" in
+    MERGED)
+      echo "PR is already merged. Nothing to do." >&2
+      return 0
+      ;;
+    CLOSED)
+      echo "PR is closed. Nothing to do." >&2
+      return 0
+      ;;
+  esac
+
+  if [[ "$is_draft" == "false" ]]; then
+    echo "PR is already ready for review." >&2
+    return 0
+  fi
+
+  echo "Marking PR as ready for review..." >&2
+  gh pr ready
+}
+
+stk_pr_close() {
+  local comment="${1:-}"
+
+  local pr_json
+  if ! pr_json="$(get_pr_state)"; then
+    echo "No PR found for current branch. Nothing to close." >&2
+    return 0
+  fi
+
+  local state
+  state="$(echo "$pr_json" | jq -r '.state')"
+
+  case "$state" in
+    MERGED)
+      echo "PR is already merged. Nothing to close." >&2
+      return 0
+      ;;
+    CLOSED)
+      echo "PR is already closed." >&2
+      return 0
+      ;;
+  esac
+
+  if [[ -n "$comment" ]]; then
+    gh pr close --comment "$comment"
+  else
+    gh pr close
+  fi
+}
+
+stk_pr_merge() {
+  local pr_json
+  if ! pr_json="$(get_pr_state)"; then
+    echo "No PR found for current branch. Nothing to merge." >&2
+    return 0
+  fi
+
+  local state
+  state="$(echo "$pr_json" | jq -r '.state')"
+
+  case "$state" in
+    MERGED)
+      echo "PR is already merged." >&2
+      return 0
+      ;;
+    CLOSED)
+      echo "PR is closed and cannot be merged." >&2
+      return 0
+      ;;
+  esac
+
+  gh pr merge --squash
 }
 
 # Ensure the repo is initialized with Graphite
@@ -85,6 +235,31 @@ case "$1" in
     ;;
   pull)
     exec gt sync
+    ;;
+  pr)
+    shift
+    subcommand="${1:-draft}"
+    shift || true
+
+    case "$subcommand" in
+      draft)
+        stk_pr_draft
+        ;;
+      ready)
+        stk_pr_ready
+        ;;
+      close)
+        stk_pr_close "${1:-}"
+        ;;
+      merge)
+        stk_pr_merge
+        ;;
+      *)
+        echo "Error: Unknown pr subcommand: $subcommand" >&2
+        echo "Usage: stk pr [draft|ready|close [comment]|merge]" >&2
+        exit 1
+        ;;
+    esac
     ;;
   -*)
     # Unrecognized flag
