@@ -10,6 +10,8 @@ version: 1.0
 
 **Shared workflow:** All common procedures (prerequisites, branch inference, confirmation, JSON format, cross-repo support, error handling, single-worktree mode, branch naming, success criteria) are defined in `workout-shared`. Follow those patterns using `stk-claude` as the command and `burns` as the subcommand.
 
+> **Note:** Wherever `workout-claude` appears in `workout-shared` examples, substitute `stk-claude`.
+
 ## Key Difference from workout-burns
 
 Unlike `/workout-burns` which creates plain git branches, this skill uses `stk-claude burns` which calls `stk work` for each branch. Every worktree gets a **Graphite-tracked branch stacked on the current branch** of the target repo. Use this when you want stacked PRs, not just parallel branches.
@@ -62,6 +64,75 @@ Each will have:
 
 Ready to proceed? (yes/no)
 ```
+
+## Example Usage
+
+### Example 1: Multiple Stacked Worktrees Without Specific Context
+
+**User request:**
+"I need Ralph to work on three features in parallel: user authentication, payment processing, and email notifications. Set up stacked worktrees with burns for each."
+
+**After user confirms "yes":**
+
+```bash
+echo '[
+  {"worktree": "user-authentication", "prompt": ""},
+  {"worktree": "payment-processing", "prompt": ""},
+  {"worktree": "email-notifications", "prompt": ""}
+]' | stk-claude burns
+```
+
+**Then explain:**
+
+"Created 3 stacked worktrees with TMUX windows and Ralph instances:
+- `user-authentication` - Graphite-tracked branch, Ralph ready
+- `payment-processing` - Graphite-tracked branch, Ralph ready
+- `email-notifications` - Graphite-tracked branch, Ralph ready
+
+Switch to any window with:
+- `tmux select-window -t user-authentication`
+- `tmux select-window -t payment-processing`
+- `tmux select-window -t email-notifications`
+
+Or use `tmux list-windows` to see all windows."
+
+### Example 2: Multiple Stacked Worktrees With Specific Context (Prompt Injection)
+
+**User request:**
+"I have three Linear tickets to work on autonomously. Create stacked worktrees and pass the ticket context to each Ralph instance:
+- AUTH-123: Fix OAuth flow
+- BUG-456: Null pointer in user profile
+- REF-789: Refactor API error handling"
+
+**After user confirms "yes":**
+
+```bash
+echo '[
+  {
+    "worktree": "fix-auth-123",
+    "prompt": "Look up Linear ticket AUTH-123 and implement the OAuth flow fix. Check existing authentication patterns in the codebase first."
+  },
+  {
+    "worktree": "bug-456-null-check",
+    "prompt": "Fix null pointer exception in user profile handler. See Linear BUG-456 for details. Add defensive null checks and update tests."
+  },
+  {
+    "worktree": "refactor-api-789",
+    "prompt": "Refactor the API module to use consistent error handling patterns. Review tech debt ticket REF-789. Focus on maintainability."
+  }
+]' | stk-claude burns
+```
+
+**Then explain:**
+
+"Created 3 stacked worktrees with TMUX windows and context-aware Ralph instances:
+- `fix-auth-123` - Ralph knows to look up AUTH-123 and fix OAuth
+- `bug-456-null-check` - Ralph knows to fix null pointer per BUG-456
+- `refactor-api-789` - Ralph knows to refactor API errors per REF-789
+
+Each Ralph instance has the specific context and can start work immediately.
+
+Switch to any window with `tmux select-window -t <name>` or use `tmux list-windows`."
 
 ## Notes
 

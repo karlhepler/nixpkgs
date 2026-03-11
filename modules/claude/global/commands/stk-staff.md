@@ -10,6 +10,8 @@ version: 1.0
 
 **Shared workflow:** All common procedures (prerequisites, branch inference, confirmation, JSON format, cross-repo support, error handling, single-worktree mode, branch naming, success criteria) are defined in `workout-shared`. Follow those patterns using `stk-claude` as the command and `staff` as the subcommand.
 
+> **Note:** Wherever `workout-claude` appears in `workout-shared` examples, substitute `stk-claude`.
+
 ## Key Difference from workout-staff
 
 Unlike `/workout-staff` which creates plain git branches, this skill uses `stk-claude staff` which calls `stk work` for each branch. Every worktree gets a **Graphite-tracked branch stacked on the current branch** of the target repo. Use this when you want stacked PRs, not just parallel branches.
@@ -62,6 +64,75 @@ Each will have:
 
 Ready to proceed? (yes/no)
 ```
+
+## Example Usage
+
+### Example 1: Multiple Stacked Worktrees Without Specific Context
+
+**User request:**
+"I need to work on three features: user authentication, payment processing, and email notifications. Set up stacked worktrees with Claude for each."
+
+**After user confirms "yes":**
+
+```bash
+echo '[
+  {"worktree": "user-authentication", "prompt": ""},
+  {"worktree": "payment-processing", "prompt": ""},
+  {"worktree": "email-notifications", "prompt": ""}
+]' | stk-claude staff
+```
+
+**Then explain:**
+
+"Created 3 stacked worktrees with TMUX windows and Claude instances:
+- `user-authentication` - Graphite-tracked branch, ready to work
+- `payment-processing` - Graphite-tracked branch, ready to work
+- `email-notifications` - Graphite-tracked branch, ready to work
+
+Switch to any window with:
+- `tmux select-window -t user-authentication`
+- `tmux select-window -t payment-processing`
+- `tmux select-window -t email-notifications`
+
+Or use `tmux list-windows` to see all windows."
+
+### Example 2: Multiple Stacked Worktrees With Specific Context (Prompt Injection)
+
+**User request:**
+"I have three Linear tickets to work on. Create stacked worktrees and pass the ticket context to each Claude instance:
+- AUTH-123: Fix OAuth flow
+- BUG-456: Null pointer in user profile
+- REF-789: Refactor API error handling"
+
+**After user confirms "yes":**
+
+```bash
+echo '[
+  {
+    "worktree": "fix-auth-123",
+    "prompt": "Look up Linear ticket AUTH-123 and implement the OAuth flow fix. Check existing authentication patterns in the codebase first."
+  },
+  {
+    "worktree": "bug-456-null-check",
+    "prompt": "Fix null pointer exception in user profile handler. See Linear BUG-456 for details. Add defensive null checks and update tests."
+  },
+  {
+    "worktree": "refactor-api-789",
+    "prompt": "Refactor the API module to use consistent error handling patterns. Review tech debt ticket REF-789. Focus on maintainability."
+  }
+]' | stk-claude staff
+```
+
+**Then explain:**
+
+"Created 3 stacked worktrees with TMUX windows and context-aware Claude instances:
+- `fix-auth-123` - Claude knows to look up AUTH-123 and fix OAuth
+- `bug-456-null-check` - Claude knows to fix null pointer per BUG-456
+- `refactor-api-789` - Claude knows to refactor API errors per REF-789
+
+Each Claude instance has the specific context and can start work immediately.
+
+Switch to any window with `tmux select-window -t <name>` or use `tmux list-windows`."
 
 ## Notes
 

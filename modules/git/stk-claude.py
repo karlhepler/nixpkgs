@@ -233,7 +233,7 @@ def create_worktree_with_prompt(worktree_def: Dict[str, str], command: str) -> b
         print("  ✗ Failed to create stacked worktree", file=sys.stderr)
         if result and result.stderr:
             for line in result.stderr.split('\n'):
-                if line and not line.startswith('cd '):
+                if line and not line.startswith("cd '"):
                     print(f"    {line}", file=sys.stderr)
         return False
 

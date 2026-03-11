@@ -140,7 +140,7 @@ in {
     };
     stk = shellApp {
       name = "stk";
-      runtimeInputs = [ pkgs.graphite-cli pkgs.git pkgs.fzf workout ];
+      runtimeInputs = [ pkgs.graphite-cli pkgs.git pkgs.fzf pkgs.jq workout ];
       text = builtins.readFile ./stk.bash;
       description = "Stacked PR workflow: no-args restacks, <branch> auto-inits Graphite and creates branch + worktree";
       sourceFile = "stk.bash";
