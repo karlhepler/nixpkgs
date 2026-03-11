@@ -35,10 +35,12 @@ show_help() {
   echo "  stk <branch>           Create graphite branch + worktree"
   echo "  stk log                Show graphite stack log (gt log)"
   echo "  stk pull               Sync with remote (gt sync)"
+  echo "  stk status             Show stack position then working tree state"
   echo "  stk pr [draft]         Create draft PR or convert ready→draft"
   echo "  stk pr ready           Create ready PR or promote draft→ready"
   echo "  stk pr close [comment] Close PR with optional comment"
   echo "  stk pr merge           Merge PR (squash)"
+  echo "  stk pr view [args]     View current branch PR (gh pr view passthrough)"
   echo "  stk -h, --help         Show this help"
   echo
   echo "DESCRIPTION:"
@@ -59,6 +61,9 @@ show_help() {
   echo "  # Show graphite stack structure"
   echo "  stk log"
   echo
+  echo "  # Show full stack position and working tree state"
+  echo "  stk status"
+  echo
   echo "  # Sync with remote and clean up merged branches"
   echo "  stk pull"
   echo
@@ -73,6 +78,9 @@ show_help() {
   echo
   echo "  # Merge PR as squash commit"
   echo "  stk pr merge"
+  echo
+  echo "  # View PR details (e.g., --web, --json)"
+  echo "  stk pr view --web"
 }
 
 # Get current PR state as JSON: {state, isDraft}
@@ -233,6 +241,10 @@ case "$1" in
   log)
     exec gt log
     ;;
+  status)
+    gt log
+    git status
+    ;;
   pull)
     exec gt sync
     ;;
@@ -254,9 +266,12 @@ case "$1" in
       merge)
         stk_pr_merge
         ;;
+      view)
+        gh pr view "$@"
+        ;;
       *)
         echo "Error: Unknown pr subcommand: $subcommand" >&2
-        echo "Usage: stk pr [draft|ready|close [comment]|merge]" >&2
+        echo "Usage: stk pr [draft|ready|close [comment]|merge|view [args...]]" >&2
         exit 1
         ;;
     esac

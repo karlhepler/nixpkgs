@@ -142,11 +142,13 @@ Each stacked PR is automatically tracked with current CI/CD status visible via `
 - `stk <branch>`: Create a stacked PR worktree (graphite-aware). Auto-inits graphite if needed, creates branch in the stack, creates worktree.
 - `stk`: No args — restack (propagate parent branch changes via `gt restack`)
 - `stk log`: Show stack status with PR statuses (`gt log`)
+- `stk status`: Show stack position then working tree state (`gt log` followed by `git status`)
 - `stk pull`: Pull latest main and rebase entire stack (`gt sync`)
 - `stk pr` / `stk pr draft`: Create draft PR (no PR exists) or convert ready→draft (PR exists)
 - `stk pr ready`: Create ready PR (no PR exists) or promote draft→ready (PR exists)
 - `stk pr close [comment]`: Close the current branch's PR with an optional comment
 - `stk pr merge`: Merge the current branch's PR (squash merge)
+- `stk pr view [args...]`: View current branch's PR details (passthrough to `gh pr view`)
 
 ### Claude Code Helpers
 
