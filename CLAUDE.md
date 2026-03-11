@@ -243,6 +243,10 @@ For detailed architecture, see README.md and source files in modules/.
 
 ## Development Workflows
 
+**🚨 Deployment Order: `hms` → `git add` → `commit` → `push`**
+
+**NEVER commit before `hms` succeeds.** The `hms` build is the validation step — a failing build means the change is broken, not just undeployed. If `hms` needs to see working tree changes, stage them with `git add` first, but do NOT commit until the build passes.
+
 **Add new package:**
 
 🚨 **NEVER via Homebrew** - Use Nix or direct download ONLY

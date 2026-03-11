@@ -37,6 +37,7 @@ monty_burns_hat_yaml = "MONTY_BURNS_HAT_YAML"  # replaced at build time
 smithers_hat_yaml = "SMITHERS_HAT_YAML"  # replaced at build time
 DEFAULT_MAX_ITERATIONS = 20
 
+
 # PROCESS_UTILS_PLACEHOLDER — get_all_descendants and kill_process_tree
 # are injected here at build time from process_utils.py by default.nix.
 
