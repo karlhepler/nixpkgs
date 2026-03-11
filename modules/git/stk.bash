@@ -237,7 +237,7 @@ stk_rebase() {
   ensure_tracked "$parent_branch"
 
   echo "Updating Graphite parent to '$parent_branch'..." >&2
-  gt move "$parent_branch"
+  gt move --onto "$parent_branch"
 
   echo >&2
   run_gt log
