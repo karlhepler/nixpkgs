@@ -6,7 +6,7 @@ set -euo pipefail
 # - `stk work <branch>`: auto-inits graphite, creates branch, creates worktree inline
 # - `stk work` (no args): delegates to workout for interactive picker
 # - `stk log`: gt log
-# - `stk sync`: gt sync
+# - `stk sync`: git sync + gt restack
 #
 # NOTE: Requires shell wrapper function to change directory in parent shell.
 # A `stk()` wrapper is defined in modules/zsh.nix (mirrors the workout wrapper):
@@ -528,7 +528,8 @@ case "$1" in
     git status
     ;;
   sync)
-    run_gt sync
+    git sync
+    run_gt restack
     ;;
   pr)
     shift
