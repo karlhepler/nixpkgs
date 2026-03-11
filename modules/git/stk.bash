@@ -230,8 +230,11 @@ stk_pr_merge() {
 }
 
 # Change the current branch's Graphite parent and restack onto it.
-# Attempts gt move --onto first; if the branch is untracked, tracks it under
-# parent_branch and retries. Any other failure surfaces the original error.
+# Handles three recoverable failure modes before surfacing errors:
+#   1. untracked branch  → gt track -p <parent>, then retry
+#   2. not in history    → git rebase <parent> to fix git history, then retry
+#   3. both at once      → track first, then rebase, then retry
+# Any other failure surfaces the original error verbatim and returns 1.
 # Usage: stk_rebase <parent-branch>
 stk_rebase() {
   local parent_branch="$1"
@@ -239,19 +242,33 @@ stk_rebase() {
   stderr_file="$(mktemp)"
 
   echo "Updating Graphite parent to '$parent_branch'..." >&2
-  if ! gt move --onto "$parent_branch" 2>"$stderr_file"; then
-    if rg -qi 'untracked' "$stderr_file" 2>/dev/null; then
-      rm -f "$stderr_file"
-      gt track -p "$parent_branch" >&2
-      gt move --onto "$parent_branch"
-    else
-      cat "$stderr_file" >&2
-      rm -f "$stderr_file"
-      return 1
-    fi
-  else
+  if gt move --onto "$parent_branch" 2>"$stderr_file"; then
     rm -f "$stderr_file"
+    return 0
   fi
+
+  local is_untracked is_not_in_history
+  rg -qi 'untracked' "$stderr_file" 2>/dev/null && is_untracked=1 || is_untracked=0
+  rg -qi 'not in the history' "$stderr_file" 2>/dev/null && is_not_in_history=1 || is_not_in_history=0
+
+  if [[ "$is_untracked" -eq 0 && "$is_not_in_history" -eq 0 ]]; then
+    cat "$stderr_file" >&2
+    rm -f "$stderr_file"
+    return 1
+  fi
+  rm -f "$stderr_file"
+
+  if [[ "$is_untracked" -eq 1 ]]; then
+    echo "Branch is not tracked by Graphite. Tracking under '$parent_branch'..." >&2
+    gt track -p "$parent_branch" >&2
+  fi
+
+  if [[ "$is_not_in_history" -eq 1 ]]; then
+    echo "'$parent_branch' is not in the current branch history. Running git rebase..." >&2
+    git rebase "$parent_branch" >&2
+  fi
+
+  gt move --onto "$parent_branch"
 }
 
 # If there are uncommitted changes, present a fzf picker offering:
