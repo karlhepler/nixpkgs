@@ -566,7 +566,7 @@ def write_kanban_event(
                     git_project,
                     from_column,
                     to_column,
-                    card.get("persona"),
+                    card.get("agent") if card.get("agent") != "unassigned" else None,
                 ),
             )
             conn.commit()

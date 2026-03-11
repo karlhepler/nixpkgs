@@ -382,7 +382,7 @@
     },
     {
       "id": 4,
-      "type": "barchart",
+      "type": "timeseries",
       "title": "Cost Over Time",
       "description": "Daily spend trend across all Claude Code sessions. Spikes usually indicate large Opus delegations or sessions with many turns — check the Cost by Agent Type panel to identify the driver.",
       "gridPos": {
@@ -401,8 +401,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT date(recorded_at, 'localtime') || 'T00:00:00' as time, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics WHERE CAST(strftime('%s', recorded_at) AS INTEGER) >= $__from/1000 AND CAST(strftime('%s', recorded_at) AS INTEGER) <= $__to/1000 GROUP BY date(recorded_at, 'localtime') ORDER BY time",
-          "queryText": "SELECT date(recorded_at, 'localtime') || 'T00:00:00' as time, COALESCE(SUM(cost_usd), 0) as cost FROM agent_metrics WHERE CAST(strftime('%s', recorded_at) AS INTEGER) >= $__from/1000 AND CAST(strftime('%s', recorded_at) AS INTEGER) <= $__to/1000 GROUP BY date(recorded_at, 'localtime') ORDER BY time",
+          "rawQueryText": "SELECT strftime('%Y-%m-%dT00:00:00', COALESCE(last_seen_at, recorded_at), 'localtime') as time, ROUND(SUM(cost_usd), 4) as cost FROM agent_metrics WHERE recorded_at IS NOT NULL GROUP BY strftime('%Y-%m-%d', COALESCE(last_seen_at, recorded_at), 'localtime') ORDER BY 1",
+          "queryText": "SELECT strftime('%Y-%m-%dT00:00:00', COALESCE(last_seen_at, recorded_at), 'localtime') as time, ROUND(SUM(cost_usd), 4) as cost FROM agent_metrics WHERE recorded_at IS NOT NULL GROUP BY strftime('%Y-%m-%d', COALESCE(last_seen_at, recorded_at), 'localtime') ORDER BY 1",
           "queryType": "time series",
           "timeColumns": [
             "time"
@@ -418,30 +418,25 @@
             "mode": "palette-classic"
           },
           "custom": {
-            "fillOpacity": 80,
-            "lineWidth": 1
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": false
           }
         },
         "overrides": []
       },
       "options": {
-        "orientation": "auto",
-        "xTickLabelRotation": 0,
-        "xTickLabelMaxLength": 0,
-        "groupWidth": 0.7,
-        "barWidth": 0.97,
-        "barRadius": 0,
-        "fullHighlight": false,
         "tooltip": {
-          "mode": "single",
+          "mode": "multi",
           "sort": "none"
         },
         "legend": {
           "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
-        },
-        "xField": "time"
+        }
       }
     },
     {
@@ -1072,8 +1067,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT date(recorded_at, 'localtime') || 'T00:00:00' as time, COALESCE(AVG(cache_hit_ratio) * 100, 0) as cache_hit_pct FROM agent_metrics WHERE cache_hit_ratio > 0 AND CAST(strftime('%s', recorded_at) AS INTEGER) >= $__from/1000 AND CAST(strftime('%s', recorded_at) AS INTEGER) <= $__to/1000 GROUP BY date(recorded_at, 'localtime') ORDER BY time",
-          "queryText": "SELECT date(recorded_at, 'localtime') || 'T00:00:00' as time, COALESCE(AVG(cache_hit_ratio) * 100, 0) as cache_hit_pct FROM agent_metrics WHERE cache_hit_ratio > 0 AND CAST(strftime('%s', recorded_at) AS INTEGER) >= $__from/1000 AND CAST(strftime('%s', recorded_at) AS INTEGER) <= $__to/1000 GROUP BY date(recorded_at, 'localtime') ORDER BY time",
+          "rawQueryText": "SELECT strftime('%Y-%m-%dT00:00:00', COALESCE(last_seen_at, recorded_at), 'localtime') as time, COALESCE(AVG(cache_hit_ratio) * 100, 0) as cache_hit_pct FROM agent_metrics WHERE cache_hit_ratio > 0 GROUP BY strftime('%Y-%m-%d', COALESCE(last_seen_at, recorded_at), 'localtime') ORDER BY 1",
+          "queryText": "SELECT strftime('%Y-%m-%dT00:00:00', COALESCE(last_seen_at, recorded_at), 'localtime') as time, COALESCE(AVG(cache_hit_ratio) * 100, 0) as cache_hit_pct FROM agent_metrics WHERE cache_hit_ratio > 0 GROUP BY strftime('%Y-%m-%d', COALESCE(last_seen_at, recorded_at), 'localtime') ORDER BY 1",
           "queryType": "time series",
           "timeColumns": [
             "time"
@@ -1230,8 +1225,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT COALESCE(MAX(last_seen_at), MAX(recorded_at)) as time, COALESCE(kanban_session, session_id) as session_label, ROUND(SUM(cost_usd), 4) as session_cost, SUM(tool_calls) as total_tool_calls, ROUND(SUM(duration_seconds) / 60.0, 1) as duration_minutes FROM agent_metrics WHERE CAST(strftime('%s', recorded_at) AS INTEGER) >= $__from/1000 AND CAST(strftime('%s', recorded_at) AS INTEGER) <= $__to/1000 GROUP BY session_id ORDER BY time",
-          "queryText": "SELECT COALESCE(MAX(last_seen_at), MAX(recorded_at)) as time, COALESCE(kanban_session, session_id) as session_label, ROUND(SUM(cost_usd), 4) as session_cost, SUM(tool_calls) as total_tool_calls, ROUND(SUM(duration_seconds) / 60.0, 1) as duration_minutes FROM agent_metrics WHERE CAST(strftime('%s', recorded_at) AS INTEGER) >= $__from/1000 AND CAST(strftime('%s', recorded_at) AS INTEGER) <= $__to/1000 GROUP BY session_id ORDER BY time",
+          "rawQueryText": "SELECT strftime('%Y-%m-%dT%H:%M:%S', COALESCE(MAX(last_seen_at), MAX(recorded_at))) as time, COALESCE(kanban_session, session_id) as session_label, ROUND(SUM(cost_usd), 4) as session_cost, SUM(tool_calls) as total_tool_calls, ROUND(SUM(duration_seconds) / 60.0, 1) as duration_minutes FROM agent_metrics WHERE recorded_at IS NOT NULL GROUP BY session_id HAVING COALESCE(MAX(last_seen_at), MAX(recorded_at)) IS NOT NULL ORDER BY time",
+          "queryText": "SELECT strftime('%Y-%m-%dT%H:%M:%S', COALESCE(MAX(last_seen_at), MAX(recorded_at))) as time, COALESCE(kanban_session, session_id) as session_label, ROUND(SUM(cost_usd), 4) as session_cost, SUM(tool_calls) as total_tool_calls, ROUND(SUM(duration_seconds) / 60.0, 1) as duration_minutes FROM agent_metrics WHERE recorded_at IS NOT NULL GROUP BY session_id HAVING COALESCE(MAX(last_seen_at), MAX(recorded_at)) IS NOT NULL ORDER BY time",
           "queryType": "time series",
           "timeColumns": [
             "time"
@@ -2568,8 +2563,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT persona, model, SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) as redos, SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END) as completions, ROUND(100.0 * SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) / NULLIF(SUM(CASE WHEN event_type IN ('done','redo') THEN 1 ELSE 0 END), 0), 1) as redo_rate_pct FROM kanban_card_events WHERE persona IS NOT NULL AND CAST(strftime('%s', recorded_at) AS INTEGER) >= $__from/1000 AND CAST(strftime('%s', recorded_at) AS INTEGER) <= $__to/1000 GROUP BY persona, model HAVING (redos + completions) > 0 ORDER BY redo_rate_pct DESC, redos DESC",
-          "queryText": "SELECT persona, model, SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) as redos, SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END) as completions, ROUND(100.0 * SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) / NULLIF(SUM(CASE WHEN event_type IN ('done','redo') THEN 1 ELSE 0 END), 0), 1) as redo_rate_pct FROM kanban_card_events WHERE persona IS NOT NULL AND CAST(strftime('%s', recorded_at) AS INTEGER) >= $__from/1000 AND CAST(strftime('%s', recorded_at) AS INTEGER) <= $__to/1000 GROUP BY persona, model HAVING (redos + completions) > 0 ORDER BY redo_rate_pct DESC, redos DESC",
+          "rawQueryText": "SELECT COALESCE(persona, agent, 'unassigned') as persona, model, SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) as redos, SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END) as completions, ROUND(100.0 * SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) / NULLIF(SUM(CASE WHEN event_type IN ('done','redo') THEN 1 ELSE 0 END), 0), 1) as redo_rate_pct FROM kanban_card_events WHERE recorded_at IS NOT NULL GROUP BY COALESCE(persona, agent, 'unassigned'), model HAVING (redos + completions) > 0 ORDER BY redo_rate_pct DESC, redos DESC",
+          "queryText": "SELECT COALESCE(persona, agent, 'unassigned') as persona, model, SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) as redos, SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END) as completions, ROUND(100.0 * SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) / NULLIF(SUM(CASE WHEN event_type IN ('done','redo') THEN 1 ELSE 0 END), 0), 1) as redo_rate_pct FROM kanban_card_events WHERE recorded_at IS NOT NULL GROUP BY COALESCE(persona, agent, 'unassigned'), model HAVING (redos + completions) > 0 ORDER BY redo_rate_pct DESC, redos DESC",
           "queryType": "table",
           "timeColumns": [],
           "refId": "A"
@@ -2965,7 +2960,7 @@
     },
     {
       "id": 28,
-      "type": "barchart",
+      "type": "timeseries",
       "title": "Throughput — Cards Done Per Day",
       "description": "Daily card completion velocity. A rising trend means more work is flowing through to done; gaps indicate days with no completions.",
       "gridPos": {
@@ -2984,8 +2979,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT date(recorded_at, 'localtime') || 'T00:00:00' as time, COUNT(*) as cards_done FROM kanban_card_events WHERE event_type = 'done' AND CAST(strftime('%s', recorded_at) AS INTEGER) >= $__from/1000 AND CAST(strftime('%s', recorded_at) AS INTEGER) <= $__to/1000 GROUP BY date(recorded_at, 'localtime') ORDER BY time",
-          "queryText": "SELECT date(recorded_at, 'localtime') || 'T00:00:00' as time, COUNT(*) as cards_done FROM kanban_card_events WHERE event_type = 'done' AND CAST(strftime('%s', recorded_at) AS INTEGER) >= $__from/1000 AND CAST(strftime('%s', recorded_at) AS INTEGER) <= $__to/1000 GROUP BY date(recorded_at, 'localtime') ORDER BY time",
+          "rawQueryText": "SELECT strftime('%Y-%m-%dT00:00:00', recorded_at, 'localtime') as time, COUNT(*) as cards_done FROM kanban_card_events WHERE event_type = 'done' AND recorded_at IS NOT NULL GROUP BY strftime('%Y-%m-%d', recorded_at, 'localtime') ORDER BY 1",
+          "queryText": "SELECT strftime('%Y-%m-%dT00:00:00', recorded_at, 'localtime') as time, COUNT(*) as cards_done FROM kanban_card_events WHERE event_type = 'done' AND recorded_at IS NOT NULL GROUP BY strftime('%Y-%m-%d', recorded_at, 'localtime') ORDER BY 1",
           "queryType": "time series",
           "timeColumns": [
             "time"
@@ -3001,35 +2996,30 @@
             "mode": "palette-classic"
           },
           "custom": {
-            "fillOpacity": 80,
-            "lineWidth": 1
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": false
           }
         },
         "overrides": []
       },
       "options": {
-        "orientation": "auto",
-        "xTickLabelRotation": 0,
-        "xTickLabelMaxLength": 0,
-        "groupWidth": 0.7,
-        "barWidth": 0.97,
-        "barRadius": 0,
-        "fullHighlight": false,
         "tooltip": {
-          "mode": "single",
+          "mode": "multi",
           "sort": "none"
         },
         "legend": {
           "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
-        },
-        "xField": "time"
+        }
       }
     },
     {
       "id": 29,
-      "type": "barchart",
+      "type": "timeseries",
       "title": "Redo Rate Over Time",
       "description": "Percentage of all kanban events that were redos, by day. A declining trend means quality is improving — fewer cards are being sent back for rework.",
       "gridPos": {
@@ -3048,8 +3038,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT date(recorded_at, 'localtime') || 'T00:00:00' as time, SUM(CASE WHEN event_type='redo' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0) as redo_rate_pct FROM kanban_card_events WHERE CAST(strftime('%s', recorded_at) AS INTEGER) >= $__from/1000 AND CAST(strftime('%s', recorded_at) AS INTEGER) <= $__to/1000 GROUP BY date(recorded_at, 'localtime') ORDER BY time",
-          "queryText": "SELECT date(recorded_at, 'localtime') || 'T00:00:00' as time, SUM(CASE WHEN event_type='redo' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0) as redo_rate_pct FROM kanban_card_events WHERE CAST(strftime('%s', recorded_at) AS INTEGER) >= $__from/1000 AND CAST(strftime('%s', recorded_at) AS INTEGER) <= $__to/1000 GROUP BY date(recorded_at, 'localtime') ORDER BY time",
+          "rawQueryText": "SELECT strftime('%Y-%m-%dT00:00:00', recorded_at, 'localtime') as time, SUM(CASE WHEN event_type='redo' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0) as redo_rate_pct FROM kanban_card_events WHERE recorded_at IS NOT NULL GROUP BY strftime('%Y-%m-%d', recorded_at, 'localtime') ORDER BY 1",
+          "queryText": "SELECT strftime('%Y-%m-%dT00:00:00', recorded_at, 'localtime') as time, SUM(CASE WHEN event_type='redo' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0) as redo_rate_pct FROM kanban_card_events WHERE recorded_at IS NOT NULL GROUP BY strftime('%Y-%m-%d', recorded_at, 'localtime') ORDER BY 1",
           "queryType": "time series",
           "timeColumns": [
             "time"
@@ -3066,8 +3056,11 @@
             "mode": "palette-classic"
           },
           "custom": {
-            "fillOpacity": 80,
-            "lineWidth": 1
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": false
           },
           "thresholds": {
             "mode": "absolute",
@@ -3090,23 +3083,15 @@
         "overrides": []
       },
       "options": {
-        "orientation": "auto",
-        "xTickLabelRotation": 0,
-        "xTickLabelMaxLength": 0,
-        "groupWidth": 0.7,
-        "barWidth": 0.97,
-        "barRadius": 0,
-        "fullHighlight": false,
         "tooltip": {
-          "mode": "single",
+          "mode": "multi",
           "sort": "none"
         },
         "legend": {
           "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
-        },
-        "xField": "time"
+        }
       }
     },
     {
@@ -3130,8 +3115,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT COALESCE(persona, 'unassigned') as persona, COUNT(*) as completions FROM kanban_card_events WHERE event_type = 'done' AND CAST(strftime('%s', recorded_at) AS INTEGER) >= $__from/1000 AND CAST(strftime('%s', recorded_at) AS INTEGER) <= $__to/1000 GROUP BY persona ORDER BY completions DESC",
-          "queryText": "SELECT COALESCE(persona, 'unassigned') as persona, COUNT(*) as completions FROM kanban_card_events WHERE event_type = 'done' AND CAST(strftime('%s', recorded_at) AS INTEGER) >= $__from/1000 AND CAST(strftime('%s', recorded_at) AS INTEGER) <= $__to/1000 GROUP BY persona ORDER BY completions DESC",
+          "rawQueryText": "SELECT COALESCE(persona, agent, 'unassigned') as persona, COUNT(*) as completions FROM kanban_card_events WHERE event_type = 'done' AND recorded_at IS NOT NULL GROUP BY COALESCE(persona, agent, 'unassigned') ORDER BY completions DESC",
+          "queryText": "SELECT COALESCE(persona, agent, 'unassigned') as persona, COUNT(*) as completions FROM kanban_card_events WHERE event_type = 'done' AND recorded_at IS NOT NULL GROUP BY COALESCE(persona, agent, 'unassigned') ORDER BY completions DESC",
           "queryType": "table",
           "timeColumns": [],
           "refId": "A"
@@ -3192,8 +3177,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT e.persona, e.model, COUNT(DISTINCT e.card_number) as total_done, SUM(CASE WHEN redo_counts.redos IS NULL THEN 1 ELSE 0 END) as first_pass, ROUND(100.0 * SUM(CASE WHEN redo_counts.redos IS NULL THEN 1 ELSE 0 END) / NULLIF(COUNT(DISTINCT e.card_number), 0), 1) as first_pass_pct FROM kanban_card_events e LEFT JOIN (SELECT card_number, COUNT(*) as redos FROM kanban_card_events WHERE event_type = 'redo' GROUP BY card_number) redo_counts ON e.card_number = redo_counts.card_number WHERE e.event_type = 'done' AND CAST(strftime('%s', e.recorded_at) AS INTEGER) >= $__from/1000 AND CAST(strftime('%s', e.recorded_at) AS INTEGER) <= $__to/1000 GROUP BY e.persona, e.model ORDER BY first_pass_pct DESC",
-          "queryText": "SELECT e.persona, e.model, COUNT(DISTINCT e.card_number) as total_done, SUM(CASE WHEN redo_counts.redos IS NULL THEN 1 ELSE 0 END) as first_pass, ROUND(100.0 * SUM(CASE WHEN redo_counts.redos IS NULL THEN 1 ELSE 0 END) / NULLIF(COUNT(DISTINCT e.card_number), 0), 1) as first_pass_pct FROM kanban_card_events e LEFT JOIN (SELECT card_number, COUNT(*) as redos FROM kanban_card_events WHERE event_type = 'redo' GROUP BY card_number) redo_counts ON e.card_number = redo_counts.card_number WHERE e.event_type = 'done' AND CAST(strftime('%s', e.recorded_at) AS INTEGER) >= $__from/1000 AND CAST(strftime('%s', e.recorded_at) AS INTEGER) <= $__to/1000 GROUP BY e.persona, e.model ORDER BY first_pass_pct DESC",
+          "rawQueryText": "SELECT COALESCE(e.persona, e.agent, 'unassigned') as persona, e.model, COUNT(DISTINCT e.card_number) as total_done, SUM(CASE WHEN redo_counts.redos IS NULL THEN 1 ELSE 0 END) as first_pass, ROUND(100.0 * SUM(CASE WHEN redo_counts.redos IS NULL THEN 1 ELSE 0 END) / NULLIF(COUNT(DISTINCT e.card_number), 0), 1) as first_pass_pct FROM kanban_card_events e LEFT JOIN (SELECT card_number, COUNT(*) as redos FROM kanban_card_events WHERE event_type = 'redo' GROUP BY card_number) redo_counts ON e.card_number = redo_counts.card_number WHERE e.event_type = 'done' AND e.recorded_at IS NOT NULL GROUP BY COALESCE(e.persona, e.agent, 'unassigned'), e.model ORDER BY first_pass_pct DESC",
+          "queryText": "SELECT COALESCE(e.persona, e.agent, 'unassigned') as persona, e.model, COUNT(DISTINCT e.card_number) as total_done, SUM(CASE WHEN redo_counts.redos IS NULL THEN 1 ELSE 0 END) as first_pass, ROUND(100.0 * SUM(CASE WHEN redo_counts.redos IS NULL THEN 1 ELSE 0 END) / NULLIF(COUNT(DISTINCT e.card_number), 0), 1) as first_pass_pct FROM kanban_card_events e LEFT JOIN (SELECT card_number, COUNT(*) as redos FROM kanban_card_events WHERE event_type = 'redo' GROUP BY card_number) redo_counts ON e.card_number = redo_counts.card_number WHERE e.event_type = 'done' AND e.recorded_at IS NOT NULL GROUP BY COALESCE(e.persona, e.agent, 'unassigned'), e.model ORDER BY first_pass_pct DESC",
           "queryType": "table",
           "timeColumns": [],
           "refId": "A"
@@ -3399,8 +3384,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT (julianday(card_completed_at) - julianday(card_created_at)) * 24 as lead_time_hours FROM kanban_card_events WHERE event_type = 'done' AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL AND CAST(strftime('%s', card_completed_at) AS INTEGER) >= $__from/1000 AND CAST(strftime('%s', card_completed_at) AS INTEGER) <= $__to/1000",
-          "queryText": "SELECT (julianday(card_completed_at) - julianday(card_created_at)) * 24 as lead_time_hours FROM kanban_card_events WHERE event_type = 'done' AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL AND CAST(strftime('%s', card_completed_at) AS INTEGER) >= $__from/1000 AND CAST(strftime('%s', card_completed_at) AS INTEGER) <= $__to/1000",
+          "rawQueryText": "SELECT (julianday(card_completed_at) - julianday(card_created_at)) * 24 as lead_time_hours FROM kanban_card_events WHERE event_type = 'done' AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL",
+          "queryText": "SELECT (julianday(card_completed_at) - julianday(card_created_at)) * 24 as lead_time_hours FROM kanban_card_events WHERE event_type = 'done' AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL",
           "queryType": "table",
           "timeColumns": [],
           "refId": "A"
@@ -3458,8 +3443,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT date(card_completed_at, 'localtime') || 'T00:00:00' as time, AVG((julianday(card_completed_at) - julianday(card_created_at)) * 24 * 60) as avg_lead_time_minutes FROM kanban_card_events WHERE event_type = 'done' AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL AND CAST(strftime('%s', card_completed_at) AS INTEGER) >= $__from/1000 AND CAST(strftime('%s', card_completed_at) AS INTEGER) <= $__to/1000 GROUP BY date(card_completed_at, 'localtime') ORDER BY time",
-          "queryText": "SELECT date(card_completed_at, 'localtime') || 'T00:00:00' as time, AVG((julianday(card_completed_at) - julianday(card_created_at)) * 24 * 60) as avg_lead_time_minutes FROM kanban_card_events WHERE event_type = 'done' AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL AND CAST(strftime('%s', card_completed_at) AS INTEGER) >= $__from/1000 AND CAST(strftime('%s', card_completed_at) AS INTEGER) <= $__to/1000 GROUP BY date(card_completed_at, 'localtime') ORDER BY time",
+          "rawQueryText": "SELECT strftime('%Y-%m-%dT00:00:00', card_completed_at, 'localtime') as time, ROUND(AVG((julianday(card_completed_at) - julianday(card_created_at)) * 24), 2) as avg_lead_time_hours FROM kanban_card_events WHERE event_type = 'done' AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL GROUP BY strftime('%Y-%m-%d', card_completed_at, 'localtime') ORDER BY 1",
+          "queryText": "SELECT strftime('%Y-%m-%dT00:00:00', card_completed_at, 'localtime') as time, ROUND(AVG((julianday(card_completed_at) - julianday(card_created_at)) * 24), 2) as avg_lead_time_hours FROM kanban_card_events WHERE event_type = 'done' AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL GROUP BY strftime('%Y-%m-%d', card_completed_at, 'localtime') ORDER BY 1",
           "queryType": "time series",
           "timeColumns": [
             "time"
@@ -3469,8 +3454,8 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "m",
-          "decimals": 0,
+          "unit": "h",
+          "decimals": 2,
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 10,
@@ -3521,8 +3506,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT COALESCE(persona, 'unassigned') as persona, ROUND(AVG((julianday(card_completed_at) - julianday(card_created_at)) * 24 * 60), 1) as avg_lead_time_minutes, COUNT(*) as card_count FROM kanban_card_events WHERE event_type = 'done' AND persona IS NOT NULL AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL AND CAST(strftime('%s', card_completed_at) AS INTEGER) >= $__from/1000 AND CAST(strftime('%s', card_completed_at) AS INTEGER) <= $__to/1000 GROUP BY persona ORDER BY avg_lead_time_minutes DESC",
-          "queryText": "SELECT COALESCE(persona, 'unassigned') as persona, ROUND(AVG((julianday(card_completed_at) - julianday(card_created_at)) * 24 * 60), 1) as avg_lead_time_minutes, COUNT(*) as card_count FROM kanban_card_events WHERE event_type = 'done' AND persona IS NOT NULL AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL AND CAST(strftime('%s', card_completed_at) AS INTEGER) >= $__from/1000 AND CAST(strftime('%s', card_completed_at) AS INTEGER) <= $__to/1000 GROUP BY persona ORDER BY avg_lead_time_minutes DESC",
+          "rawQueryText": "SELECT COALESCE(persona, agent, 'unassigned') as persona, ROUND(AVG((julianday(card_completed_at) - julianday(card_created_at)) * 24 * 60), 1) as avg_lead_time_minutes, COUNT(*) as card_count FROM kanban_card_events WHERE event_type = 'done' AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL GROUP BY COALESCE(persona, agent, 'unassigned') ORDER BY avg_lead_time_minutes DESC",
+          "queryText": "SELECT COALESCE(persona, agent, 'unassigned') as persona, ROUND(AVG((julianday(card_completed_at) - julianday(card_created_at)) * 24 * 60), 1) as avg_lead_time_minutes, COUNT(*) as card_count FROM kanban_card_events WHERE event_type = 'done' AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL GROUP BY COALESCE(persona, agent, 'unassigned') ORDER BY avg_lead_time_minutes DESC",
           "queryType": "table",
           "timeColumns": [],
           "refId": "A"
@@ -3590,8 +3575,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT COALESCE(card_type, 'unknown') as card_type, ROUND(AVG((julianday(card_completed_at) - julianday(card_created_at)) * 24 * 60), 1) as avg_lead_time_minutes, COUNT(*) as card_count FROM kanban_card_events WHERE event_type = 'done' AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL AND CAST(strftime('%s', card_completed_at) AS INTEGER) >= $__from/1000 AND CAST(strftime('%s', card_completed_at) AS INTEGER) <= $__to/1000 GROUP BY card_type ORDER BY avg_lead_time_minutes DESC",
-          "queryText": "SELECT COALESCE(card_type, 'unknown') as card_type, ROUND(AVG((julianday(card_completed_at) - julianday(card_created_at)) * 24 * 60), 1) as avg_lead_time_minutes, COUNT(*) as card_count FROM kanban_card_events WHERE event_type = 'done' AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL AND CAST(strftime('%s', card_completed_at) AS INTEGER) >= $__from/1000 AND CAST(strftime('%s', card_completed_at) AS INTEGER) <= $__to/1000 GROUP BY card_type ORDER BY avg_lead_time_minutes DESC",
+          "rawQueryText": "SELECT COALESCE(card_type, 'unknown') as card_type, ROUND(AVG((julianday(card_completed_at) - julianday(card_created_at)) * 24 * 60), 1) as avg_lead_time_minutes, COUNT(*) as card_count FROM kanban_card_events WHERE event_type = 'done' AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL GROUP BY card_type ORDER BY avg_lead_time_minutes DESC",
+          "queryText": "SELECT COALESCE(card_type, 'unknown') as card_type, ROUND(AVG((julianday(card_completed_at) - julianday(card_created_at)) * 24 * 60), 1) as avg_lead_time_minutes, COUNT(*) as card_count FROM kanban_card_events WHERE event_type = 'done' AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL GROUP BY card_type ORDER BY avg_lead_time_minutes DESC",
           "queryType": "table",
           "timeColumns": [],
           "refId": "A"
@@ -3659,8 +3644,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT ac_count, ROUND(AVG((julianday(card_completed_at) - julianday(card_created_at)) * 24 * 60), 1) as avg_lead_time_minutes, COUNT(*) as card_count FROM kanban_card_events WHERE event_type = 'done' AND ac_count IS NOT NULL AND ac_count > 0 AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL AND CAST(strftime('%s', card_completed_at) AS INTEGER) >= $__from/1000 AND CAST(strftime('%s', card_completed_at) AS INTEGER) <= $__to/1000 GROUP BY ac_count ORDER BY ac_count",
-          "queryText": "SELECT ac_count, ROUND(AVG((julianday(card_completed_at) - julianday(card_created_at)) * 24 * 60), 1) as avg_lead_time_minutes, COUNT(*) as card_count FROM kanban_card_events WHERE event_type = 'done' AND ac_count IS NOT NULL AND ac_count > 0 AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL AND CAST(strftime('%s', card_completed_at) AS INTEGER) >= $__from/1000 AND CAST(strftime('%s', card_completed_at) AS INTEGER) <= $__to/1000 GROUP BY ac_count ORDER BY ac_count",
+          "rawQueryText": "SELECT ac_count, ROUND(AVG((julianday(card_completed_at) - julianday(card_created_at)) * 24 * 60), 1) as avg_lead_time_minutes, COUNT(*) as card_count FROM kanban_card_events WHERE event_type = 'done' AND ac_count IS NOT NULL AND ac_count > 0 AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL GROUP BY ac_count ORDER BY ac_count",
+          "queryText": "SELECT ac_count, ROUND(AVG((julianday(card_completed_at) - julianday(card_created_at)) * 24 * 60), 1) as avg_lead_time_minutes, COUNT(*) as card_count FROM kanban_card_events WHERE event_type = 'done' AND ac_count IS NOT NULL AND ac_count > 0 AND card_created_at IS NOT NULL AND card_completed_at IS NOT NULL GROUP BY ac_count ORDER BY ac_count",
           "queryType": "table",
           "timeColumns": [],
           "refId": "A"
@@ -3774,8 +3759,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "claude-metrics-sqlite"
           },
-          "rawQueryText": "SELECT COALESCE(git_project, 'unknown') as project, COUNT(*) as completions, COUNT(DISTINCT date(card_completed_at, 'localtime')) as active_days FROM kanban_card_events WHERE event_type = 'done' AND git_project IS NOT NULL AND CAST(strftime('%s', card_completed_at) AS INTEGER) >= $__from/1000 AND CAST(strftime('%s', card_completed_at) AS INTEGER) <= $__to/1000 GROUP BY git_project ORDER BY completions DESC",
-          "queryText": "SELECT COALESCE(git_project, 'unknown') as project, COUNT(*) as completions, COUNT(DISTINCT date(card_completed_at, 'localtime')) as active_days FROM kanban_card_events WHERE event_type = 'done' AND git_project IS NOT NULL AND CAST(strftime('%s', card_completed_at) AS INTEGER) >= $__from/1000 AND CAST(strftime('%s', card_completed_at) AS INTEGER) <= $__to/1000 GROUP BY git_project ORDER BY completions DESC",
+          "rawQueryText": "SELECT COALESCE(git_project, 'unknown') as project, COUNT(*) as completions, COUNT(DISTINCT date(card_completed_at, 'localtime')) as active_days FROM kanban_card_events WHERE event_type = 'done' AND git_project IS NOT NULL AND card_completed_at IS NOT NULL GROUP BY git_project ORDER BY completions DESC",
+          "queryText": "SELECT COALESCE(git_project, 'unknown') as project, COUNT(*) as completions, COUNT(DISTINCT date(card_completed_at, 'localtime')) as active_days FROM kanban_card_events WHERE event_type = 'done' AND git_project IS NOT NULL AND card_completed_at IS NOT NULL GROUP BY git_project ORDER BY completions DESC",
           "queryType": "table",
           "timeColumns": [],
           "refId": "A"

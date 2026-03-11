@@ -271,7 +271,17 @@ case "$1" in
         ;;
       *)
         echo "Error: Unknown pr subcommand: $subcommand" >&2
-        echo "Usage: stk pr [draft|ready|close [comment]|merge|view [args...]]" >&2
+        echo
+        echo "This is not a valid stk pr subcommand... yet. Want to add it?" >&2
+        echo "Open a staff session to extend stk pr with new capabilities." >&2
+        echo
+        echo "Available stk pr subcommands:" >&2
+        echo "  stk pr            Create draft PR (or convert ready → draft)" >&2
+        echo "  stk pr draft      Create draft PR or convert ready → draft" >&2
+        echo "  stk pr ready      Create ready PR or promote draft → ready" >&2
+        echo "  stk pr close      Close PR (optional comment)" >&2
+        echo "  stk pr merge      Merge PR" >&2
+        echo "  stk pr view       View PR (passthrough to gh pr view)" >&2
         exit 1
         ;;
     esac
@@ -279,7 +289,22 @@ case "$1" in
   -*)
     # Unrecognized flag
     echo "Error: Unknown option: $1" >&2
-    show_help >&2
+    echo
+    echo "This is not a valid stk command... yet. Want to add it?" >&2
+    echo "Open a staff session to extend stk with new capabilities." >&2
+    echo
+    echo "Available stk commands:" >&2
+    echo "  stk <branch>      Create stacked worktree (auto-inits graphite)" >&2
+    echo "  stk               Restack downstream branches" >&2
+    echo "  stk pull          Sync with main + restack" >&2
+    echo "  stk log           Stack status with PR states" >&2
+    echo "  stk status        Stack position + working tree" >&2
+    echo "  stk pr            Create/convert to draft PR" >&2
+    echo "  stk pr draft      Create draft or convert ready to draft" >&2
+    echo "  stk pr ready      Create ready or promote draft to ready" >&2
+    echo "  stk pr close      Close PR (optional comment)" >&2
+    echo "  stk pr merge      Merge PR" >&2
+    echo "  stk pr view       View PR (passthrough to gh pr view)" >&2
     exit 1
     ;;
   *)

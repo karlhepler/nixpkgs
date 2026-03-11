@@ -76,18 +76,16 @@ from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # Pricing table — per 1M tokens, keyed by model family
-# Prices last verified: 2026-02-25
-# Source: https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching
+# Prices last verified: 2026-03-10
+# Source: https://www.anthropic.com/pricing
 #
 # Model identifier patterns per family:
-#   "opus"     — claude-opus-4, claude-opus-4-5, claude-opus-4-6 (current gen, $5/$25)
-#                NOTE: legacy models claude-opus-4-1 and claude-3-opus billed at
+#   "opus"     — claude-opus-4, claude-3-opus and all opus-family models
 #                $15 input / $75 output / $18.75 cache-write-5m / $30 cache-write-1h /
-#                $1.50 cache-read. Those are deprecated and cost here will be understated
-#                if encountered.
-#   "sonnet"   — claude-sonnet-4, claude-sonnet-4-5, claude-sonnet-4-6,
-#                claude-sonnet-3-7 (deprecated)
-#   "haiku-3.5"— claude-haiku-3-5 (deprecated)
+#                $1.50 cache-read.
+#   "sonnet"   — claude-sonnet-4, claude-3-7-sonnet, claude-3-5-sonnet and all
+#                sonnet-family models: $3/$15 per M input/output
+#   "haiku-3.5"— claude-3-5-haiku / claude-haiku-3-5: $0.80/$4.00 per M input/output
 #   "haiku"    — claude-haiku-4-5 and newer haiku models ($1/$5). NOTE: legacy
 #                claude-haiku-3 billed at $0.25 input / $1.25 output; cost will be
 #                overstated if encountered. haiku-3.5 is handled by the "haiku-3.5"
@@ -96,15 +94,15 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 PRICING = {
     "opus": {
-        # claude-opus-4, claude-opus-4-5, claude-opus-4-6
-        "input": 5.00,
-        "output": 25.00,
-        "cache_creation_5m": 6.25,
-        "cache_creation_1h": 10.00,
-        "cache_read": 0.50,
+        # claude-opus-4, claude-3-opus and all opus-family models
+        "input": 15.00,
+        "output": 75.00,
+        "cache_creation_5m": 18.75,
+        "cache_creation_1h": 30.00,
+        "cache_read": 1.50,
     },
     "sonnet": {
-        # claude-sonnet-4, claude-sonnet-4-5, claude-sonnet-4-6
+        # claude-sonnet-4, claude-3-7-sonnet, claude-3-5-sonnet and all sonnet-family models
         "input": 3.00,
         "output": 15.00,
         "cache_creation_5m": 3.75,
@@ -112,7 +110,7 @@ PRICING = {
         "cache_read": 0.30,
     },
     "haiku-3.5": {
-        # claude-haiku-3-5 (deprecated)
+        # claude-3-5-haiku / claude-haiku-3-5
         "input": 0.80,
         "output": 4.00,
         "cache_creation_5m": 1.00,
@@ -296,7 +294,16 @@ DB_PATH = Path.home() / ".claude" / "metrics" / "claude-metrics.db"
 # Model family detection
 # ---------------------------------------------------------------------------
 def detect_model_family(model: str) -> str:
-    """Parse model string to determine pricing family."""
+    """
+    Parse model string to determine pricing family.
+
+    Handled patterns (substring match, case-insensitive):
+      "opus"    → "opus"     e.g. claude-opus-4, claude-3-opus
+      "sonnet"  → "sonnet"   e.g. claude-sonnet-4, claude-3-7-sonnet, claude-3-5-sonnet
+      "haiku"+"3-5" or "3.5" → "haiku-3.5"  e.g. claude-3-5-haiku, claude-haiku-3-5
+      "haiku"   → "haiku"    e.g. claude-haiku-4, claude-haiku-4-5
+      (none)    → "unknown"
+    """
     lower = model.lower()
     if "opus" in lower:
         return "opus"
@@ -604,28 +611,39 @@ def lookup_kanban_session(working_directory: str, session_id: str):
     Return the friendly kanban session name for session_id, or None.
 
     Strategy:
-    1. Check {working_directory}/.kanban/sessions.json first (fast path,
-       works when payload contains correct cwd).
-    2. If not found, scan all .kanban/sessions.json files under $HOME.
-       This handles the case where cwd is absent from the payload and
-       os.getcwd() returns a different directory than the project's root.
+    1. Walk up the directory tree from working_directory, checking each
+       ancestor for a .kanban/sessions.json file. Stops at $HOME or
+       filesystem root. This handles both the exact cwd case and the
+       common case where Claude runs from a subdirectory of the project.
+    2. If not found after the upward walk, scan all .kanban/sessions.json
+       files under $HOME. This handles the edge case where cwd is outside
+       the project tree entirely (e.g. /tmp or a deeply nested workspace).
 
     sessions.json keys are the first 8 characters of the Claude session UUID
     (matching how kanban session-hook stores them via resolve_session_name).
     """
     prefix = session_id[:8]
+    home = Path.home()
 
-    # Fast path: cwd-based lookup
-    sessions_path = Path(working_directory) / ".kanban" / "sessions.json"
-    sessions = _read_sessions_file(sessions_path)
-    result = sessions.get(prefix)
-    if result is not None:
-        return result
+    # Walk up the directory tree from working_directory to $HOME (inclusive)
+    checked_paths: set[Path] = set()
+    current = Path(working_directory).resolve()
+    while True:
+        candidate = current / ".kanban" / "sessions.json"
+        checked_paths.add(candidate)
+        sessions = _read_sessions_file(candidate)
+        result = sessions.get(prefix)
+        if result is not None:
+            return result
+
+        # Stop once we've checked $HOME or hit the filesystem root
+        if current == home or current.parent == current:
+            break
+        current = current.parent
 
     # Fallback: search all .kanban/sessions.json files under $HOME
-    home = Path.home()
     for candidate in home.rglob(".kanban/sessions.json"):
-        if candidate == sessions_path:
+        if candidate in checked_paths:
             continue
         sessions = _read_sessions_file(candidate)
         result = sessions.get(prefix)
