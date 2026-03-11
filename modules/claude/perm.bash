@@ -15,6 +15,7 @@ set -euo pipefail
 #   perm check <pattern>                                     Check if pattern is approved across all settings files
 #   perm nuke                                                Nuke ALL entries from permissions.allow (interactive, user-only)
 #   perm session-hook                                        SessionStart hook: read JSON from stdin, print session UUID
+#   perm hook                                                PermissionRequest hook: read JSON from stdin, emit allow decision if pattern matches
 #
 # FILES:
 #   .claude/settings.local.json  - Claude Code local settings
@@ -41,6 +42,7 @@ USAGE:
   perm check <pattern>                                     Check if pattern is approved across all settings files
   perm nuke                                                Nuke ALL entries from permissions.allow (interactive, user-only)
   perm session-hook                                        SessionStart hook: read JSON stdin, print session UUID
+  perm hook                                                PermissionRequest hook: read JSON stdin, emit allow decision if pattern matches
   perm --help                                              Show this help message
 
 OPTIONS:
@@ -70,6 +72,12 @@ DESCRIPTION:
 
   session-hook reads Claude Code SessionStart JSON from stdin and
   prints the session UUID for use with --session flags.
+
+  hook reads Claude Code PermissionRequest JSON from stdin. It resolves
+  the repo root from the payload cwd, reads .claude/settings.local.json
+  permissions.allow, and emits an allow decision to stdout when any pattern
+  matches the incoming tool call. Always fails open (empty stdout, exit 0)
+  on any error so that normal permission flow handles the request.
 
 EXAMPLES:
   perm --session a1b2c3d4 allow "Bash(npm run lint)"
@@ -433,6 +441,116 @@ cmd_session_hook() {
   echo "🔑 Your perm session is: ${session_id}"
 }
 
+cmd_hook() {
+  # PermissionRequest hook: reads JSON from stdin, returns allow decision if
+  # any pattern in settings.local.json permissions.allow matches the tool call.
+  # Always fails open (empty stdout, exit 0) on any error.
+
+  local json
+  json="$(cat)"
+
+  # Empty stdin — fail open
+  if [[ -z "${json}" ]]; then
+    exit 0
+  fi
+
+  # Single jq call to extract all needed fields from the payload.
+  # Outputs tab-delimited: cwd<TAB>tool_name<TAB>content.
+  # cwd and tool_name never contain tabs; content may, so we split on the
+  # first two tabs only (IFS= read with fixed field count handles the rest).
+  local extracted
+  extracted="$(printf '%s' "${json}" | jq -rj '
+    (.cwd // "") + "\t" +
+    (.tool_name // "") + "\t" +
+    (
+      if   .tool_name == "Bash"                    then .tool_input.command   // ""
+      elif .tool_name == "Write" or
+           .tool_name == "Edit"  or
+           .tool_name == "Read"                    then .tool_input.file_path // ""
+      elif .tool_name == "WebFetch"                then .tool_input.url       // ""
+      else (.tool_input // {} | tojson)
+      end
+    )
+  ' 2>/dev/null)" || { exit 0; }
+
+  # Read exactly two tab-delimited fields; content captures the remainder.
+  local cwd tool_name content
+  IFS=$'\t' read -r cwd tool_name content <<< "${extracted}"
+
+  # cwd required — bail silently if absent
+  if [[ -z "${cwd}" ]]; then
+    exit 0
+  fi
+
+  # tool_name required — bail silently if absent
+  if [[ -z "${tool_name}" ]]; then
+    exit 0
+  fi
+
+  # Resolve repo root — bail silently on failure
+  local repo_root
+  repo_root="$(git -C "${cwd}" rev-parse --show-toplevel 2>/dev/null)" || { exit 0; }
+  if [[ -z "${repo_root}" ]]; then
+    exit 0
+  fi
+
+  local settings_file="${repo_root}/.claude/settings.local.json"
+
+  # No settings file — fail open
+  if [[ ! -f "${settings_file}" ]]; then
+    exit 0
+  fi
+
+  # Read allow patterns — bail silently on malformed JSON or missing key
+  local allow_patterns
+  allow_patterns="$(jq -r '.permissions.allow // [] | .[]' "${settings_file}" 2>/dev/null)" || { exit 0; }
+
+  if [[ -z "${allow_patterns}" ]]; then
+    exit 0
+  fi
+
+  # Check each pattern against the incoming tool call
+  while IFS= read -r pattern; do
+    [[ -z "${pattern}" ]] && continue
+
+    local pattern_tool pattern_content has_content
+    if [[ "${pattern}" == *'('* ]]; then
+      # Format: Tool(content_glob)
+      pattern_tool="${pattern%%(*}"
+      # Strip leading "(" and trailing ")"
+      pattern_content="${pattern#*(}"
+      pattern_content="${pattern_content%)}"
+      has_content=true
+    else
+      # Bare tool name — matches any input for that tool
+      pattern_tool="${pattern}"
+      pattern_content=""
+      has_content=false
+    fi
+
+    # Tool name must match
+    if [[ "${pattern_tool}" != "${tool_name}" ]]; then
+      continue
+    fi
+
+    # If bare tool name, it matches any call for this tool
+    if [[ "${has_content}" == false ]]; then
+      printf '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}'
+      exit 0
+    fi
+
+    # Glob match content against pattern (unquoted RHS enables bash glob semantics)
+    # shellcheck disable=SC2053
+    if [[ "${content}" == ${pattern_content} ]]; then
+      printf '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}'
+      exit 0
+    fi
+  done <<< "${allow_patterns}"
+
+  # No pattern matched — fail open (empty stdout)
+  exit 0
+}
+
 cmd_nuke() {
   init_settings
 
@@ -616,7 +734,7 @@ while [[ $# -gt 0 ]]; do
       show_help
       exit 0
       ;;
-    allow|always|cleanup|cleanup-stale|list|check|nuke|session-hook)
+    allow|always|cleanup|cleanup-stale|list|check|nuke|session-hook|hook)
       subcommand="$1"
       shift
       break
@@ -682,5 +800,8 @@ case "${subcommand}" in
     ;;
   session-hook)
     cmd_session_hook
+    ;;
+  hook)
+    cmd_hook
     ;;
 esac

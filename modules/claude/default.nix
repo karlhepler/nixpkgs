@@ -935,6 +935,12 @@ in {
               command = "${shellapps.claude-session-start-hook}/bin/claude-session-start-hook";
             }];
           }];
+          PermissionRequest = [{
+            hooks = [{
+              type = "command";
+              command = "${shellapps.perm}/bin/perm hook";
+            }];
+          }];
         };
       };
       claudeSettingsJson = pkgs.runCommand "claude-settings.json" {} ''
