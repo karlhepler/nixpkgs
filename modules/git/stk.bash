@@ -234,6 +234,8 @@ stk_pr_merge() {
 stk_rebase() {
   local parent_branch="$1"
 
+  ensure_tracked "$parent_branch"
+
   echo "Updating Graphite parent to '$parent_branch'..." >&2
   gt move "$parent_branch"
 
@@ -288,6 +290,26 @@ guard_uncommitted_changes() {
   esac
 }
 
+# Ensure the current branch is tracked by Graphite before running gt operations.
+# If the branch is already tracked, this is a no-op.
+# Accepts an optional parent argument: if provided, passes --parent <arg> to gt track.
+#
+# Usage: ensure_tracked [parent-branch]
+ensure_tracked() {
+  local parent="${1:-}"
+
+  # Check whether the branch is already tracked by graphite
+  if ! gt branch info 2>&1 | rg -qi 'not tracked'; then
+    return 0
+  fi
+
+  if [[ -n "$parent" ]]; then
+    gt track --parent "$parent" >&2
+  else
+    gt track >&2
+  fi
+}
+
 # Ensure the repo is initialized with Graphite
 ensure_gt_init() {
   local graphite_config
@@ -333,8 +355,9 @@ run_gt() {
   return $gt_exit
 }
 
-# No args: restack (with auto-track fallback for untracked branches)
+# No args: restack (auto-track if needed, then restack)
 if [[ $# -eq 0 ]]; then
+  ensure_tracked
   run_gt restack
   exit $?
 fi
