@@ -431,8 +431,19 @@ case "$1" in
       # Ensure graphite is initialized for this repo
       ensure_gt_init
 
+      # Save current branch before gt create. gt create checks out the new
+      # branch in the current directory, which would cause git worktree list
+      # to find the branch already checked out here — preventing a new
+      # worktree from being created. We switch back immediately after.
+      original_branch="$(git rev-parse --abbrev-ref HEAD)"
+
       # Create the graphite-tracked branch non-interactively
       run_gt create "$branch_name" >&2
+
+      # Switch back to the original branch so the new branch is not checked
+      # out in the current worktree. This allows git worktree add to create
+      # a new dedicated worktree for it below.
+      git checkout "$original_branch" >&2
 
       # Inline worktree creation (mirrors workout <branch> logic).
       # Get remote URL and extract org/repo
