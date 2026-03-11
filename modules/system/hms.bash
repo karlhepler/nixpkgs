@@ -119,8 +119,7 @@ if ! command -v claude &>/dev/null; then
 fi
 
 # Ralph Orchestrator: Multi-agent orchestration framework (version pinned via lock file)
-repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")" && git rev-parse --show-toplevel)
-ralph_lock="$repo_root/modules/claude/ralph.lock"
+ralph_lock="$HOME/.config/nixpkgs/modules/claude/ralph.lock"
 
 if [[ ! -f "$ralph_lock" ]]; then
   echo "Warning: modules/claude/ralph.lock not found — skipping ralph version check"
