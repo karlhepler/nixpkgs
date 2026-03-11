@@ -234,7 +234,7 @@ stk_pr_merge() {
 stk_rebase() {
   local parent_branch="$1"
 
-  ensure_tracked "$parent_branch"
+  ensure_tracked "$parent_branch"  # Track current branch under the new parent before moving
 
   echo "Updating Graphite parent to '$parent_branch'..." >&2
   gt move --onto "$parent_branch"
