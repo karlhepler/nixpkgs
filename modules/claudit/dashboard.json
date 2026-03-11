@@ -413,7 +413,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "currencyUSD",
-          "decimals": 4,
+          "decimals": 2,
           "color": {
             "mode": "palette-classic"
           },
@@ -1206,9 +1206,9 @@
     },
     {
       "id": 5,
-      "type": "timeseries",
+      "type": "table",
       "title": "Session Timeline (Cost + Tool Calls)",
-      "description": "Each dot represents a session plotted by start time, showing cost, tool call count, and duration. Dots high on the cost axis with low tool calls suggest token-heavy reasoning without much action — a signal to tighten the task definition.",
+      "description": "Each row represents a session showing its end time, cost, tool call count, and duration. Sessions with high cost and low tool calls suggest token-heavy reasoning without much action — a signal to tighten the task definition.",
       "gridPos": {
         "x": 12,
         "y": 39,
@@ -1227,10 +1227,8 @@
           },
           "rawQueryText": "SELECT strftime('%Y-%m-%dT%H:%M:%S', COALESCE(MAX(last_seen_at), MAX(recorded_at))) as time, COALESCE(kanban_session, session_id) as session_label, ROUND(SUM(cost_usd), 4) as session_cost, SUM(tool_calls) as total_tool_calls, ROUND(SUM(duration_seconds) / 60.0, 1) as duration_minutes FROM agent_metrics WHERE recorded_at IS NOT NULL GROUP BY session_id HAVING COALESCE(MAX(last_seen_at), MAX(recorded_at)) IS NOT NULL ORDER BY time",
           "queryText": "SELECT strftime('%Y-%m-%dT%H:%M:%S', COALESCE(MAX(last_seen_at), MAX(recorded_at))) as time, COALESCE(kanban_session, session_id) as session_label, ROUND(SUM(cost_usd), 4) as session_cost, SUM(tool_calls) as total_tool_calls, ROUND(SUM(duration_seconds) / 60.0, 1) as duration_minutes FROM agent_metrics WHERE recorded_at IS NOT NULL GROUP BY session_id HAVING COALESCE(MAX(last_seen_at), MAX(recorded_at)) IS NOT NULL ORDER BY time",
-          "queryType": "time series",
-          "timeColumns": [
-            "time"
-          ],
+          "queryType": "table",
+          "timeColumns": [],
           "refId": "A"
         }
       ],
@@ -1239,18 +1237,24 @@
           "unit": "currencyUSD",
           "decimals": 4,
           "custom": {
-            "lineWidth": 0,
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "spanNulls": false,
-            "insertNulls": false,
-            "showPoints": "always",
-            "pointSize": 8,
-            "drawStyle": "points",
-            "lineInterpolation": "linear"
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true,
+            "inspect": false
           },
           "color": {
-            "mode": "palette-classic"
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
           }
         },
         "overrides": [
@@ -1267,6 +1271,10 @@
               {
                 "id": "unit",
                 "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 4
               }
             ]
           },
@@ -1321,19 +1329,36 @@
                 "value": "Session"
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "time"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Session End"
+              }
+            ]
           }
         ]
       },
       "options": {
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": ["sum"],
+          "countRows": false,
+          "fields": ""
         },
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": false
-        }
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Session End",
+            "desc": true
+          }
+        ]
       }
     },
     {
@@ -3915,8 +3940,8 @@
     "list": []
   },
   "time": {
-    "from": "now-7d",
-    "to": "now"
+    "from": "now-7d/d",
+    "to": "now/d"
   },
   "timepicker": {
     "quick_ranges": [
