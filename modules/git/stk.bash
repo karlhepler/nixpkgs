@@ -299,7 +299,9 @@ ensure_tracked() {
   local parent="${1:-}"
 
   # Check whether the branch is already tracked by graphite
-  if ! gt branch info 2>&1 | rg -qi 'not tracked'; then
+  local branch_info
+  branch_info="$(gt branch info 2>&1 || true)"
+  if ! echo "$branch_info" | rg -qi 'not tracked'; then
     return 0
   fi
 
