@@ -101,6 +101,30 @@ get_pr_state() {
   gh pr view --json state,isDraft --jq '{state: .state, isDraft: .isDraft}' 2>/dev/null
 }
 
+# Get the graphite parent branch for the current branch (local, no auth required).
+# Returns the parent branch name, or empty string if not determinable.
+get_gt_parent() {
+  gt branch info 2>/dev/null | head -1 | awk '{print $1}'
+}
+
+# Create a PR using gh, using the graphite parent as the base branch.
+# Usage: create_gh_pr [--draft]
+create_gh_pr() {
+  local extra_flags=()
+  if [[ "${1:-}" == "--draft" ]]; then
+    extra_flags+=("--draft")
+  fi
+
+  local parent_branch
+  parent_branch="$(get_gt_parent)"
+
+  if [[ -n "$parent_branch" ]]; then
+    gh pr create "${extra_flags[@]}" --fill --base "$parent_branch"
+  else
+    gh pr create "${extra_flags[@]}" --fill
+  fi
+}
+
 # Convert a ready PR to draft. Tries --undo flag first (newer gh), falls back to
 # convert-to-draft (older gh).
 convert_to_draft() {
@@ -115,7 +139,7 @@ stk_pr_draft() {
   local pr_json
   if ! pr_json="$(get_pr_state)"; then
     echo "No PR found for current branch. Creating draft PR..." >&2
-    run_gt submit --draft
+    create_gh_pr --draft
     return
   fi
 
@@ -147,7 +171,7 @@ stk_pr_ready() {
   local pr_json
   if ! pr_json="$(get_pr_state)"; then
     echo "No PR found for current branch. Creating ready PR..." >&2
-    run_gt submit
+    create_gh_pr
     return
   fi
 
