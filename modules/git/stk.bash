@@ -249,11 +249,20 @@ stk_rebase() {
 #   2. Stack anyway
 #   3. Quit
 # Returns 0 to proceed with branch creation, 1 to abort.
+# If stdin is not a TTY (non-interactive context), exits with error instead of fzf.
 guard_uncommitted_changes() {
   local dirty
   dirty="$(git status --porcelain)"
   if [[ -z "$dirty" ]]; then
     return 0
+  fi
+
+  # Check if stdin is a TTY (interactive context)
+  if [[ ! -t 0 ]]; then
+    echo "error: uncommitted changes detected in this worktree. Commit or stash before stacking." >&2
+    echo "Uncommitted files:" >&2
+    echo "$dirty" >&2
+    return 1
   fi
 
   local choice
