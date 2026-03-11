@@ -1006,6 +1006,119 @@ EOF
       $DRY_RUN_CMD install -m 644 ${toolsMarkdown} ~/.claude/TOOLS.md
     '';
 
+    # claudePlugins
+    # Purpose: Registers Nix-managed LSP plugins in ~/.claude/plugins/installed_plugins.json
+    # Why: All Neovim LSPs are globally available in Claude Code via Nix, persisting across machines
+    # When: After writeBoundary (after files are written to disk)
+    # Note: Idempotent — only adds user-scope entries if not already present; preserves project-scope entries
+    #
+    # Official plugins (from claude-plugins-official marketplace):
+    #   pyright-lsp, typescript-lsp, gopls-lsp, rust-analyzer-lsp, ruby-lsp
+    # Custom local plugins (from ~/.claude/lsp-plugins/, deployed by claudeGlobal):
+    #   yaml-lsp, bash-lsp, haskell-lsp, nix-lsp, starlark-lsp, helm-lsp
+    claudePlugins = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      plugins_file=~/.claude/plugins/installed_plugins.json
+      marketplace_sha="bd041495bd2a1f3e21317f37277b2f5aa152b759"
+      installed_at="2026-03-11T00:00:00.000Z"
+
+      # Ensure plugins directory exists
+      $DRY_RUN_CMD mkdir -p ~/.claude/plugins
+
+      # Initialize installed_plugins.json if it doesn't exist
+      if [[ ! -f "$plugins_file" ]]; then
+        $DRY_RUN_CMD echo '{"version":2,"plugins":{}}' > "$plugins_file"
+      fi
+
+      # ── Official plugins ─────────────────────────────────────────────────────────
+      # For each official plugin:
+      #   1. Create the versioned cache dir (mirrors what `claude plugin install` creates)
+      #   2. Populate it with the .lsp.json so Claude Code can load the LSP configuration
+      #      (the official marketplace source dirs only contain LICENSE + README.md;
+      #       Claude Code reads lspServers from marketplace.json, but having .lsp.json
+      #       in the installPath makes the config self-contained and resilient to marketplace changes)
+      #   3. Register a user-scope entry in installed_plugins.json if not already present
+
+      declare -A official_plugins
+      official_plugins["pyright-lsp"]='{"pyright":{"command":"pyright-langserver","args":["--stdio"],"extensionToLanguage":{".py":"python",".pyi":"python"}}}'
+      official_plugins["typescript-lsp"]='{"typescript":{"command":"typescript-language-server","args":["--stdio"],"extensionToLanguage":{".ts":"typescript",".tsx":"typescriptreact",".js":"javascript",".jsx":"javascriptreact",".mts":"typescript",".cts":"typescript",".mjs":"javascript",".cjs":"javascript"}}}'
+      official_plugins["gopls-lsp"]='{"gopls":{"command":"gopls","extensionToLanguage":{".go":"go"}}}'
+      official_plugins["rust-analyzer-lsp"]='{"rust-analyzer":{"command":"rust-analyzer","extensionToLanguage":{".rs":"rust"}}}'
+      official_plugins["ruby-lsp"]='{"ruby-lsp":{"command":"ruby-lsp","extensionToLanguage":{".rb":"ruby",".rake":"ruby",".gemspec":"ruby",".ru":"ruby",".erb":"erb"}}}'
+
+      for plugin_name in "''${!official_plugins[@]}"; do
+        cache_dir=~/.claude/plugins/cache/claude-plugins-official/"$plugin_name"/1.0.0
+        plugin_key="$plugin_name@claude-plugins-official"
+        lsp_config="''${official_plugins[$plugin_name]}"
+
+        # Create cache dir and write .lsp.json
+        $DRY_RUN_CMD mkdir -p "$cache_dir"
+        $DRY_RUN_CMD echo "$lsp_config" | ${pkgs.jq}/bin/jq . > "$cache_dir/.lsp.json"
+
+        # Add user-scope entry only if not already present at user scope
+        has_user_scope=$(${pkgs.jq}/bin/jq --arg key "$plugin_key" \
+          'if .plugins | has($key) then
+            .plugins[$key] | map(select(.scope == "user")) | length
+          else 0 end' "$plugins_file")
+
+        if [[ "$has_user_scope" == "0" ]]; then
+          $DRY_RUN_CMD ${pkgs.jq}/bin/jq \
+            --arg key "$plugin_key" \
+            --arg install_path "$cache_dir" \
+            --arg sha "$marketplace_sha" \
+            --arg ts "$installed_at" \
+            '.plugins[$key] = ((.plugins[$key] // []) + [{
+              "scope": "user",
+              "installPath": $install_path,
+              "version": "1.0.0",
+              "installedAt": $ts,
+              "lastUpdated": $ts,
+              "gitCommitSha": $sha
+            }])' "$plugins_file" > "$plugins_file.tmp"
+          $DRY_RUN_CMD mv "$plugins_file.tmp" "$plugins_file"
+        fi
+      done
+
+      # ── Custom local plugins ─────────────────────────────────────────────────────
+      # These are deployed by claudeGlobal from modules/claude/global/lsp-plugins/
+      # to ~/.claude/lsp-plugins/<name>/. Each dir contains a .lsp.json file.
+      # Registered under "local" marketplace so they don't conflict with official plugins.
+
+      declare -A custom_plugins
+      custom_plugins["yaml-lsp"]=~/.claude/lsp-plugins/yaml-lsp
+      custom_plugins["bash-lsp"]=~/.claude/lsp-plugins/bash-lsp
+      custom_plugins["haskell-lsp"]=~/.claude/lsp-plugins/haskell-lsp
+      custom_plugins["nix-lsp"]=~/.claude/lsp-plugins/nix-lsp
+      custom_plugins["starlark-lsp"]=~/.claude/lsp-plugins/starlark-lsp
+      custom_plugins["helm-lsp"]=~/.claude/lsp-plugins/helm-lsp
+
+      for plugin_name in "''${!custom_plugins[@]}"; do
+        install_path="''${custom_plugins[$plugin_name]}"
+        plugin_key="$plugin_name@local"
+
+        # Add user-scope entry only if not already present at user scope
+        has_user_scope=$(${pkgs.jq}/bin/jq --arg key "$plugin_key" \
+          'if .plugins | has($key) then
+            .plugins[$key] | map(select(.scope == "user")) | length
+          else 0 end' "$plugins_file")
+
+        if [[ "$has_user_scope" == "0" ]]; then
+          $DRY_RUN_CMD ${pkgs.jq}/bin/jq \
+            --arg key "$plugin_key" \
+            --arg install_path "$install_path" \
+            --arg ts "$installed_at" \
+            '.plugins[$key] = ((.plugins[$key] // []) + [{
+              "scope": "user",
+              "installPath": $install_path,
+              "version": "1.0.0",
+              "installedAt": $ts,
+              "lastUpdated": $ts,
+              "gitCommitSha": "0000000000000000000000000000000000000000"
+            }])' "$plugins_file" > "$plugins_file.tmp"
+          $DRY_RUN_CMD mv "$plugins_file.tmp" "$plugins_file"
+        fi
+      done
+    '';
+
     # claudeMcp
     # Purpose: Merges Context7 MCP configuration into ~/.claude.json
     # Why: Enables Context7 MCP integration while preserving Claude's metadata

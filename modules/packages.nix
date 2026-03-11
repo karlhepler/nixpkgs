@@ -104,6 +104,9 @@ in
     nil
     comma
 
+    # Rust
+    rust-analyzer
+
     # Starlark
     starpls  # Language server for Starlark
 

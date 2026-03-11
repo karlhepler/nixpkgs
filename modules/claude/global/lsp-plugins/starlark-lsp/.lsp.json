@@ -1,0 +1,11 @@
+{
+  "starlark": {
+    "command": "starpls",
+    "extensionToLanguage": {
+      ".star": "starlark",
+      ".bzl": "starlark",
+      "BUILD": "starlark",
+      "WORKSPACE": "starlark"
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "helm": {
+    "command": "helm_ls",
+    "args": ["serve"],
+    "extensionToLanguage": {
+      ".tpl": "helm"
+    }
+  }
+}
