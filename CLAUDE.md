@@ -466,6 +466,8 @@ Ralph is a self-contained event-loop orchestrator with its own memory system. Ka
 | `/finance` | Financial analysis | Unit economics, pricing, burn rate |
 | `/workout-staff` | Git worktree | Parallel branches (exception skill) |
 | `/workout-burns` | Worktree with burns | Parallel dev with Ralph (exception skill) |
+| `/stk-staff` | Stacked worktree + staff | Parallel stacked PRs with Claude Code |
+| `/stk-burns` | Stacked worktree + burns | Parallel stacked PRs with Ralph |
 | `/review` | Full PR code review | Orchestrate specialist review of an **existing PR** — ONLY when user explicitly references a PR: "review PR #N", "code review PR #N", "review pull request". NOT triggered by user confirming Mandatory Review Protocol recommendations. |
 | `/manage-pr-comments` | PR comment management via `prc` | List, filter, resolve, collapse comment threads |
 | `smithers` (CLI) | Autonomous PR watcher (user-run, not invocable via Task/Skill) | See smithers note in staff-engineer output style |

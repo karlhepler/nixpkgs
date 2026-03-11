@@ -9,6 +9,11 @@ let
     flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
   } (builtins.readFile ./workout-claude.py);
 
+  # stk-claude Python CLI (like workout-claude but uses 'stk work' for graphite-tracked stacked branches)
+  stkClaudeScript = pkgs.writers.writePython3Bin "stk-claude" {
+    flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
+  } (builtins.readFile ./stk-claude.py);
+
   # workout-smithers Python CLI (launch smithers across multiple PRs in parallel TMUX windows)
   # Bare Python binary - runtime deps (gh, tmux, git, workout) injected via wrapProgram
   # in the gitShellapps rec block where the workout shellapp is in scope.
@@ -145,6 +150,13 @@ in {
         description = "Batch worktree creation with JSON input and per-worktree Claude command prompt injection";
         mainProgram = "workout-claude";
         homepage = "${builtins.toString ./.}/workout-claude.py";
+      };
+    };
+    stk-claude = stkClaudeScript // {
+      meta = {
+        description = "Batch stacked worktree creation with JSON input and per-worktree Claude command prompt injection";
+        mainProgram = "stk-claude";
+        homepage = "${builtins.toString ./.}/stk-claude.py";
       };
     };
     workout-smithers = pkgs.symlinkJoin {
