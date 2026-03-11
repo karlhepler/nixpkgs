@@ -235,7 +235,7 @@ stk_rebase() {
   local parent_branch="$1"
 
   echo "Updating Graphite parent to '$parent_branch'..." >&2
-  gt upstack onto "$parent_branch"
+  gt move "$parent_branch"
 
   echo >&2
   run_gt log
