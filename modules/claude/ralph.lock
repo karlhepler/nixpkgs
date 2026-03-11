@@ -1,0 +1,5 @@
+{
+  "version": "2.6.0",
+  "pinned_at": "2026-03-11",
+  "notes": "Downgraded from 2.8.0 — portable-pty breaks claude output when invoked as subprocess"
+}

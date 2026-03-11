@@ -118,18 +118,43 @@ if ! command -v claude &>/dev/null; then
   curl -fsSL https://claude.ai/install.sh | bash
 fi
 
-# Ralph Orchestrator: Multi-agent orchestration framework
-if ! command -v ralph &>/dev/null; then
-  echo "Installing Ralph Orchestrator..."
-  curl -fsSL "https://github.com/mikeyobrien/ralph-orchestrator/releases/latest/download/ralph-cli-installer.sh" | sh
-else
-  # Check for updates
-  CURRENT_VERSION=$(ralph --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "0.0.0")
-  LATEST_VERSION=$(curl -fsSL "https://api.github.com/repos/mikeyobrien/ralph-orchestrator/releases/latest" | jq -r '.tag_name // empty' | sed 's/^v//' || echo "$CURRENT_VERSION")
+# Ralph Orchestrator: Multi-agent orchestration framework (version pinned via lock file)
+repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")" && git rev-parse --show-toplevel)
+ralph_lock="$repo_root/modules/claude/ralph.lock"
 
-  if [ "$LATEST_VERSION" != "$CURRENT_VERSION" ] && [ "$LATEST_VERSION" != "0.0.0" ]; then
-    echo "Updating Ralph Orchestrator from v$CURRENT_VERSION to v$LATEST_VERSION..."
-    curl -fsSL "https://github.com/mikeyobrien/ralph-orchestrator/releases/latest/download/ralph-cli-installer.sh" | sh
+if [[ ! -f "$ralph_lock" ]]; then
+  echo "Warning: modules/claude/ralph.lock not found — skipping ralph version check"
+else
+  LOCKED_VERSION=$(jq -r '.version // empty' "$ralph_lock")
+  if [[ -z "$LOCKED_VERSION" ]]; then
+    echo "Warning: modules/claude/ralph.lock has no version field — skipping ralph version check"
+  else
+    CURRENT_VERSION=$(ralph --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "")
+
+    if [[ -z "$CURRENT_VERSION" || "$CURRENT_VERSION" != "$LOCKED_VERSION" ]]; then
+      if [[ -z "$CURRENT_VERSION" ]]; then
+        echo "Installing Ralph Orchestrator v$LOCKED_VERSION (locked)..."
+      else
+        echo "Ralph version mismatch (installed: v$CURRENT_VERSION, locked: v$LOCKED_VERSION) — installing locked version..."
+      fi
+      curl -fsSL "https://github.com/mikeyobrien/ralph-orchestrator/releases/download/v${LOCKED_VERSION}/ralph-cli-installer.sh" | sh
+    fi
+
+    # Check if a newer release exists and prompt user to upgrade
+    LATEST_VERSION=$(curl -fsSL "https://api.github.com/repos/mikeyobrien/ralph-orchestrator/releases/latest" | jq -r '.tag_name // empty' | sed 's/^v//' || echo "")
+
+    if [[ -n "$LATEST_VERSION" && "$LATEST_VERSION" != "$LOCKED_VERSION" ]]; then
+      # Only prompt for input if stdin is a terminal (interactive shell)
+      if [[ -t 0 ]]; then
+        printf "ralph v%s is available (lock file pins v%s). Update lock file? [y/N] " "$LATEST_VERSION" "$LOCKED_VERSION"
+        read -r response
+        if [[ "$response" =~ ^[Yy]$ ]]; then
+          jq --arg v "$LATEST_VERSION" '.version = $v' "$ralph_lock" > "${ralph_lock}.tmp" && mv "${ralph_lock}.tmp" "$ralph_lock"
+          echo "Updated ralph.lock to v$LATEST_VERSION — installing..."
+          curl -fsSL "https://github.com/mikeyobrien/ralph-orchestrator/releases/download/v${LATEST_VERSION}/ralph-cli-installer.sh" | sh
+        fi
+      fi
+    fi
   fi
 fi
 
