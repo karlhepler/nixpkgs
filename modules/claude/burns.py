@@ -333,7 +333,8 @@ You are running in autonomous mode within: {working_dir}
     # Build ralph command with constructed prompt
     cmd = [
         "ralph", "run",
-        "-a",  # Auto-approve
+        "-a",         # Autonomous/headless mode
+        "--no-tui",   # Disable TUI (enabled by default since v2.7.0; hangs when spawned as subprocess)
         "-c", hat_path,
         "--max-iterations", str(max_iterations),
         "-p", full_prompt,  # Always use -p with constructed prompt
