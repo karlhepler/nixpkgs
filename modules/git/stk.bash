@@ -230,17 +230,28 @@ stk_pr_merge() {
 }
 
 # Change the current branch's Graphite parent and restack onto it.
+# Attempts gt move --onto first; if the branch is untracked, tracks it under
+# parent_branch and retries. Any other failure surfaces the original error.
 # Usage: stk_rebase <parent-branch>
 stk_rebase() {
   local parent_branch="$1"
-
-  ensure_tracked "$parent_branch"  # Track current branch under the new parent before moving
+  local stderr_file
+  stderr_file="$(mktemp)"
 
   echo "Updating Graphite parent to '$parent_branch'..." >&2
-  gt move --onto "$parent_branch"
-
-  echo >&2
-  run_gt log
+  if ! gt move --onto "$parent_branch" 2>"$stderr_file"; then
+    if rg -qi 'untracked' "$stderr_file" 2>/dev/null; then
+      rm -f "$stderr_file"
+      gt track -p "$parent_branch" >&2
+      gt move --onto "$parent_branch"
+    else
+      cat "$stderr_file" >&2
+      rm -f "$stderr_file"
+      return 1
+    fi
+  else
+    rm -f "$stderr_file"
+  fi
 }
 
 # If there are uncommitted changes, present a fzf picker offering:

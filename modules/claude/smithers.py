@@ -98,8 +98,65 @@ def print_status(failed_checks: int, bot_comments: int, has_conflicts: bool, prc
     log(f"Status: {' | '.join(parts)}")
 
 
-# PROCESS_UTILS_PLACEHOLDER — get_all_descendants and kill_process_tree
-# are injected here at build time from process_utils.py by default.nix.
+def get_all_descendants(pid):
+    """Recursively find all descendant PIDs of a given process.
+
+    Uses pgrep -P to find immediate children, then recursively finds their children.
+    Works across session boundaries because pgrep -P filters by PPID, which is
+    preserved even when processes call setsid().
+    """
+    descendants = []
+    try:
+        # Get immediate children using pgrep -P
+        result = subprocess.run(
+            ["pgrep", "-P", str(pid)],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        children = result.stdout.strip().split('\n') if result.stdout.strip() else []
+
+        for child in children:
+            if child:
+                child_pid = int(child)
+                descendants.append(child_pid)
+                # Recursively get grandchildren
+                descendants.extend(get_all_descendants(child_pid))
+    except Exception:
+        pass  # Ignore errors during tree traversal
+
+    return descendants
+
+
+def kill_process_tree(pid):
+    """Kill a process and all its descendants.
+
+    This uses recursive pgrep -P to find all descendants (even those that called
+    setsid() and are in different sessions/process groups), then kills them in
+    reverse order (children first, then parents) with SIGKILL for guaranteed
+    termination.
+
+    This approach is necessary because Ralph uses portable-pty which calls setsid()
+    before spawning Claude CLI, causing Claude processes to escape killpg() but
+    still maintaining the parent-child relationship (PPID).
+    """
+    # Get full process tree
+    all_pids = [pid] + get_all_descendants(pid)
+
+    # Kill in reverse order (children first, then parents)
+    # This prevents orphaned processes
+    for target_pid in reversed(all_pids):
+        try:
+            os.kill(target_pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass  # Process already exited
+        except PermissionError:
+            pass  # Can't kill (shouldn't happen for our own processes)
+        except Exception:
+            pass  # Ignore other errors
+
+    # Small delay to let kernel clean up
+    time.sleep(0.1)
 
 
 def send_notification(title: str, message: str, sound: str = "Ping"):
@@ -2293,13 +2350,13 @@ def main_loop_iteration(
     log(f"🚀 Invoking Monty Burns (iteration {work_iteration}/{total_iterations}): {' '.join(burns_cmd)}")
     try:
         # Run burns with the prompt file and PR context
+        # Use Popen with process group for proper signal handling
+        # This ensures all child processes (Ralph and its subprocesses) get signals
         # CRITICAL: Pass --pr flag so Ralph knows PR already exists (prevents "no PR, need to create" bug)
-        # Do NOT use start_new_session=True — that detaches burns from the controlling terminal,
-        # which breaks ralph 2.8 portable-pty PTY allocation (needs a controlling terminal to
-        # spawn claude via PTY) and prevents Ctrl+C SIGINT from reaching the process chain.
         process = subprocess.Popen(
             burns_cmd,
-            env=env
+            env=env,
+            start_new_session=True  # Create new process group
         )
         try:
             result = process.wait(timeout=3600)  # 60-minute timeout

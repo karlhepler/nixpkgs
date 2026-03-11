@@ -38,8 +38,66 @@ smithers_hat_yaml = "SMITHERS_HAT_YAML"  # replaced at build time
 DEFAULT_MAX_ITERATIONS = 20
 
 
-# PROCESS_UTILS_PLACEHOLDER — get_all_descendants and kill_process_tree
-# are injected here at build time from process_utils.py by default.nix.
+def get_all_descendants(pid):
+    """Recursively find all descendant PIDs of a given process.
+
+    Uses pgrep -P to find immediate children, then recursively finds their children.
+    Works across session boundaries because pgrep -P filters by PPID, which is
+    preserved even when processes call setsid().
+    """
+    descendants = []
+    try:
+        # Get immediate children using pgrep -P
+        result = subprocess.run(
+            ["pgrep", "-P", str(pid)],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        children = result.stdout.strip().split('\n') if result.stdout.strip() else []
+
+        for child in children:
+            if child:
+                child_pid = int(child)
+                descendants.append(child_pid)
+                # Recursively get grandchildren
+                descendants.extend(get_all_descendants(child_pid))
+    except Exception:
+        pass  # Ignore errors during tree traversal
+
+    return descendants
+
+
+def kill_process_tree(pid):
+    """Kill a process and all its descendants.
+
+    This uses recursive pgrep -P to find all descendants (even those that called
+    setsid() and are in different sessions/process groups), then kills them in
+    reverse order (children first, then parents) with SIGKILL for guaranteed
+    termination.
+
+    This approach is necessary because Ralph uses portable-pty which calls setsid()
+    before spawning Claude CLI, causing Claude processes to escape killpg() but
+    still maintaining the parent-child relationship (PPID).
+    """
+    # Get full process tree
+    all_pids = [pid] + get_all_descendants(pid)
+
+    # Kill in reverse order (children first, then parents)
+    # This prevents orphaned processes
+    for target_pid in reversed(all_pids):
+        try:
+            os.kill(target_pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass  # Process already exited
+        except PermissionError:
+            pass  # Can't kill (shouldn't happen for our own processes)
+        except Exception:
+            pass  # Ignore other errors
+
+    # Small delay to let kernel clean up
+    time.sleep(0.1)
+
 
 def sanitize_for_prompt(text: str, max_length: int = 2000) -> str:
     """Sanitize external content before injecting into LLM prompts.
@@ -275,7 +333,7 @@ You are running in autonomous mode within: {working_dir}
     # Build ralph command with constructed prompt
     cmd = [
         "ralph", "run",
-        "-a",         # Autonomous/headless mode
+        "-a",  # Auto-approve
         "-c", hat_path,
         "--max-iterations", str(max_iterations),
         "-p", full_prompt,  # Always use -p with constructed prompt
@@ -297,18 +355,8 @@ You are running in autonomous mode within: {working_dir}
     # Run Ralph as subprocess (not exec) so we can handle Ctrl+C
     try:
         process = subprocess.Popen(cmd, env=env)
-        exit_code = process.wait(timeout=7200)  # 2-hour safety cap; prevents indefinite block
+        exit_code = process.wait()
         sys.exit(exit_code)
-    except subprocess.TimeoutExpired:
-        # Ralph exceeded the 2-hour safety cap — kill the tree and exit
-        print("\n⚠️  Ralph timed out after 2 hours, killing all subprocesses...", file=sys.stderr)
-        kill_process_tree(process.pid)
-        try:
-            process.wait(timeout=2)
-        except subprocess.TimeoutExpired:
-            pass  # Already killed, just cleanup
-        print("✓ Ralph terminated due to timeout", file=sys.stderr)
-        sys.exit(1)
     except KeyboardInterrupt:
         # User pressed Ctrl+C - kill Ralph and all its descendants
         print("\n⚠️  Received Ctrl+C, killing Ralph and all subprocesses...", file=sys.stderr)
