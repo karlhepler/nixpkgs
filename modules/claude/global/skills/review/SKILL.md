@@ -94,6 +94,23 @@ gh pr view <number> --json isCrossRepository --jq .isCrossRepository
 - **If fork PR (`true`):** Cannot check out the fork branch locally. Skip worktree setup; proceed to Phase 2 (diff-only review).
 
 - **If same-repo branch (`false`):**
+
+  **First: check whether the current session is already inside a git worktree.**
+
+  ```bash
+  # List all worktrees — primary entry is first; non-primary follow
+  git worktree list --porcelain
+
+  # Get current repo root
+  git rev-parse --show-toplevel
+  ```
+
+  Compare the `git rev-parse --show-toplevel` output against the worktree list entries. If the current root matches a **non-primary** entry (any entry after the first) → **already in a worktree. Skip Phase 1 entirely. Proceed directly to Phase 2.**
+
+  Being in a worktree is the reliable signal that a review environment is already set up. Branch-name comparison is irrelevant when already inside a worktree — the user may be on a tracking branch with a personal prefix (e.g., `karlhepler/signup-webapp`) while the PR `headRefName` is `signup-webapp`. Comparing these produces a false negative and creates an unnecessary nested worktree.
+
+  **Only proceed to branch-name comparison if confirmed to be in the primary (main checkout) worktree:**
+
   ```bash
   # Get the PR branch name
   gh pr view <number> --json headRefName --jq .headRefName
