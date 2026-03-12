@@ -433,6 +433,9 @@ in {
             "mcp__context7__resolve-library-id"
             "mcp__context7__query-docs"
 
+            # Artifacts MCP - Auto-approve all artifact tool usages
+            "mcp__artifacts__*"
+
             # Category A - Purely Read-Only Tools (approve all uses)
             "Bash(rg *)"
             "Bash(fd *)"
