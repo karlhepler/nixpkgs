@@ -52,7 +52,7 @@ This repository (`~/.config/nixpkgs`) is the **single source of truth** for syst
 
 **Exception:** The only files you should edit outside this repo are:
 - Active development code in OTHER repositories (not this one)
-- Temporary scratch files in `/tmp/` or scratchpad
+- Temporary scratch files in `/tmp/` or `.scratchpad/` (project root)
 
 ### Common Mistakes to Avoid
 
@@ -91,7 +91,7 @@ This repository (`~/.config/nixpkgs`) is the **single source of truth** for syst
 
 Some skills intentionally lack agent definitions because they are exception or workflow skills that run differently:
 
-- **Exception skills** (learn, workout-burns, workout-staff, project-planner) — Run via Skill tool directly, not delegated as background sub-agents. These are specialized capabilities invoked for specific use cases, not general-purpose team members.
+- **Exception skills** (learn, workout-burns, workout-staff, workout-smithers, project-planner) — Run via Skill tool directly, not delegated as background sub-agents. These are specialized capabilities invoked for specific use cases, not general-purpose team members. (`workout-smithers`: multi-PR parallel watcher, invoked via Skill tool directly)
 - **Workflow skills** (manage-pr-comments, review-pr-comments) — Run via Skill tool with specific CLI tooling integration. These coordinate external processes and don't fit the standard team member pattern.
 - **Multi-file skills** (review) — Live in `skills/<name>/SKILL.md` instead of `commands/<name>.md` because they have supporting files (e.g., `skills/review/review-citation-guide.md`, `skills/review/review-domains.md`). Deployed via `default.nix` skill copy rules, not the standard commands glob. No agent definition — invoked via Skill tool directly.
 
@@ -158,6 +158,9 @@ Each stacked PR is automatically tracked with current CI/CD status visible via `
 
 **Worktree location:** `~/worktrees/<org>/<repo>/<branch>` (e.g., `~/worktrees/mazedesignhq/maze-monorepo/karlhepler/my-feature`).
 
+### Tmux Session Management
+- `tmux-restore`: Pick and restore a tmux-resurrect snapshot via fzf (shows sessions and window names in preview)
+
 ### Claude Code Helpers
 
 > **These are shellapps defined in this repo.** To extend or modify them, edit their source in `modules/claude/` and run `hms`. Do NOT edit deployed copies directly.
@@ -169,77 +172,14 @@ Each stacked PR is automatically tracked with current CI/CD status visible via `
 - `smithers` or `smithers <PR>`: Autonomous PR watcher (monitors checks, fixes issues, handles bot comments) — source: `modules/claude/smithers.py`
 - `prc`: PR comment management tool (list, reply, resolve, collapse) — source: `modules/claude/prc.py`; see `/manage-pr-comments` skill for usage documentation
 
-### Kanban CLI (Agent Coordination)
-
-**Card Creation:**
-- `kanban do '{"action":"...","intent":"..."}'`: Create card directly in doing (accepts single object or array)
-- `kanban do --file .scratchpad/kanban-card-<session>.json`: Create card from file (for complex cards with quotes or multi-field JSON)
-- `kanban todo '{"action":"...","intent":"..."}'`: Create card in todo (accepts single object or array)
-- `kanban todo --file .scratchpad/kanban-card-<session>.json`: Create card in todo from file
-- When full work queue is known, create ALL cards upfront (current batch in doing, rest in todo)
-
-**Card Transitions:**
-- `kanban start <card#> [card#...]`: Move card(s) from todo to doing
-- `kanban review <card#>`: Move card to review column
-- `kanban redo <card#>`: Move card from review back to doing
-- `kanban defer <card#>`: Move card from doing/review to todo
-- `kanban done <card#> 'summary'`: Complete card with summary
-- `kanban cancel <card#>`: Cancel card
-
-**Card Details:**
-- `kanban show <card#> --output-style=xml`: Show full card details (XML format)
-- `kanban status <card#>`: Print column name of card (lightweight check)
-- `kanban comment <card#> "text"`: Add timestamped comment to card
-
-**Acceptance Criteria (also aliased as `kanban ac`):**
-- `kanban criteria add <card#> "text"`: Add acceptance criterion
-- `kanban criteria remove <card#> <n> "reason"`: Remove criterion (with required reason)
-- `kanban criteria check <card#> <n>`: Check off criterion
-- `kanban criteria uncheck <card#> <n>`: Uncheck criterion
-
-**Board View:**
-- `kanban list --output-style=xml`: Board check (compact XML view for staff engineers)
-
-**Session Management:**
-- Session identity injected automatically via SessionStart hook (friendly names like `swift-falcon`)
-- `--session <name>`: Pass session ID on commands (Claude does this automatically)
-- `BURNS_SESSION=1`: Environment variable set by burns to suppress kanban session instructions (Burns uses Ralph's memory system instead of kanban)
-- Session mappings stored in `.kanban/sessions.json`
-
-### Kanban Command Reference
-
-| Command | Purpose | Who Uses |
-|---------|---------|----------|
-| `kanban list --output-style=xml --session <id>` | Board check (compact XML) | Staff engineer |
-| `kanban do '<json>' --session <id>` or `kanban do --file <path> --session <id>` | Create card(s) in doing | Staff engineer |
-| `kanban todo '<json>' --session <id>` or `kanban todo --file <path> --session <id>` | Create card(s) in todo | Staff engineer |
-| `kanban show <card>` | Read card details (action, intent, AC) | Sub-agents (own card), AC reviewer, staff engineer |
-| `kanban status <card>` | Print column name of card (lightweight check) | Staff engineer, sub-agents |
-| `kanban start <card> [cards...]` | Pick up from todo | Staff engineer |
-| `kanban review <card> [cards...]` | Move to review column | Staff engineer |
-| `kanban redo <card>` | Send back from review | Staff engineer |
-| `kanban defer <card> [cards...]` | Park in todo | Staff engineer |
-| `kanban criteria add <card> "text"` | Add AC (mid-flight OK) | Staff engineer |
-| `kanban criteria remove <card> <n> "reason"` | Remove AC with reason | Staff engineer |
-| `kanban criteria check <card> <n>` | Self-check AC (agent_met column) | Sub-agents (own card) |
-| `kanban criteria uncheck <card> <n>` | Undo self-check | Sub-agents (own card) |
-| `kanban criteria verify <card> <n>` | Verify AC (reviewer_met column) | AC reviewer |
-| `kanban criteria unverify <card> <n>` | Undo verification | AC reviewer |
-| `kanban comment <card> "text"` | Add timestamped comment | Sub-agents (own card), staff engineer |
-| `kanban done <card> 'summary'` | Complete card (both columns enforced) | Staff engineer |
-| `kanban cancel <card> [cards...]` | Cancel card(s) | Staff engineer |
-| ~~`kanban clean`~~ | **PROHIBITED — never run** | Nobody |
-
-**All commands accept `--session <id>` (required in multi-session contexts).**
+For kanban workflow and command reference, see global CLAUDE.md.
 
 ## Critical Requirements
 
-1. **🚨 NEVER HOMEBREW**: Do NOT suggest, recommend, or implement Homebrew. EVER. All packages MUST be managed through Nix (nixpkgs/nixpkgs-unstable) or direct binary downloads. See prohibition above.
-2. **Repository Location**: MUST be installed at `~/.config/nixpkgs`
-3. **Use hms Command**: Always use `hms` for syncing to ensure proper git handling
-4. **Backup Synchronization**: Sync `~/.backup` folder with cloud storage for machine-specific configuration safety
-5. **--expunge Flag**: Claude Code must NEVER use the `--expunge` flag with `hms`
-6. **macOS ARM Only**: This configuration is locked to `aarch64-darwin` (Apple Silicon Macs)
+1. **Repository Location**: MUST be installed at `~/.config/nixpkgs`
+2. **Backup Synchronization**: Sync `~/.backup` folder with cloud storage for machine-specific configuration safety (human maintenance task — not Claude-actionable)
+3. **--expunge Flag**: Claude Code must NEVER use the `--expunge` flag with `hms`
+4. **macOS ARM Only**: This configuration is locked to `aarch64-darwin` (Apple Silicon Macs)
 
 ## Configuration Structure
 
@@ -251,7 +191,7 @@ For detailed architecture, see README.md and source files in modules/.
 
 ## Development Workflows
 
-**🚨 Deployment Order: `hms` → `git add` → `commit` → `push`**
+**🚨 Deployment Order: `git add` (if needed) → `hms` → `commit` → `push`**
 
 **NEVER commit before `hms` succeeds.** The `hms` build is the validation step — a failing build means the change is broken, not just undeployed. If `hms` needs to see working tree changes, stage them with `git add` first, but do NOT commit until the build passes.
 
@@ -384,6 +324,11 @@ home.packages = with pkgs; [
 
 ## File Management
 
+**home.nix:**
+- Edit with `hme`
+- Main configuration entry point
+- Changes deployed via `hms`
+
 **user.nix:**
 - Edit with `hmu`
 - Contains: name, email, username, homeDirectory
@@ -396,7 +341,7 @@ home.packages = with pkgs; [
 - Auto-backed up to `~/.backup/.config/nixpkgs/overconfig.YYYYMMDD-HHMMSS.nix`
 - Example: `programs.git.settings.user.email = lib.mkForce "work@email.com";`
 
-Both files made git-invisible by `hms` after first run. Backups linked via `*.latest.nix` symlinks.
+user.nix and overconfig.nix are made git-invisible by `hms` after first run. Backups linked via `*.latest.nix` symlinks.
 
 ## Claude Code Integration
 
@@ -429,7 +374,7 @@ Burns uses a multi-hat YAML configuration assembled at Nix build time. The Ralph
 The assembled YAML path is substituted at build time in `modules/claude/default.nix`.
 
 **Tiered Review Protocol:**
-The mandatory review protocol that determines when work requires review is defined in `modules/claude/global/hats/monty-burns.yml.tmpl` (lines 86-114, "On work.done" section). Three tiers: Tier 1 (mandatory: auth/authz, financial, infra, PII DB, CI/CD), Tier 2 (high-risk: API endpoints, third-party, performance, migrations, deps, shell scripts), Tier 3 (recommended: UI, monitoring, large refactors). The protocol activates when a specialist emits 'work.done' event.
+The mandatory review protocol that determines when work requires review is defined in `modules/claude/global/hats/monty-burns.yml.tmpl` ("On work.done" event handler). Three tiers: Tier 1 (mandatory: auth/authz, financial, infra, PII DB, CI/CD), Tier 2 (high-risk: API endpoints, third-party, performance, migrations, deps, shell scripts), Tier 3 (recommended: UI, monitoring, large refactors). The protocol activates when a specialist emits 'work.done' event.
 
 **Ralph vs. Kanban:**
 Ralph is a self-contained event-loop orchestrator with its own memory system. Kanban is the human-facing coordination layer for staff engineers. These systems are separate. When burns runs, it sets `BURNS_SESSION=1` to suppress kanban session instructions — injecting kanban context would confuse the model. Ralph uses its internal memory system (`ralph tools memory`) instead of kanban cards.
@@ -440,38 +385,11 @@ Ralph is a self-contained event-loop orchestrator with its own memory system. Ka
 - Support: researcher, scribe, ai-expert, ac-reviewer, debugger, learn
 - Workflow: review-pr-comments, manage-pr-comments
 - Business: finance, lawyer, marketing
-- Special: workout-burns, workout-staff, project-planner
+- Special: workout-burns, workout-staff, workout-smithers, stk-burns, stk-staff, project-planner
 
 ## Your Team
 
-| Skill | What They Do | When to Use |
-|-------|--------------|-------------|
-| `/ac-reviewer` | AC verification (Haiku) | AUTOMATIC after every card review |
-| `/researcher` | Multi-source investigation | Research, verify, fact-check |
-| `/scribe` | Documentation | Docs, README, API docs, guides |
-| `/ux-designer` | User experience | UI design, UX research, wireframes |
-| `/project-planner` | Project planning | Multi-week efforts (exception skill) |
-| `/visual-designer` | Visual design | Branding, graphics, design system |
-| `/swe-frontend` | React/Next.js UI | Components, CSS, accessibility |
-| `/swe-backend` | Server-side | APIs, databases, microservices |
-| `/swe-fullstack` | End-to-end features | Full-stack, rapid prototyping |
-| `/swe-sre` | Reliability | SLIs/SLOs, monitoring, incidents |
-| `/swe-infra` | Cloud infrastructure | K8s, Terraform, IaC |
-| `/swe-devex` | Developer productivity | CI/CD, build systems, testing |
-| `/swe-security` | Security assessment | Vulnerabilities, threat models |
-| `/ai-expert` | AI/ML and prompts | Prompt engineering, Claude optimization |
-| `/debugger` | Systematic debugging | Complex bugs resisting 2-3 rounds of normal fixes (escalation only) |
-| `/lawyer` | Legal documents | Contracts, privacy, ToS, GDPR |
-| `/marketing` | Go-to-market | GTM, positioning, SEO |
-| `/finance` | Financial analysis | Unit economics, pricing, burn rate |
-| `/workout-staff` | Git worktree | Parallel branches (exception skill) |
-| `/workout-burns` | Worktree with burns | Parallel dev with Ralph (exception skill) |
-| `/stk-staff` | Stacked worktree + staff | Parallel stacked PRs with Claude Code |
-| `/stk-burns` | Stacked worktree + burns | Parallel stacked PRs with Ralph |
-| `/review` | Full PR code review | Orchestrate specialist review of an **existing PR** — ONLY when user explicitly references a PR: "review PR #N", "code review PR #N", "review pull request". NOT triggered by user confirming Mandatory Review Protocol recommendations. |
-| `/manage-pr-comments` | PR comment management via `prc` | List, filter, resolve, collapse comment threads |
-| `smithers` (CLI) | Autonomous PR watcher (user-run, not invocable via Task/Skill) | See smithers note in staff-engineer output style |
-| `/review-pr-comments` | Respond to reviewer feedback | Reply to reviewer comments on a PR you submitted — NOT for performing a code review |
+For the full team roster, see global CLAUDE.md.
 
 ## Reference Documentation
 

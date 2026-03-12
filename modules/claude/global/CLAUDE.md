@@ -2,7 +2,7 @@
 
 > **Tools:** See [TOOLS.md](./TOOLS.md). **🚨 Use `rg` not `grep`, `fd` not `find`** (see § Use `rg` and `fd`). Custom git utilities available.
 
-> **Context7 MCP:** When working with external libraries/frameworks, query Context7 MCP for authoritative documentation before implementing. (Foreground agents and staff engineer only; background sub-agents receive pre-fetched results via card content or scratchpad files.)
+> **Context7 MCP:** When working with external libraries/frameworks, query Context7 MCP for authoritative documentation before implementing. See § Research Priority Order for full details, including background sub-agent constraints.
 
 > **🚨 NEVER HOMEBREW 🚨** STOP. Do NOT suggest, install, or mention Homebrew. Ever. Use Nix (nixpkgs/nixpkgs-unstable) or direct binary downloads ONLY.
 
@@ -123,7 +123,7 @@ When researching, investigating, or looking up information, ALWAYS follow this p
 | `kanban list --output-style=xml --session <id>` | Board check (compact XML) | Staff engineer |
 | `kanban do '<json>' --session <id>` or `kanban do --file <path> --session <id>` | Create card(s) in doing | Staff engineer |
 | `kanban todo '<json>' --session <id>` or `kanban todo --file <path> --session <id>` | Create card(s) in todo | Staff engineer |
-| `kanban show <card>` | Read card details (action, intent, AC) | Sub-agents (own card), AC reviewer, staff engineer |
+| `kanban show <card> [--output-style=xml]` | Read card details (action, intent, AC) | Sub-agents (own card), AC reviewer, staff engineer |
 | `kanban status <card>` | Print column name of card (lightweight check) | Staff engineer, sub-agents |
 | `kanban start <card> [cards...]` | Pick up from todo | Staff engineer |
 | `kanban review <card> [cards...]` | Move to review column | Staff engineer |
@@ -136,11 +136,13 @@ When researching, investigating, or looking up information, ALWAYS follow this p
 | `kanban criteria verify <card> <n>` | Verify AC (reviewer_met column) | AC reviewer |
 | `kanban criteria unverify <card> <n>` | Undo verification | AC reviewer |
 | `kanban comment <card> "text"` | Add timestamped comment | Sub-agents (own card), staff engineer |
-| `kanban done <card> 'summary'` | Complete card (both columns enforced) | AC reviewer (staff engineer: last-resort fallback only) |
+| `kanban done <card> 'summary'` | Complete card (both columns enforced) | AC reviewer (staff engineer: last-resort fallback only — see ⚠️ note below) |
 | `kanban cancel <card> [cards...]` | Cancel card(s) | Staff engineer |
 | ~~`kanban clean`~~ | **PROHIBITED — never run** | Nobody |
 
 **All commands accept `--session <id>` (required in multi-session contexts).**
+
+**⚠️ `kanban done` is called by the AC reviewer, not the staff engineer. Staff engineer may only call it directly as a last-resort fallback after two consecutive failed AC reviewer attempts.**
 
 ---
 
@@ -161,6 +163,12 @@ When researching, investigating, or looking up information, ALWAYS follow this p
 
 ---
 
+## Terminal Utilities
+
+- `tmux-restore`: Pick and restore a tmux-resurrect snapshot via fzf (shows sessions and window names in preview)
+
+---
+
 ## Skill Invocation
 
 When skills are invoked, the `$ARGUMENTS` placeholder is replaced at runtime with the specific task prompt provided by the coordinator. The placeholder appears in the skill file following a "## Your Task" section header.
@@ -175,6 +183,8 @@ $ARGUMENTS
 ```
 
 Skills receive the full task context through this mechanism, so they have all necessary information to complete their work.
+
+**Note:** When a skill is invoked via agent definition (`skills:` frontmatter), `$ARGUMENTS` is replaced at agent startup with the task prompt passed by the coordinator — the skill content is pre-loaded into the sub-agent's context before any tool use begins.
 
 ---
 
@@ -247,7 +257,7 @@ When delegating work via Task tool:
 
 ## MCP Integration
 
-**Context7 MCP** - Authoritative documentation lookup for libraries and frameworks. (Note: Background sub-agents cannot access MCP directly — see Research Priority Order section for details and workarounds.)
+**Context7 MCP** - Authoritative documentation lookup for libraries and frameworks. (Note: Background sub-agent MCP constraints are documented in § Research Priority Order.)
 
 **How to use:**
 - For library/framework docs: "Use Context7 MCP to lookup React Server Components best practices"
@@ -528,15 +538,51 @@ When updating a PR description, **rewrite from scratch**. The description reflec
 
 ## PR Comment Replies
 
-- Reply directly to threads (use `/replies` endpoint, NOT `gh pr comment`)
-- Never reply if your reply is already last in thread
-- Fix → commit → push → THEN reply (include commit SHA)
-
 See the `/review-pr-comments` skill for full workflow.
 
 ---
 
 ## Programming Preferences
+
+**🏆 Top Architecture Principle — Ports & Adapters (Request/Sender pattern):**
+
+Every handler should follow this contract — typed input, plain-function output port, pure and testable handler:
+
+```typescript
+// TypeScript
+function foo(req: Request, send: (msg: Message) => void): void | Promise<void>
+```
+
+```go
+// Go
+func Foo(req Request, send func(msg Message)) error
+```
+
+```python
+# Python
+def foo(req: Request, send: Callable[[Message], None]) -> None:
+```
+
+```rust
+// Rust
+fn foo(req: Request, send: impl Fn(Message))
+```
+
+```csharp
+// C#
+void Foo(Request req, Action<Message> send)
+```
+
+- **`req`** — everything the handler needs as input, typed explicitly at the call site
+- **`send`** — the output port; a plain function the handler calls to emit results
+- **`Message`** — a discriminated union or typed struct defined by the handler's layer (not the caller's)
+- The caller wires up presenters by binding to `send` — terminal output, SSE stream, test spy, file logger, etc.
+- Multiple presenters bind to one `send` via `fanOut`: `const send = fanOut([presenterA, presenterB])` // fanOut: simple utility — implement inline as: `const fanOut = (handlers) => (msg) => handlers.forEach(h => h(msg))`
+- The handler is pure and testable — it never imports or knows about its consumers
+
+Apply from the start on every new handler, service boundary, or core API. Do not reach for EventEmitter, global state, or tightly coupled I/O when this pattern fits.
+
+---
 
 **Design:** SOLID, Clean Architecture, composition over inheritance, early returns, avoid deeply nested if statements (use guard clauses for flat code structure)
 
@@ -562,7 +608,7 @@ See the `/review-pr-comments` skill for full workflow.
 - **Do NOT chain multiple logical operations with `&&` in a single Bash tool call.** Each distinct operation must be its own Bash call. This enables granular permission approval — the user cannot selectively allow `npm run lint` but deny `npm run test` when they're chained into one call.
 - ❌ `cd /path && npm run lint && npm run test`
 - ✅ Three separate Bash calls: `cd /path`, `npm run lint`, `npm run test`
-- **Exception:** Chain only when the full sequence is obviously safe as a single unit AND has genuine sequential dependency (e.g., `git add file && git commit -m "..."` is fine — one is meaningless without the other).
+- **Exception:** Chain only when all commands form a single atomic git intent (stage + commit, fetch + rebase) or are purely informational (no side effects, writes, or network calls). When in doubt, use separate calls. (e.g., `git add file && git commit -m "..."` is fine — one is meaningless without the other).
 - Piping output (`| tee`, `| jq`) counts as a separate logical operation if it could be omitted. If the pipe is integral to the command's purpose (e.g., `curl ... | jq .`), it's one operation.
 
 **Mindset:** Always Be Curious - investigate thoroughly, ask why, verify claims, cite sources

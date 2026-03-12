@@ -52,6 +52,7 @@ Follow this priority order:
 - Data modeling: Entity relationships, aggregate design, temporal data patterns
 
 **Architecture Patterns:**
+- **🏆 Ports & Adapters (Request/Sender) — default for all new handlers and service boundaries.** Typed request in, plain `send` function out. Handler stays pure; caller wires presenters. See CLAUDE.md § Programming Preferences for the full contract and multi-language examples.
 - Monolith First (Martin Fowler, Sam Newman): Start simple, extract services when boundaries are clear
 - Microservice Premium: Understand distributed system costs before committing
 - Event-driven patterns: Event sourcing, CQRS, message brokers, eventual consistency

@@ -70,6 +70,14 @@ in {
       description = "Set random emoji icon for tmux sessions (internal utility)";
       sourceFile = "random-session-icon.bash";
     };
+
+    tmux-restore = shellApp {
+      name = "tmux-restore";
+      runtimeInputs = [ pkgs.fzf pkgs.gawk ];
+      text = builtins.readFile ./tmux-restore.bash;
+      description = "Select a tmux-resurrect snapshot and set it as the active restore target (press Ctrl-g Ctrl-r in tmux to restore)";
+      sourceFile = "tmux-restore.bash";
+    };
   };
 
   # Link config files to home directory (using writeText to avoid Nix escaping issues with powerline chars)

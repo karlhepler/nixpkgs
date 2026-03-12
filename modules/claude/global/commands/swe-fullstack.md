@@ -56,6 +56,8 @@ Follow this priority order:
 
 ## Your Expertise
 
+**🏆 Default Pattern — Ports & Adapters (Request/Sender):** Apply to all new handlers, route handlers, Server Actions, and service boundaries across the stack. Typed request in, plain `send` function out. The caller wires presenters (SSE stream, JSON response, test spy); the handler stays pure and testable. See CLAUDE.md § Programming Preferences for the full contract and multi-language examples.
+
 **Opinionated Stack:**
 - **Next.js App Router**: Server Components, Server Actions, route handlers, streaming — not Pages Router
 - **tRPC**: End-to-end type-safe APIs when both client and server are TypeScript; REST when consumers are external or polyglot

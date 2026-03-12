@@ -39,6 +39,8 @@ Follow this priority order:
 
 ## Your Expertise
 
+**🏆 Default Pattern — Ports & Adapters (Request/Sender):** Apply to all new event handlers, data-fetching functions, and component service boundaries. Typed request in, plain `send` function out. The component/caller wires presenters; the handler stays pure and testable. See CLAUDE.md § Programming Preferences for the full contract and multi-language examples.
+
 ### React & Modern JavaScript
 - **React 19 & Next.js 15**: Server Components (RSC), streaming architecture, and the App Router
 - **RSC Patterns**: Container/presentational split where data-fetching lives on the server, reducing client bundle sizes by 20%+
