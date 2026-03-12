@@ -1007,32 +1007,44 @@ EOF
     '';
 
     # claudeMcp
-    # Purpose: Merges Context7 MCP configuration into ~/.claude.json
-    # Why: Enables Context7 MCP integration while preserving Claude's metadata
+    # Purpose: Merges Context7 and Artifacts MCP configuration into ~/.claude.json
+    # Why: Enables Context7 MCP integration and Artifacts MCP while preserving Claude's metadata
     # When: After writeBoundary (after files are written to disk)
-    # Note: Only runs if context7ApiKey is provided (not null)
+    # Note: Context7 only runs if context7ApiKey is provided (not null)
+    #       Artifacts MCP is always configured
     #       Merges config into existing file instead of overwriting
-    claudeMcp = lib.mkIf (context7ApiKey != null) (
-    lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    claudeMcp = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       # Create ~/.claude.json if it doesn't exist
       if [[ ! -f ~/.claude.json ]]; then
         $DRY_RUN_CMD echo '{}' > ~/.claude.json
       fi
 
-      # Merge MCP configuration into existing file (preserving all other fields)
-      # Note: Claude Code supports ''${VARIABLE_NAME} syntax for runtime env var expansion
-      # See: https://github.com/anthropics/claude-code/issues/2065
-      $DRY_RUN_CMD ${pkgs.jq}/bin/jq '.mcpServers.context7 = {
-        "command": "npx",
-        "args": ["-y", "@upstash/context7-mcp"],
-        "env": {
-          "CONTEXT7_API_KEY": "''${CONTEXT7_API_KEY}"
-        }
+      # Add Artifacts MCP server configuration (HTTP transport)
+      $DRY_RUN_CMD ${pkgs.jq}/bin/jq '.mcpServers.artifacts = {
+        "url": "https://artifacts.mctx.ai"
       }' ~/.claude.json > ~/.claude.json.tmp
 
-      # Replace original file with merged version
       $DRY_RUN_CMD mv ~/.claude.json.tmp ~/.claude.json
+
+      # Merge Context7 MCP configuration if API key is provided
+      # Note: Claude Code supports ''${VARIABLE_NAME} syntax for runtime env var expansion
+      # See: https://github.com/anthropics/claude-code/issues/2065
+      ${if context7ApiKey != null then ''
+        $DRY_RUN_CMD ${pkgs.jq}/bin/jq '.mcpServers.context7 = {
+          "command": "npx",
+          "args": ["-y", "@upstash/context7-mcp"],
+          "env": {
+            "CONTEXT7_API_KEY": "''${CONTEXT7_API_KEY}"
+          }
+        }' ~/.claude.json > ~/.claude.json.tmp
+
+        # Replace original file with merged version
+        $DRY_RUN_CMD mv ~/.claude.json.tmp ~/.claude.json
+      '' else ''
+        # Context7 not configured (context7ApiKey is null)
+      ''}
+
       $DRY_RUN_CMD chmod 600 ~/.claude.json
-    '');
+    '';
   };
 }
