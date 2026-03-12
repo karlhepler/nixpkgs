@@ -430,8 +430,7 @@ in {
             "Edit(.scratchpad/**)"
 
             # Context7 MCP - Auto-approve all documentation queries
-            "mcp__context7__resolve-library-id"
-            "mcp__context7__query-docs"
+            "mcp__context7__*"
 
             # Artifacts MCP - Auto-approve all artifact tool usages
             "mcp__artifacts__*"
