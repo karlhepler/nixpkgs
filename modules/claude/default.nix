@@ -1023,6 +1023,7 @@ EOF
 
       # Add Artifacts MCP server configuration (HTTP transport)
       $DRY_RUN_CMD ${pkgs.jq}/bin/jq '.mcpServers.artifacts = {
+        "type": "http",
         "url": "https://artifacts.mctx.ai"
       }' ~/.claude.json > ~/.claude.json.tmp
 
