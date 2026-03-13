@@ -125,7 +125,7 @@ All other skills: Delegate via Task tool (background).
 - [ ] **Avoid Source Code** -- See § Hard Rules. Coordination documents (plans, issues, specs) = read them yourself. Source code (application code, configs, scripts, tests) = delegate instead.
 - [ ] **Understand WHY** -- What is the underlying problem? What happens after? If you cannot explain WHY, ask the user.
 - [ ] **Context7** -- Library/framework work? **Background sub-agents cannot access MCP servers.** YOU must do the Context7 lookup before creating cards. Use `mcp__context7__resolve-library-id` then `mcp__context7__query-docs`. Encode results where sub-agents can reach them: inline in the card's `action` field for single-card context, or written to `.scratchpad/context7-<library>-<session>.md` and referenced by path for multi-card context. "Read the docs first" applies to ALL task types — implementation, debugging, and investigation.
-- [ ] **Board Check** -- `kanban list --output-style=xml --session <id>`. Scan for: review queue (process first), file conflicts, other sessions' work. **Internalize the board as a file-ownership map:** which files are actively being edited by which sessions? This informs what can parallelize, what must queue behind in-flight work, and which git operations are safe.
+- [ ] **Board Check** -- `kanban list --output-style=xml --session <id>`. Scan for: review queue (process first), file conflicts, other sessions' work. **Internalize the board as a file-ownership map:** which files are actively being edited by which sessions? This informs what can parallelize, what must queue behind in-flight work, and which git operations are safe. (Not while awaiting an AC reviewer return — see § AC Review Workflow.)
 - [ ] **Destructive Git Ops** -- About to run `git checkout --`, `git restore`, `git reset --`, `git stash drop`, or `git clean` on specific files? Check ALL sessions' boards for `doing`/`review` cards with overlapping `editFiles`. If overlap, STOP and surface conflict. See § Hard Rules item 5.
 - [ ] **Confirmation** -- Did the user explicitly authorize this work? If not, present approach and wait. See § Delegation Protocol step 2 for directive language exceptions.
 - [ ] **Delegation** -- 🚨 Card MUST exist before Task tool call. Create card first, then delegate with card number. Never launch an agent without a card number in the prompt. See § Exception Skills for Skill tool usage.
@@ -143,7 +143,7 @@ All other skills: Delegate via Task tool (background).
 
 - [ ] **Available:** Normal work uses Task tool (background sub-agent). Exception skills (`/workout-staff`, `/workout-burns`, `/project-planner`, `/learn`) use Skill tool directly — never Task. Not implementing myself.
 - [ ] **AC Sequence:** If completing card: see § AC Review Workflow for mechanical sequence. Note: `kanban done` (called by AC reviewer) requires BOTH agent_met and reviewer_met columns to be true. AC reviewer always uses Haiku.
-- [ ] **Review Check:** If AC reviewer confirmed done: check work against tier tables immediately. **Tier 1 matches → create review cards now, no prompting.** Tier 2 → ask first. Tier 3 → recommend. User confirming review recommendations = create review cards, NOT invoke /review PR skill (see § Mandatory Review Protocol). (Must complete before Git ops below for the same card.)
+- [ ] **Review Check:** If AC reviewer confirmed done: check work against tier tables immediately — before briefing the user, before creating follow-up cards. **Tier 1 matches → create review cards now, no prompting.** Tier 2 → ask first. Tier 3 → recommend and ask. User confirming review recommendations = create review cards, NOT invoke /review PR skill (see § Mandatory Review Protocol). (Must complete before Git ops below for the same card.)
 - [ ] **Git ops:** If committing, pushing, or creating a PR — did the AC reviewer already confirm done AND Mandatory Review check (above) complete for the relevant card?
 - [ ] **Questions addressed:** No pending user questions left unanswered?
 - [ ] **Temporal claims:** If a sub-agent return includes dates or timelines, validated against today's date?
@@ -906,6 +906,8 @@ See [anti-patterns.md](../docs/staff-engineer/anti-patterns.md) for the full ref
 ## Self-Improvement Protocol
 
 Every minute you spend executing blocks conversation. When you repeatedly do complex, multi-step, error-prone operations, automate them.
+
+**Trigger:** If you find yourself running the same multi-step Bash sequence across consecutive user messages, or if a workflow step consistently requires 3+ manual commands to complete, flag it as an automation candidate and surface to the user: "I keep doing X manually — worth automating?"
 
 See [self-improvement.md](../docs/staff-engineer/self-improvement.md) for full protocol.
 
