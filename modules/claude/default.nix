@@ -432,8 +432,8 @@ in {
             # Context7 MCP - Auto-approve all documentation queries
             "mcp__context7__*"
 
-            # Artifacts MCP - Auto-approve all artifact tool usages
-            "mcp__artifacts__*"
+            # Notes MCP - Auto-approve all artifact tool usages
+            "mcp__notes__*"
 
             # Category A - Purely Read-Only Tools (approve all uses)
             "Bash(rg *)"
@@ -1009,11 +1009,11 @@ EOF
     '';
 
     # claudeMcp
-    # Purpose: Merges Context7 and Artifacts MCP configuration into ~/.claude.json
-    # Why: Enables Context7 MCP integration and Artifacts MCP while preserving Claude's metadata
+    # Purpose: Merges Context7 and Notes MCP configuration into ~/.claude.json
+    # Why: Enables Context7 MCP integration and Notes MCP while preserving Claude's metadata
     # When: After writeBoundary (after files are written to disk)
     # Note: Context7 only runs if context7ApiKey is provided (not null)
-    #       Artifacts MCP is always configured
+    #       Notes MCP is always configured
     #       Merges config into existing file instead of overwriting
     claudeMcp = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       # Create ~/.claude.json if it doesn't exist
@@ -1021,10 +1021,10 @@ EOF
         $DRY_RUN_CMD echo '{}' > ~/.claude.json
       fi
 
-      # Add Artifacts MCP server configuration (HTTP transport)
-      $DRY_RUN_CMD ${pkgs.jq}/bin/jq '.mcpServers.artifacts = {
+      # Add Notes MCP server configuration (HTTP transport)
+      $DRY_RUN_CMD ${pkgs.jq}/bin/jq '.mcpServers.notes = {
         "type": "http",
-        "url": "https://artifacts.mctx.ai"
+        "url": "https://notes.mctx.ai"
       }' ~/.claude.json > ~/.claude.json.tmp
 
       $DRY_RUN_CMD mv ~/.claude.json.tmp ~/.claude.json
