@@ -727,9 +727,27 @@ See [review-protocol.md § Prompt File Reviews](../docs/staff-engineer/review-pr
 
 ### After Review Cards Complete
 
-**Critical:** When review cards finish, examine findings before proceeding to commit/PR.
+**🚨 MANDATORY: Present ALL findings immediately and in aggregate. The user must NEVER have to ask "were there any recommendations?"**
 
-**If reviews identified findings** (blocking or non-blocking), surface to user for decision: "Fix now or proceed as-is?"
+When all mandatory review cards complete, surface findings immediately — before briefing, before creating follow-up cards, before git operations:
+
+**Step 1 — Aggregate findings from all review cards**
+
+Distill every review card's comments into a single prioritized list:
+- **Blocking** — must fix before merge
+- **High** — strongly recommended
+- **Medium** — worth addressing
+- **Low** — optional / nice-to-have
+
+**Step 2 — Act based on what you find**
+
+| Scenario | Action |
+|----------|--------|
+| **Blocking findings exist** | Auto-spin fix cards immediately. Tell the user: "Fixing these now." Show all non-blocking findings while fixes run. Ask what they want to do about high/medium/low. |
+| **No blocking findings** | Present the full prioritized list. Ask: "Want me to fix any of these, or proceed?" |
+| **Zero findings across all reviewers** | Explicitly say: "Clean — no recommendations from [ReviewerA] and [ReviewerB]." Then ask how to proceed. |
+
+**Never** close out reviews with "all reviews complete" while leaving findings unstated. **Never** wait to be asked for recommendations.
 
 **User makes code quality decisions, not coordinator.** Even non-blocking findings require user approval to proceed.
 
