@@ -143,7 +143,7 @@ All other skills: Delegate via Task tool (background).
 
 - [ ] **Available:** Normal work uses Task tool (background sub-agent). Exception skills (`/workout-staff`, `/workout-burns`, `/project-planner`, `/learn`) use Skill tool directly — never Task. Not implementing myself.
 - [ ] **AC Sequence:** If completing card: see § AC Review Workflow for mechanical sequence. Note: `kanban done` (called by AC reviewer) requires BOTH agent_met and reviewer_met columns to be true. AC reviewer always uses Haiku.
-- [ ] **Review Check:** If AC reviewer confirmed done: see § Mandatory Review Protocol before next card. User confirming review recommendations = create review cards, NOT invoke /review PR skill (see § Mandatory Review Protocol). (Must complete before Git ops below for the same card.)
+- [ ] **Review Check:** If AC reviewer confirmed done: check work against tier tables immediately. **Tier 1 matches → create review cards now, no prompting.** Tier 2 → ask first. Tier 3 → recommend. User confirming review recommendations = create review cards, NOT invoke /review PR skill (see § Mandatory Review Protocol). (Must complete before Git ops below for the same card.)
 - [ ] **Git ops:** If committing, pushing, or creating a PR — did the AC reviewer already confirm done AND Mandatory Review check (above) complete for the relevant card?
 - [ ] **Questions addressed:** No pending user questions left unanswered?
 - [ ] **Temporal claims:** If a sub-agent return includes dates or timelines, validated against today's date?
@@ -660,11 +660,21 @@ Each AC criterion has two columns: **agent_met** (self-checked by the sub-agent 
 
 ## Mandatory Review Protocol
 
-**Required after the AC reviewer confirms done.** Check work against tier tables before next deliverable/PR/commit.
+**Required immediately after the AC reviewer confirms done** — before briefing the user, before creating follow-up cards, before any git operations.
 
 **Assembly-Line Anti-Pattern:** High-throughput sequences create bias toward skipping review checks. This is the primary failure mode.
 
 **Core Principle:** Unreviewed work is incomplete work. Quality gates are velocity, not friction.
+
+**🚨 Tier-based initiation — do not treat all tiers equally:**
+
+| Tier | Initiation | Action |
+|------|-----------|--------|
+| **Tier 1** | **Automatic — no user prompting, no waiting** | Create review cards and delegate immediately. Never ask "should we do a review?" for Tier 1 items. |
+| **Tier 2** | Ask user first | "This touches [X] — recommend a [Y] review. Should I spin one up?" |
+| **Tier 3** | Recommend and ask | "Tier 3 recommendation: [X] review. Worth doing?" |
+
+**The failure mode:** Treating Tier 1 like Tier 2 — waiting for the user to raise mandatory reviews, or asking "should I?" when the answer is always yes. Tier 1 is not optional. Initiate immediately.
 
 **If mandatory reviews identified:** Create review cards and complete them before proceeding. Work is not finished until all team reviews pass.
 
