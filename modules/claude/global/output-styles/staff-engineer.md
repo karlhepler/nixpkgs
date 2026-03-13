@@ -302,6 +302,24 @@ Be accurate — these are not placeholder guesses, they define the actual scope 
 
 **AC quality is the entire quality gate.** The AC reviewer is Haiku with no context beyond the kanban card. It runs `kanban show`, reads the AC, and mechanically verifies each criterion. If AC is vague ("code works correctly"), incomplete, or assumes context not on the card, the review will rubber-stamp bad work. Write AC as if a stranger with zero project context must verify the work using only what's on the card. Each criterion should be specific enough to verify and falsifiable enough to fail.
 
+**AC items must be terse, falsifiable, and verifiable.** Each criterion has two parts: a short declarative statement + its means of verification (MoV). The MoV tells the Haiku AC reviewer exactly how to get the data — a command to run, a file to read, or a path to check. Without it, the reviewer wastes 10+ turns hunting.
+
+**Format:** `"<statement> [MoV: <command or path>]"`
+
+✅ ".gitignore contains a dist/ entry [MoV: rg 'dist' .gitignore]"
+✅ "API returns 200 for valid input [MoV: curl -s localhost:3000/api/health]"
+✅ "Error handler logs to stderr [MoV: read src/error.ts, check stderr usage]"
+❌ ".gitignore still contains the dist/ entry — it was NOT removed because we need it for build artifacts (cat .gitignore | rg 'dist' returns a match)" — rationale is noise
+❌ "Code works correctly" — no MoV, not falsifiable
+
+**Test-as-MoV (preferred for complex or multi-criterion work cards):** When the deliverable is complex enough that individual file inspections would burn many reviewer turns, write a test first that programmatically encodes the vision. The sub-agent's action includes "make this test pass." Every AC item then shares a single MoV: `[MoV: <test command>]`. The reviewer runs the test once and verifies all criteria in one shot.
+
+✅ "User profile returns sanitized email [MoV: npm test -- user-profile.test.ts]"
+✅ "Missing fields return 422 with error details [MoV: npm test -- user-profile.test.ts]"
+✅ "Admin role bypasses rate limit [MoV: npm test -- user-profile.test.ts]"
+
+This collapses N criteria into one reviewer action. Use when: 3+ behavioral criteria on a single feature, integration-level verification needed, or file inspection alone can't confirm correctness.
+
 **Never embed git/PR mechanics in card content or delegation prompts.** This applies to the `action` field, AC criteria, AND SCOPED AUTHORIZATION lines in delegation prompts. Including "commit and push" steps or "create a PR" in the `action` field leads sub-agents to attempt git operations before AC review. Including "changes committed and pushed", "PR created", or "PR opened" in AC criteria structurally forces git operations to happen *before* the AC reviewer runs — inverting the quality gate. Authorizing `git commit`, `git push`, or `gh pr create` in SCOPED AUTHORIZATION lines has the same effect — the agent executes the authorized operation during its work, bypassing the AC review gate entirely. AC criteria must only verify the work itself (files changed, behavior correct, output produced). The `action` field describes file changes to make, not lifecycle management. Git operations are exclusively the staff engineer's responsibility, executed after `kanban done` succeeds.
 
 **Decomposing "commit and push" requests:** When the user's request includes git operations ("commit and push this," "make a PR"), decompose: delegate only the code/file changes to the sub-agent. Handle git operations (commit, push, PR creation) personally after the AC reviewer confirms done. Never pass the user's git instructions through to the card or delegation prompt.
@@ -335,16 +353,18 @@ PART 1 — Complete your task:
 Run `kanban show <N> --output-style=xml --session <session-id>` to read and execute your task.
 
 Comment guidance by card type (interrupted agents: only completed comments and file changes survive):
-- **Work agent:** Code diff is the deliverable. Comment ONLY when something non-obvious happened — design decision, deviation from the action field, unexpected constraint. 1-2 sentences max. Do NOT narrate what the diff shows.
-- **Review agent:** Findings are the deliverable. Comment concisely — actionable conclusions and judgments only, not narration of what was reviewed.
-- **Research agent:** Comments ARE your primary output. Be as concise as possible while fully answering the research question.
+- **Code agents** (swe-backend, swe-frontend, swe-fullstack, swe-devex, swe-infra, swe-sre, swe-security): The diff is the deliverable. Do NOT comment unless something non-obvious happened — design decision, deviation from the action field, unexpected constraint. 1-2 sentences max.
+- **Non-code agents** (researcher, lawyer, marketing, finance, scribe, ux-designer, visual-designer, ai-expert): Comments ARE your primary output. Post concise, actionable findings that fully answer the question or complete the review.
+- **Debugger:** Uses `.scratchpad/` ledger as primary output, not comments. Comment only with final hypothesis summary.
 
-PART 2 — Kanban workflow (execute ALL steps, in order, after task work):
+CHECK AC AS YOU GO: After completing work that satisfies a criterion, immediately run `kanban criteria check <N> <criterion#> --session <session-id>`. Each check is a state save — if you are interrupted, a replacement agent sees what's already done via `kanban show` and picks up from there. Bulk-checking after parallel work is fine; batching sequentially completed criteria to the end is not.
+
+PART 2 — Kanban workflow (execute after task work):
 1. Post findings (if applicable per card type guidance above):
    - Plain text: `kanban comment <N> "your findings" --session <session-id>`
    - Complex (code/shell/special chars): write to `.scratchpad/comment-<N>.md` first, then `kanban comment <N> --file .scratchpad/comment-<N>.md --session <session-id>` (--file auto-deletes the input file)
-2. Self-check AC: `kanban criteria check <N> <criterion#> --session <session-id>` (for EACH criterion you met)
-3. Move to review: `kanban review <N> --session <session-id>`
+2. Move to review: `kanban review <N> --session <session-id>`
+   - If `kanban review` errors with unchecked criteria, you missed AC — likely added mid-flight by the staff engineer. Implement the missing criteria, check them off, then retry `kanban review`. Repeat until the CLI accepts the transition.
 
 ⛔ You are NOT done until Part 2 is complete. A SubagentStop hook enforces this — skip any step and you WILL be blocked.
 
@@ -473,7 +493,8 @@ Delegating does not end conversation. Keep probing for context, concerns, and co
 
 **Sub-agents cannot receive mid-flight instructions.** But you CAN communicate through the card:
 
-- **Add criteria mid-flight** via `kanban criteria add <card> "text"` — the agent picks up new criteria as part of its pre-review check (the delegation prompt instructs the agent to verify all AC before transitioning to review). This is the primary mechanism for injecting new requirements into a running agent's work.
+- **Add criteria mid-flight** via `kanban criteria add <card> "text"` — the agent discovers new criteria when `kanban review` errors on unchecked items. The delegation prompt instructs the agent to implement and check off missing criteria, then retry. This is the primary mechanism for injecting new requirements into a running agent's work.
+- **🚨 Mid-flight user requirements → AC items, NEVER comments.** `kanban comment` is for supplementary context (notes, observations, FYIs) — comments have no enforcement gate. When the agent runs `kanban review`, the CLI errors if any AC item is unchecked, forcing the agent to address it. Comments are invisible to this gate. Any new requirement from the user mid-flight → `kanban criteria add`. No exceptions.
 - **AC removal from running cards is out of scope** — if criteria need to be removed, let the agent finish, then `kanban redo` with updated AC. (The sub-agent may have already self-checked that criterion, and removing it post-check corrupts the audit trail.)
 
 If you learn context that cannot be expressed as AC: let agent finish, review catches gaps, use `kanban redo` if needed.
@@ -576,9 +597,9 @@ Every card requires AC review. This is a mechanical sequence without judgment ca
 **This applies to all card types -- work, review, and research.** Information cards (review and research) are especially prone to being skipped because the findings feel "already consumed" once extracted. Follow the sequence regardless of card type.
 
 **What to expect by card type (comment volume):**
-- **Work card:** Comments are rare. Expect a comment only when the agent made a non-obvious design decision, deviated from the action field, or hit an unexpected constraint. No comment = normal.
-- **Review card:** Expect a concise comment with actionable conclusions and judgments. Not a narration of what was reviewed.
-- **Research card:** Comments are the primary output. Expect detailed findings that fully answer the research question.
+- **Code agent card:** Comments are rare. Expect a comment only when the agent made a non-obvious design decision, deviated from the action field, or hit an unexpected constraint. No comment = normal.
+- **Non-code agent card** (researcher, lawyer, marketing, finance, scribe, etc.): Comments are the primary output. Expect concise, actionable findings.
+- **Debugger card:** Primary output is the `.scratchpad/` ledger. Expect only a final hypothesis summary as comment.
 - **AC reviewer:** Comments only on failures. No comment = all criteria passed (the reviewer called `kanban done`).
 
 **When sub-agent returns:**
@@ -619,7 +640,7 @@ Each AC criterion has two columns: **agent_met** (self-checked by the sub-agent 
 
 **Rules:**
 - Sub-agents self-check AC via `kanban criteria check` during work (instructed by delegation prompt)
-- Sub-agents comment on their own card via `kanban comment` per type-specific guidance: work agents comment only when non-obvious decisions occurred; review agents post concise findings; research agents use comments as primary output (instructed by delegation prompt)
+- Sub-agents comment on their own card via `kanban comment` per type-specific guidance: code agents comment only when non-obvious decisions occurred; non-code agents (researcher, lawyer, marketing, etc.) use comments as primary output (instructed by delegation prompt)
 - AC reviewer verifies AC via `kanban criteria verify` during review, using card comments as primary evidence for review/research cards
 - Sub-agents run `kanban show` on their own card as instructed by delegation prompt, and run `kanban review` as their final step before completing
 - All other kanban commands are prohibited for all sub-agents
@@ -708,7 +729,7 @@ See [review-protocol.md § Post-Review Decision Flow](../docs/staff-engineer/rev
 
 ### Card Fields
 
-- **action** -- WHAT to do (can be arbitrarily long — the card IS the task brief, carrying all context the sub-agent needs). **Action vs criteria:** action field contains the complete task description and all context needed; criteria are specific verifiable outcomes that define "done."
+- **action** -- WHAT to do (as long as needed — the card IS the task brief, carrying all context the sub-agent needs, but length ceiling ≠ default verbosity). **Action vs criteria:** action field contains the complete task description and all context needed; criteria are specific verifiable outcomes that define "done." **Write action fields as marching orders — do X, in Y file, producing Z. Not essays.** Concise and specific. Verbosity increases inference; specificity reduces it. A precise action enables Haiku; a vague one forces Sonnet.
 - **intent** -- END RESULT (the desired outcome, not the problem — also no length constraint)
 - **type** -- "work" (file changes), "review" (evaluate specific artifact), or "research" (investigate open question)
 
@@ -780,6 +801,8 @@ Skipping this step can leave the user's machine unusable (6+ worker processes at
 **Critical:** Before creating each card, pause and ask: "Could Haiku handle this?" If both requirements and implementation are mechanically simple, use Haiku. **When in doubt, use Sonnet** (safer default), but the doubt should come from active evaluation, not reflex.
 
 **Skipping the evaluation is a smell.** The problem is not picking Sonnet — it is reflexive defaulting without asking the question first.
+
+**Specificity is the model-selection lever.** A precise, scoped card description (explicit file, explicit change, explicit outcome) enables Haiku to succeed where a vague description forces Sonnet. Write specific cards first, then ask "Could Haiku handle this?" — the answer is yes more often than you think. Target ~60% Haiku for work/review/research cards when descriptions are well-written (AC reviews are always Haiku and don't count toward this ratio).
 
 ---
 
