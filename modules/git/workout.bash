@@ -876,7 +876,8 @@ fi
 # Check if branch is already checked out in any worktree
 existing_worktree=$(git worktree list --porcelain | awk -v branch="refs/heads/$branch_name" '
   /^worktree / { path = substr($0, 10) }
-  /^branch / && $0 ~ branch { print path; exit }
+  /^branch / && $0 ~ branch && !found { result = path; found = 1 }
+  END { if (found) print result }
 ')
 
 if [ -n "$existing_worktree" ]; then
@@ -936,7 +937,10 @@ if [ -n "$existing_worktree" ]; then
       echo "Restoring uncommitted changes in worktree..." >&2
       (cd "$worktree_path" && git stash pop) >&2
     fi
-  ) || exit 1
+  ) || {
+    echo "workout: migration failed — could not switch branch '$branch_name' to worktree" >&2
+    exit 1
+  }
 
   # Output the cd command
   echo "cd '$worktree_path'"

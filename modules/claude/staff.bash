@@ -19,4 +19,6 @@ system_prompt="Today's date: ${current_date}
 ${staff_engineer_content}"
 
 # Launch Claude Code with date-aware staff engineer output style
+export KANBAN_AGENT=staff-engineer
+export CLAUDIT2_ROLE=staff-engineer
 exec claude --enable-auto-mode --system-prompt "$system_prompt" "$@"

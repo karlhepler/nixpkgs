@@ -42,7 +42,9 @@ elif [[ "${1:-}" == "--no-pull" ]]; then
   no_pull=true
 fi
 
-git remote set-head origin -a # make sure there is an origin/HEAD
+if [ "$no_pull" = false ]; then
+  git remote set-head origin -a # make sure there is an origin/HEAD
+fi
 trunk="$(git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@')"
 git checkout "$trunk"
 
