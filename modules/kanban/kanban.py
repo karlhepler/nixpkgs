@@ -439,9 +439,9 @@ def is_my_card(card: dict, current_session: str | None) -> bool:
 # Metrics event writer
 # =============================================================================
 
-_METRICS_DB_PATH = Path.home() / ".claude" / "metrics" / "claude-metrics.db"
+_METRICS_DB_PATH = Path.home() / ".claude" / "metrics" / "claudit.db"
 
-# NOTE: This DDL is intentionally duplicated in modules/claude/claude-metrics-hook.py
+# NOTE: This DDL is intentionally duplicated in modules/claudit/claudit-hook.py
 # Both files must stay in sync — changes here require matching changes there.
 _CREATE_KANBAN_CARD_EVENTS_SQL = """
 CREATE TABLE IF NOT EXISTS kanban_card_events (
@@ -727,7 +727,7 @@ def validate_and_build_card(data: dict, session: str | None) -> dict:
         intent=data.get("intent", ""),
         read_files=data.get("readFiles", []),
         edit_files=data.get("editFiles", []),
-        agent=data.get("agent", "unassigned"),
+        agent=data.get("agent") or os.environ.get("KANBAN_AGENT") or "unassigned",
         model=data.get("model"),
         session=session,
         criteria=criteria if all(isinstance(c, str) for c in criteria) else None,

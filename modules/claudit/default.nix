@@ -19,16 +19,16 @@ let
     cp -rL ${sqlitePlugin}/. $out/${sqlitePlugin.pname}/
   '';
 
-  # Provisioning datasource YAML
+  # Provisioning datasource YAML (single datasource, uid=claudit-sqlite)
   datasourceYaml = pkgs.writeText "datasource.yaml" ''
     apiVersion: 1
     datasources:
-      - name: claude-metrics-sqlite
+      - name: claudit
         type: frser-sqlite-datasource
-        uid: claude-metrics-sqlite
+        uid: claudit-sqlite
         access: proxy
         jsonData:
-          path: ${homeDirectory}/.claude/metrics/claude-metrics.db
+          path: ${homeDirectory}/.claude/metrics/claudit.db
           pathOptions: "_pragma=busy_timeout(5000)"
         editable: true
   '';
@@ -37,7 +37,7 @@ let
   dashboardYaml = pkgs.writeText "dashboard.yaml" ''
     apiVersion: 1
     providers:
-      - name: claude-metrics
+      - name: claudit
         type: file
         options:
           path: ${builtins.toString ./.}
@@ -56,10 +56,10 @@ let
   # grafana.ini configuration file
   grafanaIni = pkgs.writeText "grafana.ini" ''
     [server]
-    http_port = 3200
+    http_port = 3201
     http_addr = 127.0.0.1
-    domain = claudit.local
-    root_url = http://claudit.local:3200/
+    domain = localhost
+    root_url = http://localhost:3201/
 
     [auth.anonymous]
     enabled = true
@@ -72,23 +72,23 @@ let
     allow_loading_unsigned_plugins = frser-sqlite-datasource
 
     [paths]
-    data = ${homeDirectory}/.local/share/grafana
-    logs = ${homeDirectory}/.local/share/grafana/log
+    data = ${homeDirectory}/.local/share/claudit/data
+    logs = ${homeDirectory}/.local/share/claudit/logs
     plugins = ${pluginsDir}
     provisioning = ${provisioningDir}
   '';
 
-  # Claude Metrics Hook (tracks agent metrics on stop events)
-  claudeMetricsHookScript = pkgs.writers.writePython3Bin "claude-metrics-hook" {
-    flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
-  } (builtins.readFile ./claude-metrics-hook.py);
+  # Claudit hook (captures agent metrics on stop events)
+  clauditHookScript = pkgs.writers.writePython3Bin "claudit-hook" {
+    flakeIgnore = [ "E265" "E501" "W503" "W504" ];
+  } (builtins.readFile ./claudit-hook.py);
 
 in {
   # ============================================================================
   # Claudit - Claude Code metrics dashboard + metrics collection hook
   # ============================================================================
-  # Run `claudit` to start Grafana on http://claudit.local:3200
-  # Press SPACE to reopen browser, Ctrl+C to stop.
+  # Run `claudit` to start Grafana on http://localhost:3201
+  # Press Ctrl+C to stop.
   # ============================================================================
 
   _module.args.clauditShellapps = {
@@ -96,10 +96,9 @@ in {
       name = "claudit";
       runtimeInputs = [ pkgs.grafana pkgs.curl pkgs.sqlite ];
       text = ''
-        GRAFANA_URL="http://claudit.local:3200/d/claudit-dashboard/claudit-claude-code-agent-metrics?orgId=1&from=now-7d&to=now&timezone=browser&refresh=30s"
+        GRAFANA_URL="http://localhost:3201/d/claudit2/claudit2?orgId=1&from=now-7d&to=now&timezone=browser&refresh=30s"
         GRAFANA_HOMEPATH="${pkgs.grafana}/share/grafana"
-        GRAFANA_PID=""
-        METRICS_DB="''${HOME}/.claude/metrics/claude-metrics.db"
+        METRICS_DB="''${HOME}/.claude/metrics/claudit.db"
 
         # --- Handle help flags ---
         if [[ "''${1:-}" == "--help" ]] || [[ "''${1:-}" == "-h" ]]; then
@@ -123,100 +122,66 @@ HELP_EOF
           if [[ "''${answer}" =~ ^[Yy]$ ]]; then
             rm -f "''${METRICS_DB}"
             echo "Database deleted, recreating schema..."
-            # Recreate the database schema immediately via direct sqlite3 (no hook invocation)
             mkdir -p "$(dirname "''${METRICS_DB}")"
             sqlite3 "''${METRICS_DB}" <<'SQL_EOF'
 PRAGMA journal_mode=WAL;
 PRAGMA busy_timeout=5000;
 
 CREATE TABLE IF NOT EXISTS agent_metrics (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id TEXT NOT NULL,
     agent_id TEXT NOT NULL DEFAULT "",
-    role TEXT NOT NULL,
-    recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    working_directory TEXT,
-    kanban_session TEXT,
-    git_branch TEXT,
-    model TEXT NOT NULL,
-    model_family TEXT NOT NULL,
-    turns INTEGER NOT NULL DEFAULT 0,
+    agent TEXT NOT NULL DEFAULT "unknown",
+    model TEXT NOT NULL DEFAULT "unknown",
+    kanban_session TEXT NOT NULL DEFAULT "unknown",
+    card_number INTEGER,
+    git_repo TEXT NOT NULL DEFAULT "unknown",
+    working_directory TEXT NOT NULL DEFAULT "",
+    first_seen_at TEXT NOT NULL DEFAULT (strftime("%Y-%m-%dT%H:%M:%SZ", "now")),
+    last_seen_at TEXT NOT NULL DEFAULT (strftime("%Y-%m-%dT%H:%M:%SZ", "now")),
+    recorded_at TEXT NOT NULL DEFAULT (strftime("%Y-%m-%dT%H:%M:%SZ", "now")),
     input_tokens INTEGER NOT NULL DEFAULT 0,
     output_tokens INTEGER NOT NULL DEFAULT 0,
-    cache_creation_5m_tokens INTEGER NOT NULL DEFAULT 0,
-    cache_creation_1h_tokens INTEGER NOT NULL DEFAULT 0,
     cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_write_tokens INTEGER NOT NULL DEFAULT 0,
     cost_usd REAL NOT NULL DEFAULT 0.0,
-    duration_seconds REAL DEFAULT 0.0,
-    avg_turn_latency_seconds REAL DEFAULT 0.0,
-    cache_hit_ratio REAL DEFAULT 0.0,
-    tool_calls INTEGER DEFAULT 0,
-    tool_errors INTEGER DEFAULT 0,
-    is_sidechain INTEGER NOT NULL DEFAULT 0,
-    last_seen_at TIMESTAMP,
-    UNIQUE(session_id, agent_id, role, model)
+    total_turns INTEGER NOT NULL DEFAULT 0,
+    avg_turn_latency_seconds REAL NOT NULL DEFAULT 0.0,
+    cache_hit_ratio REAL NOT NULL DEFAULT 0.0,
+    PRIMARY KEY (session_id, agent_id)
 );
 
 CREATE TABLE IF NOT EXISTS agent_tool_usage (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id TEXT NOT NULL,
     agent_id TEXT NOT NULL DEFAULT "",
-    role TEXT NOT NULL,
-    recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     tool_name TEXT NOT NULL,
-    call_count INTEGER NOT NULL DEFAULT 0,
-    error_count INTEGER NOT NULL DEFAULT 0,
-    UNIQUE(session_id, agent_id, role, tool_name)
-);
-
-CREATE TABLE IF NOT EXISTS permission_denials (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id TEXT NOT NULL,
-    agent_id TEXT NOT NULL DEFAULT "",
-    role TEXT NOT NULL,
-    recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    tool_name TEXT NOT NULL,
-    tool_input TEXT,
-    tool_use_id TEXT,
-    kanban_session TEXT,
-    UNIQUE(session_id, tool_use_id)
+    bash_command TEXT NOT NULL DEFAULT "",
+    bash_subcommand TEXT NOT NULL DEFAULT "",
+    call_count INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (session_id, agent_id, tool_name, bash_command, bash_subcommand)
 );
 
 CREATE TABLE IF NOT EXISTS kanban_card_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    card_number TEXT NOT NULL,
-    event_type TEXT NOT NULL,
-    agent TEXT,
-    model TEXT,
-    kanban_session TEXT,
-    recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    card_created_at TEXT,
-    card_completed_at TEXT,
-    card_type TEXT,
-    ac_count INTEGER,
-    git_project TEXT,
-    from_column TEXT,
-    to_column TEXT,
-    persona TEXT
+    kanban_session TEXT NOT NULL,
+    card_number INTEGER NOT NULL,
+    event TEXT NOT NULL,
+    agent TEXT NOT NULL DEFAULT "",
+    model TEXT NOT NULL DEFAULT "",
+    occurred_at TEXT NOT NULL DEFAULT (strftime("%Y-%m-%dT%H:%M:%SZ", "now"))
 );
 
-CREATE INDEX IF NOT EXISTS idx_kanban_card_events_event_type ON kanban_card_events (event_type);
-CREATE INDEX IF NOT EXISTS idx_kanban_card_events_agent ON kanban_card_events (agent);
-CREATE INDEX IF NOT EXISTS idx_kanban_card_events_recorded_at ON kanban_card_events (recorded_at);
-
-CREATE INDEX IF NOT EXISTS idx_agent_metrics_session_id ON agent_metrics (session_id);
-CREATE INDEX IF NOT EXISTS idx_agent_metrics_recorded_at ON agent_metrics (recorded_at);
-CREATE INDEX IF NOT EXISTS idx_agent_metrics_role ON agent_metrics (role);
-CREATE INDEX IF NOT EXISTS idx_agent_metrics_model_family ON agent_metrics (model_family);
-CREATE INDEX IF NOT EXISTS idx_agent_metrics_kanban_session ON agent_metrics (kanban_session);
-CREATE INDEX IF NOT EXISTS idx_agent_metrics_git_branch ON agent_metrics (git_branch);
-CREATE INDEX IF NOT EXISTS idx_agent_metrics_is_sidechain ON agent_metrics (is_sidechain);
-CREATE INDEX IF NOT EXISTS idx_tool_usage_session_id ON agent_tool_usage (session_id);
-CREATE INDEX IF NOT EXISTS idx_tool_usage_tool_name ON agent_tool_usage (tool_name);
-CREATE INDEX IF NOT EXISTS idx_tool_usage_role ON agent_tool_usage (role);
-CREATE INDEX IF NOT EXISTS idx_permission_denials_session_id ON permission_denials (session_id);
-CREATE INDEX IF NOT EXISTS idx_permission_denials_tool_name ON permission_denials (tool_name);
-CREATE INDEX IF NOT EXISTS idx_permission_denials_kanban_session ON permission_denials (kanban_session);
+CREATE INDEX IF NOT EXISTS idx_am_session_id ON agent_metrics (session_id);
+CREATE INDEX IF NOT EXISTS idx_am_kanban_session ON agent_metrics (kanban_session);
+CREATE INDEX IF NOT EXISTS idx_am_recorded_at ON agent_metrics (recorded_at);
+CREATE INDEX IF NOT EXISTS idx_am_last_seen_at ON agent_metrics (last_seen_at);
+CREATE INDEX IF NOT EXISTS idx_am_git_repo ON agent_metrics (git_repo);
+CREATE INDEX IF NOT EXISTS idx_am_agent ON agent_metrics (agent);
+CREATE INDEX IF NOT EXISTS idx_am_model ON agent_metrics (model);
+CREATE INDEX IF NOT EXISTS idx_atu_session_id ON agent_tool_usage (session_id);
+CREATE INDEX IF NOT EXISTS idx_atu_tool_name ON agent_tool_usage (tool_name);
+CREATE INDEX IF NOT EXISTS idx_kce_kanban_session ON kanban_card_events (kanban_session);
+CREATE INDEX IF NOT EXISTS idx_kce_card_number ON kanban_card_events (card_number);
+CREATE INDEX IF NOT EXISTS idx_kce_occurred_at ON kanban_card_events (occurred_at);
 SQL_EOF
             echo "Database recreated with correct schema."
           else
@@ -225,142 +190,50 @@ SQL_EOF
           exit 0
         fi
 
-        # --- /etc/hosts check ---
-        check_hosts() {
-          if ! dscacheutil -q host -a name claudit.local 2>/dev/null | grep -q '127.0.0.1'; then
-            echo "claudit.local is not in /etc/hosts."
-            echo ""
-            echo "To add it, run:"
-            echo "  sudo sh -c 'echo \"127.0.0.1 claudit.local\" >> /etc/hosts'"
-            echo ""
-            printf "Want me to add it now? [y/N] "
-            read -r answer
-            if [[ "''${answer}" =~ ^[Yy]$ ]]; then
-              sudo sh -c 'echo "127.0.0.1 claudit.local" >> /etc/hosts'
-              echo "Added! Continuing..."
-            else
-              echo "Skipping. Falling back to http://localhost:3200"
-              GRAFANA_URL="http://localhost:3200/d/claudit-dashboard/claudit-claude-code-agent-metrics?orgId=1&from=now-7d&to=now&timezone=browser&refresh=30s"
-            fi
-          fi
-        }
+        # --- Create data and log directories ---
+        mkdir -p "''${HOME}/.local/share/claudit/data" "''${HOME}/.local/share/claudit/logs"
 
-        # --- Loading animation ---
-        LOADING_PID=""
-        start_loading() {
-          (
-            while true; do
-              printf "\rLoading.  "
-              sleep 0.3
-              printf "\rLoading.. "
-              sleep 0.3
-              printf "\rLoading..."
-              sleep 0.3
-            done
-          ) &
-          LOADING_PID=$!
-        }
-
-        stop_loading() {
-          if [[ -n "''${LOADING_PID}" ]]; then
-            kill "''${LOADING_PID}" 2>/dev/null || true
-            wait "''${LOADING_PID}" 2>/dev/null || true
-            printf "\r             \r"  # Clear the line
-          fi
-        }
-
-        # --- Clean shutdown on Ctrl+C ---
-        cleanup() {
-          stop_loading
-          echo ""
-          echo "Stopping Grafana..."
-          if [[ -n "''${GRAFANA_PID}" ]]; then
-            kill "''${GRAFANA_PID}" 2>/dev/null || true
-            wait "''${GRAFANA_PID}" 2>/dev/null || true
-          fi
-          exit 0
-        }
-        trap cleanup INT TERM
-
-        # --- Wait for Grafana to accept connections ---
-        wait_for_grafana() {
-          local attempts=0
-          while (( attempts < 20 )); do
-            if curl -sf "http://127.0.0.1:3200/api/health" >/dev/null 2>&1; then
-              return 0
-            fi
-            sleep 0.5
-            (( attempts++ )) || true
-          done
-          return 1
-        }
-
-        # --- Start ---
-        check_hosts
-
-        start_loading
-        sleep 0.1  # Brief delay to ensure animation starts cleanly
-
+        # --- Start Grafana in background, output to terminal ---
         grafana server \
           --config ${grafanaIni} \
           --homepath "''${GRAFANA_HOMEPATH}" \
-          >"''${HOME}/.local/share/grafana/log/claudit.log" 2>&1 &
-        GRAFANA_PID="$!"
+          2>&1 &
+        grafana_pid=$!
 
-        # Verify process started
-        sleep 0.5
-        if ! kill -0 "''${GRAFANA_PID}" 2>/dev/null; then
-          echo "ERROR: Grafana failed to start. Check log:"
-          echo "  ''${HOME}/.local/share/grafana/log/claudit.log"
-          exit 1
-        fi
+        # --- Trap Ctrl+C for clean shutdown ---
+        trap 'kill "''${grafana_pid}" 2>/dev/null; exit 0' INT TERM
 
-        # Wait until HTTP is ready, then open browser
-        if wait_for_grafana; then
-          stop_loading
-          echo "Starting Grafana... Done!"
-          open "''${GRAFANA_URL}"
-        else
-          stop_loading
-          echo "WARNING: Grafana did not respond within 10s. Opening browser anyway..."
-          open "''${GRAFANA_URL}"
-        fi
-
-        echo "Claudit metrics dashboard: ''${GRAFANA_URL}"
-        echo "Press SPACE to open browser, Ctrl+C to stop."
-
-        # --- Foreground keypress loop ---
-        while true; do
-          # Read one character without requiring Enter (-n 1), silent (-s)
-          if read -r -s -n 1 key 2>/dev/null; then
-            # SPACE (empty after trimming) or Enter (\n becomes empty string)
-            if [[ "''${key}" == " " || "''${key}" == "" ]]; then
-              open "''${GRAFANA_URL}"
-            fi
+        # --- Readiness check: up to 20 attempts, 0.5s sleep ---
+        attempts=0
+        while (( attempts < 20 )); do
+          if curl -sf "http://127.0.0.1:3201/api/health" >/dev/null 2>&1; then
+            break
           fi
-          # Check if Grafana process is still alive
-          if ! kill -0 "''${GRAFANA_PID}" 2>/dev/null; then
-            echo "Grafana exited unexpectedly. Check log:"
-            echo "  ''${HOME}/.local/share/grafana/log/claudit.log"
-            exit 1
-          fi
+          sleep 0.5
+          (( attempts++ )) || true
         done
+
+        open "''${GRAFANA_URL}"
+        echo "Press Ctrl+C to stop."
+
+        wait "''${grafana_pid}" 2>/dev/null || true
       '';
-      description = "Start on-demand Grafana server for Claude Code agent metrics (port 3200)";
+      description = "Start on-demand Grafana server for Claude Code agent metrics (port 3201)";
       sourceFile = "default.nix";
     };
 
-    claude-metrics-hook = claudeMetricsHookScript // {
+    claudit-hook = clauditHookScript // {
       meta = {
         description = "Hook for tracking agent metrics on stop events";
-        mainProgram = "claude-metrics-hook";
-        homepage = "${builtins.toString ./.}/claude-metrics-hook.py";
+        mainProgram = "claudit-hook";
+        homepage = "${builtins.toString ./.}/claudit-hook.py";
       };
     };
   };
 
-  # Create Grafana data and log directories on activation
-  home.activation.grafanaDirectories = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    $DRY_RUN_CMD mkdir -p ${homeDirectory}/.local/share/grafana/log
+  # Create Claudit data and log directories on activation
+  home.activation.clauditDirectories = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    $DRY_RUN_CMD mkdir -p ${homeDirectory}/.local/share/claudit/data
+    $DRY_RUN_CMD mkdir -p ${homeDirectory}/.local/share/claudit/logs
   '';
 }

@@ -908,7 +908,7 @@ in {
               }
               {
                 type = "command";
-                command = "${shellapps.claude-metrics-hook}/bin/claude-metrics-hook";
+                command = "${shellapps.claudit-hook}/bin/claudit-hook";
               }
             ];
           }];
@@ -920,7 +920,7 @@ in {
               }
               {
                 type = "command";
-                command = "${shellapps.claude-metrics-hook}/bin/claude-metrics-hook";
+                command = "${shellapps.claudit-hook}/bin/claudit-hook";
               }
             ];
           }];
@@ -950,8 +950,9 @@ in {
       '';
     in lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       $DRY_RUN_CMD mkdir -p ~/.claude
-      $DRY_RUN_CMD mkdir -p ~/.claude
-      $DRY_RUN_CMD ln -sf ${claudeSettingsJson} ~/.claude/settings.json
+      $DRY_RUN_CMD rm -f ~/.claude/settings.json
+      $DRY_RUN_CMD cp ${claudeSettingsJson} ~/.claude/settings.json
+      $DRY_RUN_CMD chmod 644 ~/.claude/settings.json
     '';
 
     # claudeGlobal
