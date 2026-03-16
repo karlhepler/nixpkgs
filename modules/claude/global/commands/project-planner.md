@@ -50,6 +50,8 @@ If you remember only 5 things from this skill:
 
 5. **Validate the Causal Chain** - DELIVERABLES + ASSUMPTIONS must logically lead to OBJECTIVE, which must lead to GOAL. If chain is Weak, add deliverables or reframe objective. Aim for Strong or Adequate confidence.
 
+6. **Assumptions Are Living, Not Static** - Re-evaluate assumptions continuously as the design evolves. When a design decision eliminates a risk, remove the corresponding assumption immediately. When building the deliverable itself validates the concern, it was never an assumption — it is a deliverable risk verified by prototyping.
+
 ## Before Starting
 
 **Read these files first to understand the environment:**
@@ -497,6 +499,18 @@ If this equation doesn't hold, the project plan is incomplete or has excess scop
 
 **Mnemonic:** If you can build it, it's not an assumption.
 
+**Continuous Re-evaluation (mandatory during design iteration):**
+
+The assumption filter is not a one-time gate. Re-apply it every time the design evolves:
+
+1. **Design decision eliminates a risk?** → Remove the assumption immediately. Do not narrate the removal or keep it "for reference." Dead assumptions clutter the plan and signal the planner is not tracking how design decisions affect the risk landscape.
+
+2. **"Will the thing we're building work?"** → That is NEVER an assumption. If building the deliverable validates the concern, it is a deliverable risk — verified by prototyping and testing, not by assumption tracking. Apply the filter: "Can the team affect this?" → YES → not an assumption.
+
+3. **Proactive pruning:** Do not wait for the user to point out dead assumptions. After every design decision that changes the risk landscape, scan the assumptions table and remove anything that is now under team control or validated by the deliverables themselves.
+
+**Red flag:** An assumption that was valid when first written but is no longer valid after a subsequent design decision. These are the hardest to catch because they *were* correct — the planner must continuously ask "is this STILL correct given what we've decided since?"
+
 ---
 
 ### Section 5: DELIVERABLES - What We'll Build
@@ -902,6 +916,7 @@ Build a code review checklist system with automated reminders and quality tracki
 14. **CREATE THE PLAN DOCUMENT** - Write the full plan to `.scratchpad/project-plan-<slug>.md`. Open it with `open <filepath>`. Tell the user it's ready.
 15. **Sufficient and necessary test** - Are deliverables enough? Is each required? Update the document if changes needed.
 16. **Validate causal chain** - Does DELIVERABLES + ASSUMPTIONS → OBJECTIVE → GOAL? Update the document if changes needed.
+16a. **Re-evaluate assumptions against final design** - Scan assumptions table: Has any design decision eliminated a risk? Is any assumption now validatable by building a deliverable? Remove dead assumptions. Do not wait for user to flag them.
 17. **Iterate on the document** - When user requests changes, edit the file in place. Brief chat note on what changed. The document is the deliverable.
 
 ## Common Pitfalls and Edge Cases
@@ -1045,6 +1060,7 @@ Before marking work complete:
 16. **Sufficient test passed** - Deliverables together achieve OBJECTIVE?
 17. **Necessary test passed** - Each deliverable required? Removed gold-plating?
 18. **CAUSAL CHECK validated** - DELIVERABLES + ASSUMPTIONS → OBJECTIVE → GOAL? SUCCESS verifies?
+19. **ASSUMPTIONS re-evaluated** - Scanned for assumptions invalidated by design decisions? Removed any that are now team-controllable or validated by deliverables?
 
 **If any verification fails, fix before completing.**
 

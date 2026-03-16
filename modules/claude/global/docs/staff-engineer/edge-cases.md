@@ -40,7 +40,7 @@ underway (card #16)."
 **What to do:**
 - **Move card to review** - `kanban review <card#>` FIRST (always required)
 - **Launch AC reviewer** - AC reviewer fetches card details (`kanban show`) and evaluates which criteria are satisfied
-- **AC reviewer verifies/unverifies criteria** - Only the AC reviewer calls `kanban criteria verify/unverify` (sets `reviewer_met` column); sub-agents use `kanban criteria check/uncheck` (sets `agent_met` column); staff engineer never calls per-criterion mutation commands
+- **AC reviewer passes/fails criteria** - Only the AC reviewer calls `kanban criteria pass/fail` (sets `reviewer_met` column); sub-agents use `kanban criteria check/uncheck` (sets `agent_met` column); staff engineer never calls per-criterion mutation commands
 - **For remaining items** - Two paths:
   - **Resume work**: `kanban redo <card#>`, new agent picks up remaining unverified AC
   - **Follow-up card**: If scope changed, create new card with remaining work
@@ -56,8 +56,8 @@ You:
 
 AC Reviewer:
 1. kanban show 20              # Fetch card details and AC list
-2. kanban criteria verify 20 1 # "API endpoint implemented" - satisfied
-3. kanban criteria verify 20 2 # "Tests passing" - satisfied
+2. kanban criteria pass 20 1 # "API endpoint implemented" - satisfied
+3. kanban criteria pass 20 2 # "Tests passing" - satisfied
 4. Returns: "AC #3 'Deployed to staging' still unverified - deployment blocked"
 
 You:
@@ -65,7 +65,7 @@ You:
 6. [Launch AC reviewer again after deployment]
 
 AC Reviewer:
-7. kanban criteria verify 20 3 # Now satisfied
+7. kanban criteria pass 20 3 # Now satisfied
 8. Returns: "All AC verified"
 
 You:
@@ -74,7 +74,7 @@ You:
 
 **Anti-pattern:**
 - Moving directly from doing to done (skipping review)
-- Staff engineer calling `kanban show` or `kanban criteria check/uncheck/verify/unverify` directly
+- Staff engineer calling `kanban show` or `kanban criteria check/uncheck/pass/fail` directly
 - AC reviewer using `kanban criteria check/uncheck` (those are for sub-agents only)
 - Creating new card instead of resuming when AC are clear
 
@@ -368,9 +368,47 @@ When the AC reviewer evaluates completed work, they should flag silent approach 
 - Work is complete but the specified approach is nowhere in the diff
 
 **What to do when detected:**
-- Mark the relevant AC as unverified (`kanban criteria unverify <card#> <n>`)
+- Mark the relevant AC as failed (`kanban criteria fail <card#> <n>`)
 - Add a comment: "Silent approach swap detected — card specified [X] but implementation uses [Y]. Approval was not obtained. This AC cannot be verified until the approach is approved or corrected."
 - Return findings to staff engineer; do not approve work with undisclosed substitutions
+
+---
+
+## Missing Marker Recovery
+
+**Scenario:** An agent completes its work and returns, but the SubagentStop hook notification never arrives. The card remains in doing because no `KANBAN REVIEW` marker was emitted.
+
+**What happened:** The hook cannot chain AC review without the marker. The agent finished its substantive work but skipped (or failed to emit) the marker that triggers the review pipeline.
+
+**Detection:** If you expect a hook notification and it does not arrive within a reasonable time, check `kanban status <N>`. If the result is `doing`, the hook never received a marker — this is the missing marker case.
+
+**What to do:**
+
+1. **Check card status:** `kanban status <N>` — confirm it is still in doing
+2. **Do NOT call `kanban review` yourself** — that command is triggered by the hook on the agent's behalf; a manual call would bypass the AC review chain
+3. **Re-launch the agent** — same card, same model (it is already in doing, no `kanban redo` needed). The new agent reads prior work via `kanban show`, emits `KANBAN CRITERIA CHECK <N>` for any criteria already satisfied by prior work, then emits `KANBAN REVIEW` to trigger the hook
+
+**Example:**
+```
+[No hook notification after agent returns]
+
+You:
+1. kanban status 42              # → "doing" — marker not emitted
+2. [Re-launch agent for card #42 using same delegation template]
+
+Agent (re-launched):
+1. kanban show 42 --output-style=xml  # Reads prior work and AC
+2. KANBAN CRITERIA CHECK 1            # Prior work already satisfied this
+3. KANBAN CRITERIA CHECK 2            # Prior work already satisfied this
+4. KANBAN REVIEW                      # Hook triggers AC review
+
+[Hook notification arrives: "AC review complete — card #42 PASSED"]
+```
+
+**Anti-pattern:**
+- Waiting indefinitely without checking card status
+- Manually calling `kanban review` to advance the card (bypasses AC review chain)
+- Calling `kanban criteria check` to fill in what the agent missed (agent_met must reflect the agent's own assessment)
 
 ---
 

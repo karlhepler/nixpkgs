@@ -10,8 +10,6 @@ Background sub-agents run in `dontAsk` mode. When an agent hits an interactive p
 
 **This protocol also applies to skill pre-flight checks.** When a skill (e.g., `/review`) runs a prerequisites check and identifies missing permissions before any work starts, that is a permission gate — not an invitation to hand the fix back to the user. Treat it identically: present the three-option AskUserQuestion, use `perm` CLI based on the user's choice, then re-launch the skill.
 
-**Kanban CLI commands are Bash commands.** When a sub-agent cannot run `kanban comment`, `kanban criteria check`, or `kanban review` because it lacks Bash permission for `kanban *`, this is a standard permission gate — not an invitation for the staff engineer to run those commands on the agent's behalf. The agent's kanban workflow (posting comments, self-checking AC, moving to review) is the agent's job. Follow the three-option protocol and re-launch the agent to complete its own workflow. The fact that "the substantive work is done and only kanban steps remain" does not create an exception — the protocol applies to ALL permission gates regardless of what the blocked command does.
-
 **Perm session identity:** Use the perm session UUID printed at session start (`🔑 Your perm session is: <uuid>`) for all `perm --session` commands. This is distinct from the kanban session name. Stale temporary permissions from crashed/forgotten sessions are automatically cleaned up at session start.
 
 **Git operation permission gates require AC review first.** If an agent returns requesting permission for a git operation — `git commit`, `git push`, `git merge`, or `gh pr create` — and the card has NOT yet completed the AC lifecycle (`kanban review` → AC reviewer → `kanban done`), do NOT proceed with the normal recovery path. Do not grant the permission. Instead: move the card to review, run the AC lifecycle, and only after `kanban done` succeeds, proceed with git operations. The permission gate recovery protocol is for unblocking legitimate work — not for bypassing the quality gate. An agent requesting commit/push is asking to signal "work is complete" before it has been verified. After `kanban done` succeeds, run the git operations directly (see § Rare Exceptions in the output style) rather than re-launching the agent — the work is done and verified; only the git operation remains.
@@ -26,7 +24,7 @@ Background sub-agents run in `dontAsk` mode. When an agent hits an interactive p
    - **"Always Allow → Run in Background"** — Run `perm always "<pattern>"` to add the permission permanently, then re-launch the agent in background. No cleanup after the agent completes.
    - **"Run in Foreground"** — Before re-launching, run `perm --session <your-session-id> cleanup` to remove all temporary permissions for your session. Then re-launch using the Task tool with `run_in_background: false`. Same prompt, same card, same agent type. Claude Code surfaces the permission prompt to the user natively.
 3. **Execute the chosen path** — No other options exist. If the user wants none of these, that conversation is separate from this protocol.
-4. **Resume** — After the chosen path completes, continue normal AC review lifecycle for remaining work.
+4. **Resume** — After the chosen path completes, the re-launched agent will emit marker messages (`KANBAN CRITERIA CHECK`, `KANBAN REVIEW`) that trigger the SubagentStop hook to run AC review automatically. Continue normal AC review lifecycle after the hook notification confirms passed.
 
 **Tracking:** `perm` handles session-aware tracking. Run `perm list` to see current state with session IDs if you need to inspect what's active.
 
@@ -408,7 +406,9 @@ YOU MUST invoke the /swe-frontend skill using the Skill tool.
 IMPORTANT: The skill will read ~/.claude/CLAUDE.md and project CLAUDE.md files
 FIRST to understand the environment, tools, and conventions.
 
-🚫 KANBAN: You do NOT touch kanban. No kanban commands. Ever.
+Note: Emit text markers (KANBAN CRITERIA CHECK <N>, KANBAN REVIEW) in your return
+message for kanban state changes. The only direct CLI call permitted is a single
+`kanban show` at the END of your work to catch mid-flight AC additions.
 
 ## Task
 Add dark mode toggle to Settings page.
@@ -445,7 +445,9 @@ YOU MUST invoke the /researcher skill using the Skill tool.
 IMPORTANT: The skill will read ~/.claude/CLAUDE.md and project CLAUDE.md files
 FIRST to understand the environment, tools, and conventions.
 
-🚫 KANBAN: You do NOT touch kanban. No kanban commands. Ever.
+Note: Emit text markers (KANBAN CRITERIA CHECK <N>, KANBAN REVIEW) in your return
+message for kanban state changes. The only direct CLI call permitted is a single
+`kanban show` at the END of your work to catch mid-flight AC additions.
 
 ## Task
 Investigate authentication flow and identify security issues.
@@ -482,7 +484,9 @@ YOU MUST invoke the /swe-security skill using the Skill tool.
 IMPORTANT: The skill will read ~/.claude/CLAUDE.md and project CLAUDE.md files
 FIRST to understand the environment, tools, and conventions.
 
-🚫 KANBAN: You do NOT touch kanban. No kanban commands. Ever.
+Note: Emit text markers (KANBAN CRITERIA CHECK <N>, KANBAN REVIEW) in your return
+message for kanban state changes. The only direct CLI call permitted is a single
+`kanban show` at the END of your work to catch mid-flight AC additions.
 
 ## Task
 Security review of IAM policy changes (Card #Y).
