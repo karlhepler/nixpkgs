@@ -1074,6 +1074,62 @@ def cmd_status(args) -> None:
     print(card_path.parent.name)
 
 
+def cmd_rename(args) -> None:
+    """Rename a session to a custom friendly name.
+
+    Allows users to override the auto-generated Docker-style session name.
+    Session is identified by --session flag or auto-detected from environment.
+    """
+    root = get_root(args.root, auto_init=False)
+    root.mkdir(parents=True, exist_ok=True)
+
+    # Get the session ID to rename
+    session_id = args.session
+    if not session_id:
+        print("Error: Session must be specified with --session flag for rename command", file=sys.stderr)
+        sys.exit(1)
+
+    # Validate the new name format (alphanumeric, hyphens only, not empty)
+    new_name = args.new_name.strip() if args.new_name else None
+    if not new_name:
+        print("Error: New session name cannot be empty", file=sys.stderr)
+        sys.exit(1)
+
+    # Validate name format: allow adjective-noun style or any alphanumeric-hyphen combo
+    if not re.match(r'^[a-z0-9]([a-z0-9-]*[a-z0-9])?$', new_name):
+        print(f"Error: Session name must contain only lowercase letters, numbers, and hyphens (got '{new_name}')", file=sys.stderr)
+        sys.exit(1)
+
+    # Load sessions mapping
+    sessions_file = root / "sessions.json"
+    sessions: dict[str, str] = {}
+    if sessions_file.exists():
+        try:
+            sessions = json.loads(sessions_file.read_text())
+        except (json.JSONDecodeError, OSError):
+            sessions = {}
+
+    # Check if new name is already in use (by a different UUID prefix)
+    used_by_other = None
+    for uuid_prefix, name in sessions.items():
+        if name == new_name and uuid_prefix != session_id:
+            used_by_other = uuid_prefix
+            break
+
+    if used_by_other:
+        print(f"Error: Session name '{new_name}' is already in use by session {used_by_other}", file=sys.stderr)
+        sys.exit(1)
+
+    # Get the old name for reporting
+    old_name = sessions.get(session_id, "<unknown>")
+
+    # Update the mapping
+    sessions[session_id] = new_name
+    sessions_file.write_text(json.dumps(sessions, indent=2) + "\n")
+
+    print(f"Renamed session {session_id} from '{old_name}' to '{new_name}'")
+
+
 def cmd_cancel(args) -> None:
     """Move card(s) to canceled column."""
     root = get_root(args.root)
@@ -2720,6 +2776,11 @@ def main() -> None:
     p_status.add_argument("card", help="Card number")
     add_session_flags(p_status)
 
+    # --- rename ---
+    p_rename = subparsers.add_parser("rename", parents=[parent_parser], help="Rename a session to a custom friendly name")
+    p_rename.add_argument("new_name", help="New session name (lowercase alphanumeric and hyphens only)")
+    p_rename.add_argument("--session", required=True, help="Session UUID or name to rename")
+
     # --- cancel ---
     p_cancel = subparsers.add_parser("cancel", parents=[parent_parser], help="Move card(s) to canceled column")
     p_cancel.add_argument("card", nargs="+", help="Card number(s)")
@@ -2853,6 +2914,7 @@ def main() -> None:
         "ls": cmd_list,
         "show": cmd_show,
         "status": cmd_status,
+        "rename": cmd_rename,
         "report": cmd_report,
         "clean": cmd_clean,
         "criteria": cmd_criteria_dispatch,

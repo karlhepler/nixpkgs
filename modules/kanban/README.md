@@ -150,6 +150,7 @@ kanban report --output-style=xml            # XML format
 
 ```bash
 kanban init [path]                          # Create board structure
+kanban rename <new-name> --session <id>    # Rename a session to custom name
 kanban clean                                # Trash cards (interactive confirmation)
 kanban clean <column>                       # Trash cards from specific column
 kanban clean --expunge                      # Trash cards + scratchpad
@@ -157,11 +158,15 @@ kanban clean --expunge                      # Trash cards + scratchpad
 
 Clean moves files to macOS Trash (recoverable via Finder "Put Back").
 
+Session names are auto-generated as friendly Docker-style names (e.g., `swift-quartz`). Use `kanban rename` to override this with a custom name if desired.
+
 ## Session Management
 
-Sessions scope cards to specific Claude Code instances. Session IDs are friendly names (e.g., `wise-cedar`) mapped from UUIDs via `.kanban/sessions.json`.
+Sessions scope cards to specific Claude Code instances. Session names are automatically generated as Docker-style friendly names (e.g., `swift-quartz`) and mapped from session UUIDs via `.kanban/sessions.json`.
 
-- **Auto-detection:** `KANBAN_SESSION` env var > `USER` env var
+- **Auto-detection:** `KANBAN_SESSION` env var > `USER` env var > auto-generated name
+- **Auto-generated names:** Deterministic adjective-noun pairs like `swift-quartz`, `wise-cedar` (from UUID)
+- **Custom renaming:** `kanban rename <new-name> --session <uuid>` to override auto-generated name
 - **All commands accept** `--session <name>` to filter
 - **Session filtering flags:** `--only-mine`, `--show-mine`, `--hide-mine`
 - **Env override:** `KANBAN_HIDE_MINE=true` hides own cards by default
