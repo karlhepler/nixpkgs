@@ -38,43 +38,44 @@ underway (card #16)."
 **Scenario:** Agent returns without finishing everything.
 
 **What to do:**
-- **Agent emits KANBAN REVIEW** - The agent's return message includes the `KANBAN REVIEW` marker; the hook moves the card to review and chains AC review automatically
-- **AC reviewer evaluates** - AC reviewer fetches card details (`kanban show`) and evaluates which criteria are satisfied
-- **AC reviewer passes/fails criteria** - Only the AC reviewer emits `KANBAN CRITERIA PASS/FAIL <N>` markers (sets `reviewer_met` column); sub-agents emit `KANBAN CRITERIA CHECK <N>` markers (sets `agent_met` column); staff engineer never calls per-criterion mutation commands
+- **Move card to review** - `kanban review <card#>` FIRST (always required)
+- **Launch AC reviewer** - AC reviewer fetches card details (`kanban show`) and evaluates which criteria are satisfied
+- **AC reviewer passes/fails criteria** - Only the AC reviewer calls `kanban criteria pass/fail` (sets `reviewer_met` column); sub-agents use `kanban criteria check/uncheck` (sets `agent_met` column); staff engineer never calls per-criterion mutation commands
 - **For remaining items** - Two paths:
-  - **Resume work**: emit `KANBAN REDO <card#>`, new agent picks up remaining unverified AC
+  - **Resume work**: `kanban redo <card#>`, new agent picks up remaining unverified AC
   - **Follow-up card**: If scope changed, create new card with remaining work
 - **Never mark done with unverified AC** - The CLI enforces this
 
 **Example:**
 ```
-Agent returns: "Completed API endpoint and tests. Hit permission gate for deployment.
-KANBAN CRITERIA CHECK 1
-KANBAN CRITERIA CHECK 2
-KANBAN REVIEW"
+Agent returns: "Completed API endpoint and tests. Hit permission gate for deployment."
 
-[Hook moves card #20 to review and chains AC reviewer]
+You:
+1. kanban review 20          # Move to review (staff engineer's only kanban call here)
+2. [Launch AC reviewer for card #20]
 
 AC Reviewer:
 1. kanban show 20              # Fetch card details and AC list
-2. Returns: "AC #1 and #2 satisfied. AC #3 'Deployed to staging' still unverified — deployment blocked.
-   KANBAN CRITERIA PASS 1
-   KANBAN CRITERIA PASS 2"
+2. kanban criteria pass 20 1 # "API endpoint implemented" - satisfied
+3. kanban criteria pass 20 2 # "Tests passing" - satisfied
+4. Returns: "AC #3 'Deployed to staging' still unverified - deployment blocked"
 
 You:
-3. Execute deployment (handle permission gate)
-4. [Launch AC reviewer again after deployment]
+5. Execute deployment (handle permission gate)
+6. [Launch AC reviewer again after deployment]
 
 AC Reviewer:
-5. Returns: "All AC verified.
-   KANBAN CRITERIA PASS 3
-   KANBAN DONE JWT auth implemented, tested, deployed"
+7. kanban criteria pass 20 3 # Now satisfied
+8. Returns: "All AC verified"
+
+You:
+9. kanban done 20 'JWT auth implemented, tested, deployed'
 ```
 
 **Anti-pattern:**
 - Moving directly from doing to done (skipping review)
-- Staff engineer emitting `KANBAN CRITERIA CHECK/PASS/FAIL` markers (sub-agent's and AC reviewer's job respectively)
-- AC reviewer emitting `KANBAN CRITERIA CHECK` (that marker is for sub-agents only)
+- Staff engineer calling `kanban show` or `kanban criteria check/uncheck/pass/fail` directly
+- AC reviewer using `kanban criteria check/uncheck` (those are for sub-agents only)
 - Creating new card instead of resuming when AC are clear
 
 ---
@@ -145,11 +146,9 @@ You: "Going with RDS. Thanks @infra-peer, implementing your recommendation."
 Reviewer: "APPROVE WITH MINOR FIX - Change error message line 45 from 'Failed' to
 'Invalid credentials'"
 
-You: [Makes the edit directly, then re-launches AC reviewer for card #35]
-
-AC Reviewer: "Fix applied. All AC verified.
-KANBAN CRITERIA PASS 3
-KANBAN DONE Auth implemented with reviewer feedback applied"
+You: [Makes the edit directly]
+kanban criteria check 35 3  # Check off the AC
+kanban done 35 'Auth implemented with reviewer feedback applied'
 ```
 
 **Example - Send back for substantive:**
@@ -168,8 +167,8 @@ reviewer's feedback."
 User (mid-review): "Also add a dark mode toggle to that settings page"
 
 You: [Settings page work already in review as card #25]
-KANBAN CRITERIA ADD 25 "Dark mode toggle added to Settings"
-KANBAN REDO 25
+kanban criteria add 25 "Dark mode toggle added to Settings"
+kanban redo 25  # Send back with new AC
 ```
 
 **Example - New AC doesn't fit:**
@@ -195,27 +194,25 @@ card #26 for payment bug."
 **Scenario:** Agent needs something outside their control (API access, credentials, third-party approval).
 
 **What to do:**
-- **Agent emits KANBAN REVIEW** - Agent's return message includes `KANBAN REVIEW`; hook moves card to review
+- **Move card to review** - Agent returns with "blocked on X"
 - **Staff engineer handles coordination**
   - Reach out for API access, credentials, approvals
   - Document what's needed and why
 - **Two paths**:
-  - **Defer card** - emit `KANBAN DEFER <card#>` (moves to todo), resume when unblocked
+  - **Defer card** - `kanban defer <card#>` (moves to todo), resume when unblocked
   - **Parallel work** - Start other cards while waiting, resume later
 
 **Example:**
 ```
-Agent: "Need production API key to test Stripe integration. Blocked.
-KANBAN REVIEW"
-
-[Hook moves card #50 to review]
+Agent: "Need production API key to test Stripe integration. Blocked."
 
 You:
-1. "@user, agent needs production Stripe API key to complete testing. Can you provide
+1. kanban review 50  # Move to review
+2. "@user, agent needs production Stripe API key to complete testing. Can you provide
    that or should we use test mode for now?"
-2. User provides key
-3. KANBAN START 50  # Pick up from todo (hook moves card back to doing)
-4. Resume agent with key in prompt
+3. User provides key
+4. kanban start 50  # Pick up from todo
+5. Resume agent with key in prompt
 ```
 
 **Anti-pattern:**
@@ -317,13 +314,14 @@ You: Resume agent: "Don't use --force. Create new commit instead."
 
 ### Surfacing Workflow
 
-When a sub-agent discovers an alternative that requires approval, it follows these 5 steps:
+When a sub-agent discovers an alternative that requires approval, it follows these 6 steps:
 
 1. **Stop work** — Do not proceed with the alternative or the originally specified approach
-2. **State choice clearly in return message** — Include full discovery context: what the card specifies, what was discovered, why they conflict, and explicitly: "Discovered alternative: [X]. Card specifies: [Y]. Waiting for approval to proceed with [X] or confirmation to proceed with [Y]."
-3. **Emit KANBAN REVIEW** — This moves the card to review so the staff engineer sees it is blocked
-4. **Return to staff engineer** — The return message IS the finding; the hook and staff engineer read it directly
-5. **Wait for decision** — Do not attempt partial work or workarounds; the staff engineer decides and re-delegates with updated direction
+2. **Document discovery** — Write a `kanban comment` explaining what was found and why it differs from the card's specification (include relevant context: what the card specifies, what was discovered, why they conflict)
+3. **State choice clearly** — In the comment, explicitly state: "Discovered alternative: [X]. Card specifies: [Y]. Waiting for approval to proceed with [X] or confirmation to proceed with [Y]."
+4. **Move to review** — Run `kanban review <card#>` so the staff engineer sees the card is blocked
+5. **Return to staff engineer** — Return with a summary of the discovery and the comment number where full context is documented
+6. **Wait for decision** — Do not attempt partial work or workarounds; the staff engineer decides and re-delegates with updated direction
 
 ### Examples
 
@@ -334,12 +332,12 @@ Agent discovers: The codebase already has NextAuth.js configured with active ses
 
 Agent:
 1. Stop work
-2. Returns: "Blocked — auth library conflict. Discovered NextAuth.js already configured
-   in the codebase (see src/auth/config.ts). Card specifies Passport.js. Adding Passport.js
-   alongside NextAuth.js would create a second auth system. Discovered alternative: NextAuth.js
-   JWT integration. Card specifies: Passport.js. Waiting for approval to proceed with
-   NextAuth.js integration or confirmation to add Passport.js as specified.
-   KANBAN REVIEW"
+2. kanban comment 55 "Discovered NextAuth.js already configured in the codebase (see
+   src/auth/config.ts). Card specifies Passport.js. Adding Passport.js alongside
+   NextAuth.js would create a second auth system. Waiting for approval to proceed
+   with NextAuth.js JWT integration or confirmation to add Passport.js as specified."
+3. kanban review 55
+4. Returns: "Blocked — see card #55 comment. Auth library conflict found."
 ```
 
 **Does not require approval — unspecified library choice:**

@@ -227,14 +227,6 @@ in {
             print('Use `kanban cancel` or `kanban redo` to resolve.')
         PYEOF
         fi
-        # Inject board state at session start so the staff engineer always
-        # has fresh board state when a new session begins.
-        board_xml=$(kanban list --output-style=xml 2>/dev/null || true)
-        if [ -n "$board_xml" ]; then
-          echo ""
-          echo "Current board state:"
-          echo "$board_xml"
-        fi
       '';
       description = "Hook for Claude Code session start - injects kanban session identity and perm session UUID";
       sourceFile = "default.nix";
@@ -907,21 +899,12 @@ in {
               command = "${shellapps.claude-notification-hook}/bin/claude-notification-hook";
             }];
           }];
-          PreToolUse = [{
-            matcher = "Task";
-            hooks = [{
-              type = "command";
-              command = "${shellapps.kanban-ac-hook}/bin/kanban-ac-hook";
-              timeout = 30;
-            }];
-          }];
           SubagentStop = [{
             hooks = [
               {
                 type = "command";
                 command = "${shellapps.kanban-ac-hook}/bin/kanban-ac-hook";
-                # AC review loop needs time: up to 5 iterations × 120s per spawn + 60s buffer = 660s
-                timeout = 660;
+                timeout = 30;
               }
               {
                 type = "command";

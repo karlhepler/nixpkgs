@@ -120,31 +120,29 @@ When researching, investigating, or looking up information, ALWAYS follow this p
 
 | Command | Purpose | Who Uses |
 |---------|---------|----------|
-| `kanban list --output-style=xml --session <id>` | Board check (compact XML) | Hooks call directly (board state injected at transitions); staff engineer for explicit queries |
-| `kanban do '<json>' --session <id>` or `kanban do --file <path> --session <id>` | Create card(s) in doing | Hooks (via KANBAN DO marker from staff engineer) |
-| `kanban todo '<json>' --session <id>` or `kanban todo --file <path> --session <id>` | Create card(s) in todo | Hooks (via KANBAN TODO marker from staff engineer) |
+| `kanban list --output-style=xml --session <id>` | Board check (compact XML) | Staff engineer |
+| `kanban do '<json>' --session <id>` or `kanban do --file <path> --session <id>` | Create card(s) in doing | Staff engineer |
+| `kanban todo '<json>' --session <id>` or `kanban todo --file <path> --session <id>` | Create card(s) in todo | Staff engineer |
 | `kanban show <card> [--output-style=xml]` | Read card details (action, intent, AC) | Sub-agents (own card), AC reviewer, staff engineer |
 | `kanban status <card>` | Print column name of card (lightweight check) | Staff engineer, sub-agents |
-| `kanban start <card> [cards...]` | Pick up from todo | Hooks (via KANBAN START marker from staff engineer) |
-| `kanban review <card> [cards...]` | Move to review column | Hooks (via KANBAN REVIEW marker from sub-agents) |
-| `kanban redo <card>` | Send back from review | Hooks (via KANBAN REDO marker from staff engineer) |
-| `kanban defer <card> [cards...]` | Park in todo | Hooks (via KANBAN DEFER marker from staff engineer) |
-| `kanban criteria add <card> "text"` | Add AC (mid-flight OK) | Hooks (via KANBAN CRITERIA ADD marker from staff engineer) |
-| `kanban criteria remove <card> <n> "reason"` | Remove AC with reason | Staff engineer (direct CLI) |
-| `kanban criteria check <card> <n>` | Self-check AC (agent_met column) | Hooks (via KANBAN CRITERIA CHECK marker from sub-agents) |
-| `kanban criteria uncheck <card> <n>` | Undo self-check | Hooks (via KANBAN CRITERIA UNCHECK marker from sub-agents) |
-| `kanban criteria pass <card> <n>` | Pass AC (reviewer_met column) | Hooks (via KANBAN CRITERIA PASS marker from AC reviewer) |
-| `kanban criteria fail <card> <n>` | Fail AC (reviewer_met column) | Hooks (via KANBAN CRITERIA FAIL marker from AC reviewer) |
-| `kanban comment <card> "text"` | Add timestamped comment | Hooks (via KANBAN COMMENT marker from staff engineer); staff engineer (direct CLI for diagnostic use) |
-| `kanban done <card> 'summary'` | Complete card (both columns enforced) | Hooks (via KANBAN DONE marker from AC reviewer); staff engineer direct CLI: last-resort fallback only — see ⚠️ note below |
-| `kanban cancel <card> [cards...]` | Cancel card(s) | Hooks (via KANBAN CANCEL marker from staff engineer) |
+| `kanban start <card> [cards...]` | Pick up from todo | Staff engineer |
+| `kanban review <card> [cards...]` | Move to review column | Staff engineer |
+| `kanban redo <card>` | Send back from review | Staff engineer |
+| `kanban defer <card> [cards...]` | Park in todo | Staff engineer |
+| `kanban criteria add <card> "text"` | Add AC (mid-flight OK) | Staff engineer |
+| `kanban criteria remove <card> <n> "reason"` | Remove AC with reason | Staff engineer |
+| `kanban criteria check <card> <n>` | Self-check AC (agent_met column) | Sub-agents (own card) |
+| `kanban criteria uncheck <card> <n>` | Undo self-check | Sub-agents (own card) |
+| `kanban criteria pass <card> <n>` | Pass AC (reviewer_met column) | AC reviewer |
+| `kanban criteria fail <card> <n>` | Fail AC (reviewer_met column) | AC reviewer |
+| `kanban comment <card> "text"` | Add timestamped comment | Sub-agents (own card), staff engineer |
+| `kanban done <card> 'summary'` | Complete card (both columns enforced) | AC reviewer (staff engineer: last-resort fallback only — see ⚠️ note below) |
+| `kanban cancel <card> [cards...]` | Cancel card(s) | Staff engineer |
 | ~~`kanban clean`~~ | **PROHIBITED — never run** | Nobody |
 
 **All commands accept `--session <id>` (required in multi-session contexts).**
 
-**Architecture note:** Agents and staff engineer emit text markers; hooks translate markers to CLI calls. The separation keeps agents free from CLI permissions and centralizes lifecycle management in the hook layer.
-
-**⚠️ `kanban done` is called by the hook after the AC reviewer emits `KANBAN DONE`. Staff engineer may only call it directly as a last-resort fallback after two consecutive failed AC reviewer attempts.**
+**⚠️ `kanban done` is called by the AC reviewer, not the staff engineer. Staff engineer may only call it directly as a last-resort fallback after two consecutive failed AC reviewer attempts.**
 
 ---
 
