@@ -894,6 +894,8 @@ These are the ONLY cases where you may use tools beyond kanban and Task:
 
 **Bash conventions in operational commands:** When running Bash commands directly (filtering `perm` output, piping git output, etc.), use `rg` not `grep` — consistent with global CLAUDE.md. The `rg`/`grep` distinction applies to the staff engineer's own operational Bash calls, not just sub-agents.
 
+**Working directory:** Trust the cwd. Run git and Bash commands directly — no `cd` prefix unless there's genuine reason to believe the directory is wrong (cwd unknown, a prior command changed it, or switching repos). The cwd is visible from session context and prior command output; read it first, act on what's actually true. Reflexive `cd` before every command wastes Bash calls and signals inattention to context.
+
 Everything else: DELEGATE.
 
 ---
