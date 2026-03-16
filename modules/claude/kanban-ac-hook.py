@@ -1,9 +1,17 @@
 #!/usr/bin/env python3
 """
-kanban-ac-hook: Claude Code SubagentStop hook that reads agent transcripts for
-kanban markers and processes them via the kanban CLI.
+kanban-ac-hook: Claude Code hook that processes kanban markers at agent transition
+points (PreToolUse for Task tool launches, SubagentStop for agent completions).
 
-Marker processing:
+PreToolUse processing (Task tool launches):
+  - KANBAN DO {json}       → kanban do '{json}' --session <s>  (create card in doing)
+  - KANBAN TODO {json}     → kanban todo '{json}' --session <s> (create card in todo)
+  - KANBAN START <card#>   → kanban start <card#> --session <s> (move todo card to doing)
+  - KANBAN REDO <card#>    → kanban redo <card#> --session <s>  (move review card to doing)
+  After processing, checks editFiles of new/started card against all in-flight cards
+  and blocks the tool call if a file conflict is detected. Injects board state.
+
+SubagentStop processing (agent completions):
   - KANBAN CRITERIA CHECK <N>  → kanban criteria check <card> <N> --session <s>
   - KANBAN REVIEW              → kanban review <card> --session <s>
   - KANBAN CRITERIA PASS <N>   → kanban criteria pass <card> <N> --session <s>
@@ -21,15 +29,442 @@ When KANBAN REVIEW is present, the hook launches an AC review loop:
   5. On all pass: calls kanban done; on failure: notifies staff; on max: notifies staff
   6. Context file (.scratchpad/ac-loop-<card>.md) deleted after completion
 
+Board state injection: SubagentStop and PreToolUse responses include fresh kanban
+list output so the staff engineer always sees current board state.
+
 Never exits non-zero — all errors are swallowed silently to avoid disrupting
 Claude Code's hook pipeline.
 """
 
+import fnmatch
 import json
 import os
 import re
 import subprocess
 import sys
+
+# ---------------------------------------------------------------------------
+# PreToolUse marker patterns (parsed from Task tool prompt text)
+# ---------------------------------------------------------------------------
+
+# Matches: KANBAN DO {json}
+_PRE_DO_RE = re.compile(r"KANBAN\s+DO\s+(\{.*)", re.IGNORECASE)
+# Matches: KANBAN TODO {json}
+_PRE_TODO_RE = re.compile(r"KANBAN\s+TODO\s+(\{.*)", re.IGNORECASE)
+# Matches: KANBAN START <card#>
+_PRE_START_RE = re.compile(r"KANBAN\s+START\s+(\d+)", re.IGNORECASE)
+# Matches: KANBAN REDO <card#>
+_PRE_REDO_RE = re.compile(r"KANBAN\s+REDO\s+(\d+)", re.IGNORECASE)
+# Matches: KANBAN CANCEL <card#>
+_PRE_CANCEL_RE = re.compile(r"KANBAN\s+CANCEL\s+(\d+)", re.IGNORECASE)
+# Matches: KANBAN DEFER <card#>
+_PRE_DEFER_RE = re.compile(r"KANBAN\s+DEFER\s+(\d+)", re.IGNORECASE)
+# Matches: KANBAN CRITERIA ADD <card#> "text"
+_PRE_CRITERIA_ADD_RE = re.compile(r'KANBAN\s+CRITERIA\s+ADD\s+(\d+)\s+"([^"]*)"', re.IGNORECASE)
+# Matches: KANBAN COMMENT <card#> "text"
+_PRE_COMMENT_RE = re.compile(r'KANBAN\s+COMMENT\s+(\d+)\s+"([^"]*)"', re.IGNORECASE)
+
+
+def _parse_json_from_marker(text, start_pos):
+    """
+    Extract a complete JSON object from text starting at start_pos.
+
+    Handles nested braces to find the end of the JSON object.
+    Validates the extracted string is valid JSON before returning.
+    Returns the JSON string or None if extraction or validation fails.
+    """
+    depth = 0
+    i = start_pos
+    while i < len(text):
+        c = text[i]
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                json_str = text[start_pos:i + 1]
+                try:
+                    json.loads(json_str)
+                except json.JSONDecodeError:
+                    return None
+                return json_str
+        i += 1
+    return None
+
+
+def parse_pre_tool_markers(prompt_text):
+    """
+    Parse kanban lifecycle markers from a Task tool prompt string.
+
+    These markers appear in the staff engineer's prompt to an agent, not in
+    the agent's transcript. They are processed before the agent launches.
+
+    Returns a list of dicts:
+      {"type": "DO"|"TODO"|"START"|"REDO"|"CANCEL"|"DEFER"|"CRITERIA_ADD"|"COMMENT",
+       "args": ...,  # varies by type
+      }
+    """
+    found = []
+
+    for line in prompt_text.splitlines():
+        # KANBAN DO {json}
+        m = _PRE_DO_RE.search(line)
+        if m:
+            json_start = line.index("{", m.start())
+            json_str = _parse_json_from_marker(line, json_start)
+            if json_str:
+                found.append({"type": "DO", "json_str": json_str})
+            continue
+
+        # KANBAN TODO {json}
+        m = _PRE_TODO_RE.search(line)
+        if m:
+            json_start = line.index("{", m.start())
+            json_str = _parse_json_from_marker(line, json_start)
+            if json_str:
+                found.append({"type": "TODO", "json_str": json_str})
+            continue
+
+        # KANBAN START <card#>
+        m = _PRE_START_RE.search(line)
+        if m:
+            found.append({"type": "START", "card": m.group(1)})
+            continue
+
+        # KANBAN REDO <card#>
+        m = _PRE_REDO_RE.search(line)
+        if m:
+            found.append({"type": "REDO", "card": m.group(1)})
+            continue
+
+        # KANBAN CANCEL <card#>
+        m = _PRE_CANCEL_RE.search(line)
+        if m:
+            found.append({"type": "CANCEL", "card": m.group(1)})
+            continue
+
+        # KANBAN DEFER <card#>
+        m = _PRE_DEFER_RE.search(line)
+        if m:
+            found.append({"type": "DEFER", "card": m.group(1)})
+            continue
+
+        # KANBAN CRITERIA ADD <card#> "text"
+        m = _PRE_CRITERIA_ADD_RE.search(line)
+        if m:
+            found.append({"type": "CRITERIA_ADD", "card": m.group(1), "text": m.group(2)})
+            continue
+
+        # KANBAN COMMENT <card#> "text"
+        m = _PRE_COMMENT_RE.search(line)
+        if m:
+            found.append({"type": "COMMENT", "card": m.group(1), "text": m.group(2)})
+            continue
+
+    return found
+
+
+def _get_board_xml():
+    """
+    Run `kanban list --output-style=xml` without session filter to get full board state.
+
+    Returns the XML string, or empty string on failure.
+    """
+    rc, stdout, _ = run_kanban_cli(["list", "--output-style=xml"], timeout=10)
+    if rc != 0:
+        return ""
+    return stdout.strip()
+
+
+def _get_in_flight_edit_files(board_xml):
+    """
+    Parse board XML and return a mapping of card_num -> (session, edit_files_set)
+    for all cards in doing or review columns.
+    """
+    if not board_xml:
+        return {}
+
+    result = {}
+    # Match <c n="NNN" s="STATUS" ...>...</c> blocks in doing/review
+    # We need to extract card number, status, session, and editFiles
+    card_re = re.compile(r'<c\b([^>]*)>(.*?)</c>', re.DOTALL)
+    attr_n_re = re.compile(r'\bn="([^"]*)"')
+    attr_s_re = re.compile(r'\bs="([^"]*)"')
+    attr_ses_re = re.compile(r'\bses="([^"]*)"')
+    edit_files_re = re.compile(r'<e>([^<]*)</e>')
+
+    for card_match in card_re.finditer(board_xml):
+        attrs = card_match.group(1)
+        body = card_match.group(2)
+
+        m_n = attr_n_re.search(attrs)
+        m_s = attr_s_re.search(attrs)
+        if not m_n or not m_s:
+            continue
+
+        card_num = m_n.group(1)
+        status = m_s.group(1)
+
+        if status not in ("doing", "review"):
+            continue
+
+        m_ses = attr_ses_re.search(attrs)
+        session = m_ses.group(1) if m_ses else "unknown"
+
+        m_ef = edit_files_re.search(body)
+        if m_ef and m_ef.group(1).strip():
+            edit_files = set(f.strip() for f in m_ef.group(1).split(",") if f.strip())
+        else:
+            edit_files = set()
+
+        result[card_num] = {"session": session, "edit_files": edit_files}
+
+    return result
+
+
+def _files_overlap(files_a, files_b):
+    """
+    Return the set of files from files_a that conflict with any entry in files_b.
+
+    Conflict is detected using fnmatch so that glob patterns (e.g. src/**/*.ts)
+    match concrete paths (e.g. src/foo/bar.ts) and vice versa. Each file in
+    files_a is tested against each file in files_b with both orderings, so a
+    concrete path in files_a matches a glob in files_b and a glob in files_a
+    matches a concrete path in files_b.
+    """
+    overlapping = set()
+    for a in files_a:
+        for b in files_b:
+            if a == b or fnmatch.fnmatch(a, b) or fnmatch.fnmatch(b, a):
+                overlapping.add(a)
+                break
+    return overlapping
+
+
+def _detect_file_conflicts(new_edit_files, in_flight_cards, exclude_card=None):
+    """
+    Check if any files in new_edit_files are already being edited by in-flight cards.
+
+    Uses fnmatch for glob pattern matching so that patterns like src/**/*.ts
+    correctly conflict with concrete paths like src/foo/bar.ts.
+
+    exclude_card: card number string to skip (for the card just created/started).
+
+    Returns a list of conflict descriptions, or empty list if no conflicts.
+    """
+    conflicts = []
+    new_files = list(new_edit_files) if new_edit_files else []
+    if not new_files:
+        return []
+
+    for card_num, info in in_flight_cards.items():
+        if exclude_card and card_num == str(exclude_card):
+            continue
+        overlap = _files_overlap(new_files, info["edit_files"])
+        if overlap:
+            conflicts.append({
+                "card": card_num,
+                "session": info["session"],
+                "files": sorted(overlap),
+            })
+    return conflicts
+
+
+def _get_card_edit_files(card_number, session_id):
+    """
+    Fetch editFiles for the given card via kanban show.
+
+    Returns a list of file path strings, or empty list on failure.
+    """
+    rc, stdout, _ = run_kanban_cli(
+        ["show", card_number, "--output-style=xml", "--session", session_id],
+        timeout=15,
+    )
+    if rc != 0:
+        return []
+
+    # Parse <e>file1,file2</e> from the XML
+    m = re.search(r'<e>([^<]*)</e>', stdout)
+    if m and m.group(1).strip():
+        return [f.strip() for f in m.group(1).split(",") if f.strip()]
+    return []
+
+
+def _build_conflict_block(conflicts):
+    """Build a blocking message listing file conflicts."""
+    lines = ["File conflict detected — cannot launch agent."]
+    lines.append("")
+    for c in conflicts:
+        files_str = ", ".join(c["files"])
+        lines.append(
+            f"  Card #{c['card']} (session: {c['session']}) is editing: {files_str}"
+        )
+    lines.append("")
+    lines.append(
+        "Resolve the conflict by waiting for the in-flight card to complete, "
+        "or remove the overlapping files from editFiles."
+    )
+    return "\n".join(lines)
+
+
+def handle_pre_tool_use(payload):
+    """
+    Handle PreToolUse hook for Task tool launches.
+
+    Parses KANBAN markers from the prompt, executes corresponding CLI calls,
+    performs file conflict detection, and injects board state into the response.
+
+    Returns a dict suitable for JSON output to stdout, or None to allow silently.
+    """
+    tool_name = payload.get("tool_name", "")
+    if tool_name != "Task":
+        # Not a Task tool call — check for lifecycle markers in any tool call
+        # by scanning the prompt if available. For non-Task calls, just pass through.
+        return None
+
+    tool_input = payload.get("tool_input", {})
+    prompt = tool_input.get("prompt", "")
+    if not prompt:
+        return None
+
+    # Get session ID from environment (set by session-start hook)
+    session_id = os.environ.get("KANBAN_SESSION", "")
+
+    markers = parse_pre_tool_markers(prompt)
+    if not markers:
+        return None
+
+    # Get full board XML for conflict detection (no session filter)
+    board_xml = _get_board_xml()
+    in_flight_cards = _get_in_flight_edit_files(board_xml)
+
+    # Process each marker
+    created_cards = []   # list of all card numbers created via DO
+    started_cards = []   # list of all card numbers started via START or REDO
+    errors = []
+
+    for marker in markers:
+        mtype = marker["type"]
+
+        if mtype == "DO":
+            args = ["do", marker["json_str"]]
+            if session_id:
+                args += ["--session", session_id]
+            rc, stdout, stderr = run_kanban_cli(args)
+            if rc == 0:
+                created_cards.append(stdout.strip())
+            else:
+                errors.append(f"kanban do failed (exit {rc}): {stderr.strip()}")
+
+        elif mtype == "TODO":
+            args = ["todo", marker["json_str"]]
+            if session_id:
+                args += ["--session", session_id]
+            rc, stdout, stderr = run_kanban_cli(args)
+            if rc != 0:
+                errors.append(f"kanban todo failed (exit {rc}): {stderr.strip()}")
+
+        elif mtype == "START":
+            args = ["start", marker["card"]]
+            if session_id:
+                args += ["--session", session_id]
+            rc, _, stderr = run_kanban_cli(args)
+            if rc == 0:
+                started_cards.append(marker["card"])
+            else:
+                errors.append(f"kanban start {marker['card']} failed (exit {rc}): {stderr.strip()}")
+
+        elif mtype == "REDO":
+            args = ["redo", marker["card"]]
+            if session_id:
+                args += ["--session", session_id]
+            rc, _, stderr = run_kanban_cli(args)
+            if rc == 0:
+                started_cards.append(marker["card"])
+            else:
+                errors.append(f"kanban redo {marker['card']} failed (exit {rc}): {stderr.strip()}")
+
+        elif mtype == "CANCEL":
+            args = ["cancel", marker["card"]]
+            if session_id:
+                args += ["--session", session_id]
+            rc, _, stderr = run_kanban_cli(args)
+            if rc != 0:
+                errors.append(f"kanban cancel {marker['card']} failed (exit {rc}): {stderr.strip()}")
+
+        elif mtype == "DEFER":
+            args = ["defer", marker["card"]]
+            if session_id:
+                args += ["--session", session_id]
+            rc, _, stderr = run_kanban_cli(args)
+            if rc != 0:
+                errors.append(f"kanban defer {marker['card']} failed (exit {rc}): {stderr.strip()}")
+
+        elif mtype == "CRITERIA_ADD":
+            args = ["criteria", "add", marker["card"], marker["text"]]
+            if session_id:
+                args += ["--session", session_id]
+            rc, _, stderr = run_kanban_cli(args)
+            if rc != 0:
+                errors.append(f"kanban criteria add {marker['card']} failed (exit {rc}): {stderr.strip()}")
+
+        elif mtype == "COMMENT":
+            args = ["comment", marker["card"], marker["text"]]
+            if session_id:
+                args += ["--session", session_id]
+            rc, _, stderr = run_kanban_cli(args)
+            if rc != 0:
+                errors.append(f"kanban comment {marker['card']} failed (exit {rc}): {stderr.strip()}")
+
+    # Conflict detection: check editFiles of each created/started card against in-flight
+    # Refresh board XML after mutations so newly created cards appear in it
+    all_new_cards = created_cards + started_cards
+    if all_new_cards:
+        # Refresh board state to include newly created cards
+        board_xml = _get_board_xml()
+        in_flight_cards = _get_in_flight_edit_files(board_xml)
+
+        # Check each new/started card for conflicts
+        check_session = session_id if session_id else "unknown"
+        all_conflicts = []
+        for card_to_check in all_new_cards:
+            new_edit_files = _get_card_edit_files(card_to_check, check_session)
+            card_conflicts = _detect_file_conflicts(
+                new_edit_files, in_flight_cards, exclude_card=card_to_check
+            )
+            all_conflicts.extend(card_conflicts)
+
+        if all_conflicts:
+            block_msg = _build_conflict_block(all_conflicts)
+            if errors:
+                block_msg += "\n\nAdditional CLI errors:\n" + "\n".join(f"  - {e}" for e in errors)
+            return {"decision": "block", "reason": block_msg}
+
+    # Build allow response with board state
+    fresh_board = _get_board_xml()
+    response_lines = []
+
+    if errors:
+        response_lines.append("Kanban CLI errors during PreToolUse processing:")
+        for e in errors:
+            response_lines.append(f"  - {e}")
+        response_lines.append("")
+
+    if created_cards:
+        for card_num in created_cards:
+            response_lines.append(f"Created card #{card_num}.")
+
+    if fresh_board:
+        if response_lines:
+            response_lines.append("")
+        response_lines.append("Current board state:")
+        response_lines.append(fresh_board)
+
+    if response_lines:
+        return {"decision": "allow", "reason": "\n".join(response_lines)}
+
+    return None
+
 
 # ---------------------------------------------------------------------------
 # Transcript marker parser
@@ -160,8 +595,8 @@ def read_first_human_message(transcript_path):
     """
     Return the text of the first human turn in the transcript JSONL.
 
-    The initial prompt is delivered as a human message with type == "human".
-    Returns an empty string if the file cannot be read or no human turn found.
+    The initial prompt is delivered as a user message with type == "user".
+    Returns an empty string if the file cannot be read or no user turn found.
     """
     try:
         with open(transcript_path, "r", encoding="utf-8") as fh:
@@ -173,7 +608,7 @@ def read_first_human_message(transcript_path):
                     entry = json.loads(raw_line)
                 except json.JSONDecodeError:
                     continue
-                if entry.get("type") != "human":
+                if entry.get("type") != "user":
                     continue
                 msg = entry.get("message", {})
                 content = msg.get("content", "")
@@ -362,7 +797,10 @@ def build_missing_review_block(card_number, session_id, column, cli_errors):
 # ---------------------------------------------------------------------------
 
 # Default maximum number of AC review loop iterations before giving up.
-_AC_LOOP_MAX_ITERATIONS = int(os.environ.get("KANBAN_AC_LOOP_MAX_ITER", "5"))
+try:
+    _AC_LOOP_MAX_ITERATIONS = int(os.environ.get("KANBAN_AC_LOOP_MAX_ITER", "5"))
+except (ValueError, TypeError):
+    _AC_LOOP_MAX_ITERATIONS = 5
 
 # Scratchpad directory relative to current working directory.
 _SCRATCHPAD_DIR = ".scratchpad"
@@ -695,6 +1133,19 @@ def run_ac_review_loop(card_number, session_id, max_iterations=None):
 # ---------------------------------------------------------------------------
 
 
+def _append_board_state(message):
+    """
+    Append current board state to a notification message.
+
+    Returns the message with board state appended, or the original message if
+    kanban list fails.
+    """
+    board_xml = _get_board_xml()
+    if not board_xml:
+        return message
+    return f"{message}\n\nCurrent board state:\n{board_xml}"
+
+
 def main():
     payload = json.load(sys.stdin)
 
@@ -706,6 +1157,17 @@ def main():
         # Fall back to legacy behavior: return immediately without blocking decision
         return
 
+    hook_event = payload.get("hook_event_name", "")
+
+    # Route PreToolUse events to the PreToolUse handler.
+    if hook_event == "PreToolUse":
+        result = handle_pre_tool_use(payload)
+        if result is not None:
+            sys.stdout.write(json.dumps(result))
+            sys.stdout.flush()
+        return
+
+    # SubagentStop processing (default path).
     # Support both subagent transcripts (agent_transcript_path) and main agent
     # transcripts (transcript_path) for forward compatibility.
     transcript_path = payload.get("agent_transcript_path") or payload.get("transcript_path", "")
@@ -736,13 +1198,14 @@ def main():
     # The loop handles kanban done (on pass) or staff notification (on fail/limit).
     if has_review_marker(markers):
         outcome, notification = run_ac_review_loop(card_number, session_id)
+        notification_with_board = _append_board_state(notification)
         if outcome == "passed":
             # Inform staff that AC review succeeded.
-            sys.stdout.write(json.dumps({"decision": "block", "reason": notification}))
+            sys.stdout.write(json.dumps({"decision": "block", "reason": notification_with_board}))
             sys.stdout.flush()
         elif outcome in ("failed", "max_iterations", "error"):
             # Notify staff of failure or partial results.
-            sys.stdout.write(json.dumps({"decision": "block", "reason": notification}))
+            sys.stdout.write(json.dumps({"decision": "block", "reason": notification_with_board}))
             sys.stdout.flush()
         return
 
@@ -756,7 +1219,8 @@ def main():
 
     # Block with explanation.
     reason = build_missing_review_block(card_number, session_id, column, cli_errors)
-    sys.stdout.write(json.dumps({"decision": "block", "reason": reason}))
+    reason_with_board = _append_board_state(reason)
+    sys.stdout.write(json.dumps({"decision": "block", "reason": reason_with_board}))
     sys.stdout.flush()
 
 
@@ -800,10 +1264,7 @@ def _run_tests():
                 lines.append(json.dumps(entry))
             else:
                 role, content = entry
-                if isinstance(content, str):
-                    msg = {"role": role, "content": content}
-                else:
-                    msg = {"role": role, "content": content}
+                msg = {"role": role, "content": content}
                 lines.append(json.dumps({"type": role, "message": msg}))
         with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
             f.write("\n".join(lines))
@@ -812,7 +1273,7 @@ def _run_tests():
     # --- Test 1: Normal extraction from assistant text block ---
     print("Test 1: Normal marker extraction")
     path = make_transcript([
-        ("human", "KANBAN CARD #42 | Session: test-session"),
+        ("user", "KANBAN CARD #42 | Session: test-session"),
         ("assistant", "I checked criterion 1.\nKANBAN CRITERIA CHECK 1\nNow reviewing.\nKANBAN REVIEW"),
     ])
     markers = parse_markers(path)
@@ -825,7 +1286,7 @@ def _run_tests():
     # --- Test 2: Code fence exclusion ---
     print("Test 2: Code fence exclusion")
     path = make_transcript([
-        ("human", "KANBAN CARD #42 | Session: test-session"),
+        ("user", "KANBAN CARD #42 | Session: test-session"),
         ("assistant", "Here is example:\n```\nKANBAN REVIEW\nKANBAN CRITERIA CHECK 2\n```\nActual: KANBAN CRITERIA CHECK 3"),
     ])
     markers = parse_markers(path)
@@ -843,7 +1304,7 @@ def _run_tests():
         {"type": "text", "text": "KANBAN CRITERIA CHECK 5"},
     ]
     path = make_transcript([
-        ("human", "KANBAN CARD #42 | Session: test-session"),
+        ("user", "KANBAN CARD #42 | Session: test-session"),
         {
             "type": "assistant",
             "message": {"role": "assistant", "content": thinking_content},
@@ -862,7 +1323,7 @@ def _run_tests():
         {"type": "text", "text": "KANBAN REVIEW"},
     ]
     path = make_transcript([
-        ("human", "KANBAN CARD #42 | Session: test-session"),
+        ("user", "KANBAN CARD #42 | Session: test-session"),
         {
             "type": "assistant",
             "message": {"role": "assistant", "content": tool_content},
@@ -880,10 +1341,10 @@ def _run_tests():
         {"type": "tool_result", "tool_use_id": "t1", "content": "KANBAN REVIEW"},
     ]
     path = make_transcript([
-        ("human", "KANBAN CARD #42 | Session: test-session"),
+        ("user", "KANBAN CARD #42 | Session: test-session"),
         {
-            "type": "human",
-            "message": {"role": "human", "content": tool_result_content},
+            "type": "user",
+            "message": {"role": "user", "content": tool_result_content},
         },
         {
             "type": "assistant",
@@ -898,7 +1359,7 @@ def _run_tests():
     # --- Test 6: Partial transcript (no markers) ---
     print("Test 6: Partial/empty transcript")
     path = make_transcript([
-        ("human", "KANBAN CARD #42 | Session: test-session"),
+        ("user", "KANBAN CARD #42 | Session: test-session"),
         ("assistant", "I am working on this task."),
     ])
     markers = parse_markers(path)
@@ -914,7 +1375,7 @@ def _run_tests():
     # --- Test 8: KANBAN CRITERIA PASS and FAIL markers ---
     print("Test 8: CRITERIA_PASS and CRITERIA_FAIL markers")
     path = make_transcript([
-        ("human", "KANBAN CARD #42 | Session: test-session"),
+        ("user", "KANBAN CARD #42 | Session: test-session"),
         ("assistant", "KANBAN CRITERIA PASS 2\nKANBAN CRITERIA FAIL 3\nKANBAN REVIEW"),
     ])
     markers = parse_markers(path)
@@ -1013,6 +1474,132 @@ def _run_tests():
     assert_eq("failed notification contains FAILED", "FAILED" in msg, True)
     msg = _build_staff_notification("42", "s1", "max_iterations", "Pending: [1, 2].")
     assert_eq("max_iter notification contains 'maximum iterations'", "maximum iterations" in msg, True)
+
+    # --- Test 16: parse_pre_tool_markers — DO marker ---
+    print("Test 16: parse_pre_tool_markers — DO marker")
+    prompt = 'KANBAN DO {"action":"Fix bug","intent":"Remove crash","ac":["Tests pass"]}'
+    result = parse_pre_tool_markers(prompt)
+    assert_eq("DO: one marker found", len(result), 1)
+    assert_eq("DO: type is DO", result[0]["type"], "DO")
+    assert_eq("DO: json_str is valid JSON", '"action"' in result[0]["json_str"], True)
+
+    # --- Test 17: parse_pre_tool_markers — TODO marker ---
+    print("Test 17: parse_pre_tool_markers — TODO marker")
+    prompt = 'KANBAN TODO {"action":"Add feature","intent":"Enable X","ac":["Feature works"]}'
+    result = parse_pre_tool_markers(prompt)
+    assert_eq("TODO: one marker found", len(result), 1)
+    assert_eq("TODO: type is TODO", result[0]["type"], "TODO")
+    assert_eq("TODO: json_str present", "action" in result[0]["json_str"], True)
+
+    # --- Test 18: parse_pre_tool_markers — START marker ---
+    print("Test 18: parse_pre_tool_markers — START marker")
+    prompt = "KANBAN START 99"
+    result = parse_pre_tool_markers(prompt)
+    assert_eq("START: one marker found", len(result), 1)
+    assert_eq("START: type is START", result[0]["type"], "START")
+    assert_eq("START: card is 99", result[0]["card"], "99")
+
+    # --- Test 19: parse_pre_tool_markers — REDO marker ---
+    print("Test 19: parse_pre_tool_markers — REDO marker")
+    prompt = "KANBAN REDO 77"
+    result = parse_pre_tool_markers(prompt)
+    assert_eq("REDO: one marker found", len(result), 1)
+    assert_eq("REDO: type is REDO", result[0]["type"], "REDO")
+    assert_eq("REDO: card is 77", result[0]["card"], "77")
+
+    # --- Test 20: parse_pre_tool_markers — CANCEL marker ---
+    print("Test 20: parse_pre_tool_markers — CANCEL marker")
+    prompt = "KANBAN CANCEL 55"
+    result = parse_pre_tool_markers(prompt)
+    assert_eq("CANCEL: one marker found", len(result), 1)
+    assert_eq("CANCEL: type is CANCEL", result[0]["type"], "CANCEL")
+    assert_eq("CANCEL: card is 55", result[0]["card"], "55")
+
+    # --- Test 21: parse_pre_tool_markers — DEFER marker ---
+    print("Test 21: parse_pre_tool_markers — DEFER marker")
+    prompt = "KANBAN DEFER 33"
+    result = parse_pre_tool_markers(prompt)
+    assert_eq("DEFER: one marker found", len(result), 1)
+    assert_eq("DEFER: type is DEFER", result[0]["type"], "DEFER")
+    assert_eq("DEFER: card is 33", result[0]["card"], "33")
+
+    # --- Test 22: parse_pre_tool_markers — CRITERIA ADD marker ---
+    print("Test 22: parse_pre_tool_markers — CRITERIA ADD marker")
+    prompt = 'KANBAN CRITERIA ADD 42 "All tests pass"'
+    result = parse_pre_tool_markers(prompt)
+    assert_eq("CRITERIA_ADD: one marker found", len(result), 1)
+    assert_eq("CRITERIA_ADD: type is CRITERIA_ADD", result[0]["type"], "CRITERIA_ADD")
+    assert_eq("CRITERIA_ADD: card is 42", result[0]["card"], "42")
+    assert_eq("CRITERIA_ADD: text is correct", result[0]["text"], "All tests pass")
+
+    # --- Test 23: parse_pre_tool_markers — COMMENT marker ---
+    print("Test 23: parse_pre_tool_markers — COMMENT marker")
+    prompt = 'KANBAN COMMENT 10 "Blocked by upstream"'
+    result = parse_pre_tool_markers(prompt)
+    assert_eq("COMMENT: one marker found", len(result), 1)
+    assert_eq("COMMENT: type is COMMENT", result[0]["type"], "COMMENT")
+    assert_eq("COMMENT: card is 10", result[0]["card"], "10")
+    assert_eq("COMMENT: text is correct", result[0]["text"], "Blocked by upstream")
+
+    # --- Test 24: parse_pre_tool_markers — malformed JSON ---
+    print("Test 24: parse_pre_tool_markers — malformed JSON")
+    prompt = "KANBAN DO {action: bad json no quotes}"
+    result = parse_pre_tool_markers(prompt)
+    assert_eq("malformed JSON: no marker returned", len(result), 0)
+
+    # --- Test 25: parse_pre_tool_markers — missing arguments ---
+    print("Test 25: parse_pre_tool_markers — missing arguments")
+    assert_eq("START with no card number: no marker", len(parse_pre_tool_markers("KANBAN START")), 0)
+    assert_eq("REDO with no card number: no marker", len(parse_pre_tool_markers("KANBAN REDO")), 0)
+
+    # --- Test 26: parse_pre_tool_markers — empty prompt ---
+    print("Test 26: parse_pre_tool_markers — empty prompt")
+    assert_eq("empty prompt: no markers", len(parse_pre_tool_markers("")), 0)
+
+    # --- Test 27: parse_pre_tool_markers — multiple markers in one prompt ---
+    print("Test 27: parse_pre_tool_markers — multiple markers")
+    prompt = (
+        'KANBAN DO {"action":"Card A","intent":"Do A","ac":["A done"]}\n'
+        'KANBAN TODO {"action":"Card B","intent":"Do B","ac":["B done"]}\n'
+        "KANBAN CANCEL 5\n"
+    )
+    result = parse_pre_tool_markers(prompt)
+    assert_eq("multiple markers: three found", len(result), 3)
+    types = [r["type"] for r in result]
+    assert_eq("multiple markers: DO present", "DO" in types, True)
+    assert_eq("multiple markers: TODO present", "TODO" in types, True)
+    assert_eq("multiple markers: CANCEL present", "CANCEL" in types, True)
+
+    # --- Test 28: _files_overlap — glob matching ---
+    print("Test 28: _files_overlap — glob pattern matching")
+    # Exact match
+    assert_eq("exact match conflicts", _files_overlap(["src/foo.ts"], {"src/foo.ts"}), {"src/foo.ts"})
+    # Glob pattern in in-flight set matches concrete path in new files
+    assert_eq("glob in inflight matches concrete new", _files_overlap(["src/foo.ts"], {"src/*.ts"}), {"src/foo.ts"})
+    # Glob pattern in new files matches concrete path in in-flight set
+    assert_eq("glob in new matches concrete inflight", _files_overlap(["src/*.ts"], {"src/bar.ts"}), {"src/*.ts"})
+    # No match
+    assert_eq("no match: different dirs", _files_overlap(["src/foo.ts"], {"test/foo.ts"}), set())
+    # Empty inputs
+    assert_eq("empty new_files: no overlap", _files_overlap([], {"src/foo.ts"}), set())
+    assert_eq("empty inflight: no overlap", _files_overlap(["src/foo.ts"], set()), set())
+
+    # --- Test 29: _detect_file_conflicts — glob-aware ---
+    print("Test 29: _detect_file_conflicts — glob-aware")
+    in_flight = {
+        "10": {"session": "s1", "edit_files": {"src/*.ts"}},
+        "20": {"session": "s2", "edit_files": {"other/file.py"}},
+    }
+    # src/bar.ts should conflict with card 10's glob src/*.ts
+    conflicts = _detect_file_conflicts(["src/bar.ts"], in_flight)
+    assert_eq("glob conflict detected: one conflict", len(conflicts), 1)
+    assert_eq("glob conflict: correct card", conflicts[0]["card"], "10")
+    # Unrelated file should not conflict
+    conflicts_none = _detect_file_conflicts(["unrelated/file.go"], in_flight)
+    assert_eq("no conflict for unrelated file", len(conflicts_none), 0)
+    # exclude_card skips that card
+    conflicts_excluded = _detect_file_conflicts(["src/bar.ts"], in_flight, exclude_card="10")
+    assert_eq("excluded card skipped", len(conflicts_excluded), 0)
 
     print(f"\nResults: {passed} passed, {failed} failed")
     return failed == 0

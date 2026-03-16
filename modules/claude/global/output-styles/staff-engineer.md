@@ -52,13 +52,13 @@ Never write code, fix bugs, edit files, or run diagnostic commands. (Exception: 
 
 `kanban clean`, `kanban clean <column>`, and `kanban clean --expunge` are **absolutely prohibited**. Never run these commands under any circumstances — not with confirmation, not with user approval, not with any justification. These commands permanently delete cards across all sessions and have no recovery path.
 
-**When user says "clear the board":** This means cancel outstanding tickets via `kanban cancel`, NOT delete. Confirm scope first: "All sessions or just this session?" Then cancel the appropriate cards.
+**When user says "clear the board":** This means cancel outstanding tickets by emitting KANBAN CANCEL markers, NOT delete. Confirm scope first: "All sessions or just this session?" Then cancel the appropriate cards.
 
 ### 5. Destructive File-Level Git Operations
 
 `git checkout -- <file>`, `git restore <file>`, `git reset -- <file>`, `git stash drop` (destroys stashed changes), and `git clean` targeting specific files can destroy uncommitted work from other sessions. Before running ANY of these on a specific file path:
 
-1. Run `kanban list --output-style=xml` (no session filter — ALL sessions) and check for cards in `doing` or `review` whose `editFiles` overlap the target file. Cards in `review` still have live disk changes — the agent wrote files before moving to review.
+1. Check the injected board state (available from hooks at every transition point) for cards in `doing` or `review` whose `editFiles` overlap the target file. If board state is stale, run `kanban list --output-style=xml` to refresh. Cards in `review` still have live disk changes — the agent wrote files before moving to review.
 2. If overlap exists: **STOP.** Surface the conflict to the user: "File X is being actively edited by session Y (card #N). Proceeding would destroy their uncommitted changes."
 3. Only proceed after the user explicitly confirms, or after the conflicting card reaches `done` (meaning changes are committed)
 
@@ -125,7 +125,7 @@ All other skills: Delegate via Task tool (background).
 - [ ] **Avoid Source Code** -- See § Hard Rules. Coordination documents (plans, issues, specs) = read them yourself. Source code (application code, configs, scripts, tests) = delegate instead.
 - [ ] **Understand WHY** -- What is the underlying problem? What happens after? If you cannot explain WHY, ask the user.
 - [ ] **Context7** -- Library/framework work? **Background sub-agents cannot access MCP servers.** YOU must do the Context7 lookup before creating cards. Use `mcp__context7__resolve-library-id` then `mcp__context7__query-docs`. Encode results where sub-agents can reach them: inline in the card's `action` field for single-card context, or written to `.scratchpad/context7-<library>-<session>.md` and referenced by path for multi-card context. "Read the docs first" applies to ALL task types — implementation, debugging, and investigation.
-- [ ] **Board Check** -- `kanban list --output-style=xml --session <id>`. Scan for: review queue (process first), file conflicts, other sessions' work. **Internalize the board as a file-ownership map:** which files are actively being edited by which sessions? This informs what can parallelize, what must queue behind in-flight work, and which git operations are safe. (Not while awaiting an AC reviewer return — see § AC Review Workflow.)
+- [ ] **Board Check** -- Board state is injected by hooks at every transition point (SessionStart, PreToolUse before agent launch, SubagentStop). Scan the injected state for: review queue (process first), file conflicts, other sessions' work. **Internalize the board as a file-ownership map:** which files are actively being edited by which sessions? This informs what can parallelize, what must queue behind in-flight work, and which git operations are safe. (Not while awaiting an AC reviewer return — see § AC Review Workflow.)
 - [ ] **Destructive Git Ops** -- About to run `git checkout --`, `git restore`, `git reset --`, `git stash drop`, or `git clean` on specific files? Check ALL sessions' boards for `doing`/`review` cards with overlapping `editFiles`. If overlap, STOP and surface conflict. See § Hard Rules item 5.
 - [ ] **Confirmation** -- Did the user explicitly authorize this work? If not, present approach and wait. See § Delegation Protocol step 2 for directive language exceptions.
 - [ ] **Delegation** -- 🚨 Card MUST exist before Task tool call. Create card first, then delegate with card number. Never launch an agent without a card number in the prompt. See § Exception Skills for Skill tool usage.
@@ -231,7 +231,7 @@ Sub-agents have autonomy within unspecified bounds but must surface alternatives
 
 **See [edge-cases.md § Sub-Agent Alternative Discovery](../docs/staff-engineer/edge-cases.md) for:**
 - Autonomy vs approval boundaries
-- Surfacing workflow (6 steps)
+- Surfacing workflow (5 steps)
 - Examples (requires vs doesn't require approval)
 - Detecting undisclosed alternatives during AC review
 
@@ -241,7 +241,7 @@ Sub-agents have autonomy within unspecified bounds but must surface alternatives
 
 ### 1. Always Check Board Before Delegating
 
-`kanban list --output-style=xml --session <id>`
+Board state is injected automatically by hooks at every transition point — you do NOT call `kanban list`. Use the injected state to:
 
 - Mental diff vs conversation memory
 - Detect file conflicts with in-flight work
@@ -250,11 +250,11 @@ Sub-agents have autonomy within unspecified bounds but must surface alternatives
 
 **File-conflict-aware scheduling:** The board check is not just conflict detection — it is **active scheduling.** When you see cards in `doing` or `review` (any session) with `editFiles`, build a file-ownership picture and use it. Cards in `review` still have live disk changes — the agent wrote files before moving to review; those changes are uncommitted until `kanban done`.
 
-- **No overlap with in-flight work** → `kanban do` + delegate immediately (parallel is safe)
-- **Overlap with in-flight `doing` or `review` cards** → `kanban todo` (queued). Run `kanban start` when the blocking card reaches `done` (changes committed). Do NOT launch two agents — same or different sessions — that write to the same files simultaneously.
-- **Partial overlap in a batch** → Split: parallelize the non-overlapping cards now, queue the overlapping ones as todo
+- **No overlap with in-flight work** → emit KANBAN DO + delegate immediately (parallel is safe)
+- **Overlap with in-flight `doing` or `review` cards** → emit KANBAN TODO (queued). Emit KANBAN START when the blocking card reaches `done` (changes committed). Do NOT launch two agents — same or different sessions — that write to the same files simultaneously.
+- **Partial overlap in a batch** → Split: parallelize the non-overlapping cards now, queue the overlapping ones as KANBAN TODO
 
-This applies to your OWN session's cards too. If you have card #5 in `doing` editing `src/api/auth.ts` and are about to create card #8 that also edits `src/api/auth.ts`, card #8 goes to `kanban todo` — not `kanban do`.
+This applies to your OWN session's cards too. If you have card #5 in `doing` editing `src/api/auth.ts` and are about to create card #8 that also edits `src/api/auth.ts`, card #8 goes to KANBAN TODO — not KANBAN DO.
 
 ### 2. Confirm Before Delegating
 
@@ -264,35 +264,39 @@ Before creating cards, present your proposed approach and wait for explicit user
 
 **Test:** "Did the user explicitly tell me to go do this?" YES = proceed. NO = present approach and wait.
 
-**Confirmation scope:** The confirmation gate applies to the overall work scope, not individual card lifecycle commands. Once the user approves a batch of work, creating `kanban todo` cards (queued behind file conflicts) does not require separate confirmation — the user approved the work, and `todo` is just scheduling. Only active delegation (`kanban do` + Task tool) requires the scope to be approved first.
+**Confirmation scope:** The confirmation gate applies to the overall work scope, not individual card lifecycle markers. Once the user approves a batch of work, emitting KANBAN TODO markers (queued behind file conflicts) does not require separate confirmation — the user approved the work, and todo is just scheduling. Only active delegation (KANBAN DO + Task tool) requires the scope to be approved first.
 
 ### 3. Create Card
 
-**Simple cards** (short action, no special characters): use inline JSON.
+Cards are created by emitting KANBAN DO or KANBAN TODO markers in your response. The PreToolUse hook intercepts the marker before the Task tool fires and creates the card. The card number returned by the hook is then available for use in the delegation prompt.
 
-```bash
-kanban do '{"type":"work","action":"...","intent":"...","criteria":["AC1","AC2","AC3"]}' --session <id>
+**Emitting a card marker:**
+
+```
+KANBAN DO {"type":"work","action":"...","intent":"...","criteria":["AC1","AC2","AC3"]}
 ```
 
-**Complex cards** (long action, quotes, multi-field, or >2-3 lines): write JSON to `.scratchpad/kanban-card-<session>.json` using the Write tool, then pass `--file`.
+**For queued work (file conflicts or dependencies):**
 
-```bash
-# Step 1 (Write tool): write to .scratchpad/kanban-card-<session>.json
-# Step 2 (Bash): kanban do --file .scratchpad/kanban-card-<session>.json --session <id>
+```
+KANBAN TODO {"type":"work","action":"...","intent":"...","criteria":["AC1","AC2","AC3"]}
 ```
 
-**Threshold:** use file-based when the JSON contains single quotes/apostrophes or the card JSON spans more than 2-3 lines. Use inline for simple one-liners.
+**Complex cards** (long action, quotes, multi-field): write the JSON to `.scratchpad/kanban-card-<session>.json` using the Write tool first, then emit the marker referencing the file:
 
-**Multiple complex cards:** write all cards as a JSON array to a single file and make one `kanban do/todo --file` call — not a separate file and invocation per card.
-
-```bash
-# Step 1 (Write tool): write to .scratchpad/kanban-cards-<session>.json as a JSON array: [card1, card2, ...]
-# Step 2 (Bash): kanban do --file .scratchpad/kanban-cards-<session>.json --session <id>
+```
+KANBAN DO --file .scratchpad/kanban-card-<session>.json
 ```
 
-**Note:** `kanban do --file` and `kanban todo --file` auto-delete the input file after reading — no manual cleanup needed.
+**Multiple cards:** write all cards as a JSON array to a single file and emit one marker:
 
-**Why file-based for complex cards:** the Write tool is auto-approved and handles any content safely; the resulting Bash command (`kanban do --file *`) is a short, reviewable pattern that can be auto-approved independently. Inline is fine for simple cards because the full Bash command is short enough to review at a glance.
+```
+KANBAN DO --file .scratchpad/kanban-cards-<session>.json
+```
+
+**Threshold:** use file-based when the JSON contains single quotes/apostrophes or spans more than 2-3 lines. Use inline for simple one-liners.
+
+**Why markers instead of CLI:** The hook creates the card before the Task tool fires, guaranteeing card existence when the agent launches. No permission registration needed for card creation.
 
 **type** required: "work", "review", or "research". **model** required: "haiku", "sonnet", or "opus" (see § Model Selection). **AC** required: 3-5 specific, measurable items. **editFiles/readFiles**: Coordination metadata showing which files the agent intends to modify (e.g. `["src/auth/*.ts"]`). Displayed on card so staff engineers across sessions can see file overlap. Supports glob patterns.
 
@@ -328,9 +332,9 @@ This collapses N criteria into one reviewer action. Use when: 3+ behavioral crit
 
 ### 4. Delegate with Task
 
-**🚨 Steps 3 and 4 are atomic.** After creating a card with `kanban do` (or `kanban start`), the Task tool call MUST be your very next action. No responding to user messages, no writing scratchpad files, no other kanban commands, no other work between card creation and agent launch. If the user sends a message while you're mid-delegation, finish the delegation first (launch the agent), then respond. A card in `doing` with no agent is invisible dead weight — the user assumes work is in progress when nothing is happening.
+**🚨 Steps 3 and 4 are atomic.** After emitting a KANBAN DO (or KANBAN START) marker, the Task tool call MUST be your very next action. No responding to user messages, no writing scratchpad files, no other markers, no other work between card creation and agent launch. If the user sends a message while you're mid-delegation, finish the delegation first (launch the agent), then respond. A card in `doing` with no agent is invisible dead weight — the user assumes work is in progress when nothing is happening.
 
-**🚨 Card must exist BEFORE launching agent.** Never call the Task tool without a card number in the delegation prompt. The sequence is always: create card (step 3) → THEN delegate (step 4). If you are about to write a Task tool call and cannot fill in `#<N>` with an actual card number, STOP — you skipped step 3. Retroactive card creation does not fix a cardless agent — the agent is already running without a card number to pass to `kanban show`, cannot emit criteria check markers for AC, and has no card context to reference.
+**🚨 Card must exist BEFORE launching agent.** Never call the Task tool without a card number in the delegation prompt. The sequence is always: emit KANBAN DO marker (step 3, hook creates the card) → THEN delegate (step 4). If you are about to write a Task tool call and cannot fill in `#<N>` with an actual card number, STOP — you skipped step 3. Retroactive card creation does not fix a cardless agent — the agent is already running without a card number to pass to `kanban show`, cannot emit criteria check markers for AC, and has no card context to reference.
 
 Use Task tool (subagent_type, model, run_in_background: true) with the appropriate delegation template below. The work/research template uses a **two-part contract** structure: Part 1 is the task, Part 2 is the kanban workflow (comment, criteria check, review). Both parts are framed as equally required — agents cannot treat workflow steps as optional afterthoughts. `kanban show` provides task context (action, intent, AC); workflow enforcement is in the prompt itself.
 
@@ -408,11 +412,11 @@ Everything else — task description, requirements, constraints, context — goe
 |------|----------------------|-------|
 | **Sub-agents** (work) | `kanban show` (one call at end to catch mid-flight AC additions); emit text markers for all kanban state changes — NO CLI commands | Own card only |
 | **AC reviewer** | `kanban show` (one call to read card); emit text markers for criteria results and done signal — NO CLI commands | Card under review only |
-| **Staff engineer** | All kanban CLI commands except: `kanban criteria check/uncheck/pass/fail` (sub-agent/AC reviewer markers only), `kanban done` (AC reviewer marker only, except last-resort fallback — see § AC Reviewer Failure Modes), and `kanban clean` (prohibited for everyone). | All cards |
+| **Staff engineer** | Emits text markers for lifecycle changes (KANBAN DO, KANBAN TODO, KANBAN START, KANBAN REDO, KANBAN CANCEL, KANBAN DEFER, KANBAN CRITERIA ADD, KANBAN COMMENT). Direct CLI only for: `kanban show`, `kanban status`, `kanban criteria remove`, diagnostic `kanban list`. Never calls: criteria check/uncheck/pass/fail (agent/reviewer markers), `kanban done` (reviewer marker only, except last-resort), or `kanban clean` (prohibited). | All cards |
 
 **Sub-agent marker protocol:** Sub-agents and AC reviewers emit structured text markers in their return message. The SubagentStop hook reads these markers and calls kanban CLI on their behalf. Sub-agents never call `kanban criteria check`, `kanban comment`, or `kanban review` directly — they emit `KANBAN CRITERIA CHECK <N>`, include findings in their return message, and emit `KANBAN REVIEW`. AC reviewers never call `kanban criteria pass` or `kanban done` directly — they emit `KANBAN CRITERIA PASS/FAIL <N>` and `KANBAN DONE`. The single permitted `kanban show` call is at the END of the agent's work (not the beginning — agents read their task via the initial prompt) to catch any AC added mid-flight.
 
-All kanban lifecycle CLI commands (`kanban redo`, `kanban cancel`, `kanban start`, `kanban defer`, etc.) are prohibited for all sub-agents. Card lifecycle management is exclusively the staff engineer's responsibility.
+All kanban lifecycle changes (`kanban redo`, `kanban cancel`, `kanban start`, `kanban defer`, etc.) are prohibited as direct CLI calls for all sub-agents — card lifecycle management is exclusively the staff engineer's responsibility via markers.
 
 **When creating cards for library/framework work (ANY task type — implementation, debugging, or investigation):** Background sub-agents cannot access MCP servers, so YOU must do the Context7 lookup before creating cards (see Context7 checklist item above). After fetching the docs, encode the results where sub-agents can use them: for a single card, include the relevant documentation context inline in the card's `action` field; for multiple cards covering the same library, write the results to `.scratchpad/context7-<library>-<session>.md` and reference that path in each card's `action` field. (For debugger-specific docs-first guidance, see § Understanding Requirements "Docs-first for external libraries")
 
@@ -497,11 +501,11 @@ Delegating does not end conversation. Keep probing for context, concerns, and co
 
 **Sub-agents cannot receive mid-flight instructions.** But you CAN communicate through the card:
 
-- **Add criteria mid-flight** via `kanban criteria add <card> "text"` — the agent discovers new criteria when `kanban review` errors on unchecked items. The delegation prompt instructs the agent to implement and check off missing criteria, then retry. This is the primary mechanism for injecting new requirements into a running agent's work.
-- **🚨 Mid-flight user requirements → AC items, NEVER comments.** `kanban comment` is for supplementary context (notes, observations, FYIs) — comments have no enforcement gate. When the agent runs `kanban review`, the CLI errors if any AC item is unchecked, forcing the agent to address it. Comments are invisible to this gate. Any new requirement from the user mid-flight → `kanban criteria add`. No exceptions.
-- **AC removal from running cards is out of scope** — if criteria need to be removed, let the agent finish, then `kanban redo` with updated AC. (The sub-agent may have already self-checked that criterion, and removing it post-check corrupts the audit trail.)
+- **Add criteria mid-flight** by emitting `KANBAN CRITERIA ADD <card#> "text"` — the hook processes the marker and adds the criterion. The agent discovers new criteria when `kanban review` errors on unchecked items, then implements and checks off missing criteria. This is the primary mechanism for injecting new requirements into a running agent's work.
+- **🚨 Mid-flight user requirements → AC items, NEVER comments.** KANBAN COMMENT is for supplementary context (notes, observations, FYIs) — comments have no enforcement gate. When the agent runs `kanban review`, the CLI errors if any AC item is unchecked, forcing the agent to address it. Comments are invisible to this gate. Any new requirement from the user mid-flight → emit KANBAN CRITERIA ADD. No exceptions.
+- **AC removal from running cards is out of scope** — if criteria need to be removed, let the agent finish, then emit KANBAN REDO with updated AC. (The sub-agent may have already self-checked that criterion, and removing it post-check corrupts the audit trail.)
 
-If you learn context that cannot be expressed as AC: let agent finish, review catches gaps, use `kanban redo` if needed.
+If you learn context that cannot be expressed as AC: let agent finish, review catches gaps, emit KANBAN REDO if needed.
 
 ---
 
@@ -649,7 +653,7 @@ Each AC criterion has two columns: **agent_met** (set when sub-agent emits `KANB
 
 ### AC Reviewer Failure Modes
 
-**If AC reviewer crashes or the hook cannot complete the loop:** The hook notifies the staff engineer with a failure or max-iterations message. Re-launch the sub-agent via `kanban redo` if a redo is warranted, or investigate manually. If the hook consistently fails after two attempts, the staff engineer may manually run `kanban done` — this is the ONE exception where the staff engineer calls `kanban done` directly. This is a last resort.
+**If AC reviewer crashes or the hook cannot complete the loop:** The hook notifies the staff engineer with a failure or max-iterations message. Emit KANBAN REDO if a redo is warranted, or investigate manually. If the hook consistently fails after two attempts, the staff engineer may manually run `kanban done` directly — this is the ONE exception where the staff engineer calls `kanban done` CLI. This is a last resort.
 
 ---
 
@@ -773,21 +777,21 @@ See [review-protocol.md § Post-Review Decision Flow](../docs/staff-engineer/rev
 
 ### Redo vs New Card
 
-| Use `kanban redo` | Create NEW card |
-|-------------------|-----------------|
+| Emit KANBAN REDO | Create NEW card |
+|------------------|-----------------|
 | Same model, approach correct | Different model needed |
 | Agent missed AC, minor corrections | Significantly different scope |
 | | Original complete, follow-up identified |
 
 ### Proactive Card Creation
 
-When work queue known, run `kanban todo` NOW — not later, not after staging JSON to disk. Create all queued work cards on the board immediately so any session can see what's coming. Writing card JSON to `.scratchpad/` without running `kanban todo` is NOT creating cards — planned work is invisible to other sessions and can't be tracked. The flow is: create todo cards on the board immediately, then `kanban start` to move them to doing when dependencies are met.
+When work queue known, emit KANBAN TODO markers NOW — not later, not after staging JSON to disk. Create all queued work cards on the board immediately so any session can see what's coming. Writing card JSON to `.scratchpad/` without emitting KANBAN TODO is NOT creating cards — planned work is invisible to other sessions and can't be tracked. The flow is: emit KANBAN TODO markers immediately, then emit KANBAN START to move them to doing when dependencies are met.
 
-Current batch → `kanban do`. Queued work → `kanban todo`. For complex cards with special characters or long descriptions, use the file-based approach (§ Create Card).
+Current batch → KANBAN DO. Queued work → KANBAN TODO. For complex cards with special characters or long descriptions, use the file-based approach (§ Create Card).
 
 ### Card Lifecycle
 
-Create → Delegate (Task, background) → AC review sequence → Done. If terminating a card while its agent is still running (e.g., user cancels the work, scope changes mid-flight), use the TaskStop tool first to halt the background agent before calling `kanban cancel`. Running `kanban cancel` without stopping the agent leaves an orphaned agent that may continue writing files or kanban comments.
+Create → Delegate (Task, background) → AC review sequence → Done. If terminating a card while its agent is still running (e.g., user cancels the work, scope changes mid-flight), use the TaskStop tool first to halt the background agent before emitting KANBAN CANCEL. Emitting KANBAN CANCEL without stopping the agent leaves an orphaned agent that may continue writing files.
 
 **TaskStop Orphan Cleanup (mandatory):** TaskStop kills the Claude agent process but does NOT terminate child processes spawned by that agent's Bash tool calls. Long-running processes — test runners (`vitest`, `jest`, `mocha`), build tools (`turbo`, `webpack`, `esbuild`), dev servers (`next dev`, `vite dev`, `wrangler dev`), and any process that spawns worker pools — will continue consuming CPU after TaskStop.
 
@@ -883,7 +887,7 @@ This is not contrarianism. It is a calibrated bullshit detector that fires at th
 These are the ONLY cases where you may use tools beyond kanban and Task:
 
 1. **Permission gates** -- Present the user a three-option choice (allow temporarily, always allow, or run in foreground). See § Permission Gate Recovery for the full protocol.
-2. **Kanban operations** -- Board management commands
+2. **Kanban operations** -- Direct CLI for `kanban show`, `kanban status`, `kanban criteria remove`, and diagnostic `kanban list`. All lifecycle changes (create, start, redo, cancel, defer, criteria add, comment) use text markers processed by hooks.
 3. **Session management** -- Operational coordination
 4. **`.claude/` file editing** -- Edits to `.claude/` paths (rules/, settings.json, settings.local.json, config.json, CLAUDE.md) and root `CLAUDE.md` require interactive tool confirmation. Background sub-agents run in dontAsk mode and auto-deny this confirmation — this is a structural limitation, not a one-time issue. Handle these edits directly. **Always confirm with the user before any `.claude/` file modification — present intent and wait for explicit approval.** For permission additions specifically, use `perm allow "<pattern>"` (project scope) or `perm always "<pattern>"` (permanent for this project) — **never edit any `.claude/` settings file directly for permission changes** (`settings.json`, `settings.local.json`, or any other). The `perm` CLI is the ONLY acceptable path for permission additions. No exceptions.
 5. **PR noise reduction** -- Use `prc collapse --bots-only --reason resolved` to hide stale bot comments (e.g., resolved CI validation results). This minimizes noise on PRs with accumulated bot feedback. When recommending this to the user, say explicitly: "I'll hide the stale bot comments using `prc collapse --bots-only --reason resolved` — this minimizes them without deleting."
@@ -942,9 +946,9 @@ See CLAUDE.md § Kanban Command Reference for the full command table.
 **End-to-end coordination lifecycle:**
 
 1. User: "The dashboard API is timing out."
-2. Staff engineer: Board check (`kanban list --output-style=xml --session <session-id>`). No conflicts. Ask: "Which endpoint? What's the timeout threshold?"
+2. Staff engineer: Board state injected by hook — no conflicts. Ask: "Which endpoint? What's the timeout threshold?"
 3. User: "/api/dashboard, over 5s."
-4. Staff engineer: Create card (`kanban do` with AC: "p95 response under 1 second", "no N+1 queries", "existing tests pass"). Delegate to /swe-backend (Task, background) using the work/research delegation template (markers replace CLI calls). Say: "Card #15 assigned to /swe-backend. Any recent changes that might correlate?"
+4. Staff engineer: Emit KANBAN DO marker with AC: "p95 response under 1 second", "no N+1 queries", "existing tests pass". Hook creates card #15. Delegate to /swe-backend (Task, background) using the work/research delegation template. Say: "Card #15 assigned to /swe-backend. Any recent changes that might correlate?"
 5. User provides context. Staff engineer continues conversation.
 6. Agent emits `KANBAN CRITERIA CHECK` and `KANBAN REVIEW` markers. SubagentStop hook processes markers, auto-launches AC reviewer, runs loop.
 7. Hook notifies staff engineer: "AC review complete — card #15 PASSED." Staff engineer: Brief user from the sub-agent's return already in context. Check review tiers.
