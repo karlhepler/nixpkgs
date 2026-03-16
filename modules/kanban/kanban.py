@@ -1277,7 +1277,7 @@ def cmd_criteria_uncheck(args) -> None:
     write_card(card_path, card)
 
 
-def cmd_criteria_verify(args) -> None:
+def cmd_criteria_pass(args) -> None:
     """Mark acceptance criterion(s) as reviewer-verified (sets reviewer_met)."""
     root = get_root(args.root)
     card_path = find_card(root, args.card)
@@ -1306,13 +1306,13 @@ def cmd_criteria_verify(args) -> None:
             sys.exit(1)
 
         criteria[criterion_idx]["reviewer_met"] = True
-        print(f"[✅] Verified: {criteria[criterion_idx]['text']}")
+        print(f"[✅] Passed: {criteria[criterion_idx]['text']}")
 
     card["updated"] = now_iso()
     write_card(card_path, card)
 
 
-def cmd_criteria_unverify(args) -> None:
+def cmd_criteria_fail(args) -> None:
     """Clear reviewer verification on acceptance criterion(s) (clears reviewer_met)."""
     root = get_root(args.root)
     card_path = find_card(root, args.card)
@@ -1330,7 +1330,7 @@ def cmd_criteria_unverify(args) -> None:
             sys.exit(1)
 
         criteria[criterion_idx]["reviewer_met"] = False
-        print(f"[⬜] Unverified: {criteria[criterion_idx]['text']}")
+        print(f"[⬜] Failed: {criteria[criterion_idx]['text']}")
 
     card["updated"] = now_iso()
     write_card(card_path, card)
@@ -1343,8 +1343,11 @@ def cmd_criteria_dispatch(args) -> None:
         "remove": cmd_criteria_remove,
         "check": cmd_criteria_check,
         "uncheck": cmd_criteria_uncheck,
-        "verify": cmd_criteria_verify,
-        "unverify": cmd_criteria_unverify,
+        "pass": cmd_criteria_pass,
+        "fail": cmd_criteria_fail,
+        # Backward-compat aliases (deprecated — use pass/fail)
+        "verify": cmd_criteria_pass,
+        "unverify": cmd_criteria_fail,
     }
     handler = subcommand_map.get(args.criteria_command)
     if handler:
@@ -2150,7 +2153,7 @@ def cmd_done(args) -> None:
                 text = criterion.get("text", "")
                 print(f"  [{agent_box}]     [{reviewer_box}]       {i}. {text}", file=sys.stderr)
             print(f"\nAgent checks: kanban criteria check {num} <n>", file=sys.stderr)
-            print(f"Reviewer verification: kanban criteria verify {num} <n>", file=sys.stderr)
+            print(f"Reviewer verification: kanban criteria pass {num} <n>", file=sys.stderr)
             sys.exit(1)
 
     # Append completion message to activity
@@ -2770,12 +2773,23 @@ def main() -> None:
     p_criteria_uncheck.add_argument("n", nargs="+", help="Criterion index(es) (1-based) or text prefix(es)")
     add_session_flags(p_criteria_uncheck)
 
-    p_criteria_verify = criteria_subparsers.add_parser("verify", parents=[parent_parser], help="Mark criterion as reviewer-verified (sets reviewer_met)")
+    p_criteria_pass = criteria_subparsers.add_parser("pass", parents=[parent_parser], help="Mark criterion as reviewer-verified (sets reviewer_met)")
+    p_criteria_pass.add_argument("card", help="Card number")
+    p_criteria_pass.add_argument("n", nargs="+", help="Criterion index(es) (1-based) or text prefix(es)")
+    add_session_flags(p_criteria_pass)
+
+    p_criteria_fail = criteria_subparsers.add_parser("fail", parents=[parent_parser], help="Clear reviewer verification (clears reviewer_met)")
+    p_criteria_fail.add_argument("card", help="Card number")
+    p_criteria_fail.add_argument("n", nargs="+", help="Criterion index(es) (1-based) or text prefix(es)")
+    add_session_flags(p_criteria_fail)
+
+    # Backward-compat aliases (hidden from help — use pass/fail instead)
+    p_criteria_verify = criteria_subparsers.add_parser("verify", parents=[parent_parser], help=argparse.SUPPRESS)
     p_criteria_verify.add_argument("card", help="Card number")
     p_criteria_verify.add_argument("n", nargs="+", help="Criterion index(es) (1-based) or text prefix(es)")
     add_session_flags(p_criteria_verify)
 
-    p_criteria_unverify = criteria_subparsers.add_parser("unverify", parents=[parent_parser], help="Clear reviewer verification (clears reviewer_met)")
+    p_criteria_unverify = criteria_subparsers.add_parser("unverify", parents=[parent_parser], help=argparse.SUPPRESS)
     p_criteria_unverify.add_argument("card", help="Card number")
     p_criteria_unverify.add_argument("n", nargs="+", help="Criterion index(es) (1-based) or text prefix(es)")
     add_session_flags(p_criteria_unverify)
