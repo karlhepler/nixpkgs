@@ -136,9 +136,9 @@ CREATE TABLE IF NOT EXISTS agent_metrics (
     card_number INTEGER,
     git_repo TEXT NOT NULL DEFAULT "unknown",
     working_directory TEXT NOT NULL DEFAULT "",
-    first_seen_at TEXT NOT NULL DEFAULT (strftime("%Y-%m-%dT%H:%M:%SZ", "now")),
-    last_seen_at TEXT NOT NULL DEFAULT (strftime("%Y-%m-%dT%H:%M:%SZ", "now")),
-    recorded_at TEXT NOT NULL DEFAULT (strftime("%Y-%m-%dT%H:%M:%SZ", "now")),
+    first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     input_tokens INTEGER NOT NULL DEFAULT 0,
     output_tokens INTEGER NOT NULL DEFAULT 0,
     cache_read_tokens INTEGER NOT NULL DEFAULT 0,
@@ -167,7 +167,7 @@ CREATE TABLE IF NOT EXISTS kanban_card_events (
     event TEXT NOT NULL,
     agent TEXT NOT NULL DEFAULT "",
     model TEXT NOT NULL DEFAULT "",
-    occurred_at TEXT NOT NULL DEFAULT (strftime("%Y-%m-%dT%H:%M:%SZ", "now"))
+    occurred_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_am_session_id ON agent_metrics (session_id);
