@@ -718,8 +718,9 @@ run_fzf_selector() {
   # Get git root directory (primary repo location) before launching fzf
   # This is needed in case we delete the current worktree
   # Use git worktree list to find primary repo (first entry), not git rev-parse which returns current worktree
+  # Note: awk uses END block instead of early exit to avoid SIGPIPE with set -o pipefail
   local git_root
-  git_root="$(git worktree list --porcelain | awk '/^worktree / {print substr($0, 10); exit}')"
+  git_root="$(git worktree list --porcelain | awk '/^worktree / && !found { result = substr($0, 10); found = 1 } END { if (found) print result }')"
 
   # Get current directory to mark with arrow
   local current_dir="$PWD"
