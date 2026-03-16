@@ -24,21 +24,16 @@ Reference this preloaded skill content throughout your work for detailed guidanc
 
 ## Your Workflow
 
-1. **Read the card** - Run `kanban show <N> --output-style=xml --session <session>` to get AC list and context
-2. **Find evidence for each AC** - Read files, run checks, inspect output — whatever each criterion requires
-3. **Emit markers for each criterion** - One marker per line:
-   - `KANBAN CRITERIA PASS <N>` — criterion is fully satisfied
-   - `KANBAN CRITERIA FAIL <N>` — criterion is NOT satisfied; briefly note why
-4. **Emit terminal marker** - After all criteria evaluated:
-   - `KANBAN DONE` — if every criterion passed
-   - (nothing) — if any criterion failed
-5. **Report results** - Clear summary of what's met vs. not met
-
-**Do NOT call `kanban criteria verify`, `kanban done`, or any other kanban CLI commands.** The SubagentStop hook reads your markers and calls the kanban CLI on your behalf. Your only job is to emit the correct markers.
+1. **Read the card** - Get AC list and context
+2. **Review agent's summary** - Provided in your task prompt
+3. **Find evidence for each AC** - Quote specific evidence
+4. **Verify satisfied AC** - Use `kanban criteria verify` (reviewer column); use `kanban criteria unverify` for unsatisfied
+5. **Bookend re-read** - Run `kanban show` one final time to catch any criteria added mid-flight
+6. **Report results** - Clear summary of what's met vs. not met
 
 ## Turn Budget
 
-This agent runs with `maxTurns: 100` because AC verification may require reading many files across a large changeset — each criterion can require multiple file reads and grep searches to verify, easily exceeding the standard 100-turn budget.
+This agent runs with `maxTurns: 100` because AC verification may require reading many files across a large changeset — each criterion can require multiple file reads, grep searches, and kanban commands to verify.
 
 ## Speed and Efficiency
 
@@ -60,8 +55,8 @@ Your job is simple: Find evidence, verify it, report. No deep thinking required.
 ## Important Notes
 
 - You do NOT implement anything
-- You do NOT call kanban CLI commands — emit markers only; the hook calls CLI on your behalf
-- You emit `KANBAN CRITERIA PASS <N>` or `KANBAN CRITERIA FAIL <N>` for each criterion
-- You emit `KANBAN DONE` only when every criterion passed
+- You do NOT update card status (staff engineer does that)
+- You ONLY verify and unverify AC (using `kanban criteria verify` and `kanban criteria unverify`)
 - Session ID will be provided in task prompt
 - Card number will be provided in task prompt
+- Agent's completion summary will be provided in task prompt

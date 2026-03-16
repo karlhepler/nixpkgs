@@ -130,11 +130,6 @@ let
     flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
   } (builtins.readFile ./prr.py);
 
-  # Kanban AC Hook — SubagentStop hook that enforces AC self-checking
-  kanbanAcHookScript = pkgs.writers.writePython3Bin "kanban-ac-hook" {
-    flakeIgnore = [ "E265" "E501" "W503" "W504" ];
-  } (builtins.readFile ./kanban-ac-hook.py);
-
   # Claude Inspect — CLI for introspecting Claude session metrics
   claudeInspectScript = pkgs.writers.writePython3Bin "claude-inspect" {
     flakeIgnore = [ "E226" "E265" "E501" "F541" "W503" "W504" ];
@@ -320,14 +315,6 @@ in {
       text = builtins.readFile ./perm.bash;
       description = "Manage Claude Code permissions in .claude/settings.local.json (allow, always, cleanup, list)";
       sourceFile = "perm.bash";
-    };
-
-    kanban-ac-hook = kanbanAcHookScript // {
-      meta = {
-        description = "SubagentStop hook that blocks sub-agents with unchecked kanban acceptance criteria";
-        mainProgram = "kanban-ac-hook";
-        homepage = "${builtins.toString ./.}/kanban-ac-hook.py";
-      };
     };
 
     claude-inspect = claudeInspectScript // {
@@ -900,17 +887,10 @@ in {
             }];
           }];
           SubagentStop = [{
-            hooks = [
-              {
-                type = "command";
-                command = "${shellapps.kanban-ac-hook}/bin/kanban-ac-hook";
-                timeout = 30;
-              }
-              {
-                type = "command";
-                command = "${shellapps.claudit-hook}/bin/claudit-hook";
-              }
-            ];
+            hooks = [{
+              type = "command";
+              command = "${shellapps.claudit-hook}/bin/claudit-hook";
+            }];
           }];
           Stop = [{
             hooks = [

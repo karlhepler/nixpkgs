@@ -24,7 +24,7 @@ Background sub-agents run in `dontAsk` mode. When an agent hits an interactive p
    - **"Always Allow → Run in Background"** — Run `perm always "<pattern>"` to add the permission permanently, then re-launch the agent in background. No cleanup after the agent completes.
    - **"Run in Foreground"** — Before re-launching, run `perm --session <your-session-id> cleanup` to remove all temporary permissions for your session. Then re-launch using the Task tool with `run_in_background: false`. Same prompt, same card, same agent type. Claude Code surfaces the permission prompt to the user natively.
 3. **Execute the chosen path** — No other options exist. If the user wants none of these, that conversation is separate from this protocol.
-4. **Resume** — After the chosen path completes, the re-launched agent will emit marker messages (`KANBAN CRITERIA CHECK`, `KANBAN REVIEW`) that trigger the SubagentStop hook to run AC review automatically. Continue normal AC review lifecycle after the hook notification confirms passed.
+4. **Resume** — After the chosen path completes, continue normal AC review lifecycle for remaining work.
 
 **Tracking:** `perm` handles session-aware tracking. Run `perm list` to see current state with session IDs if you need to inspect what's active.
 
@@ -406,9 +406,8 @@ YOU MUST invoke the /swe-frontend skill using the Skill tool.
 IMPORTANT: The skill will read ~/.claude/CLAUDE.md and project CLAUDE.md files
 FIRST to understand the environment, tools, and conventions.
 
-Note: Emit text markers (KANBAN CRITERIA CHECK <N>, KANBAN REVIEW) in your return
-message for kanban state changes. The only direct CLI call permitted is a single
-`kanban show` at the END of your work to catch mid-flight AC additions.
+Note: Use kanban CLI commands per the delegation template (kanban show, kanban criteria check,
+kanban comment). Card lifecycle commands (review, done, redo, cancel) are handled by the coordinator.
 
 ## Task
 Add dark mode toggle to Settings page.
@@ -445,9 +444,8 @@ YOU MUST invoke the /researcher skill using the Skill tool.
 IMPORTANT: The skill will read ~/.claude/CLAUDE.md and project CLAUDE.md files
 FIRST to understand the environment, tools, and conventions.
 
-Note: Emit text markers (KANBAN CRITERIA CHECK <N>, KANBAN REVIEW) in your return
-message for kanban state changes. The only direct CLI call permitted is a single
-`kanban show` at the END of your work to catch mid-flight AC additions.
+Note: Use kanban CLI commands per the delegation template (kanban show, kanban criteria check,
+kanban comment). Card lifecycle commands (review, done, redo, cancel) are handled by the coordinator.
 
 ## Task
 Investigate authentication flow and identify security issues.
@@ -484,9 +482,8 @@ YOU MUST invoke the /swe-security skill using the Skill tool.
 IMPORTANT: The skill will read ~/.claude/CLAUDE.md and project CLAUDE.md files
 FIRST to understand the environment, tools, and conventions.
 
-Note: Emit text markers (KANBAN CRITERIA CHECK <N>, KANBAN REVIEW) in your return
-message for kanban state changes. The only direct CLI call permitted is a single
-`kanban show` at the END of your work to catch mid-flight AC additions.
+Note: Use kanban CLI commands per the delegation template (kanban show, kanban criteria check,
+kanban comment). Card lifecycle commands (review, done, redo, cancel) are handled by the coordinator.
 
 ## Task
 Security review of IAM policy changes (Card #Y).

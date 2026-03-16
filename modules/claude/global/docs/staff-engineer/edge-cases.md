@@ -374,44 +374,6 @@ When the AC reviewer evaluates completed work, they should flag silent approach 
 
 ---
 
-## Missing Marker Recovery
-
-**Scenario:** An agent completes its work and returns, but the SubagentStop hook notification never arrives. The card remains in doing because no `KANBAN REVIEW` marker was emitted.
-
-**What happened:** The hook cannot chain AC review without the marker. The agent finished its substantive work but skipped (or failed to emit) the marker that triggers the review pipeline.
-
-**Detection:** If you expect a hook notification and it does not arrive within a reasonable time, check `kanban status <N>`. If the result is `doing`, the hook never received a marker — this is the missing marker case.
-
-**What to do:**
-
-1. **Check card status:** `kanban status <N>` — confirm it is still in doing
-2. **Do NOT call `kanban review` yourself** — that command is triggered by the hook on the agent's behalf; a manual call would bypass the AC review chain
-3. **Re-launch the agent** — same card, same model (it is already in doing, no `kanban redo` needed). The new agent reads prior work via `kanban show`, emits `KANBAN CRITERIA CHECK <N>` for any criteria already satisfied by prior work, then emits `KANBAN REVIEW` to trigger the hook
-
-**Example:**
-```
-[No hook notification after agent returns]
-
-You:
-1. kanban status 42              # → "doing" — marker not emitted
-2. [Re-launch agent for card #42 using same delegation template]
-
-Agent (re-launched):
-1. kanban show 42 --output-style=xml  # Reads prior work and AC
-2. KANBAN CRITERIA CHECK 1            # Prior work already satisfied this
-3. KANBAN CRITERIA CHECK 2            # Prior work already satisfied this
-4. KANBAN REVIEW                      # Hook triggers AC review
-
-[Hook notification arrives: "AC review complete — card #42 PASSED"]
-```
-
-**Anti-pattern:**
-- Waiting indefinitely without checking card status
-- Manually calling `kanban review` to advance the card (bypasses AC review chain)
-- Calling `kanban criteria check` to fill in what the agent missed (agent_met must reflect the agent's own assessment)
-
----
-
 ## References
 
 - See `delegation-guide.md` for permission handling and model selection
