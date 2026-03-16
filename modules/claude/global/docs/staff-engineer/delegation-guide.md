@@ -12,7 +12,7 @@ Background sub-agents run in `dontAsk` mode. When an agent hits an interactive p
 
 **Perm session identity:** Use the perm session UUID printed at session start (`🔑 Your perm session is: <uuid>`) for all `perm --session` commands. This is distinct from the kanban session name. Stale temporary permissions from crashed/forgotten sessions are automatically cleaned up at session start.
 
-**Git operation permission gates require AC review first.** If an agent returns requesting permission for a git operation — `git commit`, `git push`, `git merge`, or `gh pr create` — and the card has NOT yet completed the AC lifecycle (`kanban review` → AC reviewer → `kanban done`), do NOT proceed with the normal recovery path. Do not grant the permission. Instead: move the card to review, run the AC lifecycle, and only after `kanban done` succeeds, proceed with git operations. The permission gate recovery protocol is for unblocking legitimate work — not for bypassing the quality gate. An agent requesting commit/push is asking to signal "work is complete" before it has been verified. After `kanban done` succeeds, run the git operations directly (see § Rare Exceptions in the output style) rather than re-launching the agent — the work is done and verified; only the git operation remains.
+**Git operation permission gates require AC review first.** If an agent returns requesting permission for a git operation — `git commit`, `git push`, `git merge`, or `gh pr create` — and the card has NOT yet completed the AC lifecycle (KANBAN REVIEW marker → hook chains AC reviewer → hook calls `kanban done`), do NOT proceed with the normal recovery path. Do not grant the permission. Instead: let the AC lifecycle complete, and only after the hook confirms `kanban done` succeeds, proceed with git operations. The permission gate recovery protocol is for unblocking legitimate work — not for bypassing the quality gate. An agent requesting commit/push is asking to signal "work is complete" before it has been verified. After `kanban done` succeeds, run the git operations directly (see § Rare Exceptions in the output style) rather than re-launching the agent — the work is done and verified; only the git operation remains.
 
 ### Detection, Three-Option Choice, and Execution
 
@@ -101,7 +101,7 @@ Run `perm --session <your-session-id> cleanup`. This removes only your session's
 ### Re-launch vs. Redo
 
 - Permission gate failure → Present three-option choice (Allow → Run in Background, Always Allow → Run in Background, or Run in Foreground), execute chosen path
-- Implementation error → `kanban redo` and re-delegate background
+- Implementation error → emit KANBAN REDO and re-delegate background
 
 Do not move the card to done or cancel it. The card stays in `doing` while the chosen path executes. Resume normal AC review lifecycle after the agent succeeds.
 
