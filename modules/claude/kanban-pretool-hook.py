@@ -15,6 +15,16 @@ results in allowing the tool call unchanged.
 
 Skip condition: BURNS_SESSION=1 env var means Ralph is running — skip injection
 to avoid confusing the model with kanban context.
+
+Known Issues:
+    - Claude Code displays 'PreToolUse:Agent hook error' in the UI even when
+      this hook succeeds (exits 0, valid JSON, no stderr). This is a cosmetic
+      UI bug in Claude Code, not a hook failure. The hook's info log at
+      ~/.claude/metrics/kanban-pretool-hook.log confirms successful injection.
+      See: https://github.com/anthropics/claude-code/issues/17088
+    - updatedInput may be silently dropped if multiple PreToolUse hooks match
+      the same tool (we only register one for Agent, so this should not apply).
+      See: https://github.com/anthropics/claude-code/issues/15897
 """
 
 import json
@@ -179,8 +189,12 @@ def inject_card_into_prompt(prompt: str, card_xml: str, card_number: str, sessio
 def allow_unchanged() -> dict:
     """Return a permissionDecision=allow response with no prompt modification."""
     return {
+        "continue": True,
+        "suppressOutput": False,
         "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
             "permissionDecision": "allow",
+            "permissionDecisionReason": "",
         }
     }
 
@@ -188,8 +202,12 @@ def allow_unchanged() -> dict:
 def allow_with_updated_prompt(new_prompt: str) -> dict:
     """Return a permissionDecision=allow response with updated prompt."""
     return {
+        "continue": True,
+        "suppressOutput": False,
         "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
             "permissionDecision": "allow",
+            "permissionDecisionReason": "",
             "updatedInput": {
                 "prompt": new_prompt,
             },
