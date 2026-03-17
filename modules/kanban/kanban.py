@@ -1296,6 +1296,20 @@ def cmd_cancel(args) -> None:
             print(f"Canceled: #{num}")
 
 
+def cmd_agent(args) -> None:
+    """Set the agent field on a card."""
+    root = get_root(args.root)
+    card_path = find_card(root, args.card)
+    card = read_card(card_path)
+
+    # Normalize to lowercase-kebab-case (same as make_card)
+    agent_type = args.agent_type.lower().replace(" ", "-")
+    card["agent"] = agent_type
+    card["updated"] = now_iso()
+    write_card(card_path, card)
+    print(f"Card #{card_number(card_path)} agent set to: {agent_type}")
+
+
 def cmd_comment(args) -> None:
     """Add a timestamped comment to a card."""
     root = get_root(args.root)
@@ -2984,6 +2998,12 @@ def main() -> None:
     p_comment.add_argument("--file", dest="comment_file", metavar="PATH", help="Read comment text from file instead of inline argument")
     add_session_flags(p_comment)
 
+    # --- agent ---
+    p_agent = subparsers.add_parser("agent", parents=[parent_parser], help="Set the agent type on a card")
+    p_agent.add_argument("card", help="Card number")
+    p_agent.add_argument("agent_type", help="Agent type (e.g. swe-backend, researcher)")
+    add_session_flags(p_agent)
+
     # --- criteria (with subcommands) ---
     p_criteria = subparsers.add_parser("criteria", parents=[parent_parser], help="Manage acceptance criteria", aliases=["ac"])
     criteria_subparsers = p_criteria.add_subparsers(dest="criteria_command", help="Criteria subcommands")
@@ -3082,6 +3102,7 @@ def main() -> None:
         "review": cmd_review,
         "done": cmd_done,
         "cancel": cmd_cancel,
+        "agent": cmd_agent,
         "comment": cmd_comment,
         "redo": cmd_redo,
         "defer": cmd_defer,

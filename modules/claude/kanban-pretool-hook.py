@@ -204,7 +204,7 @@ def main() -> None:
         return
 
     try:
-        payload = json.loads(raw)
+        payload = json.loads(raw, strict=False)
     except json.JSONDecodeError as exc:
         log_error(f"JSON decode error: {exc}")
         print(json.dumps(allow_unchanged()))
@@ -245,6 +245,18 @@ def main() -> None:
 
     # Inject card content into the prompt
     new_prompt = inject_card_into_prompt(prompt, card_xml, card_number, session)
+
+    # Update card's agent field with the actual sub-agent type (fire-and-forget)
+    subagent_type = tool_input.get("subagent_type", "")
+    if subagent_type:
+        try:
+            subprocess.Popen(
+                ["kanban", "agent", card_number, subagent_type, "--session", session],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception as exc:
+            log_error(f"kanban agent update failed for #{card_number}: {exc}")
 
     print(json.dumps(allow_with_updated_prompt(new_prompt)))
 
