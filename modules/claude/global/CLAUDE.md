@@ -123,7 +123,7 @@ When researching, investigating, or looking up information, ALWAYS follow this p
 | `kanban list --output-style=xml --session <id>` | Board check (compact XML) | Staff engineer |
 | `kanban do '<json>' --session <id>` or `kanban do --file <path> --session <id>` | Create card(s) in doing | Staff engineer |
 | `kanban todo '<json>' --session <id>` or `kanban todo --file <path> --session <id>` | Create card(s) in todo | Staff engineer |
-| `kanban show <card> [--output-style=xml]` | Read card details (action, intent, AC) | Sub-agents (own card), AC reviewer, staff engineer |
+| `kanban show <card> [--output-style=xml]` | Read card details (action, intent, AC) | AC reviewer, staff engineer |
 | `kanban status <card>` | Print column name of card (lightweight check) | Staff engineer, sub-agents |
 | `kanban start <card> [cards...]` | Pick up from todo | Staff engineer |
 | `kanban review <card> [cards...]` | Move to review column | Staff engineer |
@@ -135,7 +135,7 @@ When researching, investigating, or looking up information, ALWAYS follow this p
 | `kanban criteria uncheck <card> <n>` | Undo self-check | Sub-agents (own card) |
 | `kanban criteria pass <card> <n>` | Pass AC (reviewer_met column) | AC reviewer |
 | `kanban criteria fail <card> <n>` | Fail AC (reviewer_met column) | AC reviewer |
-| `kanban comment <card> "text"` | Add timestamped comment | Sub-agents (own card), staff engineer |
+| `kanban comment <card> "text"` | Add timestamped comment | Staff engineer |
 | `kanban done <card> 'summary'` | Complete card (both columns enforced) | AC reviewer (staff engineer: last-resort fallback only — see ⚠️ note below) |
 | `kanban cancel <card> [cards...]` | Cancel card(s) | Staff engineer |
 | ~~`kanban clean`~~ | **PROHIBITED — never run** | Nobody |

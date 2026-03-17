@@ -942,6 +942,7 @@ in {
             hooks = [{
               type = "command";
               command = "${shellapps.kanban-pretool-hook}/bin/kanban-pretool-hook";
+              timeout = 600000;
             }];
           }];
           PostToolUse = [{

@@ -164,10 +164,10 @@ CREATE TABLE IF NOT EXISTS kanban_card_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     kanban_session TEXT NOT NULL,
     card_number INTEGER NOT NULL,
-    event TEXT NOT NULL,
+    event_type TEXT NOT NULL,
     agent TEXT NOT NULL DEFAULT "",
     model TEXT NOT NULL DEFAULT "",
-    occurred_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_am_session_id ON agent_metrics (session_id);
@@ -181,7 +181,7 @@ CREATE INDEX IF NOT EXISTS idx_atu_session_id ON agent_tool_usage (session_id);
 CREATE INDEX IF NOT EXISTS idx_atu_tool_name ON agent_tool_usage (tool_name);
 CREATE INDEX IF NOT EXISTS idx_kce_kanban_session ON kanban_card_events (kanban_session);
 CREATE INDEX IF NOT EXISTS idx_kce_card_number ON kanban_card_events (card_number);
-CREATE INDEX IF NOT EXISTS idx_kce_occurred_at ON kanban_card_events (occurred_at);
+CREATE INDEX IF NOT EXISTS idx_kce_recorded_at ON kanban_card_events (recorded_at);
 SQL_EOF
             echo "Database recreated with correct schema."
           else

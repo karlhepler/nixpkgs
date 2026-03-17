@@ -120,10 +120,10 @@ CREATE TABLE IF NOT EXISTS kanban_card_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     kanban_session TEXT NOT NULL,
     card_number INTEGER NOT NULL,
-    event TEXT NOT NULL,
+    event_type TEXT NOT NULL,
     agent TEXT NOT NULL DEFAULT '',
     model TEXT NOT NULL DEFAULT '',
-    occurred_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 )
 """
 
@@ -140,7 +140,7 @@ CREATE_INDEXES_SQL = [
     "CREATE INDEX IF NOT EXISTS idx_pd_session_id ON permission_denials (session_id)",
     "CREATE INDEX IF NOT EXISTS idx_kce_kanban_session ON kanban_card_events (kanban_session)",
     "CREATE INDEX IF NOT EXISTS idx_kce_card_number ON kanban_card_events (card_number)",
-    "CREATE INDEX IF NOT EXISTS idx_kce_occurred_at ON kanban_card_events (occurred_at)",
+    "CREATE INDEX IF NOT EXISTS idx_kce_recorded_at ON kanban_card_events (recorded_at)",
 ]
 
 

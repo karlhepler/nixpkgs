@@ -116,6 +116,59 @@ def block(reason: str) -> dict:
 # Transcript parsing
 # ---------------------------------------------------------------------------
 
+def extract_agent_output(transcript_path: str) -> str:
+    """
+    Extract the agent's final substantive output from the JSONL transcript.
+
+    Reads the transcript and returns the content of the last assistant message
+    before the agent stopped. This is the agent's findings/deliverable summary.
+
+    For review/research cards, this output IS the primary deliverable.
+    For work cards, file inspection remains primary but this provides supplementary context.
+
+    Returns the extracted output string, or empty string if not found.
+    """
+    last_assistant_content = ""
+    try:
+        with open(transcript_path, "r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line, strict=False)
+                except json.JSONDecodeError:
+                    continue
+
+                # Look for assistant-role messages
+                if not isinstance(entry, dict):
+                    continue
+
+                role = entry.get("role", "")
+                if role != "assistant":
+                    continue
+
+                content = entry.get("content", "")
+                if isinstance(content, str) and content.strip():
+                    last_assistant_content = content.strip()
+                elif isinstance(content, list):
+                    # Content may be a list of blocks; extract text blocks
+                    text_parts = []
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "text":
+                            text = block.get("text", "")
+                            if text.strip():
+                                text_parts.append(text.strip())
+                        elif isinstance(block, str) and block.strip():
+                            text_parts.append(block.strip())
+                    if text_parts:
+                        last_assistant_content = "\n".join(text_parts)
+    except (OSError, IOError) as exc:
+        log_error(f"Failed to read transcript for agent output at {transcript_path}: {exc}")
+
+    return last_assistant_content
+
+
 def extract_card_from_transcript(transcript_path: str) -> tuple[str, str] | None:
     """
     Parse the agent's transcript (JSONL) line by line to find the card number
@@ -253,7 +306,7 @@ def format_deferred_notification(session: str) -> str:
 # Inner loop: Haiku AC review
 # ---------------------------------------------------------------------------
 
-def build_haiku_prompt(card_number: str, session: str, previous_context: str) -> str:
+def build_haiku_prompt(card_number: str, session: str, previous_context: str, agent_output: str = "") -> str:
     """Build the prompt for the haiku AC reviewer."""
     previous_section = ""
     if previous_context:
@@ -261,6 +314,18 @@ def build_haiku_prompt(card_number: str, session: str, previous_context: str) ->
 Previous review context (accumulated from earlier passes — use this to avoid
 re-checking criteria you already reviewed):
 {previous_context}
+"""
+
+    agent_output_section = ""
+    if agent_output:
+        agent_output_section = f"""
+Agent output (the sub-agent's final response — use this as evidence context):
+---
+{agent_output}
+---
+
+For review/research cards, the agent output above IS the primary deliverable to verify against.
+For work cards, file inspection is primary but use agent output as supplementary context.
 """
 
     return f"""You are an AC reviewer for kanban card #{card_number} (session {session}).
@@ -283,7 +348,7 @@ Step 4: After all criteria have a pass or fail verdict, run:
 
 If kanban done fails (some criteria are unchecked or failed), that is expected.
 Just ensure every criterion has been evaluated with pass or fail.
-{previous_section}
+{agent_output_section}{previous_section}
 IMPORTANT:
 - Verify EVERY criterion. Do not skip any.
 - Be thorough but efficient — max 2 file reads per criterion.
@@ -292,7 +357,7 @@ IMPORTANT:
 """
 
 
-def run_inner_loop(card_number: str, session: str) -> bool:
+def run_inner_loop(card_number: str, session: str, transcript_path: str = "") -> bool:
     """
     Run the inner AC review loop (max MAX_INNER_ITERATIONS iterations).
 
@@ -302,11 +367,14 @@ def run_inner_loop(card_number: str, session: str) -> bool:
     Returns True if the card reached done, False otherwise.
     """
     accumulated_context = ""
+    agent_output = extract_agent_output(transcript_path) if transcript_path else ""
+    if agent_output:
+        log_info(f"Extracted agent output for card #{card_number} ({len(agent_output)} chars)")
 
     for i in range(1, MAX_INNER_ITERATIONS + 1):
         log_info(f"Inner loop iteration {i}/{MAX_INNER_ITERATIONS} for card #{card_number}")
 
-        prompt = build_haiku_prompt(card_number, session, accumulated_context)
+        prompt = build_haiku_prompt(card_number, session, accumulated_context, agent_output)
 
         try:
             result = subprocess.run(
@@ -405,7 +473,7 @@ def process_subagent_stop(payload: dict) -> dict:
 
     # Step 3: Inner loop — Haiku AC verification
     log_info(f"Starting AC review inner loop for card #{card_number}")
-    card_done = run_inner_loop(card_number, session)
+    card_done = run_inner_loop(card_number, session, transcript_path)
 
     # Step 4: Process result
     if card_done:
@@ -439,6 +507,13 @@ def process_subagent_stop(payload: dict) -> dict:
     # First, capture the kanban done error to understand what failed
     done_result = run_kanban(["done", card_number, "AC review attempt", "--session", session])
     failure_details = done_result.stderr.strip() if done_result.stderr else "Unknown failure"
+
+    # Check card status before attempting redo — if it's already in a terminal state, skip redo
+    status_before_redo = get_card_status(card_number, session)
+    if status_before_redo in ("done", "canceled"):
+        message = f"Card #{card_number} is already {status_before_redo}."
+        message += format_deferred_notification(session)
+        return allow(message)
 
     # Run kanban redo to send card back to doing (increments review_cycles)
     redo_result = run_kanban(["redo", card_number, "--session", session])

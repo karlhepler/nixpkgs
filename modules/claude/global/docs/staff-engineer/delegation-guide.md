@@ -349,8 +349,8 @@ Safe to parallelize
 **Symptom:** Agent moved to review but didn't document what they need
 
 **Solution:**
-1. Check kanban comments: `kanban show <card#>`
-2. If no clear request → Resume agent and ask: "What permission do you need?"
+1. Check the agent's Task return value for a description of what it needs
+2. If no clear request → Re-launch the agent and ask: "What permission do you need?"
 3. Agent clarifies → Execute → Resume
 
 ### Permission Requested But Unsafe
@@ -406,8 +406,8 @@ YOU MUST invoke the /swe-frontend skill using the Skill tool.
 IMPORTANT: The skill will read ~/.claude/CLAUDE.md and project CLAUDE.md files
 FIRST to understand the environment, tools, and conventions.
 
-Note: Use kanban CLI commands per the delegation template (kanban show, kanban criteria check,
-kanban comment). Card lifecycle commands (review, done, redo, cancel) are handled by the coordinator.
+Note: Use kanban CLI commands per the delegation template (kanban criteria check/uncheck only).
+Card lifecycle commands (review, done, redo, cancel) and kanban show are handled by the coordinator.
 
 ## Task
 Add dark mode toggle to Settings page.
@@ -444,8 +444,8 @@ YOU MUST invoke the /researcher skill using the Skill tool.
 IMPORTANT: The skill will read ~/.claude/CLAUDE.md and project CLAUDE.md files
 FIRST to understand the environment, tools, and conventions.
 
-Note: Use kanban CLI commands per the delegation template (kanban show, kanban criteria check,
-kanban comment). Card lifecycle commands (review, done, redo, cancel) are handled by the coordinator.
+Note: Use kanban CLI commands per the delegation template (kanban criteria check/uncheck only).
+Card lifecycle commands (review, done, redo, cancel) and kanban show are handled by the coordinator.
 
 ## Task
 Investigate authentication flow and identify security issues.
@@ -482,8 +482,8 @@ YOU MUST invoke the /swe-security skill using the Skill tool.
 IMPORTANT: The skill will read ~/.claude/CLAUDE.md and project CLAUDE.md files
 FIRST to understand the environment, tools, and conventions.
 
-Note: Use kanban CLI commands per the delegation template (kanban show, kanban criteria check,
-kanban comment). Card lifecycle commands (review, done, redo, cancel) are handled by the coordinator.
+Note: Use kanban CLI commands per the delegation template (kanban criteria check/uncheck only).
+Card lifecycle commands (review, done, redo, cancel) and kanban show are handled by the coordinator.
 
 ## Task
 Security review of IAM policy changes (Card #Y).

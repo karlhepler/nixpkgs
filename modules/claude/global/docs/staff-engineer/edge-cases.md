@@ -314,14 +314,13 @@ You: Resume agent: "Don't use --force. Create new commit instead."
 
 ### Surfacing Workflow
 
-When a sub-agent discovers an alternative that requires approval, it follows these 6 steps:
+When a sub-agent discovers an alternative that requires approval, it follows these 5 steps:
 
 1. **Stop work** — Do not proceed with the alternative or the originally specified approach
-2. **Document discovery** — Write a `kanban comment` explaining what was found and why it differs from the card's specification (include relevant context: what the card specifies, what was discovered, why they conflict)
-3. **State choice clearly** — In the comment, explicitly state: "Discovered alternative: [X]. Card specifies: [Y]. Waiting for approval to proceed with [X] or confirmation to proceed with [Y]."
+2. **Document discovery** — Prepare a clear summary of what was found, why it differs from the card's specification, and what the two options are (include relevant context: what the card specifies, what was discovered, why they conflict)
+3. **State choice clearly** — In the return message, explicitly state: "Discovered alternative: [X]. Card specifies: [Y]. Waiting for approval to proceed with [X] or confirmation to proceed with [Y]."
 4. **Move to review** — Run `kanban review <card#>` so the staff engineer sees the card is blocked
-5. **Return to staff engineer** — Return with a summary of the discovery and the comment number where full context is documented
-6. **Wait for decision** — Do not attempt partial work or workarounds; the staff engineer decides and re-delegates with updated direction
+5. **Return to staff engineer** — Return with the full discovery summary in the Task return value. Do not attempt partial work or workarounds; the staff engineer decides and re-delegates with updated direction
 
 ### Examples
 
@@ -332,12 +331,12 @@ Agent discovers: The codebase already has NextAuth.js configured with active ses
 
 Agent:
 1. Stop work
-2. kanban comment 55 "Discovered NextAuth.js already configured in the codebase (see
-   src/auth/config.ts). Card specifies Passport.js. Adding Passport.js alongside
-   NextAuth.js would create a second auth system. Waiting for approval to proceed
-   with NextAuth.js JWT integration or confirmation to add Passport.js as specified."
-3. kanban review 55
-4. Returns: "Blocked — see card #55 comment. Auth library conflict found."
+2. kanban review 55
+3. Returns: "Blocked — auth library conflict found. Discovered NextAuth.js already
+   configured in the codebase (see src/auth/config.ts). Card specifies Passport.js.
+   Adding Passport.js alongside NextAuth.js would create a second auth system.
+   Waiting for approval to proceed with NextAuth.js JWT integration or confirmation
+   to add Passport.js as specified."
 ```
 
 **Does not require approval — unspecified library choice:**

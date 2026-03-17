@@ -996,7 +996,7 @@
       "title": "Cards Completed Per Day",
       "description": "Daily card completion velocity. A rising trend means more work is flowing through to done; gaps indicate days with no completions.",
       "gridPos": { "x": 0, "y": 107, "w": 12, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claude-metrics-uid" },
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
       "targets": [
         {
           "refId": "A",
@@ -1024,7 +1024,7 @@
       "title": "Redo Rate",
       "description": "Ratio of redo events to done events across all time. A high redo rate signals quality issues — cards are frequently sent back for rework before acceptance.",
       "gridPos": { "x": 12, "y": 107, "w": 6, "h": 4 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claude-metrics-uid" },
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
       "targets": [
         {
           "refId": "A",
@@ -1065,7 +1065,7 @@
       "title": "Card Cycle Time",
       "description": "Time from first 'doing' event to 'done' event per card. Cards with very long cycle times may indicate tasks that are too large or agents that got stuck.",
       "gridPos": { "x": 18, "y": 107, "w": 6, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claude-metrics-uid" },
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
       "targets": [
         {
           "refId": "A",
@@ -1094,7 +1094,7 @@
       "title": "Cards by Agent",
       "description": "Total card completions broken down by agent persona. Shows workload distribution — which agents are carrying the most throughput.",
       "gridPos": { "x": 12, "y": 111, "w": 6, "h": 4 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claude-metrics-uid" },
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
       "targets": [
         {
           "refId": "A",
@@ -1135,7 +1135,7 @@
       "title": "Lead Time Distribution",
       "description": "Distribution of how many hours cards take from first 'doing' to 'done'. The bulk of the distribution shows the typical card duration; outliers on the right indicate cards that got stuck or were exceptionally complex.",
       "gridPos": { "x": 0, "y": 116, "w": 12, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claude-metrics-uid" },
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
       "targets": [
         {
           "refId": "A",
@@ -1165,7 +1165,7 @@
       "title": "Average Lead Time by Agent",
       "description": "Average card completion time (in minutes) per agent persona. Longer bars indicate agents working on higher-complexity cards or models that require more elapsed time.",
       "gridPos": { "x": 12, "y": 116, "w": 12, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claude-metrics-uid" },
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
       "targets": [
         {
           "refId": "A",
@@ -1197,7 +1197,7 @@
       "title": "Done vs Redo Events Over Time",
       "description": "Daily count of 'done' events vs 'redo' events. A declining redo line alongside a stable or rising done line means quality is improving — fewer cards are being sent back for rework.",
       "gridPos": { "x": 0, "y": 124, "w": 12, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claude-metrics-uid" },
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
       "targets": [
         {
           "refId": "A",
@@ -1225,7 +1225,7 @@
       "title": "Card Flow",
       "description": "Recent cards with their events, showing the flow from creation through to completion. Cards with many redo events before done indicate quality issues or under-specified task definitions.",
       "gridPos": { "x": 12, "y": 124, "w": 12, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claude-metrics-uid" },
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
       "targets": [
         {
           "refId": "A",

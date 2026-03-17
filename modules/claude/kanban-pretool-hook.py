@@ -35,6 +35,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 # ---------------------------------------------------------------------------
 
 ERROR_LOG_PATH = Path.home() / ".claude" / "metrics" / "kanban-pretool-hook-errors.log"
+INFO_LOG_PATH = Path.home() / ".claude" / "metrics" / "kanban-pretool-hook.log"
 
 # Patterns for extracting card number and session from agent prompts.
 # Priority order: most specific first.
@@ -61,16 +62,26 @@ _SESSION_BARE_PATTERN = re.compile(r'[Ss]ession[:\s]+([a-z0-9][a-z0-9-]+)')
 # Error logging
 # ---------------------------------------------------------------------------
 
-def log_error(message: str) -> None:
-    """Append an error to the hook error log. Never raises."""
+def _write_log(path: Path, message: str) -> None:
+    """Append a timestamped message to a log file. Never raises."""
     try:
-        ERROR_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        path.parent.mkdir(parents=True, exist_ok=True)
         from datetime import datetime, timezone
         timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-        with open(ERROR_LOG_PATH, "a", encoding="utf-8") as fh:
+        with open(path, "a", encoding="utf-8") as fh:
             fh.write(f"[{timestamp}] {message}\n")
     except Exception:
         pass
+
+
+def log_error(message: str) -> None:
+    """Append an error to the hook error log. Never raises."""
+    _write_log(ERROR_LOG_PATH, message)
+
+
+def log_info(message: str) -> None:
+    """Append an info message to the hook info log. Never raises."""
+    _write_log(INFO_LOG_PATH, message)
 
 
 # ---------------------------------------------------------------------------
@@ -231,10 +242,12 @@ def main() -> None:
     extracted = extract_card_and_session(prompt)
     if extracted is None:
         # No card reference found — pass through unchanged
+        log_info("no card reference found in prompt — passing through unchanged")
         print(json.dumps(allow_unchanged()))
         return
 
     card_number, session = extracted
+    log_info(f"card found: #{card_number} session={session}")
 
     # Fetch card XML via kanban CLI
     card_xml = fetch_card_xml(card_number, session)
@@ -242,6 +255,7 @@ def main() -> None:
         # kanban show failed — fail open
         print(json.dumps(allow_unchanged()))
         return
+    log_info(f"card XML fetched successfully for #{card_number}")
 
     # Inject card content into the prompt
     new_prompt = inject_card_into_prompt(prompt, card_xml, card_number, session)
@@ -258,6 +272,7 @@ def main() -> None:
         except Exception as exc:
             log_error(f"kanban agent update failed for #{card_number}: {exc}")
 
+    log_info(f"prompt updated successfully for #{card_number} session={session}")
     print(json.dumps(allow_with_updated_prompt(new_prompt)))
 
 
