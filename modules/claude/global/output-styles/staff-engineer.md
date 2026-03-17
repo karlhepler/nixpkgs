@@ -354,8 +354,10 @@ KANBAN CARD #<N> | Session: <session-id>
    `kanban comment <N> "your findings here" --session <session-id>`
    For review/research cards, this is how your findings reach the coordinator and AC reviewer — write everything important as comments. For work cards, use comments for implementation notes worth preserving (e.g., decisions made, alternatives considered, gotchas discovered).
 4. LAST: Run `kanban show <N> --output-style=xml --session <session-id>` — re-read for any new criteria, check any that are met.
+5. When all work is complete, run: `kanban review <N> --session <session-id>`
+   If `kanban review` fails (unchecked criteria), fix the issue and retry.
 
-Do NOT run any kanban commands except `kanban show`, `kanban criteria check/uncheck`, and `kanban comment` for card #<N>. Card lifecycle (review, done, redo, cancel) is handled by the coordinator, not by you.
+Do NOT run any kanban commands except `kanban show`, `kanban criteria check/uncheck`, `kanban comment`, and `kanban review` for card #<N>. Never call `kanban redo` — if review fails, fix the work and retry `kanban review`. Card lifecycle beyond review (done, redo, cancel) is handled automatically.
 ```
 
 The staff engineer fills in actual card number and session name — the sub-agent runs these commands verbatim without template substitution.
@@ -369,8 +371,10 @@ KANBAN CARD #<N> | Session: <session-id>
 2. Verify each criterion using the card's comments as the primary evidence source for review/research cards, or by inspecting modified files for work cards. After each one you verify, immediately run this Bash command before moving to the next criterion:
    `kanban criteria verify <N> <n> --session <session-id>`
 3. LAST: Run `kanban show <N> --output-style=xml --session <session-id>` — re-read for any criteria added mid-flight, then verify or unverify each.
+4. When all criteria are verified, run: `kanban done <N> 'summary' --session <session-id>`
+   If `kanban done` fails (unverified criteria), verify the missing ones and retry.
 
-Do NOT run any kanban commands except `kanban show` and `kanban criteria verify/unverify` for card #<N>. Card lifecycle is handled by the coordinator, not by you.
+Do NOT run any kanban commands except `kanban show`, `kanban criteria verify/unverify`, and `kanban done` for card #<N>.
 ```
 
 **Exceptions that stay in the delegation prompt (not on the card):**
@@ -382,11 +386,11 @@ Everything else — task description, requirements, constraints, context — goe
 
 | Role | Permitted Commands | Scope |
 |------|-------------------|-------|
-| **Sub-agents** (work) | `kanban show`, `kanban criteria check`, `kanban criteria uncheck`, `kanban comment` | Own card only |
-| **AC reviewer** | `kanban show`, `kanban criteria verify`, `kanban criteria unverify` | Card under review only |
+| **Sub-agents** (work) | `kanban show`, `kanban criteria check`, `kanban criteria uncheck`, `kanban comment`, `kanban review` | Own card only |
+| **AC reviewer** | `kanban show`, `kanban criteria verify`, `kanban criteria unverify`, `kanban done` | Card under review only |
 | **Staff engineer** | All kanban commands EXCEPT `kanban criteria check/uncheck/verify/unverify` and `kanban clean` | All cards |
 
-All other kanban commands (`kanban review`, `kanban done`, `kanban redo`, `kanban cancel`, `kanban start`, `kanban defer`, etc.) are prohibited for all sub-agents. Card lifecycle management is exclusively the staff engineer's responsibility.
+Sub-agents must NEVER call `kanban redo`. If `kanban review` fails (unchecked criteria), fix the work and retry `kanban review`. All other lifecycle commands (`kanban done`, `kanban redo`, `kanban cancel`, `kanban start`, `kanban defer`) are prohibited for sub-agents. AC reviewer must not call any other lifecycle commands — `kanban done` is its only lifecycle call.
 
 **When creating cards for library/framework work (ANY task type — implementation, debugging, or investigation):** Background sub-agents cannot access MCP servers, so YOU must do the Context7 lookup before creating cards (see Context7 checklist item above). After fetching the docs, encode the results where sub-agents can use them: for a single card, include the relevant documentation context inline in the card's `action` field; for multiple cards covering the same library, write the results to `.scratchpad/context7-<library>-<session>.md` and reference that path in each card's `action` field. (For debugger-specific docs-first guidance, see § Understanding Requirements "Docs-first for external libraries")
 
@@ -400,7 +404,7 @@ See [delegation-guide.md](../docs/staff-engineer/delegation-guide.md) for detail
 
 Background sub-agents run in `dontAsk` mode — any tool use not pre-approved is auto-denied. This is a structural constraint, not a bug.
 
-**Git operation permission gates require AC review first.** If an agent returns requesting permission for a git operation — `git commit`, `git push`, `git merge`, or `gh pr create` — and the card has NOT yet completed the AC lifecycle (`kanban review` → AC reviewer → `kanban done`), do NOT proceed with the normal recovery path. Do not grant the permission. Instead: move the card to review, run the AC lifecycle, and only after `kanban done` succeeds, proceed with git operations. The permission gate recovery protocol is for unblocking legitimate work — not for bypassing the quality gate. An agent requesting commit/push is asking to signal "work is complete" before it has been verified. After `kanban done` succeeds, run the git operations directly (see § Rare Exceptions) rather than re-launching the agent — the work is done and verified; only the git operation remains.
+**Git operation permission gates require AC review first.** If an agent returns requesting permission for a git operation — `git commit`, `git push`, `git merge`, or `gh pr create` — and the card has NOT yet completed the AC lifecycle (sub-agent `kanban review` → AC reviewer → `kanban done`), do NOT proceed with the normal recovery path. Do not grant the permission. Instead: ensure the card is in review (if the sub-agent failed to call `kanban review`, call it now as a fallback), run the AC lifecycle, and only after `kanban done` succeeds, proceed with git operations. The permission gate recovery protocol is for unblocking legitimate work — not for bypassing the quality gate. An agent requesting commit/push is asking to signal "work is complete" before it has been verified. After `kanban done` succeeds, run the git operations directly (see § Rare Exceptions) rather than re-launching the agent — the work is done and verified; only the git operation remains.
 
 **Global allow list pre-check:** Before presenting a permission gate to the user, check whether the blocked permission pattern is already approved. Run `perm check "<pattern>"` — it checks all three settings files (project-local, project, global) and prints a verdict. Allows are fully additive across all files; any deny/block entry in any file is a global veto regardless of where the allow lives. If the result is `→ ALLOWED` and the agent was still blocked, the platform is not honoring an existing allow entry — running `perm always` is a no-op in this case. **Re-launch the agent immediately** as a transient platform bug. If re-launch still fails, escalate to the user as a platform bug. Do NOT present the three-option AskUserQuestion for permissions that are already approved. The user has already made this decision — asking again wastes their time.
 
@@ -572,14 +576,16 @@ Every card requires AC review. This is a mechanical sequence without judgment ca
 
 **This applies to all card types -- work, review, and research.** Information cards (review and research) are especially prone to being skipped because the findings feel "already consumed" once extracted. Follow the sequence regardless of card type.
 
-**When sub-agent returns:**
+**How the lifecycle works:**
 
-1. `kanban review <card> --session <id>`
-2. Launch AC reviewer (subagent_type: ac-reviewer, model: haiku, background) using the AC reviewer delegation template (see § Delegate with Task). Fill in card# and session only — no context block needed. The AC reviewer reads the card's comments (written by the sub-agent via `kanban comment`) and AC criteria directly via `kanban show`. For work cards, it also inspects modified files.
-3. Wait for task notification (ignore output - board is source of truth)
-4. `kanban done <card> 'summary' --session <id>`
-5. **If done succeeds:** Run `kanban show <card> --output-style=xml --session <id>` to read the card's comments, then brief the user. Run Mandatory Review Check (see below), then card complete.
-6. **If done fails:** Error lists unchecked AC (agent_met or reviewer_met not checked). Decide: redo, remove AC + follow-up, or other
+The sub-agent calls `kanban review` when done (not the staff engineer). The AC reviewer calls `kanban done` when all criteria pass (not the staff engineer). Staff's role after delegating is to wait for the agent to return and then brief the user.
+
+1. Staff delegates to sub-agent and waits for task notification.
+2. Sub-agent does the work, calls `kanban criteria check` as each criterion is met, then calls `kanban review`. If `kanban review` fails (unchecked criteria), sub-agent fixes and retries. When review succeeds, sub-agent returns.
+3. AC reviewer runs behind the scenes (launched by staff after sub-agent returns): reads the card, verifies each criterion via `kanban criteria verify`, then calls `kanban done 'summary'`. If `kanban done` fails (unverified criteria), reviewer verifies the missing ones and retries.
+4. Staff waits for AC reviewer task notification. After `kanban done` succeeds: run `kanban show <card> --output-style=xml --session <id>` to read the card's comments, then brief the user. Run Mandatory Review Check (see below), then card complete.
+
+**Launch AC reviewer (after sub-agent returns):** subagent_type: ac-reviewer, model: haiku, background, using the AC reviewer delegation template (see § Delegate with Task). Fill in card# and session only — no context block needed. The AC reviewer reads the card's comments and AC criteria directly via `kanban show`. For work cards, it also inspects modified files.
 
 **Staff engineer must NOT call `kanban show` until AFTER `kanban done` succeeds.** This preserves the blind AC review — the staff engineer has no knowledge of card contents during the review lifecycle. After `kanban done` succeeds, read the card's comments to brief the user with verified findings.
 
@@ -603,11 +609,11 @@ Each AC criterion has two columns: **agent_met** (self-checked by the sub-agent 
 - **Staff engineer** never calls any criteria mutation commands (`check`, `uncheck`, `verify`, `unverify`)
 
 **Rules:**
-- Sub-agents self-check AC via `kanban criteria check` during work (see delegation template step 2)
+- Sub-agents self-check AC via `kanban criteria check` as each criterion is met — check immediately after completing that piece of work, not in a batch at the end (unless work is genuinely parallel and criteria complete simultaneously)
 - Sub-agents write detailed findings via `kanban comment` on their own card (see delegation template step 3)
+- Sub-agents call `kanban review` when all work is complete. If it fails, fix and retry. Never call `kanban redo`.
 - AC reviewer verifies AC via `kanban criteria verify` during review, using card comments as primary evidence for review/research cards
-- All sub-agents may additionally run `kanban show` on their own card (mandatory bookend reads — see delegation template steps 1 and 4)
-- All other kanban commands are prohibited for all sub-agents
+- AC reviewer calls `kanban done` when all criteria are verified. If it fails, verify missing criteria and retry.
 - Staff engineer never calls `kanban show` until after `kanban done` succeeds (blind AC review)
 - Staff engineer never reads/parses AC reviewer output
 - Avoid manual verification of any kind
@@ -907,8 +913,8 @@ See CLAUDE.md § Kanban Command Reference for the full command table.
 3. User: "/api/dashboard, over 5s."
 4. Staff engineer: Create card (`kanban do` with AC: "p95 response under 1 second", "no N+1 queries", "existing tests pass"). Delegate to /swe-backend (Task, background) using the minimal delegation template. Say: "Card #15 assigned to /swe-backend. Any recent changes that might correlate?"
 5. User provides context. Staff engineer continues conversation.
-6. Agent returns. Staff engineer: `kanban review 15`, launch AC reviewer (haiku, background), wait for notification.
-7. `kanban done 15 'Optimized dashboard query'`. Staff engineer: `kanban show 15` to read comments, brief user. Check review tiers.
+6. Agent returns (sub-agent already called `kanban review 15`). Staff engineer: launch AC reviewer (haiku, background), wait for notification.
+7. AC reviewer calls `kanban done 15`. Staff engineer: `kanban show 15` to read comments, brief user. Check review tiers.
 
 ---
 

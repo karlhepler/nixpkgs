@@ -15,6 +15,7 @@ ENVIRONMENT VARIABLES:
 """
 
 import argparse
+import fnmatch
 import html
 import json
 import os
@@ -234,7 +235,12 @@ def get_root(args_root: str | None, auto_init: bool = True) -> Path:
 # =============================================================================
 
 def migrate_criteria(card: dict) -> bool:
-    """Migrate old single-column criteria (met) to dual-column (agent_met, reviewer_met).
+    """Migrate criteria schema across versions.
+
+    V1 -> V2: single-column (met) to dual-column (agent_met, reviewer_met).
+    V2 -> V3: boolean reviewer_met to tri-state (None/"pass"/"fail").
+              True  -> "pass"
+              False -> None (unchecked)
 
     Returns True if migration was performed and the card should be persisted.
     """
@@ -244,9 +250,14 @@ def migrate_criteria(card: dict) -> bool:
 
     migrated = False
     for criterion in criteria:
+        # V1 -> V2: rename met to agent_met, add reviewer_met
         if "met" in criterion and "agent_met" not in criterion:
             criterion["agent_met"] = criterion.pop("met")
-            criterion["reviewer_met"] = False
+            criterion["reviewer_met"] = None
+            migrated = True
+        # V2 -> V3: migrate boolean reviewer_met to tri-state
+        elif "reviewer_met" in criterion and isinstance(criterion["reviewer_met"], bool):
+            criterion["reviewer_met"] = "pass" if criterion["reviewer_met"] else None
             migrated = True
 
     return migrated
@@ -667,7 +678,7 @@ def make_card(
 
     # Add acceptance criteria if provided
     if criteria:
-        card["criteria"] = [{"text": c, "agent_met": False, "reviewer_met": False} for c in criteria]
+        card["criteria"] = [{"text": c, "agent_met": False, "reviewer_met": None} for c in criteria]
 
     return card
 
@@ -786,6 +797,74 @@ def resolve_json_input(args) -> object:
         sys.exit(1)
 
 
+def _files_conflict(path_a: str, edit_a: bool, path_b: str, edit_b: bool) -> bool:
+    """Return True if two file entries conflict based on conflict rules.
+
+    Conflict rules:
+    - editFiles vs editFiles  → CONFLICT (two writers)
+    - editFiles vs readFiles  → CONFLICT (writer + reader = race condition)
+    - readFiles vs readFiles  → NO CONFLICT (two readers are fine)
+
+    Uses fnmatch for glob matching. Python's fnmatch treats '*' as matching
+    any character including '/' on non-Windows, so 'src/*.py' will match
+    'src/foo.py' — crossing path separators as specified.
+    """
+    # readFiles vs readFiles → no conflict
+    if not edit_a and not edit_b:
+        return False
+
+    # Check if the two patterns overlap: either a matches b's pattern or b matches a's
+    return fnmatch.fnmatch(path_a, path_b) or fnmatch.fnmatch(path_b, path_a)
+
+
+def check_file_conflicts(
+    root: Path,
+    new_edit_files: list[str],
+    new_read_files: list[str],
+) -> tuple[str, str, str] | None:
+    """Check new card's files against all in-flight cards (doing + review) across all sessions.
+
+    Returns the first conflict found as (inflight_card_num, inflight_session, conflicting_path),
+    or None if no conflicts exist.
+
+    In-flight means: doing or review columns.
+    """
+    if not new_edit_files and not new_read_files:
+        return None
+
+    in_flight_columns = ["doing", "review"]
+
+    for col in in_flight_columns:
+        for card_path in find_cards_in_column(root, col):
+            try:
+                inflight = read_card(card_path)
+            except (json.JSONDecodeError, OSError):
+                continue
+
+            inflight_edit = inflight.get("editFiles") or []
+            inflight_read = inflight.get("readFiles") or []
+            inflight_num = card_number(card_path)
+            inflight_session = inflight.get("session") or "unknown"
+
+            # Check new card's editFiles against inflight editFiles and readFiles
+            for new_path in new_edit_files:
+                for existing_path in inflight_edit:
+                    if _files_conflict(new_path, True, existing_path, True):
+                        return (inflight_num, inflight_session, new_path)
+                for existing_path in inflight_read:
+                    if _files_conflict(new_path, True, existing_path, False):
+                        return (inflight_num, inflight_session, new_path)
+
+            # Check new card's readFiles against inflight editFiles only
+            # (readFiles vs readFiles never conflicts)
+            for new_path in new_read_files:
+                for existing_path in inflight_edit:
+                    if _files_conflict(new_path, False, existing_path, True):
+                        return (inflight_num, inflight_session, new_path)
+
+    return None
+
+
 def cmd_do(args) -> None:
     """Create card(s) directly in the doing column from JSON input.
 
@@ -812,17 +891,46 @@ def cmd_do(args) -> None:
             card = validate_and_build_card(card_data, session)
             cards.append(card)
 
-        # All validation passed — create all cards
+        # All validation passed — create cards, checking conflicts per card
+        had_conflict = False
         for card in cards:
+            edit_files = card.get("editFiles") or []
+            read_files = card.get("readFiles") or []
+            conflict = check_file_conflicts(root, edit_files, read_files)
+            if conflict:
+                inflight_num, inflight_session, conflict_path = conflict
+                num = create_card_in_column(root, "todo", card)
+                write_kanban_event(card, str(num), "create", to_column="todo", git_project=git_project)
+                print(num)
+                print(f"Card #{num} deferred to todo: editFiles conflict with card #{inflight_num} (session {inflight_session}) on path {conflict_path}", file=sys.stderr)
+                had_conflict = True
+            else:
+                num = create_card_in_column(root, "doing", card)
+                write_kanban_event(card, str(num), "create", to_column="doing", git_project=git_project)
+                print(num)
+        if had_conflict:
+            sys.exit(1)
+    elif isinstance(data, dict):
+        # Single card creation with conflict detection
+        card = validate_and_build_card(data, session)
+        edit_files = card.get("editFiles") or []
+        read_files = card.get("readFiles") or []
+        conflict = check_file_conflicts(root, edit_files, read_files)
+        if conflict:
+            inflight_num, inflight_session, conflict_path = conflict
+            num = create_card_in_column(root, "todo", card)
+            write_kanban_event(card, str(num), "create", to_column="todo", git_project=git_project)
+            print(num)
+            # Clean up --file before exiting so it never pre-exists on next use
+            json_file = getattr(args, "json_file", None)
+            if json_file:
+                os.remove(json_file)
+            print(f"Card #{num} deferred to todo: editFiles conflict with card #{inflight_num} (session {inflight_session}) on path {conflict_path}", file=sys.stderr)
+            sys.exit(1)
+        else:
             num = create_card_in_column(root, "doing", card)
             write_kanban_event(card, str(num), "create", to_column="doing", git_project=git_project)
             print(num)
-    elif isinstance(data, dict):
-        # Single card creation (existing behavior)
-        card = validate_and_build_card(data, session)
-        num = create_card_in_column(root, "doing", card)
-        write_kanban_event(card, str(num), "create", to_column="doing", git_project=git_project)
-        print(num)
     else:
         print(f"Error: JSON must be an object or array, got {type(data).__name__}", file=sys.stderr)
         sys.exit(1)
@@ -846,14 +954,21 @@ def cmd_redo(args) -> None:
 
     card = read_card(card_path)
 
-    # Reset agent_met flags so the agent must re-verify their work.
-    # reviewer_met flags are intentionally preserved — they are managed by the AC reviewer.
+    # Reset reviewer_met to unchecked (None) for all criteria — the AC reviewer must
+    # re-verify after the agent fixes the issues. Keep agent_met as-is: the agent
+    # already self-checked and those checks remain valid unless explicitly unchecked.
     for criterion in card.get("criteria", []):
-        criterion["agent_met"] = False
+        criterion["reviewer_met"] = None
+        # Clear any prior fail reasons — they will be re-set if the reviewer fails again
+        if "reviewer_fail_reason" in criterion:
+            del criterion["reviewer_fail_reason"]
+
+    # Increment review_cycles counter (tracks how many redo/retry cycles occurred)
+    card["review_cycles"] = card.get("review_cycles", 0) + 1
 
     card["activity"].append({
         "timestamp": now_iso(),
-        "message": "Sent back for rework (AC review failed)",
+        "message": f"Sent back for rework (AC review failed — cycle {card['review_cycles']})",
     })
     card["updated"] = now_iso()
     write_card(card_path, card)
@@ -917,6 +1032,17 @@ def cmd_start(args) -> None:
                 continue
 
             card = read_card(card_path)
+
+            # Check for file conflicts before moving to doing
+            edit_files = card.get("editFiles") or []
+            read_files = card.get("readFiles") or []
+            conflict = check_file_conflicts(root, edit_files, read_files)
+            if conflict:
+                inflight_num, inflight_session, conflict_path = conflict
+                print(f"Error: Cannot start card #{num}: editFiles conflict with card #{inflight_num} (session {inflight_session}) on path {conflict_path}", file=sys.stderr)
+                failed = True
+                continue
+
             card["updated"] = now_iso()
             write_card(card_path, card)
             write_kanban_event(card, num, "start", from_column="todo", to_column="doing", git_project=git_project)
@@ -1060,6 +1186,9 @@ def cmd_show(args) -> None:
     if model:
         footer_parts.append(f"Model: {model}")
     footer_parts.append(f"Created: {created_date}")
+    review_cycles = card.get("review_cycles", 0)
+    if review_cycles:
+        footer_parts.append(f"Review cycles: {review_cycles}")
 
     output_lines.append(f"{bold}{' · '.join(footer_parts)}{reset}")
 
@@ -1222,7 +1351,7 @@ def cmd_criteria_add(args) -> None:
     if "criteria" not in card:
         card["criteria"] = []
 
-    card["criteria"].append({"text": args.text, "agent_met": False, "reviewer_met": False})
+    card["criteria"].append({"text": args.text, "agent_met": False, "reviewer_met": None})
     card["updated"] = now_iso()
     write_card(card_path, card)
     num = card_number(card_path)
@@ -1361,7 +1490,7 @@ def cmd_criteria_pass(args) -> None:
             print(f"Error: No criterion found matching '{criterion_arg}'", file=sys.stderr)
             sys.exit(1)
 
-        criteria[criterion_idx]["reviewer_met"] = True
+        criteria[criterion_idx]["reviewer_met"] = "pass"
         print(f"[✅] Passed: {criteria[criterion_idx]['text']}")
 
     card["updated"] = now_iso()
@@ -1369,7 +1498,7 @@ def cmd_criteria_pass(args) -> None:
 
 
 def cmd_criteria_fail(args) -> None:
-    """Clear reviewer verification on acceptance criterion(s) (clears reviewer_met)."""
+    """Mark acceptance criterion(s) as reviewer-failed with optional reason."""
     root = get_root(args.root)
     card_path = find_card(root, args.card)
     card = read_card(card_path)
@@ -1379,14 +1508,23 @@ def cmd_criteria_fail(args) -> None:
         print(f"Error: Card #{card_number(card_path)} has no acceptance criteria", file=sys.stderr)
         sys.exit(1)
 
+    reason = getattr(args, "reason", None)
+
     for criterion_arg in args.n:
         criterion_idx = _find_criterion_idx(criteria, criterion_arg)
         if criterion_idx is None:
             print(f"Error: No criterion found matching '{criterion_arg}'", file=sys.stderr)
             sys.exit(1)
 
-        criteria[criterion_idx]["reviewer_met"] = False
-        print(f"[⬜] Failed: {criteria[criterion_idx]['text']}")
+        criteria[criterion_idx]["reviewer_met"] = "fail"
+        if reason:
+            criteria[criterion_idx]["reviewer_fail_reason"] = reason
+        elif "reviewer_fail_reason" in criteria[criterion_idx]:
+            # Clear any previous reason if no new reason given
+            del criteria[criterion_idx]["reviewer_fail_reason"]
+
+        reason_suffix = f" — {reason}" if reason else ""
+        print(f"[✗] Failed: {criteria[criterion_idx]['text']}{reason_suffix}")
 
     card["updated"] = now_iso()
     write_card(card_path, card)
@@ -1434,11 +1572,14 @@ def format_card_xml(card: dict, num: str, col: str, include_details: bool = Fals
     model = card.get("model", "")
 
     # Card opening tag with attributes
+    review_cycles = card.get("review_cycles", 0)
     card_attrs = f'num="{esc(num)}" session="{esc(session)}" status="{esc(col)}" type="{esc(card_type)}"'
     if agent:
         card_attrs += f' agent="{esc(agent)}"'
     if model:
         card_attrs += f' model="{esc(model)}"'
+    if review_cycles:
+        card_attrs += f' review-cycles="{review_cycles}"'
     xml_parts = [f"<card {card_attrs}>"]
 
     # Action (always included as child element)
@@ -1457,9 +1598,20 @@ def format_card_xml(card: dict, num: str, col: str, include_details: bool = Fals
             xml_parts.append("  <acceptance-criteria>")
             for criterion in criteria:
                 agent_met = "true" if criterion.get("agent_met", False) else "false"
-                reviewer_met = "true" if criterion.get("reviewer_met", False) else "false"
+                reviewer_state = criterion.get("reviewer_met")
+                # Normalize tri-state: "pass"/"fail"/None; also handle legacy booleans
+                if reviewer_state is True or reviewer_state == "pass":
+                    reviewer_met = "pass"
+                elif reviewer_state == "fail":
+                    reviewer_met = "fail"
+                else:
+                    reviewer_met = "unchecked"
                 text = esc(criterion.get("text", ""))
-                xml_parts.append(f'    <ac agent-met="{agent_met}" reviewer-met="{reviewer_met}">{text}</ac>')
+                ac_attrs = f'agent-met="{agent_met}" reviewer-met="{reviewer_met}"'
+                fail_reason = criterion.get("reviewer_fail_reason", "")
+                if fail_reason:
+                    ac_attrs += f' reviewer-fail-reason="{esc(fail_reason)}"'
+                xml_parts.append(f"    <ac {ac_attrs}>{text}</ac>")
             xml_parts.append("  </acceptance-criteria>")
 
     # Edit files
@@ -1631,14 +1783,27 @@ def format_criteria_table(criteria: list, indent: str = "  ", terminal_width: in
 
     for i, criterion in enumerate(criteria, start=1):
         agent_met = criterion.get("agent_met", False)
-        reviewer_met = criterion.get("reviewer_met", False)
+        reviewer_state = criterion.get("reviewer_met")
+        # Normalize tri-state: "pass"/"fail"/None; also handle legacy booleans
+        if reviewer_state is True or reviewer_state == "pass":
+            normalized_reviewer = "pass"
+        elif reviewer_state == "fail":
+            normalized_reviewer = "fail"
+        else:
+            normalized_reviewer = "unchecked"
 
         # Center the emoji within agent_col_width display columns.
         # ✅ and ⬜ are each 2 display columns wide; _center_to_display_width()
         # adds the correct number of spaces so the cell occupies exactly
         # agent_col_width display columns, matching header and separator.
         agent_cell = _center_to_display_width("✅" if agent_met else "⬜", agent_col_width)
-        rev_cell   = _center_to_display_width("✅" if reviewer_met else "⬜", rev_col_width)
+        if normalized_reviewer == "pass":
+            rev_symbol = "✅"
+        elif normalized_reviewer == "fail":
+            rev_symbol = "✗"
+        else:
+            rev_symbol = "—"
+        rev_cell = _center_to_display_width(rev_symbol, rev_col_width)
 
         num_cell = str(i).rjust(num_col_width)
         text = criterion.get("text", "")
@@ -2192,24 +2357,34 @@ def cmd_done(args) -> None:
     card = read_card(card_path)
     num = card_number(card_path)
 
-    # Block if any acceptance criteria have either column unmet
+    # Block if any acceptance criteria are not fully passed by both agent and reviewer.
+    # reviewer_met must be "pass"; "fail" and None (unchecked) both block completion.
     criteria = card.get("criteria", [])
     if criteria:
         incomplete = [
             (i, c) for i, c in enumerate(criteria, start=1)
-            if not c.get("agent_met", False) or not c.get("reviewer_met", False)
+            if not c.get("agent_met", False) or c.get("reviewer_met") != "pass"
         ]
         if incomplete:
             total_incomplete = len(incomplete)
-            print(f"🛑 Cannot complete card #{num} — {total_incomplete} of {len(criteria)} acceptance criteria incomplete:", file=sys.stderr)
-            print(f"  {'[agent]':<8} {'[reviewer]':<10}  criterion", file=sys.stderr)
+            print(f"Cannot complete card #{num} — {total_incomplete} of {len(criteria)} acceptance criteria not fully passed:", file=sys.stderr)
+            print(f"  {'[agent]':<8} {'[reviewer]':<12}  criterion", file=sys.stderr)
             for i, criterion in enumerate(criteria, start=1):
                 agent_box = "✅" if criterion.get("agent_met", False) else "⬜"
-                reviewer_box = "✅" if criterion.get("reviewer_met", False) else "⬜"
+                reviewer_state = criterion.get("reviewer_met")
+                if reviewer_state == "pass":
+                    reviewer_box = "✅ pass"
+                elif reviewer_state == "fail":
+                    reviewer_box = "✗ fail"
+                else:
+                    reviewer_box = "⬜ —"
                 text = criterion.get("text", "")
-                print(f"  [{agent_box}]     [{reviewer_box}]       {i}. {text}", file=sys.stderr)
+                fail_reason = criterion.get("reviewer_fail_reason", "")
+                reason_note = f" [{fail_reason}]" if fail_reason else ""
+                print(f"  [{agent_box}]  [{reviewer_box}]  {i}. {text}{reason_note}", file=sys.stderr)
             print(f"\nAgent checks: kanban criteria check {num} <n>", file=sys.stderr)
-            print(f"Reviewer verification: kanban criteria pass {num} <n>", file=sys.stderr)
+            print(f"Reviewer pass: kanban criteria pass {num} <n>", file=sys.stderr)
+            print(f"Reviewer fail: kanban criteria fail {num} <n> [reason]", file=sys.stderr)
             sys.exit(1)
 
     # Append completion message to activity
@@ -2839,9 +3014,10 @@ def main() -> None:
     p_criteria_pass.add_argument("n", nargs="+", help="Criterion index(es) (1-based) or text prefix(es)")
     add_session_flags(p_criteria_pass)
 
-    p_criteria_fail = criteria_subparsers.add_parser("fail", parents=[parent_parser], help="Clear reviewer verification (clears reviewer_met)")
+    p_criteria_fail = criteria_subparsers.add_parser("fail", parents=[parent_parser], help="Mark criterion as reviewer-failed with optional reason")
     p_criteria_fail.add_argument("card", help="Card number")
     p_criteria_fail.add_argument("n", nargs="+", help="Criterion index(es) (1-based) or text prefix(es)")
+    p_criteria_fail.add_argument("--reason", default=None, help="Optional reason for failure")
     add_session_flags(p_criteria_fail)
 
     # Backward-compat aliases (hidden from help — use pass/fail instead)

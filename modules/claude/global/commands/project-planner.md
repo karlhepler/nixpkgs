@@ -407,6 +407,10 @@ If user cannot define measurable outcome → **Cannot proceed with planning.** M
 
 ### Section 4: ASSUMPTIONS - What We Can't Control
 
+**🚨 TWO MANDATORY ASSUMPTION GATES:**
+1. **First-pass gate (step 10):** Every candidate passes the "Can the team affect this?" filter BEFORE appearing in the plan. Apply rigorously on the first draft — do not present team-controllable items as assumptions and let the user catch them.
+2. **Continuous gate (every design decision):** After EVERY design decision during planning, re-scan the assumptions table. Has anything been eliminated? Has any risk level changed? Has anything new been introduced? Do not wait for the user to flag stale assumptions.
+
 **Goal:** Only things team CANNOT directly affect - external factors outside direct control.
 
 **Format:** Markdown table with 3 columns:
@@ -908,16 +912,17 @@ Build a code review checklist system with automated reminders and quality tracki
 7. **Map GOAL to SUCCESS** - Every claim in GOAL must have a measure
 8. **Verification Feasibility Check for SUCCESS** - For EVERY means of verification: Can we get this data TODAY? Annotate inline: `<br>✅ *(exists)*` OR `<br>⚠️ [missing] → **Deliverable #N**`
 9. **Identify ASSUMPTIONS** - What's outside team control?
-10. **Convert assumptions** - Apply filter: Can team affect this? Convert to deliverables when possible
+10. **Convert assumptions (HARD GATE)** - Apply filter to EVERY candidate: "Can the team affect this?" YES → deliverable, not assumption. PARTIAL → add mitigating deliverables, may keep. NO → keep as assumption. No assumption reaches the plan document without passing this filter on the FIRST pass. If unsure, default to deliverable.
 11. **Monitoring Feasibility Check for ASSUMPTIONS** - For EVERY "How to Monitor": Can we collect this data TODAY? Annotate inline: `<br>✅ *(exists)*` OR `<br>⚠️ [missing] → **Deliverable #N**`
 12. **Define DELIVERABLES** - What outputs achieve the objective?
 12a. **Estimate deliverables** - Run `claude-inspect estimate` to ground each deliverable timeline in historical data. Include P90 projection in the plan document.
+12b. **Assumption re-scan** - Deliverable design may have eliminated assumptions. Re-apply the filter: Has any assumption become team-controllable via a deliverable just defined? Has any risk level changed? Remove or update immediately.
 13. **Add End of Project Status Report** - Mandatory final deliverable for accountability (include HOW to verify/monitor instructions)
 14. **CREATE THE PLAN DOCUMENT** - Write the full plan to `.scratchpad/project-plan-<slug>.md`. Open it with `open <filepath>`. Tell the user it's ready.
 15. **Sufficient and necessary test** - Are deliverables enough? Is each required? Update the document if changes needed.
 16. **Validate causal chain** - Does DELIVERABLES + ASSUMPTIONS → OBJECTIVE → GOAL? Update the document if changes needed.
 16a. **Re-evaluate assumptions against final design** - Scan assumptions table: Has any design decision eliminated a risk? Is any assumption now validatable by building a deliverable? Remove dead assumptions. Do not wait for user to flag them.
-17. **Iterate on the document** - When user requests changes, edit the file in place. Brief chat note on what changed. The document is the deliverable.
+17. **Iterate on the document** - When user requests changes, edit the file in place. Brief chat note on what changed. The document is the deliverable. **After every design decision that changes scope or architecture, re-scan the assumptions table — remove eliminated assumptions, note changed risk levels, add any new ones. Assumptions are living; treat them that way throughout iteration.**
 
 ## Common Pitfalls and Edge Cases
 
@@ -1060,7 +1065,7 @@ Before marking work complete:
 16. **Sufficient test passed** - Deliverables together achieve OBJECTIVE?
 17. **Necessary test passed** - Each deliverable required? Removed gold-plating?
 18. **CAUSAL CHECK validated** - DELIVERABLES + ASSUMPTIONS → OBJECTIVE → GOAL? SUCCESS verifies?
-19. **ASSUMPTIONS re-evaluated** - Scanned for assumptions invalidated by design decisions? Removed any that are now team-controllable or validated by deliverables?
+19. **ASSUMPTIONS re-evaluated at EVERY design decision** - Scanned after each design decision (not just at the end)? Removed any now team-controllable? Noted risk level changes from design decisions (e.g., redundancy softening a stability risk)? No stale assumptions remain from earlier drafts?
 
 **If any verification fails, fix before completing.**
 

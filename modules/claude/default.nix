@@ -130,6 +130,16 @@ let
     flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
   } (builtins.readFile ./prr.py);
 
+  # Kanban PreToolUse(Agent) hook — injects card content into sub-agent prompts
+  kanbanPretoolHookScript = pkgs.writers.writePython3Bin "kanban-pretool-hook" {
+    flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
+  } (builtins.readFile ./kanban-pretool-hook.py);
+
+  # Kanban SubagentStop hook — dual-loop AC review system
+  kanbanSubagentStopHookScript = pkgs.writers.writePython3Bin "kanban-subagent-stop-hook" {
+    flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
+  } (builtins.readFile ./kanban-subagent-stop-hook.py);
+
   # Claude Inspect — CLI for introspecting Claude session metrics
   claudeInspectScript = pkgs.writers.writePython3Bin "claude-inspect" {
     flakeIgnore = [ "E226" "E265" "E501" "F541" "W503" "W504" ];
@@ -322,6 +332,22 @@ in {
         description = "Introspect Claude session metrics from the SQLite metrics DB (token usage, cost, tool calls, card events)";
         mainProgram = "claude-inspect";
         homepage = "${builtins.toString ./.}/claude-inspect.py";
+      };
+    };
+
+    kanban-pretool-hook = kanbanPretoolHookScript // {
+      meta = {
+        description = "PreToolUse(Agent) hook that injects kanban card content into sub-agent prompts";
+        mainProgram = "kanban-pretool-hook";
+        homepage = "${builtins.toString ./.}/kanban-pretool-hook.py";
+      };
+    };
+
+    kanban-subagent-stop-hook = kanbanSubagentStopHookScript // {
+      meta = {
+        description = "SubagentStop hook that runs dual-loop AC review via haiku before allowing agent stop";
+        mainProgram = "kanban-subagent-stop-hook";
+        homepage = "${builtins.toString ./.}/kanban-subagent-stop-hook.py";
       };
     };
   };
@@ -887,10 +913,17 @@ in {
             }];
           }];
           SubagentStop = [{
-            hooks = [{
-              type = "command";
-              command = "${shellapps.claudit-hook}/bin/claudit-hook";
-            }];
+            hooks = [
+              {
+                type = "command";
+                command = "${shellapps.claudit-hook}/bin/claudit-hook";
+              }
+              {
+                type = "command";
+                command = "${shellapps.kanban-subagent-stop-hook}/bin/kanban-subagent-stop-hook";
+                timeout = 600000;
+              }
+            ];
           }];
           Stop = [{
             hooks = [
@@ -904,6 +937,13 @@ in {
               }
             ];
           }];
+          PreToolUse = [{
+            matcher = "Agent";
+            hooks = [{
+              type = "command";
+              command = "${shellapps.kanban-pretool-hook}/bin/kanban-pretool-hook";
+            }];
+          }];
           PostToolUse = [{
             matcher = "Edit|MultiEdit|Write";
             hooks = [{
@@ -915,6 +955,28 @@ in {
             hooks = [{
               type = "command";
               command = "${shellapps.claude-session-start-hook}/bin/claude-session-start-hook";
+            }];
+          }];
+          PostCompact = [{
+            hooks = [{
+              type = "command";
+              command = pkgs.writeShellScript "claude-postcompact-hook" ''
+                set -euo pipefail
+
+                # Output the full kanban board state (re-inject after compaction)
+                kanban_xml=$(kanban list --output-style=xml 2>/dev/null || true)
+                if [ -n "$kanban_xml" ]; then
+                  echo "$kanban_xml"
+                fi
+
+                # Check for deferred cards and append notification
+                deferred=$(kanban list --column todo --output-style=simple 2>/dev/null || true)
+                if [ -n "$deferred" ]; then
+                  echo ""
+                  echo "Deferred cards awaiting action:"
+                  echo "$deferred"
+                fi
+              '';
             }];
           }];
           PermissionRequest = [{
