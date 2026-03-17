@@ -353,8 +353,7 @@ KANBAN CARD #<N> | Session: <session-id>
 3. Write your detailed findings, recommendations, or deliverable details as card comments:
    `kanban comment <N> "your findings here" --session <session-id>`
    For review/research cards, this is how your findings reach the coordinator and AC reviewer — write everything important as comments. For work cards, use comments for implementation notes worth preserving (e.g., decisions made, alternatives considered, gotchas discovered).
-4. LAST: Run `kanban show <N> --output-style=xml --session <session-id>` — re-read for any new criteria, check any that are met.
-5. When all work is complete, run: `kanban review <N> --session <session-id>`
+4. When all work is complete, run: `kanban review <N> --session <session-id>`
    If `kanban review` fails (unchecked criteria), fix the issue and retry.
 
 Do NOT run any kanban commands except `kanban show`, `kanban criteria check/uncheck`, `kanban comment`, and `kanban review` for card #<N>. Never call `kanban redo` — if review fails, fix the work and retry `kanban review`. Card lifecycle beyond review (done, redo, cancel) is handled automatically.
@@ -370,8 +369,7 @@ KANBAN CARD #<N> | Session: <session-id>
 1. FIRST: Run `kanban show <N> --output-style=xml --session <session-id>` to read the card, its acceptance criteria, and any comments left by the sub-agent.
 2. Verify each criterion using the card's comments as the primary evidence source for review/research cards, or by inspecting modified files for work cards. After each one you verify, immediately run this Bash command before moving to the next criterion:
    `kanban criteria verify <N> <n> --session <session-id>`
-3. LAST: Run `kanban show <N> --output-style=xml --session <session-id>` — re-read for any criteria added mid-flight, then verify or unverify each.
-4. When all criteria are verified, run: `kanban done <N> 'summary' --session <session-id>`
+3. When all criteria are verified, run: `kanban done <N> 'summary' --session <session-id>`
    If `kanban done` fails (unverified criteria), verify the missing ones and retry.
 
 Do NOT run any kanban commands except `kanban show`, `kanban criteria verify/unverify`, and `kanban done` for card #<N>.
@@ -473,7 +471,7 @@ Delegating does not end conversation. Keep probing for context, concerns, and co
 
 **Sub-agents cannot receive mid-flight instructions.** But you CAN communicate through the card:
 
-- **Add criteria mid-flight** via `kanban criteria add <card> "text"` — the agent picks up new criteria on its bookend re-read (step 4 of the delegation template: "re-read for any new criteria, check any that are met"). This is the primary mechanism for injecting new requirements into a running agent's work.
+- **Add criteria mid-flight** via `kanban criteria add <card> "text"` — the agent discovers new criteria when `kanban review` fails (unchecked criteria), forcing it to fix and retry. This is the primary mechanism for injecting new requirements into a running agent's work.
 - **🚨 Mid-flight user requirements → AC items, NEVER comments.** `kanban comment` is for supplementary context (notes, observations, FYIs) — comments have no enforcement gate. Comments are invisible to any quality gate. Any new requirement from the user mid-flight → `kanban criteria add`. No exceptions.
 - **AC removal from running cards is out of scope** — if criteria need to be removed, let the agent finish, then `kanban redo` with updated AC.
 
