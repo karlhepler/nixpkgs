@@ -259,16 +259,22 @@ Keep the two separate. Background explains what's happening and why it matters n
 - Achievable (no absolute claims like "completely eliminate")
 - Concrete (not vague like "improve performance")
 - Specific (what exactly are we producing?)
+- Concise — each sentence means something, each word contributes to that meaning. No filler.
+- **Language maps to success measures** — Vague terms are permitted when they present big ideas simply (that's what objectives do), but every vague term MUST have a corresponding success measure that concretely defines it. The objective is the plain-language summary; the success measures are the contract that gives those words teeth.
 
 **Example:**
 "Build a fast local test execution system and flaky test detection system so developers aren't blocked by false failures."
+
+↑ "fast" is defined by success measure: "local test runtime <5min". "aren't blocked" is defined by success measure: "blocked time <30min/day/dev". Every word earns its place because a success measure backs it up.
 
 **Red flags:**
 - Absolute language ("will no longer", "completely", "always", "never")
 - Vague objectives ("improve", "optimize", "enhance" without specifics)
 - Multiple unrelated objectives (probably multiple projects)
+- Vague terms with no corresponding success measure to define them
+- Wordy sentences that could be said in fewer words
 
-**Test:** Can we measure whether we achieved this? (If no, fix before proceeding)
+**Test:** Can we measure whether we achieved this? (If no, fix before proceeding). Can every vague term be traced to a success measure that defines it concretely? (If no, add the measure or sharpen the language.)
 
 ---
 
@@ -322,6 +328,8 @@ For each "Means of Verification" entry, answer this question and **annotate the 
 **For qualitative measures:** Convert to quantitative using surveys, user feedback scores, or observable proxies.
 
 **Validation rule:** No success measure without practical verification means that exists TODAY (annotated with *(exists)*) or becomes a deliverable (annotated with ⚠️ and deliverable reference).
+
+**Removal rule:** If a success measure has no feasible means of verification — AND building that verification capability is impractical (cost, complexity, or timeline makes it unreasonable as a deliverable) — **remove the success measure entirely.** An unmeasurable measure is worse than no measure: it creates false confidence that the goal is being tracked when it isn't. When the verification capability CAN be built as a deliverable, prefer frontloading it to capture the baseline before other work begins — but frontloading is a preference, not a hard requirement (some baselines can be reconstructed retroactively from logs, historical data, or surveys).
 
 **Challenge Mode - Converting Unmeasurable Claims to Measurable:**
 
@@ -910,7 +918,8 @@ Build a code review checklist system with automated reminders and quality tracki
 5. **Define SUCCESS** - How do we measure goal achievement? Use chat for initial dialogue.
 6. **Challenge unmeasurable claims** - Use generative mode: suggest measurable alternatives, refuse to proceed if can't measure. Use chat for this dialogue.
 7. **Map GOAL to SUCCESS** - Every claim in GOAL must have a measure
-8. **Verification Feasibility Check for SUCCESS** - For EVERY means of verification: Can we get this data TODAY? Annotate inline: `<br>✅ *(exists)*` OR `<br>⚠️ [missing] → **Deliverable #N**`
+7a. **Map OBJECTIVE language to SUCCESS MEASURES** - Every vague term in the objective must trace to a success measure that defines it concretely. If a term has no backing measure, either add one or sharpen the language. The objective is the plain-language summary; the measures are the contract.
+8. **Verification Feasibility Check for SUCCESS** - For EVERY means of verification: Can we get this data TODAY? Annotate inline: `<br>✅ *(exists)*` OR `<br>⚠️ [missing] → **Deliverable #N**`. If building the capability is impractical, remove the success measure entirely — unmeasurable measures create false confidence. When adding a verification deliverable, prefer frontloading it to capture the baseline before other work begins.
 9. **Identify ASSUMPTIONS** - What's outside team control?
 10. **Convert assumptions (HARD GATE)** - Apply filter to EVERY candidate: "Can the team affect this?" YES → deliverable, not assumption. PARTIAL → add mitigating deliverables, may keep. NO → keep as assumption. No assumption reaches the plan document without passing this filter on the FIRST pass. If unsure, default to deliverable.
 11. **Monitoring Feasibility Check for ASSUMPTIONS** - For EVERY "How to Monitor": Can we collect this data TODAY? Annotate inline: `<br>✅ *(exists)*` OR `<br>⚠️ [missing] → **Deliverable #N**`
@@ -1050,9 +1059,10 @@ Before marking work complete:
 1. **BACKGROUND AND CONTEXT complete** - Current state captured? Trigger identified? Kept to 2-4 sentences? No desired outcomes (those belong in GOAL)?
 2. **GOAL complete** - Desired outcome clear in fifth-grader language? Used Five Whys?
 3. **GOAL measurable** - All claims in GOAL have corresponding success measures?
-4. **OBJECTIVE complete** - Achievable objective in fifth-grader language? No absolute claims?
+4. **OBJECTIVE complete** - Achievable objective in fifth-grader language? No absolute claims? Concise — every sentence means something, every word earns its place?
+4a. **OBJECTIVE language maps to SUCCESS MEASURES** - Every vague term in the objective has a corresponding success measure that concretely defines it? Objective reads as plain-language summary, success measures read as the contract?
 5. **SUCCESS defined** - 1-3 measures in table format (Base | Target | Means of Verification)?
-6. **VERIFICATION FEASIBILITY CHECK applied** - For EVERY means of verification: Annotated inline with `<br>✅ *(exists)*` OR `<br>⚠️ [missing] → **Deliverable #N**`?
+6. **VERIFICATION FEASIBILITY CHECK applied** - For EVERY means of verification: Annotated inline with `<br>✅ *(exists)*` OR `<br>⚠️ [missing] → **Deliverable #N**`? If building the verification capability is impractical, removed the success measure entirely (no unmeasurable measures)?
 7. **SUCCESS MEASURES track GOAL** - Measuring outcomes (goal), not outputs (deliverables)?
 8. **Unmeasurable claims challenged** - Used generative mode to suggest alternatives? Refused to proceed if can't measure?
 9. **GOAL-SUCCESS mapping** - Every claim in GOAL has a measure?
