@@ -37,9 +37,9 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 # ---------------------------------------------------------------------------
 
 ERROR_LOG_PATH = Path.home() / ".claude" / "metrics" / "kanban-subagent-stop-hook-errors.log"
-MAX_INNER_ITERATIONS = 5
+MAX_INNER_ITERATIONS = 2
 MAX_OUTER_CYCLES = 3
-CLAUDE_MAX_TURNS = 10
+CLAUDE_MAX_TURNS = 50
 
 # Patterns for extracting card number and session from transcript lines
 _KANBAN_CMD_PATTERN = re.compile(
@@ -107,9 +107,12 @@ def allow(message: str = "") -> dict:
     return result
 
 
-def block(reason: str) -> dict:
+def block(reason: str, system_message: str = "") -> dict:
     """Return a decision=block response to send the agent back."""
-    return {"decision": "block", "reason": reason}
+    result = {"decision": "block", "reason": reason}
+    if system_message:
+        result["systemMessage"] = system_message
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -279,6 +282,47 @@ def get_review_cycles(card_number: str, session: str) -> int:
     except Exception:
         pass
     return 0
+
+
+def _extract_criteria_failures(card_number: str, session: str) -> str:
+    """Read card XML and extract criteria that failed with their reasons.
+
+    Returns a formatted string listing each failed criterion, or a fallback
+    message if the card cannot be read.
+    """
+    try:
+        result = run_kanban(["show", card_number, "--output-style=xml", "--session", session])
+        if result.returncode != 0:
+            return "Could not read card details to determine failure reasons."
+
+        xml_output = result.stdout
+        # Parse ALL <ac> elements to track their 1-based position, then report
+        # only those with reviewer-met="fail" using their actual AC index.
+        ac_pattern = re.compile(
+            r'<ac\b([^>]*?)>(.*?)</ac>',
+            re.DOTALL,
+        )
+        fail_pattern = re.compile(r'reviewer-met="fail"')
+        reason_pattern = re.compile(r'reviewer-fail-reason="([^"]*)"')
+
+        failures = []
+        for ac_index, match in enumerate(ac_pattern.finditer(xml_output), 1):
+            attrs = match.group(1)
+            if not fail_pattern.search(attrs):
+                continue
+            criterion_text = match.group(2).strip()
+            reason_match = reason_pattern.search(attrs)
+            reason = reason_match.group(1) if reason_match else "no reason provided"
+            failures.append(f"{ac_index}. [{criterion_text}]: {reason}")
+
+        if failures:
+            return "\n".join(failures)
+
+        return "AC review did not pass, but no specific failure reasons were found on the card."
+
+    except Exception as exc:
+        log_error(f"Failed to extract criteria failures for card #{card_number}: {exc}")
+        return "Could not determine failure reasons due to an error."
 
 
 def get_deferred_cards(session: str) -> list[str]:
@@ -504,9 +548,8 @@ def process_subagent_stop(payload: dict) -> dict:
         return allow(message)
 
     # Under max cycles — redo the card and block the agent
-    # First, capture the kanban done error to understand what failed
-    done_result = run_kanban(["done", card_number, "AC review attempt", "--session", session])
-    failure_details = done_result.stderr.strip() if done_result.stderr else "Unknown failure"
+    # Read the card to get actual criteria failure reasons from the AC reviewer
+    failure_details = _extract_criteria_failures(card_number, session)
 
     # Check card status before attempting redo — if it's already in a terminal state, skip redo
     status_before_redo = get_card_status(card_number, session)
@@ -528,9 +571,14 @@ def process_subagent_stop(payload: dict) -> dict:
     reason = (
         f"AC review failed for card #{card_number} "
         f"(cycle {review_cycles + 1}/{MAX_OUTER_CYCLES}). "
-        f"Fix the following issues and retry:\n\n{failure_details}"
+        f"The following criteria failed:\n\n{failure_details}"
     )
-    return block(reason)
+    system_message = (
+        f"The AC reviewer found issues with your work. "
+        f"Fix the issues described below, then call "
+        f"kanban review {card_number} --session {session} again."
+    )
+    return block(reason, system_message)
 
 
 # ---------------------------------------------------------------------------

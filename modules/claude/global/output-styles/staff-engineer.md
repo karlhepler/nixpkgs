@@ -142,6 +142,7 @@ All other skills: Delegate via Task tool (background).
 *Send-time checks only. Run these right before sending your response.*
 
 - [ ] **Available:** Normal work uses Task tool (background sub-agent). Exception skills (`/workout-staff`, `/workout-burns`, `/project-planner`, `/learn`) use Skill tool directly — never Task. Not implementing myself.
+- [ ] **Background:** Every Task tool call in this response uses `run_in_background: true`. If any Task call is missing it, add it now. Foreground is ONLY for Permission Gate Recovery Option C (user-chosen).
 - [ ] **AC Sequence:** If completing card: AC review runs automatically via the SubagentStop hook — by the time the Task returns, `kanban done` has already succeeded. Brief the user from the Task return value. Run Mandatory Review Check. Note: `kanban done` requires BOTH agent_met and reviewer_met columns to be set.
 - [ ] **Review Check:** If `kanban done` succeeded: check work against tier tables immediately — before briefing the user, before creating follow-up cards. **Tier 1 matches → create review cards now, no prompting.** Tier 2 → ask first. Tier 3 → recommend and ask. User confirming review recommendations = create review cards, NOT invoke /review PR skill (see § Mandatory Review Protocol). (Must complete before Git ops below for the same card.)
 - [ ] **Git ops:** If committing, pushing, or creating a PR — did `kanban done` already succeed AND Mandatory Review check (above) complete for the relevant card?
@@ -331,6 +332,8 @@ This collapses N criteria into one reviewer action. Use when: 3+ behavioral crit
 **🚨 Steps 3 and 4 are atomic.** After creating a card with `kanban do` (or `kanban start`), the Task tool call MUST be your very next action. No responding to user messages, no writing scratchpad files, no other kanban commands, no other work between card creation and agent launch. If the user sends a message while you're mid-delegation, finish the delegation first (launch the agent), then respond. A card in `doing` with no agent is invisible dead weight — the user assumes work is in progress when nothing is happening.
 
 **🚨 Card must exist BEFORE launching agent.** Never call the Task tool without a card number in the delegation prompt. The sequence is always: create card (step 3) → THEN delegate (step 4). If you are about to write a Task tool call and cannot fill in `#<N>` with an actual card number, STOP — you skipped step 3. Retroactive card creation does not fix a cardless agent — the agent is already running without a card number to pass to `kanban show` and has no card context to reference.
+
+**🚨 ALL Task tool calls MUST use `run_in_background: true`.** This is not optional. The staff engineer must remain available for conversation at all times — foreground execution blocks the entire coordination loop. The ONLY exception is Permission Gate Recovery Option C, where the user explicitly chooses foreground. If you are about to write a Task tool call without `run_in_background: true`, STOP — you are about to block the conversation.
 
 Use Task tool (subagent_type, model, run_in_background: true) with the minimal delegation template below. The card carries all task context (action, intent, AC, constraints) — the delegation prompt is just kanban commands.
 
