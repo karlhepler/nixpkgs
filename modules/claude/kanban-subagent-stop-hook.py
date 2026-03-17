@@ -76,9 +76,23 @@ def log_error(message: str) -> None:
         pass
 
 
+INFO_LOG_PATH = Path.home() / ".claude" / "metrics" / "kanban-subagent-stop-hook.log"
+
+
 def log_info(message: str) -> None:
-    """Log informational message to stderr for debugging."""
-    print(f"[kanban-subagent-stop-hook] {message}", file=sys.stderr)
+    """Log informational message to file. Never raises.
+
+    Previously wrote to stderr, but Claude Code interprets any stderr output
+    from hooks as errors — causing false 'hook error' labels in the UI.
+    """
+    try:
+        INFO_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        from datetime import datetime, timezone
+        timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+        with open(INFO_LOG_PATH, "a", encoding="utf-8") as fh:
+            fh.write(f"[{timestamp}] {message}\n")
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -121,7 +135,7 @@ def extract_card_from_transcript(transcript_path: str) -> tuple[str, str] | None
                 if not line:
                     continue
                 try:
-                    entry = json.loads(line)
+                    entry = json.loads(line, strict=False)
                 except json.JSONDecodeError:
                     continue
 
@@ -163,45 +177,6 @@ def _extract_text_from_entry(entry: dict | list | str, depth: int = 0) -> list[s
         for item in entry:
             texts.extend(_extract_text_from_entry(item, depth + 1))
     return texts
-
-
-def transcript_has_successful_review(transcript_path: str, card_number: str) -> bool:
-    """
-    Scan transcript for a successful `kanban review` call for the given card.
-
-    Looks for tool_result entries where the kanban review command succeeded
-    (exit code 0 or output indicating success).
-    """
-    try:
-        with open(transcript_path, "r", encoding="utf-8") as fh:
-            prev_had_review_cmd = False
-            for line in fh:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    entry = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-
-                # Look for tool_use entries with kanban review command
-                text_content = _extract_text_from_entry(entry)
-                for text in text_content:
-                    if f"kanban review {card_number}" in text:
-                        # Check if this looks like a successful call
-                        # The review command prints to stdout on success
-                        if "moved to review" in text.lower() or "review" in text.lower():
-                            prev_had_review_cmd = True
-
-                    # Also check for explicit success patterns
-                    if prev_had_review_cmd and ("moved" in text.lower() or "review" in text.lower()):
-                        return True
-
-    except (OSError, IOError) as exc:
-        log_error(f"Failed to scan transcript for review: {exc}")
-
-    # Fallback: check card status via kanban CLI
-    return False
 
 
 # ---------------------------------------------------------------------------
@@ -438,6 +413,15 @@ def process_subagent_stop(payload: dict) -> dict:
         message += format_deferred_notification(session)
         return allow(message)
 
+    # Re-check status — inner loop may have succeeded but returned False
+    # (e.g. transient status check failure while haiku actually called kanban done)
+    status = get_card_status(card_number, session)
+    if status == "done":
+        log_info(f"Card #{card_number} reached done (detected on re-check after inner loop)")
+        message = f"Card #{card_number} AC review passed — card completed."
+        message += format_deferred_notification(session)
+        return allow(message)
+
     # Card not done after inner loop — check review cycles
     review_cycles = get_review_cycles(card_number, session)
     log_info(f"Card #{card_number} AC review failed — review_cycles={review_cycles}")
@@ -491,7 +475,7 @@ def main() -> None:
         return
 
     try:
-        payload = json.loads(raw)
+        payload = json.loads(raw, strict=False)
     except json.JSONDecodeError as exc:
         log_error(f"JSON decode error: {exc}")
         print(json.dumps(allow()))
