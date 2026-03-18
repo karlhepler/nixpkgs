@@ -215,6 +215,19 @@ def allow_with_updated_prompt(new_prompt: str) -> dict:
     }
 
 
+def deny_with_reason(reason: str) -> dict:
+    """Return a permissionDecision=deny response with a reason message."""
+    return {
+        "continue": False,
+        "suppressOutput": False,
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": reason,
+        }
+    }
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -251,37 +264,28 @@ def main() -> None:
         print(json.dumps(allow_unchanged()))
         return
 
-    # Check for missing or empty description field
+    # Check for missing or empty description field — deny launch if absent
     description = tool_input.get("description", "")
-    missing_description = not description or not str(description).strip()
-    if missing_description:
-        log_info("Agent tool call missing description field — injecting warning")
+    if not description or not str(description).strip():
+        reason = (
+            "Agent tool call denied: missing or empty 'description' field. "
+            "Include a meaningful description on all Agent/Task tool calls "
+            "so the completion notification identifies the agent (instead of 'undefined')."
+        )
+        log_info("Agent denied — missing description field")
+        print(json.dumps(deny_with_reason(reason)))
+        return
 
     prompt = tool_input.get("prompt", "")
     if not prompt:
         print(json.dumps(allow_unchanged()))
         return
 
-    # If description is missing, prepend a warning to the prompt
-    if missing_description:
-        description_warning = (
-            "WARNING: This agent was launched without a description. "
-            "The completion notification will show Agent undefined completed. "
-            "Include a meaningful description field on all Agent/Task tool calls.\n\n"
-        )
-        prompt = description_warning + prompt
-
     # Extract card number and session from prompt
     extracted = extract_card_and_session(prompt)
     if extracted is None:
-        # No card reference found
-        if missing_description:
-            # Still inject the description warning even without a card
-            log_info("no card reference found — injecting description warning only")
-            print(json.dumps(allow_with_updated_prompt(prompt)))
-        else:
-            log_info("no card reference found in prompt — passing through unchanged")
-            print(json.dumps(allow_unchanged()))
+        log_info("no card reference found in prompt — passing through unchanged")
+        print(json.dumps(allow_unchanged()))
         return
 
     card_number, session = extracted
