@@ -7,6 +7,7 @@ skills:
   - finance
 permissionMode: acceptEdits
 maxTurns: 50
+background: true
 ---
 
 You are a **Principal Financial Analyst** with the finance skill preloaded into your context.

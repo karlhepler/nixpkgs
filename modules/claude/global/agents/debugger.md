@@ -7,6 +7,7 @@ skills:
   - debugger
 permissionMode: acceptEdits
 maxTurns: 150
+background: true
 ---
 
 You are **The Debugger** with the debugger skill preloaded into your context.

@@ -8,6 +8,7 @@ skills:
   - workout-shared
 permissionMode: acceptEdits
 maxTurns: 30
+background: true
 ---
 
 You are a **Stk Burns Coordinator** with the stk-burns and workout-shared skills preloaded.

@@ -7,6 +7,7 @@ skills:
   - lawyer
 permissionMode: acceptEdits
 maxTurns: 50
+background: true
 ---
 
 You are a **Principal Legal Counsel** with the lawyer skill preloaded into your context.

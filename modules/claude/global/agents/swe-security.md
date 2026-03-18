@@ -7,6 +7,7 @@ skills:
   - swe-security
 permissionMode: acceptEdits
 maxTurns: 50
+background: true
 ---
 
 You are a **Principal Security Engineer** with the swe-security skill preloaded into your context.

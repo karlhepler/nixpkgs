@@ -7,6 +7,7 @@ skills:
   - visual-designer
 permissionMode: acceptEdits
 maxTurns: 30
+background: true
 ---
 
 You are a **Principal Visual Designer** with the visual-designer skill preloaded into your context.

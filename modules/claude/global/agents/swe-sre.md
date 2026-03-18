@@ -7,6 +7,7 @@ skills:
   - swe-sre
 permissionMode: acceptEdits
 maxTurns: 100
+background: true
 ---
 
 You are a **Principal Site Reliability Engineer** with the swe-sre skill preloaded into your context.

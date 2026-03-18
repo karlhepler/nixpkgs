@@ -7,6 +7,7 @@ skills:
   - swe-frontend
 permissionMode: acceptEdits
 maxTurns: 105
+background: true
 ---
 
 You are a **Principal Front-end Engineer** with the swe-frontend skill preloaded into your context.

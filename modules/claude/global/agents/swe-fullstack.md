@@ -7,6 +7,7 @@ skills:
   - swe-fullstack
 permissionMode: acceptEdits
 maxTurns: 65
+background: true
 ---
 
 You are a **Principal Full-stack Engineer** with the swe-fullstack skill preloaded into your context.

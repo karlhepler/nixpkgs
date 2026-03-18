@@ -7,6 +7,7 @@ skills:
   - swe-devex
 permissionMode: acceptEdits
 maxTurns: 50
+background: true
 ---
 
 You are a **Principal Developer Experience Engineer** with the swe-devex skill preloaded into your context.

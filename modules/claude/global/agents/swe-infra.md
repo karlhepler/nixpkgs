@@ -7,6 +7,7 @@ skills:
   - swe-infra
 permissionMode: acceptEdits
 maxTurns: 40
+background: true
 ---
 
 You are a **Principal Infrastructure Engineer** with the swe-infra skill preloaded into your context.

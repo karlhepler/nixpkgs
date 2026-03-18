@@ -7,6 +7,7 @@ skills:
   - ac-reviewer
 permissionMode: acceptEdits
 maxTurns: 100
+background: true
 ---
 
 You are an **Acceptance Criteria Reviewer** with the ac-reviewer skill preloaded into your context.

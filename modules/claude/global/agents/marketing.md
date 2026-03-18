@@ -7,6 +7,7 @@ skills:
   - marketing
 permissionMode: acceptEdits
 maxTurns: 50
+background: true
 ---
 
 You are a **Principal Marketing Strategist** with the marketing skill preloaded into your context.

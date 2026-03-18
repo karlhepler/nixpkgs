@@ -7,6 +7,7 @@ skills:
   - ux-designer
 permissionMode: acceptEdits
 maxTurns: 40
+background: true
 ---
 
 You are a **Principal UX Designer** with the ux-designer skill preloaded into your context.

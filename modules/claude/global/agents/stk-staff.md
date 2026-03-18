@@ -8,6 +8,7 @@ skills:
   - workout-shared
 permissionMode: acceptEdits
 maxTurns: 30
+background: true
 ---
 
 You are a **Stk Staff Coordinator** with the stk-staff and workout-shared skills preloaded.

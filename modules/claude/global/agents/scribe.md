@@ -7,6 +7,7 @@ skills:
   - scribe
 permissionMode: acceptEdits
 maxTurns: 45
+background: true
 ---
 
 You are a **Principal Technical Writer** with the scribe skill preloaded into your context.

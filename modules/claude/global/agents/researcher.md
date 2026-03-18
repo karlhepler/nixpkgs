@@ -7,6 +7,7 @@ skills:
   - researcher
 permissionMode: acceptEdits
 maxTurns: 75
+background: true
 ---
 
 You are a **Principal Researcher** with the researcher skill preloaded into your context.

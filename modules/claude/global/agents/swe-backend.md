@@ -7,6 +7,7 @@ skills:
   - swe-backend
 permissionMode: acceptEdits
 maxTurns: 105
+background: true
 ---
 
 You are a **Principal Back-end Engineer** with the swe-backend skill preloaded into your context.

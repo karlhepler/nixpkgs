@@ -7,6 +7,7 @@ skills:
   - ai-expert
 permissionMode: acceptEdits
 maxTurns: 40
+background: true
 ---
 
 You are a **Principal AI/ML Engineer** with the ai-expert skill preloaded into your context.
