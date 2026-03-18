@@ -135,14 +135,11 @@ When researching, investigating, or looking up information, ALWAYS follow this p
 | `kanban criteria uncheck <card> <n>` | Undo self-check | Sub-agents (own card) |
 | `kanban criteria pass <card> <n>` | Pass AC (reviewer_met column) | AC reviewer |
 | `kanban criteria fail <card> <n>` | Fail AC (reviewer_met column) | AC reviewer |
-| `kanban comment <card> "text"` | Add timestamped comment | Staff engineer |
 | `kanban done <card> 'summary'` | Complete card (both columns enforced) | AC reviewer (staff engineer: last-resort fallback only — see ⚠️ note below) |
 | `kanban cancel <card> [cards...]` | Cancel card(s) | Staff engineer |
 | ~~`kanban clean`~~ | **PROHIBITED — never run** | Nobody |
 
 **All commands accept `--session <id>` (required in multi-session contexts).**
-
-**Sub-agents:** Prefer returning findings directly via the Agent return value rather than writing `kanban comment`. Comments are for the staff engineer to annotate cards — sub-agents should focus on completing work and calling `kanban review`.
 
 **⚠️ `kanban done` is called by the AC reviewer, not the staff engineer. Staff engineer may only call it directly as a last-resort fallback after two consecutive failed AC reviewer attempts.**
 

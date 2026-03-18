@@ -602,7 +602,7 @@ Each AC criterion has two columns: **agent_met** (self-checked by the sub-agent 
 - **Staff engineer** never calls any criteria mutation commands (`check`, `uncheck`, `verify`, `unverify`)
 
 **Rules:**
-- Sub-agents: return output via Agent return value (no `kanban comment` needed); call `kanban review` when done; if it fails, fix and retry; never call `kanban redo`
+- Sub-agents: return output via Agent return value; call `kanban review` when done; if it fails, fix and retry; never call `kanban redo`
 - AC reviewer: calls `kanban done` when all criteria verified; if it fails, verify missing criteria and retry
 - Staff engineer: reads Agent return value to brief user; never reads/parses AC reviewer output; never manually verifies
 

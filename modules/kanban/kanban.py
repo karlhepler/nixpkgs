@@ -1310,50 +1310,6 @@ def cmd_agent(args) -> None:
     print(f"Card #{card_number(card_path)} agent set to: {agent_type}")
 
 
-def cmd_comment(args) -> None:
-    """Add a timestamped comment to a card."""
-    root = get_root(args.root)
-    card_path = find_card(root, args.card)
-    card = read_card(card_path)
-
-    comment_file = getattr(args, "comment_file", None)
-    text = getattr(args, "text", None)
-
-    if comment_file and text:
-        print("Error: Cannot use both --file and a positional text argument simultaneously", file=sys.stderr)
-        sys.exit(1)
-
-    if comment_file:
-        file_path = Path(comment_file)
-        if not file_path.exists():
-            print(f"Error: File not found: {comment_file}", file=sys.stderr)
-            sys.exit(1)
-        try:
-            comment_text = file_path.read_text(encoding="utf-8")
-        except OSError as e:
-            print(f"Error: cannot read comment file: {comment_file}: {e}", file=sys.stderr)
-            sys.exit(1)
-        if not comment_text.strip():
-            print(f"Error: comment file is empty: {comment_file}", file=sys.stderr)
-            sys.exit(1)
-    elif text is not None:
-        comment_text = text
-    else:
-        print("Error: Provide comment text as a positional argument or via --file <path>", file=sys.stderr)
-        sys.exit(1)
-
-    if "comments" not in card:
-        card["comments"] = []
-
-    card["comments"].append({"timestamp": now_iso(), "text": comment_text})
-    card["updated"] = now_iso()
-    write_card(card_path, card)
-    print(f"Comment added to #{card_number(card_path)}")
-
-    # Delete the --file input after successful comment so it never pre-exists on next use
-    if comment_file:
-        os.remove(comment_file)
-
 
 def cmd_criteria_add(args) -> None:
     """Add acceptance criterion to card."""
@@ -2991,12 +2947,6 @@ def main() -> None:
     p_start.add_argument("card", nargs="+", help="Card number(s)")
     add_session_flags(p_start)
 
-    # --- comment ---
-    p_comment = subparsers.add_parser("comment", parents=[parent_parser], help="Add timestamped comment to card")
-    p_comment.add_argument("card", help="Card number")
-    p_comment.add_argument("text", nargs="?", default=None, help="Comment text (omit when using --file)")
-    p_comment.add_argument("--file", dest="comment_file", metavar="PATH", help="Read comment text from file instead of inline argument")
-    add_session_flags(p_comment)
 
     # --- agent ---
     p_agent = subparsers.add_parser("agent", parents=[parent_parser], help="Set the agent type on a card")
@@ -3103,7 +3053,6 @@ def main() -> None:
         "done": cmd_done,
         "cancel": cmd_cancel,
         "agent": cmd_agent,
-        "comment": cmd_comment,
         "redo": cmd_redo,
         "defer": cmd_defer,
         "start": cmd_start,
