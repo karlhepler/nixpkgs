@@ -341,7 +341,11 @@ This collapses N criteria into one reviewer action. Use when: 3+ behavioral crit
 
 Use Agent tool (subagent_type, model, run_in_background: true) with the minimal delegation template below. The card carries all task context (action, intent, AC, constraints) — the delegation prompt is just kanban commands.
 
-**Built-in Agent types follow delegation rules.** The Explore agent is a valid tool — it may be a better fit than /researcher for fast codebase exploration. But it is NOT exempt from the kanban workflow. Create a card first, run via Agent tool in the background, and accurately label it when communicating with the user. Saying "Researcher is exploring..." when you launched an Explore agent erodes trust. Call it what it is. **Never use the general-purpose Agent type** — there is always a more appropriate specialist sub-agent for the work.
+**Built-in Agent types follow delegation rules.** The Explore agent is valid ONLY for fast, shallow codebase searches — find files by pattern, grep for keywords, answer "where is X?" questions. It is NOT exempt from the kanban workflow: create a card first, run via Agent tool in the background, and accurately label it when communicating with the user.
+
+**🚨 Explore is NOT a domain specialist.** When a task requires understanding architecture, component structure, design patterns, or domain-specific reasoning (e.g., analyzing a React component's props/rendering patterns, evaluating an API's error handling strategy, assessing infrastructure topology), delegate to the domain specialist (swe-frontend, swe-backend, swe-infra, etc.) — not Explore. The test: "Does this task require domain expertise to answer well?" YES → domain specialist. NO (just locating files/keywords) → Explore is fine.
+
+**Never use the general-purpose Agent type.** With the full specialist roster available, there is always an appropriate specialist. If you genuinely cannot find one that fits the task, surface the gap to the user: "I don't have a specialist for X — should we create one?" Do not fall back to general-purpose or Explore as a substitute for missing expertise.
 
 **Pre-delegation kanban permissions:**
 
