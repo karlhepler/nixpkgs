@@ -199,8 +199,17 @@ def allow_unchanged() -> dict:
     }
 
 
-def allow_with_updated_prompt(new_prompt: str) -> dict:
-    """Return a permissionDecision=allow response with updated prompt."""
+def allow_with_updated_prompt(original_input: dict, new_prompt: str) -> dict:
+    """Return a permissionDecision=allow response with updated prompt.
+
+    CRITICAL: updatedInput must contain ALL original tool_input fields, not just
+    prompt. Claude Code replaces (not merges) tool_input with updatedInput, so
+    omitting fields like run_in_background, subagent_type, model, and description
+    causes them to be silently stripped — resulting in agents running in the
+    foreground despite the caller setting run_in_background: true.
+    """
+    updated = dict(original_input)
+    updated["prompt"] = new_prompt
     return {
         "continue": True,
         "suppressOutput": False,
@@ -208,9 +217,7 @@ def allow_with_updated_prompt(new_prompt: str) -> dict:
             "hookEventName": "PreToolUse",
             "permissionDecision": "allow",
             "permissionDecisionReason": "",
-            "updatedInput": {
-                "prompt": new_prompt,
-            },
+            "updatedInput": updated,
         }
     }
 
@@ -385,7 +392,7 @@ def main() -> None:
             log_error(f"kanban agent update failed for #{card_number}: {exc}")
 
     log_info(f"prompt updated successfully for #{card_number} session={session}")
-    print(json.dumps(allow_with_updated_prompt(new_prompt)))
+    print(json.dumps(allow_with_updated_prompt(tool_input, new_prompt)))
 
 
 if __name__ == "__main__":
