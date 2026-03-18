@@ -276,6 +276,19 @@ def main() -> None:
         print(json.dumps(deny_with_reason(reason)))
         return
 
+    # Check for missing or invalid subagent_type — deny launch if absent
+    subagent_type_check = tool_input.get("subagent_type", "")
+    if not subagent_type_check or not str(subagent_type_check).strip():
+        reason = (
+            "Agent tool call denied: missing or empty 'subagent_type' field. "
+            "Always specify a subagent_type (e.g. swe-backend, swe-frontend, "
+            "researcher). The general-purpose agent is prohibited — there is "
+            "always a more appropriate specialist."
+        )
+        log_info("Agent denied — missing subagent_type field")
+        print(json.dumps(deny_with_reason(reason)))
+        return
+
     prompt = tool_input.get("prompt", "")
     if not prompt:
         print(json.dumps(allow_unchanged()))
@@ -301,8 +314,14 @@ def main() -> None:
     # Extract card number and session from prompt
     extracted = extract_card_and_session(prompt)
     if extracted is None:
-        log_info("no card reference found in prompt — passing through unchanged")
-        print(json.dumps(allow_unchanged()))
+        reason = (
+            "Agent tool call denied: no kanban card reference found in prompt. "
+            "Every Agent delegation must reference a card created with `kanban do`. "
+            "Include 'KANBAN CARD #<N> | Session: <session-id>' at the top of "
+            "the delegation prompt. Create the card first, then launch the agent."
+        )
+        log_info("Agent denied — no card reference in prompt")
+        print(json.dumps(deny_with_reason(reason)))
         return
 
     card_number, session = extracted
