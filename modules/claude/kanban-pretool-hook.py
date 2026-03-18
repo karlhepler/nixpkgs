@@ -264,64 +264,83 @@ def main() -> None:
         print(json.dumps(allow_unchanged()))
         return
 
-    # Check for missing or empty description field — deny launch if absent
-    description = tool_input.get("description", "")
-    if not description or not str(description).strip():
-        reason = (
-            "Agent tool call denied: missing or empty 'description' field. "
-            "Include a meaningful description on all Agent/Task tool calls "
-            "so the completion notification identifies the agent (instead of 'undefined')."
-        )
-        log_info("Agent denied — missing description field")
-        print(json.dumps(deny_with_reason(reason)))
-        return
-
-    # Check for missing or invalid subagent_type — deny launch if absent
-    subagent_type_check = tool_input.get("subagent_type", "")
-    if not subagent_type_check or not str(subagent_type_check).strip():
-        reason = (
-            "Agent tool call denied: missing or empty 'subagent_type' field. "
-            "Always specify a subagent_type (e.g. swe-backend, swe-frontend, "
-            "researcher). The general-purpose agent is prohibited — there is "
-            "always a more appropriate specialist."
-        )
-        log_info("Agent denied — missing subagent_type field")
-        print(json.dumps(deny_with_reason(reason)))
-        return
-
     prompt = tool_input.get("prompt", "")
+
+    # SKILL_AGENT_BYPASS: Skills (e.g. /commit) may spawn Agent calls without
+    # kanban cards, background mode, or subagent_type. If the prompt contains
+    # the bypass marker, skip all enforcement deny rules but still attempt card
+    # injection if a card reference is present.
+    skill_bypass = bool(prompt and "SKILL_AGENT_BYPASS" in prompt)
+    if skill_bypass:
+        log_info("SKILL_AGENT_BYPASS detected — skipping enforcement rules")
+
+    if not skill_bypass:
+        # Check for missing or empty description field — deny launch if absent
+        description = tool_input.get("description", "")
+        if not description or not str(description).strip():
+            reason = (
+                "Agent tool call denied: missing or empty 'description' field. "
+                "Include a meaningful description on all Agent/Task tool calls "
+                "so the completion notification identifies the agent (instead of 'undefined')."
+            )
+            log_info("Agent denied — missing description field")
+            print(json.dumps(deny_with_reason(reason)))
+            return
+
+        # Check for missing or invalid subagent_type — deny launch if absent
+        subagent_type_check = tool_input.get("subagent_type", "")
+        if not subagent_type_check or not str(subagent_type_check).strip():
+            reason = (
+                "Agent tool call denied: missing or empty 'subagent_type' field. "
+                "Always specify a subagent_type (e.g. swe-backend, swe-frontend, "
+                "researcher). The general-purpose agent is prohibited — there is "
+                "always a more appropriate specialist."
+            )
+            log_info("Agent denied — missing subagent_type field")
+            print(json.dumps(deny_with_reason(reason)))
+            return
+
     if not prompt:
         print(json.dumps(allow_unchanged()))
         return
 
-    # Check for missing run_in_background: true — deny foreground launches unless
-    # Option C is explicitly authorized via FOREGROUND_AUTHORIZED marker in prompt.
-    run_in_background = tool_input.get("run_in_background")
-    if run_in_background is not True:
-        if "FOREGROUND_AUTHORIZED" not in prompt:
+    if not skill_bypass:
+        # Check for missing run_in_background: true — deny foreground launches unless
+        # Option C is explicitly authorized via FOREGROUND_AUTHORIZED marker in prompt.
+        run_in_background = tool_input.get("run_in_background")
+        if run_in_background is not True:
+            if "FOREGROUND_AUTHORIZED" not in prompt:
+                reason = (
+                    "Agent tool call denied: missing `run_in_background: true`. "
+                    "All Agent tool calls MUST run in the background to keep the "
+                    "coordination loop available. Add `run_in_background: true` to "
+                    "your Agent tool call. Exception: Permission Gate Recovery "
+                    "Option C — include 'FOREGROUND_AUTHORIZED' in the delegation "
+                    "prompt to allow a foreground launch."
+                )
+                log_info("Agent denied — missing run_in_background: true")
+                print(json.dumps(deny_with_reason(reason)))
+                return
+
+        # Extract card number and session from prompt — deny if missing
+        extracted = extract_card_and_session(prompt)
+        if extracted is None:
             reason = (
-                "Agent tool call denied: missing `run_in_background: true`. "
-                "All Agent tool calls MUST run in the background to keep the "
-                "coordination loop available. Add `run_in_background: true` to "
-                "your Agent tool call. Exception: Permission Gate Recovery "
-                "Option C — include 'FOREGROUND_AUTHORIZED' in the delegation "
-                "prompt to allow a foreground launch."
+                "Agent tool call denied: no kanban card reference found in prompt. "
+                "Every Agent delegation must reference a card created with `kanban do`. "
+                "Include 'KANBAN CARD #<N> | Session: <session-id>' at the top of "
+                "the delegation prompt. Create the card first, then launch the agent."
             )
-            log_info("Agent denied — missing run_in_background: true")
+            log_info("Agent denied — no card reference in prompt")
             print(json.dumps(deny_with_reason(reason)))
             return
+    else:
+        # Bypass mode: still attempt card injection if a card reference exists
+        extracted = extract_card_and_session(prompt)
 
-    # Extract card number and session from prompt
-    extracted = extract_card_and_session(prompt)
+    # If no card reference found (only possible in bypass mode), allow unchanged
     if extracted is None:
-        reason = (
-            "Agent tool call denied: no kanban card reference found in prompt. "
-            "Every Agent delegation must reference a card created with `kanban do`. "
-            "Include 'KANBAN CARD #<N> | Session: <session-id>' at the top of "
-            "the delegation prompt. Create the card first, then launch the agent."
-        )
-        log_info("Agent denied — no card reference in prompt")
-        print(json.dumps(deny_with_reason(reason)))
+        print(json.dumps(allow_unchanged()))
         return
 
     card_number, session = extracted
