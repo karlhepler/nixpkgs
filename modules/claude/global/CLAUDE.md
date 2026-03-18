@@ -142,6 +142,8 @@ When researching, investigating, or looking up information, ALWAYS follow this p
 
 **All commands accept `--session <id>` (required in multi-session contexts).**
 
+**Sub-agents:** Prefer returning findings directly via the Agent return value rather than writing `kanban comment`. Comments are for the staff engineer to annotate cards — sub-agents should focus on completing work and calling `kanban review`.
+
 **⚠️ `kanban done` is called by the AC reviewer, not the staff engineer. Staff engineer may only call it directly as a last-resort fallback after two consecutive failed AC reviewer attempts.**
 
 ---
