@@ -610,6 +610,16 @@ Apply from the start on every new handler, service boundary, or core API. Do not
 - **Exception:** Chain only when all commands form a single atomic git intent (stage + commit, fetch + rebase) or are purely informational (no side effects, writes, or network calls). When in doubt, use separate calls. (e.g., `git add file && git commit -m "..."` is fine — one is meaningless without the other).
 - Piping output (`| tee`, `| jq`) counts as a separate logical operation if it could be omitted. If the pipe is integral to the command's purpose (e.g., `curl ... | jq .`), it's one operation.
 
+**Save Output, Don't Re-Run:**
+- When you plan to `rg`/analyze the output of a command multiple times, **run it once and save to a file**, then analyze that file. Use a unique filename (e.g., card number) to avoid collisions with parallel agents.
+- ❌ Running the same command three times to extract different parts of the output:
+  `npm test | rg 'FAIL'` → `npm test | rg 'Error'` → `npm test | rg 'snapshot'`
+- ✅ Run once, analyze many times:
+  `npm test > .scratchpad/test-output-42.txt 2>&1` → then `rg 'FAIL' .scratchpad/test-output-42.txt`, `rg 'Error' .scratchpad/test-output-42.txt`, etc.
+- Only re-run the command after making a code change that should affect its output.
+
+---
+
 **Mindset:** Always Be Curious - investigate thoroughly, ask why, verify claims, cite sources
 
 ---
