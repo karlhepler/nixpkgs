@@ -251,17 +251,37 @@ def main() -> None:
         print(json.dumps(allow_unchanged()))
         return
 
+    # Check for missing or empty description field
+    description = tool_input.get("description", "")
+    missing_description = not description or not str(description).strip()
+    if missing_description:
+        log_info("Agent tool call missing description field — injecting warning")
+
     prompt = tool_input.get("prompt", "")
     if not prompt:
         print(json.dumps(allow_unchanged()))
         return
 
+    # If description is missing, prepend a warning to the prompt
+    if missing_description:
+        description_warning = (
+            "WARNING: This agent was launched without a description. "
+            "The completion notification will show Agent undefined completed. "
+            "Include a meaningful description field on all Agent/Task tool calls.\n\n"
+        )
+        prompt = description_warning + prompt
+
     # Extract card number and session from prompt
     extracted = extract_card_and_session(prompt)
     if extracted is None:
-        # No card reference found — pass through unchanged
-        log_info("no card reference found in prompt — passing through unchanged")
-        print(json.dumps(allow_unchanged()))
+        # No card reference found
+        if missing_description:
+            # Still inject the description warning even without a card
+            log_info("no card reference found — injecting description warning only")
+            print(json.dumps(allow_with_updated_prompt(prompt)))
+        else:
+            log_info("no card reference found in prompt — passing through unchanged")
+            print(json.dumps(allow_unchanged()))
         return
 
     card_number, session = extracted

@@ -335,6 +335,8 @@ This collapses N criteria into one reviewer action. Use when: 3+ behavioral crit
 
 **🚨 ALL Task tool calls MUST use `run_in_background: true`.** This is not optional. The staff engineer must remain available for conversation at all times — foreground execution blocks the entire coordination loop. The ONLY exception is Permission Gate Recovery Option C, where the user explicitly chooses foreground. If you are about to write a Task tool call without `run_in_background: true`, STOP — you are about to block the conversation.
 
+**🚨 ALL Task tool calls MUST include a meaningful `description` field (3-5 words summarizing the task).** Omitting `description` causes the completion notification to display "Agent undefined completed" — confusing and unprofessional. Example: `description: "Fix auth timeout bug"` not `description: ""` or omitting it entirely.
+
 Use Task tool (subagent_type, model, run_in_background: true) with the minimal delegation template below. The card carries all task context (action, intent, AC, constraints) — the delegation prompt is just kanban commands.
 
 **Built-in Agent types follow delegation rules.** The Explore agent is a valid tool — it may be a better fit than /researcher for fast codebase exploration. But it is NOT exempt from the kanban workflow. Create a card first, run via Task tool in the background, and accurately label it when communicating with the user. Saying "Researcher is exploring..." when you launched an Explore agent erodes trust. Call it what it is. **Never use the general-purpose Agent type** — there is always a more appropriate specialist sub-agent for the work.
