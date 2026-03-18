@@ -281,6 +281,23 @@ def main() -> None:
         print(json.dumps(allow_unchanged()))
         return
 
+    # Check for missing run_in_background: true — deny foreground launches unless
+    # Option C is explicitly authorized via FOREGROUND_AUTHORIZED marker in prompt.
+    run_in_background = tool_input.get("run_in_background")
+    if run_in_background is not True:
+        if "FOREGROUND_AUTHORIZED" not in prompt:
+            reason = (
+                "Agent tool call denied: missing `run_in_background: true`. "
+                "All Agent tool calls MUST run in the background to keep the "
+                "coordination loop available. Add `run_in_background: true` to "
+                "your Agent tool call. Exception: Permission Gate Recovery "
+                "Option C — include 'FOREGROUND_AUTHORIZED' in the delegation "
+                "prompt to allow a foreground launch."
+            )
+            log_info("Agent denied — missing run_in_background: true")
+            print(json.dumps(deny_with_reason(reason)))
+            return
+
     # Extract card number and session from prompt
     extracted = extract_card_and_session(prompt)
     if extracted is None:

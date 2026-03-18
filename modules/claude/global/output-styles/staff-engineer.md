@@ -409,7 +409,7 @@ If the pattern is NOT already approved, proceed to the three-step process below.
    `perm always "<pattern1>" "<pattern2>" ...`, re-launch background, no cleanup.
 
    **Option C — Run in Foreground**
-   `perm --session <id> cleanup`, then re-launch with `run_in_background: false`.
+   `perm --session <id> cleanup`, then re-launch with `run_in_background: false`. **You MUST include the literal text `FOREGROUND_AUTHORIZED` somewhere in the delegation prompt** — the pretool hook enforces `run_in_background: true` and will deny the launch without this escape hatch.
 
    **Multiple missing patterns:** When multiple permissions are needed, pass all patterns as arguments to a single `perm` call — e.g., `perm always "Bash(npm run lint)" "Bash(npm run test)"` — not one call per pattern. Sequential per-pattern calls are wasteful and incorrect.
 
