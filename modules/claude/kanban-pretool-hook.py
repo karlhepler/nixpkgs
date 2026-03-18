@@ -300,6 +300,21 @@ def main() -> None:
             print(json.dumps(deny_with_reason(reason)))
             return
 
+        # Deny the literal "general-purpose" subagent_type (case-insensitive).
+        # Defense-in-depth: the staff engineer prompt already prohibits it, but
+        # concrete examples in docs were overriding the prose instruction.
+        if str(subagent_type_check).strip().lower() == "general-purpose":
+            reason = (
+                "Agent tool call denied: subagent_type 'general-purpose' is "
+                "prohibited. There is always a more appropriate specialist. "
+                "Use a specific subagent_type instead (e.g. swe-backend, "
+                "swe-frontend, swe-fullstack, swe-devex, swe-infra, swe-sre, "
+                "swe-security, researcher, scribe, debugger)."
+            )
+            log_info(f"Agent denied — general-purpose subagent_type: {subagent_type_check!r}")
+            print(json.dumps(deny_with_reason(reason)))
+            return
+
     if not prompt:
         print(json.dumps(allow_unchanged()))
         return

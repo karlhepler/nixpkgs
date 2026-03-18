@@ -29,7 +29,7 @@ kanban todo '{"action":"Review IAM policy (Security)","intent":"Validate securit
 # Step 2: Launch BOTH reviewers in SAME message (parallel)
 # First Task call (Infrastructure peer)
 Task tool:
-  subagent_type: general-purpose
+  subagent_type: swe-infra
   model: sonnet
   run_in_background: true
   prompt: |
@@ -43,7 +43,7 @@ Task tool:
 
 # Second Task call (Security) - SAME MESSAGE
 Task tool:
-  subagent_type: general-purpose
+  subagent_type: swe-security
   model: sonnet
   run_in_background: true
   prompt: |
@@ -129,7 +129,7 @@ kanban do '{"action":"Password reset API","intent":"Secure password recovery","e
 
 # Launch in parallel (same message)
 Task tool:
-  subagent_type: general-purpose
+  subagent_type: swe-frontend
   model: sonnet
   run_in_background: true
   prompt: |
@@ -138,7 +138,7 @@ Task tool:
     [Dark mode task...]
 
 Task tool:
-  subagent_type: general-purpose
+  subagent_type: swe-backend
   model: sonnet
   run_in_background: true
   prompt: |

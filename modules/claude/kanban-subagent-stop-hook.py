@@ -40,6 +40,7 @@ ERROR_LOG_PATH = Path.home() / ".claude" / "metrics" / "kanban-subagent-stop-hoo
 MAX_INNER_ITERATIONS = 2
 MAX_OUTER_CYCLES = 3
 CLAUDE_MAX_TURNS = 50
+AC_REVIEWER_AGENT_PATH = Path.home() / ".claude" / "agents" / "ac-reviewer.md"
 
 # Patterns for extracting card number and session from transcript lines
 _KANBAN_CMD_PATTERN = re.compile(
@@ -401,6 +402,16 @@ IMPORTANT:
 """
 
 
+def read_ac_reviewer_agent_definition() -> str:
+    """Read the ac-reviewer agent definition for use as system prompt.
+
+    Same pattern as staff.bash: read agent definition, pass via --system-prompt.
+    The file is deployed by Nix Home Manager (hms) and is guaranteed to exist.
+    If missing, that is a deployment failure and should crash loudly.
+    """
+    return AC_REVIEWER_AGENT_PATH.read_text(encoding="utf-8")
+
+
 def run_inner_loop(card_number: str, session: str, transcript_path: str = "") -> bool:
     """
     Run the inner AC review loop (max MAX_INNER_ITERATIONS iterations).
@@ -415,18 +426,35 @@ def run_inner_loop(card_number: str, session: str, transcript_path: str = "") ->
     if agent_output:
         log_info(f"Extracted agent output for card #{card_number} ({len(agent_output)} chars)")
 
+    # Read ac-reviewer agent definition for use as system prompt
+    # (same pattern as staff.bash: read agent definition, pass via --system-prompt)
+    ac_reviewer_system_prompt = read_ac_reviewer_agent_definition()
+    log_info("Loaded ac-reviewer agent definition as system prompt")
+
     for i in range(1, MAX_INNER_ITERATIONS + 1):
         log_info(f"Inner loop iteration {i}/{MAX_INNER_ITERATIONS} for card #{card_number}")
 
         prompt = build_haiku_prompt(card_number, session, accumulated_context, agent_output)
 
         try:
+            # Set agent identity env vars so metrics identify this as ac-reviewer
+            # (same pattern as staff.bash: KANBAN_AGENT + CLAUDIT2_ROLE)
+            ac_env = {**os.environ, "KANBAN_AGENT": "ac-reviewer", "CLAUDIT2_ROLE": "ac-reviewer"}
+
+            # Build claude command: load ac-reviewer agent definition as system prompt
+            # (same mechanism as staff.bash loads staff-engineer via --system-prompt)
+            claude_cmd = [
+                "claude", "-p", "--model", "haiku", "--max-turns", str(CLAUDE_MAX_TURNS),
+                "--system-prompt", ac_reviewer_system_prompt,
+            ]
+
             result = subprocess.run(
-                ["claude", "-p", "--model", "haiku", "--max-turns", str(CLAUDE_MAX_TURNS)],
+                claude_cmd,
                 input=prompt,
                 capture_output=True,
                 text=True,
                 timeout=300,  # 5 minutes per iteration
+                env=ac_env,
             )
             iteration_output = result.stdout.strip()
             iteration_stderr = result.stderr.strip()

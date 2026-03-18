@@ -2,7 +2,7 @@
 """
 claude-inspect: Claude session metrics introspection CLI
 
-Queries ~/.claude/metrics/claude-metrics.db (SQLite) to surface token usage,
+Queries ~/.claude/metrics/claudit.db (SQLite) to surface token usage,
 tool calls, cost, and agent behavior by kanban session.
 
 Commands:
@@ -30,7 +30,7 @@ from typing import Any, List, Optional, Tuple
 # DB helpers
 # ---------------------------------------------------------------------------
 
-DB_PATH = os.path.expanduser("~/.claude/metrics/claude-metrics.db")
+DB_PATH = os.path.expanduser("~/.claude/metrics/claudit.db")
 
 
 def connect() -> sqlite3.Connection:
@@ -125,7 +125,7 @@ def section(title: str) -> None:
 # ---------------------------------------------------------------------------
 
 def cmd_session(kanban_session: str) -> None:
-    """Full session overview grouped by parent vs sub-agents."""
+    """Full session overview grouped by agent type."""
     conn = connect()
     try:
         # Total agent count
@@ -145,35 +145,33 @@ def cmd_session(kanban_session: str) -> None:
             SELECT
                 SUM(input_tokens) as input_tokens,
                 SUM(output_tokens) as output_tokens,
-                SUM(cache_creation_5m_tokens) as cache_creation_5m,
-                SUM(cache_creation_1h_tokens) as cache_creation_1h,
                 SUM(cache_read_tokens) as cache_read,
+                SUM(cache_write_tokens) as cache_write,
                 SUM(cost_usd) as cost,
-                SUM(tool_calls) as tool_calls,
-                SUM(tool_errors) as tool_errors,
-                SUM(turns) as turns,
-                SUM(duration_seconds) as duration_secs
+                SUM(total_turns) as total_turns
             FROM agent_metrics
             WHERE kanban_session = ?
             """,
             (kanban_session,),
         ).fetchone()
 
-        # By is_sidechain
-        by_chain = conn.execute(
+        # By agent type
+        by_agent = conn.execute(
             """
             SELECT
-                is_sidechain,
+                agent,
+                model,
                 COUNT(*) as agents,
                 SUM(input_tokens) as input_tokens,
                 SUM(output_tokens) as output_tokens,
                 SUM(cache_read_tokens) as cache_read,
+                SUM(cache_write_tokens) as cache_write,
                 SUM(cost_usd) as cost,
-                SUM(tool_calls) as tool_calls,
-                SUM(turns) as turns
+                SUM(total_turns) as total_turns
             FROM agent_metrics
             WHERE kanban_session = ?
-            GROUP BY is_sidechain
+            GROUP BY agent, model
+            ORDER BY cost DESC
             """,
             (kanban_session,),
         ).fetchall()
@@ -186,32 +184,25 @@ def cmd_session(kanban_session: str) -> None:
         print(f"  {'-'*30} {'-'*20}")
         print(f"  {'Input tokens':<30} {fmt_int(totals['input_tokens']):>20}")
         print(f"  {'Output tokens':<30} {fmt_int(totals['output_tokens']):>20}")
-        print(f"  {'Cache creation (5m) tokens':<30} {fmt_int(totals['cache_creation_5m']):>20}")
-        print(f"  {'Cache creation (1h) tokens':<30} {fmt_int(totals['cache_creation_1h']):>20}")
+        print(f"  {'Cache write tokens':<30} {fmt_int(totals['cache_write']):>20}")
         print(f"  {'Cache read tokens':<30} {fmt_int(totals['cache_read']):>20}")
         print(f"  {'Total cost':<30} {fmt_cost(totals['cost']):>20}")
-        print(f"  {'Total tool calls':<30} {fmt_int(totals['tool_calls']):>20}")
-        print(f"  {'Total tool errors':<30} {fmt_int(totals['tool_errors']):>20}")
-        print(f"  {'Total turns':<30} {fmt_int(totals['turns']):>20}")
-        if totals["duration_secs"] is not None:
-            minutes = int(totals["duration_secs"] // 60)
-            secs = int(totals["duration_secs"] % 60)
-            print(f"  {'Total duration':<30} {f'{minutes}m {secs}s':>20}")
+        print(f"  {'Total turns':<30} {fmt_int(totals['total_turns']):>20}")
 
         section("By Agent Type")
-        headers = ["Type", "Agents", "Turns", "Input Tokens", "Output Tokens", "Cache Read", "Cost", "Tool Calls"]
+        headers = ["Agent", "Model", "Count", "Turns", "Input Tokens", "Output Tokens", "Cache Read", "Cache Write", "Cost"]
         rows = []
-        for r in by_chain:
-            agent_type = "sub-agent" if r["is_sidechain"] else "parent"
+        for r in by_agent:
             rows.append([
-                agent_type,
+                fmt_str(r["agent"]),
+                fmt_str(r["model"]),
                 fmt_str(r["agents"]),
-                fmt_int(r["turns"]),
+                fmt_int(r["total_turns"]),
                 fmt_int(r["input_tokens"]),
                 fmt_int(r["output_tokens"]),
                 fmt_int(r["cache_read"]),
+                fmt_int(r["cache_write"]),
                 fmt_cost(r["cost"]),
-                fmt_int(r["tool_calls"]),
             ])
         print_table(headers, rows)
 
@@ -224,25 +215,26 @@ def cmd_session(kanban_session: str) -> None:
 # ---------------------------------------------------------------------------
 
 def cmd_agents(kanban_session: str) -> None:
-    """Per-agent row table sorted by recorded_at."""
+    """Per-agent row table sorted by first_seen_at."""
     conn = connect()
     try:
         rows_raw = conn.execute(
             """
             SELECT
-                role,
+                agent,
                 model,
-                turns,
+                card_number,
+                git_repo,
+                total_turns,
                 input_tokens,
                 output_tokens,
                 cache_read_tokens,
+                cache_write_tokens,
                 cost_usd,
-                tool_calls,
-                is_sidechain,
-                recorded_at
+                first_seen_at
             FROM agent_metrics
             WHERE kanban_session = ?
-            ORDER BY recorded_at ASC
+            ORDER BY first_seen_at ASC
             """,
             (kanban_session,),
         ).fetchall()
@@ -254,25 +246,24 @@ def cmd_agents(kanban_session: str) -> None:
         print(f"Session: {kanban_session}  ({len(rows_raw)} agents)")
         print()
 
-        headers = ["Role", "Model", "Type", "Turns", "Input", "Output", "Cache Read", "Cost", "Tool Calls", "Recorded At"]
+        headers = ["Agent", "Model", "Card", "Repo", "Turns", "Input", "Output", "Cache Read", "Cache Write", "Cost", "First Seen"]
         rows = []
         for r in rows_raw:
-            agent_type = "sub" if r["is_sidechain"] else "parent"
-            role = fmt_str(r["role"])
-            # Truncate long role names for readability
-            if len(role) > 30:
-                role = role[:27] + "..."
+            agent = fmt_str(r["agent"])
+            if len(agent) > 20:
+                agent = agent[:17] + "..."
             rows.append([
-                role,
+                agent,
                 fmt_str(r["model"]),
-                agent_type,
-                fmt_int(r["turns"]),
+                fmt_str(r["card_number"]),
+                fmt_str(r["git_repo"]),
+                fmt_int(r["total_turns"]),
                 fmt_int(r["input_tokens"]),
                 fmt_int(r["output_tokens"]),
                 fmt_int(r["cache_read_tokens"]),
+                fmt_int(r["cache_write_tokens"]),
                 fmt_cost(r["cost_usd"]),
-                fmt_int(r["tool_calls"]),
-                fmt_str(r["recorded_at"]),
+                fmt_str(r["first_seen_at"]),
             ])
         print_table(headers, rows)
 
@@ -285,21 +276,22 @@ def cmd_agents(kanban_session: str) -> None:
 # ---------------------------------------------------------------------------
 
 def cmd_tools(kanban_session: str) -> None:
-    """Tool usage breakdown per agent role, sorted by call_count desc."""
+    """Tool usage breakdown per agent, sorted by call_count desc."""
     conn = connect()
     try:
         rows_raw = conn.execute(
             """
             SELECT
-                atu.role,
+                am.agent,
                 atu.tool_name,
-                SUM(atu.call_count) as calls,
-                SUM(atu.error_count) as errors
+                atu.bash_command,
+                atu.bash_subcommand,
+                SUM(atu.call_count) as calls
             FROM agent_tool_usage atu
-            JOIN agent_metrics am ON atu.session_id = am.session_id
+            JOIN agent_metrics am ON atu.session_id = am.session_id AND atu.agent_id = am.agent_id
             WHERE am.kanban_session = ?
-            GROUP BY atu.role, atu.tool_name
-            ORDER BY atu.role ASC, calls DESC
+            GROUP BY am.agent, atu.tool_name, atu.bash_command, atu.bash_subcommand
+            ORDER BY am.agent ASC, calls DESC
             """,
             (kanban_session,),
         ).fetchall()
@@ -311,33 +303,34 @@ def cmd_tools(kanban_session: str) -> None:
         print(f"Session: {kanban_session}")
         print()
 
-        # Group by role for display
-        current_role = None
-        role_rows: List[List[str]] = []
-        headers = ["Tool", "Calls", "Errors"]
+        # Group by agent for display
+        current_agent = None
+        agent_rows: List[List[str]] = []
+        headers = ["Tool", "Command", "Subcommand", "Calls"]
 
-        def flush_role(role: str, accumulated: List[List[str]]) -> None:
+        def flush_agent(agent: str, accumulated: List[List[str]]) -> None:
             if not accumulated:
                 return
-            print(f"--- {role} ---")
+            print(f"--- {agent} ---")
             print_table(headers, accumulated)
             print()
 
         for r in rows_raw:
-            role = fmt_str(r["role"])
-            if role != current_role:
-                if current_role is not None:
-                    flush_role(current_role, role_rows)
-                current_role = role
-                role_rows = []
-            role_rows.append([
+            agent = fmt_str(r["agent"])
+            if agent != current_agent:
+                if current_agent is not None:
+                    flush_agent(current_agent, agent_rows)
+                current_agent = agent
+                agent_rows = []
+            agent_rows.append([
                 fmt_str(r["tool_name"]),
+                fmt_str(r["bash_command"]) if r["bash_command"] else "-",
+                fmt_str(r["bash_subcommand"]) if r["bash_subcommand"] else "-",
                 fmt_int(r["calls"]),
-                fmt_int(r["errors"]),
             ])
 
-        if current_role is not None:
-            flush_role(current_role, role_rows)
+        if current_agent is not None:
+            flush_agent(current_agent, agent_rows)
 
     finally:
         conn.close()
@@ -434,7 +427,7 @@ def cmd_cards(kanban_session: str) -> None:
 # ---------------------------------------------------------------------------
 
 def _session_sub_totals(conn: sqlite3.Connection, kanban_session: str) -> Optional[sqlite3.Row]:
-    """Fetch aggregate sub-agent metrics for a session."""
+    """Fetch aggregate sub-agent metrics for a session (agent_id != '' means sub-agent)."""
     return conn.execute(
         """
         SELECT
@@ -442,11 +435,11 @@ def _session_sub_totals(conn: sqlite3.Connection, kanban_session: str) -> Option
             SUM(input_tokens) as input_tokens,
             SUM(output_tokens) as output_tokens,
             SUM(cache_read_tokens) as cache_read,
+            SUM(cache_write_tokens) as cache_write,
             SUM(cost_usd) as cost,
-            SUM(tool_calls) as tool_calls,
-            SUM(turns) as turns
+            SUM(total_turns) as total_turns
         FROM agent_metrics
-        WHERE kanban_session = ? AND is_sidechain = 1
+        WHERE kanban_session = ? AND agent_id != ''
         """,
         (kanban_session,),
     ).fetchone()
@@ -466,29 +459,29 @@ def cmd_compare(session1: str, session2: str) -> None:
             print(f"No sub-agent data found for session: {session2}")
             return
 
-        print(f"Sub-agent comparison (is_sidechain=1)")
+        print(f"Sub-agent comparison (agent_id != '')")
         print()
         print(f"  {'Metric':<30} {session1:>20} {session2:>20} {'Change':>10}")
         print(f"  {'-'*30} {'-'*20} {'-'*20} {'-'*10}")
 
         metrics: List[Tuple[str, str, str]] = [
             ("Agents", fmt_int(a["agents"]), fmt_int(b["agents"])),
-            ("Turns", fmt_int(a["turns"]), fmt_int(b["turns"])),
+            ("Turns", fmt_int(a["total_turns"]), fmt_int(b["total_turns"])),
             ("Input tokens", fmt_int(a["input_tokens"]), fmt_int(b["input_tokens"])),
             ("Output tokens", fmt_int(a["output_tokens"]), fmt_int(b["output_tokens"])),
             ("Cache read tokens", fmt_int(a["cache_read"]), fmt_int(b["cache_read"])),
+            ("Cache write tokens", fmt_int(a["cache_write"]), fmt_int(b["cache_write"])),
             ("Cost", fmt_cost(a["cost"]), fmt_cost(b["cost"])),
-            ("Tool calls", fmt_int(a["tool_calls"]), fmt_int(b["tool_calls"])),
         ]
 
         raw_metrics = [
             ("Agents", a["agents"], b["agents"]),
-            ("Turns", a["turns"], b["turns"]),
+            ("Turns", a["total_turns"], b["total_turns"]),
             ("Input tokens", a["input_tokens"], b["input_tokens"]),
             ("Output tokens", a["output_tokens"], b["output_tokens"]),
             ("Cache read tokens", a["cache_read"], b["cache_read"]),
+            ("Cache write tokens", a["cache_write"], b["cache_write"]),
             ("Cost", a["cost"], b["cost"]),
-            ("Tool calls", a["tool_calls"], b["tool_calls"]),
         ]
 
         for (label, av, bv), (_, a_raw, b_raw) in zip(metrics, raw_metrics):
@@ -513,12 +506,12 @@ def cmd_list(n: int) -> None:
                 kanban_session,
                 COUNT(*) as agents,
                 SUM(cost_usd) as total_cost,
-                MIN(recorded_at) as first_seen,
+                MIN(first_seen_at) as first_seen,
                 MAX(last_seen_at) as last_seen
             FROM agent_metrics
-            WHERE kanban_session IS NOT NULL AND kanban_session != ''
+            WHERE kanban_session IS NOT NULL AND kanban_session != '' AND kanban_session != 'unknown'
             GROUP BY kanban_session
-            ORDER BY MAX(recorded_at) DESC
+            ORDER BY MAX(last_seen_at) DESC
             LIMIT ?
             """,
             (n,),
