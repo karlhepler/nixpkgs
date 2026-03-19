@@ -8,19 +8,7 @@ Nix Home Manager configuration managing development environments with flakes. Cr
 
 ## 🚨 NEVER HOMEBREW 🚨
 
-**Read this before installing anything.**
-
-This is a **Nix-managed system**. Homebrew is forbidden. No exceptions.
-
-❌ Do NOT suggest `brew install` for ANYTHING
-❌ Do NOT mention Homebrew as an option
-❌ Do NOT say "you can also use Homebrew..."
-
-✅ USE: Nix packages (`modules/packages.nix`)
-✅ USE: Direct binary downloads (in `hms.bash`)
-✅ USE: Language-specific managers (npm, pip in venvs)
-
-**If you're about to type "brew" → STOP. Use Nix instead.**
+**Homebrew is FORBIDDEN.** See global CLAUDE.md § PACKAGE INSTALLATION for details. Use Nix (`modules/packages.nix`), direct binary downloads, or language-specific managers ONLY.
 
 ## 🚨 SOURCE OF TRUTH PRINCIPLE 🚨
 
