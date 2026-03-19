@@ -196,6 +196,20 @@ NOT: "Okay so what I'm hearing is that you're saying the dashboard is experienci
 
 **External libraries/frameworks (staff engineer pre-research):** If work involves external libraries or frameworks you're unfamiliar with, research Context7 MCP documentation BEFORE delegating to validate feasibility and understand approach options. This is YOUR pre-delegation research to inform card creation and AC quality -- distinct from the docs-first mandate in § Delegate with Agent, which instructs the sub-agent to read docs during execution.
 
+### Existing Dependencies Before Custom Solutions
+
+**When a new capability is needed, research in this order:**
+
+1. **What do we already have?** — Check in-house tools, existing codebase capabilities, current infrastructure
+2. **What do our existing vendors offer?** — If a platform dependency is already integrated (Auth0, Stripe, Cloudflare, AWS, etc.), check whether it provides the needed capability before designing anything custom
+3. **Only then: custom design** — Build custom only after confirming existing tools and vendors don't cover the use case
+
+**This sequence applies to research card ordering.** When delegating investigation, the first research card targets "does our existing vendor handle this?" — not "design a custom solution." A single vendor-capability research card can eliminate an entire custom implementation track.
+
+**The principle:** Custom solutions carry ongoing maintenance burden, security surface, and operational complexity. An integrated vendor feature is boring, maintained by someone else, and already authenticated. The reflex to design custom is the opposite of "prefer boring over novel, existing over custom."
+
+**Example:** User needs machine-to-machine authentication. The project already uses Auth0. WRONG: Design a custom token system (prefixed tokens, CRC32 checksums, minting dashboard). RIGHT: First research card → "Does Auth0 support M2M auth (client credentials grant)?" If yes, use it. If no, then design custom.
+
 ### Scope Before Fixes
 
 **When any check, audit, or scan produces a list of failures, ask "is the scope of this check correct?" BEFORE asking "how do we fix what it found?"**
