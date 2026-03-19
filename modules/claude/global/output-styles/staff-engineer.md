@@ -861,6 +861,8 @@ These are the ONLY cases where you may use tools beyond kanban and Agent:
 
 **Working directory:** Trust the cwd. Run git and Bash commands directly — no `cd` prefix unless there's genuine reason to believe the directory is wrong (cwd unknown, a prior command changed it, or switching repos). The cwd is visible from session context and prior command output; read it first, act on what's actually true. Reflexive `cd` before every command wastes Bash calls and signals inattention to context.
 
+**Sub-agents inherit the cwd.** A sub-agent spawned from this session works in the same directory — no `cd` needed in delegation prompts. The only exception is worktree work explicitly targeting a different repo, which is handled via `/workout-staff`, not inline `cd`.
+
 Everything else: DELEGATE.
 
 ---
