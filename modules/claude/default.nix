@@ -145,6 +145,21 @@ let
     flakeIgnore = [ "E226" "E265" "E501" "F541" "W503" "W504" ];
   } (builtins.readFile ./claude-inspect.py);
 
+  # Telegram gate hook — blocks on AskUserQuestion until user replies via Telegram
+  telegramGateHookScript = pkgs.writers.writePython3Bin "telegram-gate-hook" {
+    flakeIgnore = [ "E265" "E501" "W503" "W504" ];
+  } (builtins.readFile ./telegram-gate-hook.py);
+
+  # Telegram notify hook — sends session notifications via Telegram
+  telegramNotifyHookScript = pkgs.writers.writePython3Bin "telegram-notify-hook" {
+    flakeIgnore = [ "E265" "E501" "W503" "W504" ];
+  } (builtins.readFile ./telegram-notify-hook.py);
+
+  # Telegram bot — long-polling bot that relays messages to Claude sessions
+  telegramBotScript = pkgs.writers.writePython3Bin "telegram-bot" {
+    flakeIgnore = [ "E265" "E501" "W503" "W504" ];
+  } (builtins.readFile ./telegram-bot.py);
+
 in {
   # ============================================================================
   # Claude Code Configuration & Shell Applications
@@ -186,7 +201,14 @@ in {
       text = ''
         json=$(cat)
         mkdir -p .scratchpad
-        echo "$json" | kanban session-hook
+        kanban_output=$(echo "$json" | kanban session-hook)
+        echo "$kanban_output"
+        kanban_name=$(echo "$kanban_output" | python3 -c "import sys, re; m = re.search(r'Your kanban session is: ([a-z0-9-]+)', sys.stdin.read()); print(m.group(1) if m else '''')")
+        session_uuid=$(echo "$json" | python3 -c "import sys, json as j; print(j.loads(sys.stdin.read()).get('session_id', ''''))")
+        if [ -n "$kanban_name" ] && [ -n "$session_uuid" ]; then
+          mkdir -p ~/.claude/telegram/session-map
+          printf '%s' "$kanban_name" > ~/.claude/telegram/session-map/"$session_uuid"
+        fi
         ${perm}/bin/perm cleanup-stale 2>/dev/null || true
         echo "$json" | ${perm}/bin/perm session-hook 2>/dev/null || true
         if [ -f ~/.claude/TOOLS.md ]; then
@@ -194,43 +216,34 @@ in {
         fi
         kanban_xml=$(kanban list --output-style=xml 2>/dev/null || true)
         if [ -n "$kanban_xml" ]; then
-          python3 - "$kanban_xml" <<'PYEOF'
-        import sys
-        import xml.etree.ElementTree as ET
-
-        xml_text = sys.argv[1]
-        if not xml_text.strip():
-            sys.exit(0)
-
-        try:
-            root = ET.fromstring(xml_text)
-        except ET.ParseError:
-            sys.exit(0)
-
-        orphans = []
-        board_session = root.get('session', 'unknown')
-        for group in root:
-            if group.tag == 'mine':
-                group_session = board_session
-            else:
-                group_session = None
-            for card in group.iter('c'):
-                status = card.get('s', "")
-                if status not in ('doing', 'review'):
-                    continue
-                num = card.get('n', '?')
-                session = card.get('ses', group_session) if group_session is None else group_session
-                action_el = card.find('a')
-                action = (action_el.text or "").strip() if action_el is not None else ""
-                truncated = action[:50] + '...' if len(action) > 50 else action
-                orphans.append((num, status, session, truncated))
-
-        if orphans:
-            print('⚠️ Orphaned cards detected:')
-            for num, status, session, action in orphans:
-                print(f'  - #{num} ({status}, session: {session}) — {action}')
-            print('Use `kanban cancel` or `kanban redo` to resolve.')
-        PYEOF
+          echo "$kanban_xml" | python3 -c "
+import sys, xml.etree.ElementTree as ET
+xml_text = sys.stdin.read()
+if not xml_text.strip(): sys.exit(0)
+try:
+    root = ET.fromstring(xml_text)
+except ET.ParseError:
+    sys.exit(0)
+orphans = []
+board_session = root.get('session', 'unknown')
+for group in root:
+    group_session = board_session if group.tag == 'mine' else None
+    for card in group.iter('c'):
+        status = card.get('s', '''')
+        if status not in ('doing', 'review'):
+            continue
+        num = card.get('n', '?')
+        session = card.get('ses', group_session) if group_session is None else group_session
+        action_el = card.find('a')
+        action = (action_el.text or '''').strip() if action_el is not None else ''''
+        truncated = action[:50] + '...' if len(action) > 50 else action
+        orphans.append((num, status, session, truncated))
+if orphans:
+    print('Warning: Orphaned cards detected:')
+    for num, status, session, action in orphans:
+        print(f'  - #{num} ({status}, session: {session}) -- {action}')
+    print('Use kanban cancel or kanban redo to resolve.')
+"
         fi
       '';
       description = "Hook for Claude Code session start - injects kanban session identity and perm session UUID";
@@ -348,6 +361,14 @@ in {
         description = "SubagentStop hook that runs dual-loop AC review via haiku before allowing agent stop";
         mainProgram = "kanban-subagent-stop-hook";
         homepage = "${builtins.toString ./.}/kanban-subagent-stop-hook.py";
+      };
+    };
+
+    telegram-bot = telegramBotScript // {
+      meta = {
+        description = "Long-polling Telegram bot that relays messages to Claude sessions via the gate hook";
+        mainProgram = "telegram-bot";
+        homepage = "${builtins.toString ./.}/telegram-bot.py";
       };
     };
   };
@@ -906,12 +927,20 @@ in {
           ];
         };
         hooks = {
-          Notification = [{
-            hooks = [{
-              type = "command";
-              command = "${shellapps.claude-notification-hook}/bin/claude-notification-hook";
-            }];
-          }];
+          Notification = [
+            {
+              hooks = [{
+                type = "command";
+                command = "${shellapps.claude-notification-hook}/bin/claude-notification-hook";
+              }];
+            }
+            {
+              hooks = [{
+                type = "command";
+                command = "${telegramNotifyHookScript}/bin/telegram-notify-hook";
+              }];
+            }
+          ];
           SubagentStop = [{
             hooks = [
               {
@@ -935,16 +964,30 @@ in {
                 type = "command";
                 command = "${shellapps.claudit-hook}/bin/claudit-hook";
               }
+              {
+                type = "command";
+                command = "${telegramNotifyHookScript}/bin/telegram-notify-hook";
+              }
             ];
           }];
-          PreToolUse = [{
-            matcher = "Agent";
-            hooks = [{
-              type = "command";
-              command = "${shellapps.kanban-pretool-hook}/bin/kanban-pretool-hook";
-              timeout = 600000;
-            }];
-          }];
+          PreToolUse = [
+            {
+              matcher = "Agent";
+              hooks = [{
+                type = "command";
+                command = "${shellapps.kanban-pretool-hook}/bin/kanban-pretool-hook";
+                timeout = 600000;
+              }];
+            }
+            {
+              matcher = "AskUserQuestion";
+              hooks = [{
+                type = "command";
+                command = "${telegramGateHookScript}/bin/telegram-gate-hook";
+                timeout = 3600000;
+              }];
+            }
+          ];
           PostToolUse = [{
             matcher = "Edit|MultiEdit|Write";
             hooks = [{
