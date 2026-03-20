@@ -11,6 +11,7 @@ import json
 import os
 import pathlib
 import queue
+import subprocess
 import threading
 import time
 import urllib.request
@@ -30,6 +31,7 @@ RESPONSES_DIR = BASE_DIR / "responses"
 SESSIONS_DIR = BASE_DIR / "sessions"
 SESSION_MAP_DIR = BASE_DIR / "session-map"
 THREADS_DIR = BASE_DIR / "threads"
+PANES_DIR = BASE_DIR / "panes"
 PID_FILE = BASE_DIR / "bot.pid"
 
 LOG_DIR = pathlib.Path.home() / ".claude" / "metrics"
@@ -110,7 +112,7 @@ def telegram_call(method: str, payload: dict, timeout: int = 10) -> dict | None:
 # ---------------------------------------------------------------------------
 
 def setup_directories() -> None:
-    for directory in [PENDING_DIR, RESPONSES_DIR, SESSIONS_DIR, SESSION_MAP_DIR, THREADS_DIR, LOG_DIR]:
+    for directory in [PENDING_DIR, RESPONSES_DIR, SESSIONS_DIR, SESSION_MAP_DIR, THREADS_DIR, PANES_DIR, LOG_DIR]:
         directory.mkdir(parents=True, exist_ok=True)
 
 
@@ -166,6 +168,9 @@ def _build_message_text(data: dict) -> str:
     machine_name = data.get("machine_name", "unknown")
     kanban_name = data.get("kanban_name", "unknown")
     question = data.get("question", "")
+    # Fall back to 'message' field for gate hook pending files
+    if not question:
+        question = data.get("message", "")
     options = data.get("options", [])
 
     header = f"\U0001f5a5 {machine_name} | {kanban_name}"
@@ -192,10 +197,25 @@ def _build_inline_keyboard(uuid: str, options: list[str]) -> dict:
     buttons = []
     for opt in options:
         buttons.append({"text": opt, "callback_data": f"{uuid}:{opt}"})
+
+    # For gate requests (no options), include Allow/Deny buttons
+    if not options:
+        allow_button = {"text": "\u2705 Allow", "callback_data": f"{uuid}:allow"}
+        deny_button = {"text": "\u274c Deny", "callback_data": f"{uuid}:deny"}
+        buttons = [allow_button, deny_button]
+
     more_button = {"text": "\u2753 More", "callback_data": f"more:{uuid}"}
-    # Each option on its own row, More button last
-    rows = [[btn] for btn in buttons]
-    rows.append([more_button])
+
+    # Build rows: each option on its own row, Allow/Deny on same row if present, More button last
+    if not options:
+        # Gate request: Allow and Deny on the same row, then More
+        rows = [[allow_button, deny_button]]
+        rows.append([more_button])
+    else:
+        # Question with options: each option on its own row, then More
+        rows = [[btn] for btn in buttons]
+        rows.append([more_button])
+
     return {"inline_keyboard": rows}
 
 
@@ -218,12 +238,50 @@ def _set_thread_root(kanban_name: str, message_id: int) -> None:
 
 
 def pending_watcher_worker() -> None:
-    """Polls the pending directory every 0.5s for new question files."""
+    """Polls the pending directory every 0.5s for new question files.
+
+    Also watches for cli_resolved response files — written by the notify hook
+    when the user answers a permission prompt in the terminal instead of via
+    Telegram. When detected, the corresponding Telegram message has its inline
+    buttons removed and is updated to show a resolved status.
+    """
     log_info("Pending watcher thread started")
     seen: set[str] = set()
+    # Map from uuid -> message_id for messages we have sent (so we can edit them)
+    sent_message_ids: dict[str, int] = {}
 
     while True:
         try:
+            # Check for cli_resolved responses for messages we previously sent
+            for uuid, message_id in list(sent_message_ids.items()):
+                response_file = RESPONSES_DIR / f"{uuid}.json"
+                if not response_file.exists():
+                    continue
+                try:
+                    response_data = json.loads(response_file.read_text())
+                except Exception:
+                    continue
+                if response_data.get("answer") != "cli_resolved":
+                    continue
+                # Remove buttons and update message text
+                log_info(f"cli_resolved detected for {uuid} — editing Telegram message {message_id}")
+                enqueue("editMessageReplyMarkup", {
+                    "chat_id": CLAUDE_REMOTE_TELEGRAM_CHAT_ID,
+                    "message_id": message_id,
+                    "reply_markup": {"inline_keyboard": []},
+                })
+                enqueue("editMessageText", {
+                    "chat_id": CLAUDE_REMOTE_TELEGRAM_CHAT_ID,
+                    "message_id": message_id,
+                    "text": "\u2705 Answered in terminal",
+                })
+                # Clean up tracking state and response file
+                del sent_message_ids[uuid]
+                try:
+                    response_file.unlink(missing_ok=True)
+                except Exception:
+                    pass
+
             for pending_file in sorted(PENDING_DIR.glob("*.json")):
                 fname = pending_file.name
                 if fname in seen:
@@ -254,12 +312,14 @@ def pending_watcher_worker() -> None:
                 if thread_root is not None:
                     payload["reply_parameters"] = {"message_id": thread_root}
 
-                # We need the message_id to set thread root if needed.
-                # Direct call (not via queue) so we can capture the response.
+                # We need the message_id to set thread root if needed and to
+                # track for cli_resolved dismissal. Direct call (not via queue)
+                # so we can capture the response.
                 result = telegram_call("sendMessage", payload)
                 if result and result.get("ok"):
                     sent_message_id = result["result"]["message_id"]
                     log_info(f"Sent pending {uuid} as message {sent_message_id}")
+                    sent_message_ids[uuid] = sent_message_id
                     if thread_root is None:
                         _set_thread_root(kanban_name, sent_message_id)
                 else:
@@ -275,6 +335,46 @@ def pending_watcher_worker() -> None:
 # Long-poll thread
 # ---------------------------------------------------------------------------
 
+def _send_tmux_keystroke(uuid: str, key: str) -> None:
+    """Send a keystroke to the tmux pane registered for the session owning uuid."""
+    pending_file = PENDING_DIR / f"{uuid}.json"
+    if not pending_file.exists():
+        log_error(f"_send_tmux_keystroke: pending file not found for {uuid}")
+        return
+    try:
+        data = json.loads(pending_file.read_text())
+    except Exception as exc:
+        log_error(f"_send_tmux_keystroke: failed to read pending file for {uuid}: {exc}")
+        return
+
+    kanban_name = data.get("kanban_name", "")
+    if not kanban_name:
+        log_error(f"_send_tmux_keystroke: no kanban_name in pending file for {uuid}")
+        return
+
+    pane_file = PANES_DIR / kanban_name
+    if not pane_file.exists():
+        log_error(f"_send_tmux_keystroke: no pane registered for kanban session {kanban_name!r}")
+        return
+
+    pane_id = pane_file.read_text().strip()
+    if not pane_id:
+        log_error(f"_send_tmux_keystroke: pane file is empty for kanban session {kanban_name!r}")
+        return
+
+    try:
+        subprocess.run(
+            ["tmux", "send-keys", "-t", pane_id, key, "Enter"],
+            check=True,
+            capture_output=True,
+        )
+        log_info(f"Sent tmux key {key!r} to pane {pane_id} for {uuid} (session {kanban_name!r})")
+    except subprocess.CalledProcessError as exc:
+        log_error(f"tmux send-keys failed for pane {pane_id}: {exc.stderr.decode().strip()}")
+    except Exception as exc:
+        log_error(f"_send_tmux_keystroke unexpected error for {uuid}: {exc}")
+
+
 def _handle_answer_callback(uuid: str, answer: str, callback_query_id: str, message_id: int, chat_id: str | int) -> None:
     # Acknowledge the callback
     enqueue("answerCallbackQuery", {"callback_query_id": callback_query_id})
@@ -285,6 +385,13 @@ def _handle_answer_callback(uuid: str, answer: str, callback_query_id: str, mess
         "message_id": message_id,
         "reply_markup": {"inline_keyboard": []},
     })
+
+    # For Allow/Deny gate responses, send the keystroke to the tmux pane.
+    # Claude Code's permission prompt uses 1=Yes (allow) and 3=No (deny).
+    if answer == "allow":
+        _send_tmux_keystroke(uuid, "1")
+    elif answer == "deny":
+        _send_tmux_keystroke(uuid, "3")
 
     # Write response file
     response_file = RESPONSES_DIR / f"{uuid}.json"

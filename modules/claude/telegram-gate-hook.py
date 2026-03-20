@@ -1,26 +1,26 @@
 #!/usr/bin/env python3
 """
-telegram-gate-hook: PreToolUse hook that intercepts AskUserQuestion calls
-and routes them to Telegram, blocking until the user responds.
+telegram-gate-hook: PermissionRequest hook that intercepts permission requests
+and routes them to Telegram, blocking until the user responds with Allow or Deny.
 
 When a Claude session has an active Telegram gate (flagged in
-~/.claude/telegram/sessions/<kanban_name>), any AskUserQuestion tool call is
-intercepted. The question is written to a pending file, and this hook polls
-for a response file written by the Telegram bot. The hook returns deny with
-the user's answer as the reason, which causes Claude Code to surface the
-answer as context.
+~/.claude/claude-remote-telegram/sessions/<kanban_name>), permission requests
+are intercepted. The request is written to a pending file, and this hook polls for
+a response file written by the Telegram bot. The hook returns allow or deny
+based on the user's response.
 
-Output format (PreToolUse hook):
-    allow: {"decision": "allow"}
-    deny:  {"decision": "deny", "reason": "<message>"}
+Output format (PermissionRequest hook):
+    allow: {"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "allow"}}}
+    deny:  {"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "deny", "reason": "<message>"}}}
+
+Note: PermissionRequest hooks only fire when Claude Code has determined the user
+must be prompted. This eliminates false positives from auto-approved calls.
 
 Fails open: any error results in allowing the tool call unchanged (exit 0).
 
 Skip conditions:
     - BURNS_SESSION=1 env var (Ralph is running)
     - CLAUDE_REMOTE_TELEGRAM_BOT_TOKEN or CLAUDE_REMOTE_TELEGRAM_CHAT_ID not set
-    - permission_mode is 'dontAsk' or 'bypassPermissions'
-    - tool_name is not 'AskUserQuestion'
     - session map file missing for session_id
     - session flag file missing for kanban_name
 """
@@ -69,13 +69,106 @@ def log(message: str) -> None:
 # ---------------------------------------------------------------------------
 
 def allow_unchanged() -> None:
-    """Print allow decision to stdout."""
-    print(json.dumps({"decision": "allow"}))
+    """Print allow decision to stdout (PermissionRequest format)."""
+    print(json.dumps({
+        "hookSpecificOutput": {
+            "hookEventName": "PermissionRequest",
+            "decision": {"behavior": "allow"}
+        }
+    }))
 
 
 def deny_with_reason(reason: str) -> None:
-    """Print deny decision with reason to stdout."""
-    print(json.dumps({"decision": "deny", "reason": reason}))
+    """Print deny decision with reason to stdout (PermissionRequest format)."""
+    print(json.dumps({
+        "hookSpecificOutput": {
+            "hookEventName": "PermissionRequest",
+            "decision": {"behavior": "deny", "reason": reason}
+        }
+    }))
+
+
+# ---------------------------------------------------------------------------
+# Message formatting
+# ---------------------------------------------------------------------------
+
+def format_telegram_message(tool_name: str, tool_input: dict, kanban_name: str, machine_name: str) -> str:
+    """
+    Format a human-readable Telegram message describing what Claude wants to do.
+    Shows the most relevant fields for each tool type so the user can approve/deny.
+    """
+    header = f"[{machine_name}] [{kanban_name}] Claude wants to use: {tool_name}"
+
+    if tool_name == "Bash":
+        command = tool_input.get("command", "(unknown)")
+        description = tool_input.get("description", "")
+        body = f"Command: {command}"
+        if description:
+            body += f"\nDescription: {description}"
+
+    elif tool_name in ("Write", "Edit", "MultiEdit"):
+        file_path = tool_input.get("file_path", "(unknown)")
+        body = f"File: {file_path}"
+        if tool_name == "Write":
+            body += "\nAction: write (create/overwrite)"
+        elif tool_name == "Edit":
+            old = tool_input.get("old_string", "")
+            body += f"\nAction: edit ({len(old)} chars replaced)"
+        else:
+            edits = tool_input.get("edits", [])
+            body += f"\nAction: multi-edit ({len(edits)} edit(s))"
+
+    elif tool_name == "Read":
+        file_path = tool_input.get("file_path", "(unknown)")
+        limit = tool_input.get("limit", "")
+        offset = tool_input.get("offset", "")
+        body = f"File: {file_path}"
+        if limit:
+            body += f"\nLines: {offset or 1}-{int(offset or 0) + int(limit)}"
+
+    elif tool_name == "Glob":
+        pattern = tool_input.get("pattern", "(unknown)")
+        path = tool_input.get("path", "")
+        body = f"Pattern: {pattern}"
+        if path:
+            body += f"\nIn: {path}"
+
+    elif tool_name == "Grep":
+        pattern = tool_input.get("pattern", "(unknown)")
+        path = tool_input.get("path", "")
+        body = f"Pattern: {pattern}"
+        if path:
+            body += f"\nIn: {path}"
+
+    elif tool_name == "AskUserQuestion":
+        question = tool_input.get("question", "(unknown)")
+        options = tool_input.get("options", [])
+        body = f"Question: {question}"
+        if options:
+            body += "\nOptions:\n" + "\n".join(f"  - {o}" for o in options)
+
+    elif tool_name == "WebSearch":
+        query = tool_input.get("query", "(unknown)")
+        body = f"Query: {query}"
+
+    elif tool_name == "WebFetch":
+        url = tool_input.get("url", "(unknown)")
+        prompt = tool_input.get("prompt", "")
+        body = f"URL: {url}"
+        if prompt:
+            body += f"\nPrompt: {prompt[:100]}{'...' if len(prompt) > 100 else ''}"
+
+    elif tool_name == "Agent":
+        description = tool_input.get("description", "")
+        prompt = tool_input.get("prompt", "")
+        body = f"Description: {description or '(none)'}"
+        if prompt:
+            body += f"\nPrompt: {prompt[:120]}{'...' if len(prompt) > 120 else ''}"
+
+    else:
+        body = json.dumps(tool_input, indent=2)[:400]
+
+    return f"{header}\n\n{body}"
 
 
 # ---------------------------------------------------------------------------
@@ -125,6 +218,9 @@ def read_context_snippets(transcript_path: str) -> list:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    # Read and parse stdin payload immediately
+    raw = sys.stdin.read()
+
     # Skip condition: BURNS_SESSION=1 means Ralph is running
     if os.environ.get("BURNS_SESSION") == "1":
         allow_unchanged()
@@ -135,8 +231,6 @@ def main() -> None:
         allow_unchanged()
         return
 
-    # Read and parse stdin payload
-    raw = sys.stdin.read()
     if not raw.strip():
         allow_unchanged()
         return
@@ -148,12 +242,6 @@ def main() -> None:
         allow_unchanged()
         return
 
-    # Skip condition: not an AskUserQuestion tool call
-    tool_name = payload.get("tool_name", "")
-    if tool_name != "AskUserQuestion":
-        allow_unchanged()
-        return
-
     # Skip condition: permission_mode is dontAsk or bypassPermissions
     permission_mode = payload.get("permission_mode", "")
     if permission_mode in ("dontAsk", "bypassPermissions"):
@@ -162,11 +250,10 @@ def main() -> None:
 
     # Extract fields from payload
     session_id = payload.get("session_id", "")
+    tool_name = payload.get("tool_name", "")
     tool_input = payload.get("tool_input", {})
     if not isinstance(tool_input, dict):
         tool_input = {}
-    question = tool_input.get("question", "")
-    options = tool_input.get("options", [])
     transcript_path = payload.get("transcript_path", "")
 
     # Skip condition: no session_id
@@ -200,6 +287,10 @@ def main() -> None:
     # Read context snippets from transcript
     context_snippets = read_context_snippets(transcript_path) if transcript_path else []
 
+    # Build the human-readable message for Telegram
+    machine_name = socket.gethostname()
+    message = format_telegram_message(tool_name, tool_input, kanban_name, machine_name)
+
     # Generate unique request ID
     request_id = str(uuid.uuid4())
 
@@ -211,16 +302,18 @@ def main() -> None:
         PENDING_DIR.mkdir(parents=True, exist_ok=True)
         RESPONSES_DIR.mkdir(parents=True, exist_ok=True)
         pending_data = {
-            "question": question,
-            "options": options,
+            "message": message,
+            "options": ["Allow", "Deny"],
+            "tool_name": tool_name,
+            "tool_input": tool_input,
             "kanban_name": kanban_name,
-            "machine_name": socket.gethostname(),
+            "machine_name": machine_name,
             "context_snippets": context_snippets,
             "transcript_path": transcript_path,
             "timestamp": time.time(),
         }
         pending_path.write_text(json.dumps(pending_data), encoding="utf-8")
-        log(f"pending question written: {request_id} kanban={kanban_name}")
+        log(f"pending gate request written: {request_id} tool={tool_name} kanban={kanban_name}")
     except Exception as exc:
         log(f"failed to write pending file {request_id}: {exc}")
         allow_unchanged()
@@ -252,7 +345,10 @@ def main() -> None:
         elapsed += POLL_INTERVAL_SECONDS
 
     if answer is not None:
-        deny_with_reason("User answered via Telegram: " + answer)
+        if answer.lower() == "allow":
+            allow_unchanged()
+        else:
+            deny_with_reason("User denied via Telegram")
     else:
         # Timeout: clean up pending file if still present
         try:

@@ -30,6 +30,7 @@ Known Issues:
 import json
 import os
 import re
+import sqlite3
 import subprocess
 import sys
 import traceback
@@ -379,17 +380,56 @@ def main() -> None:
     # Inject card content into the prompt
     new_prompt = inject_card_into_prompt(prompt, card_xml, card_number, session)
 
-    # Update card's agent field with the actual sub-agent type (fire-and-forget)
+    # Update card's agent field with the actual sub-agent type.
+    # Run synchronously so we know it succeeded before attempting the DB update.
     subagent_type = tool_input.get("subagent_type", "")
     if subagent_type:
+        agent_updated = False
         try:
-            subprocess.Popen(
+            result = subprocess.run(
                 ["kanban", "agent", card_number, subagent_type, "--session", session],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
+                timeout=5,
             )
+            agent_updated = result.returncode == 0
+            if not agent_updated:
+                log_error(
+                    f"kanban agent update failed for #{card_number} "
+                    f"(exit {result.returncode})"
+                )
+        except subprocess.TimeoutExpired:
+            log_error(f"kanban agent update timed out for #{card_number}")
         except Exception as exc:
             log_error(f"kanban agent update failed for #{card_number}: {exc}")
+
+        # After a successful kanban agent call, backfill the 'created' event row
+        # in the metrics DB so it reflects the correct agent from the start.
+        if agent_updated:
+            _METRICS_DB_PATH = Path.home() / ".claude" / "metrics" / "claudit.db"
+            normalized_agent = subagent_type.lower().replace(" ", "-")
+            # persona mirrors agent (None when agent is "unassigned")
+            persona = normalized_agent if normalized_agent != "unassigned" else None
+            try:
+                conn = sqlite3.connect(str(_METRICS_DB_PATH))
+                try:
+                    conn.execute("PRAGMA journal_mode=WAL")
+                    conn.execute("PRAGMA busy_timeout=5000")
+                    conn.execute(
+                        """
+                        UPDATE kanban_card_events
+                        SET agent = ?, persona = ?
+                        WHERE card_number = ? AND event_type = 'create'
+                        """,
+                        (normalized_agent, persona, card_number),
+                    )
+                    conn.commit()
+                finally:
+                    conn.close()
+            except Exception as exc:
+                log_error(
+                    f"DB update of created event failed for #{card_number}: {exc}"
+                )
 
     log_info(f"prompt updated successfully for #{card_number} session={session}")
     print(json.dumps(allow_with_updated_prompt(tool_input, new_prompt)))

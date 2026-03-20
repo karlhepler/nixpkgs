@@ -5,13 +5,18 @@ telegram-notify-hook: Non-blocking Notification and Stop event hook.
 Sends Telegram messages when Claude sessions go idle or complete,
 so the user knows to check in.
 
+For permission_prompt notifications, writes a pending file for the bot
+to pick up and present as an inline keyboard in Telegram.
+
 Non-blocking hooks produce no stdout output and always exit 0.
 """
 
 import json
 import os
+import socket
 import sys
 import urllib.request
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -43,18 +48,14 @@ def log_error(message: str) -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    # Parse stdin JSON
+    raw = sys.stdin.read()
+
     # Skip if running inside a Burns/Ralph session
     if os.environ.get("BURNS_SESSION") == "1":
         return
 
-    # Read token and chat ID from environment
-    bot_token = os.environ.get("CLAUDE_REMOTE_TELEGRAM_BOT_TOKEN", "")
-    chat_id = os.environ.get("CLAUDE_REMOTE_TELEGRAM_CHAT_ID", "")
-    if not bot_token or not chat_id:
-        return
-
-    # Parse stdin JSON
-    raw = sys.stdin.read()
+    # Check if we got anything
     if not raw.strip():
         return
 
@@ -88,13 +89,80 @@ def main() -> None:
     if not session_flag_path.exists():
         return
 
-    # Build message based on event type
-    if event_type == "notification":
+    # Handle Stop event: do NOT clean up session flag or pane file
+    # The Stop event fires after EVERY Claude turn, not just session exit.
+    # Cleanup happens via claude-remote-telegram-ctl off, not here.
+    if event_type == "Stop":
+        pass
+
+    # Handle PostToolUse: resolve any pending permission prompts for this session
+    if event_type == "PostToolUse":
+        pending_dir = TELEGRAM_DIR / "pending"
+        responses_dir = TELEGRAM_DIR / "responses"
+        if pending_dir.exists():
+            for pending_file in pending_dir.glob("*.json"):
+                try:
+                    data = json.loads(pending_file.read_text(encoding="utf-8"))
+                except OSError:
+                    continue
+                if data.get("kanban_name") != kanban_name:
+                    continue
+                # Write cli_resolved response so the bot dismisses the Telegram message
+                file_uuid = pending_file.stem
+                response_file = responses_dir / f"{file_uuid}.json"
+                if not response_file.exists():
+                    try:
+                        responses_dir.mkdir(parents=True, exist_ok=True)
+                        response_file.write_text(
+                            json.dumps({"answer": "cli_resolved"}),
+                            encoding="utf-8",
+                        )
+                    except OSError as exc:
+                        log_error(f"Failed to write cli_resolved for {file_uuid}: {exc}")
+                # Remove the pending file so the bot stops watching it
+                try:
+                    pending_file.unlink(missing_ok=True)
+                except OSError:
+                    pass
+        return
+
+    # Handle permission_prompt: write pending file for the bot to pick up
+    if event_type == "Notification":
         notification_type = payload.get("notification_type", "")
-        if notification_type not in ("idle_prompt", "permission_prompt"):
+
+        if notification_type == "permission_prompt":
+            pending_dir = TELEGRAM_DIR / "pending"
+            pending_dir.mkdir(parents=True, exist_ok=True)
+            pending_file = pending_dir / f"{uuid.uuid4()}.json"
+            pending_payload = {
+                "message": payload.get("message", "Claude needs your permission"),
+                "options": ["Allow", "Deny"],
+                "kanban_name": kanban_name,
+                "machine_name": socket.gethostname(),
+                "context_snippets": [],
+                "transcript_path": payload.get("transcript_path", ""),
+                "timestamp": datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+            }
+            try:
+                pending_file.write_text(json.dumps(pending_payload), encoding="utf-8")
+            except OSError as exc:
+                log_error(f"Failed to write pending file: {exc}")
             return
+
+        if notification_type != "idle_prompt":
+            return
+
+    # Read token and chat ID from environment (needed for Telegram send)
+    bot_token = os.environ.get("CLAUDE_REMOTE_TELEGRAM_BOT_TOKEN", "")
+    chat_id = os.environ.get("CLAUDE_REMOTE_TELEGRAM_CHAT_ID", "")
+    if not bot_token or not chat_id:
+        return
+
+    # Build message based on event type
+    if event_type == "Notification":
+        notification_type = payload.get("notification_type", "")
         message = f"\U0001f514 {kanban_name}: Claude is waiting for input ({notification_type})"
-    elif event_type == "stop":
+    elif event_type == "Stop":
         message = f"\U0001f3c1 Session {kanban_name} finished \u2014 waiting for next input"
     else:
         return
