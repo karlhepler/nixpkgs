@@ -156,9 +156,9 @@ let
   } (builtins.readFile ./telegram-notify-hook.py);
 
   # Telegram bot — long-polling bot that relays messages to Claude sessions
-  telegramBotScript = pkgs.writers.writePython3Bin "telegram-bot" {
+  telegramBotScript = pkgs.writers.writePython3Bin "claude-remote-telegram" {
     flakeIgnore = [ "E265" "E501" "W503" "W504" ];
-  } (builtins.readFile ./telegram-bot.py);
+  } (builtins.readFile ./claude-remote-telegram.py);
 
 in {
   # ============================================================================
@@ -206,8 +206,8 @@ in {
         kanban_name=$(echo "$kanban_output" | python3 -c "import sys, re; m = re.search(r'Your kanban session is: ([a-z0-9-]+)', sys.stdin.read()); print(m.group(1) if m else '''')")
         session_uuid=$(echo "$json" | python3 -c "import sys, json as j; print(j.loads(sys.stdin.read()).get('session_id', ''''))")
         if [ -n "$kanban_name" ] && [ -n "$session_uuid" ]; then
-          mkdir -p ~/.claude/telegram/session-map
-          printf '%s' "$kanban_name" > ~/.claude/telegram/session-map/"$session_uuid"
+          mkdir -p ~/.claude/claude-remote-telegram/session-map
+          printf '%s' "$kanban_name" > ~/.claude/claude-remote-telegram/session-map/"$session_uuid"
         fi
         ${perm}/bin/perm cleanup-stale 2>/dev/null || true
         echo "$json" | ${perm}/bin/perm session-hook 2>/dev/null || true
@@ -364,11 +364,11 @@ if orphans:
       };
     };
 
-    telegram-bot = telegramBotScript // {
+    claude-remote-telegram = telegramBotScript // {
       meta = {
         description = "Long-polling Telegram bot that relays messages to Claude sessions via the gate hook";
-        mainProgram = "telegram-bot";
-        homepage = "${builtins.toString ./.}/telegram-bot.py";
+        mainProgram = "claude-remote-telegram";
+        homepage = "${builtins.toString ./.}/claude-remote-telegram.py";
       };
     };
   };

@@ -19,8 +19,8 @@ from pathlib import Path
 # Constants
 # ---------------------------------------------------------------------------
 
-ERROR_LOG_PATH = Path.home() / ".claude" / "metrics" / "telegram-gate-hook.log"
-TELEGRAM_DIR = Path.home() / ".claude" / "telegram"
+ERROR_LOG_PATH = Path.home() / ".claude" / "metrics" / "claude-remote-telegram-gate-hook.log"
+TELEGRAM_DIR = Path.home() / ".claude" / "claude-remote-telegram"
 
 
 # ---------------------------------------------------------------------------
@@ -48,8 +48,8 @@ def main() -> None:
         return
 
     # Read token and chat ID from environment
-    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
+    bot_token = os.environ.get("CLAUDE_REMOTE_TELEGRAM_BOT_TOKEN", "")
+    chat_id = os.environ.get("CLAUDE_REMOTE_TELEGRAM_CHAT_ID", "")
     if not bot_token or not chat_id:
         return
 

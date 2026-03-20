@@ -18,7 +18,7 @@ Fails open: any error results in allowing the tool call unchanged (exit 0).
 
 Skip conditions:
     - BURNS_SESSION=1 env var (Ralph is running)
-    - TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set
+    - CLAUDE_REMOTE_TELEGRAM_BOT_TOKEN or CLAUDE_REMOTE_TELEGRAM_CHAT_ID not set
     - permission_mode is 'dontAsk' or 'bypassPermissions'
     - tool_name is not 'AskUserQuestion'
     - session map file missing for session_id
@@ -37,12 +37,12 @@ from pathlib import Path
 # Constants
 # ---------------------------------------------------------------------------
 
-TELEGRAM_DIR = Path.home() / ".claude" / "telegram"
+TELEGRAM_DIR = Path.home() / ".claude" / "claude-remote-telegram"
 SESSION_MAP_DIR = TELEGRAM_DIR / "session-map"
 SESSIONS_DIR = TELEGRAM_DIR / "sessions"
 PENDING_DIR = TELEGRAM_DIR / "pending"
 RESPONSES_DIR = TELEGRAM_DIR / "responses"
-LOG_PATH = Path.home() / ".claude" / "metrics" / "telegram-gate-hook.log"
+LOG_PATH = Path.home() / ".claude" / "metrics" / "claude-remote-telegram-gate-hook.log"
 
 POLL_INTERVAL_SECONDS = 1
 POLL_TIMEOUT_SECONDS = 3600
@@ -131,7 +131,7 @@ def main() -> None:
         return
 
     # Skip condition: Telegram credentials not configured
-    if not os.environ.get("TELEGRAM_BOT_TOKEN") or not os.environ.get("TELEGRAM_CHAT_ID"):
+    if not os.environ.get("CLAUDE_REMOTE_TELEGRAM_BOT_TOKEN") or not os.environ.get("CLAUDE_REMOTE_TELEGRAM_CHAT_ID"):
         allow_unchanged()
         return
 

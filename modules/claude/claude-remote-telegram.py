@@ -21,10 +21,10 @@ import urllib.error
 # Configuration
 # ---------------------------------------------------------------------------
 
-TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
+CLAUDE_REMOTE_TELEGRAM_BOT_TOKEN = os.environ["CLAUDE_REMOTE_TELEGRAM_BOT_TOKEN"]
+CLAUDE_REMOTE_TELEGRAM_CHAT_ID = os.environ["CLAUDE_REMOTE_TELEGRAM_CHAT_ID"]
 
-BASE_DIR = pathlib.Path.home() / ".claude" / "telegram"
+BASE_DIR = pathlib.Path.home() / ".claude" / "claude-remote-telegram"
 PENDING_DIR = BASE_DIR / "pending"
 RESPONSES_DIR = BASE_DIR / "responses"
 SESSIONS_DIR = BASE_DIR / "sessions"
@@ -33,9 +33,9 @@ THREADS_DIR = BASE_DIR / "threads"
 PID_FILE = BASE_DIR / "bot.pid"
 
 LOG_DIR = pathlib.Path.home() / ".claude" / "metrics"
-LOG_FILE = LOG_DIR / "telegram-bot.log"
+LOG_FILE = LOG_DIR / "claude-remote-telegram.log"
 
-API_BASE = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/"
+API_BASE = f"https://api.telegram.org/bot{CLAUDE_REMOTE_TELEGRAM_BOT_TOKEN}/"
 
 # Rate limit between outbound messages (seconds)
 OUTBOUND_RATE_LIMIT = 1.0
@@ -247,7 +247,7 @@ def pending_watcher_worker() -> None:
                 thread_root = _get_thread_root(kanban_name)
 
                 payload: dict = {
-                    "chat_id": TELEGRAM_CHAT_ID,
+                    "chat_id": CLAUDE_REMOTE_TELEGRAM_CHAT_ID,
                     "text": text,
                     "reply_markup": reply_markup,
                 }
@@ -473,7 +473,7 @@ def main() -> None:
     write_pid()
     startup_probe()
 
-    log_info("Starting Telegram bot daemon")
+    log_info("Starting claude-remote-telegram daemon")
 
     outbound_thread = threading.Thread(
         target=outbound_queue_worker,

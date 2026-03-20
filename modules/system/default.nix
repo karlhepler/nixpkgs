@@ -26,5 +26,12 @@ in
       description = "Apply Home Manager configuration with git handling and backups";
       sourceFile = "hms.bash";
     };
+    reload-env = shellApp {
+      name = "reload-env";
+      runtimeInputs = [ ];
+      text = builtins.readFile ./reload-env.bash;
+      description = "Reload Home Manager session variables into current shell";
+      sourceFile = "reload-env.bash";
+    };
   };
 }
