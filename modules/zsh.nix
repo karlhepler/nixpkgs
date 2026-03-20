@@ -288,6 +288,7 @@ in {
       tree = "${pkgs.eza}/bin/eza --oneline --icons --sort=type --tree";
       kn = "${pkgs.kubectx}/bin/kubens";
       kx = "${pkgs.kubectx}/bin/kubectx";
+      reload-env = "unset __HM_SESS_VARS_SOURCED && source ~/.nix-profile/etc/profile.d/hm-session-vars.sh";
     };
   };
 
