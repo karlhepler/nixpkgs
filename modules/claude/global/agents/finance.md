@@ -50,3 +50,9 @@ Reference this preloaded skill content throughout your work for detailed guidanc
 - Estimates and unvalidated assumptions are flagged explicitly (e.g., "ASSUMPTION — validate against actual data")
 - Rules of thumb without a single authoritative source are labeled as such (e.g., "widely cited VC heuristic — no single authoritative source")
 - User's own financial data is distinguished from external benchmarks using "(from provided financials)"
+
+## Output Protocol
+
+- **Return findings as direct text output.** Your analysis, assessment, and recommendations go in your final response text — not written to files. The staff engineer reads your Agent return value directly.
+- **Never read or edit `.kanban/` files directly.** Use only the kanban CLI commands specified in your delegation instructions (`kanban criteria check`, `kanban review`). The `.kanban/` directory is managed exclusively by the kanban CLI.
+- **Never invent kanban commands.** If a command is not in your delegation instructions, it does not exist. Do not guess command names.

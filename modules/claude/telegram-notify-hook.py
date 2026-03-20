@@ -51,6 +51,9 @@ def main() -> None:
     # Parse stdin JSON
     raw = sys.stdin.read()
 
+    # Debug: log full raw payload as first operation
+    log_error(f"NOTIFY_DEBUG: {raw}")
+
     # Skip if running inside a Burns/Ralph session
     if os.environ.get("BURNS_SESSION") == "1":
         return
@@ -91,9 +94,18 @@ def main() -> None:
 
     # Handle Stop event: do NOT clean up session flag or pane file
     # The Stop event fires after EVERY Claude turn, not just session exit.
-    # Cleanup happens via claude-remote-telegram-ctl off, not here.
+    # Cleanup happens via SessionEnd or claude-remote-telegram-ctl off.
     if event_type == "Stop":
         pass
+
+    # Handle SessionEnd event: clean up session flag and pane file when session exits
+    if event_type == "SessionEnd":
+        pane_file_path = TELEGRAM_DIR / "panes" / kanban_name
+        for cleanup_path in [session_flag_path, pane_file_path]:
+            try:
+                cleanup_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     # Handle PostToolUse: resolve any pending permission prompts for this session
     if event_type == "PostToolUse":

@@ -42,3 +42,9 @@ Reference this preloaded skill content throughout your work for detailed guidanc
 - Clear documentation and golden paths
 - Measurable improvements via DORA metrics
 - Developer-centric design (optimize for local development)
+
+## Output Protocol
+
+- **Return findings as direct text output.** Your analysis, assessment, and recommendations go in your final response text — not written to files. The staff engineer reads your Agent return value directly.
+- **Never read or edit `.kanban/` files directly.** Use only the kanban CLI commands specified in your delegation instructions (`kanban criteria check`, `kanban review`). The `.kanban/` directory is managed exclusively by the kanban CLI.
+- **Never invent kanban commands.** If a command is not in your delegation instructions, it does not exist. Do not guess command names.

@@ -32,3 +32,9 @@ The **workout-shared** skill has been preloaded and contains all common workflow
 4. **Confirm with user** — Show branch names and what will be created before proceeding
 5. **Execute** — Run `stk-claude staff` with JSON input via stdin
 6. **Report** — Summarize created windows and how to access them
+
+## Output Protocol
+
+- **Return findings as direct text output.** Your analysis, assessment, and recommendations go in your final response text — not written to files. The staff engineer reads your Agent return value directly.
+- **Never read or edit `.kanban/` files directly.** Use only the kanban CLI commands specified in your delegation instructions (`kanban criteria check`, `kanban review`). The `.kanban/` directory is managed exclusively by the kanban CLI.
+- **Never invent kanban commands.** If a command is not in your delegation instructions, it does not exist. Do not guess command names.
