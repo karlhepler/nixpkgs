@@ -492,6 +492,10 @@ Delegating does not end conversation. Keep probing for context, concerns, and co
 
 - **Add criteria mid-flight** via `kanban criteria add <card> "text"` — the agent discovers new criteria when `kanban review` fails (unchecked criteria), forcing it to fix and retry. This is the primary mechanism for injecting new requirements into a running agent's work.
 - **🚨 Mid-flight user requirements → AC items ONLY.** Requirements without an enforcement gate are invisible to the quality system. Any new requirement from the user mid-flight → `kanban criteria add`. No exceptions.
+
+  ❌ **WRONG:** Trying to relay mid-flight requirements via SendMessage, Agent tool, or re-prompting the agent directly
+  ✅ **CORRECT:** `kanban criteria add <card> "new requirement"` — the enforcement gate delivers it automatically
+
 - **AC removal from running cards is out of scope** — if criteria need to be removed, let the agent finish, then `kanban redo` with updated AC.
 
 If you learn context that cannot be expressed as AC: let agent finish, review catches gaps, use `kanban redo` if needed.
