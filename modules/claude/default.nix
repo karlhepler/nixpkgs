@@ -100,9 +100,6 @@ let
       (builtins.readFile ./global/hats/wrapper.yml.tmpl)
   );
 
-  # Session start helper script — extracted Python one-liners as named functions
-  sessionStartHelpers = pkgs.writeText "session-start-helpers.py" (builtins.readFile ./session-start-helpers.py);
-
   # Python environment for smithers with required packages
   smithersPython = pkgs.python3.withPackages (ps: with ps; [
     wcwidth   # Unicode display width calculation for terminal formatting
@@ -148,21 +145,6 @@ let
     flakeIgnore = [ "E226" "E265" "E501" "F541" "W503" "W504" ];
   } (builtins.readFile ./claude-inspect.py);
 
-  # Telegram gate hook — blocks on AskUserQuestion until user replies via Telegram
-  telegramGateHookScript = pkgs.writers.writePython3Bin "telegram-gate-hook" {
-    flakeIgnore = [ "E265" "E501" "W503" "W504" ];
-  } (builtins.readFile ./telegram-gate-hook.py);
-
-  # Telegram notify hook — sends session notifications via Telegram
-  telegramNotifyHookScript = pkgs.writers.writePython3Bin "telegram-notify-hook" {
-    flakeIgnore = [ "E265" "E501" "W503" "W504" ];
-  } (builtins.readFile ./telegram-notify-hook.py);
-
-  # Telegram bot — long-polling bot that relays messages to Claude sessions
-  telegramBotScript = pkgs.writers.writePython3Bin "claude-remote-telegram" {
-    flakeIgnore = [ "E265" "E501" "W503" "W504" ];
-  } (builtins.readFile ./claude-remote-telegram.py);
-
 in {
   # ============================================================================
   # Claude Code Configuration & Shell Applications
@@ -198,24 +180,59 @@ in {
       description = "Hook for automatic C# code formatting with csharpier";
       sourceFile = "claude-csharp-format-hook.bash";
     };
-    claude-session-start-hook = shellApp {
+    claude-session-start-hook = let
+      extractKanbanName = pkgs.writeText "extract-kanban-name.py" ''
+        import re, sys
+        text = sys.stdin.read()
+        m = re.search(r"Your kanban session is: ([a-z0-9-]+)", text)
+        print(m.group(1) if m else "")
+      '';
+      findOrphanedCards = pkgs.writeText "find-orphaned-cards.py" ''
+        import sys, xml.etree.ElementTree as ET
+        xml_text = sys.stdin.read()
+        if not xml_text.strip():
+            sys.exit(0)
+        try:
+            root = ET.fromstring(xml_text)
+        except ET.ParseError:
+            sys.exit(0)
+        orphans = []
+        board_session = root.get("session", "unknown")
+        for group in root:
+            group_session = board_session if group.tag == "mine" else None
+            for card in group.iter("c"):
+                status = card.get("s", "")
+                if status not in ("doing", "review"):
+                    continue
+                num = card.get("n", "?")
+                session = card.get("ses", group_session) if group_session is None else group_session
+                action_el = card.find("a")
+                action = (action_el.text or "").strip() if action_el is not None else ""
+                truncated = action[:50] + "..." if len(action) > 50 else action
+                orphans.append((num, status, session, truncated))
+        if orphans:
+            print("Warning: Orphaned cards detected:")
+            for num, status, session, action in orphans:
+                print(f"  - #{num} ({status}, session: {session}) -- {action}")
+            print("Use kanban cancel or kanban redo to resolve.")
+      '';
+      toResultJson = pkgs.writeText "to-result-json.py" ''
+        import json, sys
+        content = sys.stdin.read()
+        print(json.dumps({"result": content}))
+      '';
+    in shellApp {
       name = "claude-session-start-hook";
       runtimeInputs = [ pkgs.python3 ];
       text = ''
-        helpers=${sessionStartHelpers}
         json=$(cat)
         mkdir -p .scratchpad
         kanban_output=$(echo "$json" | kanban session-hook)
-        kanban_name=$(echo "$kanban_output" | python3 "$helpers" extract_kanban_name)
-        session_uuid=$(echo "$json" | python3 "$helpers" extract_session_uuid)
+        kanban_name=$(echo "$kanban_output" | python3 ${extractKanbanName})
         if [ -n "$kanban_name" ] && [ -n "''${CLAUDE_ENV_FILE:-}" ]; then
           echo "export KANBAN_SESSION=$kanban_name" >> "$CLAUDE_ENV_FILE"
         elif [ -n "$kanban_name" ] && [ -z "''${CLAUDE_ENV_FILE:-}" ]; then
           echo "Warning: CLAUDE_ENV_FILE is not set; KANBAN_SESSION=$kanban_name will not be exported to the shell environment" >&2
-        fi
-        if [ -n "$kanban_name" ] && [ -n "$session_uuid" ]; then
-          mkdir -p ~/.claude/claude-remote-telegram/session-map
-          printf '%s' "$kanban_name" > ~/.claude/claude-remote-telegram/session-map/"$session_uuid"
         fi
         ${perm}/bin/perm cleanup-stale 2>/dev/null || true
         echo "$json" | ${perm}/bin/perm session-hook 2>/dev/null || true
@@ -227,13 +244,13 @@ $tools_md"
         fi
         kanban_xml=$(kanban list --output-style=xml 2>/dev/null || true)
         if [ -n "$kanban_xml" ]; then
-          orphan_warning=$(echo "$kanban_xml" | python3 "$helpers" find_orphaned_cards 2>/dev/null || true)
+          orphan_warning=$(echo "$kanban_xml" | python3 ${findOrphanedCards} 2>/dev/null || true)
           if [ -n "$orphan_warning" ]; then
             output="$output
 $orphan_warning"
           fi
         fi
-        printf '%s' "$output" | python3 "$helpers" to_result_json
+        printf '%s' "$output" | python3 ${toResultJson}
       '';
       description = "Hook for Claude Code session start - injects kanban session identity and perm session UUID";
       sourceFile = "default.nix";
@@ -353,21 +370,6 @@ $orphan_warning"
       };
     };
 
-    claude-remote-telegram = telegramBotScript // {
-      meta = {
-        description = "Long-polling Telegram bot that relays messages to Claude sessions via the gate hook";
-        mainProgram = "claude-remote-telegram";
-        homepage = "${builtins.toString ./.}/claude-remote-telegram.py";
-      };
-    };
-
-    claude-remote-telegram-ctl = shellApp {
-      name = "claude-remote-telegram-ctl";
-      runtimeInputs = [ claude-remote-telegram ];
-      text = builtins.readFile ./claude-remote-telegram-ctl.bash;
-      description = "Enable or disable the Telegram gate for the current Claude Code session (accepts 'on' or 'off', defaults to 'on'). Requires KANBAN_SESSION, CLAUDE_REMOTE_TELEGRAM_BOT_TOKEN, and CLAUDE_REMOTE_TELEGRAM_CHAT_ID.";
-      sourceFile = "claude-remote-telegram-ctl.bash";
-    };
   };
 
   home.activation = {
@@ -439,9 +441,6 @@ $orphan_warning"
             # Perm CLI (permission lifecycle management)
             "Bash(perm)"
             "Bash(perm *)"
-
-            # Claude Remote Telegram control (session-aware remote interaction)
-            "Bash(claude-remote-telegram-ctl *)"
 
             # Claude Code Read-Only Tools (no parameters needed - approve all uses)
             "Read"
@@ -934,12 +933,6 @@ $orphan_warning"
                 command = "${shellapps.claude-notification-hook}/bin/claude-notification-hook";
               }];
             }
-            {
-              hooks = [{
-                type = "command";
-                command = "${telegramNotifyHookScript}/bin/telegram-notify-hook";
-              }];
-            }
           ];
           SubagentStop = [{
             hooks = [
@@ -964,10 +957,6 @@ $orphan_warning"
                 type = "command";
                 command = "${shellapps.claudit-hook}/bin/claudit-hook";
               }
-              {
-                type = "command";
-                command = "${telegramNotifyHookScript}/bin/telegram-notify-hook";
-              }
             ];
           }];
           PreToolUse = [
@@ -986,12 +975,6 @@ $orphan_warning"
               hooks = [{
                 type = "command";
                 command = "${shellapps.claude-csharp-format-hook}/bin/claude-csharp-format-hook";
-              }];
-            }
-            {
-              hooks = [{
-                type = "command";
-                command = "${telegramNotifyHookScript}/bin/telegram-notify-hook";
               }];
             }
           ];
@@ -1024,13 +1007,6 @@ $orphan_warning"
             }];
           }];
           PermissionRequest = [
-            {
-              hooks = [{
-                type = "command";
-                command = "${telegramGateHookScript}/bin/telegram-gate-hook";
-                timeout = 3600000;
-              }];
-            }
             {
               hooks = [{
                 type = "command";
