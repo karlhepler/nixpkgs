@@ -39,7 +39,7 @@ USAGE:
   perm --session <id> cleanup                              Remove temporary permissions owned by the given session
   perm cleanup-stale [--max-age <hours>]                   Remove temporary permissions older than max-age (default: 4h)
   perm list                                                Show tracked permissions with labels and timestamps
-  perm check <pattern>                                     Check if pattern is approved across all settings files
+  perm check [--verbose] <pattern>                         Check if pattern is approved (exit 0 if allowed, 1 if denied/not-allowed)
   perm nuke                                                Nuke ALL entries from permissions.allow (interactive, user-only)
   perm session-hook                                        SessionStart hook: read JSON stdin, print session UUID
   perm hook                                                PermissionRequest hook: read JSON stdin, emit allow decision if pattern matches
@@ -50,6 +50,7 @@ OPTIONS:
                       Use the perm session UUID printed at session start.
                       Controls ownership in .claude/.perm-tracking.json only — NOT written to settings.local.json.
   --max-age <hours>   Maximum age in hours for cleanup-stale (default: 4).
+  --verbose           For check: show detailed output (file-by-file breakdown + verdict).
 
 DESCRIPTION:
   Manages Claude Code permissions in .claude/settings.local.json.
@@ -617,16 +618,32 @@ cmd_list() {
 }
 
 cmd_check() {
-  local pattern="${1:-}"
+  local verbose=false
+  local pattern=""
+
+  # Parse --verbose flag if present
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --verbose)
+        verbose=true
+        shift
+        ;;
+      -h|--help)
+        show_help
+        exit 0
+        ;;
+      *)
+        pattern="$1"
+        shift
+        ;;
+    esac
+  done
 
   if [[ -z "${pattern}" ]]; then
     echo "Error: pattern required" >&2
-    echo "Usage: perm check <pattern>" >&2
+    echo "Usage: perm check [--verbose] <pattern>" >&2
     exit 1
   fi
-
-  echo "Checking: ${pattern}"
-  echo ""
 
   local found_allow=false
   local found_deny=false
@@ -635,6 +652,12 @@ cmd_check() {
   local repo_root=""
   repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || true
 
+  # Build output lines to display only when verbose
+  local output_lines=()
+
+  output_lines+=("Checking: ${pattern}")
+  output_lines+=("")
+
   # 1. Project-local: .claude/settings.local.json
   if [[ -n "${repo_root}" ]]; then
     local local_file="${repo_root}/.claude/settings.local.json"
@@ -642,19 +665,19 @@ cmd_check() {
       local in_local_allow
       in_local_allow="$(jq --arg p "${pattern}" '.permissions.allow // [] | index($p) != null' "${local_file}")"
       if [[ "${in_local_allow}" == "true" ]]; then
-        printf "  ✓ local   .claude/settings.local.json\n"
+        output_lines+=("  ✓ local   .claude/settings.local.json")
         found_allow=true
       else
-        printf "  ✗ local   .claude/settings.local.json\n"
+        output_lines+=("  ✗ local   .claude/settings.local.json")
       fi
       local in_local_deny
       in_local_deny="$(jq --arg p "${pattern}" '(.permissions.deny // []) + (.permissions.block // []) | index($p) != null' "${local_file}")"
       if [[ "${in_local_deny}" == "true" ]]; then
-        printf "  ⚠ deny/block  local   .claude/settings.local.json\n"
+        output_lines+=("  ⚠ deny/block  local   .claude/settings.local.json")
         found_deny=true
       fi
     else
-      printf "  - local   .claude/settings.local.json [not found]\n"
+      output_lines+=("  - local   .claude/settings.local.json [not found]")
     fi
 
     # 2. Project: .claude/settings.json
@@ -663,23 +686,23 @@ cmd_check() {
       local in_project_allow
       in_project_allow="$(jq --arg p "${pattern}" '.permissions.allow // [] | index($p) != null' "${project_file}")"
       if [[ "${in_project_allow}" == "true" ]]; then
-        printf "  ✓ project .claude/settings.json\n"
+        output_lines+=("  ✓ project .claude/settings.json")
         found_allow=true
       else
-        printf "  ✗ project .claude/settings.json\n"
+        output_lines+=("  ✗ project .claude/settings.json")
       fi
       local in_project_deny
       in_project_deny="$(jq --arg p "${pattern}" '(.permissions.deny // []) + (.permissions.block // []) | index($p) != null' "${project_file}")"
       if [[ "${in_project_deny}" == "true" ]]; then
-        printf "  ⚠ deny/block  project .claude/settings.json\n"
+        output_lines+=("  ⚠ deny/block  project .claude/settings.json")
         found_deny=true
       fi
     else
-      printf "  - project .claude/settings.json [not found]\n"
+      output_lines+=("  - project .claude/settings.json [not found]")
     fi
   else
-    printf "  - local   .claude/settings.local.json [not in a git repo]\n"
-    printf "  - project .claude/settings.json [not in a git repo]\n"
+    output_lines+=("  - local   .claude/settings.local.json [not in a git repo]")
+    output_lines+=("  - project .claude/settings.json [not in a git repo]")
   fi
 
   # 3. Global: ~/.claude/settings.json
@@ -688,28 +711,42 @@ cmd_check() {
     local in_global_allow
     in_global_allow="$(jq --arg p "${pattern}" '.permissions.allow // [] | index($p) != null' "${global_file}")"
     if [[ "${in_global_allow}" == "true" ]]; then
-      printf "  ✓ global  ~/.claude/settings.json\n"
+      output_lines+=("  ✓ global  ~/.claude/settings.json")
       found_allow=true
     else
-      printf "  ✗ global  ~/.claude/settings.json\n"
+      output_lines+=("  ✗ global  ~/.claude/settings.json")
     fi
     local in_global_deny
     in_global_deny="$(jq --arg p "${pattern}" '(.permissions.deny // []) + (.permissions.block // []) | index($p) != null' "${global_file}")"
     if [[ "${in_global_deny}" == "true" ]]; then
-      printf "  ⚠ deny/block  global  ~/.claude/settings.json\n"
+      output_lines+=("  ⚠ deny/block  global  ~/.claude/settings.json")
       found_deny=true
     fi
   else
-    printf "  - global  ~/.claude/settings.json [not found]\n"
+    output_lines+=("  - global  ~/.claude/settings.json [not found]")
   fi
 
-  echo ""
+  output_lines+=("")
   if [[ "${found_deny}" == "true" ]]; then
-    echo "→ DENIED  (deny/block found — overrides all allows globally)"
+    output_lines+=("→ DENIED  (deny/block found — overrides all allows globally)")
   elif [[ "${found_allow}" == "true" ]]; then
-    echo "→ ALLOWED"
+    output_lines+=("→ ALLOWED")
   else
-    echo "→ NOT ALLOWED"
+    output_lines+=("→ NOT ALLOWED")
+  fi
+
+  # Print output only if verbose
+  if [[ "${verbose}" == "true" ]]; then
+    printf '%s\n' "${output_lines[@]}"
+  fi
+
+  # Exit with proper codes: 0 if allowed, 1 if denied or not-allowed
+  if [[ "${found_deny}" == "true" ]]; then
+    exit 1
+  elif [[ "${found_allow}" == "true" ]]; then
+    exit 0
+  else
+    exit 1
   fi
 }
 
@@ -769,6 +806,11 @@ while [[ $# -gt 0 ]]; do
       sub_args+=("$2")
       shift 2
       ;;
+    --verbose)
+      # Pass --verbose to check command
+      sub_args+=("--verbose")
+      shift
+      ;;
     *)
       sub_args+=("$1")
       shift
@@ -793,7 +835,7 @@ case "${subcommand}" in
     cmd_list
     ;;
   check)
-    cmd_check "${sub_args[0]:-}"
+    cmd_check "${sub_args[@]}"
     ;;
   nuke)
     cmd_nuke
