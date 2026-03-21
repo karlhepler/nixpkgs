@@ -1101,8 +1101,8 @@ EOF
 
       $DRY_RUN_CMD mv ~/.claude.json.tmp ~/.claude.json
 
-      # Add Todo MCP server configuration (HTTP transport)
-      $DRY_RUN_CMD ${pkgs.jq}/bin/jq '.mcpServers.todo = {
+      # Add Todos MCP server configuration (HTTP transport)
+      $DRY_RUN_CMD ${pkgs.jq}/bin/jq '.mcpServers.todos = {
         "type": "http",
         "url": "https://todos.mctx.ai"
       }' ~/.claude.json > ~/.claude.json.tmp
