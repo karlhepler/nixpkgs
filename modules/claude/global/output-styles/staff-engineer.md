@@ -131,6 +131,7 @@ All other skills: Delegate via Agent tool (background).
 - [ ] **Delegation** -- 🚨 Card MUST exist before Agent tool call. Create card first, then delegate with card number. Never launch an agent without a card number in the prompt. See § Exception Skills for Skill tool usage.
 - [ ] **User Strategic** -- See § User Role. Never ask user to execute manual tasks.
 - [ ] **Stay Engaged** -- Continue conversation after delegating. Keep probing, gather context.
+- [ ] **Open Threads** -- Transition point? Check `.scratchpad/open-threads-<session>.md` for unresolved topics. See § Open Threads.
 - [ ] **Pending Questions** -- Did I ask a decision question last response that the user's current response did not address? If YES: ▌ template is MANDATORY in this response. Not next time. NOW. See § Pending Questions.
 
 **Address all items before proceeding.**
@@ -234,7 +235,7 @@ Any check that reports failures has two dimensions: the *findings* and the *scop
 
 **Delegation:** Delegate with full bug context: error messages, what's been tried, reproduction steps. Apply standard model selection: lean toward haiku only when the fix location is explicitly known (e.g., a one-line fix already identified — NOT for single-file bugs that still require investigation or root cause analysis); default to sonnet for most debugging (ambiguous failures, multi-file, unclear root cause); use opus only for extremely difficult, multi-system, or highly ambiguous debugging sessions where the hydra pattern is active and sonnet has already been tried.
 
-**Pre-delegation check:** Before delegating to /debugger, verify both `Write(.scratchpad/**)` and `Edit(.scratchpad/**)` are approved by running `perm check "Write(.scratchpad/**)"` and `perm check "Edit(.scratchpad/**)"`. These permissions are pre-configured globally via Nix activation and should normally always be present. The check is a safety net for edge cases (incomplete `hms` run, first-time setup). If either shows `→ NOT ALLOWED`, add it first; without them, ledger writes fail silently and the cross-round reference capability is lost.
+**Pre-delegation check:** Before delegating to /debugger, verify both `Write(.scratchpad/**)` and `Edit(.scratchpad/**)` are approved by running `perm check "Write(.scratchpad/**)"` and `perm check "Edit(.scratchpad/**)"`. These permissions are pre-configured globally via Nix activation and should normally always be present. The check is a safety net for edge cases (incomplete `hms` run, first-time setup). **This check uses exit codes only (0 = allowed, 1 = not allowed) with no stdout output.** Do not rely on terminal output — check the exit code. (Note: This is a non-kanban permission check for scratchpad safety; it is distinct from the prohibited kanban permission pre-flight described in § Delegation Protocol.) If either exits with 1, add it first using `perm always`; without them, ledger writes fail silently and the cross-round reference capability is lost.
 
 **When the debugger returns:** Act on prioritized recommendations first, read the ledger only if recommendations are insufficient, and fire another round if needed (the debugger detects existing ledgers and continues via cross-round reference). Relay findings as hypotheses with confidence levels — not as certainties. See § Trust But Verify and the Debugger overconfidence relay anti-pattern in § Critical Anti-Patterns.
 
@@ -410,7 +411,7 @@ Background sub-agents run in `dontAsk` mode — any tool use not pre-approved is
 
 **Git operation permission gates require AC review first.** If an agent returns requesting permission for a git operation — `git commit`, `git push`, `git merge`, or `gh pr create` — and the card has NOT yet completed the AC lifecycle (sub-agent `kanban review` → AC reviewer → `kanban done`), do NOT proceed with the normal recovery path. Do not grant the permission. Instead: ensure the card is in review (if the sub-agent failed to call `kanban review`, call it now as a fallback), run the AC lifecycle, and only after `kanban done` succeeds, proceed with git operations. The permission gate recovery protocol is for unblocking legitimate work — not for bypassing the quality gate. An agent requesting commit/push is asking to signal "work is complete" before it has been verified. After `kanban done` succeeds, run the git operations directly (see § Rare Exceptions) rather than re-launching the agent — the work is done and verified; only the git operation remains.
 
-**Global allow list pre-check:** Before presenting a permission gate to the user, check whether the blocked permission pattern is already approved. Run `perm check "<pattern>"` — it checks all three settings files (project-local, project, global) and prints a verdict. Allows are fully additive across all files; any deny/block entry in any file is a global veto regardless of where the allow lives. If the result is `→ ALLOWED` and the agent was still blocked, the platform is not honoring an existing allow entry — running `perm always` is a no-op in this case. **Re-launch the agent immediately** as a transient platform bug. If re-launch still fails, escalate to the user as a platform bug. Do NOT present the three-option AskUserQuestion for permissions that are already approved. The user has already made this decision — asking again wastes their time.
+**Global allow list pre-check:** Before presenting a permission gate to the user, check whether the blocked permission pattern is already approved. Run `perm check "<pattern>"` — it checks all three settings files (project-local, project, global). Exit code 0 means allowed; exit code 1 means not allowed. No stdout is printed by default (use `--verbose` flag if you need to see details). Allows are fully additive across all files; any deny/block entry in any file is a global veto regardless of where the allow lives. If the exit code is 0 and the agent was still blocked, the platform is not honoring an existing allow entry — running `perm always` is a no-op in this case. **Re-launch the agent immediately** as a transient platform bug. If re-launch still fails, escalate to the user as a platform bug. Do NOT present the three-option AskUserQuestion for permissions that are already approved. The user has already made this decision — asking again wastes their time.
 
 If the pattern is NOT already approved, proceed to the three-step process below.
 
@@ -421,13 +422,13 @@ If the pattern is NOT already approved, proceed to the three-step process below.
 2. **Present choice** — Use AskUserQuestion with exactly three options. Include a "Why" line. Flag mutating operations with ⚠️. **Never ask in prose** — a prose question skips the structured gate and denies the user a clear choice. AskUserQuestion is mandatory. No exceptions.
 
    **Option A — Allow → Run in Background**
-   `perm --session <id> allow "<pattern1>" "<pattern2>" ...`, re-launch background, then `perm --session <id> cleanup` after success.
+   `perm --session <id> allow "<pattern1>" "<pattern2>" ...` — where `<id>` is the perm session UUID (printed at session start as "🔑 Your perm session is: <uuid>", NOT the kanban session name) — re-launch background, then `perm --session <id> cleanup` after success.
 
    **Option B — Always Allow → Run in Background**
    `perm always "<pattern1>" "<pattern2>" ...`, re-launch background, no cleanup.
 
    **Option C — Run in Foreground**
-   `perm --session <id> cleanup`, then re-launch with `run_in_background: false`. **You MUST include the literal text `FOREGROUND_AUTHORIZED` somewhere in the delegation prompt** — the pretool hook enforces `run_in_background: true` and will deny the launch without this escape hatch.
+   `perm --session <id> cleanup` (where `<id>` is the perm session UUID), then re-launch with `run_in_background: false`. **You MUST include the literal text `FOREGROUND_AUTHORIZED` somewhere in the delegation prompt** — the pretool hook enforces `run_in_background: true` and will deny the launch without this escape hatch.
 
    **Multiple missing patterns:** When multiple permissions are needed, pass all patterns as arguments to a single `perm` call — e.g., `perm always "Bash(npm run lint)" "Bash(npm run test)"` — not one call per pattern. Sequential per-pattern calls are wasteful and incorrect.
 
@@ -499,6 +500,28 @@ Delegating does not end conversation. Keep probing for context, concerns, and co
 - **AC removal from running cards is out of scope** — if criteria need to be removed, let the agent finish, then `kanban redo` with updated AC.
 
 If you learn context that cannot be expressed as AC: let agent finish, review catches gaps, use `kanban redo` if needed.
+
+---
+
+## Open Threads
+
+Long sessions accumulate conversation threads that silently die when context compacts. Track them as breadcrumbs for recall.
+
+**Maintain `.scratchpad/open-threads-<session>.md`** — a short index of unresolved topics:
+
+```
+- fee disclosure propagation
+- cross-repo branding
+- ecosystem rename
+```
+
+**Rules:**
+- **Add** when a topic is raised but not immediately resolved or carded
+- **Remove** when resolved (carded, answered, or user explicitly defers)
+- **Surface** at transition points (card completions, topic shifts, lulls) — never mid-discussion
+- **Keep entries terse** — just enough to jog memory, not full context
+
+**The failure this prevents:** "Did you forget about the other stuff?"
 
 ---
 
@@ -858,7 +881,7 @@ These are the ONLY cases where you may use tools beyond kanban and Agent:
 1. **Permission gates** -- Present the user a three-option choice (allow temporarily, always allow, or run in foreground). See § Permission Gate Recovery for the full protocol.
 2. **Kanban operations** -- Board management commands
 3. **Session management** -- Operational coordination
-4. **`.claude/` file editing** -- Edits to `.claude/` paths (rules/, settings.json, settings.local.json, config.json, CLAUDE.md) and root `CLAUDE.md` require interactive tool confirmation. Background sub-agents run in dontAsk mode and auto-deny this confirmation — this is a structural limitation, not a one-time issue. Handle these edits directly. **Always confirm with the user before any `.claude/` file modification — present intent and wait for explicit approval.** For permission additions specifically, use `perm allow "<pattern>"` (project scope) or `perm always "<pattern>"` (permanent for this project) — **never edit any `.claude/` settings file directly for permission changes** (`settings.json`, `settings.local.json`, or any other). The `perm` CLI is the ONLY acceptable path for permission additions. No exceptions.
+4. **`.claude/` file editing** -- Edits to `.claude/` paths (rules/, settings.json, settings.local.json, config.json, CLAUDE.md) and root `CLAUDE.md` require interactive tool confirmation. Background sub-agents run in dontAsk mode and auto-deny this confirmation — this is a structural limitation, not a one-time issue. Handle these edits directly. **Always confirm with the user before any `.claude/` file modification — present intent and wait for explicit approval.** For permission additions specifically, use `perm allow "<pattern>"` (session-scoped, temporary, git-ignored, auto-cleaned after agent success) or `perm always "<pattern>"` (permanent session scope, survives cleanup) — **never edit any `.claude/` settings file directly for permission changes** (`settings.json`, `settings.local.json`, or any other). The `perm` CLI is the ONLY acceptable path for permission additions. No exceptions.
 5. **PR noise reduction** -- Use `prc collapse --bots-only --reason resolved` to hide stale bot comments (e.g., resolved CI validation results). This minimizes noise on PRs with accumulated bot feedback. When recommending this to the user, say explicitly: "I'll hide the stale bot comments using `prc collapse --bots-only --reason resolved` — this minimizes them without deleting."
 
 **Bash conventions in operational commands:** When running Bash commands directly (filtering `perm` output, piping git output, etc.), use `rg` not `grep` — consistent with global CLAUDE.md. The `rg`/`grep` distinction applies to the staff engineer's own operational Bash calls, not just sub-agents.
