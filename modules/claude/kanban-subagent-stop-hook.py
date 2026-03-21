@@ -22,10 +22,13 @@ Skip condition: BURNS_SESSION=1 env var means Ralph is running — skip AC revie
 import json
 import os
 import re
+import sqlite3
 import subprocess
 import sys
 import traceback
+import uuid
 import warnings
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Suppress Python deprecation warnings to prevent stderr output,
@@ -41,6 +44,170 @@ MAX_INNER_ITERATIONS = 2
 MAX_OUTER_CYCLES = 3
 CLAUDE_MAX_TURNS = 50
 AC_REVIEWER_AGENT_PATH = Path.home() / ".claude" / "agents" / "ac-reviewer.md"
+
+# ---------------------------------------------------------------------------
+# Claudit DB integration — write AC reviewer token usage
+# ---------------------------------------------------------------------------
+
+_CLAUDIT_DB_PATH = Path.home() / ".claude" / "metrics" / "claudit.db"
+
+_CLAUDIT_PRICING = {
+    "haiku": {
+        "input": 0.25,
+        "output": 1.25,
+        "cache_read": 0.03,
+        "cache_write": 0.30,
+    },
+}
+
+_CREATE_AGENT_METRICS_SQL = """
+CREATE TABLE IF NOT EXISTS agent_metrics (
+    session_id TEXT NOT NULL,
+    agent_id TEXT NOT NULL DEFAULT '',
+    agent TEXT NOT NULL DEFAULT 'unknown',
+    model TEXT NOT NULL DEFAULT 'unknown',
+    kanban_session TEXT NOT NULL DEFAULT 'unknown',
+    card_number INTEGER,
+    git_repo TEXT NOT NULL DEFAULT 'unknown',
+    working_directory TEXT NOT NULL DEFAULT '',
+    first_seen_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    last_seen_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+    cost_usd REAL NOT NULL DEFAULT 0.0,
+    total_turns INTEGER NOT NULL DEFAULT 0,
+    avg_turn_latency_seconds REAL NOT NULL DEFAULT 0.0,
+    cache_hit_ratio REAL NOT NULL DEFAULT 0.0,
+    PRIMARY KEY (session_id, agent_id)
+)
+"""
+
+
+def _claudit_open_db() -> sqlite3.Connection | None:
+    """Open (or create) the claudit metrics DB. Returns None on any failure."""
+    try:
+        _CLAUDIT_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(_CLAUDIT_DB_PATH))
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+        conn.execute(_CREATE_AGENT_METRICS_SQL)
+        conn.commit()
+        return conn
+    except Exception as exc:
+        log_error(f"claudit DB open failed: {exc}")
+        return None
+
+
+def _claudit_calculate_cost(input_tokens: int, output_tokens: int, cache_read: int, cache_write: int) -> float:
+    """Calculate USD cost for haiku model token usage."""
+    prices = _CLAUDIT_PRICING["haiku"]
+    per_million = 1_000_000.0
+    return (
+        input_tokens * prices["input"] / per_million
+        + output_tokens * prices["output"] / per_million
+        + cache_read * prices["cache_read"] / per_million
+        + cache_write * prices["cache_write"] / per_million
+    )
+
+
+def _claudit_write_ac_reviewer_metrics(
+    outer_session_id: str,
+    kanban_session: str,
+    card_number: str,
+    working_directory: str,
+    iteration: int,
+    input_tokens: int,
+    output_tokens: int,
+    cache_read_tokens: int,
+    cache_write_tokens: int,
+) -> None:
+    """Write AC reviewer token usage to the claudit SQLite DB. Never raises."""
+    try:
+        cost_usd = _claudit_calculate_cost(input_tokens, output_tokens, cache_read_tokens, cache_write_tokens)
+        # Use a synthetic session_id scoped to the outer session so metrics
+        # appear grouped with the parent session in Grafana dashboards.
+        # The agent_id encodes card + iteration to keep each run distinct.
+        synthetic_session_id = f"ac-reviewer:{outer_session_id}" if outer_session_id else f"ac-reviewer:{uuid.uuid4()}"
+        synthetic_agent_id = f"card-{card_number}-iter-{iteration}"
+
+        cache_hit_ratio = 0.0
+        denominator = input_tokens + cache_read_tokens
+        if denominator > 0:
+            cache_hit_ratio = cache_read_tokens / denominator
+
+        now = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+        conn = _claudit_open_db()
+        if conn is None:
+            return
+
+        try:
+            conn.execute(
+                """
+                INSERT INTO agent_metrics (
+                    session_id, agent_id, agent, model, kanban_session, card_number,
+                    git_repo, working_directory,
+                    first_seen_at, last_seen_at, recorded_at,
+                    input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+                    cost_usd, total_turns, avg_turn_latency_seconds, cache_hit_ratio
+                ) VALUES (
+                    ?, ?, ?, ?, ?, ?,
+                    ?, ?,
+                    ?, ?, ?,
+                    ?, ?, ?, ?,
+                    ?, ?, ?, ?
+                )
+                ON CONFLICT(session_id, agent_id) DO UPDATE SET
+                    agent = excluded.agent,
+                    model = excluded.model,
+                    kanban_session = excluded.kanban_session,
+                    card_number = excluded.card_number,
+                    git_repo = excluded.git_repo,
+                    working_directory = excluded.working_directory,
+                    last_seen_at = excluded.last_seen_at,
+                    input_tokens = excluded.input_tokens,
+                    output_tokens = excluded.output_tokens,
+                    cache_read_tokens = excluded.cache_read_tokens,
+                    cache_write_tokens = excluded.cache_write_tokens,
+                    cost_usd = excluded.cost_usd,
+                    total_turns = excluded.total_turns,
+                    avg_turn_latency_seconds = excluded.avg_turn_latency_seconds,
+                    cache_hit_ratio = excluded.cache_hit_ratio
+                """,
+                (
+                    synthetic_session_id,
+                    synthetic_agent_id,
+                    "ac-reviewer",
+                    "haiku",
+                    kanban_session,
+                    int(card_number) if card_number else None,
+                    "unknown",
+                    working_directory,
+                    now, now, now,
+                    input_tokens,
+                    output_tokens,
+                    cache_read_tokens,
+                    cache_write_tokens,
+                    cost_usd,
+                    1,   # total_turns = 1 per AC reviewer invocation
+                    0.0,
+                    cache_hit_ratio,
+                ),
+            )
+            conn.commit()
+            log_info(
+                f"claudit: wrote ac-reviewer metrics for card #{card_number} iter {iteration}: "
+                f"in={input_tokens} out={output_tokens} cache_read={cache_read_tokens} "
+                f"cache_write={cache_write_tokens} cost=${cost_usd:.6f}"
+            )
+        finally:
+            conn.close()
+    except Exception as exc:
+        log_error(f"claudit write failed for ac-reviewer card #{card_number} iter {iteration}: {exc}")
+
 
 # Patterns for extracting card number and session from transcript lines
 _KANBAN_CMD_PATTERN = re.compile(
@@ -412,12 +579,19 @@ def read_ac_reviewer_agent_definition() -> str:
     return AC_REVIEWER_AGENT_PATH.read_text(encoding="utf-8")
 
 
-def run_inner_loop(card_number: str, session: str, transcript_path: str = "") -> bool:
+def run_inner_loop(
+    card_number: str,
+    session: str,
+    transcript_path: str = "",
+    outer_session_id: str = "",
+    working_directory: str = "",
+) -> bool:
     """
     Run the inner AC review loop (max MAX_INNER_ITERATIONS iterations).
 
     Each iteration launches claude -p --model haiku to review criteria.
     After each iteration, checks if the card reached the done column.
+    Token usage from each iteration is written to the claudit SQLite DB.
 
     Returns True if the card reached done, False otherwise.
     """
@@ -438,14 +612,16 @@ def run_inner_loop(card_number: str, session: str, transcript_path: str = "") ->
 
         try:
             # Set agent identity env vars so metrics identify this as ac-reviewer
-            # (same pattern as staff.bash: KANBAN_AGENT + CLAUDIT2_ROLE)
-            ac_env = {**os.environ, "KANBAN_AGENT": "ac-reviewer", "CLAUDIT2_ROLE": "ac-reviewer"}
+            # (same pattern as staff.bash: KANBAN_AGENT + CLAUDIT_ROLE)
+            ac_env = {**os.environ, "KANBAN_AGENT": "ac-reviewer", "CLAUDIT_ROLE": "ac-reviewer"}
 
             # Build claude command: load ac-reviewer agent definition as system prompt
             # (same mechanism as staff.bash loads staff-engineer via --system-prompt)
+            # --output-format json enables structured response with usage stats
             claude_cmd = [
                 "claude", "-p", "--model", "haiku", "--max-turns", str(CLAUDE_MAX_TURNS),
                 "--system-prompt", ac_reviewer_system_prompt,
+                "--output-format", "json",
             ]
 
             result = subprocess.run(
@@ -456,11 +632,39 @@ def run_inner_loop(card_number: str, session: str, transcript_path: str = "") ->
                 timeout=300,  # 5 minutes per iteration
                 env=ac_env,
             )
-            iteration_output = result.stdout.strip()
             iteration_stderr = result.stderr.strip()
 
             if iteration_stderr:
                 log_info(f"claude -p stderr (iter {i}): {iteration_stderr}")
+
+            # Parse JSON output and extract result text + token usage
+            iteration_output = ""
+            if result.stdout.strip():
+                try:
+                    json_response = json.loads(result.stdout)
+                    iteration_output = json_response.get("result", "") or ""
+
+                    # Extract token usage and write to claudit DB
+                    usage = json_response.get("usage") or {}
+                    input_tokens = int(usage.get("input_tokens", 0) or 0)
+                    output_tokens = int(usage.get("output_tokens", 0) or 0)
+                    cache_read_tokens = int(usage.get("cache_read_input_tokens", 0) or 0)
+                    cache_write_tokens = int(usage.get("cache_creation_input_tokens", 0) or 0)
+
+                    _claudit_write_ac_reviewer_metrics(
+                        outer_session_id=outer_session_id,
+                        kanban_session=session,
+                        card_number=card_number,
+                        working_directory=working_directory,
+                        iteration=i,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        cache_read_tokens=cache_read_tokens,
+                        cache_write_tokens=cache_write_tokens,
+                    )
+                except (json.JSONDecodeError, TypeError, ValueError) as exc:
+                    log_error(f"Failed to parse claude -p JSON output on iter {i}: {exc}")
+                    iteration_output = result.stdout.strip()
 
             accumulated_context += f"\n--- Pass {i} ---\n{iteration_output}\n"
 
@@ -506,6 +710,8 @@ def process_subagent_stop(payload: dict) -> dict:
     5. Append deferred card notification
     """
     transcript_path = payload.get("agent_transcript_path", "")
+    outer_session_id = payload.get("session_id", "")
+    working_directory = payload.get("cwd") or os.getcwd()
 
     if not transcript_path or not os.path.exists(transcript_path):
         log_info("No transcript path or file not found — allowing stop")
@@ -545,7 +751,13 @@ def process_subagent_stop(payload: dict) -> dict:
 
     # Step 3: Inner loop — Haiku AC verification
     log_info(f"Starting AC review inner loop for card #{card_number}")
-    card_done = run_inner_loop(card_number, session, transcript_path)
+    card_done = run_inner_loop(
+        card_number,
+        session,
+        transcript_path,
+        outer_session_id=outer_session_id,
+        working_directory=working_directory,
+    )
 
     # Step 4: Process result
     if card_done:
