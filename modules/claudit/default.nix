@@ -96,7 +96,7 @@ in {
       name = "claudit";
       runtimeInputs = [ pkgs.grafana pkgs.curl pkgs.sqlite ];
       text = ''
-        GRAFANA_URL="http://localhost:3201/d/claudit2/claudit2?orgId=1&from=now-7d&to=now&timezone=browser&refresh=30s"
+        GRAFANA_URL="http://localhost:3201/d/claudit/claudit?orgId=1&from=now-7d&to=now&timezone=browser&refresh=30s"
         GRAFANA_HOMEPATH="${pkgs.grafana}/share/grafana"
         METRICS_DB="''${HOME}/.claude/metrics/claudit.db"
 

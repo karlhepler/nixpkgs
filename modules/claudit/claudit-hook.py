@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-claudit2 metrics hook: Claude Code hook for capturing agent metrics into SQLite.
+claudit metrics hook: Claude Code hook for capturing agent metrics into SQLite.
 
 Triggered by Claude Code's Stop and SubagentStop events. Reads JSON payload
 from stdin, parses the JSONL transcript, aggregates tokens per model, computes
-cost, and writes to ~/.claude/metrics/claudit2.db.
+cost, and writes to ~/.claude/metrics/claudit.db.
 
 Key differences from the V1 hook (claude-metrics-hook.py):
   - Single row per agent (session_id + agent_id primary key) instead of per model
@@ -12,7 +12,7 @@ Key differences from the V1 hook (claude-metrics-hook.py):
   - Model normalization: full model string collapsed to sonnet/opus/haiku short form
   - card_number extracted from transcript by scanning kanban CLI bash calls
   - git_repo derived from git remote get-url origin (falls back to basename(cwd))
-  - Errors logged to ~/.claude/metrics/claudit2-errors.log (never to stderr/exit non-zero)
+  - Errors logged to ~/.claude/metrics/claudit-errors.log (never to stderr/exit non-zero)
 """
 
 import json
@@ -537,7 +537,7 @@ def compute_avg_latency(timestamps: list[float]) -> float:
 # ---------------------------------------------------------------------------
 
 def open_db() -> sqlite3.Connection:
-    """Open (and initialize) the claudit2 metrics database."""
+    """Open (and initialize) the claudit metrics database."""
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(DB_PATH))
     conn.execute("PRAGMA journal_mode=WAL")
@@ -712,7 +712,7 @@ def write_permission_denials(
 # ---------------------------------------------------------------------------
 
 def log_error(message: str) -> None:
-    """Append an error message to the claudit2 error log file."""
+    """Append an error message to the claudit error log file."""
     try:
         ERROR_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         timestamp = utc_now()
@@ -737,7 +737,7 @@ def main() -> None:
         agent = payload.get("agent_type") or "subagent"
         transcript_path = payload["agent_transcript_path"]
     else:
-        agent = os.environ.get('CLAUDIT2_ROLE') or 'claude'
+        agent = os.environ.get('CLAUDIT_ROLE') or 'claude'
         transcript_path = payload.get("transcript_path", "")
 
     session_id = payload.get("session_id", "")
