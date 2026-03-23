@@ -2071,12 +2071,21 @@ def main():
     log(f"Poll interval: {POLL_INTERVAL}s | Max cycles: {max_cycles}")
 
     ralph_invocation_count = 0
+    stagnation_count = 0
     current_cycle = 0  # Track which cycle we're on
     cycle = 1
     effective_max_cycles = max_cycles
     try:
         while cycle <= effective_max_cycles:
             current_cycle = cycle
+
+            # Capture HEAD SHA before Ralph invocation for stagnation detection
+            pre_sha_result = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                capture_output=True, text=True, check=False
+            )
+            pre_sha = pre_sha_result.stdout.strip() if pre_sha_result.returncode == 0 else None
+
             ralph_invoked, should_restart = main_loop_iteration(
                 cycle, ralph_invocation_count, pr_number, pr_url, owner, repo,
                 max_ralph_invocations, effective_max_cycles, start_time,
@@ -2085,11 +2094,30 @@ def main():
             if ralph_invoked:
                 ralph_invocation_count += 1
 
+                # Stagnation detection: check if Ralph produced any new commits
+                post_sha_result = subprocess.run(
+                    ["git", "rev-parse", "HEAD"],
+                    capture_output=True, text=True, check=False
+                )
+                post_sha = post_sha_result.stdout.strip() if post_sha_result.returncode == 0 else None
+
+                if pre_sha and post_sha and pre_sha == post_sha:
+                    stagnation_count += 1
+                    log(f"⚠️  No new commits produced by Ralph (stagnation count: {stagnation_count})")
+                    if stagnation_count >= 2:
+                        log(
+                            f"🚨 Ralph invoked {stagnation_count} times with no commits produced — "
+                            "stopping to avoid infinite loop. Ralph may be blocked by a hook or "
+                            "structural issue that cannot be resolved by retrying."
+                        )
+                        sys.exit(1)
+                else:
+                    stagnation_count = 0
+
             # Handle verification restart - if verification found new work, completely restart
             if should_restart:
                 log("🔄 Restarting smithers from cycle 1/4 (verification found new work)")
                 cycle = 1
-                ralph_invocation_count = 0
                 continue  # Skip cycle increment, restart from cycle 1
 
             cycle += 1
@@ -2233,8 +2261,8 @@ def main_loop_iteration(
         if work_needed(verification_failed, verification_conflicts, owner, repo, pr_number):
             log("⚠️  New work detected during verification. Restarting smithers loop from cycle 1...")
             # Signal to main loop that verification found new work
-            # Main loop will reset cycle counter to 1 and Ralph invocation count to 0
-            # This gives smithers a full budget to handle the newly discovered work
+            # Main loop will reset cycle counter to 1 (but not ralph_invocation_count)
+            # This allows smithers to restart detection but preserves Ralph invocation budget
             return (False, True)  # ralph_invoked=False, should_restart=True
 
         # Guard: refuse to declare done if local commits have not been pushed.
