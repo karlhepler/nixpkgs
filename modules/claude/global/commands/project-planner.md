@@ -227,8 +227,15 @@ The objective contributes to the goal but may not fully achieve it on its own. A
 
 **Format:** Markdown table with 3 columns:
 - **Base** (current state or N/A)
-- **Target** (desired state)
+- **Target** (desired state — see target format rule below)
 - **Means of Verification** (HOW we get this data - must be REAL and POSSIBLE)
+
+**Target Format Rule: Lead with hard numbers, not percentages.**
+Targets must state the concrete target state first. Percentages may follow as supplementary context but never lead. Hard numbers are immediately understandable, verifiable, and actionable. Percentages require mental math against the baseline to understand what you're actually aiming for.
+- ❌ "80% reduction in manual relays"
+- ✅ "<2 manual relays per session (~80% reduction)"
+- ❌ "Reduce context-switching time by 30%"
+- ✅ "<4 app switches per hour (~30% reduction)"
 
 **Important: Success Measures Track GOAL (Outcomes), Not OBJECTIVE (Deliverables)**
 
@@ -320,7 +327,7 @@ If user cannot define measurable outcome → **Cannot proceed with planning.** M
 
 | Unmeasurable (BAD) | Measurable Alternative (GOOD) |
 |--------------------|-------------------------------|
-| Engineers lose flow state when context switching | Reduce context-switching time by 30% (measure: IDE logs showing app switches per hour) |
+| Engineers lose flow state when context switching | <4 app switches per hour (~30% reduction) (measure: IDE logs showing app switches per hour) |
 | Users are satisfied with the product | Increase NPS from 45 to 70 (measure: quarterly NPS survey) |
 | Dashboard helps detect incidents faster | Time to detect incidents <2min (measure: incident timestamp vs alert timestamp in logs) |
 
@@ -337,6 +344,7 @@ If user cannot define measurable outcome → **Cannot proceed with planning.** M
 - Measuring outputs not outcomes ("dashboard exists" vs "time to detect <2min")
 - More than 3 measures (probably scope creep or multiple projects)
 - Unmeasurable claims accepted without challenge
+- Percentage-led targets ("reduce by 30%") instead of hard numbers ("<4 app switches per hour")
 
 ### ASSUMPTIONS - What We Can't Control
 
