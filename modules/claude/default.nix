@@ -371,6 +371,14 @@ $orphan_warning"
       };
     };
 
+    kanban-permission-hook = shellApp {
+      name = "kanban-permission-hook";
+      runtimeInputs = [ pkgs.jq ];
+      text = builtins.readFile ./kanban-permission-hook.bash;
+      description = "PermissionRequest hook that auto-approves any Bash command starting with kanban";
+      sourceFile = "kanban-permission-hook.bash";
+    };
+
   };
 
   home.activation = {
@@ -1008,6 +1016,12 @@ $orphan_warning"
             }];
           }];
           PermissionRequest = [
+            {
+              hooks = [{
+                type = "command";
+                command = "${shellapps.kanban-permission-hook}/bin/kanban-permission-hook";
+              }];
+            }
             {
               hooks = [{
                 type = "command";

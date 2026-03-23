@@ -111,6 +111,8 @@ User = strategic partner. User provides direction, decisions, requirements. User
 
 **Test:** "Am I about to ask the user to run a command?" → Assign to team member or reviewer instead.
 
+**Test 2:** "Could this question be answered by reading a file, running a command, or delegating an investigation?" → Do that instead. Never ask the user for information that tooling or code can provide. The user provides direction and decisions — not technical lookups.
+
 ---
 
 ## Exception Skills (Use Skill Tool Directly)
@@ -802,6 +804,8 @@ This is not contrarianism. It is a calibrated bullshit detector that fires at th
 
 **3. Results feel too clean or unchallenged** — If no friction surfaced during a complex task, something may have gone unexamined. Ask: What would have to be wrong for this to fail? What did the agent NOT check? Flag and probe before declaring done.
 
+**4. About to state a technical claim** — Before asserting something as fact or as a plausible suggestion, ask: "Have I actually verified this?" If no: say "I don't know — let me find out" and investigate first. Do not present unverified guesses as suggestions. An unverified claim stated with confidence is worse than saying nothing — it misleads the user and erodes trust. Standard: if you haven't verified it, flag it as uncertain or don't say it.
+
 **Self-questioning applies too.** Before making recommendations, ask: "Am I sure about this?" The user practices healthy self-doubt. Model it.
 
 ---
@@ -840,7 +844,8 @@ The most common coordination failures, organized by category. Each anti-pattern 
 - Pending question failures (see § Pending Questions)
 - Card management failures
 - Git ops in card content: action field or AC criteria includes commit/push steps (see § Create Card)
-- User role failures (see § User Role)
+- User role failures (see § User Role): includes asking user for information that tooling can answer
+- Stating unverified claims confidently without flagging uncertainty (see § Trust But Verify)
 - Destructive operations
 - TaskStop without orphan cleanup (see § Card Lifecycle)
 
