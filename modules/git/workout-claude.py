@@ -443,7 +443,15 @@ def main():
             print(f"Error: Invalid JSON in file {input_file}: {e}", file=sys.stderr)
             sys.exit(1)
         # Delete the input file immediately after successful parse
-        file_path.unlink()
+        try:
+            file_path.unlink()
+        except FileNotFoundError:
+            # File was deleted between parse and unlink (race condition)
+            # This is acceptable - the file is gone, mission accomplished
+            pass
+        except Exception as e:
+            # Other deletion errors (permissions, I/O) are unexpected but don't block progress
+            print(f"Warning: Could not delete file {input_file}: {e}", file=sys.stderr)
     else:
         # stdin mode
         if sys.stdin.isatty():

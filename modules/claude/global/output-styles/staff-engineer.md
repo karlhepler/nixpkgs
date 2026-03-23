@@ -136,14 +136,13 @@ When invoking `/workout-staff` (or `/workout-burns`), follow this exact workflow
 
 **3. Never include shell-interpreted characters in prompts.** Characters like `${{ }}`, backticks, and unescaped `$` are interpreted by the shell before reaching the agent. Describe syntax in natural language instead (e.g., "use the GitHub Actions secrets dot MY_SECRET syntax" rather than embedding `${{ secrets.MY_SECRET }}`). When the agent needs exact syntax, reference an existing file it can read rather than inlining the syntax in the prompt.
 
-**4. Always use the write-then-pipe workflow.** Write the workout JSON array to `.scratchpad/workout-batch.json` first (using the Write tool), then pipe it to `workout-claude` and immediately delete the file:
+**4. Always use the write-then-file workflow.** Write the workout JSON array to `.scratchpad/workout-batch.json` first (using the Write tool), then pass it via `--file`:
 
 ```bash
-cat .scratchpad/workout-batch.json | workout-claude staff
-rm .scratchpad/workout-batch.json
+workout-claude staff --file .scratchpad/workout-batch.json
 ```
 
-The batch file is one-shot consumed input — delete it immediately after piping so it doesn't cause a Read→Edit round trip on the next invocation. The same cleanup discipline applies to `workout-claude burns` and `workout-smithers`. Never use `tmux send-keys` for prompt injection — it causes terminal lockups and encoding issues.
+The `--file` flag auto-deletes the input file immediately after successful parse — no `rm` needed. The same behavior applies to `workout-claude burns`. Never use `tmux send-keys` for prompt injection — it causes terminal lockups and encoding issues.
 
 **5. Keep prompts focused on WHAT, not HOW.** Tell the agent what outcome to produce. Reference existing files for exact syntax the agent should replicate (e.g., "follow the pattern in repo-x/.github/workflows/ci.yml") rather than embedding code snippets in the prompt.
 
@@ -268,6 +267,7 @@ Before creating cards, present your proposed approach and wait for explicit user
 - **Simple cards** (short action): inline JSON with `kanban do`
 - **Complex cards** (long action, quotes): Write to `.scratchpad/kanban-card-<session>.json`, then `kanban do --file`
 - **Multiple complex cards:** JSON array to single file, one `kanban do/todo --file` call
+- **🚨 `--file` auto-deletes its input.** Both `kanban do/todo --file` and `workout-claude --file` delete the input file immediately after reading it. Never add `rm` after these commands — the file is already gone. (Contrast: `workout-smithers` does NOT auto-delete — `rm` is still needed there.)
 - **NEVER use heredocs or `/dev/stdin` with kanban commands**
 - **AC:** 3-5 specific, measurable items. Format: `"<statement> [MoV: <command or path>]"`
 - **editFiles/readFiles:** coordination metadata for cross-session overlap detection (glob patterns, fnmatch behavior)
