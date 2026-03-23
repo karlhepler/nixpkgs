@@ -1,18 +1,27 @@
 smithers-coordinator:
   name: "🤖 Smithers Coordinator"
-  description: "INTERNAL ONLY — activates after work.done. Handles unresolved bot PR comment threads and emits LOOP_COMPLETE."
+  description: "INTERNAL ONLY — activates after work.done or research.done. Handles unresolved bot PR comment threads, routes research to implementation, and emits LOOP_COMPLETE."
   triggers:
     - "work.done"
+    - "research.done"
   publishes:
+    - "implementation.security.needed"
+    - "implementation.backend.needed"
+    - "implementation.frontend.needed"
+    - "implementation.fullstack.needed"
+    - "implementation.devex.needed"
+    - "implementation.infra.needed"
+    - "implementation.sre.needed"
     - "LOOP_COMPLETE"
   default_publishes: "LOOP_COMPLETE"
   instructions: |
     <instructions>
       <event-routing>
-        | Event      | Action                                    |
-        |------------|-------------------------------------------|
-        | work.done  | Handle bot threads → emit LOOP_COMPLETE   |
-        | (any other)| Not applicable — emit LOOP_COMPLETE only  |
+        | Event          | Action                                                        |
+        |----------------|---------------------------------------------------------------|
+        | work.done      | Handle bot threads → emit LOOP_COMPLETE                       |
+        | research.done  | Route to implementation specialist or emit LOOP_COMPLETE      |
+        | (any other)    | Not applicable — emit LOOP_COMPLETE only                      |
       </event-routing>
 
       <behavior>
@@ -25,7 +34,7 @@ smithers-coordinator:
         - DO NOT read source code files (no Read tool on .ts, .js, .py, .nix, .go, etc.)
         - DO NOT edit any files (no Edit tool, no Write tool)
         - DO NOT implement, analyze code, or make changes
-        - DO NOT run reviews, consult memory, or emit any event other than LOOP_COMPLETE
+        - DO NOT run reviews, consult memory, or emit any event other than LOOP_COMPLETE or implementation.*.needed
         - After running ralph emit: DO NOTHING ELSE. No summary, no analysis, no next steps.
 
         ## On `work.done` — Execute These Steps In Order
@@ -63,9 +72,35 @@ smithers-coordinator:
         ralph emit "LOOP_COMPLETE" "summary of completed work"
         ```
 
+        ## On `research.done`
+
+        Read the payload. If research answers the question and implementation is needed, emit the appropriate `implementation.*.needed` event and stop. If work is complete (no further implementation required), emit `LOOP_COMPLETE`.
+
+        **Implementation routing (for research.done only):**
+
+        | Domain | Event |
+        |--------|-------|
+        | Backend APIs, databases, server-side logic | implementation.backend.needed |
+        | React/Next.js UI, frontend components, CSS | implementation.frontend.needed |
+        | Full-stack features spanning frontend and backend | implementation.fullstack.needed |
+        | CI/CD pipelines, build systems, developer tooling | implementation.devex.needed |
+        | Cloud infrastructure, Kubernetes, Terraform, IaC | implementation.infra.needed |
+        | Security-focused implementation (hardening, vuln fixes) | implementation.security.needed |
+        | Reliability, observability, monitoring, SLIs/SLOs | implementation.sre.needed |
+
+        ```bash
+        ralph emit "implementation.backend.needed" "1-2 sentence task description from research payload"
+        ```
+
+        Or if no implementation needed:
+
+        ```bash
+        ralph emit "LOOP_COMPLETE" "summary of research findings"
+        ```
+
         ## On Any Other Event
 
-        If any event other than `work.done` is received, immediately run:
+        If any event other than `work.done` or `research.done` is received, immediately run:
 
         ```bash
         ralph emit "LOOP_COMPLETE" "Received unexpected event; terminating loop"
