@@ -371,7 +371,7 @@ def _prc_retry(pr_number: int, max_retries: int, backoff_base: int) -> dict:
     """
     for attempt in range(1, max_retries + 1):
         result = subprocess.run(
-            ["prc", "list", str(pr_number), "--bots-only", "--inline-only", "--max-replies", "0"],
+            ["prc", "list", str(pr_number), "--unresolved", "--bots-only", "--inline-only", "--max-replies", "0"],
             capture_output=True,
             text=True,
             check=False
@@ -403,38 +403,15 @@ def _prc_retry(pr_number: int, max_retries: int, backoff_base: int) -> dict:
 
 
 def get_bot_comments(owner: str, repo: str, pr_number: int) -> dict:
-    """Get inline bot comments with zero replies from the PR using prc CLI.
+    """Get actionable inline bot comments from the PR using prc CLI.
 
-    FILTERS APPLIED (any may cause bot comments to be missed):
+    Runs: prc list --unresolved --bots-only --inline-only --max-replies 0
 
-    1. --bots-only: Only returns comments where author.__typename == "Bot" (GraphQL)
-       - Catches: GitHub Actions, CodeQL, dependabot, linear-app, terraform-bot, etc.
-       - Filters used: informational_bots list in count_actionable_bot_comments()
-
-    2. --inline-only: Only returns inline code review comments (not PR-level comments)
-       - Misses: PR-level bot comments (e.g., "This PR needs...")
-       - Rationale: PR-level comments are typically informational, not actionable code feedback
-       - Example miss: Claude-Maze bot PR-level comment on PR #28686
-
-    3. --max-replies 0: Only returns threads with ZERO replies
-       - Misses: Bot comments that already have replies (even if unresolved)
-       - Rationale: Avoids duplicate work - if replied, assume addressed
-       - Edge case: Bot comment with reply but still actionable (rare)
-
-    4. Implicit: Resolved threads may be excluded by prc depending on implementation
-       - Misses: Bot comments in resolved threads
-       - Rationale: Resolved = addressed (by convention)
-
-    INVESTIGATION NOTE (Claude-Maze miss):
-    If Claude-Maze comment was missed on PR #28686, likely causes:
-    - PR-level comment (not inline) → filtered by --inline-only
-    - Already had replies → filtered by --max-replies 0
-    - In resolved thread → filtered by prc's resolution logic
-
-    TUNING RECOMMENDATIONS:
-    - To catch PR-level bot comments: Remove --inline-only, add PR-level handling in prompt
-    - To catch commented threads: Increase --max-replies to 1+, add dedup logic
-    - To catch resolved threads: Add --include-resolved flag to prc (if available)
+    prc is the sole source of truth for what is actionable:
+    - --unresolved: only unresolved threads
+    - --bots-only: only bot authors
+    - --inline-only: only inline review comments (not PR-level)
+    - --max-replies 0: only threads with zero replies
 
     RETRY LOGIC:
     - Retries up to 5 times with exponential backoff (1s, 2s, 4s, 8s, 16s)
@@ -456,58 +433,22 @@ def has_unaddressed_bot_comments(owner: str, repo: str, pr_number: int) -> bool:
 
 
 def count_actionable_bot_comments(bot_comments: dict) -> int:
-    """Count actionable inline bot comments with zero replies.
+    """Count actionable inline bot comments returned by prc.
 
-    Uses prc with --max-replies 0 to only get threads with no replies.
-    This automatically excludes threads where anyone (including smithers) has replied.
+    prc is the sole source of truth. Comments are already filtered at the source by:
+    - --unresolved: resolved threads excluded
+    - --bots-only: only bot authors
+    - --inline-only: only inline review comments (not PR-level)
+    - --max-replies 0: threads with replies excluded
 
-    Filters out:
-    - Informational bots (linear-app, terraform-bot, github-actions, argocd, codecov, dependabot)
-    - Already resolved review threads
-
-    Returns count of inline bot comments that need action/response.
-    If prc failed, logs the error and returns 0 (not None) to prevent crashes.
+    No additional filtering applied here.
+    If prc failed, logs the error and returns 0 to prevent crashes.
     """
-    # Check for prc errors first
     if "error" in bot_comments:
-        error_msg = bot_comments["error"]
-        log(f"🟡 prc error detected: {error_msg}")
+        log(f"🟡 prc error detected: {bot_comments['error']}")
         return 0  # Can't count comments if prc failed
 
-    # Informational bots that don't require action
-    informational_bots = {
-        "linear-app[bot]",
-        "linear-app",
-        "terraform-bot",
-        "github-actions[bot]",
-        "github-actions",
-        "argocd-bot",
-        "argocd",
-        "codecov[bot]",
-        "codecov",
-        "dependabot[bot]",
-        "dependabot",
-    }
-
-    comments = bot_comments.get("comments", [])
-    actionable_count = 0
-
-    for comment in comments:
-        author = comment.get("author", "").lower()
-
-        # Skip informational bots
-        if author in informational_bots:
-            continue
-
-        # Skip resolved threads
-        if comment.get("is_resolved") is True:
-            continue
-
-        # prc --max-replies 0 already filtered out threads with replies
-        # and --inline-only filtered out PR-level comments
-        actionable_count += 1
-
-    return actionable_count
+    return len(bot_comments.get("comments", []))
 
 
 def has_merge_conflicts(pr_number: int) -> bool:
