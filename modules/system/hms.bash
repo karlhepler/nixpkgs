@@ -157,30 +157,6 @@ else
   fi
 fi
 
-# Typora: Markdown editor (macOS universal binary, installed from typora.io)
-typora_installed=$(defaults read /Applications/Typora.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null || echo "")
-typora_latest=$(curl -fsSL "https://typora.io/releases/stable.html" | sed -n 's/.*<h2>\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)<\/h2>.*/\1/p' | head -1 || echo "")
-
-if [ -z "$typora_latest" ]; then
-  echo "Warning: Could not fetch latest Typora version, skipping."
-elif [ "$typora_installed" != "$typora_latest" ]; then
-  if [ -z "$typora_installed" ]; then
-    echo "Installing Typora v$typora_latest..."
-  else
-    echo "Updating Typora from v$typora_installed to v$typora_latest..."
-  fi
-  typora_tmp=$(mktemp -d)
-  if curl -fsSL "https://downloads.typora.io/mac/Typora-${typora_latest}.dmg" -o "$typora_tmp/Typora.dmg"; then
-    hdiutil attach "$typora_tmp/Typora.dmg" -mountpoint "$typora_tmp/mnt" -nobrowse -quiet
-    cp -R "$typora_tmp/mnt/Typora.app" /Applications/Typora.app
-    hdiutil detach "$typora_tmp/mnt" -quiet
-    echo "Typora v$typora_latest installed."
-  else
-    echo "Warning: Could not download Typora v$typora_latest, skipping."
-  fi
-  rm -rf "$typora_tmp"
-fi
-
 # Configure local git for this repo (silent, idempotent)
 # USER_NAME and USER_EMAIL are provided as env vars by the nix wrapper
 git -C ~/.config/nixpkgs config --local user.name "$USER_NAME" 2>/dev/null
