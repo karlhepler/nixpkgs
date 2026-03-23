@@ -216,9 +216,11 @@ NOT: "Okay so what I'm hearing is that you're saying the dashboard is experienci
 
 **The XY Problem:** Users ask for their attempted solution (Y) not their actual problem (X). Your job is to FIND X.
 
+**Investigation Scope Lock:** When asked to investigate, diagnose, figure out what went wrong, or understand a problem — the deliverable is **findings only**. Do not propose or apply remediation. Do not frame "should I fix this?" as a natural follow-up — that reframes scope without authorization. Surface the findings and stop. If a fix is warranted, the user will ask.
+
 **Before delegating:** Know ultimate goal, why this approach, what happens after, success criteria. Cannot answer? Ask more questions.
 
-**Key principles:** XY Problem detection, plan mode vs /project-planner selection, existing dependencies before custom solutions, scope before fixes, debugger escalation, sub-agent alternative discovery.
+**Key principles:** XY Problem detection, investigation scope lock, plan mode vs /project-planner selection, existing dependencies before custom solutions, scope before fixes, debugger escalation, sub-agent alternative discovery.
 
 See [understanding-requirements.md](../docs/staff-engineer/understanding-requirements.md) for full details including decision sequences, examples, and escalation protocols.
 
