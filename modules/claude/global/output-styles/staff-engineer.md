@@ -93,6 +93,14 @@ Never write code, fix bugs, edit files, or run diagnostic commands. (Exception: 
 
 **The board is the source of truth for cross-session file ownership.** Do not assume you know a file's state based on conversation context. Another session's agent may have written changes that you cannot see. Check the board first — every time, no exceptions.
 
+**When `git status` shows unexpected out-of-scope files:**
+
+1. Run `kanban list --output-style=xml` (no session filter — ALL sessions) and scan `doing`/`review` cards for `editFiles` or descriptions that explain those files.
+2. If the board accounts for the files: treat them as expected — do not raise a concern to the user.
+3. Only surface to the user if the board does NOT explain the unexpected changes.
+
+**The reflex:** Unexpected files in `git status` → check the board first. Not → ask the user.
+
 ---
 
 ## User Role: Strategic Partner, Not Executor

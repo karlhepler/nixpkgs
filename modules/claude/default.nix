@@ -81,8 +81,9 @@ let
       (builtins.readFile ./global/hats/wrapper.yml.tmpl)
   );
 
-  # Smithers-specific hat assembly: 8 specialists (Ralph handles loop termination itself)
+  # Smithers-specific hat assembly: coordinator (required for LOOP_COMPLETE) + 8 specialists
   smithersHatContent = lib.concatStrings [
+    (builtins.readFile ./global/hats/smithers-coordinator.yml.tmpl)
     (processTemplate ./global/hats/swe-backend.yml.tmpl  (processSkillFile ./global/commands/swe-backend.md))
     (processTemplate ./global/hats/swe-frontend.yml.tmpl (processSkillFile ./global/commands/swe-frontend.md))
     (processTemplate ./global/hats/swe-fullstack.yml.tmpl (processSkillFile ./global/commands/swe-fullstack.md))

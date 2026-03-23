@@ -25,6 +25,7 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
 from typing import List, Dict, Optional
 
 
@@ -35,6 +36,7 @@ def show_help() -> None:
 USAGE:
   echo '[{...}]' | workout-claude <command>
   cat file.json | workout-claude <command>
+  workout-claude --file <path> <command>
   workout-claude -h, --help
 
 ARGUMENTS:
@@ -93,8 +95,11 @@ EXAMPLES:
   # Cross-repo: create worktree in a different repository
   echo '[{"worktree": "fix-infra", "prompt": "Fix the deployment issue", "repo": "~/ops"}]' | workout-claude staff
 
-  # From file
+  # From file via pipe
   cat worktrees.json | workout-claude staff
+
+  # From file (auto-deleted after reading)
+  workout-claude --file worktrees.json staff
 
 WHAT HAPPENS:
   For each JSON object:
@@ -402,36 +407,61 @@ def main():
         show_help()
         sys.exit(0)
 
+    # Parse --file flag if present
+    args = sys.argv[1:]
+    input_file: Optional[str] = None
+    if len(args) >= 2 and args[0] == "--file":
+        input_file = args[1]
+        args = args[2:]
+
     # Check for command argument
-    if len(sys.argv) < 2:
+    if len(args) < 1:
         print("Error: Missing required command argument", file=sys.stderr)
         print("Usage: echo '[{...}]' | workout-claude <command>", file=sys.stderr)
         print("       cat file.json | workout-claude <command>", file=sys.stderr)
+        print("       workout-claude --file <path> <command>", file=sys.stderr)
         print("Example: echo '[{...}]' | workout-claude staff", file=sys.stderr)
         print("Run 'workout-claude --help' for full documentation", file=sys.stderr)
         sys.exit(1)
 
-    command = sys.argv[1]
+    command = args[0]
 
-    # Check for non-stdin invocation (error)
-    if sys.stdin.isatty():
-        print("Error: workout-claude requires JSON input via stdin", file=sys.stderr)
-        print(f"Usage: echo '[{{...}}]' | workout-claude {command}", file=sys.stderr)
-        print(f"       cat file.json | workout-claude {command}", file=sys.stderr)
-        print("Run 'workout-claude --help' for full documentation", file=sys.stderr)
-        sys.exit(1)
-
-    # Read and parse JSON from stdin (must happen before check_prerequisites so
-    # we know whether any items lack a repo field and need a CWD git check)
-    try:
-        json_input = sys.stdin.read()
-        data = json.loads(json_input)
-    except json.JSONDecodeError as e:
-        print(f"Error: Invalid JSON input: {e}", file=sys.stderr)
-        sys.exit(1)
-    except Exception as e:
-        print(f"Error reading stdin: {e}", file=sys.stderr)
-        sys.exit(1)
+    # Read and parse JSON — either from --file or stdin
+    # (must happen before check_prerequisites so we know whether any items
+    # lack a repo field and need a CWD git check)
+    if input_file is not None:
+        # --file mode: read file, parse, then delete immediately after successful parse
+        file_path = Path(input_file)
+        try:
+            json_input = file_path.read_text()
+        except Exception as e:
+            print(f"Error reading file {input_file}: {e}", file=sys.stderr)
+            sys.exit(1)
+        try:
+            data = json.loads(json_input)
+        except json.JSONDecodeError as e:
+            print(f"Error: Invalid JSON in file {input_file}: {e}", file=sys.stderr)
+            sys.exit(1)
+        # Delete the input file immediately after successful parse
+        file_path.unlink()
+    else:
+        # stdin mode
+        if sys.stdin.isatty():
+            print("Error: workout-claude requires JSON input via stdin or --file", file=sys.stderr)
+            print(f"Usage: echo '[{{...}}]' | workout-claude {command}", file=sys.stderr)
+            print(f"       cat file.json | workout-claude {command}", file=sys.stderr)
+            print(f"       workout-claude --file <path> {command}", file=sys.stderr)
+            print("Run 'workout-claude --help' for full documentation", file=sys.stderr)
+            sys.exit(1)
+        try:
+            json_input = sys.stdin.read()
+            data = json.loads(json_input)
+        except json.JSONDecodeError as e:
+            print(f"Error: Invalid JSON input: {e}", file=sys.stderr)
+            sys.exit(1)
+        except Exception as e:
+            print(f"Error reading stdin: {e}", file=sys.stderr)
+            sys.exit(1)
 
     # Validate JSON structure
     try:

@@ -157,32 +157,28 @@ else
   fi
 fi
 
-# MarkText: Markdown editor (Tkaixiang maintained fork, installed from GitHub releases)
-marktext_installed=$(defaults read /Applications/MarkText.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null || echo "")
-marktext_latest=$(curl -fsSL "https://api.github.com/repos/Tkaixiang/marktext/releases/latest" | jq -r '.tag_name // empty' | sed 's/^v//' || echo "")
+# Typora: Markdown editor (macOS universal binary, installed from typora.io)
+typora_installed=$(defaults read /Applications/Typora.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null || echo "")
+typora_latest=$(curl -fsSL "https://typora.io/releases/stable.html" | sed -n 's/.*<h2>\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)<\/h2>.*/\1/p' | head -1 || echo "")
 
-if [ -z "$marktext_latest" ]; then
-  echo "Warning: Could not fetch latest MarkText version, skipping."
-elif [ "$marktext_installed" != "$marktext_latest" ]; then
-  if [ -z "$marktext_installed" ]; then
-    echo "Installing MarkText v$marktext_latest..."
+if [ -z "$typora_latest" ]; then
+  echo "Warning: Could not fetch latest Typora version, skipping."
+elif [ "$typora_installed" != "$typora_latest" ]; then
+  if [ -z "$typora_installed" ]; then
+    echo "Installing Typora v$typora_latest..."
   else
-    echo "Updating MarkText from v$marktext_installed to v$marktext_latest..."
+    echo "Updating Typora from v$typora_installed to v$typora_latest..."
   fi
-  marktext_tmp=$(mktemp -d)
-  curl -fsSL "https://github.com/Tkaixiang/marktext/releases/download/v${marktext_latest}/marktext-mac-arm64-${marktext_latest}.zip" -o "$marktext_tmp/marktext.zip"
-  unzip -q "$marktext_tmp/marktext.zip" -d "$marktext_tmp"
-  rm -rf /Applications/MarkText.app
-  mv "$marktext_tmp/marktext.app" /Applications/MarkText.app
-  xattr -cr /Applications/MarkText.app
-  codesign --force --deep --sign - /Applications/MarkText.app
-  rm -rf "$marktext_tmp"
-  echo "MarkText v$marktext_latest installed."
-fi
-
-# Ensure MarkText is the default app for markdown files
-if [ -d /Applications/MarkText.app ]; then
-  duti -s com.electron.app .md all
+  typora_tmp=$(mktemp -d)
+  if curl -fsSL "https://downloads.typora.io/mac/Typora-${typora_latest}.dmg" -o "$typora_tmp/Typora.dmg"; then
+    hdiutil attach "$typora_tmp/Typora.dmg" -mountpoint "$typora_tmp/mnt" -nobrowse -quiet
+    cp -R "$typora_tmp/mnt/Typora.app" /Applications/Typora.app
+    hdiutil detach "$typora_tmp/mnt" -quiet
+    echo "Typora v$typora_latest installed."
+  else
+    echo "Warning: Could not download Typora v$typora_latest, skipping."
+  fi
+  rm -rf "$typora_tmp"
 fi
 
 # Configure local git for this repo (silent, idempotent)
