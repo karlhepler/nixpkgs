@@ -1,8 +1,8 @@
-/* marktext.css — Typora theme replicating marktext default light aesthetics */
+/* marktext.css — Typora theme replicating marktext default dark aesthetics */
 
 :root {
-  --bg-color: #ffffff;
-  --text-color: rgba(0, 0, 0, 0.7);
+  --bg-color: #1e2127;
+  --text-color: rgba(255, 255, 255, 0.85);
   --primary-color: rgba(33, 181, 111, 1);
   --monospace: "DejaVu Sans Mono", "Source Code Pro", "Droid Sans Mono", Consolas, monospace;
 }
@@ -13,9 +13,9 @@ html {
 
 body {
   font-family: "Open Sans", "Clear Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
-  color: rgba(0, 0, 0, 0.7);
+  color: rgba(255, 255, 255, 0.85);
   line-height: 1.6;
-  background-color: #ffffff;
+  background-color: #1e2127;
 }
 
 #write {
@@ -34,8 +34,9 @@ body {
 #write h4, #write h5, #write h6 {
   font-weight: bold;
   line-height: 1.4;
-  margin: 1rem 0;
-  color: rgba(0, 0, 0, 0.8);
+  margin-top: 3rem;
+  margin-bottom: 0.75rem;
+  color: rgba(255, 255, 255, 0.92);
 }
 
 a {
@@ -48,13 +49,13 @@ blockquote {
   border-left: 2px solid rgba(33, 181, 111, 1);
   padding: 0 30px;
   margin: 0;
-  color: rgba(0, 0, 0, 0.5);
+  color: rgba(255, 255, 255, 0.5);
 }
 
 code {
   font-family: var(--monospace);
   font-size: 85%;
-  background-color: rgba(0, 0, 0, 0.03);
+  background-color: rgba(255, 255, 255, 0.06);
   padding: 0.2em 0.4em;
   border-radius: 3px;
 }
@@ -62,8 +63,8 @@ code {
 pre.md-fences {
   font-family: var(--monospace);
   font-size: 14px;
-  background-color: rgba(0, 0, 0, 0.03);
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  background-color: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 4px;
   padding: 16px;
   overflow-x: auto;
@@ -71,13 +72,13 @@ pre.md-fences {
 
 /* Selection color matching marktext green accent */
 ::selection {
-  background-color: rgba(33, 181, 111, 0.2);
+  background-color: rgba(33, 181, 111, 0.25);
 }
 
 /* Horizontal rule */
 hr {
   border: none;
-  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
   margin: 1.5rem 0;
 }
 
@@ -90,9 +91,9 @@ hr {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.15);
+  background: rgba(255, 255, 255, 0.15);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.25);
+  background: rgba(255, 255, 255, 0.25);
 }
