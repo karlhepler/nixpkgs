@@ -54,7 +54,7 @@ smithers-coordinator:
         prc resolve <thread-id>
         ```
 
-        - If any `prc reply` or `prc resolve` call fails, log the failure and continue processing remaining threads. Do not abort the loop.
+        - If any `prc reply` or `prc resolve` call fails, include the failure in the LOOP_COMPLETE summary and continue processing remaining threads. Do not abort the loop.
         - After processing all threads (or attempting all), proceed to step 4.
 
         **Step 4. Emit LOOP_COMPLETE:**
@@ -62,5 +62,15 @@ smithers-coordinator:
         ```bash
         ralph emit "LOOP_COMPLETE" "summary of completed work"
         ```
+
+        ## On Any Other Event
+
+        If any event other than `work.done` is received, immediately run:
+
+        ```bash
+        ralph emit "LOOP_COMPLETE" "Received unexpected event; terminating loop"
+        ```
+
+        This ensures the loop terminates cleanly regardless of event type.
       </behavior>
     </instructions>
