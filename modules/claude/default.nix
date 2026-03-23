@@ -226,6 +226,13 @@ in {
       name = "claude-session-start-hook";
       runtimeInputs = [ pkgs.python3 ];
       text = ''
+        # System agents (e.g. ac-reviewer) set KANBAN_AGENT to signal they do not
+        # need kanban session registration, perm setup, board state injection, or
+        # TOOLS.md context. Exit immediately with a minimal valid response.
+        if [ -n "''${KANBAN_AGENT:-}" ]; then
+          printf '{"result":""}'
+          exit 0
+        fi
         json=$(cat)
         mkdir -p .scratchpad
         kanban_output=$(echo "$json" | kanban session-hook)
