@@ -1,37 +1,6 @@
 { config, pkgs, lib, theme, shellapps, unstable, ... }:
 
 let
-  # typora - Markdown editor for macOS
-  # NOTE: nixpkgs provides typora only for Linux (x86_64-linux).
-  # macOS users require a custom derivation that downloads the DMG directly from Typora's servers.
-  # Cannot be sourced from pkgs-unstable.typora due to platform limitations.
-  # https://typora.io
-  typora = pkgs.stdenv.mkDerivation rec {
-    pname = "typora";
-    version = "1.12.6";
-
-    src = pkgs.fetchurl {
-      url = "https://downloads.typora.io/mac/Typora-${version}.dmg";
-      sha256 = "sha256-JJmW45QayMlia6rnOecW+JPfFPEijhOkqcgZFzaXS4g=";
-    };
-
-    sourceRoot = ".";
-
-    nativeBuildInputs = [ pkgs.undmg ];
-
-    installPhase = ''
-      mkdir -p "$out/Applications"
-      cp -R "Typora.app" "$out/Applications/Typora.app"
-    '';
-
-    meta = {
-      description = "A minimal Markdown editor and reader";
-      homepage = "https://typora.io";
-      platforms = [ "aarch64-darwin" "x86_64-darwin" ];
-      license = pkgs.lib.licenses.unfree;
-    };
-  };
-
   # pinact - GitHub Actions SHA-pinning CLI (not in nixpkgs)
   # https://github.com/suzuki-shunsuke/pinact
   pinact = pkgs.stdenv.mkDerivation {
@@ -80,7 +49,6 @@ in
     jq
     just
     mkcert
-    typora  # Markdown editor
     yq-go
 
     # === Version Control ===
