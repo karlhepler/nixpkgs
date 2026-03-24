@@ -256,9 +256,11 @@ in {
       bind-key -N "Create new session" + new-session
       bind-key -N "Kill current session (with confirmation)" - confirm-before -p "CAUTION: This will kill all windows in session #S. Continue? (y/n)" kill-session
 
-      # Session navigation
-      bind-key -N "Next session" ) switch-client -n
-      bind-key -N "Previous session" ( switch-client -p
+      # Session navigation (index-based, wrapping)
+      bind-key -N "Next session (by index)" ) run-shell 'sessions=$(tmux list-sessions -F "#S" 2>/dev/null); current=$(tmux display-message -p "#S"); count=$(echo "$sessions" | wc -l | tr -d " "); idx=0; i=0; while IFS= read -r s; do i=$((i+1)); [ "$s" = "$current" ] && idx=$i; done <<< "$sessions"; next=$(( idx % count + 1 )); target=$(echo "$sessions" | sed -n "''${next}p"); tmux switch-client -t "''${target}"'
+      bind-key -N "Previous session (by index)" ( run-shell 'sessions=$(tmux list-sessions -F "#S" 2>/dev/null); current=$(tmux display-message -p "#S"); count=$(echo "$sessions" | wc -l | tr -d " "); idx=0; i=0; while IFS= read -r s; do i=$((i+1)); [ "$s" = "$current" ] && idx=$i; done <<< "$sessions"; prev=$(( (idx - 2 + count) % count + 1 )); target=$(echo "$sessions" | sed -n "''${prev}p"); tmux switch-client -t "''${target}"'
+      bind-key -N "Next session (by index, held Ctrl)" C-) run-shell 'sessions=$(tmux list-sessions -F "#S" 2>/dev/null); current=$(tmux display-message -p "#S"); count=$(echo "$sessions" | wc -l | tr -d " "); idx=0; i=0; while IFS= read -r s; do i=$((i+1)); [ "$s" = "$current" ] && idx=$i; done <<< "$sessions"; next=$(( idx % count + 1 )); target=$(echo "$sessions" | sed -n "''${next}p"); tmux switch-client -t "''${target}"'
+      bind-key -N "Previous session (by index, held Ctrl)" C-( run-shell 'sessions=$(tmux list-sessions -F "#S" 2>/dev/null); current=$(tmux display-message -p "#S"); count=$(echo "$sessions" | wc -l | tr -d " "); idx=0; i=0; while IFS= read -r s; do i=$((i+1)); [ "$s" = "$current" ] && idx=$i; done <<< "$sessions"; prev=$(( (idx - 2 + count) % count + 1 )); target=$(echo "$sessions" | sed -n "''${prev}p"); tmux switch-client -t "''${target}"'
     '';
   };
 }
