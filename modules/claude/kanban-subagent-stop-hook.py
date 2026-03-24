@@ -465,11 +465,19 @@ def get_review_cycles(card_number: str, session: str) -> int:
     return 0
 
 
+# Prefix constant used to detect reviewer malfunction in process_subagent_stop
+_REVIEWER_MALFUNCTION_PREFIX = "AC reviewer failed to evaluate any criteria"
+
+
 def _extract_criteria_failures(card_number: str, session: str) -> str:
     """Read card XML and extract criteria that failed with their reasons.
 
     Returns a formatted string listing each failed criterion, or a fallback
     message if the card cannot be read.
+
+    When the reviewer never called pass/fail on ANY criterion, returns a
+    diagnostic prefixed with _REVIEWER_MALFUNCTION_PREFIX so callers can
+    distinguish reviewer malfunction from legitimate work failures.
     """
     try:
         result = run_kanban(["show", card_number, "--output-style=xml", "--session", session])
@@ -484,11 +492,17 @@ def _extract_criteria_failures(card_number: str, session: str) -> str:
             re.DOTALL,
         )
         fail_pattern = re.compile(r'reviewer-met="fail"')
+        reviewer_met_pattern = re.compile(r'reviewer-met="(pass|fail)"')
         reason_pattern = re.compile(r'reviewer-fail-reason="([^"]*)"')
 
         failures = []
+        total_criteria = 0
+        reviewer_interacted_count = 0
         for ac_index, match in enumerate(ac_pattern.finditer(xml_output), 1):
+            total_criteria += 1
             attrs = match.group(1)
+            if reviewer_met_pattern.search(attrs):
+                reviewer_interacted_count += 1
             if not fail_pattern.search(attrs):
                 continue
             criterion_text = match.group(2).strip()
@@ -498,6 +512,19 @@ def _extract_criteria_failures(card_number: str, session: str) -> str:
 
         if failures:
             return "\n".join(failures)
+
+        # Distinguish "reviewer found no failures" from "reviewer never interacted"
+        if total_criteria > 0 and reviewer_interacted_count == 0:
+            log_error(
+                f"AC reviewer for card #{card_number} failed to call criteria pass/fail "
+                f"on any of {total_criteria} criteria — reviewer produced no actionable output"
+            )
+            return (
+                f"{_REVIEWER_MALFUNCTION_PREFIX} — 0/{total_criteria} criteria "
+                f"received a pass/fail verdict. The reviewer ran but did not call "
+                f"'kanban criteria pass' or 'kanban criteria fail' for any criterion. "
+                f"This is a reviewer malfunction, not a work quality issue."
+            )
 
         return "AC review did not pass, but no specific failure reasons were found on the card."
 
@@ -852,6 +879,27 @@ def process_subagent_stop(payload: dict) -> dict:
     # Under max cycles — redo the card and block the agent
     # Read the card to get actual criteria failure reasons from the AC reviewer
     failure_details = _extract_criteria_failures(card_number, session)
+
+    # If the reviewer itself malfunctioned (never called pass/fail on any criterion),
+    # don't redo — the sub-agent's work may be correct, retrying won't fix a reviewer
+    # issue. Allow stop with diagnostic so staff can intervene.
+    if failure_details.startswith(_REVIEWER_MALFUNCTION_PREFIX):
+        log_error(
+            f"Reviewer malfunction for card #{card_number} — "
+            f"allowing stop for staff intervention instead of redo"
+        )
+        agent_output = extract_agent_output(transcript_path) if transcript_path else ""
+        agent_excerpt = (agent_output[:500] + "...") if len(agent_output) > 500 else agent_output
+        message = (
+            f"Card #{card_number} AC reviewer malfunction — the reviewer ran but never "
+            f"called criteria pass/fail on any criterion. The sub-agent's work may be "
+            f"correct. Staff engineer should review manually or re-run AC review.\n\n"
+            f"Reviewer diagnostic: {failure_details}"
+        )
+        if agent_excerpt:
+            message += f"\n\nAgent output excerpt:\n{agent_excerpt}"
+        message += format_deferred_notification(session)
+        return allow(message)
 
     # Check card status before attempting redo — if it's already in a terminal state, skip redo
     status_before_redo = get_card_status(card_number, session)
