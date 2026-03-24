@@ -711,6 +711,7 @@ def run_inner_loop(
                 "claude", "-p", "--model", "haiku", "--max-turns", str(CLAUDE_MAX_TURNS),
                 "--system-prompt", ac_reviewer_system_prompt,
                 "--output-format", "json",
+                "--dangerously-skip-permissions",
             ]
 
             result = subprocess.run(
@@ -793,7 +794,7 @@ def process_subagent_stop(payload: dict) -> dict:
 
     Steps:
     1. Identify card from transcript
-    2. Check if agent called kanban review
+    2. Call kanban review (hook responsibility, not agent's)
     3. Run inner AC review loop (haiku)
     4. Process result (allow/block)
     5. Append deferred card notification
@@ -815,8 +816,7 @@ def process_subagent_stop(payload: dict) -> dict:
     card_number, session = extracted
     log_info(f"Found card #{card_number} (session: {session})")
 
-    # Step 2: Check if agent completed work (called kanban review)
-    # Check card status — if it's in "review", the agent successfully called kanban review
+    # Step 2: Call kanban review (hook responsibility — agents no longer call this)
     status = get_card_status(card_number, session)
     if status is None:
         log_info(f"Could not get status for card #{card_number} — allowing stop")
@@ -828,13 +828,33 @@ def process_subagent_stop(payload: dict) -> dict:
         message += format_deferred_notification(session)
         return allow(message)
 
-    if status != "review":
-        # Agent didn't call kanban review successfully — incomplete work
-        log_info(f"Card #{card_number} is in '{status}', not 'review' — agent did not complete review step")
-        message = (
-            f"Card #{card_number} work incomplete — agent stopped without calling kanban review. "
-            f"Card remains in '{status}' column."
-        )
+    if status == "review":
+        # Agent or a previous hook run already moved card to review — proceed to AC
+        log_info(f"Card #{card_number} already in review — proceeding to AC review")
+    elif status in ("doing", "todo"):
+        # Agent stopped without calling kanban review — call it ourselves
+        log_info(f"Card #{card_number} is in '{status}' — hook calling kanban review")
+        review_result = run_kanban(["review", card_number, "--session", session])
+        if review_result.returncode != 0:
+            # kanban review failed — unchecked criteria exist. Block the agent
+            # with the error so it can investigate, fix, and re-check.
+            review_error = review_result.stderr.strip() or review_result.stdout.strip()
+            log_info(f"kanban review failed for card #{card_number}: {review_error}")
+            reason = (
+                f"kanban review failed for card #{card_number}:\n\n"
+                f"{review_error}\n\n"
+                f"You have unchecked acceptance criteria. Do NOT blindly check them off — "
+                f"investigate each unchecked criterion, do the work to satisfy it, verify "
+                f"your fix is correct, and only THEN run `kanban criteria check`. "
+                f"The SubagentStop hook will call `kanban review` again automatically "
+                f"when you stop."
+            )
+            return block(reason)
+        log_info(f"kanban review succeeded for card #{card_number} — proceeding to AC review")
+    else:
+        # Card in unexpected status (canceled, etc.) — allow stop
+        log_info(f"Card #{card_number} in unexpected status '{status}' — allowing stop")
+        message = f"Card #{card_number} is in '{status}' — cannot proceed with AC review."
         message += format_deferred_notification(session)
         return allow(message)
 
@@ -925,8 +945,10 @@ def process_subagent_stop(payload: dict) -> dict:
     )
     system_message = (
         f"The AC reviewer found issues with your work. "
-        f"Fix the issues described below, then call "
-        f"kanban review {card_number} --session {session} again."
+        f"Investigate each failed criterion, fix the underlying issue, verify your fix "
+        f"is correct, and run `kanban criteria check {card_number} <n> --session {session}` "
+        f"for each criterion you fix. The SubagentStop hook will call `kanban review` "
+        f"automatically when you stop — do NOT call it yourself."
     )
     return block(reason, system_message)
 
