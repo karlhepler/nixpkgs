@@ -439,6 +439,19 @@ def get_card_status(card_number: str, session: str) -> str | None:
     return None
 
 
+def get_card_type(card_number: str, session: str) -> str:
+    """Get the card type (work, review, or research). Defaults to 'work'."""
+    try:
+        result = run_kanban(["show", card_number, "--output-style=xml", "--session", session])
+        if result.returncode == 0:
+            m = re.search(r'type="(work|review|research)"', result.stdout)
+            if m:
+                return m.group(1)
+    except Exception:
+        pass
+    return "work"
+
+
 def get_review_cycles(card_number: str, session: str) -> int:
     """Read the review_cycles count from the card XML."""
     try:
@@ -518,8 +531,13 @@ def format_deferred_notification(session: str) -> str:
 # Inner loop: Haiku AC review
 # ---------------------------------------------------------------------------
 
-def build_haiku_prompt(card_number: str, session: str, previous_context: str, agent_output: str = "") -> str:
-    """Build the prompt for the haiku AC reviewer."""
+def build_haiku_prompt(card_number: str, session: str, previous_context: str, agent_output: str = "", card_type: str = "work") -> str:
+    """Build the prompt for the haiku AC reviewer.
+
+    Verification strategy depends on card type:
+    - work: evidence = filesystem (inspect files, run MoV commands)
+    - review/research: evidence = agent output (verify findings were articulated)
+    """
     previous_section = ""
     if previous_context:
         previous_section = f"""
@@ -528,17 +546,63 @@ re-checking criteria you already reviewed):
 {previous_context}
 """
 
+    is_findings_card = card_type in ("review", "research")
+
     agent_output_section = ""
     if agent_output:
-        agent_output_section = f"""
-Agent output (the sub-agent's final response — use this as evidence context):
+        if is_findings_card:
+            agent_output_section = f"""
+Agent output (the sub-agent's final response — THIS IS THE PRIMARY EVIDENCE):
 ---
 {agent_output}
 ---
 
-For review/research cards, the agent output above IS the primary deliverable to verify against.
-For work cards, file inspection is primary but use agent output as supplementary context.
+This is a {card_type} card. The agent's deliverable is its findings/analysis, NOT
+file changes. Verify each criterion against the agent output above. The MoV tells
+you WHAT to look for in the output (e.g., "findings returned" means check that
+findings exist and address the criterion). Do NOT inspect source files to validate
+whether findings are "correct" — the agent's job was to articulate findings, and
+your job is to verify the findings were articulated.
 """
+        else:
+            agent_output_section = f"""
+Agent output (the sub-agent's final response — supplementary context):
+---
+{agent_output}
+---
+
+This is a work card. File inspection is primary evidence. Use the agent output
+above as supplementary context only.
+"""
+
+    if is_findings_card:
+        verification_step = f"""Step 2: For each acceptance criterion, verify it against the AGENT OUTPUT
+provided above. This is a {card_type} card — the deliverable is findings/analysis
+returned by the agent, not file changes.
+- Read each criterion and its MoV
+- Check whether the agent output satisfies what the MoV asks for
+- Do NOT inspect source code files to judge whether findings are "accurate"
+  (the agent reported what it found — your job is to verify it reported findings,
+  not to re-do the investigation)"""
+    else:
+        verification_step = """Step 2: For each acceptance criterion, verify it by inspecting files, running
+the Method of Verification (MoV) specified in the criterion text, or checking
+whatever evidence is appropriate."""
+
+    if is_findings_card:
+        important_section = f"""IMPORTANT:
+- Verify EVERY criterion. Do not skip any.
+- Evidence source is the AGENT OUTPUT above — not the filesystem.
+- The MoV tells you what to look for in the agent's output.
+- Do NOT read source files to check if findings are "correct" — that is re-doing
+  the {card_type}, not reviewing it.
+- Run kanban criteria pass/fail as you verify each criterion, not all at the end."""
+    else:
+        important_section = """IMPORTANT:
+- Verify EVERY criterion. Do not skip any.
+- Be thorough but efficient — max 2 file reads per criterion.
+- Use the MoV in each criterion to guide your verification approach.
+- Run kanban criteria pass/fail as you verify each criterion, not all at the end."""
 
     return f"""You are an AC reviewer for kanban card #{card_number} (session {session}).
 
@@ -547,9 +611,7 @@ Your job: Verify each acceptance criterion, then complete the card.
 Step 1: Run this command to read the card:
   kanban show {card_number} --output-style=xml --session {session}
 
-Step 2: For each acceptance criterion, verify it by inspecting files, running
-the Method of Verification (MoV) specified in the criterion text, or checking
-whatever evidence is appropriate.
+{verification_step}
 
 Step 3: For each criterion you verify:
   - If it PASSES: kanban criteria pass {card_number} <n> --session {session}
@@ -561,11 +623,7 @@ Step 4: After all criteria have a pass or fail verdict, run:
 If kanban done fails (some criteria are unchecked or failed), that is expected.
 Just ensure every criterion has been evaluated with pass or fail.
 {agent_output_section}{previous_section}
-IMPORTANT:
-- Verify EVERY criterion. Do not skip any.
-- Be thorough but efficient — max 2 file reads per criterion.
-- Use the MoV in each criterion to guide your verification approach.
-- Run kanban criteria pass/fail as you verify each criterion, not all at the end.
+{important_section}
 """
 
 
@@ -600,6 +658,10 @@ def run_inner_loop(
     if agent_output:
         log_info(f"Extracted agent output for card #{card_number} ({len(agent_output)} chars)")
 
+    # Detect card type to adjust verification strategy
+    card_type = get_card_type(card_number, session)
+    log_info(f"Card #{card_number} type: {card_type}")
+
     # Read ac-reviewer agent definition for use as system prompt
     # (same pattern as staff.bash: read agent definition, pass via --system-prompt)
     ac_reviewer_system_prompt = read_ac_reviewer_agent_definition()
@@ -608,7 +670,7 @@ def run_inner_loop(
     for i in range(1, MAX_INNER_ITERATIONS + 1):
         log_info(f"Inner loop iteration {i}/{MAX_INNER_ITERATIONS} for card #{card_number}")
 
-        prompt = build_haiku_prompt(card_number, session, accumulated_context, agent_output)
+        prompt = build_haiku_prompt(card_number, session, accumulated_context, agent_output, card_type)
 
         try:
             # Set agent identity env vars so metrics identify this as ac-reviewer
