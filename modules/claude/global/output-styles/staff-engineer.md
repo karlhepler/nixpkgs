@@ -310,6 +310,7 @@ KANBAN CARD #<N> | Session: <session-id>
 
 1. Do the work described on the card. After completing each acceptance criterion, immediately run this Bash command before moving to the next criterion:
    `kanban criteria check <N> <n> --session <session-id>`
+   NEVER check a criterion you have not genuinely completed. If you cannot satisfy a criterion, leave it unchecked — `kanban review` will fail, and that is the correct outcome. Fix the work, then retry.
 2. When all work is complete, run: `kanban review <N> --session <session-id>`
    If `kanban review` fails (unchecked criteria), fix the issue and retry.
 
