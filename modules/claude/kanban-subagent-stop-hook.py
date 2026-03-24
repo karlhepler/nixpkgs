@@ -227,6 +227,13 @@ _CARD_XML_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# Patterns for detecting permission-gate stalls in Claude Code dontAsk mode.
+# Denied Bash commands produce tool results containing these phrases.
+_PERMISSION_DENIAL_PATTERN = re.compile(
+    r'(?:auto(?:matically)?[- ]denied|not allowed by.*permissions)',
+    re.IGNORECASE,
+)
+
 
 # ---------------------------------------------------------------------------
 # Error logging
@@ -385,6 +392,57 @@ def extract_card_from_transcript(transcript_path: str) -> tuple[str, str] | None
         return None
 
     return None
+
+
+def detect_permission_stall(transcript_path: str) -> list[str]:
+    """
+    Scan the JSONL transcript for Bash permission denial signals.
+
+    In Claude Code dontAsk mode, denied Bash commands produce tool_result
+    entries whose content contains phrases like 'was automatically denied',
+    'not allowed by your current permissions', or 'permission denied'.
+
+    Returns a list of denied command descriptions (non-empty strings extracted
+    near each denial), or an empty list if no denials are found or on error.
+    Fails open: any exception is caught and an empty list is returned.
+    """
+    denied = []
+    try:
+        with open(transcript_path, "r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line, strict=False)
+                except json.JSONDecodeError:
+                    continue
+
+                if not isinstance(entry, dict):
+                    continue
+
+                # Tool results appear as user-role messages in JSONL transcripts.
+                # Filter to only user-role entries to avoid false positives from
+                # assistant messages that discuss permissions in their reasoning.
+                if entry.get("role") != "user":
+                    continue
+
+                content = entry.get("content", "")
+                texts = _extract_text_from_entry(content)
+
+                for text in texts:
+                    if _PERMISSION_DENIAL_PATTERN.search(text):
+                        # Extract a concise description: first non-empty line of the denial text
+                        description = next(
+                            (ln.strip() for ln in text.splitlines() if ln.strip()),
+                            text[:120].strip(),
+                        )
+                        denied.append(description)
+                        break  # one denial per entry is enough
+    except Exception as exc:
+        log_error(f"detect_permission_stall failed for {transcript_path}: {exc}")
+        return []
+    return denied
 
 
 def _extract_text_from_entry(entry: dict | list | str, depth: int = 0) -> list[str]:
@@ -815,6 +873,29 @@ def process_subagent_stop(payload: dict) -> dict:
 
     card_number, session = extracted
     log_info(f"Found card #{card_number} (session: {session})")
+
+    # Check for permission-gate stall before doing anything else.
+    # If the agent hit Bash auto-denials and the card is still doing (never completed),
+    # short-circuit the retry loop — retrying won't help until permissions are granted.
+    status_for_stall_check = get_card_status(card_number, session)
+    if status_for_stall_check == "doing":
+        denied_commands = detect_permission_stall(transcript_path)
+        if len(denied_commands) >= 2:
+            log_info(
+                f"Permission stall detected for card #{card_number} — "
+                f"{len(denied_commands)} denial(s) found in transcript"
+            )
+            denied_list = "\n".join(f"  - {cmd}" for cmd in denied_commands)
+            message = (
+                f"Card #{card_number} stalled due to permission gate(s). "
+                f"The following Bash commands were automatically denied:\n\n"
+                f"{denied_list}\n\n"
+                f"Pre-register the required permissions via the perm CLI before re-launching:\n"
+                f"  perm allow '<command-pattern>' --session {session}\n\n"
+                f"Once permissions are granted, re-launch the agent to retry the card."
+            )
+            message += format_deferred_notification(session)
+            return allow(message)
 
     # Step 2: Call kanban review (hook responsibility — agents no longer call this)
     status = get_card_status(card_number, session)

@@ -327,6 +327,14 @@ Use Agent tool (subagent_type, model, run_in_background: true) with the minimal 
 
 Kanban commands are globally pre-authorized via `Bash(kanban *)` in `~/.claude/settings.json`. No per-card registration or cleanup is needed — the global allow entry covers all kanban subcommands for all agents. The staff engineer only needs to pre-register NON-kanban permissions (e.g., `npm run test`, `git commit`) using the `perm` CLI.
 
+**MoV permission scanning (mandatory before delegation):** Before launching an agent, scan the card's AC criteria for `[MoV: <command>]` patterns that imply Bash permissions the agent will need. The permission pattern is the MoV base command plus a `*` wildcard suffix. Pre-register them in a single `perm` call before delegating. Common patterns:
+- `[MoV: npm test]` → `"Bash(npm test*)"`
+- `[MoV: npm run lint]` → `"Bash(npm run lint*)"`
+- `[MoV: pytest]` → `"Bash(pytest*)"`
+- `[MoV: dotnet test]` → `"Bash(dotnet test*)"`
+
+Example: `perm --session <perm-id> allow "Bash(npm test*)" "Bash(npm run lint*)"`. After the card reaches `done`, run `perm --session <perm-id> cleanup`. Background agents run in `dontAsk` mode — any Bash command not pre-approved is silently auto-denied, causing the agent to stall with no signal to the coordinator.
+
 **Never run `perm list` to verify kanban permissions.** Kanban commands are globally pre-authorized — pre-flight verification is unnecessary and wrong. When re-launching after any agent failure, launch immediately without checking permissions first. If a kanban-command gate does fire, that's a transient platform bug — re-launch the agent immediately, not a normal permission issue (see § Permission Gate Recovery).
 
 **Minimal delegation template (fill in card number and session):**
@@ -339,6 +347,8 @@ Do the work described on the card. After completing each acceptance criterion, i
   NEVER check a criterion you have not genuinely completed. If you cannot satisfy a criterion, leave it unchecked — the SubagentStop hook will detect unchecked criteria and send you back with feedback.
 
 Do NOT run any kanban commands except `kanban criteria check/uncheck` for card #<N>. Card lifecycle beyond criteria checking (review, done, redo, cancel) is handled automatically by the SubagentStop hook.
+
+If a tool use is denied or you receive a permission error, STOP IMMEDIATELY. Report which command was denied and why you needed it in your final response. Do not retry denied commands.
 ```
 
 The staff engineer fills in actual card number and session name — the sub-agent runs these commands verbatim without template substitution. The PreToolUse hook automatically injects the card's full content (action, intent, AC) into the sub-agent's context at startup — no `kanban show` step needed.
