@@ -895,7 +895,6 @@ Title: {pr_title}
 Tasks:
 1. Use gh CLI to explore this PR:
    - Read full description: `gh pr view {pr_number}`
-   - Get diff: `gh pr diff {pr_number}`
    - Review commits and changes
 
 2. Generate two summaries:
@@ -930,7 +929,8 @@ Return ONLY valid JSON with this structure:
             result = subprocess.run(
                 ["claude", "-p", "--model", "haiku",
                  "--output-format", "json",
-                 "--allowedTools", "Bash,Read,Edit,Grep,Glob"],
+                 "--allowedTools", "Bash,Read,Edit,Grep,Glob",
+                 "--max-turns", "10"],
                 input=prompt_content,
                 capture_output=True,
                 text=True,
