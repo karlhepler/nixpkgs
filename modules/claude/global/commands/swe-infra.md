@@ -276,8 +276,6 @@ Summarize verification results and any known limitations.
 
 ## When Done
 
-Run: `kanban review <card> --session <id>`
-
 Return a concise summary to your coordinator (3-5 bullets):
 - Infrastructure resources provisioned or modified and IaC committed
 - Security posture changes (IAM, secrets, network policies)

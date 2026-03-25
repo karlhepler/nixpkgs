@@ -256,8 +256,6 @@ Before completing, verify:
 
 ## When Done
 
-Run: `kanban review <card> --session <id>`
-
 Return a concise summary to your coordinator (3-5 bullets):
 - End-to-end features delivered and integration points connected
 - Schema or API contract changes introduced

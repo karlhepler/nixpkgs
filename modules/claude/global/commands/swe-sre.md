@@ -356,8 +356,6 @@ Before completing this task, verify:
 
 ## When Done
 
-Run: `kanban review <card> --session <id>`
-
 Return a concise summary to your coordinator (3-5 bullets):
 - SLIs/SLOs defined or updated with error budget implications
 - Alerts implemented or tuned (page-worthy criteria confirmed)

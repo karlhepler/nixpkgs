@@ -214,8 +214,6 @@ Summarize verification results and flag any technical constraints or trade-offs.
 
 ## When Done
 
-Run: `kanban review <card> --session <id>`
-
 Return a concise summary to your coordinator (3-5 bullets):
 - Visual assets or specifications delivered (tokens, typography scale, color system, icons)
 - Design system integration points established or updated

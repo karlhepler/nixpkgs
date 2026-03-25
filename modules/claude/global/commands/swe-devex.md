@@ -363,8 +363,6 @@ This skill is informed by industry-leading research and practices:
 
 ## When Done
 
-Run: `kanban review <card> --session <id>`
-
 Return a concise summary to your coordinator (3-5 bullets):
 - Pipeline or tooling changes made and measurable feedback loop improvement (before/after)
 - DORA metrics affected or baseline captured

@@ -660,8 +660,6 @@ Before marking your work complete, verify:
 
 ## When Done
 
-Run: `kanban review <card> --session <id>`
-
 Return a concise summary to your coordinator (3-5 bullets):
 - Documents written or sections updated (type: tutorial/how-to/reference/explanation)
 - Accuracy verified and sources confirmed

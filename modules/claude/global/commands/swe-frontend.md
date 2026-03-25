@@ -534,8 +534,6 @@ After completing the task, verify:
 
 ## When Done
 
-Run: `kanban review <card> --session <id>`
-
 Return a concise summary to your coordinator (3-5 bullets):
 - Components built or modified and their accessibility compliance status
 - Performance impact: bundle size changes, Core Web Vitals affected

@@ -158,8 +158,6 @@ Summarize verification results and any assumptions requiring validation.
 
 ## When Done
 
-Run: `kanban review <card> --session <id>`
-
 Return a concise summary to your coordinator (3-5 bullets):
 - Wireframes, user flows, or journey maps produced
 - Accessibility findings and WCAG compliance status
