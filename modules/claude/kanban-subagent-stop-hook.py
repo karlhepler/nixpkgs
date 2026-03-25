@@ -243,7 +243,6 @@ def log_error(message: str) -> None:
     """Append an error to the hook error log. Never raises."""
     try:
         ERROR_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        from datetime import datetime, timezone
         timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
         with open(ERROR_LOG_PATH, "a", encoding="utf-8") as fh:
             fh.write(f"[{timestamp}] {message}\n")
@@ -262,7 +261,6 @@ def log_info(message: str) -> None:
     """
     try:
         INFO_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        from datetime import datetime, timezone
         timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
         with open(INFO_LOG_PATH, "a", encoding="utf-8") as fh:
             fh.write(f"[{timestamp}] {message}\n")
@@ -821,8 +819,9 @@ def run_inner_loop(
             accumulated_context += f"\n--- Pass {i} ---\n[TIMED OUT]\n"
             continue
         except FileNotFoundError:
-            log_error("claude CLI not found in PATH")
-            return False
+            # Let this propagate — caught by process_subagent_stop's except block
+            # which surfaces a clear systemic error instead of burning redo cycles
+            raise
         except Exception as exc:
             log_error(f"claude -p failed on iteration {i}: {exc}")
             accumulated_context += f"\n--- Pass {i} ---\n[ERROR: {exc}]\n"
@@ -880,6 +879,8 @@ def process_subagent_stop(payload: dict) -> dict:
     status_for_stall_check = get_card_status(card_number, session)
     if status_for_stall_check == "doing":
         denied_commands = detect_permission_stall(transcript_path)
+        # Threshold >= 2: a single denial may be a one-off prompt issue;
+        # two or more signals a systemic permission gap worth short-circuiting for.
         if len(denied_commands) >= 2:
             log_info(
                 f"Permission stall detected for card #{card_number} — "
@@ -941,13 +942,31 @@ def process_subagent_stop(payload: dict) -> dict:
 
     # Step 3: Inner loop — Haiku AC verification
     log_info(f"Starting AC review inner loop for card #{card_number}")
-    card_done = run_inner_loop(
-        card_number,
-        session,
-        transcript_path,
-        outer_session_id=outer_session_id,
-        working_directory=working_directory,
-    )
+    try:
+        card_done = run_inner_loop(
+            card_number,
+            session,
+            transcript_path,
+            outer_session_id=outer_session_id,
+            working_directory=working_directory,
+        )
+    except Exception as exc:
+        log_error(f"AC review inner loop crashed for card #{card_number}: {exc}\n{traceback.format_exc()}")
+        try:
+            agent_output = extract_agent_output(transcript_path) if transcript_path else ""
+        except Exception:
+            agent_output = ""
+        agent_excerpt = (agent_output[:500] + "...") if len(agent_output) > 500 else agent_output
+        message = (
+            f"Card #{card_number} AC review CRASHED — the hook encountered an unhandled error "
+            f"during AC review. Card is stranded in 'review' status. "
+            f"Staff engineer must intervene manually.\n\n"
+            f"Error: {exc}"
+        )
+        if agent_excerpt:
+            message += f"\n\nAgent output excerpt:\n{agent_excerpt}"
+        message += format_deferred_notification(session)
+        return allow(message)
 
     # Step 4: Process result
     if card_done:
