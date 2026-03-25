@@ -234,6 +234,38 @@ _PERMISSION_DENIAL_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# Markers that appear in block-feedback messages sent back to the agent after an
+# AC review failure or unchecked-criteria rejection. Used by detect_criteria_gaming()
+# to find the "last rejection point" in the transcript.
+_BLOCK_FEEDBACK_MARKERS: list[str] = [
+    "AC review failed for card",
+    "kanban review failed for card",
+    "unchecked acceptance criteria",
+    "investigate each unchecked criterion",
+    "investigate each failed criterion",
+    "Anti-gaming gate triggered for card",
+]
+
+# Tool names (tool_use block "name" field) that constitute real, substantive work.
+# kanban bookkeeping commands are deliberately excluded — they are not work.
+_SUBSTANTIVE_TOOLS: frozenset[str] = frozenset([
+    "Read",
+    "Grep",
+    "Glob",
+    "Edit",
+    "Write",
+    "WebSearch",
+    "WebFetch",
+    "NotebookEdit",
+    "Task",
+])
+
+# Matches any `kanban criteria ...` Bash invocation (bookkeeping, not work).
+_KANBAN_CRITERIA_BASH: re.Pattern[str] = re.compile(
+    r'^\s*kanban\s+criteria\s+',
+    re.IGNORECASE,
+)
+
 
 # ---------------------------------------------------------------------------
 # Error logging
@@ -459,6 +491,132 @@ def _extract_text_from_entry(entry: dict | list | str, depth: int = 0) -> list[s
     return texts
 
 
+def detect_criteria_gaming(transcript_path: str) -> bool:
+    """Detect whether an agent is gaming the AC review gate.
+
+    The gaming pattern: after being blocked (AC review failure or unchecked
+    criteria), the agent immediately re-runs `kanban criteria check` on the
+    same criteria WITHOUT doing any real work first.
+
+    Algorithm:
+    1. Scan all JSONL entries to find the LAST block-feedback message
+       (identified by _BLOCK_FEEDBACK_MARKERS phrases).
+    2. After that message, scan assistant-role entries for:
+       a. tool_use blocks naming a tool in _SUBSTANTIVE_TOOLS  → substantive work
+       b. tool_use blocks for "Bash" whose input.command does NOT match
+          _KANBAN_CRITERIA_BASH                               → substantive work
+       c. tool_use blocks for "Bash" whose input.command matches
+          _KANBAN_CRITERIA_BASH                               → criteria recheck
+    3. Gaming = at least one criteria recheck found AND no substantive work.
+
+    Fails open: any error returns False so normal hook flow is not interrupted.
+
+    Args:
+        transcript_path: Absolute path to the agent's JSONL transcript.
+
+    Returns:
+        True if gaming is detected, False otherwise (including on any error).
+    """
+    try:
+        # --- Pass 1: load all entries and find the last block-feedback index ---
+        entries: list[dict] = []
+        try:
+            with open(transcript_path, "r", encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line, strict=False)
+                    except json.JSONDecodeError:
+                        continue
+                    if isinstance(entry, dict):
+                        entries.append(entry)
+        except (OSError, IOError) as exc:
+            log_error(f"detect_criteria_gaming: failed to read transcript {transcript_path}: {exc}")
+            return False
+
+        if not entries:
+            return False
+
+        # Find the index of the LAST entry that contains a block-feedback marker.
+        # Block-feedback is delivered as a "user" role message injected by the hook.
+        last_feedback_index: int = -1
+        for idx, entry in enumerate(entries):
+            texts = _extract_text_from_entry(entry)
+            for text in texts:
+                if any(marker in text for marker in _BLOCK_FEEDBACK_MARKERS):
+                    last_feedback_index = idx
+                    break  # found a marker in this entry; move to next entry
+
+        if last_feedback_index < 0:
+            # No block-feedback message found — nothing to detect gaming against.
+            return False
+
+        log_info(
+            f"detect_criteria_gaming: last block-feedback at entry index {last_feedback_index} "
+            f"of {len(entries)} entries"
+        )
+
+        # --- Pass 2: scan entries AFTER the last feedback for tool_use blocks ---
+        has_substantive_work = False
+        has_criteria_recheck = False
+
+        for entry in entries[last_feedback_index + 1:]:
+            if entry.get("role") != "assistant":
+                continue
+
+            content = entry.get("content", [])
+            if not isinstance(content, list):
+                continue
+
+            for block in content:
+                if not isinstance(block, dict):
+                    continue
+                if block.get("type") != "tool_use":
+                    continue
+
+                tool_name: str = block.get("name", "")
+
+                if tool_name in _SUBSTANTIVE_TOOLS:
+                    has_substantive_work = True
+                    log_info(f"detect_criteria_gaming: substantive tool '{tool_name}' found after feedback")
+                    break  # one substantive tool is enough
+
+                if tool_name.startswith("mcp__"):
+                    has_substantive_work = True
+                    log_info(f"detect_criteria_gaming: MCP tool '{tool_name}' found after feedback")
+                    break  # one substantive tool is enough
+
+                if tool_name == "Bash":
+                    cmd: str = ""
+                    tool_input = block.get("input", {})
+                    if isinstance(tool_input, dict):
+                        cmd = tool_input.get("command", "") or ""
+                    if _KANBAN_CRITERIA_BASH.match(cmd):
+                        has_criteria_recheck = True
+                        log_info(f"detect_criteria_gaming: criteria recheck command found: {cmd[:80]!r}")
+                    else:
+                        # Non-kanban-criteria Bash command counts as substantive work.
+                        has_substantive_work = True
+                        log_info(f"detect_criteria_gaming: substantive Bash command found: {cmd[:80]!r}")
+                        break
+
+            if has_substantive_work:
+                break  # no need to keep scanning
+
+        gaming = has_criteria_recheck and not has_substantive_work
+        log_info(
+            f"detect_criteria_gaming: has_criteria_recheck={has_criteria_recheck} "
+            f"has_substantive_work={has_substantive_work} → gaming={gaming}"
+        )
+        return gaming
+
+    except Exception as exc:
+        log_error(f"detect_criteria_gaming: unexpected error for {transcript_path}: {exc}")
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Kanban CLI helpers
 # ---------------------------------------------------------------------------
@@ -587,6 +745,127 @@ def _extract_criteria_failures(card_number: str, session: str) -> str:
     except Exception as exc:
         log_error(f"Failed to extract criteria failures for card #{card_number}: {exc}")
         return "Could not determine failure reasons due to an error."
+
+
+def build_malfunction_retry_prompt(card_number: str, session: str, transcript_path: str) -> str:
+    """Build a stripped-down prompt for malfunction retry AC review.
+
+    Used when the first AC reviewer ran but never called pass or fail on any
+    criterion. This prompt avoids inlining agent output (which may have
+    confused the reviewer) and instead directs it to read the transcript file
+    directly. Uses only pass/fail vocabulary and minimal instructions.
+    """
+    return f"""You are an AC reviewer for kanban card #{card_number} (session {session}).
+
+The previous review attempt ran but never called pass or fail. You MUST call pass or fail for every criterion.
+
+Step 1: Read the card:
+  kanban show {card_number} --output-style=xml --session {session}
+
+Step 2: Read the agent transcript for evidence:
+  The agent transcript is at {transcript_path}. Read it to find the agent findings and work output.
+
+Step 3: For each criterion, evaluate it against the evidence (files for work cards, transcript for review/research cards), then call exactly one of:
+  - kanban criteria pass {card_number} <n> --session {session}
+  - kanban criteria fail {card_number} <n> --reason '<why it failed>' --session {session}
+
+Step 4: After every criterion has a pass or fail verdict, call:
+  kanban done {card_number} '<one-sentence summary>' --session {session}
+
+You MUST call pass or fail for EVERY criterion before calling done. Do not skip any.
+"""
+
+
+def _run_malfunction_retry(
+    card_number: str,
+    session: str,
+    transcript_path: str,
+    outer_session_id: str,
+    working_directory: str,
+) -> bool:
+    """Run a single AC review pass as a malfunction retry.
+
+    Uses build_malfunction_retry_prompt (stripped-down, transcript-based
+    prompt) and the same subprocess pattern as run_inner_loop. Writes metrics
+    to claudit DB with iteration=99 as a sentinel for malfunction retry.
+
+    Returns True if the card reached done, False otherwise.
+    Does NOT wrap in try/except — caller is responsible for exception handling.
+    """
+    log_info(f"Malfunction retry: launching single AC review pass for card #{card_number}")
+
+    prompt = build_malfunction_retry_prompt(card_number, session, transcript_path)
+    ac_reviewer_system_prompt = read_ac_reviewer_agent_definition()
+
+    ac_env = {**os.environ, "KANBAN_AGENT": "ac-reviewer", "CLAUDIT_ROLE": "ac-reviewer"}
+
+    claude_cmd = [
+        "claude", "-p", "--model", "haiku", "--max-turns", str(CLAUDE_MAX_TURNS),
+        "--system-prompt", ac_reviewer_system_prompt,
+        "--output-format", "json",
+        "--dangerously-skip-permissions",
+    ]
+
+    result = subprocess.run(
+        claude_cmd,
+        input=prompt,
+        capture_output=True,
+        text=True,
+        timeout=300,
+        env=ac_env,
+    )
+
+    if result.stderr.strip():
+        log_info(f"Malfunction retry claude -p stderr: {result.stderr.strip()}")
+
+    # Parse JSON output and write metrics with iteration=99 (sentinel)
+    if result.stdout.strip():
+        try:
+            json_response = json.loads(result.stdout)
+            usage = json_response.get("usage") or {}
+            input_tokens = int(usage.get("input_tokens", 0) or 0)
+            output_tokens = int(usage.get("output_tokens", 0) or 0)
+            cache_read_tokens = int(usage.get("cache_read_input_tokens", 0) or 0)
+            cache_write_tokens = int(usage.get("cache_creation_input_tokens", 0) or 0)
+
+            _claudit_write_ac_reviewer_metrics(
+                outer_session_id=outer_session_id,
+                kanban_session=session,
+                card_number=card_number,
+                working_directory=working_directory,
+                iteration=99,  # sentinel for malfunction retry
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cache_read_tokens=cache_read_tokens,
+                cache_write_tokens=cache_write_tokens,
+            )
+        except (json.JSONDecodeError, TypeError, ValueError) as exc:
+            log_error(f"Malfunction retry: failed to parse claude -p JSON output: {exc}")
+
+    status = get_card_status(card_number, session)
+    if status == "done":
+        log_info(f"Malfunction retry: card #{card_number} reached done")
+        return True
+
+    log_info(f"Malfunction retry: card #{card_number} status after retry='{status}' — not done")
+    return False
+
+
+def get_all_criteria_numbers(card_number: str, session: str) -> list[int]:
+    """Return 1-based index list of all acceptance criteria on a card.
+
+    Reads the card XML and counts <ac> elements to produce a list like
+    [1, 2, 3, ...].  Returns an empty list on any error.
+    """
+    try:
+        result = run_kanban(["show", card_number, "--output-style=xml", "--session", session])
+        if result.returncode != 0:
+            return []
+        ac_count = len(re.findall(r'<ac\b', result.stdout))
+        return list(range(1, ac_count + 1))
+    except Exception as exc:
+        log_error(f"get_all_criteria_numbers for card #{card_number}: {exc}")
+        return []
 
 
 def get_deferred_cards(session: str) -> list[str]:
@@ -914,6 +1193,49 @@ def process_subagent_stop(payload: dict) -> dict:
         # Agent or a previous hook run already moved card to review — proceed to AC
         log_info(f"Card #{card_number} already in review — proceeding to AC review")
     elif status in ("doing", "todo"):
+        # Anti-gaming check: only fires on 'doing' (retry scenario).
+        # If the agent is retrying after a rejection but has done nothing but re-check
+        # criteria (no Read/Grep/Edit/Write/Bash etc.), block immediately without
+        # running the full AC review cycle.
+        if status == "doing" and detect_criteria_gaming(transcript_path):
+            log_info(
+                f"Anti-gaming triggered for card #{card_number} — "
+                "agent re-checked criteria without doing substantive work"
+            )
+            # Uncheck all criteria so the agent cannot coast on previously-checked ones.
+            criteria_numbers = get_all_criteria_numbers(card_number, session)
+            unchecked_count = 0
+            for n in criteria_numbers:
+                try:
+                    run_kanban(["criteria", "uncheck", card_number, str(n), "--session", session])
+                    unchecked_count += 1
+                except Exception as uncheck_exc:
+                    log_error(
+                        f"anti-gaming: failed to uncheck criterion {n} for card #{card_number}: {uncheck_exc}"
+                    )
+            substantive_list = ", ".join(sorted(_SUBSTANTIVE_TOOLS))
+            # Construct the uncheck status message based on whether unchecking succeeded
+            if unchecked_count == len(criteria_numbers) and criteria_numbers:
+                uncheck_status = (
+                    "All criteria have been unchecked. Investigate each criterion, use the "
+                    "appropriate tools to verify or fix the work, and only then run "
+                    f"`kanban criteria check {card_number} <n> --session {session}`."
+                )
+            else:
+                uncheck_status = "Criteria uncheck was attempted but may not have fully succeeded."
+            gaming_reason = (
+                f"Anti-gaming gate triggered for card #{card_number}.\n\n"
+                f"You re-checked acceptance criteria after being blocked, but the hook "
+                f"detected no substantive tool calls between the last rejection and this "
+                f"stop. Simply re-checking criteria without doing real work bypasses the "
+                f"quality gate and is not allowed.\n\n"
+                f"Substantive tools (at least one required before re-checking criteria):\n"
+                f"  {substantive_list}\n"
+                f"  Bash commands that are NOT `kanban criteria ...` also count.\n\n"
+                f"{uncheck_status}"
+            )
+            return block(gaming_reason)
+
         # Agent stopped without calling kanban review — call it ourselves
         log_info(f"Card #{card_number} is in '{status}' — hook calling kanban review")
         review_result = run_kanban(["review", card_number, "--session", session])
@@ -1004,6 +1326,33 @@ def process_subagent_stop(payload: dict) -> dict:
     # don't redo — the sub-agent's work may be correct, retrying won't fix a reviewer
     # issue. Allow stop with diagnostic so staff can intervene.
     if failure_details.startswith(_REVIEWER_MALFUNCTION_PREFIX):
+        log_info(
+            f"Reviewer malfunction for card #{card_number} — "
+            f"attempting malfunction retry before falling through to allow-stop"
+        )
+        try:
+            retry_succeeded = _run_malfunction_retry(
+                card_number=card_number,
+                session=session,
+                transcript_path=transcript_path,
+                outer_session_id=outer_session_id,
+                working_directory=working_directory,
+            )
+            if retry_succeeded:
+                message = f"Card #{card_number} AC review passed on malfunction retry — card completed."
+                message += format_deferred_notification(session)
+                return allow(message)
+            log_info(
+                f"Malfunction retry did not complete card #{card_number} — "
+                f"falling through to allow-stop diagnostic"
+            )
+        except Exception as retry_exc:
+            log_error(
+                f"Malfunction retry crashed for card #{card_number}: {retry_exc}\n"
+                f"{traceback.format_exc()}"
+            )
+
+        # Retry failed or crashed — fall through to existing allow-stop diagnostic
         log_error(
             f"Reviewer malfunction for card #{card_number} — "
             f"allowing stop for staff intervention instead of redo"

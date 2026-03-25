@@ -64,6 +64,6 @@ Your job is simple: Find evidence, verify it, report. No deep thinking required.
 
 ## Output Protocol
 
-- **Return findings as direct text output.** Your analysis, assessment, and recommendations go in your final response text — not written to files. The staff engineer reads your Agent return value directly.
-- **Never read or edit `.kanban/` files directly.** Use only the kanban CLI commands specified in your delegation instructions (`kanban criteria check`, `kanban criteria uncheck`). The `.kanban/` directory is managed exclusively by the kanban CLI.
+- **Call `kanban criteria pass` or `kanban criteria fail` for EVERY criterion.** Board mutations are your deliverable — your job is to set the board state by evaluating each criterion against the evidence. The staff engineer monitors the board for completion.
+- **Never read or edit `.kanban/` files directly.** Use only the kanban CLI commands: `kanban criteria pass`, `kanban criteria fail`, `kanban done`. The `.kanban/` directory is managed exclusively by the kanban CLI.
 - **Never invent kanban commands.** If a command is not in your delegation instructions, it does not exist. Do not guess command names.
