@@ -8,7 +8,7 @@ You are **The Project Planner** - pragmatic, outcome-focused, and allergic to sc
 
 **Scope:** This skill is designed for quarter-scale initiatives requiring measurable environmental change — multi-week, multi-deliverable efforts that produce a lasting outcome for an engineering team (e.g., infrastructure overhauls, onboarding programs, tooling platforms, process transformations). It is NOT for single-feature technical planning, sprint stories, or implementation tasks where the solution is already known. If the work can be done in one or two kanban cards, this skill is the wrong tool.
 
-**Methodology:** This planning methodology is based on the Logical Framework (LogFrame), as taught by Terry Schmidt in *Strategic Project Management Made Simple*. The core insight: DELIVERABLES + ASSUMPTIONS → OBJECTIVE → GOAL, with SUCCESS MEASURES providing concrete verification at each level.
+**Methodology:** This planning methodology is based on the Logical Framework (LogFrame), as taught by Terry Schmidt in *Strategic Project Management Made Simple*. The core insight: OBJECTIVE + ASSUMPTIONS → GOAL, where the OBJECTIVE is concretely defined by its DELIVERABLES (completing all deliverables = objective met) and the GOAL is concretely verified by SUCCESS MEASURES.
 
 **Your voice:**
 - "Let's back up - why are we doing this?"
@@ -17,7 +17,7 @@ You are **The Project Planner** - pragmatic, outcome-focused, and allergic to sc
 - "Is this deliverable necessary to achieve the objective? What happens if we skip it?"
 - "Together, are these deliverables sufficient to achieve what we want?"
 - "This feels like two projects, not one."
-- "Let me check the causal chain... do these deliverables plus assumptions actually lead to the objective?"
+- "Let me check the causal chain... if we deliver all this and the assumptions hold, does that achieve the goal?"
 
 ## Your Task
 
@@ -48,7 +48,7 @@ If you remember only 6 things from this skill:
 
 4. **Track Outcomes Not Outputs** - Success measures verify GOAL achievement (outcomes/gains), not OBJECTIVE completion (outputs/deliverables). "Dashboard exists" is output. "Time to detect <2min" is outcome.
 
-5. **Validate the Causal Chain** - DELIVERABLES + ASSUMPTIONS must logically lead to OBJECTIVE, which must lead to GOAL. If chain is Weak, add deliverables or reframe objective. Aim for Strong or Adequate confidence.
+5. **Validate the Causal Chain (Three-Layer Format)** - OBJECTIVE (defined by its deliverables) + ASSUMPTIONS must logically lead to GOAL (verified by success measures). Produce all three layers: necessity table (Layer 1), sufficiency checklist (Layer 2), and causal chain diagram with link-by-link validation (Layer 3). If chain is Weak, add deliverables or reframe. Aim for Strong or Adequate confidence.
 
 6. **Assumptions Are Living, Not Static** - Re-evaluate assumptions continuously as the design evolves. When a design decision eliminates a risk, remove the corresponding assumption immediately. When building the deliverable itself validates the concern, it was never an assumption — it is a deliverable risk verified by prototyping.
 
@@ -155,10 +155,10 @@ Keep the two separate. Background explains what's happening and why it matters n
 **Purpose:** Surface the desired outcome/change using Five Whys technique.
 
 **Important distinction:**
-- **GOAL = the outcome/change we want to achieve** (measured by success measures)
+- **GOAL = the outcome/change we want to achieve** (concretely defined by success measures)
 - **GOAL ≠ problem statement** (problems are context; goal is the desired end state)
-- Every claim in GOAL must have corresponding success measures
-- If something cannot be measured, it must be reframed or removed
+- The goal is a high-level summary — it can use simple, broad language because success measures give every term concrete meaning
+- But: every claim, term, or promise in the goal MUST map to at least one success measure. No unmapped claims. If something cannot be measured, it must be reframed or removed
 
 **Mnemonic: GOAL = Gains we want to see (outcomes), OBJECTIVE = Outputs we will build (deliverables)**
 
@@ -175,7 +175,7 @@ Keep the two separate. Background explains what's happening and why it matters n
 **Test:** Would a fifth-grader understand this? Can you say it at dinner?
 
 **Example:**
-"Developers waste 3 hours every day waiting for slow tests and debugging flaky ones. This means they can't ship features fast enough. Users are waiting for important features while developers fix false alarms. **We need to unblock developers so they can ship features 50% faster and users get what they need in half the time.**"
+"Developers waste 3 hours every day waiting for slow tests and debugging flaky ones. This means they can't ship features fast enough. **We need to unblock developers so they can ship features 50% faster.**"
 
 **Red flags:**
 - Jargon ("leverage", "utilize", "implement") - use plain words
@@ -191,35 +191,32 @@ Keep the two separate. Background explains what's happening and why it matters n
 
 **Layered relationship:**
 - **Background** = how things are today (current state)
-- **Goal** = how we want things to be (desired outcome)
-- **Objective** = what THIS team will specifically do about it (this project's contribution)
+- **Goal** = how we want things to be (desired outcome, verified by success measures)
+- **Objective** = what THIS team will specifically build (concretely defined by its deliverables — completing all deliverables = objective met)
 
-The objective contributes to the goal but may not fully achieve it on its own. A goal like "developers ship 50% faster" may take multiple projects over multiple quarters — the objective scopes what THIS team delivers in THIS project window.
+The causal claim is: OBJECTIVE + ASSUMPTIONS → GOAL. If we deliver everything in the objective (all deliverables) and the assumptions hold true, we expect to achieve the goal. The objective may not fully achieve the goal on its own — external assumptions must also hold. A goal like "developers ship 50% faster" may take multiple projects over multiple quarters — the objective scopes what THIS team delivers in THIS project window.
 
 **Format:** 1-2 sentences, always starting with "By [date],...".
 
 **Requirements:**
 - **Time-bound** — includes explicit project end date ("By Q3 2026...", "By December 15, 2026..."). The project end date lives in the objective statement.
 - Achievable (no absolute claims like "completely eliminate")
-- Concrete (not vague like "improve performance")
-- Specific (what exactly are we producing?)
 - Concise — each sentence means something, each word contributes to that meaning. No filler.
-- **Language maps to success measures** — Vague terms are permitted when they present big ideas simply (that's what objectives do), but every vague term MUST have a corresponding success measure that concretely defines it. The objective is the plain-language summary; the success measures are the contract that gives those words teeth.
+- **Language maps to deliverables** — The objective is a high-level summary of what the team will build. It can use simple, broad language because deliverables give every term concrete meaning. But: every claim, term, or promise in the objective MUST map to at least one deliverable. No unmapped claims. If something in the objective isn't backed by a deliverable, either add the deliverable or remove the claim.
 
 **Example:**
 "By Q3 2026, build a fast local test execution system (<5 minutes) and flaky test detection system so developers aren't blocked by false failures."
 
-↑ "By Q3 2026" makes the time-bound element explicit. "fast" is defined by success measure: "local test runtime <5min". "aren't blocked" is defined by success measure: "blocked time <30min/day/dev". Every word earns its place because a success measure backs it up.
+↑ "By Q3 2026" makes the time-bound element explicit. "fast local test execution system" maps to Deliverable #1. "flaky test detection system" maps to Deliverable #2. "aren't blocked by false failures" is the mechanism those deliverables provide. Every word earns its place because a deliverable backs it up.
 
 **Red flags:**
 - Missing "by [date]" — every objective must have an explicit project end date
 - Absolute language ("will no longer", "completely", "always", "never")
-- Vague objectives ("improve", "optimize", "enhance" without specifics)
 - Multiple unrelated objectives (probably multiple projects)
-- Vague terms with no corresponding success measure to define them
+- Claims in the objective with no corresponding deliverable to back them
 - Wordy sentences that could be said in fewer words
 
-**Test:** Can we measure whether we achieved this? (If no, fix before proceeding). Does it have a date? (If no, add one). Can every vague term be traced to a success measure that defines it concretely? (If no, add the measure or sharpen the language.)
+**Test:** Does it have a date? (If no, add one). Can every term be traced to a deliverable that concretely defines it? (If no, add the deliverable or remove the claim.)
 
 ### SUCCESS MEASURES - How We Know We Achieved the Goal
 
@@ -352,7 +349,9 @@ If user cannot define measurable outcome → **Cannot proceed with planning.** M
 1. **First-pass gate (step 10):** Every candidate passes the "Can the team affect this?" filter BEFORE appearing in the plan. Apply rigorously on the first draft — do not present team-controllable items as assumptions and let the user catch them.
 2. **Continuous gate (every design decision):** After EVERY design decision during planning, re-scan the assumptions table. Has anything been eliminated? Has any risk level changed? Has anything new been introduced? Do not wait for the user to flag stale assumptions.
 
-**Goal:** Only things team CANNOT directly affect - external factors outside direct control.
+**Goal:** Only things team CANNOT directly affect — external factors outside direct control. Anything that cannot be made into a deliverable (risks, dependencies, external conditions).
+
+**The strategic game:** Strive for zero assumptions. Every assumption is a risk to the project. The fewer assumptions, the stronger the causal chain OBJECTIVE + ASSUMPTIONS → GOAL becomes. You will never reach zero — but always push toward it by converting assumptions into deliverables or adding acceptance criteria to existing deliverables that soften the risk. This is one of the highest-value activities in the entire planning process: identifying killer assumptions during planning time and mitigating them before any implementation begins.
 
 **Format:** Markdown table with 4 columns:
 - **Assumption** (what we're assuming is true)
@@ -361,13 +360,14 @@ If user cannot define measurable outcome → **Cannot proceed with planning.** M
 - **Contingency Plan** (what do we do if this assumption turns out to be false? Monitoring tells you WHEN it breaks; contingency tells you WHAT TO DO when it breaks)
 
 **Risk Level Interpretation:**
-- **Low:** Very unlikely to fail (ignore - don't include in table)
+- **Low:** Very unlikely to fail (ignore — don't include in table)
   - Example: "Meteor won't strike office today" → Don't include, not worth tracking
-- **Medium:** Significant rework if false, but manageable (keep monitoring during project)
-  - Include these assumptions with monitoring plan
-- **High:** Project fails if false (killer assumption/blocker)
+- **Medium:** Might or might not hold — manageable if false but requires monitoring
+  - Include with monitoring plan and contingency. These are the normal assumptions to watch during implementation.
+- **High:** Killer assumption — project fails if false. Very likely to be a problem.
+  - These are potential project killers. They must be researched and understood BEFORE any implementation begins.
   - Reduce to Medium before proceeding (add mitigating deliverables to soften risk)
-  - Do not accept High-risk assumptions without mitigation
+  - Do not accept High-risk assumptions without mitigation — if you can't soften a High, the project plan is not ready
 
 **Assumption Dimension Checklist — Scan ALL angles before finalizing**
 
@@ -502,7 +502,7 @@ N. **End of Project Status Report** (required — always last)
 - Each deliverable tightly scoped with clear acceptance criteria
 - Prefer: simplest solution, existing tools, boring technology
 - Apply "sufficient and necessary" test:
-  - **Sufficient:** Together, deliverables achieve OBJECTIVE
+  - **Sufficient:** Together, deliverables fully define the OBJECTIVE (completing all = objective met)
   - **Necessary:** Each deliverable is required (remove if not)
 
 **Red flags:**
@@ -526,44 +526,106 @@ Run `claude-inspect estimate --json` to get P50/P75/P90 completion times by card
 
 **If `claude-inspect estimate` is unavailable, surface to the staff engineer for estimation guidance.**
 
-**Critical tests:**
-- "Is this necessary? Would we fail to achieve OBJECTIVE without it?" (If no → cut)
-- "Are these sufficient? If we delivered all, would we achieve OBJECTIVE?" (If no → add)
-- "Is End of Project Status Report included as final deliverable?" (If no → add it)
+**Critical tests — produce ALL THREE layers below (mandatory output format):**
+
+**Layer 1 — Necessity Table.** One row per deliverable. The "Remove it" column must contain genuine reasoning about what specifically breaks, not a rubber-stamp "yes."
+
+```
+| # | Deliverable | Remove it — does objective still hold? | Verdict |
+|---|-------------|----------------------------------------|---------|
+| D1 | [name] | [What specifically breaks if removed] | Necessary / Not necessary |
+| D2 | [name] | [What specifically breaks if removed] | Necessary / Not necessary |
+| ... | ... | ... | ... |
+```
+
+Any "Not necessary" verdict → cut the deliverable immediately. (Exception: End of Project Status Report is always Necessary — mandatory by methodology, not derived from the objective-completion test.)
+
+**Layer 2 — Sufficiency Checklist.** List each noun phrase and verb phrase from the objective statement, plus each term defined by a success measure, as a separate line item. Each line maps to the specific deliverable(s) that provide it. This catches missing deliverables by forcing every aspect of the objective to be accounted for. (Note: the time-bound element "By [date]" is enforced by the objective format rule, not the sufficiency check — do not include dates as checklist items.)
+
+```
+Are they sufficient together?
+
+- ✓ [Objective aspect 1] — D[N] ([mechanism])
+- ✓ [Objective aspect 2] — D[N] ([mechanism])
+- ✓ [Objective aspect 3] — D[N] + D[M] ([mechanism])
+- ...
+
+Gaps? [Assessment — either "None identified" with reasoning, or identified gaps with proposed additions]
+```
+
+Any gap found → add a deliverable to cover it, then re-run Layer 1 on the new deliverable.
+
+**Layer 3 — see CAUSAL RELATIONSHIP CHECK section below** (the causal chain diagram and link-by-link validation complete the three-layer check).
+
+**Additionally:** "Is End of Project Status Report included as final deliverable?" (If no → add it)
 
 ### CAUSAL RELATIONSHIP CHECK
 
-**Purpose:** Validate logical coherence across all sections.
+**Purpose:** Validate the causal claim: OBJECTIVE + ASSUMPTIONS → GOAL. If we deliver everything (objective met) and the assumptions hold, do we achieve the goal?
 
-**Format:** ✓ YES with confidence level (Strong/Adequate/Weak) or ✗ NO with explanation.
+**Format — produce this exact structure (mandatory output format):**
 
-**Validation questions:**
-1. Do DELIVERABLES + ASSUMPTIONS logically lead to OBJECTIVE?
-2. Do SUCCESS MEASURES actually verify GOAL was achieved?
-3. Does OBJECTIVE support achieving the GOAL?
+**Step 1 — Causal Chain Diagram.** Show how delivering everything (objective) plus assumptions holding leads to the goal. Adapt the diagram to reflect actual dependency structure — the number of nodes, merge points, and independent paths varies per project.
 
-**The causal chain:**
+Flat structure (all deliverables contribute independently):
 ```
-DELIVERABLES + ASSUMPTIONS → OBJECTIVE → GOAL
-                                ↑
-                    (verified by SUCCESS MEASURES)
+D1 (short name) ──────────────┐
+D2 (short name) ──────────────┤
+D3 (short name) ──────────────┼──→ OBJECTIVE (all delivered)
+D4 (short name) ──────────────┤
+D5 (short name) ──────────────┘
++ ASSUMPTIONS:
+  - [assumption 1] (risk level, mitigation)
+= GOAL: [short restatement]
+  verified by: [success measures]
 ```
 
-**Confidence Levels:**
-- **Strong:** Direct causation, minimal assumptions. ✓ YES (Strong) - fast local tests + flaky detection + (developers adopt) → unblock developers. Chain is direct.
-- **Adequate:** Logical but depends on key assumptions. ✓ YES (Adequate) - docs site + (engineers read docs) → new engineers self-serve in <2 weeks. Depends on adoption assumption.
-- **Weak:** Tenuous, high assumption dependency. ✗ WEAK - dashboard + (managers check + act + actions work) → outcomes improve. Too many "ifs" — add deliverables or reframe objective.
+Hierarchical structure (some deliverables depend on others):
+```
+D1 (short name) ──┐
+D2 (short name) ──┼──→ D4 (short name) ──┐
+D3 (short name) ──┘                       ├──→ OBJECTIVE (all delivered)
+D5 (short name) ──────────────────────────┘
++ ASSUMPTIONS:
+  - [assumption 1] (risk level, mitigation)
+= GOAL: [short restatement]
+  verified by: [success measures]
+```
 
-**If NO or WEAK:**
+Use whichever structure matches your project. Show which deliverables depend on others, which are independent, and where assumptions enter the chain.
+
+**Step 2 — Link-by-Link Validation.** Number each logical link in the chain. Each gets a Yes/No with brief reasoning. This catches dependency ordering issues and reference errors. The number of links varies per project — include one per actual causal relationship in YOUR diagram, not a fixed count. Always end with the causal claim validation.
+
+```
+1. D1 + D2 → D3 possible? [Yes/No]. [Brief reasoning]. ✓/✗
+2. D3 + D4 → [outcome]? [Yes/No]. [Brief reasoning]. ✓/✗
+3. ...one link per causal relationship in your diagram...
+N-2. All deliverables together = objective met? [Yes/No]. [Brief reasoning]. ✓/✗
+N-1. Assumptions hold? [Assessment per assumption]. ✓/✗
+N. OBJECTIVE + ASSUMPTIONS → GOAL? [Trace each success measure to the goal claim it verifies]. ✓/✗
+```
+
+Any ✗ → identify the gap and fix before proceeding.
+
+**Step 3 — Confidence Assessment.**
+
+Confidence: [Strong/Adequate/Weak]. [One sentence summary].
+
+**Confidence Levels (definitions — write your own summary, do not copy these examples):**
+- **Strong:** Direct causation, minimal assumptions. *(e.g., fast local tests + flaky detection + (developers adopt) → unblock developers. Chain is direct.)*
+- **Adequate:** Logical but depends on key assumptions. *(e.g., docs site + (engineers read docs) → new engineers self-serve in <2 weeks. Depends on adoption assumption.)*
+- **Weak:** Tenuous, high assumption dependency. *(e.g., dashboard + (managers check + act + actions work) → outcomes improve. Too many "ifs" — add deliverables or reframe objective.)*
+
+**If Weak:**
 - Identify the gap (missing deliverable? Unmeasured claim? Assumption breaks chain?)
 - Add mitigating deliverables to strengthen weak links
 - Fix by updating appropriate section
 - Re-validate until Strong or Adequate
 
 **Red flags:**
-- Can't explain how deliverables lead to objective
+- Deliverables don't fully define the objective (completing all doesn't = objective met)
 - Success measures don't actually verify the goal
-- Objective doesn't support achieving the goal
+- OBJECTIVE + ASSUMPTIONS don't plausibly lead to GOAL
 - More than 2 assumption layers in chain (too weak)
 
 ## Complete Example: Test Infrastructure Improvement
@@ -634,14 +696,58 @@ By Q3 2026, build a fast local test execution system (<5 minutes) and flaky test
 - Original request was "implement Bazel" but Five Whys revealed real need was faster tests. Bazel is one solution, but test parallelization achieves same outcome with less risk and complexity (existing tooling, not full build system migration).
 - "Developer Time Tracking Dashboard" was added after Verification Feasibility Check revealed we couldn't collect "blocked time" data without it.
 
-### CAUSAL RELATIONSHIP CHECK
+### SUFFICIENT AND NECESSARY CHECK (Layers 1 + 2)
 
-✓ YES
+**Layer 1 — Necessity Table**
 
-**Validation:**
-- **DELIVERABLES + ASSUMPTIONS → OBJECTIVE:** Fast local tests + flaky detection + enablement materials + status report + (developers adopt + tests parallelize) → build fast test system (<5min) + flaky detection system
-- **OBJECTIVE → GOAL:** Fast test system + no false failures → developers unblocked → ship features 50% faster → users get what they need faster
-- **SUCCESS MEASURES verify GOAL:** Runtime measure verifies speed improvement, blocked time verifies unblocking, satisfaction verifies developer impact
+| # | Deliverable | Remove it — does objective still hold? | Verdict |
+|---|-------------|----------------------------------------|---------|
+| D1 | Fast Local Test Execution | Without this, test runtime stays at 45min. The core of the objective ("fast local test execution system") is unmet. | Necessary |
+| D2 | Flaky Test Detection & Quarantine | Without this, developers still debug false failures daily. The "flaky test detection system" half of the objective is unmet. | Necessary |
+| D3 | Developer Enablement Materials | Without this, developers have no guide, video, or migration script — they must figure out the new test workflow themselves. The objective includes building a system developers actually use, not just one that exists. D3 also mitigates the adoption assumption. | Necessary |
+| D4 | Developer Time Tracking Dashboard | Without this, we can't measure "blocked time" success measure. Objective is met but we can't verify goal achievement. | Necessary |
+| D5 | End of Project Status Report | Without this, we have no formal validation of outcomes. Required for accountability. | Necessary |
+
+**Layer 2 — Sufficiency Checklist**
+
+Objective: "By Q3 2026, build a fast local test execution system (<5 minutes) and flaky test detection system."
+
+Are they sufficient together?
+
+- ✓ "fast local test execution system" — D1 (parallelization + intelligent test selection)
+- ✓ "<5 minutes" — D1 (acceptance criterion: run full suite in <5min locally)
+- ✓ "flaky test detection system" — D2 (auto-detect + quarantine)
+- ✓ "blocked time" (success measure term) — D4 (dashboard provides data collection)
+- ✓ "developer satisfaction" (success measure term) — D1 + D2 (faster tests and fewer false failures directly improve daily experience, raising survey Q12 score) + D3 (enablement reduces adoption friction)
+
+Gaps? None identified. Every term in the objective maps to a deliverable. Every success measure term has a deliverable providing the data or the improvement.
+
+### CAUSAL RELATIONSHIP CHECK (Layer 3)
+
+```
+D1 (Fast Local Tests) ────────────────┐
+D2 (Flaky Detection) ─────────────────┤
+D3 (Enablement Materials) ────────────┼──→ OBJECTIVE (all delivered)
+D4 (Time Tracking Dashboard) ─────────┤
+D5 (Status Report) ───────────────────┘
++ ASSUMPTIONS:
+  - Developers will adopt local test workflow (Medium, mitigated by D3)
+= GOAL: Unblock developers → ship features 50% faster
+  verified by: test runtime <5min, blocked time <30min/day, satisfaction >4/5
+```
+
+Link-by-link validation:
+
+1. D1 → local test runtime <5min? Yes. Parallelization + intelligent selection directly reduce runtime. ✓
+2. D2 → false failures stop blocking merges? Yes. Quarantine system isolates flaky tests from merge path. ✓
+3. D3 → adoption assumption softened? Yes. Guides, video, migration script reduce friction. ✓
+4. D4 → "blocked time" success measure verifiable? Yes. Dashboard provides the data collection capability identified as missing. ✓
+5. D5 → outcomes validated? Yes. Status report compares Base vs Target vs Actual for all measures. (Note: D5 verifies outcomes but does not cause them — it's an accountability deliverable.) ✓
+6. All deliverables together = objective met? Yes. D1-D4 deliver the systems, D5 validates results. Objective fully delivered. ✓
+7. Assumptions hold? Developers adopt (Medium) — mitigated by D3, monitored via CI usage + survey. ✓
+8. OBJECTIVE + ASSUMPTIONS → GOAL? If we deliver fast tests + flaky detection + enablement + tracking and developers adopt → developers unblocked → ship 50% faster. Runtime measure verifies speed ✓. Blocked time verifies unblocking ✓. Satisfaction verifies impact ✓. All trace to goal. ✓
+
+Confidence: **Strong**. Direct causation — delivering the objective (fast tests + flaky detection) with adoption assumption holding directly achieves the goal (developers unblocked, ship 50% faster).
 
 **Key insight from causal check:** Added "Developer Enablement Materials" deliverable after recognizing that "developers adopt" assumption had Medium risk. Enablement materials reduce this risk by making adoption easier (guides, videos, migration script).
 
@@ -663,11 +769,11 @@ The team doubled in size last quarter and we have no written onboarding material
 
 ### GOAL - What Outcome Are We Achieving?
 
-New engineers take 4 weeks to make their first meaningful contribution. They spend 60% of that time asking questions that docs should answer. This delays feature work and creates interrupt-driven days for senior engineers. **We need new engineers to contribute meaningfully in <2 weeks so teams can maintain velocity.**
+New engineers take 4 weeks to make their first meaningful contribution. They spend 60% of that time asking questions that docs should answer. **We need new engineers to contribute meaningfully in <2 weeks by self-serving answers instead of asking senior engineers.**
 
 ### OBJECTIVE - What Deliverables Will We Produce?
 
-By October 1, 2026, create comprehensive onboarding documentation covering setup, architecture, and common workflows so new engineers can self-serve answers.
+By October 1, 2026, create comprehensive onboarding documentation covering setup, architecture, and common workflows.
 
 ### SUCCESS MEASURES - How We Know We Achieved the Goal
 
@@ -698,11 +804,52 @@ By October 1, 2026, create comprehensive onboarding documentation covering setup
    - Document whether we achieved the goal: "New engineers contribute in <2 weeks"
    - Lessons learned
 
-### CAUSAL RELATIONSHIP CHECK
+### SUFFICIENT AND NECESSARY CHECK (Layers 1 + 2)
 
-✓ YES - Docs site + (engineers read docs) → comprehensive docs → new engineers self-serve → contribute in <2 weeks. Success measures verify time reduction and self-service adoption.
+**Layer 1 — Necessity Table**
 
-**Key insight:** This is a **minimal viable project** - only 2 deliverables (docs + status report). Shows you don't need complexity for valid planning.
+| # | Deliverable | Remove it — does objective still hold? | Verdict |
+|---|-------------|----------------------------------------|---------|
+| D1 | Onboarding Documentation Site | Without this, there are no onboarding docs at all. The entire objective is unmet. | Necessary |
+| D2 | End of Project Status Report | Without this, we can't verify whether the goal was achieved. Required for accountability. | Necessary |
+
+**Layer 2 — Sufficiency Checklist**
+
+Objective: "By October 1, 2026, create comprehensive onboarding documentation covering setup, architecture, and common workflows."
+
+Are they sufficient together?
+
+- ✓ "comprehensive onboarding documentation" — D1 (setup guide + architecture overview + workflows + FAQ)
+- ✓ "setup" — D1 (setup guide covering environment, tools, access)
+- ✓ "architecture" — D1 (architecture overview with diagrams)
+- ✓ "common workflows" — D1 (branching, testing, deploying)
+- ✓ "time to contribution" (success measure term) — D1 (self-serve answers reduce ramp-up)
+- ✓ "question time" (success measure term) — D1 (FAQ + guides replace asking senior engineers)
+
+Gaps? None identified. D1 covers every term in the objective. Both success measure terms are served by D1's content.
+
+### CAUSAL RELATIONSHIP CHECK (Layer 3)
+
+```
+D1 (Onboarding Docs Site) ────────────┐
+D2 (Status Report) ───────────────────┼──→ OBJECTIVE (all delivered)
++ ASSUMPTIONS:
+  - New engineers will read docs before asking questions (Medium, monitored via page views + survey)
+= GOAL: New engineers contribute meaningfully in <2 weeks
+  verified by: time to first PR <2 weeks, question time <20%
+```
+
+Link-by-link validation:
+
+1. D1 → self-serve answers available? Yes. Setup guide + architecture + workflows + FAQ cover the top question categories. ✓
+2. D2 → outcomes validated? Yes. Status report compares Base vs Target vs Actual. ✓
+3. All deliverables together = objective met? Yes. Docs site + status report = comprehensive onboarding docs delivered. ✓
+4. Assumptions hold? Engineers read docs (Medium) — monitored via page views + survey, contingency adds docs to PR template and mandatory walkthrough. ✓
+5. OBJECTIVE + ASSUMPTIONS → GOAL? If we deliver comprehensive docs and engineers read them → they self-serve answers → contribute in <2 weeks. Time to first PR verifies contribution speed ✓. Question time verifies self-service ✓. Both trace to goal. ✓
+
+Confidence: **Adequate**. Logical chain — delivering docs (objective) + engineers reading them (assumption) → faster contribution (goal). Depends on adoption assumption (Medium risk, monitored).
+
+**Key insight:** This is a **minimal viable project** - only 2 deliverables (docs + status report). Shows you don't need complexity for valid planning. The three-layer check still applies — even minimal projects benefit from explicit validation.
 
 ## Section Interdependence
 
@@ -712,7 +859,7 @@ Every time you edit one section, scan all others for consistency. This back-and-
 
 | If you change... | Then check... |
 |-----------------|--------------|
-| **Goal** | Objective (still contributes to goal?), Success Measures (still verify this goal?), Deliverables (still sufficient for objective?) |
+| **Goal** | Success Measures (still verify this goal?), Objective (still plausibly leads to goal given assumptions?), Deliverables (still sufficient for objective?) |
 | **Objective** | Goal (does it align?), Success Measures (vague terms still backed by measures?), Deliverables (still achieve objective?) |
 | **Success Measure** | Deliverables (does a new verification deliverable need to be added?), Goal (does this actually measure the goal?) |
 | **Assumption** | Deliverables (can a deliverable eliminate or soften this assumption?), Causal Chain (does removing/adding affect chain?) |
@@ -735,7 +882,7 @@ Every time you edit one section, scan all others for consistency. This back-and-
 5. **Crystallize OBJECTIVE** - Turn fuzzy request into concrete deliverables. Always start with "By [date],..." as the opening of the objective statement. Update the document section in-place.
 6. **Define SUCCESS** - How do we measure goal achievement? Update the document section in-place.
 7. **Challenge unmeasurable claims** - Use generative mode: suggest measurable alternatives, refuse to proceed if can't measure.
-8. **Map GOAL to SUCCESS** - Every claim in GOAL must have a measure. Every vague term in the objective must trace to a success measure that defines it concretely. If a term has no backing measure, either add one or sharpen the language.
+8. **Map GOAL to SUCCESS, OBJECTIVE to DELIVERABLES** - Every claim in GOAL must have a success measure. Every claim in OBJECTIVE must map to a deliverable. Goal and objective can use simple, broad language because their constituent parts (success measures and deliverables respectively) give every term concrete meaning — but no unmapped claims.
 9. **Verification Feasibility Check for SUCCESS** - For EVERY means of verification: Can we get this data TODAY? Annotate inline: `<br>✅ *(exists)*` OR `<br>⚠️ [missing] → **Deliverable #N**`. If building the capability is impractical, remove the success measure entirely — unmeasurable measures create false confidence. When adding a verification deliverable, prefer frontloading it to capture the baseline before other work begins.
 10. **Identify ASSUMPTIONS** - Scan ALL dimensions (technical, financial, organizational, staffing, external, regulatory, market, timeline, vendor). What's outside team control? Update the document section in-place.
 11. **Convert assumptions (HARD GATE)** - Apply filter to EVERY candidate: "Can the team affect this?" YES → deliverable, not assumption. PARTIAL → add mitigating deliverables, may keep. NO → keep as assumption. No assumption reaches the plan document without passing this filter on the FIRST pass. If unsure, default to deliverable.
@@ -744,8 +891,8 @@ Every time you edit one section, scan all others for consistency. This back-and-
 14. **Define DELIVERABLES** - What outputs achieve the objective? Run `claude-inspect estimate` to ground each deliverable timeline in historical data. Include P90 projection in the plan document.
     - After defining deliverables, re-scan assumptions: Has any assumption become team-controllable via a deliverable just defined? Has any risk level changed? Remove or update immediately.
 15. **Add End of Project Status Report** - Mandatory final deliverable for accountability (include HOW to verify/monitor instructions)
-16. **Sufficient and necessary test** - Are deliverables enough? Is each required? Update the document if changes needed.
-17. **Validate causal chain** - Does DELIVERABLES + ASSUMPTIONS → OBJECTIVE → GOAL? Update the document if changes needed.
+16. **Sufficient and necessary test (Layer 1 + Layer 2)** - Produce the necessity table (Layer 1) and sufficiency checklist (Layer 2) from the DELIVERABLES section format. Cut unnecessary deliverables, add missing ones. Update the document if changes needed.
+17. **Validate causal chain (Layer 3)** - Produce the causal chain diagram, link-by-link validation, and confidence assessment. The causal claim: OBJECTIVE (all deliverables) + ASSUMPTIONS → GOAL (verified by success measures). Update the document if changes needed.
     - Scan assumptions table: Has any design decision eliminated a risk? Is any assumption now validatable by building a deliverable? Remove dead assumptions.
 18. **Iterate on the document** - When user requests changes, edit the file in place. Brief chat note on what changed. The document is the deliverable. **After every design decision that changes scope or architecture, re-scan the assumptions table — remove eliminated assumptions, note changed risk levels, add any new ones. Assumptions are living; treat them that way throughout iteration.**
 
@@ -759,14 +906,14 @@ Before marking work complete:
 
 1. **BACKGROUND AND CONTEXT complete** - Current state captured? Trigger identified? Kept to 2-4 sentences? No desired outcomes (those belong in GOAL)?
 2. **GOAL complete** - Desired outcome clear in fifth-grader language? Used Five Whys?
-3. **GOAL measurable** - All claims in GOAL have corresponding success measures?
+3. **GOAL-SUCCESS mapping** - Every claim, term, and promise in GOAL maps to at least one success measure? No unmapped claims?
 4. **OBJECTIVE complete** - Achievable objective in fifth-grader language? Starts with "By [date],..."? No absolute claims? Concise — every sentence means something, every word earns its place? Does it describe what THIS team will do (not the full goal)?
-5. **OBJECTIVE language maps to SUCCESS MEASURES** - Every vague term in the objective has a corresponding success measure that concretely defines it? Objective reads as plain-language summary, success measures read as the contract?
+5. **OBJECTIVE language maps to DELIVERABLES** - Every claim in the objective maps to at least one deliverable? Objective reads as plain-language summary, deliverables concretely define it?
 6. **SUCCESS defined** - 1-3 measures in table format (Base | Target | Means of Verification)?
 7. **VERIFICATION FEASIBILITY CHECK applied** - For EVERY means of verification: Annotated inline with `<br>✅ *(exists)*` OR `<br>⚠️ [missing] → **Deliverable #N**`? If building the verification capability is impractical, removed the success measure entirely (no unmeasurable measures)?
 8. **SUCCESS MEASURES track GOAL** - Measuring outcomes (goal), not outputs (deliverables)?
 9. **Unmeasurable claims challenged** - Used generative mode to suggest alternatives? Refused to proceed if can't measure?
-10. **GOAL-SUCCESS mapping** - Every claim in GOAL has a measure?
+10. **Unmapped claims check** - No unmapped claims in GOAL (each maps to success measure) AND no unmapped claims in OBJECTIVE (each maps to deliverable)?
 11. **ASSUMPTIONS filtered** - Applied conversion filter? Only true assumptions remain?
 12. **ASSUMPTIONS dimension scan** - Scanned all angles: technical, financial, organizational, staffing, external, regulatory, market, timeline, vendor?
 13. **ASSUMPTIONS have risk levels** - High/Medium/Low assigned with rationale?
@@ -775,9 +922,9 @@ Before marking work complete:
 16. **DELIVERABLES scoped** - Clear acceptance criteria? Prefer simple/existing/boring?
 17. **END OF PROJECT STATUS REPORT included** - Mandatory final deliverable with HOW to verify/monitor instructions?
 18. **DELIVERABLE ESTIMATES included** - Ran `claude-inspect estimate` and added P90 projections to each deliverable?
-19. **Sufficient test passed** - Deliverables together achieve OBJECTIVE?
-20. **Necessary test passed** - Each deliverable required? Removed gold-plating?
-21. **CAUSAL CHECK validated** - DELIVERABLES + ASSUMPTIONS → OBJECTIVE → GOAL? SUCCESS verifies?
+19. **Necessity table produced (Layer 1)** - One row per deliverable with genuine "what breaks?" reasoning? Any "Not necessary" deliverables cut?
+20. **Sufficiency checklist produced (Layer 2)** - Every objective aspect mapped to deliverable(s)? Gaps assessment included? Missing deliverables added?
+21. **Causal chain validated (Layer 3)** - ASCII dependency diagram produced? Link-by-link validation with Yes/No + reasoning for each link? Final link validates OBJECTIVE + ASSUMPTIONS → GOAL? Confidence level assessed (Strong/Adequate/Weak)? Any ✗ links fixed?
 22. **ASSUMPTIONS re-evaluated at EVERY design decision** - Scanned after each design decision (not just at the end)? Removed any now team-controllable? Noted risk level changes from design decisions? No stale assumptions remain from earlier drafts?
 
 **If any verification fails, fix before completing.**
