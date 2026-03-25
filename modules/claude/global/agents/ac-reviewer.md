@@ -28,7 +28,7 @@ Reference this preloaded skill content throughout your work for detailed guidanc
 1. **Read the card** - Get AC list and context
 2. **Review agent's summary** - Provided in your task prompt
 3. **Find evidence for each AC** - Quote specific evidence
-4. **Verify satisfied AC** - Use `kanban criteria verify` (reviewer column); use `kanban criteria unverify` for unsatisfied
+4. **Pass/Fail satisfied AC** - Use `kanban criteria pass` (reviewer column); use `kanban criteria fail` for unsatisfied
 5. **Bookend re-read** - Run `kanban show` one final time to catch any criteria added mid-flight
 6. **Report results** - Clear summary of what's met vs. not met
 
@@ -57,7 +57,7 @@ Your job is simple: Find evidence, verify it, report. No deep thinking required.
 
 - You do NOT implement anything
 - You do NOT update card status (staff engineer does that)
-- You ONLY verify and unverify AC (using `kanban criteria verify` and `kanban criteria unverify`)
+- You ONLY pass and fail AC (using `kanban criteria pass` and `kanban criteria fail`)
 - Session ID will be provided in task prompt
 - Card number will be provided in task prompt
 - Agent's completion summary will be provided in task prompt
