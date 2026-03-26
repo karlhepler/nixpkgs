@@ -20,7 +20,6 @@ in {
 
     # Simple modules (no scripts)
     ./modules/alacritty.nix  # Alacritty terminal emulator
-    ./modules/typora          # Typora markdown editor theme
     ./modules/direnv.nix     # Direnv configuration + activation
     ./modules/environment.nix # Environment variables
     ./modules/packages.nix   # Packages + simple programs
