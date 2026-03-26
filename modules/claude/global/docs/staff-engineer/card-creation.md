@@ -46,6 +46,13 @@ Be accurate — these are not placeholder guesses, they define the actual scope 
 ❌ ".gitignore still contains the dist/ entry — it was NOT removed because we need it for build artifacts (cat .gitignore | rg 'dist' returns a match)" — rationale is noise
 ❌ "Code works correctly" — no MoV, not falsifiable
 
+**Grep MoV scoping — avoid false positives:** When a MoV uses `rg` to verify absence or presence of specific content, the pattern must be scoped tightly enough to match ONLY the change being verified — not unrelated content in the same file. A blanket pattern that matches other legitimate content will false-positive, burning retry cycles on correct work.
+
+✅ "No stale 2-minute references in distribution section [MoV: rg -c 'distribution.*every 2 minute' docs/monitoring-runbook.md]"
+❌ "No stale 2-minute references [MoV: rg -c '2.minute' docs/monitoring-runbook.md]" — matches unrelated "2 minute" references (circuit breaker, deploy queue)
+
+**The test:** Before writing a grep MoV, ask: "Could this pattern match content unrelated to my change?" If yes, add surrounding context words to disambiguate, or use a different verification approach.
+
 **Test-as-MoV (preferred for complex or multi-criterion work cards):** When the deliverable is complex enough that individual file inspections would burn many reviewer turns, write a test first that programmatically encodes the vision. The sub-agent's action includes "make this test pass." Every AC item then shares a single MoV: `[MoV: <test command>]`. The reviewer runs the test once and verifies all criteria in one shot.
 
 ✅ "User profile returns sanitized email [MoV: npm test -- user-profile.test.ts]"
