@@ -802,15 +802,15 @@ def _files_conflict(path_a: str, edit_a: bool, path_b: str, edit_b: bool) -> boo
 
     Conflict rules:
     - editFiles vs editFiles  → CONFLICT (two writers)
-    - editFiles vs readFiles  → CONFLICT (writer + reader = race condition)
+    - editFiles vs readFiles  → NO CONFLICT (reader + writer is allowed)
     - readFiles vs readFiles  → NO CONFLICT (two readers are fine)
 
     Uses fnmatch for glob matching. Python's fnmatch treats '*' as matching
     any character including '/' on non-Windows, so 'src/*.py' will match
     'src/foo.py' — crossing path separators as specified.
     """
-    # readFiles vs readFiles → no conflict
-    if not edit_a and not edit_b:
+    # Only conflict when both are edits (two writers)
+    if not (edit_a and edit_b):
         return False
 
     # Check if the two patterns overlap: either a matches b's pattern or b matches a's
@@ -846,20 +846,11 @@ def check_file_conflicts(
             inflight_num = card_number(card_path)
             inflight_session = inflight.get("session") or "unknown"
 
-            # Check new card's editFiles against inflight editFiles and readFiles
+            # Check new card's editFiles against inflight editFiles only
+            # (only edit-vs-edit is a conflict)
             for new_path in new_edit_files:
                 for existing_path in inflight_edit:
                     if _files_conflict(new_path, True, existing_path, True):
-                        return (inflight_num, inflight_session, new_path)
-                for existing_path in inflight_read:
-                    if _files_conflict(new_path, True, existing_path, False):
-                        return (inflight_num, inflight_session, new_path)
-
-            # Check new card's readFiles against inflight editFiles only
-            # (readFiles vs readFiles never conflicts)
-            for new_path in new_read_files:
-                for existing_path in inflight_edit:
-                    if _files_conflict(new_path, False, existing_path, True):
                         return (inflight_num, inflight_session, new_path)
 
     return None
