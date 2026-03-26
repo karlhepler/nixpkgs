@@ -83,7 +83,7 @@ let
 
   # Smithers-specific hat assembly: coordinator (required for LOOP_COMPLETE) + 8 specialists
   smithersHatContent = lib.concatStrings [
-    (builtins.readFile ./global/hats/smithers-coordinator.yml.tmpl)
+    (builtins.readFile ./global/hats/smithers.yml.tmpl)
     (processTemplate ./global/hats/swe-backend.yml.tmpl  (processSkillFile ./global/commands/swe-backend.md))
     (processTemplate ./global/hats/swe-frontend.yml.tmpl (processSkillFile ./global/commands/swe-frontend.md))
     (processTemplate ./global/hats/swe-fullstack.yml.tmpl (processSkillFile ./global/commands/swe-fullstack.md))
@@ -94,11 +94,18 @@ let
     (processTemplate ./global/hats/researcher.yml.tmpl   (processSkillFile ./global/commands/researcher.md))
   ];
 
+  # Smithers wrapper needs starting_event: task.route (monty-burns does not)
+  smithersWrapperContent =
+    builtins.replaceStrings
+      [ "completion_promise: \"LOOP_COMPLETE\"\n" ]
+      [ "completion_promise: \"LOOP_COMPLETE\"\n  starting_event: task.route\n" ]
+      (builtins.readFile ./global/hats/wrapper.yml.tmpl);
+
   smithersHatYaml = pkgs.writeText "smithers-hat.yml" (
     builtins.replaceStrings
       [ "HATS_PLACEHOLDER" ]
       [ smithersHatContent ]
-      (builtins.readFile ./global/hats/wrapper.yml.tmpl)
+      smithersWrapperContent
   );
 
   # Python environment for smithers with required packages
