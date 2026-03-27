@@ -1616,20 +1616,8 @@ You MUST complete ALL of the following before exiting:
 ## How to Work
 
 - **Use Ralph's task system** - Create tasks for each issue, track progress with `ralph tools task`
-- **Use Skill tool for ALL implementation work** - Route every investigation and fix through the appropriate skill. Available skills (use ONLY these):
-
-  **Code fixes by domain:**
-  - Frontend/React/TypeScript UI/CSS → `/swe-frontend`
-  - Backend/API/database/server-side → `/swe-backend`
-  - Full-stack, unclear which layer, or ambiguous domain → `/swe-fullstack`
-  - Infrastructure/Terraform/Kubernetes/cloud/IaC → `/swe-infra`
-  - CI/CD pipelines, build failures, test failures, lint/format errors → `/swe-devex`
-  - Performance, reliability, SLOs, monitoring/alerting → `/swe-sre`
-  - Security scan failures, auth issues, vulnerabilities → `/swe-security`
-
-  **prc operations** (reply, resolve bot comment threads): Use `prc` CLI directly per the instructions in this prompt — no skill needed.
-
-  **NOT available in this context:** `/debugger`, `/project-planner`, `/lawyer`, `/marketing`, `/visual-designer`, `/finance`, `/ux-designer`, `/scribe`, `/ai-expert`, `/researcher`, `/manage-pr-comments`, `/review-pr-comments`
+- **Dispatch implementation work to specialists** - Emit ralph events for code fixes; the coordinator routes each task to the appropriate specialist
+- **prc operations** (reply, resolve bot comment threads): Use `prc` CLI directly per the instructions in this prompt — no specialist dispatch needed
 - **Be thorough** - Don't skip issues or make partial fixes
 
 ## What NOT to Do
