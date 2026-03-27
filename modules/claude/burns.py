@@ -18,10 +18,10 @@ Options:
                                 Priority: CLI flag > env var > default
     --debug                     Enable Ralph diagnostics mode (sets RALPH_DIAGNOSTICS=1)
                                 Generates detailed JSONL logs in .ralph/diagnostics/
-    --no-reviews                Skip the mandatory tiered review protocol; uses the Smithers
-                                coordinator hat which emits LOOP_COMPLETE immediately after
-                                work.done without routing to any review specialists. Intended
-                                for use by smithers where review cycles are unnecessary overhead.
+    --no-reviews                Skip the mandatory tiered review protocol; Monty Burns will
+                                emit LOOP_COMPLETE immediately after work.done without routing
+                                to any review specialists. Intended for use by smithers where
+                                review cycles are unnecessary overhead.
 """
 
 import argparse
@@ -31,10 +31,11 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 
-monty_burns_hat_yaml = "MONTY_BURNS_HAT_YAML"  # replaced at build time
-smithers_hat_yaml = "SMITHERS_HAT_YAML"  # replaced at build time
+# Path to Ralph Coordinator hat YAML (substituted by Nix at build time)
+RALPH_COORDINATOR_HAT = "RALPH_COORDINATOR_HAT_YAML"
 DEFAULT_MAX_ITERATIONS = 20
 
 
@@ -211,18 +212,116 @@ def clean_stale_tool_results(working_dir: str) -> None:
         )
 
 
-def main():
-    """Main entry point."""
-    # Validate Nix substitution occurred (check if hat files exist)
-    if not os.path.isfile(monty_burns_hat_yaml):
+def create_no_reviews_hat(hat_path: str) -> str:
+    """Create a temporary hat YAML with the tiered review protocol removed.
+
+    Reads the Monty Burns hat YAML from hat_path, replaces the 'On work.done'
+    behavior section so that Monty Burns handles bot comment cleanup then emits
+    LOOP_COMPLETE immediately rather than routing to review specialists.
+
+    Returns the path to a temporary file containing the patched hat YAML.
+    The caller is responsible for deleting the temp file when done.
+
+    Args:
+        hat_path: Path to the original Ralph Coordinator hat YAML.
+
+    Returns:
+        Path to the temporary patched hat YAML file, or None if patching failed.
+    """
+    with open(hat_path, 'r') as f:
+        hat_content = f.read()
+
+    # Replace the 'On `work.done`' section with a no-reviews version.
+    # The original section starts with '## On `work.done`' and ends just before
+    # '## On `research.done`'. We replace the entire block including the review
+    # tables with a directive to handle bot comments then emit LOOP_COMPLETE.
+    no_reviews_work_done = """\
+          ## On `work.done`
+
+          Reviews are suppressed for this session (--no-reviews mode).
+
+          **1. Check for unresolved bot threads:**
+
+          ```bash
+          prc list --unresolved --bots-only --max-replies 0
+          ```
+
+          - If `prc list` fails for any reason (network error, auth failure, PR closed), skip steps 2 and 3 and go directly to step 4. Include the error in the LOOP_COMPLETE summary.
+          - If `prc list` returns no rows or an empty result, skip steps 2 and 3 and go directly to step 4.
+
+          **2. Get the commit SHA:**
+
+          ```bash
+          git rev-parse HEAD
+          ```
+
+          - If `git rev-parse HEAD` fails, use the string `"unknown commit"` in place of the SHA and continue.
+
+          **3. Reply to and resolve each unresolved thread:**
+
+          The `prc list` output is columnar. The first column is the numeric comment ID; the second column is the thread ID in `PRRT_...` format. Use the numeric comment ID with `prc reply` and the `PRRT_...` thread ID with `prc resolve`.
+
+          ```bash
+          prc reply <numeric-comment-id> "Fixed in <commit-sha>: <brief description of what was changed>."
+          prc resolve <thread-id>
+          ```
+
+          - If any `prc reply` or `prc resolve` call fails, include the failure in the LOOP_COMPLETE summary and continue processing remaining threads. Do not abort the loop.
+          - After processing all threads (or attempting all), proceed to step 4.
+
+          **4. Emit LOOP_COMPLETE:**
+
+          ```bash
+          ralph emit "LOOP_COMPLETE" "summary of completed work"
+          ```
+
+"""
+
+    original_section_start = "          ## On `work.done`"
+    original_section_end = "          ## On `research.done`"
+
+    start_idx = hat_content.find(original_section_start)
+    end_idx = hat_content.find(original_section_end)
+
+    if start_idx == -1 or end_idx == -1:
+        # Hat structure has changed -- fall back to original hat to avoid silent breakage
         print(
-            f"Error: Monty Burns hat not found at: {monty_burns_hat_yaml}",
+            "Warning: --no-reviews: could not locate review protocol section in hat YAML. "
+            "Falling back to full hat (reviews will run).",
             file=sys.stderr
         )
-        sys.exit(1)
-    if not os.path.isfile(smithers_hat_yaml):
+        return None
+
+    patched_content = (
+        hat_content[:start_idx]
+        + no_reviews_work_done
+        + hat_content[end_idx:]
+    )
+
+    tmp = tempfile.NamedTemporaryFile(
+        mode='w',
+        suffix='.yml',
+        prefix='burns-no-reviews-hat-',
+        delete=False
+    )
+    try:
+        tmp.write(patched_content)
+        tmp.flush()
+        return tmp.name
+    except Exception:
+        tmp.close()
+        os.unlink(tmp.name)
+        raise
+    finally:
+        tmp.close()
+
+
+def main():
+    """Main entry point."""
+    # Validate Nix substitution occurred (check if hat file exists)
+    if not os.path.isfile(RALPH_COORDINATOR_HAT):
         print(
-            f"Error: Smithers hat not found at: {smithers_hat_yaml}",
+            f"Error: Ralph Coordinator hat not found at: {RALPH_COORDINATOR_HAT}",
             file=sys.stderr
         )
         sys.exit(1)
@@ -259,7 +358,7 @@ def main():
         action="store_true",
         default=False,
         dest="no_reviews",
-        help="Skip mandatory tiered review protocol; uses Smithers coordinator hat that emits LOOP_COMPLETE immediately after work.done"
+        help="Skip mandatory tiered review protocol; Monty Burns emits LOOP_COMPLETE immediately after work.done"
     )
 
     args = parser.parse_args()
@@ -324,11 +423,14 @@ You are running in autonomous mode within: {working_dir}
 **If you need to access files outside this directory, STOP and document the blocker.**
 """
 
-    # Determine hat path: use smithers lightweight coordinator if --no-reviews, otherwise Monty Burns
+    # Determine hat path: use patched no-reviews hat if requested, otherwise use the original
+    no_reviews_hat_path = None
     if args.no_reviews:
-        hat_path = smithers_hat_yaml
+        no_reviews_hat_path = create_no_reviews_hat(RALPH_COORDINATOR_HAT)
+        # If patching failed (returned None), fall back to original hat
+        hat_path = no_reviews_hat_path if no_reviews_hat_path is not None else RALPH_COORDINATOR_HAT
     else:
-        hat_path = monty_burns_hat_yaml
+        hat_path = RALPH_COORDINATOR_HAT
 
     # Build ralph command with constructed prompt
     cmd = [
@@ -368,6 +470,13 @@ You are running in autonomous mode within: {working_dir}
             pass  # Already killed, just cleanup
         print("✓ Ralph terminated", file=sys.stderr)
         sys.exit(130)  # Standard exit code for SIGINT (128 + 2)
+    finally:
+        # Clean up the temporary no-reviews hat file if we created one
+        if no_reviews_hat_path is not None and os.path.exists(no_reviews_hat_path):
+            try:
+                os.unlink(no_reviews_hat_path)
+            except OSError:
+                pass
 
 
 if __name__ == "__main__":
