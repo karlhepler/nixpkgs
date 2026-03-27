@@ -914,17 +914,10 @@ re-checking criteria you already reviewed):
     if agent_output:
         if is_findings_card:
             agent_output_section = f"""
-Agent output (the sub-agent's final response — THIS IS THE PRIMARY EVIDENCE):
+Agent output (PRIMARY EVIDENCE — verify criteria against this):
 ---
 {agent_output}
 ---
-
-This is a {card_type} card. The agent's deliverable is its findings/analysis, NOT
-file changes. Verify each criterion against the agent output above. The MoV tells
-you WHAT to look for in the output (e.g., "findings returned" means check that
-findings exist and address the criterion). Do NOT inspect source files to validate
-whether findings are "correct" — the agent's job was to articulate findings, and
-your job is to verify the findings were articulated.
 """
         else:
             agent_output_section = f"""
@@ -938,14 +931,10 @@ above as supplementary context only.
 """
 
     if is_findings_card:
-        verification_step = f"""Step 2: For each acceptance criterion, verify it against the AGENT OUTPUT
-provided above. This is a {card_type} card — the deliverable is findings/analysis
-returned by the agent, not file changes.
+        verification_step = f"""Step 2: For each acceptance criterion, verify it against the AGENT OUTPUT below.
+This is a {card_type} card — the deliverable is the agent's findings/analysis.
 - Read each criterion and its MoV
-- Check whether the agent output satisfies what the MoV asks for
-- Do NOT inspect source code files to judge whether findings are "accurate"
-  (the agent reported what it found — your job is to verify it reported findings,
-  not to re-do the investigation)"""
+- Check whether the agent output satisfies what the MoV asks for"""
     else:
         verification_step = """Step 2: For each acceptance criterion, verify it by inspecting files, running
 the Method of Verification (MoV) specified in the criterion text, or checking
@@ -954,10 +943,13 @@ whatever evidence is appropriate."""
     if is_findings_card:
         important_section = f"""IMPORTANT:
 - Verify EVERY criterion. Do not skip any.
-- Evidence source is the AGENT OUTPUT above — not the filesystem.
+- Evidence source is the AGENT OUTPUT below — not the filesystem.
 - The MoV tells you what to look for in the agent's output.
-- Do NOT read source files to check if findings are "correct" — that is re-doing
-  the {card_type}, not reviewing it.
+- Do NOT read source files to check if findings are "correct" — that re-does the {card_type}.
+- CRITICAL — "assessed" ≠ "no defects found": The deliverable is the assessment itself.
+  An agent that identifies HIGH-severity gaps has PASSED — finding deficiencies is success.
+  Evaluate whether the agent COMPLETED and DELIVERED its assessment, not whether the
+  assessed artifact is defect-free.
 - Run kanban criteria pass/fail as you verify each criterion, not all at the end."""
     else:
         important_section = """IMPORTANT:
@@ -975,6 +967,8 @@ Step 1: Run this command to read the card:
 
 {verification_step}
 
+{important_section}
+
 Step 3: For each criterion you verify:
   - If it PASSES: kanban criteria pass {card_number} <n> --session {session}
   - If it FAILS: kanban criteria fail {card_number} <n> --reason '<why it failed>' --session {session}
@@ -985,7 +979,6 @@ Step 4: After all criteria have a pass or fail verdict, run:
 If kanban done fails (some criteria are unchecked or failed), that is expected.
 Just ensure every criterion has been evaluated with pass or fail.
 {agent_output_section}{previous_section}
-{important_section}
 """
 
 
