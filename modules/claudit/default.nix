@@ -167,7 +167,8 @@ CREATE TABLE IF NOT EXISTS kanban_card_events (
     event_type TEXT NOT NULL,
     agent TEXT NOT NULL DEFAULT "",
     model TEXT NOT NULL DEFAULT "",
-    recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    rejection_reasons TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_am_session_id ON agent_metrics (session_id);

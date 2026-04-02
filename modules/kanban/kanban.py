@@ -945,6 +945,21 @@ def cmd_redo(args) -> None:
 
     card = read_card(card_path)
 
+    # Collect failed criteria BEFORE clearing reviewer_fail_reason — preserves rejection context
+    current_cycle = card.get("review_cycles", 0)
+    failed_criteria = [
+        {"criterion": c.get("text", ""), "reason": c["reviewer_fail_reason"]}
+        for c in card.get("criteria", [])
+        if "reviewer_fail_reason" in c
+    ]
+    if failed_criteria:
+        rejection_entry = {
+            "timestamp": now_iso(),
+            "cycle": current_cycle,
+            "failures": failed_criteria,
+        }
+        card.setdefault("rejection_history", []).append(rejection_entry)
+
     # Reset reviewer_met to unchecked (None) for all criteria — the AC reviewer must
     # re-verify after the agent fixes the issues. Keep agent_met as-is: the agent
     # already self-checked and those checks remain valid unless explicitly unchecked.
@@ -1192,6 +1207,55 @@ def cmd_status(args) -> None:
     root = get_root(args.root)
     card_path = find_card(root, args.card)
     print(card_path.parent.name)
+
+
+def cmd_rejections(args) -> None:
+    """Display rejection history for a card, formatted for readability."""
+    root = get_root(args.root)
+    card_path = find_card(root, args.card)
+    card = read_card(card_path)
+    num = card_number(card_path)
+
+    rejection_history = card.get("rejection_history", [])
+
+    if not rejection_history:
+        print(f"Card #{num}: No rejection history recorded")
+        return
+
+    # Build formatted output
+    output_lines = []
+    output_lines.append(f"=== Rejection History for Card #{num} ===")
+    output_lines.append("")
+
+    bold = "\033[1m"
+    reset = "\033[0m"
+
+    for entry in rejection_history:
+        cycle = entry.get("cycle", "?")
+        timestamp = entry.get("timestamp", "unknown")
+        failures = entry.get("failures", [])
+
+        # Format timestamp for display
+        try:
+            ts_display = parse_iso(timestamp).strftime("%Y-%m-%d %H:%M:%S UTC")
+        except (ValueError, AttributeError):
+            ts_display = timestamp
+
+        output_lines.append(f"{bold}Cycle {cycle}{reset} — {ts_display}")
+
+        if not failures:
+            output_lines.append("  (no failures recorded)")
+        else:
+            for i, failure in enumerate(failures, 1):
+                criterion = failure.get("criterion", "[Unknown criterion]")
+                reason = failure.get("reason", "[No reason provided]")
+                output_lines.append(f"  {i}. {criterion}")
+                output_lines.append(f"     Reason: {reason}")
+
+        output_lines.append("")
+
+    # Send through pager
+    use_pager("\n".join(output_lines) + "\n")
 
 
 def cmd_rename(args) -> None:
@@ -2912,6 +2976,11 @@ def main() -> None:
     p_status.add_argument("card", help="Card number")
     add_session_flags(p_status)
 
+    # --- rejections ---
+    p_rejections = subparsers.add_parser("rejections", parents=[parent_parser], help="Display rejection history for a card")
+    p_rejections.add_argument("card", help="Card number")
+    add_session_flags(p_rejections)
+
     # --- rename ---
     p_rename = subparsers.add_parser("rename", parents=[parent_parser], help="Rename a session to a custom friendly name")
     p_rename.add_argument("new_name", help="New session name (lowercase alphanumeric and hyphens only)")
@@ -3051,6 +3120,7 @@ def main() -> None:
         "ls": cmd_list,
         "show": cmd_show,
         "status": cmd_status,
+        "rejections": cmd_rejections,
         "rename": cmd_rename,
         "report": cmd_report,
         "clean": cmd_clean,

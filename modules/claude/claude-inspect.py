@@ -15,15 +15,20 @@ Commands:
   estimate [--type TYPE] [--model MODEL] [--batch N]
                                    Card completion time estimates from historical data
   throughput [kanban-session]      Cards completed per hour
+  ac-rejections                    AC reviewer rejection patterns
+    [--agent AGENT] [--card-type TYPE] [--model MODEL]
+    [--session SESSION] [--since DATE]
+    [--verbose] [--summary]
 """
 
 import argparse
+import json
 import math
 import os
 import sqlite3
 import sys
 from datetime import datetime
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 
 # ---------------------------------------------------------------------------
@@ -820,6 +825,176 @@ def cmd_throughput(kanban_session: Optional[str]) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Command: ac-rejections
+# ---------------------------------------------------------------------------
+
+def _truncate(s: str, max_len: int) -> str:
+    """Truncate a string to max_len, appending '...' if truncated."""
+    if len(s) <= max_len:
+        return s
+    return s[: max_len - 3] + "..."
+
+
+def _parse_rejection_reasons(raw: Optional[str]) -> List[Dict[str, str]]:
+    """Parse rejection_reasons JSON array; return empty list on failure."""
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, list):
+            return parsed
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return []
+
+
+def cmd_ac_rejections(
+    agent: Optional[str],
+    card_type: Optional[str],
+    model: Optional[str],
+    session: Optional[str],
+    since: Optional[str],
+    verbose: bool,
+    summary: bool,
+) -> None:
+    """Show redo events with rejection reasons, with optional filters."""
+    conn = connect()
+    try:
+        conditions = [
+            "event_type = 'redo'",
+            "rejection_reasons IS NOT NULL",
+        ]
+        params: list = []
+
+        if agent:
+            conditions.append("agent = ?")
+            params.append(agent)
+        if card_type:
+            conditions.append("card_type = ?")
+            params.append(card_type)
+        if model:
+            conditions.append("model = ?")
+            params.append(model)
+        if session:
+            conditions.append("kanban_session = ?")
+            params.append(session)
+        if since:
+            conditions.append("recorded_at >= ?")
+            params.append(since)
+
+        where = " AND ".join(conditions)
+
+        rows_raw = conn.execute(
+            f"""
+            SELECT
+                card_number,
+                kanban_session,
+                agent,
+                card_type,
+                model,
+                recorded_at,
+                rejection_reasons
+            FROM kanban_card_events
+            WHERE {where}
+            ORDER BY recorded_at DESC
+            """,
+            params,
+        ).fetchall()
+
+        if not rows_raw:
+            print("No AC rejections found matching the given filters.")
+            return
+
+        if summary:
+            # Aggregate rejection patterns by agent and card_type
+            # Count criterion text occurrences
+            pattern_counts: Dict[Tuple[str, str, str], int] = {}
+            for r in rows_raw:
+                a = fmt_str(r["agent"])
+                ct = fmt_str(r["card_type"])
+                reasons = _parse_rejection_reasons(r["rejection_reasons"])
+                for item in reasons:
+                    criterion = item.get("criterion", "") if isinstance(item, dict) else str(item)
+                    key = (a, ct, criterion)
+                    pattern_counts[key] = pattern_counts.get(key, 0) + 1
+
+            if not pattern_counts:
+                print("No parseable rejection reasons found.")
+                return
+
+            print(f"AC Rejection Patterns ({len(rows_raw)} redo events)")
+            print()
+
+            headers = ["Agent", "Card Type", "Count", "Criterion (truncated)"]
+            rows_out = []
+            for (a, ct, criterion), count in sorted(
+                pattern_counts.items(), key=lambda x: -x[1]
+            ):
+                rows_out.append([
+                    a,
+                    ct,
+                    str(count),
+                    _truncate(criterion, 60),
+                ])
+            print_table(headers, rows_out)
+
+        else:
+            # Default table view
+            print(f"AC Rejections ({len(rows_raw)} redo events)")
+            print()
+
+            if verbose:
+                # Full rejection reasons, one block per row
+                for r in rows_raw:
+                    reasons = _parse_rejection_reasons(r["rejection_reasons"])
+                    print(f"Card #{fmt_str(r['card_number'])}  Session: {fmt_str(r['kanban_session'])}  "
+                          f"Agent: {fmt_str(r['agent'])}  Type: {fmt_str(r['card_type'])}  "
+                          f"Model: {fmt_str(r['model'])}  At: {fmt_str(r['recorded_at'])}")
+                    if reasons:
+                        for item in reasons:
+                            if isinstance(item, dict):
+                                criterion = item.get("criterion", "-")
+                                reason = item.get("reason", "-")
+                                print(f"  Criterion: {criterion}")
+                                print(f"  Reason:    {reason}")
+                            else:
+                                print(f"  {item}")
+                    else:
+                        print(f"  (unparseable: {fmt_str(r['rejection_reasons'])})")
+                    print()
+            else:
+                # Compact table with truncated reasons
+                headers = ["Card", "Session", "Agent", "Type", "Model", "Timestamp", "Rejection Reasons"]
+                rows_out = []
+                for r in rows_raw:
+                    reasons = _parse_rejection_reasons(r["rejection_reasons"])
+                    if reasons:
+                        parts = []
+                        for item in reasons:
+                            if isinstance(item, dict):
+                                c = item.get("criterion", "")
+                                parts.append(c)
+                            else:
+                                parts.append(str(item))
+                        reasons_str = "; ".join(parts)
+                    else:
+                        reasons_str = fmt_str(r["rejection_reasons"])
+                    rows_out.append([
+                        fmt_str(r["card_number"]),
+                        fmt_str(r["kanban_session"]),
+                        fmt_str(r["agent"]),
+                        fmt_str(r["card_type"]),
+                        fmt_str(r["model"]),
+                        fmt_str(r["recorded_at"]),
+                        _truncate(reasons_str, 50),
+                    ])
+                print_table(headers, rows_out)
+
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -843,6 +1018,11 @@ Examples:
   claude-inspect estimate --json
   claude-inspect throughput
   claude-inspect throughput kind-vale
+  claude-inspect ac-rejections
+  claude-inspect ac-rejections --agent swe-backend
+  claude-inspect ac-rejections --card-type work --since 2025-01-01
+  claude-inspect ac-rejections --verbose
+  claude-inspect ac-rejections --summary
 """,
     )
 
@@ -884,6 +1064,16 @@ Examples:
     throughput_parser = subparsers.add_parser("throughput", help="Cards completed per hour")
     throughput_parser.add_argument("kanban_session", nargs="?", help="Kanban session name (omit for aggregate)")
 
+    # ac-rejections
+    ac_rej_parser = subparsers.add_parser("ac-rejections", help="AC reviewer rejection patterns")
+    ac_rej_parser.add_argument("--agent", help="Filter by agent/specialist name")
+    ac_rej_parser.add_argument("--card-type", dest="card_type", choices=["work", "review", "research"], help="Filter by card type")
+    ac_rej_parser.add_argument("--model", help="Filter by model (e.g., sonnet, haiku, opus)")
+    ac_rej_parser.add_argument("--session", dest="session", help="Filter by kanban session name")
+    ac_rej_parser.add_argument("--since", help="Filter by date (ISO format, e.g., 2025-01-01)")
+    ac_rej_parser.add_argument("--verbose", action="store_true", help="Show full rejection reason text")
+    ac_rej_parser.add_argument("--summary", action="store_true", help="Aggregate view: top rejection reason patterns by agent and card type")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -907,6 +1097,16 @@ Examples:
             cmd_estimate(args.card_type, args.model, args.batch, args.json_output)
         elif args.command == "throughput":
             cmd_throughput(args.kanban_session)
+        elif args.command == "ac-rejections":
+            cmd_ac_rejections(
+                agent=args.agent,
+                card_type=args.card_type,
+                model=args.model,
+                session=args.session,
+                since=args.since,
+                verbose=args.verbose,
+                summary=args.summary,
+            )
         else:
             print(f"Unknown command: {args.command}", file=sys.stderr)
             sys.exit(1)

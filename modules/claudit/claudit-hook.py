@@ -123,8 +123,13 @@ CREATE TABLE IF NOT EXISTS kanban_card_events (
     event_type TEXT NOT NULL,
     agent TEXT NOT NULL DEFAULT '',
     model TEXT NOT NULL DEFAULT '',
-    recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    rejection_reasons TEXT
 )
+"""
+
+MIGRATE_KANBAN_CARD_EVENTS_SQL = """
+ALTER TABLE kanban_card_events ADD COLUMN rejection_reasons TEXT
 """
 
 CREATE_INDEXES_SQL = [
@@ -548,6 +553,15 @@ def open_db() -> sqlite3.Connection:
         conn.execute(CREATE_AGENT_TOOL_USAGE_SQL)
         conn.execute(CREATE_PERMISSION_DENIALS_SQL)
         conn.execute(CREATE_KANBAN_CARD_EVENTS_SQL)
+
+        # Idempotent migration: add rejection_reasons if not present.
+        # SQLite raises OperationalError "duplicate column name" when the column
+        # already exists — catch and ignore that specific case.
+        try:
+            conn.execute(MIGRATE_KANBAN_CARD_EVENTS_SQL)
+        except Exception as migration_exc:
+            if "duplicate column name" not in str(migration_exc).lower():
+                raise
 
         for idx_sql in CREATE_INDEXES_SQL:
             conn.execute(idx_sql)

@@ -86,6 +86,11 @@ CREATE TABLE IF NOT EXISTS agent_metrics (
 """
 
 
+_MIGRATE_KANBAN_CARD_EVENTS_REJECTION_REASONS_SQL = """
+ALTER TABLE kanban_card_events ADD COLUMN rejection_reasons TEXT
+"""
+
+
 def _claudit_open_db() -> sqlite3.Connection | None:
     """Open (or create) the claudit metrics DB. Returns None on any failure."""
     try:
@@ -94,6 +99,12 @@ def _claudit_open_db() -> sqlite3.Connection | None:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=5000")
         conn.execute(_CREATE_AGENT_METRICS_SQL)
+        # Idempotent migration: add rejection_reasons to kanban_card_events if absent.
+        try:
+            conn.execute(_MIGRATE_KANBAN_CARD_EVENTS_REJECTION_REASONS_SQL)
+        except Exception as migration_exc:
+            if "duplicate column name" not in str(migration_exc).lower():
+                raise
         conn.commit()
         return conn
     except Exception as exc:
@@ -207,6 +218,53 @@ def _claudit_write_ac_reviewer_metrics(
             conn.close()
     except Exception as exc:
         log_error(f"claudit write failed for ac-reviewer card #{card_number} iter {iteration}: {exc}")
+
+
+def _claudit_write_redo_rejection_reasons(
+    card_number: str,
+    kanban_session: str,
+    rejection_reasons_json: str,
+) -> None:
+    """Update the most recent redo event for this card with rejection reasons.
+
+    The kanban CLI inserts the redo row; this function runs immediately after
+    and stamps rejection_reasons onto that row before the fail reasons are
+    cleared by the redo operation.  Uses UPDATE ... WHERE id = (SELECT max(id)
+    ...) to target only the latest row and avoid touching historical rows.
+
+    Never raises — any failure is silently logged.
+    """
+    try:
+        conn = _claudit_open_db()
+        if conn is None:
+            return
+        try:
+            conn.execute(
+                """
+                UPDATE kanban_card_events
+                SET rejection_reasons = ?
+                WHERE id = (
+                    SELECT id FROM kanban_card_events
+                    WHERE kanban_session = ?
+                      AND card_number = ?
+                      AND event_type = 'redo'
+                    ORDER BY id DESC
+                    LIMIT 1
+                )
+                """,
+                (rejection_reasons_json, kanban_session, int(card_number)),
+            )
+            conn.commit()
+            log_info(
+                f"claudit: stamped rejection_reasons onto latest redo event "
+                f"for card #{card_number} in session '{kanban_session}'"
+            )
+        finally:
+            conn.close()
+    except Exception as exc:
+        log_error(
+            f"claudit: failed to write redo rejection_reasons for card #{card_number}: {exc}"
+        )
 
 
 # Patterns for extracting card number and session from transcript lines
@@ -745,6 +803,45 @@ def _extract_criteria_failures(card_number: str, session: str) -> str:
     except Exception as exc:
         log_error(f"Failed to extract criteria failures for card #{card_number}: {exc}")
         return "Could not determine failure reasons due to an error."
+
+
+def _extract_criteria_failures_as_json(card_number: str, session: str) -> str | None:
+    """Read card XML and return failed criteria as a JSON array string.
+
+    Returns a JSON string of the form:
+        [{"criterion": "<text>", "reason": "<why it failed>"}, ...]
+
+    Returns None if the card cannot be read or no failures are found.
+    Never raises.
+    """
+    try:
+        result = run_kanban(["show", card_number, "--output-style=xml", "--session", session])
+        if result.returncode != 0:
+            return None
+
+        xml_output = result.stdout
+        ac_pattern = re.compile(r'<ac\b([^>]*?)>(.*?)</ac>', re.DOTALL)
+        fail_pattern = re.compile(r'reviewer-met="fail"')
+        reason_pattern = re.compile(r'reviewer-fail-reason="([^"]*)"')
+
+        failures = []
+        for match in ac_pattern.finditer(xml_output):
+            attrs = match.group(1)
+            if not fail_pattern.search(attrs):
+                continue
+            criterion_text = match.group(2).strip()
+            reason_match = reason_pattern.search(attrs)
+            reason = reason_match.group(1) if reason_match else "no reason provided"
+            failures.append({"criterion": criterion_text, "reason": reason})
+
+        if not failures:
+            return None
+
+        return json.dumps(failures, ensure_ascii=False)
+
+    except Exception as exc:
+        log_error(f"Failed to extract criteria failures as JSON for card #{card_number}: {exc}")
+        return None
 
 
 def build_malfunction_retry_prompt(card_number: str, session: str, transcript_path: str) -> str:
@@ -1370,6 +1467,11 @@ def process_subagent_stop(payload: dict) -> dict:
         message += format_deferred_notification(session)
         return allow(message)
 
+    # Capture rejection reasons as JSON BEFORE kanban redo clears the fail reasons.
+    # The kanban CLI's redo command clears reviewer_fail_reason on each criterion,
+    # so this must happen before the redo call below.
+    rejection_reasons_json = _extract_criteria_failures_as_json(card_number, session)
+
     # Run kanban redo to send card back to doing (increments review_cycles)
     redo_result = run_kanban(["redo", card_number, "--session", session])
     if redo_result.returncode != 0:
@@ -1378,6 +1480,14 @@ def process_subagent_stop(payload: dict) -> dict:
         message = f"Card #{card_number} AC review failed but kanban redo also failed. Needs manual intervention."
         message += format_deferred_notification(session)
         return allow(message)
+
+    # Stamp the rejection reasons onto the redo event row the kanban CLI just inserted.
+    if rejection_reasons_json is not None:
+        _claudit_write_redo_rejection_reasons(
+            card_number=card_number,
+            kanban_session=session,
+            rejection_reasons_json=rejection_reasons_json,
+        )
 
     # Block the agent with failure details
     reason = (

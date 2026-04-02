@@ -1242,6 +1242,113 @@
         "defaults": { "custom": { "filterable": true } },
         "overrides": []
       }
+    },
+    {
+      "id": 80,
+      "type": "row",
+      "title": "AC Reviewer Effectiveness",
+      "collapsed": false,
+      "gridPos": { "x": 0, "y": 132, "w": 24, "h": 1 },
+      "datasource": null,
+      "panels": []
+    },
+    {
+      "id": 81,
+      "type": "barchart",
+      "title": "Redo Rate by Card Type",
+      "description": "Percentage of cards sent back for rework, broken down by card type (work, review, research). A high redo rate for a specific card type points to systematic quality gaps — either the AC criteria are poorly specified for that type or agents struggle with that category of task.",
+      "gridPos": { "x": 0, "y": 133, "w": 12, "h": 8 },
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
+      "targets": [
+        {
+          "refId": "A",
+          "rawQueryText": "SELECT card_type, CAST(SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS REAL) / NULLIF(SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END), 0) * 100 AS redo_rate, SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS redo_count, SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END) AS done_count FROM kanban_card_events WHERE card_type IS NOT NULL AND card_type != '' AND recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY card_type ORDER BY redo_rate DESC",
+          "queryText": "SELECT card_type, CAST(SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS REAL) / NULLIF(SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END), 0) * 100 AS redo_rate, SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS redo_count, SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END) AS done_count FROM kanban_card_events WHERE card_type IS NOT NULL AND card_type != '' AND recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY card_type ORDER BY redo_rate DESC",
+          "queryType": "table",
+          "timeColumns": []
+        }
+      ],
+      "options": {
+        "xField": "card_type",
+        "orientation": "horizontal",
+        "barWidth": 0.6,
+        "groupWidth": 0.7,
+        "fillOpacity": 80,
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 20 },
+              { "color": "red", "value": 40 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 82,
+      "type": "table",
+      "title": "Redo Rate by Agent/Specialist",
+      "description": "Redo rate per agent persona, sorted by redo rate descending. Agents with consistently high redo rates are candidates for prompt improvements, better AC specification, or model upgrades. Compare redo_count against done_count to avoid being misled by low-volume agents.",
+      "gridPos": { "x": 12, "y": 133, "w": 12, "h": 8 },
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
+      "targets": [
+        {
+          "refId": "A",
+          "rawQueryText": "SELECT persona, CAST(SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS REAL) / NULLIF(SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END), 0) * 100 AS redo_rate, SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS redo_count, SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END) AS done_count FROM kanban_card_events WHERE persona IS NOT NULL AND persona != '' AND recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY persona ORDER BY redo_rate DESC",
+          "queryText": "SELECT persona, CAST(SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS REAL) / NULLIF(SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END), 0) * 100 AS redo_rate, SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS redo_count, SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END) AS done_count FROM kanban_card_events WHERE persona IS NOT NULL AND persona != '' AND recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY persona ORDER BY redo_rate DESC",
+          "queryType": "table",
+          "timeColumns": []
+        }
+      ],
+      "options": {
+        "sortBy": [{ "displayName": "redo_rate", "desc": true }]
+      },
+      "fieldConfig": {
+        "defaults": { "custom": { "filterable": true } },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "redo_rate" },
+            "properties": [{ "id": "unit", "value": "percent" }, { "id": "decimals", "value": 1 }]
+          }
+        ]
+      }
+    },
+    {
+      "id": 83,
+      "type": "timeseries",
+      "title": "Redo Events Over Time",
+      "description": "Daily count of redo events over the selected time range. A declining trend indicates AC reviewer quality is improving and agents are delivering work that passes acceptance criteria on the first attempt. Spikes often follow prompt or instruction changes.",
+      "gridPos": { "x": 0, "y": 141, "w": 24, "h": 8 },
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
+      "targets": [
+        {
+          "refId": "A",
+          "rawQueryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(recorded_at)) AS time, COUNT(*) AS redo_count FROM kanban_card_events WHERE event_type = 'redo' AND recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', recorded_at, 'localtime') ORDER BY time ASC",
+          "queryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(recorded_at)) AS time, COUNT(*) AS redo_count FROM kanban_card_events WHERE event_type = 'redo' AND recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', recorded_at, 'localtime') ORDER BY time ASC",
+          "queryType": "time series",
+          "timeColumns": ["time"]
+        }
+      ],
+      "options": {
+        "tooltip": { "mode": "single", "sort": "none" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      }
     }
   ]
 }

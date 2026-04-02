@@ -70,6 +70,7 @@ _kanban() {
         'comment:Add timestamped comment to card'
         'criteria:Manage acceptance criteria'
         'ac:Manage acceptance criteria (alias for criteria)'
+        'rejections:Display rejection history for a card'
         'list:Show board overview'
         'ls:Show board overview (alias for list)'
         'report:Generate reporting from completed cards'
@@ -100,6 +101,12 @@ _kanban() {
           _arguments \
             '1:card:_kanban_cards' \
             '--output-style[Output format]:style:(simple xml detail)' \
+            '--watch[Auto-refresh on changes]' \
+            ${_kanban_session_flags[@]}
+          ;;
+        rejections)
+          _arguments \
+            '1:card:_kanban_cards' \
             '--watch[Auto-refresh on changes]' \
             ${_kanban_session_flags[@]}
           ;;
