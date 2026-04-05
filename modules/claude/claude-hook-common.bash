@@ -18,10 +18,11 @@ send_notification() {
   local message="$2"
   local sound="${3:-Ping}"
 
-  # Escape double quotes to prevent command injection
-  # Replace all " with \" to safely embed in AppleScript strings
-  local safe_title="${title//\"/\\\"}"
-  local safe_message="${message//\"/\\\"}"
+  # Escape backslashes first, then double quotes (order matters for AppleScript)
+  local safe_title="${title//\\/\\\\}"
+  safe_title="${safe_title//\"/\\\"}"
+  local safe_message="${message//\\/\\\\}"
+  safe_message="${safe_message//\"/\\\"}"
   local safe_sound="${sound//\"/\\\"}"
 
   osascript -e "tell application id \"org.alacritty\" to display notification \"$safe_message\" with title \"$safe_title\" sound name \"$safe_sound\""
@@ -35,7 +36,7 @@ set_tmux_attention() {
 
     # Also set session-level flag so it shows in session chooser
     local session_name
-    session_name=$(tmux display-message -p '#S')
+    session_name=$(tmux display-message -t "$TMUX_PANE" -p '#S')
     tmux set-option -t "$session_name" @session_needs_attention 1
   fi
 }

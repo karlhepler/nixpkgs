@@ -146,7 +146,7 @@ in {
     };
     claude-complete-hook = shellApp {
       name = "claude-complete-hook";
-      runtimeInputs = [ ];
+      runtimeInputs = [ pkgs.python3 ];
       text = builtins.replaceStrings
         ["# @COMMON_FUNCTIONS@ - Will be replaced by Nix at build time"]
         [hookCommon]
@@ -940,6 +940,10 @@ $orphan_warning"
                 type = "command";
                 command = "${shellapps.kanban-subagent-stop-hook}/bin/kanban-subagent-stop-hook";
                 timeout = 600000;
+              }
+              {
+                type = "command";
+                command = "${shellapps.claude-complete-hook}/bin/claude-complete-hook";
               }
             ];
           }];
