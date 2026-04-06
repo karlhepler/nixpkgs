@@ -36,7 +36,7 @@ set_tmux_attention() {
 
     # Also set session-level flag so it shows in session chooser
     local session_name
-    session_name=$(tmux display-message -t "$TMUX_PANE" -p '#S')
+    session_name=$(tmux display-message -t "$TMUX_PANE" -p '#S' 2>/dev/null || true)
     tmux set-option -t "$session_name" @session_needs_attention 1
   fi
 }

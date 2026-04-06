@@ -146,7 +146,7 @@ in {
     };
     claude-complete-hook = shellApp {
       name = "claude-complete-hook";
-      runtimeInputs = [ pkgs.python3 ];
+      runtimeInputs = [];
       text = builtins.replaceStrings
         ["# @COMMON_FUNCTIONS@ - Will be replaced by Nix at build time"]
         [hookCommon]
@@ -160,6 +160,13 @@ in {
       text = builtins.readFile ./claude-csharp-format-hook.bash;
       description = "Hook for automatic C# code formatting with csharpier";
       sourceFile = "claude-csharp-format-hook.bash";
+    };
+    claude-kanban-transition-hook = shellApp {
+      name = "claude-kanban-transition-hook";
+      runtimeInputs = [ pkgs.python3 ];
+      text = builtins.readFile ./claude-kanban-transition-hook.bash;
+      description = "PostToolUse(Bash) hook that sends macOS notifications on kanban state transitions (start, defer, cancel)";
+      sourceFile = "claude-kanban-transition-hook.bash";
     };
     claude-session-start-hook = let
       extractKanbanName = pkgs.writeText "extract-kanban-name.py" ''
@@ -975,6 +982,13 @@ $orphan_warning"
               hooks = [{
                 type = "command";
                 command = "${shellapps.claude-csharp-format-hook}/bin/claude-csharp-format-hook";
+              }];
+            }
+            {
+              matcher = "Bash";
+              hooks = [{
+                type = "command";
+                command = "${shellapps.claude-kanban-transition-hook}/bin/claude-kanban-transition-hook";
               }];
             }
           ];

@@ -9,19 +9,15 @@ show_help() {
   echo
   echo "PURPOSE:"
   echo "  Sends macOS notifications and sets tmux window attention flags"
-  echo "  when Claude Code requires user input or interaction."
+  echo "  when Claude Code requires user input (permission prompts, elicitation dialogs)."
   echo
   echo "TRIGGER:"
-  echo "  Automatically invoked by Claude Code on Notification events:"
-  echo "  - Permission prompts"
-  echo "  - Idle prompts (waiting for user)"
-  echo "  - Authentication success"
-  echo "  - Input requests"
-  echo "  - Errors"
+  echo "  Automatically invoked by Claude Code on Notification events."
+  echo "  Only fires on: permission_prompt, elicitation_dialog"
   echo
   echo "BEHAVIOR:"
   echo "  - Parses JSON input from stdin (Claude Code hook format)"
-  echo "  - Sends macOS notification via Alacritty"
+  echo "  - Sends macOS notification via Alacritty (title: '❓ Question')"
   echo "  - Sets tmux @claude_attention window option"
   echo "  - Plays 'Ping' notification sound"
   echo
@@ -35,7 +31,7 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   exit 0
 fi
 
-set -eou pipefail
+set -euo pipefail
 
 # @COMMON_FUNCTIONS@ - Will be replaced by Nix at build time
 
@@ -51,32 +47,29 @@ data=$(echo "$json" | python3 -c "
 import sys, json, os
 try:
     data = json.load(sys.stdin)
-    message = data.get('message', 'Claude needs input')
     notification_type = data.get('notification_type', '')
     tmux_context = os.environ.get('TMUX_CONTEXT', '')
 
-    # Use notification_type for better title categorization
-    if notification_type == 'permission_prompt':
-        title = 'Claude Permission Request'
-    elif notification_type == 'idle_prompt':
-        title = 'Claude Waiting'
-    elif notification_type == 'auth_success':
-        title = 'Claude Authenticated'
-    elif notification_type == 'elicitation_dialog':
-        title = 'Claude Needs Input'
-    elif 'error' in message.lower():
-        title = 'Claude Error'
-    else:
-        title = 'Claude Notification'
+    # Only notify for question/input events
+    if notification_type not in ('permission_prompt', 'elicitation_dialog'):
+        print('SKIP')
+        sys.exit(0)
+
+    message = data.get('message', 'Claude needs input')
 
     # Prepend tmux context to message if available
     if tmux_context:
         message = f'{tmux_context}\n{message}'
 
-    print(f'{title}|{message}')
+    print(f'❓ Question|{message}')
 except Exception as e:
-    print('Claude Notification|Claude needs input')
+    print('SKIP')
 ")
+
+# Skip notification if not a question event
+if [[ "$data" == "SKIP" ]]; then
+  exit 0
+fi
 
 # Split output on first pipe, preserving newlines in message
 title="${data%%|*}"

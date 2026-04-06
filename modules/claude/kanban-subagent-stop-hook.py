@@ -697,7 +697,110 @@ def run_kanban(args: list[str], timeout: int = 30) -> subprocess.CompletedProces
         raise
     except FileNotFoundError:
         log_error("kanban CLI not found in PATH")
-        raise
+
+
+# ---------------------------------------------------------------------------
+# macOS notification helpers
+# ---------------------------------------------------------------------------
+
+_STATE_EMOJI = {
+    "doing": "🚂",      # todo→doing (Work Started)
+    "review": "🔍",     # doing→review (In Review)
+    "done": "✅",       # review→done (Done)
+    "redo": "🔄",       # review→doing (Redo)
+    "todo": "⏸️",       # doing→todo (Deferred)
+    "canceled": "❌",   # any→canceled (Canceled)
+}
+
+_STATE_TITLE = {
+    "doing": "Work Started",
+    "review": "In Review",
+    "done": "Done",
+    "redo": "Redo",
+    "todo": "Deferred",
+    "canceled": "Canceled",
+}
+
+
+def _truncate_intent(intent: str, max_len: int = 60) -> str:
+    """Truncate intent to a short snippet for notifications."""
+    intent = intent.replace("\n", " ").strip()
+    if len(intent) <= max_len:
+        return intent
+    return intent[:max_len - 1].rstrip() + "\u2026"
+
+
+def get_card_intent(card_number: str, session: str) -> str:
+    """Fetch card intent from kanban show XML. Returns empty string on failure."""
+    try:
+        result = run_kanban(["show", card_number, "--output-style=xml", "--session", session], timeout=10)
+        if result.returncode == 0:
+            m = re.search(r"<intent>(.*?)</intent>", result.stdout, re.DOTALL)
+            if m:
+                return m.group(1).strip()
+    except Exception:
+        pass
+    return ""
+
+
+def _get_tmux_context() -> str:
+    """Get tmux session → window context string. Returns empty string if not in tmux."""
+    tmux = os.environ.get("TMUX", "")
+    tmux_pane = os.environ.get("TMUX_PANE", "")
+    if not tmux or not tmux_pane:
+        return ""
+    try:
+        session = subprocess.run(
+            ["tmux", "display-message", "-t", tmux_pane, "-p", "#S"],
+            capture_output=True, text=True, timeout=3,
+        ).stdout.strip()
+        window = subprocess.run(
+            ["tmux", "display-message", "-t", tmux_pane, "-p", "#W"],
+            capture_output=True, text=True, timeout=3,
+        ).stdout.strip()
+        if session and window:
+            return f"{session} \u2192 {window}"
+    except Exception:
+        pass
+    return ""
+
+
+def send_transition_notification(card_number: str, new_state: str, intent: str) -> None:
+    """Send a macOS notification for a kanban state transition.
+
+    Uses osascript to notify via Alacritty, same mechanism as bash hooks.
+    Title: <emoji> <State Name>
+    Body line 1: <tmux_session> → <tmux_window>
+    Body line 2: #<N> — <card intent, truncated>
+
+    Never raises — notification failure must not affect hook decisions.
+    """
+    try:
+        emoji = _STATE_EMOJI.get(new_state, "")
+        state_name = _STATE_TITLE.get(new_state, new_state.capitalize())
+        title = f"{emoji} {state_name}" if emoji else state_name
+
+        snippet = _truncate_intent(intent) if intent else f"card #{card_number}"
+        card_line = f"#{card_number} \u2014 {snippet}"
+        tmux_ctx = _get_tmux_context()
+        body = f"{tmux_ctx}\n{card_line}" if tmux_ctx else card_line
+
+        # Escape AppleScript string delimiters
+        safe_title = title.replace("\\", "\\\\").replace('"', '\\"')
+        safe_body = body.replace("\\", "\\\\").replace('"', '\\"')
+
+        subprocess.run(
+            [
+                "osascript", "-e",
+                f'tell application id "org.alacritty" to display notification '
+                f'"{safe_body}" with title "{safe_title}" sound name "Glass"',
+            ],
+            capture_output=True,
+            timeout=5,
+        )
+        log_info(f"Sent transition notification: [{title}] {body}")
+    except Exception as exc:
+        log_error(f"send_transition_notification failed for card #{card_number} → {new_state}: {exc}")
 
 
 def get_card_status(card_number: str, session: str) -> str | None:
@@ -1345,6 +1448,9 @@ def process_subagent_stop(payload: dict) -> dict:
             )
             return block(reason)
         log_info(f"kanban review succeeded for card #{card_number} — proceeding to AC review")
+        # Notify: doing→review (fetch intent once and cache for reuse below)
+        intent = get_card_intent(card_number, session)
+        send_transition_notification(card_number, "review", intent)
     else:
         # Card in unexpected status (canceled, etc.) — allow stop
         log_info(f"Card #{card_number} in unexpected status '{status}' — allowing stop")
@@ -1381,7 +1487,13 @@ def process_subagent_stop(payload: dict) -> dict:
         return allow(message)
 
     # Step 4: Process result
+    # Reuse the cached intent fetched at the review transition above.
+    # For cards that arrived already in 'review' (skipped the doing→review path),
+    # intent may be unset — fetch it lazily only when needed.
     if card_done:
+        # Notify: review→done
+        card_intent = intent if 'intent' in dir() else get_card_intent(card_number, session)
+        send_transition_notification(card_number, "done", card_intent)
         message = f"Card #{card_number} AC review passed — card completed."
         message += format_deferred_notification(session)
         return allow(message)
@@ -1391,6 +1503,9 @@ def process_subagent_stop(payload: dict) -> dict:
     status = get_card_status(card_number, session)
     if status == "done":
         log_info(f"Card #{card_number} reached done (detected on re-check after inner loop)")
+        # Notify: review→done (reuse cached intent)
+        card_intent = intent if 'intent' in dir() else get_card_intent(card_number, session)
+        send_transition_notification(card_number, "done", card_intent)
         message = f"Card #{card_number} AC review passed — card completed."
         message += format_deferred_notification(session)
         return allow(message)
@@ -1429,6 +1544,9 @@ def process_subagent_stop(payload: dict) -> dict:
                 working_directory=working_directory,
             )
             if retry_succeeded:
+                # Notify: review→done (malfunction retry path) — reuse cached intent
+                intent_for_retry_done = intent if 'intent' in dir() else get_card_intent(card_number, session)
+                send_transition_notification(card_number, "done", intent_for_retry_done)
                 message = f"Card #{card_number} AC review passed on malfunction retry — card completed."
                 message += format_deferred_notification(session)
                 return allow(message)
@@ -1480,6 +1598,10 @@ def process_subagent_stop(payload: dict) -> dict:
         message = f"Card #{card_number} AC review failed but kanban redo also failed. Needs manual intervention."
         message += format_deferred_notification(session)
         return allow(message)
+
+    # Notify: review→doing (redo) — reuse cached intent
+    card_intent_for_redo = intent if 'intent' in dir() else get_card_intent(card_number, session)
+    send_transition_notification(card_number, "redo", card_intent_for_redo)
 
     # Stamp the rejection reasons onto the redo event row the kanban CLI just inserted.
     if rejection_reasons_json is not None:
