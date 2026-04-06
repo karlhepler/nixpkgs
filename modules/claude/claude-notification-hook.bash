@@ -61,7 +61,7 @@ try:
     if tmux_context:
         message = f'{tmux_context}\n{message}'
 
-    print(f'❓ Question|{message}|Funky')
+    print(f'❓ Question|{message}|Ping')
 except Exception as e:
     print('SKIP')
 ")

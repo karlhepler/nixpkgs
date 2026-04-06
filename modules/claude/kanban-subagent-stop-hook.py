@@ -722,12 +722,12 @@ _STATE_TITLE = {
 }
 
 _STATE_SOUND = {
-    "doing": "Pluck",        # Work Started — uplifting, positive energy
-    "review": "Breeze",      # In Review — attention-grabbing pattern
-    "done": "Pebble",        # Done — celebratory completion
-    "redo": "Pluck",         # Redo — submarine alert suggests rework
-    "todo": "Submerge",      # Deferred — subtle, gentle pause
-    "canceled": "Mezzo",     # Canceled — low, final termination sound
+    "doing": "Purr",         # Work Started — uplifting, positive energy
+    "review": "Blow",        # In Review — attention-grabbing pattern
+    "done": "Hero",          # Done — celebratory completion
+    "redo": "Morse",         # Redo — submarine alert suggests rework
+    "todo": "Pop",           # Deferred — subtle, gentle pause
+    "canceled": "Bottle",    # Canceled — low, final termination sound
 }
 
 

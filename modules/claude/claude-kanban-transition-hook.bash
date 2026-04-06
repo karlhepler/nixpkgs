@@ -60,11 +60,11 @@ _TRANSITION_PATTERN = re.compile(
 
 # State mapping: command → (emoji, title, new_state, sound)
 _COMMAND_STATES = {
-    'start':  ('🚂', 'Work Started', 'doing', 'Pluck'),
-    'defer':  ('⏸️', 'Deferred',     'todo', 'Submerge'),
-    'cancel': ('❌', 'Canceled',     'canceled', 'Mezzo'),
-    'done':   ('✅', 'Done',         'done', 'Pebble'),
-    'review': ('🔍', 'In Review',    'review', 'Breeze'),
+    'start':  ('🚂', 'Work Started', 'doing', 'Purr'),
+    'defer':  ('⏸️', 'Deferred',     'todo', 'Pop'),
+    'cancel': ('❌', 'Canceled',     'canceled', 'Bottle'),
+    'done':   ('✅', 'Done',         'done', 'Hero'),
+    'review': ('🔍', 'In Review',    'review', 'Blow'),
 }
 
 
