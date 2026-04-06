@@ -721,6 +721,15 @@ _STATE_TITLE = {
     "canceled": "Canceled",
 }
 
+_STATE_SOUND = {
+    "doing": "Pluck",        # Work Started — uplifting, positive energy
+    "review": "Breeze",      # In Review — attention-grabbing pattern
+    "done": "Pebble",        # Done — celebratory completion
+    "redo": "Pluck",         # Redo — submarine alert suggests rework
+    "todo": "Submerge",      # Deferred — subtle, gentle pause
+    "canceled": "Mezzo",     # Canceled — low, final termination sound
+}
+
 
 def _truncate_intent(intent: str, max_len: int = 60) -> str:
     """Truncate intent to a short snippet for notifications."""
@@ -779,6 +788,7 @@ def send_transition_notification(card_number: str, new_state: str, intent: str) 
         emoji = _STATE_EMOJI.get(new_state, "")
         state_name = _STATE_TITLE.get(new_state, new_state.capitalize())
         title = f"{emoji} {state_name}" if emoji else state_name
+        sound = _STATE_SOUND.get(new_state, "Glass")
 
         snippet = _truncate_intent(intent) if intent else f"card #{card_number}"
         card_line = f"#{card_number} \u2014 {snippet}"
@@ -793,7 +803,7 @@ def send_transition_notification(card_number: str, new_state: str, intent: str) 
             [
                 "osascript", "-e",
                 f'tell application id "org.alacritty" to display notification '
-                f'"{safe_body}" with title "{safe_title}" sound name "Glass"',
+                f'"{safe_body}" with title "{safe_title}" sound name "{sound}"',
             ],
             capture_output=True,
             timeout=5,

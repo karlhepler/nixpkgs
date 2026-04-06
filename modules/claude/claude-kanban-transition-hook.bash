@@ -58,13 +58,13 @@ _TRANSITION_PATTERN = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 
-# State mapping: command → (emoji, title, new_state)
+# State mapping: command → (emoji, title, new_state, sound)
 _COMMAND_STATES = {
-    'start':  ('🚂', 'Work Started', 'doing'),
-    'defer':  ('⏸️', 'Deferred',     'todo'),
-    'cancel': ('❌', 'Canceled',     'canceled'),
-    'done':   ('✅', 'Done',         'done'),
-    'review': ('🔍', 'In Review',    'review'),
+    'start':  ('🚂', 'Work Started', 'doing', 'Pluck'),
+    'defer':  ('⏸️', 'Deferred',     'todo', 'Submerge'),
+    'cancel': ('❌', 'Canceled',     'canceled', 'Mezzo'),
+    'done':   ('✅', 'Done',         'done', 'Pebble'),
+    'review': ('🔍', 'In Review',    'review', 'Breeze'),
 }
 
 
@@ -159,7 +159,7 @@ try:
     subcommand = m.group(1).lower()
     card_number = m.group(2)
 
-    emoji, state_name, new_state = _COMMAND_STATES[subcommand]
+    emoji, state_name, new_state, sound = _COMMAND_STATES[subcommand]
     title = f'{emoji} {state_name}'
 
     # Extract --session flag from command if present
@@ -177,7 +177,7 @@ try:
     card_line = f'#{card_number} \u2014 {snippet}'
     body = f'{tmux_ctx}\n{card_line}' if tmux_ctx else card_line
 
-    send_notification(title, body)
+    send_notification(title, body, sound)
 
 except Exception:
     pass

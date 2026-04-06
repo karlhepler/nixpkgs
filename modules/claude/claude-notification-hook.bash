@@ -61,7 +61,7 @@ try:
     if tmux_context:
         message = f'{tmux_context}\n{message}'
 
-    print(f'❓ Question|{message}')
+    print(f'❓ Question|{message}|Funky')
 except Exception as e:
     print('SKIP')
 ")
@@ -71,12 +71,11 @@ if [[ "$data" == "SKIP" ]]; then
   exit 0
 fi
 
-# Split output on first pipe, preserving newlines in message
-title="${data%%|*}"
-message="${data#*|}"
+# Split output on pipes: title|message|sound
+IFS='|' read -r title message sound <<< "$data"
 
-# Send notification with 'Ping' sound
-send_notification "$title" "$message" "Ping"
+# Send notification with parsed sound
+send_notification "$title" "$message" "$sound"
 
 # Set tmux attention flags
 set_tmux_attention
