@@ -46,6 +46,7 @@ json=$(cat)
 
 # Extract command, detect kanban state transitions, send macOS notification
 python3 -c "
+import html
 import sys, json, os, re, subprocess
 
 KANBAN_TIMEOUT = 10  # seconds
@@ -84,14 +85,18 @@ def get_card_intent(card_number, session):
         if result.returncode == 0:
             m = re.search(r'<intent>(.*?)</intent>', result.stdout, re.DOTALL)
             if m:
-                return m.group(1).strip()
+                encoded_intent = m.group(1).strip()
+                # Decode XML/HTML entities: &amp;#x27; → ', &amp; → &, &lt; → <, etc.
+                return html.unescape(encoded_intent)
     except Exception:
         pass
     return ''
 
 
 def get_card_intent_no_session(card_number):
-    '''Try to get intent without requiring a session (for cancel case).'''
+    '''Try to get intent without requiring a session (for cancel case).
+    Decodes XML/HTML entities from the intent text.
+    '''
     try:
         result = subprocess.run(
             ['kanban', 'show', card_number, '--output-style=xml'],
@@ -100,7 +105,9 @@ def get_card_intent_no_session(card_number):
         if result.returncode == 0:
             m = re.search(r'<intent>(.*?)</intent>', result.stdout, re.DOTALL)
             if m:
-                return m.group(1).strip()
+                encoded_intent = m.group(1).strip()
+                # Decode XML/HTML entities: &amp;#x27; → ', &amp; → &, &lt; → <, etc.
+                return html.unescape(encoded_intent)
     except Exception:
         pass
     return ''

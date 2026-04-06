@@ -19,6 +19,7 @@ Fails open: any error results in allowing the agent to stop unchanged.
 Skip condition: BURNS_SESSION=1 env var means Ralph is running — skip AC review.
 """
 
+import html
 import json
 import os
 import re
@@ -740,13 +741,18 @@ def _truncate_intent(intent: str, max_len: int = 60) -> str:
 
 
 def get_card_intent(card_number: str, session: str) -> str:
-    """Fetch card intent from kanban show XML. Returns empty string on failure."""
+    """Fetch card intent from kanban show XML. Returns empty string on failure.
+
+    Decodes XML/HTML entities (e.g., &amp;#x27; → ', &amp; → &) from the intent text.
+    """
     try:
         result = run_kanban(["show", card_number, "--output-style=xml", "--session", session], timeout=10)
         if result.returncode == 0:
             m = re.search(r"<intent>(.*?)</intent>", result.stdout, re.DOTALL)
             if m:
-                return m.group(1).strip()
+                encoded_intent = m.group(1).strip()
+                # Decode XML/HTML entities: &amp;#x27; → ', &amp; → &, &lt; → <, etc.
+                return html.unescape(encoded_intent)
     except Exception:
         pass
     return ""
