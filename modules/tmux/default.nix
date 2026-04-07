@@ -12,14 +12,16 @@ let
     set -g @theme_right_separator ""
   '';
   bellFormatConf = pkgs.writeText "bell-format.conf" ''
-    # Inactive window format with bell-aware conditional
-    set -g window-status-format "#{?#{||:#{window_bell_flag},#{==:#{@claude_attention},1}},#[bg=#f7768e fg=#292e42]#{@theme_left_separator}#[none],#[bg=#737aa2 fg=#292e42]#{@theme_left_separator}#[none]}#[fg=#ffffff] #I #{?#{||:#{window_bell_flag},#{==:#{@claude_attention},1}},#[bg=#db4b5e fg=#f7768e]#{@theme_left_separator}#[none],#[bg=#545c7e fg=#737aa2]#{@theme_left_separator}#[none]}#[fg=#ffffff] #{?window_zoomed_flag,#{@theme_plugin_zoomed_window_icon} ,#{@theme_plugin_inactive_window_icon} }#W #[bg=#292e42]#{?#{||:#{window_bell_flag},#{==:#{@claude_attention},1}},#[fg=#db4b5e]#{@theme_left_separator}#[none],#[fg=#545c7e]#{@theme_left_separator}#[none]}"
+    # Inactive window format with attention conditional (hook-driven only, no bell flag)
+    set -g window-status-format "#{?#{==:#{@claude_attention},1},#[bg=#f7768e fg=#292e42]#{@theme_left_separator}#[none],#[bg=#737aa2 fg=#292e42]#{@theme_left_separator}#[none]}#[fg=#ffffff] #I #{?#{==:#{@claude_attention},1},#[bg=#db4b5e fg=#f7768e]#{@theme_left_separator}#[none],#[bg=#545c7e fg=#737aa2]#{@theme_left_separator}#[none]}#[fg=#ffffff] #{?window_zoomed_flag,#{@theme_plugin_zoomed_window_icon} ,#{@theme_plugin_inactive_window_icon} }#W #[bg=#292e42]#{?#{==:#{@claude_attention},1},#[fg=#db4b5e]#{@theme_left_separator}#[none],#[fg=#545c7e]#{@theme_left_separator}#[none]}"
 
     # Active window format with dynamic icon variable
     set -g window-status-current-format "#[bg=#bb9af7,fg=#292e42]#{@theme_left_separator}#[none]#[fg=#ffffff] #I #[bg=#9d7cd8,fg=#bb9af7]#{@theme_left_separator}#[none]#[fg=#ffffff] #{?window_zoomed_flag,#{@theme_plugin_zoomed_window_icon} ,#{@theme_plugin_active_window_icon} }#W #{?pane_synchronized,✵,}#[bg=#292e42,fg=#9d7cd8]#{@theme_left_separator}#[none]#[none]"
 
-    # Clear attention flag when window becomes active
-    set-hook -g after-select-window "set-window-option @claude_attention 0"
+    # Clear attention flag when window becomes active (keyboard navigation)
+    set-hook -g after-select-window "set-window-option @claude_attention 0; set-option @session_needs_attention 0"
+    # Clear attention flag when pane becomes active (mouse click navigation)
+    set-hook -g after-select-pane "set-window-option @claude_attention 0; set-option @session_needs_attention 0"
   '';
   sessionIconConf = pkgs.writeText "session-icon.conf" ''
     # Override status-left to use session-specific icon

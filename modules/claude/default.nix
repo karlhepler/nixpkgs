@@ -147,10 +147,7 @@ in {
     claude-complete-hook = shellApp {
       name = "claude-complete-hook";
       runtimeInputs = [];
-      text = builtins.replaceStrings
-        ["# @COMMON_FUNCTIONS@ - Will be replaced by Nix at build time"]
-        [hookCommon]
-        (builtins.readFile ./claude-complete-hook.bash);
+      text = builtins.readFile ./claude-complete-hook.bash;
       description = "Hook for Claude Code completion events";
       sourceFile = "claude-complete-hook.bash";
     };
@@ -164,7 +161,10 @@ in {
     claude-kanban-transition-hook = shellApp {
       name = "claude-kanban-transition-hook";
       runtimeInputs = [ pkgs.python3 ];
-      text = builtins.readFile ./claude-kanban-transition-hook.bash;
+      text = builtins.replaceStrings
+        ["# @COMMON_FUNCTIONS@ - Will be replaced by Nix at build time"]
+        [hookCommon]
+        (builtins.readFile ./claude-kanban-transition-hook.bash);
       description = "PostToolUse(Bash) hook that sends macOS notifications on kanban state transitions (start, defer, cancel)";
       sourceFile = "claude-kanban-transition-hook.bash";
     };

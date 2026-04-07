@@ -8,10 +8,10 @@ show_help() {
   echo "  Should not be invoked manually by users."
   echo
   echo "PURPOSE:"
-  echo "  Sets tmux window attention flags when Claude Code completes a task"
-  echo "  or subagent finishes. Kanban state transition notifications are"
-  echo "  handled by dedicated hooks (kanban-subagent-stop-hook.py and"
-  echo "  claude-kanban-transition-hook.bash)."
+  echo "  Consumes Claude Code completion events without triggering any"
+  echo "  notifications or tmux attention flags. Kanban state transition"
+  echo "  notifications and tmux red highlights are handled exclusively by"
+  echo "  claude-kanban-transition-hook.bash (notification = red tab)."
   echo
   echo "TRIGGER:"
   echo "  Automatically invoked by Claude Code on completion events:"
@@ -19,9 +19,9 @@ show_help() {
   echo "  - SubagentStop (subagent task completion)"
   echo
   echo "BEHAVIOR:"
-  echo "  - Parses JSON input from stdin (Claude Code hook format)"
-  echo "  - Sets tmux @claude_attention window option"
-  echo "  - Does NOT send macOS notifications (handled by transition hooks)"
+  echo "  - Consumes stdin (required by hook protocol)"
+  echo "  - Does NOT send macOS notifications"
+  echo "  - Does NOT set tmux @claude_attention (no notification = no red tab)"
   echo
   echo "CONFIGURATION:"
   echo "  Configured in modules/claude/default.nix as completion hook."
@@ -35,10 +35,5 @@ fi
 
 set -euo pipefail
 
-# @COMMON_FUNCTIONS@ - Will be replaced by Nix at build time
-
 # Consume stdin (required by hook protocol)
 read -r -d '' _ < /dev/stdin 2>/dev/null || true
-
-# Set tmux attention flags only
-set_tmux_attention

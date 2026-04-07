@@ -41,13 +41,17 @@ fi
 
 set -euo pipefail
 
-# Read JSON from stdin
-json=$(cat)
+# @COMMON_FUNCTIONS@ - Will be replaced by Nix at build time
 
 # Extract command, detect kanban state transitions, send macOS notification
+# Exit code contract: 42 = notification was sent, 0 = no notification sent
+# IMPORTANT: Do not use print() in this block — stdout is not captured. Communication with bash is via exit code: 42 = notified, 0 = no notification.
+py_exit=0
 python3 -c "
 import html
 import sys, json, os, re, subprocess
+
+# IMPORTANT: Do not use print() in this block — stdout is not captured. Communication with bash is via exit code: 42 = notified, 0 = no notification.
 
 KANBAN_TIMEOUT = 10  # seconds
 
@@ -122,6 +126,7 @@ def get_tmux_context():
 
 
 def send_notification(title, body, sound):
+    # Escape for AppleScript string embedding: \ -> \\, \" -> \"  (multi-level: Python string literal -> AppleScript string)
     safe_title = title.replace('\\\\', '\\\\\\\\').replace('\"', '\\\\\"')
     safe_body = body.replace('\\\\', '\\\\\\\\').replace('\"', '\\\\\"')
     try:
@@ -168,9 +173,15 @@ try:
     body = f'{tmux_ctx}\n{card_line}' if tmux_ctx else card_line
 
     send_notification(title, body, sound)
+    sys.exit(42)
 
 except Exception:
-    pass
-" <<< "$json"
+    sys.exit(0)
+" || py_exit=$?
+
+# If a notification was sent (exit code 42), also set the tmux attention flag (red tab highlight)
+if [[ "$py_exit" -eq 42 ]]; then
+  set_tmux_attention
+fi
 
 exit 0

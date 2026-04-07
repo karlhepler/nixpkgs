@@ -1,6 +1,7 @@
 # Common functions shared by Claude Code hooks (inlined at build time)
 
 # Get tmux context if in tmux
+# shellcheck disable=SC2329
 get_tmux_context() {
   local tmux_context=""
   if [[ -n "${TMUX:-}" && -n "${TMUX_PANE:-}" ]]; then
@@ -13,6 +14,7 @@ get_tmux_context() {
 }
 
 # Send macOS notification via Alacritty
+# shellcheck disable=SC2329
 send_notification() {
   local title="$1"
   local message="$2"
