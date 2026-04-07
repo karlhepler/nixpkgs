@@ -38,7 +38,7 @@ set -euo pipefail
 # @COMMON_FUNCTIONS@ - Will be replaced by Nix at build time
 
 # Consume stdin (required by hook protocol)
-cat > /dev/null
+read -r -d '' _ < /dev/stdin 2>/dev/null || true
 
 # Set tmux attention flags only
 set_tmux_attention

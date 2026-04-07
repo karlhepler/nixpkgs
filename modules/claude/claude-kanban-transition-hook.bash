@@ -76,30 +76,16 @@ def truncate_intent(intent, max_len=60):
     return intent[:max_len - 1].rstrip() + '\u2026'
 
 
-def get_card_intent(card_number, session):
-    try:
-        result = subprocess.run(
-            ['kanban', 'show', card_number, '--output-style=xml', '--session', session],
-            capture_output=True, text=True, timeout=KANBAN_TIMEOUT,
-        )
-        if result.returncode == 0:
-            m = re.search(r'<intent>(.*?)</intent>', result.stdout, re.DOTALL)
-            if m:
-                encoded_intent = m.group(1).strip()
-                # Decode XML/HTML entities: &amp;#x27; → ', &amp; → &, &lt; → <, etc.
-                return html.unescape(encoded_intent)
-    except Exception:
-        pass
-    return ''
-
-
-def get_card_intent_no_session(card_number):
-    '''Try to get intent without requiring a session (for cancel case).
+def get_card_intent(card_number, session=''):
+    '''Fetch card intent, optionally scoped to a session.
     Decodes XML/HTML entities from the intent text.
     '''
+    cmd = ['kanban', 'show', card_number, '--output-style=xml']
+    if session:
+        cmd += ['--session', session]
     try:
         result = subprocess.run(
-            ['kanban', 'show', card_number, '--output-style=xml'],
+            cmd,
             capture_output=True, text=True, timeout=KANBAN_TIMEOUT,
         )
         if result.returncode == 0:
@@ -135,7 +121,7 @@ def get_tmux_context():
     return ''
 
 
-def send_notification(title, body, sound='Glass'):
+def send_notification(title, body, sound):
     safe_title = title.replace('\\\\', '\\\\\\\\').replace('\"', '\\\\\"')
     safe_body = body.replace('\\\\', '\\\\\\\\').replace('\"', '\\\\\"')
     try:
@@ -174,10 +160,7 @@ try:
     session = session_m.group(1) if session_m else ''
 
     # Fetch card intent
-    if session:
-        intent = get_card_intent(card_number, session)
-    else:
-        intent = get_card_intent_no_session(card_number)
+    intent = get_card_intent(card_number, session)
 
     snippet = truncate_intent(intent) if intent else f'card #{card_number}'
     tmux_ctx = get_tmux_context()

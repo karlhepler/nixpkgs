@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -eou pipefail
+set -euo pipefail
 
 # Claude Quick Question Assistant
 # Takes model as first argument (haiku, sonnet, opus)

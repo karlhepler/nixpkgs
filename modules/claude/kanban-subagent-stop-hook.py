@@ -1507,9 +1507,6 @@ def process_subagent_stop(payload: dict) -> dict:
     # For cards that arrived already in 'review' (skipped the doing→review path),
     # intent may be unset — fetch it lazily only when needed.
     if card_done:
-        # Notify: review→done
-        card_intent = intent if 'intent' in dir() else get_card_intent(card_number, session)
-        send_transition_notification(card_number, "done", card_intent)
         message = f"Card #{card_number} AC review passed — card completed."
         message += format_deferred_notification(session)
         return allow(message)
@@ -1519,9 +1516,6 @@ def process_subagent_stop(payload: dict) -> dict:
     status = get_card_status(card_number, session)
     if status == "done":
         log_info(f"Card #{card_number} reached done (detected on re-check after inner loop)")
-        # Notify: review→done (reuse cached intent)
-        card_intent = intent if 'intent' in dir() else get_card_intent(card_number, session)
-        send_transition_notification(card_number, "done", card_intent)
         message = f"Card #{card_number} AC review passed — card completed."
         message += format_deferred_notification(session)
         return allow(message)
@@ -1560,9 +1554,6 @@ def process_subagent_stop(payload: dict) -> dict:
                 working_directory=working_directory,
             )
             if retry_succeeded:
-                # Notify: review→done (malfunction retry path) — reuse cached intent
-                intent_for_retry_done = intent if 'intent' in dir() else get_card_intent(card_number, session)
-                send_transition_notification(card_number, "done", intent_for_retry_done)
                 message = f"Card #{card_number} AC review passed on malfunction retry — card completed."
                 message += format_deferred_notification(session)
                 return allow(message)

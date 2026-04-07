@@ -32,7 +32,7 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   exit 0
 fi
 
-set -eou pipefail
+set -euo pipefail
 
 # Read JSON from stdin
 json=$(cat)
