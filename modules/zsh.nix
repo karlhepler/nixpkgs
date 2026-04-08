@@ -227,25 +227,6 @@ in {
         return $exit_code
       }
 
-      # stk wrapper function that auto-evals cd command (mirrors workout wrapper)
-      # stk <branch> delegates to workout for worktree navigation, so it outputs cd commands
-      stk() {
-        local result
-        result="$(${homeDirectory}/.nix-profile/bin/stk "$@")"
-        local exit_code=$?
-        if [ $exit_code -eq 0 ]; then
-          if [[ "$result" == cd\ * ]]; then
-            local worktree_root="''${WORKTREE_ROOT:-$HOME/worktrees}"
-            mkdir -p "$worktree_root"
-            echo "$PWD" > "$worktree_root/.workout_prev"
-            eval "$result"
-          else
-            echo "$result"
-          fi
-        fi
-        return $exit_code
-      }
-
       # Groot wrapper function that auto-evals cd command to git root
       groot() {
         local result

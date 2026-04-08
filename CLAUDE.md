@@ -110,42 +110,6 @@ Some skills intentionally lack agent definitions because they are exception or w
 - `workout -`: Toggle to previous worktree location
 - `groot`: Navigate to git repository root
 
-#### Stacked PR Workflow
-
-For PRs that form a logical dependency chain (e.g., API endpoint, then CLI command, then documentation):
-
-**Inner Loop (per branch):**
-```
-make changes → amend commit → stk → repeat
-```
-
-**Before Submitting:**
-```
-stk sync → stk → stk pr
-```
-
-Each stacked PR is automatically tracked with current CI/CD status visible via `stk log`.
-
-**Does NOT require Graphite auth token.** All remote operations use `gh` CLI. Graphite (`gt`) is used only for local stack tracking and restack operations.
-
-**Stacked PR Commands:**
-- `stk work <branch>`: Create a Graphite-tracked branch stacked on the current branch, then create a dedicated worktree at `~/worktrees/<org>/<repo>/<branch>`. Auto-inits Graphite if needed.
-- `stk work`: No branch arg — open interactive worktree picker.
-- `stk` / `stk restack`: No args — restack all downstream branches (`gt restack`). Errors with a helpful message if the current branch is untracked by Graphite (run `stk rebase <parent>` to fix).
-- `stk rebase <parent-branch>`: Fix a branch's parent. Runs `git rebase <parent>` then `gt move --onto <parent>`. Required when the graphite parent is wrong or the branch was created outside the stk workflow.
-- `stk log`: Show stack structure with PR statuses (`gt log`)
-- `stk status`: Show stack position then working tree state
-- `stk sync`: Pull latest trunk into current branch (`git sync`) then restack the entire stack (`gt restack`). Does NOT require Graphite auth.
-- `stk pr` / `stk pr draft`: Create draft PR (no PR exists) or convert ready→draft (PR exists). Uses `gh pr create --draft --fill --base <graphite-parent>`.
-- `stk pr ready`: Create ready PR (no PR exists) or promote draft→ready (PR exists).
-- `stk pr close [comment]`: Close the current branch's PR with an optional comment
-- `stk pr merge`: Merge the current branch's PR (squash merge)
-- `stk pr view [args...]`: View current branch's PR details (passthrough to `gh pr view`)
-
-**Branch naming:** All stk branches must use `karlhepler/` prefix (e.g., `stk work karlhepler/my-feature`).
-
-**Worktree location:** `~/worktrees/<org>/<repo>/<branch>` (e.g., `~/worktrees/mazedesignhq/maze-monorepo/karlhepler/my-feature`).
-
 ### Tmux Session Management
 - `tmux-restore`: Pick and restore a tmux-resurrect snapshot via fzf (shows sessions and window names in preview)
 
@@ -181,7 +145,7 @@ For detailed architecture, see README.md and source files in modules/.
 
 **🚨 Deployment Order: `git add` (if needed) → `hms` → `commit` → `push`**
 
-**NEVER commit before `hms` succeeds.** The `hms` build is the validation step — a failing build means the change is broken, not just undeployed. If `hms` needs to see working tree changes, stage them with `git add` first, but do NOT commit until the build passes.
+Wait for `hms` to succeed before running `git commit`. The `hms` build is the validation step — a failing build means the change is broken, not just undeployed. Stage files with `git add` if needed before running `hms`, but only commit after the build passes.
 
 **Add new package:**
 
@@ -220,7 +184,7 @@ brew install colima  # ❌ FORBIDDEN
 3. Run `hms` to deploy
 4. Skill automatically discovered in `~/.claude/commands/`
 
-Note: If adding a team member skill (not a standalone workflow skill), also create an agent definition — see Team Member Terminology section above.
+For team member skills (delegatable sub-agents), see § Team Member Terminology above for the full process including agent definition creation.
 
 **Update Nix dependencies:**
 1. `nix flake update` (updates flake.lock)
@@ -373,7 +337,7 @@ Ralph is a self-contained event-loop orchestrator with its own memory system. Ka
 - Support: researcher, scribe, ai-expert, ac-reviewer, debugger, learn
 - Workflow: review-pr-comments, manage-pr-comments
 - Business: finance, lawyer, marketing
-- Special: workout-burns, workout-staff, workout-smithers, stk-burns, stk-staff, project-planner
+- Exception Skills (invoked via Skill tool directly): workout-burns, workout-staff, workout-smithers, project-planner
 
 ## Your Team
 

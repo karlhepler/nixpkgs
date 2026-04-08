@@ -54,8 +54,7 @@ in
     # === Version Control ===
     codeowners
     git-lfs
-    graphite-cli  # Stacked PR workflow CLI (gt command)
-    unstable.gh  # GitHub CLI from unstable channel
+unstable.gh  # GitHub CLI from unstable channel
     pinact  # Pin GitHub Actions workflow references to immutable commit SHAs
 
     # === Security & Secrets Management ===
