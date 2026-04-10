@@ -91,9 +91,19 @@ Never write code, fix bugs, edit files, or run diagnostic commands. (Exception: 
 
 `git checkout -- <file>`, `git restore <file>`, `git reset -- <file>`, `git stash drop` (destroys stashed changes), and `git clean` targeting specific files can destroy uncommitted work from other sessions. Before running ANY of these on a specific file path:
 
-1. Run `kanban list --output-style=xml` (no session filter — ALL sessions) and check for cards in `doing` or `review` whose `editFiles` overlap the target file. Cards in `review` still have live disk changes — the agent wrote files before moving to review.
-2. If overlap exists: **STOP.** Surface the conflict to the user: "File X is being actively edited by session Y (card #N). Proceeding would destroy their uncommitted changes."
-3. Only proceed after the user explicitly confirms, or after the conflicting card reaches `done` (meaning changes are committed)
+1. Run `kanban list --output-style=xml` (no session filter — ALL sessions) and check for cards in `doing`, `review`, or recently `done` (uncommitted) whose `editFiles` overlap the target file. Cards in `review` still have live disk changes — the agent wrote files before moving to review. Cards in `done` may also have live disk changes if no commit has occurred since completion.
+2. **Run `git diff <file>` on every target file.** Read the diff. Understand what you are about to destroy. This is not optional — the board tells you WHO wrote to the file; the diff tells you WHAT is on disk. Both checks are required.
+3. If the diff contains work from completed cards, or work the user has been actively using (previewing, testing, iterating on): **STOP. Do not revert the file.** Surface the situation to the user: "This file contains uncommitted work from cards #X, #Y, #Z. Reverting it would destroy all of it."
+4. Only proceed after the user explicitly confirms, or after all accumulated work in the file is committed.
+
+**Whole-file revert is prohibited when surgical revert is possible.** When one agent produces bad changes in a file that contains accumulated work from other agents or direct edits, `git checkout -- <file>` is the WRONG tool. It destroys everything to fix one thing. Instead:
+- **Edit out the bad changes** — delegate to a sub-agent to remove the specific unwanted modifications
+- **Use `git checkout -p <file>`** — interactive hunk-level revert that lets you select which changes to discard
+- **Only revert the entire file** when the diff confirms the file contains NOTHING worth keeping
+
+**Accumulated uncommitted work:** When multiple sequential cards write to the same file without intermediate commits, the file on disk is a cumulative artifact containing ALL their work. Reverting it does not undo "the last change" — it undoes EVERY change since the last commit. This is the most dangerous scenario because the blast radius is invisible without checking the diff.
+
+**Concrete failure example:** Running `git checkout -- page.tsx` to revert one agent's incorrect changes destroyed 7 cards' worth of accumulated frontend work in the same file — hours of completed, user-verified work that had not yet been committed. The board check alone did not prevent this because the cards were in `done` status. The diff would have shown exactly what was at stake.
 
 **The board is the source of truth for cross-session file ownership.** Do not assume you know a file's state based on conversation context. Another session's agent may have written changes that you cannot see. Check the board first — every time, no exceptions.
 
@@ -189,7 +199,7 @@ All other skills: Delegate via Agent tool (background).
 
 - [ ] **Cross-Repo** -- Does this task write files in a repo other than the current project's repo? If YES → `/workout-staff` (exception skill). Background sub-agents CANNOT write outside the project tree. Agent tool cannot solve this — /workout-staff is the ONLY path. Include `"repo": "/path/to/repo"` in each workout JSON entry — without it, the worktree lands in the wrong repo. See § Workout-Staff Operational Pattern and § Exception Skills cross-repo note.
 - [ ] **Context7** -- Library/framework work? **Background sub-agents cannot access MCP servers.** YOU must do the Context7 lookup before creating cards. Use `mcp__context7__resolve-library-id` then `mcp__context7__query-docs`. Encode results where sub-agents can reach them: inline in the card's `action` field for single-card context, or written to `.scratchpad/context7-<library>-<session>.md` and referenced by path for multi-card context. "Read the docs first" applies to ALL task types — implementation, debugging, and investigation.
-- [ ] **Destructive Git Ops** -- About to run `git checkout --`, `git restore`, `git reset --`, `git stash drop`, or `git clean` on specific files? Check ALL sessions' boards for `doing`/`review` cards with overlapping `editFiles`. If overlap, STOP and surface conflict. See § Hard Rules item 5.
+- [ ] **Destructive Git Ops** -- About to run `git checkout --`, `git restore`, `git reset --`, `git stash drop`, or `git clean` on specific files? (1) Check ALL sessions' boards for `doing`/`review`/`done`-uncommitted cards with overlapping `editFiles`. (2) Run `git diff` on every target file — read what you'd destroy. If accumulated uncommitted work exists, STOP. Prefer surgical edits over whole-file revert. See § Hard Rules item 5.
 - [ ] **Delegation** -- 🚨 Card MUST exist before Agent tool call. Create card first, then delegate with card number. Never launch an agent without a card number in the prompt. See § Exception Skills for Skill tool usage.
 - [ ] **Stay Engaged** -- Does this response end at delegation? If YES, add follow-up conversation (see § Stay Engaged).
 - [ ] **Open Threads** -- Transition point? Check `.scratchpad/open-threads-<session>.md` for unresolved topics. See § Open Threads.
