@@ -301,6 +301,14 @@ $orphan_warning"
       sourceFile = "staff.bash";
     };
 
+    sstaff = shellApp {
+      name = "sstaff";
+      runtimeInputs = [ ];
+      text = builtins.readFile ./sstaff.bash;
+      description = "Launch Claude Code with Senior Staff Engineer output style (coordinates Staff Engineer sessions)";
+      sourceFile = "sstaff.bash";
+    };
+
     burns = burnsScript // {
       meta = {
         description = "Run Ralph Orchestrator with Ralph Coordinator output style (accepts prompt string or file path)";
@@ -371,6 +379,38 @@ $orphan_warning"
       text = builtins.readFile ./kanban-permission-hook.bash;
       description = "PermissionRequest hook that auto-approves any Bash command starting with kanban";
       sourceFile = "kanban-permission-hook.bash";
+    };
+
+    tell = shellApp {
+      name = "tell";
+      runtimeInputs = [ ];
+      text = builtins.readFile ./tell.bash;
+      description = "Send a message to a named tmux window (message + Enter as separate send-keys calls)";
+      sourceFile = "tell.bash";
+    };
+
+    read-window = shellApp {
+      name = "read-window";
+      runtimeInputs = [ ];
+      text = builtins.readFile ./read-window.bash;
+      description = "Capture recent output from a named tmux window (default 50 lines)";
+      sourceFile = "read-window.bash";
+    };
+
+    broadcast = shellApp {
+      name = "broadcast";
+      runtimeInputs = [ ];
+      text = builtins.readFile ./broadcast.bash;
+      description = "Send the same message to multiple comma-separated tmux windows via tell";
+      sourceFile = "broadcast.bash";
+    };
+
+    senior-staff-staleness-hook = shellApp {
+      name = "senior-staff-staleness-hook";
+      runtimeInputs = [ pkgs.jq ];
+      text = builtins.readFile ./senior-staff-staleness-hook.bash;
+      description = "PreToolUse(Bash) hook that polls Senior Staff session windows when >60s stale";
+      sourceFile = "senior-staff-staleness-hook.bash";
     };
 
   };
@@ -868,6 +908,11 @@ $orphan_warning"
             # Claude Code metrics introspection CLI
             "Bash(claude-inspect *)"
 
+            # Senior Staff inter-session communication (tmux-based)
+            "Bash(tell *)"
+            "Bash(read-window *)"
+            "Bash(broadcast *)"
+
           ];
 
           # ============================================================================
@@ -973,6 +1018,13 @@ $orphan_warning"
                 type = "command";
                 command = "${shellapps.kanban-pretool-hook}/bin/kanban-pretool-hook";
                 timeout = 600000;
+              }];
+            }
+            {
+              matcher = "Bash";
+              hooks = [{
+                type = "command";
+                command = "${shellapps.senior-staff-staleness-hook}/bin/senior-staff-staleness-hook";
               }];
             }
           ];
