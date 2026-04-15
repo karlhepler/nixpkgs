@@ -18,7 +18,16 @@ show_help() {
   echo
   echo "ROSTER FORMAT:"
   echo "  .scratchpad/senior-staff-roster.json:"
-  echo '  {"sessions":[{"window":"pricing","workstream":"Stripe pricing model"}]}'
+  echo '  {"sessions":['
+  echo '    {"window":"pricing","workstream":"Stripe pricing model",'
+  echo '     "panes":{"0":"claude (staff-engineer)","1":"smithers (ci)"}}'
+  echo '  ]}'
+  echo
+  echo "CLAUDE PANE DISCOVERY:"
+  echo "  For each session, the hook scans the 'panes' map for the first pane"
+  echo "  whose description contains 'claude' (case-insensitive) and polls that"
+  echo "  pane via read-windowpane. If no match is found (or no panes field"
+  echo "  exists), the hook falls back to pane 0."
   echo
   echo "STALENESS GATE:"
   echo "  Reads unix epoch from .scratchpad/senior-staff-last-poll."
@@ -61,7 +70,6 @@ if [[ $age -lt $staleness_seconds ]]; then
 fi
 
 # Poll is stale (or first run) — gather session output
-# Read the sessions array from roster JSON
 sessions_json="$(jq -c '.sessions[]' "$roster_file" 2>/dev/null || true)"
 
 if [[ -z "$sessions_json" ]]; then
@@ -81,12 +89,16 @@ while IFS= read -r session_entry; do
     continue
   fi
 
-  echo ""
-  echo "Session: ${window}${workstream:+ (${workstream})}"
+  # Find the Claude pane from the roster's panes map — first pane whose
+  # description contains "claude" (case-insensitive). Fallback to pane 0.
+  claude_pane="$(echo "$session_entry" | jq -r '[(.panes // {}) | to_entries[] | select(.value | test("claude"; "i")) | .key][0] // "0"')"
 
-  # Capture recent output from the window; report if window is missing
-  window_output="$(read-window "$window" 30 2>&1)" || {
-    echo "  [window '${window}' not found or could not be read]"
+  echo ""
+  echo "Session: ${window}.${claude_pane}${workstream:+ (${workstream})}"
+
+  # Capture recent output from the Claude pane; report if window/pane is missing.
+  window_output="$(read-windowpane "${window}.${claude_pane}" 30 2>&1)" || {
+    echo "  [${window}.${claude_pane} not found or could not be read — roster may be drifting from tmux reality]"
     continue
   }
 

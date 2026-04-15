@@ -381,28 +381,28 @@ $orphan_warning"
       sourceFile = "kanban-permission-hook.bash";
     };
 
-    tell = shellApp {
-      name = "tell";
+    tell-windowpane = shellApp {
+      name = "tell-windowpane";
       runtimeInputs = [ ];
-      text = builtins.readFile ./tell.bash;
-      description = "Send a message to a named tmux window (message + Enter as separate send-keys calls)";
-      sourceFile = "tell.bash";
+      text = builtins.readFile ./tell-windowpane.bash;
+      description = "Send a message to one or more tmux window panes (message + Enter with 150ms sleep between, window.pane format required, comma-separated multi-target)";
+      sourceFile = "tell-windowpane.bash";
     };
 
-    read-window = shellApp {
-      name = "read-window";
+    read-windowpane = shellApp {
+      name = "read-windowpane";
       runtimeInputs = [ ];
-      text = builtins.readFile ./read-window.bash;
-      description = "Capture recent output from a named tmux window (default 50 lines)";
-      sourceFile = "read-window.bash";
+      text = builtins.readFile ./read-windowpane.bash;
+      description = "Capture recent output from one or more tmux window panes (window.pane format required, default 50 lines, comma-separated multi-target)";
+      sourceFile = "read-windowpane.bash";
     };
 
-    broadcast = shellApp {
-      name = "broadcast";
+    list-windowpane = shellApp {
+      name = "list-windowpane";
       runtimeInputs = [ ];
-      text = builtins.readFile ./broadcast.bash;
-      description = "Send the same message to multiple comma-separated tmux windows via tell";
-      sourceFile = "broadcast.bash";
+      text = builtins.readFile ./list-windowpane.bash;
+      description = "Overview of all tmux windows, panes, and recent output snippets (default 3 lines per pane) — lay of the land for Senior Staff";
+      sourceFile = "list-windowpane.bash";
     };
 
     senior-staff-staleness-hook = shellApp {
@@ -909,9 +909,9 @@ $orphan_warning"
             "Bash(claude-inspect *)"
 
             # Senior Staff inter-session communication (tmux-based)
-            "Bash(tell *)"
-            "Bash(read-window *)"
-            "Bash(broadcast *)"
+            "Bash(tell-windowpane *)"
+            "Bash(read-windowpane *)"
+            "Bash(list-windowpane *)"
 
           ];
 
