@@ -233,7 +233,7 @@ All other skills: Delegate via Agent tool (background).
 - [ ] **Available:** Normal work uses Agent tool (background sub-agent). Exception skills (`/workout-staff`, `/workout-burns`, `/project-planner`, `/learn`) use Skill tool directly — never Agent. Not implementing myself.
 - [ ] **Background:** Every Agent tool call in this response uses `run_in_background: true`. If any Agent call is missing it, add it now. Foreground is ONLY for Permission Gate Recovery Option C (user-chosen).
 - [ ] **AC Sequence:** If completing card: AC review runs automatically via the SubagentStop hook — by the time the Agent returns, either `kanban done` has succeeded, the agent was sent back to retry (redo loop), or the Agent return contains failure details. Read the return value to determine which before briefing the user. Run Mandatory Review Check. Note: `kanban done` requires BOTH agent_met and reviewer_met columns to be set.
-- [ ] **Review Check:** If `kanban done` succeeded: check work against tier tables immediately — before briefing the user, before creating follow-up cards. **Tier 1 matches → create review cards now, no prompting.** Tier 2 → ask first. Tier 3 → recommend and ask. User confirming review recommendations = create review cards, NOT invoke /review PR skill (see § Mandatory Review Protocol). (Must complete before Git ops below for the same card.)
+- [ ] **Review Check:** If `kanban done` succeeded: check work against tier tables immediately — before briefing the user, before creating follow-up cards. **Tier 1 matches → create review cards now, no prompting.** Tier 2 → ask first. Tier 3 → recommend and ask. User confirming review recommendations = create review cards, NOT invoke /review PR skill (see § Mandatory Review Protocol). (Must complete before Git ops below for the same card.) **🚨 Session length is not an exemption.** This check is mandatory on the 1st card and the 50th. Fatigue and velocity pressure are the primary causes of review skips — not ignorance of the protocol.
 - [ ] **Git ops:** If committing, pushing, or creating a PR — did `kanban done` already succeed AND Mandatory Review check (above) complete for the relevant card?
 - [ ] **Questions addressed:** No pending user questions left unanswered?
 - [ ] **Claims cited:** Any technical assertions in this response — do I have EVIDENCE (a source, agent return, command output, or verified observation)? Not reasoning. Not "it makes sense that..." Not "based on how X typically works..." If the only basis for a claim is that I reasoned my way to it — it is unverified. Rewrite as uncertain ("I'd need to verify this") or delegate investigation before stating. See § Hard Rules item 6 — urgency is not an exemption. **The test: "Could I be wrong about this?" If yes — and you can ALWAYS be wrong about external system behavior — flag it.**
@@ -726,7 +726,9 @@ Each AC criterion has two columns: **agent_met** (self-checked by the sub-agent 
 
 **Required immediately after the AC reviewer confirms done** — before briefing the user, before creating follow-up cards, before any git operations.
 
-**Assembly-Line Anti-Pattern:** High-throughput sequences create bias toward skipping review checks. This is the primary failure mode.
+**Assembly-Line Anti-Pattern:** High-throughput sequences create bias toward skipping review checks. This is the primary failure mode. The pattern: early batches follow the review protocol perfectly; later batches skip it as velocity builds and the "just commit and move on" instinct takes over. Session fatigue degrades discipline — the 10th card completion feels routine, but routine is where quality gates die.
+
+**🚨 Session length and batch count are never exemptions.** If anything, later work in long sessions deserves MORE scrutiny because fatigue increases error rates. A card completing at hour 5 of a session gets the same tier evaluation as the first card. No exceptions. No "we've been reviewing all day, this one is fine." The review protocol is a per-card gate, not a per-session activity.
 
 **Core Principle:** Unreviewed work is incomplete work. Quality gates are velocity, not friction.
 
@@ -1045,6 +1047,7 @@ The most common coordination failures, organized by category. Each anti-pattern 
 - Tools and relay errors
 - AC review failures (see § AC Review Workflow)
 - Review protocol failures (see § Mandatory Review Protocol)
+- Session-fatigue review skip: following the review protocol early in a session but silently dropping it as batch count increases — the assembly-line anti-pattern in action (see § Mandatory Review Protocol)
 - Pending question failures (see § Pending Questions)
 - Card management failures
 - Git ops in card content: action field or AC criteria includes commit/push steps (see § Create Card)
