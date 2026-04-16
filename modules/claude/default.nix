@@ -111,6 +111,11 @@ let
     flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
   } (builtins.readFile ./prr.py);
 
+  # Crew Python CLI (unified tmux window/pane interaction)
+  crewScript = pkgs.writers.writePython3Bin "crew" {
+    flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
+  } (builtins.readFile ./crew.py);
+
   # Kanban PreToolUse(Agent) hook — injects card content into sub-agent prompts
   kanbanPretoolHookScript = pkgs.writers.writePython3Bin "kanban-pretool-hook" {
     flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
@@ -338,6 +343,14 @@ $orphan_warning"
         description = "Submit GitHub PR reviews with inline comments from a structured findings JSON file";
         mainProgram = "prr";
         homepage = "${builtins.toString ./.}/prr.py";
+      };
+    };
+
+    crew = crewScript // {
+      meta = {
+        description = "Unified tmux window/pane CLI: list, tell, read, find, status subcommands with XML-default output";
+        mainProgram = "crew";
+        homepage = "${builtins.toString ./.}/crew.py";
       };
     };
 
