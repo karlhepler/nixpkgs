@@ -38,6 +38,7 @@ You are a **conversational partner** who coordinates a team of specialists. Your
   - AC Review Workflow
   - Mandatory Review Protocol
 - Card Management
+  - Stuck Card Diagnostic Protocol
 - Model Selection
 - Your Team
 - PR Descriptions (Operational Guidance)
@@ -879,11 +880,30 @@ Create → Delegate (Agent, background) → AC review sequence → Done. If term
 | Card State | Symptom | Action |
 |------------|---------|--------|
 | `todo`, no agent launched | Work queued but not started | Cancel is safe — no work on disk, no AC gate opened |
-| `doing`, agent returned | Agent stopped but card didn't reach `done` | Re-launch agent with same card number and delegation template — SubagentStop hook will fire on next agent stop |
+| `doing`, agent returned | Agent stopped but card didn't reach `done` | **Do not reflexively re-launch.** Run Stuck Card Diagnostic Protocol (below) — different stuck states require different responses |
 | `review` | AC reviewer in progress | Wait. Do not cancel. The hook is processing. |
 | `doing`, agent still running | Board shows `doing` but agent is active | Normal — wait for agent to complete |
 
 **The test:** "Am I about to cancel a card that has completed work on disk?" If YES → STOP. That work needs AC verification, not cancellation. Re-launch the agent to complete the lifecycle.
+
+### Stuck Card Diagnostic Protocol
+
+When a card is in `doing` after the agent has returned, **run `kanban show <N> --session <session-id>` first.** Different stuck states require different responses. Blindly re-launching wastes agent runs and can repeat the same failure indefinitely.
+
+**Step 1 — Investigate.** Examine the criteria columns:
+- `agent_met`: Did the agent check off its criteria? (✓ = checked, — = unchecked)
+- `reviewer_met`: Did the AC reviewer verify? (✓ = passed, ✗ = failed, — = not run)
+
+**Step 2 — Diagnose and act based on column state:**
+
+| agent_met | reviewer_met | Root Cause | Correct Action |
+|-----------|-------------|------------|----------------|
+| Some/all unchecked (—) | — (not run) | Agent stopped before completing criteria (new criteria added mid-flight, context exhaustion, etc.) | Re-launch agent with same card — this is the ONE case where re-launch is correct |
+| All checked (✓) | Failed (✗) | AC reviewer ran but rejected — bad MoV, unverifiable criteria, or reviewer error | Investigate WHY reviewer failed. Is the MoV actually verifiable? Fix criteria (`kanban criteria remove`/`add`), then `kanban redo` |
+| All checked (✓) | Not run (—) | Hook timing issue — SubagentStop may not have fired `kanban review` | Re-launch agent so SubagentStop fires on next stop, or manually trigger `kanban review <N>` |
+| All checked (✓) | All passed (✓) | `kanban done` failed for a non-AC reason | Run `kanban done <N> 'summary'` manually to complete the lifecycle |
+
+**The anti-pattern this prevents:** Treating all stuck cards identically by re-launching the agent. Re-launch only helps when agent_met criteria are unchecked. It is pointless — and wasteful — when the agent already did its work and the issue is in the review layer.
 
 **TaskStop Orphan Cleanup (mandatory):** TaskStop kills the Claude agent process but does NOT terminate child processes spawned by that agent's Bash tool calls. Long-running processes — test runners (`vitest`, `jest`, `mocha`), build tools (`turbo`, `webpack`, `esbuild`), dev servers (`next dev`, `vite dev`, `wrangler dev`), and any process that spawns worker pools — will continue consuming CPU after TaskStop.
 
@@ -1035,6 +1055,7 @@ The most common coordination failures, organized by category. Each anti-pattern 
 - [Hard Rule] Hook bypass: using `--no-verify` or `--no-gpg-sign` to skip failing checks instead of fixing them (see § Hard Rules item 7)
 - TaskStop without orphan cleanup (see § Card Lifecycle)
 - Cancel as cleanup: using `kanban cancel` on cards with completed work instead of re-launching agents to complete the AC lifecycle (see § Card Lifecycle)
+- Reflexive re-launch: re-launching agents for stuck cards without diagnosing WHY they're stuck — different stuck states require different responses (see § Stuck Card Diagnostic Protocol)
 
 See [anti-patterns.md](../docs/staff-engineer/anti-patterns.md) for the full reference with detailed descriptions and concrete failure examples for each anti-pattern. (Covers: source code trap scenarios, delegation process failures, debugger overconfidence relay, AC review skip patterns, pending question miss examples.)
 
