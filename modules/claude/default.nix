@@ -405,6 +405,14 @@ $orphan_warning"
       sourceFile = "list-windowpane.bash";
     };
 
+    search-windowpane = shellApp {
+      name = "search-windowpane";
+      runtimeInputs = [ pkgs.ripgrep ];
+      text = builtins.readFile ./search-windowpane.bash;
+      description = "Search tmux scrollback across all windowpanes for a pattern (groups matches by window.pane, full scrollback by default)";
+      sourceFile = "search-windowpane.bash";
+    };
+
     senior-staff-staleness-hook = shellApp {
       name = "senior-staff-staleness-hook";
       runtimeInputs = [ pkgs.jq ];
@@ -912,6 +920,7 @@ $orphan_warning"
             "Bash(tell-windowpane *)"
             "Bash(read-windowpane *)"
             "Bash(list-windowpane *)"
+            "Bash(search-windowpane *)"
 
           ];
 
