@@ -21,4 +21,4 @@ ${staff_engineer_content}"
 # Launch Claude Code with date-aware staff engineer output style
 export KANBAN_AGENT=staff-engineer
 export CLAUDIT_ROLE=staff-engineer
-exec claude --enable-auto-mode --model 'opus[1m]' --effort max --system-prompt "$system_prompt" "$@"
+exec claude --enable-auto-mode --model 'opus[1m]' --system-prompt "$system_prompt" "$@"
