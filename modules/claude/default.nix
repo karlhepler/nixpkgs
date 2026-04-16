@@ -394,38 +394,6 @@ $orphan_warning"
       sourceFile = "kanban-permission-hook.bash";
     };
 
-    tell-windowpane = shellApp {
-      name = "tell-windowpane";
-      runtimeInputs = [ ];
-      text = builtins.readFile ./tell-windowpane.bash;
-      description = "Send a message to one or more tmux window panes (message + Enter with 150ms sleep between, window.pane format required, comma-separated multi-target)";
-      sourceFile = "tell-windowpane.bash";
-    };
-
-    read-windowpane = shellApp {
-      name = "read-windowpane";
-      runtimeInputs = [ ];
-      text = builtins.readFile ./read-windowpane.bash;
-      description = "Capture recent output from one or more tmux window panes (window.pane format required, default 50 lines, comma-separated multi-target)";
-      sourceFile = "read-windowpane.bash";
-    };
-
-    list-windowpane = shellApp {
-      name = "list-windowpane";
-      runtimeInputs = [ ];
-      text = builtins.readFile ./list-windowpane.bash;
-      description = "Overview of all tmux windows, panes, and recent output snippets (default 3 lines per pane) — lay of the land for Senior Staff";
-      sourceFile = "list-windowpane.bash";
-    };
-
-    search-windowpane = shellApp {
-      name = "search-windowpane";
-      runtimeInputs = [ pkgs.ripgrep ];
-      text = builtins.readFile ./search-windowpane.bash;
-      description = "Search tmux scrollback across all windowpanes for a pattern (groups matches by window.pane, full scrollback by default)";
-      sourceFile = "search-windowpane.bash";
-    };
-
     senior-staff-staleness-hook = shellApp {
       name = "senior-staff-staleness-hook";
       runtimeInputs = [ pkgs.jq ];
@@ -928,12 +896,6 @@ $orphan_warning"
 
             # Claude Code metrics introspection CLI
             "Bash(claude-inspect *)"
-
-            # Senior Staff inter-session communication (tmux-based)
-            "Bash(tell-windowpane *)"
-            "Bash(read-windowpane *)"
-            "Bash(list-windowpane *)"
-            "Bash(search-windowpane *)"
 
           ];
 

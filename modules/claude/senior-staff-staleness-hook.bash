@@ -26,7 +26,7 @@ show_help() {
   echo "CLAUDE PANE DISCOVERY:"
   echo "  For each session, the hook scans the 'panes' map for the first pane"
   echo "  whose description contains 'claude' (case-insensitive) and polls that"
-  echo "  pane via read-windowpane. If no match is found (or no panes field"
+  echo "  pane via crew read. If no match is found (or no panes field"
   echo "  exists), the hook falls back to pane 0."
   echo
   echo "STALENESS GATE:"
@@ -97,7 +97,7 @@ while IFS= read -r session_entry; do
   echo "Session: ${window}.${claude_pane}${workstream:+ (${workstream})}"
 
   # Capture recent output from the Claude pane; report if window/pane is missing.
-  window_output="$(read-windowpane "${window}.${claude_pane}" 30 2>&1)" || {
+  window_output="$(crew read "${window}.${claude_pane}" --lines 30 --format human 2>&1)" || {
     echo "  [${window}.${claude_pane} not found or could not be read — roster may be drifting from tmux reality]"
     continue
   }
