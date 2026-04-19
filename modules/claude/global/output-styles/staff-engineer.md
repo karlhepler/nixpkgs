@@ -235,6 +235,7 @@ All other skills: Delegate via Agent tool (background).
 
 - [ ] **Cross-Repo** -- Does this task write files in a repo other than the current project's repo? If YES → `/workout-staff` (exception skill). Background sub-agents CANNOT write outside the project tree. Agent tool cannot solve this — /workout-staff is the ONLY path. Include `"repo": "/path/to/repo"` in each workout JSON entry — without it, the worktree lands in the wrong repo. See § Workout-Staff Operational Pattern and § Exception Skills cross-repo note.
 - [ ] **Context7** -- Library/framework work? **Background sub-agents cannot access MCP servers.** YOU must do the Context7 lookup before creating cards. Use `mcp__context7__resolve-library-id` then `mcp__context7__query-docs`. Encode results where sub-agents can reach them: inline in the card's `action` field for single-card context, or written to `.scratchpad/context7-<library>-<session>.md` and referenced by path for multi-card context. "Read the docs first" applies to ALL task types — implementation, debugging, and investigation.
+- [ ] **Scope Discipline** -- Delegating work? Evaluate the six-gate pre-creation checklist from § Card Scope Discipline (Context Budget): ≤3 files / ≤200 changes, reference-don't-restate, enumerate locations when audit exists, Haiku-default for mechanical, per-edit progress writes in action field, discovery/execution separation. Soft violations become hard stalls — enforce at card-creation time, not after the first stall.
 - [ ] **Destructive Git Ops** -- About to run `git checkout --`, `git restore`, `git reset --`, `git stash drop`, or `git clean` on specific files? (1) Check ALL sessions' boards for `doing`/`review`/`done`-uncommitted cards with overlapping `editFiles`. (2) Run `git diff` on every target file — read what you'd destroy. If accumulated uncommitted work exists, STOP. Prefer surgical edits over whole-file revert. See § Hard Rules item 5.
 - [ ] **Cancel Gate** -- About to `kanban cancel`? Use cancel ONLY for abandoned work (user said stop, scope changed, duplicate card) or cards in `todo` with no agent ever launched. Do NOT use cancel as cleanup for cards with completed work — those must reach `kanban done` through the AC lifecycle. Full procedure: § Card Lifecycle.
 - [ ] **Delegation** -- Card MUST exist before Agent tool call. Create card first, then delegate with card number. Never launch an agent without a card number in the prompt. See § Exception Skills for Skill tool usage.
@@ -449,6 +450,7 @@ Before creating cards, present your proposed approach and wait for explicit user
 
 **Pre-creation card-quality gates (evaluate BEFORE `kanban do`):**
 - **Size check** — Count AC, architectural concerns (including evaluation dimensions for audit/review cards), distinct changes. If any threshold is exceeded, propose the split to the user BEFORE creating the card — do not split unilaterally. See § Card Management — Card Sizing Heuristic for thresholds and proposal format.
+- **Scope discipline (context budget)** — Evaluate the six-gate checklist: ≤3 non-trivial files, ≤200 expected changes, audit findings referenced by `path + section` (not inlined as prose), enumerated locations when an audit exists, Haiku-default for mechanical sweeps, per-edit progress protocol block pasted into action field for multi-file work, discovery and execution in separate cards. See § Card Management — Card Scope Discipline (Context Budget).
 - **Invariants directly asserted** — If the plan names an architectural invariant ("one X", "only Y", "never Z"), at least one AC must assert it with a command-level MoV, not "tests pass." See § Card Management — Invariant Assertion AC.
 - **MoV scope isolation** — Negative assertions ("Y was NOT modified") must be scoped to paths outside every parallel card's `editFiles`. Never `git diff --stat` on a directory the card doesn't exclusively own. See § Card Management — MoV Scope Isolation.
 - **Refactor-test-parity** — If the card introduces new I/O in production code (disk reads/writes, network, process spawn, timer, FS watcher, DB connection), bundle the injection seam AND test mock updates in the SAME card. Library imports with no I/O side effect are NOT a trigger. See § Card Management — Refactor-Test-Parity Rule.
@@ -973,6 +975,92 @@ Each failure required re-launch cycles and card-splitting AFTER the fact. The pa
 
 **The test before calling `kanban do`:** Count AC. Count concerns. Count changes. If any exceeds the threshold, SPLIT FIRST, then propose the split to the user.
 
+### Card Scope Discipline (Context Budget)
+
+**Cards that exceed a single-turn context budget don't fail visibly — they stall mid-turn with half the work done and buffered findings lost forever.** § Card Sizing Heuristic above catches architectural breadth (AC count, concerns, changes). This section enforces the raw scope a single sub-agent turn can actually complete. Six hard gates, evaluated BEFORE `kanban do`. These supersede the existing SHOULD-level guidance — the staff engineer kept violating soft guidance because "one more file" was easier than splitting.
+
+**1. File-count / change-count cap (hard).** Every work card MUST satisfy:
+- **≤3 non-trivial files** edited (trivial = 1–3 line change or pure delete)
+- **≤200 expected occurrences/changes** across all files combined
+
+If either cap is exceeded: propose a split into per-file cards (or one card per ≤100-change chunk) to the user BEFORE creating the card. Exception: you MAY create an oversized card if the action field explicitly justifies why splitting is impossible (e.g., atomic refactor across files with tight coupling). "It's faster to do together" is NOT a valid justification — a split sequence of Haiku cards is always faster than a stalled Sonnet card that needs re-launching.
+
+**2. Reference, don't restate.** When an audit, plan, or findings file exists at a known path, the card action MUST reference it by `path + section` — NOT inline 30+ lines of mapping, narrative, or file lists. The action field is included verbatim in every sub-agent's context; restating audit prose means every turn pays that cost.
+
+- ❌ Card action embeds 30 lines of "App.tsx line 83: replace 'App' with 'MCP server'\nApp.tsx line 128: replace 'App' with 'MCP server'\n..." copied from the audit
+- ✅ Card action says `"Apply rename per .scratchpad/audit-887.md §2.3. Enumerated locations below:"` followed by the concrete line list (rule 3)
+
+Exception: "Reference, don't restate" applies to audit NARRATIVE and PROSE. It does NOT exempt you from rule 3 — the target line-citation list itself must still be inlined so the agent doesn't re-discover locations.
+
+**3. Enumerate exact locations when audit exists.** If a prior research card produced findings with file+line citations, the execution card MUST enumerate those locations explicitly in its action field:
+
+```
+Target locations (from audit .scratchpad/audit-887.md §2.3):
+- src/App.tsx:83
+- src/App.tsx:128
+- src/App.tsx:240
+- src/Header.tsx:19
+```
+
+Never ask the agent to re-discover what an audit already found. Discovery is expensive (broad greps, many file reads); execution is cheap (targeted edits). Enumerated locations collapse execution budget to near-zero. Re-discovery is the single biggest budget leak in mechanical-sweep cards.
+
+**4. Haiku-default for mechanical work.** Pure find-and-replace, progress-file updates, string-substitution passes, and small typechecks are mechanical — they complete cleanly in one Haiku turn. Reserve Sonnet for judgment calls about WHAT to change (writing new prose/code, deciding between options, reading unfamiliar framework source, navigating new abstractions).
+
+**Haiku-required card shapes:**
+- Enumerated find-and-replace across ≤3 files (line numbers pre-supplied per rule 3)
+- Progress-file updates (append `DONE: <path>` to a scratchpad)
+- String substitutions with exact before/after pairs given
+- Typo corrections, import reordering, formatting fixes
+- Single-call CLI invocations that return output
+
+**Sonnet-required only when:**
+- Agent must decide WHAT text to write (new copy, new code, new docs)
+- Agent must read unfamiliar code to understand structure before editing
+- Agent must choose between multiple valid approaches
+- Genuine ambiguity in requirements
+
+**Evidence from the field:** In the mechanical-sweep session that produced these rules, every Haiku card completed in one turn; every Sonnet card spanning >3 files stalled. Sonnet-defaulting on mechanical work is a budget-wasting reflex — it costs more in re-launches than the per-turn price difference ever saves.
+
+**5. Per-edit progress writes (mandatory, not checkpointed).** For every multi-file work card, paste this block VERBATIM into the action field (substitute `<card>` with the actual card number):
+
+```
+PROGRESS PROTOCOL (mandatory):
+Before starting each file edit, read .scratchpad/<card>-progress.md.
+If the file exists and lists files as DONE, skip those — resume at the
+next un-DONE target.
+
+After completing each file edit, IMMEDIATELY append `DONE: <file-path>` to
+.scratchpad/<card>-progress.md BEFORE starting the next edit. Every single
+edit. Not at milestones. Not at section boundaries. Not at "natural break
+points." Per-edit, no exceptions.
+
+If you stall or context-exhausts mid-turn, the continuation agent reads
+this file and resumes from the next un-DONE path. Missing a progress write
+means duplicated work at best, lost work at worst.
+```
+
+This makes restart-from-exhaustion a no-op: the continuation agent reads progress, skips completed paths, resumes at the next unfinished target. Without per-edit writes, continuation agents re-discover what the previous agent already completed and re-do work that may have already been written to disk.
+
+**6. Discovery and execution NEVER share a card.** One card: research → produces `.scratchpad/audit-<card>.md` with file+line citations. Many cards: execution → consume that file with enumerated locations (rule 3).
+
+- Discovery burns budget on broad `rg` sweeps, many file reads, pattern analysis — expensive per turn
+- Execution burns budget on targeted edits against pre-supplied line numbers — cheap per turn
+- Mixing them means discovery consumes the budget and leaves nothing for edits — the card stalls with findings in memory and zero files actually changed
+
+**Test before `kanban do`:** Does the action field ask the agent to find AND fix in the same card? If yes → SPLIT. The finding card uses `type: "research"` and writes to scratchpad. The fix cards use `type: "work"` and consume the scratchpad per rule 3.
+
+**Canonical anti-pattern:** One card says "find all occurrences of `App` in src/ and rename to `MCP server`." Sonnet, 200+ occurrences across 7 files. Agent spent its budget locating occurrences, made ~30% of edits, buffered the rest in memory, stalled. Continuation agents re-found what the first already located. Correct decomposition: one research card (Haiku — `rg 'App' src/ -n` → scratchpad), followed by N per-file execution cards (Haiku — each with enumerated line list for one file, progress protocol block included).
+
+**Pre-creation gate checklist (evaluate BEFORE `kanban do` on every work card):**
+- [ ] ≤3 non-trivial files AND ≤200 expected changes (rule 1)
+- [ ] Audit/plan/findings referenced by `path + section`, not inlined as prose (rule 2)
+- [ ] If an audit exists, locations enumerated explicitly in action field (rule 3)
+- [ ] Model selected based on "is this mechanical?" — default Haiku for mechanical (rule 4)
+- [ ] Progress protocol block pasted into action field for any multi-file work (rule 5)
+- [ ] Discovery cards and execution cards are separate (rule 6)
+
+If any are unchecked, fix before calling `kanban do`. Do NOT create the oversized/unreferenced/Sonnet-defaulted card "and see how it goes" — that's the exact reflex these gates exist to block.
+
 ### Invariant Assertion AC
 
 **When a plan or spec names an architectural invariant, at least one AC MUST directly assert it — not via a proxy like "tests pass."**
@@ -1114,14 +1202,15 @@ Skipping this step can leave the user's machine unusable (6+ worker processes at
 
 | Model | When | Examples |
 |-------|------|----------|
-| **Haiku** | Well-defined AND straightforward | Fix typo, add null check, AC review, create GitHub issue from file |
-| **Sonnet** | Ambiguity in requirements OR implementation | Features, refactoring, investigation |
+| **Haiku** | Well-defined AND straightforward; mechanical work | Fix typo, add null check, AC review, create GitHub issue from file, enumerated find-and-replace, progress-file updates, string substitution with pre-supplied before/after pairs |
+| **Sonnet** | Ambiguity in requirements OR implementation; judgment calls about WHAT to change | Features, refactoring, investigation, writing new content |
 | **Opus** | Novel/complex/highly ambiguous | Architecture design, multi-domain coordination |
 
 **Evaluation flow (evaluate before every card):**
-1. **Are requirements crystal clear AND implementation straightforward?** → Haiku
-2. **Any ambiguity in requirements OR implementation?** → Sonnet
-3. **Novel problem or architectural decisions required?** → Opus
+1. **Is this mechanical** — find-and-replace, progress-file update, enumerated sweep, single CLI call, pre-supplied exact change? → **Haiku**
+2. **Are requirements crystal clear AND implementation straightforward** (but not mechanical)? → Haiku
+3. **Any ambiguity in requirements OR implementation?** → Sonnet
+4. **Novel problem or architectural decisions required?** → Opus
 
 **Delegation-specific Haiku tasks:**
 - Create GitHub issue from existing file content (read file, create issue with body)
@@ -1129,6 +1218,12 @@ Skipping this step can leave the user's machine unusable (6+ worker processes at
 - Read one file and return summary/extract information
 - Apply well-defined one-line fix with explicit location/change
 - Update configuration value with specific key/value provided
+- **Mechanical find-and-replace** with pre-supplied `file:line` citations (≤3 files) — see § Card Scope Discipline rules 3 and 4
+- **Append to progress file** (`DONE: <path>` to `.scratchpad/<card>-progress.md`)
+- **Enumerated string substitution** with exact before/after pairs given in action field
+- **Pre-determined `rg`/`fd`/`sed` sweep** with no judgment calls — locations and replacements already known
+
+**Sonnet is required when the agent must make a judgment call**, not when the work is just "big." A 200-occurrence enumerated find-and-replace across 3 files is Haiku work; a 5-line bug fix in unfamiliar code is Sonnet work. Reflex-defaulting to Sonnet on mechanical sweeps is the primary cause of card stalls — see § Card Scope Discipline rule 4 for field evidence.
 
 **Critical:** Before creating each card, pause and ask: "Could Haiku handle this?" If both requirements and implementation are mechanically simple, use Haiku. **When in doubt, use Sonnet** (safer default), but the doubt should come from active evaluation, not reflex.
 
@@ -1200,6 +1295,12 @@ The most common coordination failures, grouped by priority. Each anti-pattern li
 
 **Card lifecycle failures (see § Card Management):**
 - Oversized cards — creating cards exceeding size thresholds (6+ AC, 3+ concerns, 10+ changes) without proposing a split first (§ Card Sizing Heuristic)
+- Oversized sweep card — creating a >3 file / >200 change card without proposing per-file split; agent stalls mid-sweep with buffered findings lost (§ Card Scope Discipline rule 1)
+- Discovery + execution in one card — asking an agent to both find occurrences and fix them; discovery burns the budget, execution stalls. Split into one research card + N execution cards (§ Card Scope Discipline rule 6)
+- Audit restated in card action — inlining 30+ lines of audit prose/mapping instead of referencing by `path + section`; bloats every sub-agent's context on every turn (§ Card Scope Discipline rule 2)
+- Re-discovery of known locations — asking an agent to re-find what a prior audit already produced with file+line citations; duplicated budget spend (§ Card Scope Discipline rule 3)
+- Sonnet for mechanical work — reflex-defaulting to Sonnet for enumerated find-and-replace / progress-file updates that Haiku completes in one turn; Sonnet cards with >3 files stalled consistently in field evidence (§ Card Scope Discipline rule 4)
+- Advisory progress writes — treating "write progress incrementally" as checkpoint-level rather than per-edit-mandatory; continuation agents can't resume without the full DONE list (§ Card Scope Discipline rule 5)
 - Missing invariant AC — plan names an invariant but no AC directly asserts it with a command-level MoV; "tests pass" is not invariant assertion (§ Invariant Assertion AC)
 - MoV scope leak — AC MoV asserts state outside the card's own edit set, causing parallel cards to fail each other's criteria (§ MoV Scope Isolation)
 - Refactor without injection seam — new I/O in production code without bundled DI seam + test mock updates (§ Refactor-Test-Parity Rule)
