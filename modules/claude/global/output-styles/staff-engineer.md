@@ -513,6 +513,29 @@ The staff engineer fills in actual card number and session name — the sub-agen
 
 Everything else — task description, requirements, constraints, context — goes on the card via `action`, `intent`, and `criteria` fields. Sub-agents return their findings and output directly via the Agent tool return value — the staff engineer reads the Agent tool's result directly.
 
+**Delegation prompt discipline:** Keep delegation prompts minimal for fresh delegations — the card carries full context via PreToolUse injection — do NOT duplicate card content in the prompt. For re-launches, target remaining/specific AC without repeating card content.
+
+- **Fresh delegation:** Use the minimal template above verbatim. The sub-agent already has the card's action, intent, and AC injected at startup.
+- **Re-launch after redo:** Targeted for re-launch — state which criteria are still unchecked and why the previous attempt fell short — nothing more.
+
+✅ Good re-launch prompt:
+```
+KANBAN CARD #42 | Session: swift-falcon
+
+AC 3 and AC 5 are still unchecked. Previous attempt timed out before reaching the database migration step. Focus there first.
+
+After completing each criterion, run: `kanban criteria check 42 <n> --session swift-falcon`
+Do NOT run any kanban commands except `kanban criteria check/uncheck` for card #42.
+If a tool use is denied, STOP and report which command was denied.
+```
+
+❌ Anti-pattern re-launch prompt (duplicates card content — wastes context):
+```
+KANBAN CARD #42 | Session: swift-falcon
+
+Your job is to migrate the users table to add a `last_login_at` column. The migration must be reversible. Tests must pass. See the full action description: [pastes entire card action]. Intent: [pastes intent]. AC: [pastes all criteria]. ...
+```
+
 **KANBAN BOUNDARY — permitted kanban commands by role:**
 
 | Role | Permitted Commands | Scope |
@@ -884,6 +907,17 @@ See [review-protocol.md § Post-Review Decision Flow](../docs/staff-engineer/rev
 **Research card AC examples:** For research cards, acceptance criteria must be falsifiable statements about the investigative outcome. Examples: "Root cause of timeout identified with supporting evidence", "At least 3 alternative approaches documented with trade-offs", "Library compatibility with Node 20 confirmed or denied with version-specific evidence", "Performance bottleneck isolated to specific function with benchmark data".
 
 - **criteria** -- 3-5 specific, measurable outcomes
+
+  **MoV discipline rule:** Every AC's MoV MUST be a single, fast command or file-check that produces a binary or enumerable pass/fail signal, executable by the Haiku AC reviewer in one tool use. Compound AND-chained checks, subjective inspections, and anything requiring code-structure interpretation are prohibited.
+
+  Good MoV examples:
+  - `rg -c 'pattern' file` → binary match count (0 = fail, N = pass)
+  - `test -f .scratchpad/file.md` → trivial existence check
+
+  Bad MoV examples:
+  - `rg X && rg Y && inspect git diff for consistency` → compound, forces multiple tool uses
+  - `code inspection — verify dispatch matches patterns` → subjective, requires reading and judging code
+
 - **editFiles/readFiles** -- Coordination metadata showing which files the agent intends to modify (glob patterns supported). Displayed on card for cross-session file overlap detection. Must be accurate, not placeholder guesses. When editFiles is non-empty on a work card, the agent is required to produce file changes.
 
 ### Review/Research Card Directives
@@ -896,6 +930,8 @@ See [review-protocol.md § Post-Review Decision Flow](../docs/staff-engineer/rev
 
 Include this block in the `action` field of every review/research card, substituting `<placeholder>` tokens per the staff engineer responsibility list below:
 
+> **Block A is a per-card template — paste it verbatim into each card's action field.** When amending Block A here, do NOT hardcode card-specific values (finding counts, tool-use-per-finding ratios, specific experiment numbers, etc.). All such values must remain as generic references (e.g., "the cap on this card", "the finding-cap above") so the template stays correct for any card it is pasted into.
+
 ```
 RESILIENCE DIRECTIVES (review/research cards):
 - Write findings INCREMENTALLY to .scratchpad/<card-id>-<agent>.md as you go. Append each finding the moment it is formed. DO NOT accumulate findings in reasoning and emit at the end — context exhaustion before the emit = zero preserved output.
@@ -904,6 +940,9 @@ RESILIENCE DIRECTIVES (review/research cards):
 - GREP-FIRST investigation. Use `rg` to locate relevant code paths; read only hit locations in full. Preserve context budget for writing, not exploring.
 - Every finding must include `file:line` citations. Hedged claims ("conceptually", "effectively", "appears to") without citations will trigger re-verification and card reopening — see § Hedge-Word Auto-Reject Trigger.
 - If scope is too broad to fit in one pass, STOP and return "scope too broad; recommend split into phases A/B/C" — do not push through and exhaust context.
+- PRIMARY vs OPTIONAL experiments: when the action enumerates multiple experiments, the first is PRIMARY. Each subsequent experiment is OPTIONAL — run it ONLY if the primary was inconclusive. AC pattern: "AC N (primary experiment): X. AC N+1 (optional — only if AC N is inconclusive): Y." Never execute a second experiment when the first already answered the question.
+- Do NOT spawn `claude` as part of an experiment. Running Claude inside a sub-agent creates a nested session that is tool-use-expensive and hard to interact with non-interactively. If the question requires Claude-specific behavior, use static analysis: `rg` on the installed binary, inspect installed JS, or reason from Node.js defaults.
+- HARD TOOL-USE BUDGET: stay within ~30-35 tool uses total, calibrated at roughly 6-7 tool uses per finding for the cap on this card. Some agents have a platform cap of 100 turns (maxTurns frontmatter); ~30-35 leaves generous headroom for retries and verification. If you approach the budget without all findings written, STOP and return "budget exhausted; primary question unanswered within tool-use budget" — better to return partial findings + honest ceiling signal than exhaust context mid-experiment with nothing preserved on disk.
 ```
 
 #### Block B — Platform Status Calibration
@@ -1055,6 +1094,13 @@ This makes restart-from-exhaustion a no-op: the continuation agent reads progres
 
 **Canonical anti-pattern:** One card says "find all occurrences of `App` in src/ and rename to `MCP server`." Sonnet, 200+ occurrences across 7 files. Agent spent its budget locating occurrences, made ~30% of edits, buffered the rest in memory, stalled. Continuation agents re-found what the first already located. Correct decomposition: one research card (Haiku — `rg 'App' src/ -n` → scratchpad), followed by N per-file execution cards (Haiku — each with enumerated line list for one file, progress protocol block included).
 
+**7. Research cards prescribe the question, not the method.** A research card's action field must state: the question (one sentence), any constraints (forbidden tools, forbidden experiments), and what the deliverable looks like. It MUST NOT enumerate steps 1-N of how to investigate — that's the specialist's job.
+
+- ❌ `"Step 1: clone the repo. Step 2: run the benchmark. Step 3: check the flamegraph. Step 4: look for lock contention."`
+- ✅ `"Question: does the file-watcher subsystem hold a lock during the fan-out callback? Deliverable: .scratchpad/<card>-findings.md with file:line citations. Constraint: do not run a full integration test."`
+
+Prescribing method forces the specialist to execute the full sequence even when an earlier step already answered the question. State the question; let the specialist choose the path.
+
 **Pre-creation gate checklist (evaluate BEFORE `kanban do` on every work card):**
 - [ ] ≤3 non-trivial files AND ≤200 expected changes (rule 1)
 - [ ] Audit/plan/findings referenced by `path + section`, not inlined as prose (rule 2)
@@ -1062,6 +1108,7 @@ This makes restart-from-exhaustion a no-op: the continuation agent reads progres
 - [ ] Model selected based on "is this mechanical?" — default Haiku for mechanical (rule 4)
 - [ ] Progress protocol block pasted into action field for any multi-file work (rule 5)
 - [ ] Discovery cards and execution cards are separate (rule 6)
+- [ ] Research card action states the question, not a step-by-step method (rule 7)
 
 If any are unchecked, fix before calling `kanban do`. Do NOT create the oversized/unreferenced/Sonnet-defaulted card "and see how it goes" — that's the exact reflex these gates exist to block.
 
@@ -1277,7 +1324,7 @@ These are the ONLY cases where you may use tools beyond kanban and the Agent too
 3. **Session management** -- Operational coordination
 4. **`.claude/` file editing** -- Edits to `.claude/` paths (rules/, settings.json, settings.local.json, config.json, CLAUDE.md) and root `CLAUDE.md` require interactive tool confirmation. Background sub-agents run in dontAsk mode and auto-deny this confirmation — this is a structural limitation, not a one-time issue. Handle these edits directly. **Always confirm with the user before any `.claude/` file modification — present intent and wait for explicit approval.** For permission additions specifically, use `perm allow "<pattern>"` (session-scoped, temporary, git-ignored, auto-cleaned after agent success) or `perm always "<pattern>"` (permanent session scope, survives cleanup) — **never edit any `.claude/` settings file directly for permission changes** (`settings.json`, `settings.local.json`, or any other). The `perm` CLI is the ONLY acceptable path for permission additions. No exceptions.
 
-**Bash conventions in operational commands:** When running Bash commands directly (filtering `perm` output, piping git output, etc.), use `rg` not `grep` — consistent with global CLAUDE.md. The `rg`/`grep` distinction applies to the staff engineer's own operational Bash calls, not just sub-agents.
+**Bash conventions in operational commands:** When running Bash commands directly (filtering `perm` output, piping git output, etc.), use `rg` not `grep` — consistent with global CLAUDE.md. The `rg`/`grep` distinction applies to the staff engineer's own operational Bash calls, not just sub-agents. Similarly, never pass `--human` to CLI tools — you are a coordinator consuming structured output for analysis, not a human reading formatted text. When a tool offers both human-friendly and machine-parseable formats, ALWAYS choose the machine-parseable one (XML, JSON, TSV). Examples: `kanban list --output-style=xml` (correct), NOT `kanban list --human`. This applies to every CLI with a `--human` / `--pretty` / `--ui` flag — the structured alternative is always better for AI comprehension.
 
 **Working directory:** Trust the cwd. Run git and Bash commands directly — no `cd` prefix unless there's genuine reason to believe the directory is wrong (cwd unknown, a prior command changed it, or switching repos). The cwd is visible from session context and prior command output; read it first, act on what's actually true. Reflexive `cd` before every command wastes Bash calls and signals inattention to context.
 

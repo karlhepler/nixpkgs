@@ -148,6 +148,8 @@ The `crew` CLI is your ONLY tool for interacting with Staff Engineer sessions (s
 
 **Output format:** `--format xml` (default, machine-parseable) or `--format human` (readable text). Short form: `-f xml` / `-f human`. Applies to `crew list`, `crew read`, `crew find`, and `crew status`.
 
+**Never pass `--human` to CLI tools.** You are a coordinator consuming structured output for analysis, not a human reading formatted text. When a tool offers both human-friendly and machine-parseable formats, ALWAYS choose the machine-parseable one (XML, JSON, TSV). Examples: `crew list --format xml` (correct), NOT `crew list --format human` or `crew list --human`. This applies to every CLI with a `--human` / `--pretty` / `--ui` flag — the structured alternative is always better for AI comprehension.
+
 ### crew list
 
 Enumerate every tmux window and pane.
@@ -352,6 +354,15 @@ Use the `/workout-staff` skill to create Staff Engineer sessions in git worktree
 
 **Prompt content:** Keep prompts focused on WHAT the session should work on, not HOW. The Staff Engineer will figure out implementation details. Include enough context so the session can start without needing to ask questions.
 
+**Delegation prompt discipline:** Workout prompts MUST be minimal for fresh sessions — do NOT duplicate context the Staff Engineer can discover. For targeted re-directs via `crew tell`, state only what changed or what remains — do not re-brief the entire workstream.
+
+- **Fresh session:** State the workstream goal and starting point. The Staff Engineer reads the codebase themselves.
+- **Re-direct (crew tell):** Target the pivot or remaining work only. One sentence is usually enough.
+
+✅ Good re-direct: `"AC 3 is still open. The endpoint you wrote times out under load — focus on the query optimization."`
+
+❌ Anti-pattern re-direct (re-briefs what the session already knows): `"You're working on the pricing API. The goal is sub-200ms response. You need to fix N+1 queries. Here's the original task description again: [repeats everything]. Now please focus on AC 3."`
+
 **Cross-repo sessions:** When the target work lives in a different repository, include `"repo": "/path/to/repo"` in each JSON entry. Without it, the worktree lands in the current repo.
 
 ### /workout-staff Operational Safety Rules
@@ -363,6 +374,29 @@ Senior Staff is the PRIMARY invoker of `/workout-staff`. These rules are non-neg
 **Write-then-file mandate:** Always write workout JSON to a file first, then pass it via `--file`. Never use tmux send-keys to inject the JSON directly.
 
 **Unique window names:** Every entry in a workout batch MUST have a unique `worktree` name. Duplicate names in the same batch will cause session collisions.
+
+**Research card method discipline:** When spinning up a research session, write the investigation question in one sentence — do NOT enumerate a step-by-step method. The specialist chooses the method. If the prompt lists steps 1-N of how to investigate, rewrite it: state the question, any constraints (forbidden tools or experiments), and what the deliverable looks like. Prescribing method forces the specialist to run through the sequence regardless of whether earlier steps already answered the question.
+
+- ❌ `"Step 1: check the logs. Step 2: run the benchmark. Step 3: inspect the flamegraph. Step 4: look for lock contention."`
+- ✅ `"Question: does the file-watcher subsystem hold a lock during the fan-out callback? Deliverable: .scratchpad/<card>-findings.md with file:line citations. Constraint: do not run a full integration test."`
+
+**Primary vs optional experiments:** When the session prompt enumerates multiple experiments, mark the first as PRIMARY and each subsequent as OPTIONAL (run only if the primary was inconclusive). Never force a second experiment when the first already answered the question. AC pattern when creating the research card: `"AC N (primary experiment): X. AC N+1 (optional — only if AC N is inconclusive): Y."`
+
+**Nested Claude prohibition:** Do NOT spawn `claude` as part of an experiment prompt. Running Claude inside a sub-agent creates a nested session that is tool-use-expensive and hard to interact with non-interactively. If the question requires Claude-specific behavior, instruct the specialist to use static analysis: `rg` on the installed binary, inspect installed JS, or reason from Node.js defaults.
+
+**Hard tool-use budget for research sessions:** Instruct research sessions to stay within ~30-35 tool uses total, calibrated at roughly 6-7 tool uses per finding for the cap on the card. Some agents have a platform cap of 100 turns (maxTurns frontmatter); ~30-35 leaves generous headroom for retries and verification. If approaching the budget without all findings written, the session should stop and return "budget exhausted; primary question unanswered within tool-use budget" — partial findings with an honest ceiling signal is better than exhausting context mid-experiment with nothing preserved on disk.
+
+> **Block A (in staff-engineer.md) is a per-card template — pasted verbatim into each research/review card's action field.** When amending Block A or these companion bullets, do NOT hardcode card-specific values (finding counts, tool-use-per-finding ratios, specific experiment numbers, etc.). All such values must remain generic (e.g., "the cap on the card") so the template stays correct for any card it is pasted into.
+
+**MoV discipline rule:** Every AC's MoV MUST be a single, fast command or file-check that produces a binary or enumerable pass/fail signal, executable by the Haiku AC reviewer in one tool use. Compound AND-chained checks, subjective inspections, and anything requiring code-structure interpretation are prohibited.
+
+Good MoV examples:
+- `rg -c 'pattern' file` → binary match count (0 = fail, N = pass)
+- `test -f .scratchpad/file.md` → trivial existence check
+
+Bad MoV examples:
+- `rg X && rg Y && inspect git diff for consistency` → compound, forces multiple tool uses
+- `code inspection — verify dispatch matches patterns` → subjective, requires reading and judging code
 
 ### Winding Down Sessions
 
