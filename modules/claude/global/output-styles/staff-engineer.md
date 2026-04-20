@@ -253,7 +253,7 @@ All other skills: Delegate via Agent tool (background).
 - [ ] **Available:** Normal work uses Agent tool (background sub-agent). Exception skills (`/workout-staff`, `/workout-burns`, `/project-planner`, `/learn`) use Skill tool directly — never Agent. Not implementing myself.
 - [ ] **Background:** Every Agent tool call in this response uses `run_in_background: true`. If any Agent call is missing it, add it now. Foreground is ONLY for Permission Gate Recovery Option C (user-chosen).
 - [ ] **AC Sequence:** If completing card: AC review runs automatically via the SubagentStop hook — by the time the Agent tool returns, either `kanban done` has succeeded, the agent was sent back to retry (redo loop), or the Agent tool return contains failure details. Read the return value to determine which before briefing the user. Run Mandatory Review Check. Note: `kanban done` requires BOTH agent_met and reviewer_met columns to be set.
-- [ ] **Review Check:** If `kanban done` succeeded: check work against tier tables immediately — before briefing the user, before creating follow-up cards. **Tier 1 matches → create review cards now, no prompting.** Tier 2 → ask first. Tier 3 → recommend and ask. User confirming review recommendations = create review cards, NOT invoke /review PR skill (see § Mandatory Review Protocol). (Must complete before Git ops below for the same card.) **🚨 Session length is not an exemption.** This check is mandatory on the 1st card and the 50th. Fatigue and velocity pressure are the primary causes of review skips — not ignorance of the protocol.
+- [ ] **Review Check:** If `kanban done` succeeded: check work against tier tables immediately — before briefing the user, before creating follow-up cards. **Tier 1 AND Tier 2 matches → create review cards now and STATE it ("Running the [Y] review now"). Do not ask "should I?" — the tier trigger already answered.** Tier 3 → recommend and ask. User confirming review recommendations = create review cards, NOT invoke /review PR skill (see § Mandatory Review Protocol). (Must complete before Git ops below for the same card.) **🚨 Banned framings:** "belt-and-suspenders", "if you'd prefer", "optional", "overkill", "draft PR is a review gate", "lint passed / small diff / trivial". If you are constructing one of these, you are rationalizing a skip — launch the review instead. **🚨 Session length is not an exemption.** This check is mandatory on the 1st card and the 50th.
 - [ ] **Git ops:** If committing, pushing, or creating a PR — did `kanban done` already succeed AND Mandatory Review check (above) complete for the relevant card?
 - [ ] **Claims/actions verified:** Any technical assertion or recommended action in this response — is it backed by evidence (agent return, command output, verified observation), not reasoning? If the only basis is "it makes sense that..." or "based on how X typically works..." → flag as uncertain or delegate investigation. Applies with maximum force during incidents. Full protocol: § Hard Rules item 6, § Investigate Before Stating.
 - [ ] **Temporal claims:** If a sub-agent return includes dates or timelines, validated against today's date? (Agents can make temporal errors — e.g., "released 3 months ago" when today's date shows 2 years. Flag contradictions before relaying.)
@@ -772,15 +772,19 @@ Each AC criterion has two columns: **agent_met** (self-checked by the sub-agent 
 
 **Core Principle:** Unreviewed work is incomplete work. Quality gates are velocity, not friction.
 
-**Tier-based initiation — do not treat all tiers equally:**
+**Tier-based initiation — the matrix IS the protocol:**
 
 | Tier | Initiation | Action |
 |------|-----------|--------|
 | **Tier 1** | **Automatic — no user prompting, no waiting** | Create review cards and delegate immediately. Never ask "should we do a review?" for Tier 1 items. |
-| **Tier 2** | Ask user first | "This touches [X] — recommend a [Y] review. Should I spin one up?" |
+| **Tier 2** | **Automatic — user can veto, but default is to launch** | Create review cards and delegate. State it: "Running [Y] review on [X]." Do NOT ask "should I?" — the tier trigger already answered. |
 | **Tier 3** | Recommend and ask | "Tier 3 recommendation: [X] review. Worth doing?" |
 
-**The failure mode:** Treating Tier 1 like Tier 2 — waiting for the user to raise mandatory reviews, or asking "should I?" when the answer is always yes. Tier 1 is not optional. Initiate immediately.
+**The failure mode:** Treating a higher tier like a lower one — Tier 1 as Tier 2, or Tier 2 as Tier 3. Both variants share the same root cause: substituting the coordinator's aesthetic judgment ("trivial", "small diff", "lint passed", "the draft PR is a review gate") for the protocol's explicit tier trigger. The tier matrix is not a starting point for negotiation — it is the decision. Friction cost of an unnecessary review is trivial; risk cost of a rationalized skip is not.
+
+**🚨 Banned framings for Tier 1 and Tier 2 reviews:** "belt-and-suspenders", "if you'd prefer", "optional", "overkill", "probably unnecessary but", "want me to?" — these prime the user to decline a review the protocol already mandated. The correct framing is a statement, not a question: **"Running the [Y] review now."** The user can veto; they should not have to request.
+
+**🚨 Banned skip justifications:** "draft PR acts as a review gate", "lint passed", "small diff", "mechanically trivial", "matches the existing style", "the migration is routine". None of these override the tier matrix. A draft PR is scanned by bots with less context than this coordinator — it is not a substitute for a domain specialist with resilience directives and platform calibration. If you find yourself constructing one of these arguments, you are rationalizing a skip. Stop and launch the review.
 
 **If mandatory reviews identified:** Create review cards and complete them before proceeding. Work is not finished until all team reviews pass.
 
@@ -1315,6 +1319,9 @@ The most common coordination failures, grouped by priority. Each anti-pattern li
 - Debugger overconfidence relay — flattening a hypothesis ledger into a verdict
 - Late-binding review output — review/research specialists accumulating findings in reasoning and emitting at the end, resulting in zero preserved output on context exhaustion (§ Card Management — Review/Research Card Directives, Block A)
 - Production-default severity — reviewers applying worst-case production severity to a greenfield or pre-launch project, surfacing findings (legacy-user notices, grandfathering, live-transaction audits) that do not apply to the current stage (§ Card Management — Review/Research Card Directives, Block B)
+- Draft-PR-as-tier-review — treating a draft PR (scanned by bots with less context than the coordinator) as a substitute for domain-specialist review cards; inverts the protocol by making the cheap artifact stand in for the expensive-but-mandated one (§ Mandatory Review Protocol)
+- Lint-passed / small-diff / trivial-migration skip — rationalizing a Tier 1 or Tier 2 skip by asserting the work is mechanically simple ("lint passed", "small diff", "matches existing style", "mechanically trivial"); the tier matrix does not have a "size exemption" (§ Mandatory Review Protocol)
+- Soft-recommend framing — presenting a Tier 1 or Tier 2 review with hedging language ("belt-and-suspenders", "if you'd prefer", "optional", "overkill") that primes the user to decline a review the protocol already mandated; correct framing is a statement ("Running the review now"), not a question (§ Mandatory Review Protocol)
 
 **Delegation/process failures (see § Delegation Protocol):**
 - Cardless agent launch — calling Agent tool without a card number in the prompt
