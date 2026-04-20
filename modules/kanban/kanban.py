@@ -692,6 +692,125 @@ def create_card_in_column(root: Path, column: str, card: dict) -> int:
     return num
 
 
+def validate_criteria_schema(criteria: list) -> None:
+    """Validate criteria against the V4 structured schema.
+
+    Rules:
+    - Every criterion must have mov_type: 'programmatic' or 'semantic'.
+      Missing mov_type is rejected (no default — greenfield only, no backward compat).
+    - Programmatic criteria must have mov_command (non-empty string).
+    - Programmatic criteria must have mov_timeout (integer, 1-300). MANDATORY.
+    - mov_command must pass bash -n syntax check.
+    - Semantic criteria must have mov_command: null (or absent).
+
+    Raises SystemExit on any validation failure.
+    """
+    for i, criterion in enumerate(criteria, start=1):
+        if not isinstance(criterion, dict):
+            print(f"Error: Criterion {i} must be an object, got {type(criterion).__name__}", file=sys.stderr)
+            sys.exit(1)
+
+        text = criterion.get("text", "")
+        if not text or not str(text).strip():
+            print(f"Error: Criterion {i} missing required 'text' field", file=sys.stderr)
+            sys.exit(1)
+
+        mov_type = criterion.get("mov_type")
+        if mov_type is None:
+            print(
+                f"Error: Criterion {i} ('{text[:60]}') missing required 'mov_type' field. "
+                f"Must be 'programmatic' or 'semantic'.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        if mov_type not in ("programmatic", "semantic"):
+            print(
+                f"Error: Criterion {i} has invalid mov_type '{mov_type}'. "
+                f"Must be 'programmatic' or 'semantic'.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        mov_command = criterion.get("mov_command")
+        mov_timeout = criterion.get("mov_timeout")
+
+        if mov_type == "programmatic":
+            # mov_command: required, non-empty string
+            if not mov_command or not str(mov_command).strip():
+                print(
+                    f"Error: Criterion {i} ('{text[:60]}') is programmatic but has no mov_command.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+
+            # mov_timeout: MANDATORY for programmatic, integer 1-300
+            if mov_timeout is None:
+                print(
+                    f"Error: Criterion {i} ('{text[:60]}') is programmatic but mov_timeout is missing. "
+                    f"mov_timeout is required (integer, 1-300 seconds).",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+
+            if not isinstance(mov_timeout, int) or isinstance(mov_timeout, bool):
+                print(
+                    f"Error: Criterion {i} ('{text[:60]}') mov_timeout must be an integer, "
+                    f"got {type(mov_timeout).__name__}.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+
+            if mov_timeout < 1 or mov_timeout > 300:
+                print(
+                    f"Error: Criterion {i} ('{text[:60]}') mov_timeout {mov_timeout} is out of range. "
+                    f"Must be 1-300 seconds.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+
+            # bash -n syntax check: validate mov_command before accepting the card
+            try:
+                result = subprocess.run(
+                    ["bash", "-n", "-c", mov_command],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                if result.returncode != 0:
+                    error_detail = result.stderr.strip() if result.stderr.strip() else "(no detail)"
+                    print(
+                        f"Error: Criterion {i} ('{text[:60]}') mov_command failed bash -n syntax check:\n"
+                        f"  Command: {mov_command}\n"
+                        f"  bash -n error: {error_detail}",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
+            except subprocess.TimeoutExpired:
+                print(
+                    f"Error: Criterion {i} bash -n syntax check timed out for command: {mov_command}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+
+        else:
+            # Semantic: mov_command must be null/absent, mov_timeout must be null/absent
+            if mov_command is not None:
+                print(
+                    f"Error: Criterion {i} ('{text[:60]}') is semantic but has mov_command set. "
+                    f"Set mov_command to null for semantic criteria.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            if mov_timeout is not None:
+                print(
+                    f"Error: Criterion {i} ('{text[:60]}') is semantic but has mov_timeout set. "
+                    f"Set mov_timeout to null for semantic criteria.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+
+
 def validate_and_build_card(data: dict, session: str | None) -> dict:
     """Validate card data and build card dict.
 
@@ -754,6 +873,12 @@ def validate_and_build_card(data: dict, session: str | None) -> dict:
     if not criteria_check:
         print("Error: At least one acceptance criterion required. Add \"criteria\": [\"...\"] to JSON.", file=sys.stderr)
         sys.exit(1)
+
+    # Validate new structured criteria schema (V4): mov_type, mov_command, mov_timeout
+    # Only validate object criteria (string criteria are legacy/simple; they pass through unchanged)
+    object_criteria = [c for c in criteria_check if isinstance(c, dict)]
+    if object_criteria:
+        validate_criteria_schema(object_criteria)
 
     # Remove readFiles entries that are already in editFiles (editing implies reading)
     edit_files = card.get("editFiles", [])
@@ -1440,15 +1565,31 @@ def _find_criterion_idx(criteria: list, criterion_arg: str) -> int | None:
 
 
 def cmd_criteria_check(args) -> None:
-    """Mark acceptance criterion(s) as met (sets agent_met)."""
+    """Mark acceptance criterion(s) as met (sets agent_met).
+
+    For programmatic criteria (mov_type == 'programmatic'), executes mov_command
+    and sets agent_met only on exit code 0.
+
+    Exit code classification:
+      0   → pass (agent_met = True)
+      127 → command not found (kanban exits 10)
+      126 → permission denied (kanban exits 10)
+      2   → bash syntax error at runtime (kanban exits 10)
+      124 → timeout (kanban exits 11 with clear message)
+      other nonzero → work failure (kanban exits 1 with full diagnostics)
+    """
     root = get_root(args.root)
     card_path = find_card(root, args.card)
     card = read_card(card_path)
+    num = card_number(card_path)
 
     criteria = card.get("criteria", [])
     if not criteria:
-        print(f"Error: Card #{card_number(card_path)} has no acceptance criteria", file=sys.stderr)
+        print(f"Error: Card #{num} has no acceptance criteria", file=sys.stderr)
         sys.exit(1)
+
+    # Use process cwd (where agent invoked kanban)
+    working_dir = os.getcwd()
 
     for criterion_arg in args.n:
         criterion_idx = _find_criterion_idx(criteria, criterion_arg)
@@ -1456,8 +1597,69 @@ def cmd_criteria_check(args) -> None:
             print(f"Error: No criterion found matching '{criterion_arg}'", file=sys.stderr)
             sys.exit(1)
 
-        criteria[criterion_idx]["agent_met"] = True
-        print(f"✅ Checked: {criteria[criterion_idx]['text']}")
+        criterion = criteria[criterion_idx]
+        mov_type = criterion.get("mov_type")
+        mov_command = criterion.get("mov_command")
+        mov_timeout = criterion.get("mov_timeout")
+        text = criterion.get("text", "")
+        display_n = criterion_arg if str(criterion_arg).isdigit() else (criterion_idx + 1)
+
+        if mov_type == "programmatic" and mov_command:
+            # Execute mov_command and classify exit code
+            timeout_secs = mov_timeout
+            try:
+                result = subprocess.run(  # runs mov_command via shell=True
+                    mov_command,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout_secs,
+                    cwd=working_dir,
+                    env=os.environ.copy(),
+                )
+                rc = result.returncode
+
+                if rc == 0:
+                    criteria[criterion_idx]["agent_met"] = True
+                    print(f"Criterion {display_n} passed: {text}")
+                elif rc in (127, 126):
+                    # mov_error: command not found or permission denied
+                    print(f"Criterion {display_n} check ERROR (exit {rc}).", file=sys.stderr)
+                    print(f"  Command: {mov_command}", file=sys.stderr)
+                    print(f"  Exit code: {rc}", file=sys.stderr)
+                    if result.stdout.strip():
+                        print(f"  Stdout: {result.stdout.rstrip()}", file=sys.stderr)
+                    if result.stderr.strip():
+                        print(f"  Stderr: {result.stderr.rstrip()}", file=sys.stderr)
+                    if rc == 127:
+                        print("  Cause: command not found", file=sys.stderr)
+                    else:
+                        print("  Cause: permission denied (command not executable)", file=sys.stderr)
+                    sys.exit(10)
+                else:
+                    # Work failure: command ran but the criterion is not met
+                    print(f"Criterion {display_n} check FAILED.", file=sys.stderr)
+                    print(f"  Command: {mov_command}", file=sys.stderr)
+                    print(f"  Exit code: {rc}", file=sys.stderr)
+                    if result.stdout.strip():
+                        print(f"  Stdout: {result.stdout.rstrip()}", file=sys.stderr)
+                    if result.stderr.strip():
+                        print(f"  Stderr: {result.stderr.rstrip()}", file=sys.stderr)
+                    sys.exit(1)
+
+            except subprocess.TimeoutExpired:
+                print(
+                    f"Criterion {display_n} check TIMED OUT after {timeout_secs}s.\n"
+                    f"  Command: {mov_command}\n"
+                    f"  The command did not complete within the mov_timeout window ({timeout_secs}s).\n"
+                    f"  Result is ambiguous — verify manually.",
+                    file=sys.stderr,
+                )
+                sys.exit(11)
+        else:
+            # Semantic path: unconditional check (defers verification to AC reviewer)
+            criteria[criterion_idx]["agent_met"] = True
+            print(f"Checked: {text}")
 
     card["updated"] = now_iso()
     write_card(card_path, card)
@@ -1636,6 +1838,15 @@ def format_card_xml(card: dict, num: str, col: str, include_details: bool = Fals
                 fail_reason = criterion.get("reviewer_fail_reason", "")
                 if fail_reason:
                     ac_attrs += f' reviewer-fail-reason="{esc(fail_reason)}"'
+                mov_type = criterion.get("mov_type")
+                mov_command = criterion.get("mov_command")
+                mov_timeout = criterion.get("mov_timeout")
+                if mov_type:
+                    ac_attrs += f' mov-type="{esc(str(mov_type))}"'
+                if mov_command:
+                    ac_attrs += f' mov-command="{esc(str(mov_command))}"'
+                if mov_timeout is not None:
+                    ac_attrs += f' mov-timeout="{mov_timeout}"'
                 xml_parts.append(f"    <ac {ac_attrs}>{text}</ac>")
             xml_parts.append("  </acceptance-criteria>")
 
@@ -1842,6 +2053,19 @@ def format_criteria_table(criteria: list, indent: str = "  ", terminal_width: in
         # Continuation lines: blank num/status cells, only criterion text
         for continuation in wrapped_lines[1:]:
             lines.append(f"{continuation_prefix}{continuation}")
+
+        # MoV metadata line: show mov_type + mov_command + mov_timeout if present
+        mov_type = criterion.get("mov_type")
+        mov_command = criterion.get("mov_command")
+        mov_timeout = criterion.get("mov_timeout")
+        if mov_type is not None:
+            mov_parts = [f"mov_type: {mov_type}"]
+            if mov_command is not None:
+                mov_parts.append(f"mov_command: {mov_command}")
+            if mov_timeout is not None:
+                mov_parts.append(f"mov_timeout: {mov_timeout}s")
+            mov_line = "  ".join(mov_parts)
+            lines.append(f"{continuation_prefix}{mov_line}")
 
     return lines
 

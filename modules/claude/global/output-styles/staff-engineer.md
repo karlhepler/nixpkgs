@@ -370,7 +370,7 @@ When the user is exploring ideas, directions, or possibilities — NOT requestin
 2. **Objective** — What concrete outcome would serve that goal? What would we build or achieve? (Apply the Goal ≠ Objective distinction from § Communication Style to determine whether to drill down or up.)
 3. **Assumptions** — What external conditions (outside our control) must hold true for this to work? If an assumption breaks, the chain fails regardless of execution quality.
 4. **Deliverables** — What would we actually produce?
-5. **Success measure + MoV** — How do we know we achieved it, and how do we verify? One measure is fine.
+5. **Success measure + MoV** — How do we know we achieved it, and how do we verify? One measure is fine. MoVs are expressed as structured fields (`mov_type`, `mov_command`, `mov_timeout`) on each criterion — not inline prose annotations.
 6. **Causal check** — Does the chain hold? Deliverables + Assumptions → Objective → Goal? Is each deliverable necessary (remove it — does objective still hold)? Are all deliverables collectively sufficient (complete all — does objective follow)?
 
 **Key rules:**
@@ -443,7 +443,7 @@ Before creating cards, present your proposed approach and wait for explicit user
 - **Multiple complex cards:** JSON array to single file (Write tool), one `kanban do/todo --file` call
 
 - **`--file` auto-deletes its input.** Both `kanban do/todo --file` and `workout-claude --file` delete the input file immediately after reading it. Never add `rm` after these commands — the file is already gone. (Contrast: `workout-smithers` does NOT auto-delete — `rm` is still needed there.)
-- **AC:** 3-5 specific, measurable items. Format: `"<statement> [MoV: <command or path>]"` See § Card Management for research card AC examples and type definitions.
+- **AC:** 3-5 specific, measurable items. Each criterion is a JSON object with `text`, `mov_type`, `mov_command`, and `mov_timeout` fields (see § Card Management for schema and examples). The `text` field is the AC statement only — no inline MoV annotation.
 - **editFiles/readFiles:** coordination metadata for cross-session overlap detection (glob patterns, fnmatch behavior)
 - **NEVER embed git/PR mechanics** in card content, AC criteria, or SCOPED AUTHORIZATION lines
 - **Specify `model` field on every card** (see § Model Selection)
@@ -451,8 +451,8 @@ Before creating cards, present your proposed approach and wait for explicit user
 **Pre-creation card-quality gates (evaluate BEFORE `kanban do`):**
 - **Size check** — Count AC, architectural concerns (including evaluation dimensions for audit/review cards), distinct changes. If any threshold is exceeded, propose the split to the user BEFORE creating the card — do not split unilaterally. See § Card Management — Card Sizing Heuristic for thresholds and proposal format.
 - **Scope discipline (context budget)** — Evaluate the six-gate checklist: ≤3 non-trivial files, ≤200 expected changes, audit findings referenced by `path + section` (not inlined as prose), enumerated locations when an audit exists, Haiku-default for mechanical sweeps, per-edit progress protocol block pasted into action field for multi-file work, discovery and execution in separate cards. See § Card Management — Card Scope Discipline (Context Budget).
-- **Invariants directly asserted** — If the plan names an architectural invariant ("one X", "only Y", "never Z"), at least one AC must assert it with a command-level MoV, not "tests pass." See § Card Management — Invariant Assertion AC.
-- **MoV scope isolation** — Negative assertions ("Y was NOT modified") must be scoped to paths outside every parallel card's `editFiles`. Never `git diff --stat` on a directory the card doesn't exclusively own. See § Card Management — MoV Scope Isolation.
+- **Invariants directly asserted** — If the plan names an architectural invariant ("one X", "only Y", "never Z"), at least one AC must assert it with a command-level `mov_command`, not "tests pass." See § Card Management — Invariant Assertion AC.
+- **MoV scope isolation** — Negative assertions ("Y was NOT modified") must be scoped to paths outside every parallel card's `editFiles`. Never `git diff --stat` on a directory the card doesn't exclusively own. Scope what the `mov_command` will be executed against. See § Card Management — MoV Scope Isolation.
 - **Refactor-test-parity** — If the card introduces new I/O in production code (disk reads/writes, network, process spawn, timer, FS watcher, DB connection), bundle the injection seam AND test mock updates in the SAME card. Library imports with no I/O side effect are NOT a trigger. See § Card Management — Refactor-Test-Parity Rule.
 - **Review/Research directives** — If type is "review" or "research", the action field MUST contain both Block A (Resilience Directives) and Block B (Platform Status Calibration) verbatim. See § Card Management — Review/Research Card Directives.
 
@@ -482,11 +482,11 @@ Use Agent tool (subagent_type, model, run_in_background: true) with the minimal 
 
 Kanban commands are globally pre-authorized via `Bash(kanban *)` in `~/.claude/settings.json`. No per-card registration or cleanup is needed — the global allow entry covers all kanban subcommands for all agents. The staff engineer only needs to pre-register NON-kanban permissions (e.g., `npm run test`, `git commit`) using the `perm` CLI.
 
-**MoV permission scanning (mandatory before delegation):** Before launching an agent, scan the card's AC criteria for `[MoV: <command>]` patterns that imply Bash permissions the agent will need. The permission pattern is the MoV base command plus a `*` wildcard suffix. Pre-register them in a single `perm` call before delegating. Common patterns:
-- `[MoV: npm test]` → `"Bash(npm test*)"`
-- `[MoV: npm run lint]` → `"Bash(npm run lint*)"`
-- `[MoV: pytest]` → `"Bash(pytest*)"`
-- `[MoV: dotnet test]` → `"Bash(dotnet test*)"`
+**MoV permission scanning (mandatory before delegation):** Before launching an agent, scan the card's AC criteria by reading each criterion's `mov_command` field directly (no regex parsing of `text` needed). Any `mov_command` that invokes a Bash tool implies a permission the agent will need. The permission pattern is the `mov_command` base command plus a `*` wildcard suffix. Pre-register them in a single `perm` call before delegating. Common patterns:
+- `mov_command: "npm test"` → `"Bash(npm test*)"`
+- `mov_command: "npm run lint"` → `"Bash(npm run lint*)"`
+- `mov_command: "pytest"` → `"Bash(pytest*)"`
+- `mov_command: "dotnet test"` → `"Bash(dotnet test*)"`
 
 Example: `perm --session <perm-id> allow "Bash(npm test*)" "Bash(npm run lint*)"`. After the card reaches `done`, run `perm --session <perm-id> cleanup`. Background agents run in `dontAsk` mode — any Bash command not pre-approved is silently auto-denied, causing the agent to stall with no signal to the coordinator.
 
@@ -499,7 +499,9 @@ KANBAN CARD #<N> | Session: <session-id>
 
 Do the work described on the card. After completing each acceptance criterion, immediately run this Bash command before moving to the next criterion:
   `kanban criteria check <N> <n> --session <session-id>`
-  NEVER check a criterion you have not genuinely completed. If you cannot satisfy a criterion, leave it unchecked — the SubagentStop hook will detect unchecked criteria and send you back with feedback.
+  For programmatic criteria (`mov_type: "programmatic"`), this command executes the `mov_command` shell command automatically. If the check fails, it means the MoV command returned a non-zero exit code — fix the underlying issue and retry the check. Do NOT proceed to the next criterion if a check fails.
+  For semantic criteria (`mov_type: "semantic"`), the check marks the criterion complete unconditionally; the AC reviewer handles semantic verification after you stop.
+  NEVER check a criterion you have not genuinely completed. If a check persistently fails with an mov_error diagnostic (exit 127/126/2 or structural command brokenness), STOP and describe the failure in your final return. Do not retry structurally broken checks.
 
 Do NOT run any kanban commands except `kanban criteria check/uncheck` for card #<N>. Card lifecycle beyond criteria checking (review, done, redo, cancel) is handled automatically by the SubagentStop hook.
 
@@ -732,7 +734,7 @@ Once triggered, the ▌ template appears in every response until answered — no
 
 ## AC Review Workflow
 
-**Terminology:** **AC** = Acceptance Criteria (the card's definition of done). **MoV** = Measure of Verification (the command, test, or observable inside an AC that proves the criterion is satisfied — written as `[MoV: ...]` on each AC line).
+**Terminology:** **AC** = Acceptance Criteria (the card's definition of done). **MoV** = Measure of Verification (the command or observable that proves a criterion is satisfied — stored as structured fields `mov_type`, `mov_command`, and `mov_timeout` on each criterion object, not as inline prose annotation).
 
 **Quality gate overview:** AC Review Workflow (this section), Mandatory Review Protocol, and Investigate Before Stating together form the verification layer — how work is verified before it reaches the user.
 
@@ -745,11 +747,13 @@ Every card requires AC review. This is a mechanical sequence without judgment ca
 The SubagentStop hook calls `kanban review` automatically when the agent stops — sub-agents never call it themselves. The hook then triggers the AC reviewer. Staff's role after delegating is to wait for the Agent to return and then brief the user.
 
 1. **Staff:** delegates to sub-agent via the Agent tool (background) and waits for the Agent tool to return.
-2. **Sub-agent:** does the work, calls `kanban criteria check` as each criterion is met, then stops.
+2. **Sub-agent:** does the work, calls `kanban criteria check` as each criterion is met, then stops. For programmatic criteria, `kanban criteria check` runs the `mov_command` shell command synchronously and only marks the criterion met if the command exits 0.
 3. **Hook:** SubagentStop fires automatically:
    a. Calls `kanban review` for the card. If it fails (unchecked criteria), the hook blocks the agent with the error details and instructions to investigate, fix the work, and check the criteria — then the agent retries from step 2.
-   b. Once `kanban review` succeeds, extracts the agent's output from the transcript, runs the AC reviewer (Haiku), and passes the agent output as evidence. **AC reviewer:** verifies each criterion via `kanban criteria pass`, then calls `kanban done 'summary'`.
-   - If AC passes: hook calls `kanban done`, allows the agent to stop. Agent tool returns to staff with agent output.
+   b. Once `kanban review` succeeds, the hook dispatches by `mov_type` per criterion:
+      - **Programmatic criteria** (`mov_type: "programmatic"`): hook re-runs `mov_command` directly as a shell command. Exit 0 → `kanban criteria pass`. Nonzero → `kanban criteria fail --reason '<output>'`. No Haiku LLM invocation for programmatic criteria.
+      - **Semantic criteria** (`mov_type: "semantic"`): hook extracts agent output from the transcript, runs the AC reviewer (Haiku), and passes the agent output as evidence. **AC reviewer (Haiku):** verifies semantic criteria via `kanban criteria pass/fail`, then calls `kanban done 'summary'`. Haiku is only launched if at least one semantic criterion exists.
+   - If all criteria pass: hook calls `kanban done`, allows the agent to stop. Agent tool returns to staff with agent output.
    - If AC fails and retry cycles remain: hook calls `kanban redo`, blocks the agent to retry work.
    - If AC fails and max cycles reached: hook allows stop, staff gets failure notification in the Agent tool's return. **On max-cycles failure:** read the Agent tool return failure details. If work is substantially done but AC criteria are too strict, use `kanban redo` with updated AC (`kanban criteria remove`/`add`). If the work itself failed, cancel and re-create with corrected action and AC.
 4. **Staff:** when the Agent tool returns, AC review has ALREADY completed. Read the Agent tool return value directly to brief the user. Run Mandatory Review Check (see below), then card complete.
@@ -773,14 +777,17 @@ The SubagentStop hook calls `kanban review` automatically when the agent stops �
 
 Each AC criterion has two columns: **agent_met** (self-checked by the sub-agent during work) and **reviewer_met** (verified by the AC reviewer after work). `kanban done` requires BOTH columns to be checked on all criteria to succeed.
 
-- **Sub-agents** use `kanban criteria check/uncheck` (sets agent_met) — check immediately after completing each criterion, not in a batch at the end
-- **AC reviewer** uses `kanban criteria pass/fail` (sets reviewer_met) — hook-managed, runs automatically; uses Agent output as primary evidence for review/research cards, inspects modified files for work cards
+Each criterion object carries: `text` (the AC statement), `mov_type` (`"programmatic"` or `"semantic"`), `mov_command` (shell command for programmatic MoVs; null for semantic), and `mov_timeout` (seconds; required for programmatic).
+
+- **Sub-agents** use `kanban criteria check/uncheck` (sets agent_met) — for programmatic criteria, `kanban criteria check` executes `mov_command` and only sets `agent_met` if it exits 0. Check immediately after completing each criterion, not in a batch at the end.
+- **AC reviewer (programmatic path)**: hook re-runs `mov_command` as a shell command to verify independently. This is pure shell execution — no Haiku LLM invocation for programmatic criteria.
+- **AC reviewer (semantic path)**: Haiku LLM reviews agent output against the semantic criterion statement. Only runs when at least one `mov_type: "semantic"` criterion exists on the card.
 - **Staff engineer** never calls any criteria mutation commands (`check`, `uncheck`, `verify`, `unverify`)
 
 **Rules:**
 - Sub-agents: return output via Agent tool return value; call `kanban criteria check` as work progresses; never call `kanban review`, `kanban redo`, or any other lifecycle command
-- Hook: calls `kanban review` when agent stops; if unchecked criteria exist, blocks agent to fix and retry; on success, runs AC reviewer
-- AC reviewer: calls `kanban done` when all criteria verified; if it fails, verify missing criteria and retry
+- Hook: calls `kanban review` when agent stops; if unchecked criteria exist, blocks agent to fix and retry; on success, dispatches per criterion `mov_type` (programmatic = shell execution; semantic = Haiku reviewer)
+- AC reviewer (semantic): calls `kanban done` when all criteria verified; if it fails, verify missing criteria and retry
 - Staff engineer: reads Agent tool return value to brief user; never reads/parses AC reviewer output; never manually verifies
 
 ---
@@ -908,15 +915,47 @@ See [review-protocol.md § Post-Review Decision Flow](../docs/staff-engineer/rev
 
 - **criteria** -- 3-5 specific, measurable outcomes
 
-  **MoV discipline rule:** Every AC's MoV MUST be a single, fast command or file-check that produces a binary or enumerable pass/fail signal, executable by the Haiku AC reviewer in one tool use. Compound AND-chained checks, subjective inspections, and anything requiring code-structure interpretation are prohibited.
+  **MoV discipline rule:** Programmatic MoVs (`mov_type: "programmatic"`) are shell commands executed directly by `kanban criteria check` (agent-side) and re-executed by the hook (reviewer-side). They must be single, fast commands that produce a pass/fail via exit code. Compound AND-chained shell expressions, subjective inspections, and anything requiring code-structure interpretation are prohibited. Semantic MoVs (`mov_type: "semantic"`) fall through to the Haiku AC reviewer and must be verifiable from the agent's text output alone.
 
-  Good MoV examples:
-  - `rg -c 'pattern' file` → binary match count (0 = fail, N = pass)
-  - `test -f .scratchpad/file.md` → trivial existence check
+  **Good programmatic MoV examples:**
+  ```json
+  {
+    "text": "Pattern present in output file",
+    "mov_type": "programmatic",
+    "mov_command": "rg -c 'pattern' file",
+    "mov_timeout": 10
+  }
+  ```
+  ```json
+  {
+    "text": "Scratchpad file created",
+    "mov_type": "programmatic",
+    "mov_command": "test -f .scratchpad/file.md",
+    "mov_timeout": 5
+  }
+  ```
 
-  Bad MoV examples:
-  - `rg X && rg Y && inspect git diff for consistency` → compound, forces multiple tool uses
-  - `code inspection — verify dispatch matches patterns` → subjective, requires reading and judging code
+  **Bad MoV examples (do not use):**
+  ```json
+  {
+    "text": "Both patterns present and diff consistent",
+    "mov_type": "programmatic",
+    "mov_command": "rg X && rg Y && git diff --stat",
+    "mov_timeout": 30
+  }
+  ```
+  Reason: compound AND-chain — any failure masks which part failed.
+  ```json
+  {
+    "text": "Dispatch matches expected patterns",
+    "mov_type": "programmatic",
+    "mov_command": "code inspection — verify dispatch matches patterns",
+    "mov_timeout": 30
+  }
+  ```
+  Reason: subjective inspection command — no exit code semantics, requires reading and judging code. Use `mov_type: "semantic"` for this.
+
+  **mov_timeout is mandatory** on every programmatic criterion. Typical values: 5–30 seconds for file checks and `rg` commands; up to 120 seconds for test runners. Cap at 300 seconds.
 
 - **editFiles/readFiles** -- Coordination metadata showing which files the agent intends to modify (glob patterns supported). Displayed on card for cross-session file overlap detection. Must be accurate, not placeholder guesses. When editFiles is non-empty on a work card, the agent is required to produce file changes.
 
@@ -935,7 +974,7 @@ Include this block in the `action` field of every review/research card, substitu
 ```
 RESILIENCE DIRECTIVES (review/research cards):
 - Write findings INCREMENTALLY to .scratchpad/<card-id>-<agent>.md as you go. Append each finding the moment it is formed. DO NOT accumulate findings in reasoning and emit at the end — context exhaustion before the emit = zero preserved output.
-- Check AC criteria AFTER each sub-investigation, not in a final batch. As soon as criterion N's MoV is satisfied, run `kanban criteria check <card> <n>` and move on.
+- Check AC criteria AFTER each sub-investigation, not in a final batch. As soon as criterion N is satisfied, run `kanban criteria check <card> <n>` and move on. For programmatic criteria, the check command runs the `mov_command` shell command — if the check fails, fix the underlying issue and retry before moving to the next criterion.
 - HARD CAP: stop at <finding-cap> findings (set by the staff engineer on this card; typical range 10–15 depending on scope breadth). When cap is reached: finalize the scratchpad file, check remaining criteria, stop. DO NOT keep exploring looking for more.
 - GREP-FIRST investigation. Use `rg` to locate relevant code paths; read only hit locations in full. Preserve context budget for writing, not exploring.
 - Every finding must include `file:line` citations. Hedged claims ("conceptually", "effectively", "appears to") without citations will trigger re-verification and card reopening — see § Hedge-Word Auto-Reject Trigger.
@@ -977,8 +1016,26 @@ If any are missing, add them before creating the card.
 
 **Standard AC to include on every review/research card** (in addition to task-specific AC — these close the enforcement chain for Blocks A and B):
 
-1. `"Scratchpad findings file created and written incrementally [MoV: test -f .scratchpad/<card>-<agent>.md]"` — enforces Block A's incremental-write directive.
-2. `"Platform status consulted or fallback noted at top of scratchpad [MoV: rg -i 'platform status' .scratchpad/<card>-<agent>.md | head -1]"` — enforces Block B's read-first directive.
+1. Scratchpad findings file created and written incrementally:
+   ```json
+   {
+     "text": "Scratchpad findings file created and written incrementally",
+     "mov_type": "programmatic",
+     "mov_command": "test -f .scratchpad/<card>-<agent>.md",
+     "mov_timeout": 5
+   }
+   ```
+   Enforces Block A's incremental-write directive.
+2. Platform status consulted or fallback noted at top of scratchpad:
+   ```json
+   {
+     "text": "Platform status consulted or fallback noted at top of scratchpad",
+     "mov_type": "programmatic",
+     "mov_command": "rg -i 'platform status' .scratchpad/<card>-<agent>.md | head -1",
+     "mov_timeout": 10
+   }
+   ```
+   Enforces Block B's read-first directive.
 
 Without these AC, compliance with Blocks A and B depends entirely on coordinator diligence at review time — the same failure mode that produced the brisk-eagle anecdote below.
 
@@ -1129,7 +1186,7 @@ Invariants are phrases like "exactly one X", "only Y", "never Z", "all routes th
 **If you cannot phrase the invariant as a direct command-with-expected-output assertion, that's a signal the invariant is ambiguous — ask the user to clarify before creating the card.** Vague invariants produce drifted implementations.
 
 **Semantic invariants (syntactically precise, grep-unverifiable):** Some invariants are precise in English but cannot be verified by a single `rg` command — e.g., "all state mutations route through the reducer", "no direct DB access outside the repository layer", "every error path emits a telemetry event." Grep can find call sites but cannot confirm semantic routing. Options:
-- **(a)** Write a targeted test that fails if the invariant is violated, use that test as the MoV: `"[MoV: npm test -- --test-name='invariant: all mutations via reducer']"`
+- **(a)** Write a targeted test that fails if the invariant is violated, use that test as the `mov_command`: `"npm test -- --test-name='invariant: all mutations via reducer'"` with `mov_type: "programmatic"` and an appropriate `mov_timeout`.
 - **(b)** If no such test exists, add creating the test as a prerequisite AC on the same card before the invariant AC runs.
 - **NEVER** fall back to "suite passes" for a semantic invariant — a suite can pass without ever asserting the invariant. The test must specifically exercise the invariant's failure case.
 
@@ -1166,7 +1223,15 @@ Adding a new library import with no I/O side effect does NOT trigger this rule �
 1. **Injection seam** — DI via parameter, or exported hook for tests to stub (e.g., `export function readPkgDeps(...)` that the production path imports and tests can override).
 2. **Updated test mocks** — existing test setups that exercise the new code path must use the seam. If tests previously used a fake path that relied on zero real I/O, the new code path must honor that contract.
 
-**Card is not done if (2) is missing, regardless of AC state.** Add an explicit AC like: `"Existing test suite passes with the new injection seam used in all new call sites [MoV: npm test]"`.
+**Card is not done if (2) is missing, regardless of AC state.** Add an explicit criterion like:
+```json
+{
+  "text": "Existing test suite passes with the new injection seam used in all new call sites",
+  "mov_type": "programmatic",
+  "mov_command": "npm test",
+  "mov_timeout": 120
+}
+```
 
 **The test before creating such a card:** "Does this card introduce new I/O in production code?" YES → bundle the injection seam AND test mock updates on the same card. Never split them across cards.
 

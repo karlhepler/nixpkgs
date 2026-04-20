@@ -388,15 +388,49 @@ Senior Staff is the PRIMARY invoker of `/workout-staff`. These rules are non-neg
 
 > **Block A (in staff-engineer.md) is a per-card template — pasted verbatim into each research/review card's action field.** When amending Block A or these companion bullets, do NOT hardcode card-specific values (finding counts, tool-use-per-finding ratios, specific experiment numbers, etc.). All such values must remain generic (e.g., "the cap on the card") so the template stays correct for any card it is pasted into.
 
-**MoV discipline rule:** Every AC's MoV MUST be a single, fast command or file-check that produces a binary or enumerable pass/fail signal, executable by the Haiku AC reviewer in one tool use. Compound AND-chained checks, subjective inspections, and anything requiring code-structure interpretation are prohibited.
+> **Tool-use budget note:** For all-programmatic cards (all criteria have `mov_type: "programmatic"`), the SubagentStop hook skips the Haiku AC reviewer entirely — it re-runs each `mov_command` directly as a shell command. This eliminates ~10–60 seconds of Haiku LLM invocation latency and reduces token cost to zero for the review step. Budget estimates above are unchanged (they cover the agent's own tool uses, not the reviewer). Semantic criteria (`mov_type: "semantic"`) still spawn the Haiku reviewer — plan accordingly when mixed cards exist.
 
-Good MoV examples:
-- `rg -c 'pattern' file` → binary match count (0 = fail, N = pass)
-- `test -f .scratchpad/file.md` → trivial existence check
+**MoV discipline rule:** Programmatic MoVs (`mov_type: "programmatic"`) are shell commands executed directly by `kanban criteria check` at check time — no Haiku reviewer involvement for these criteria. They must be single, fast commands that produce a pass/fail via exit code. Semantic MoVs (`mov_type: "semantic"`) fall through to the Haiku AC reviewer. Compound AND-chained expressions, subjective inspections, and anything requiring code-structure interpretation are prohibited as programmatic MoVs.
 
-Bad MoV examples:
-- `rg X && rg Y && inspect git diff for consistency` → compound, forces multiple tool uses
-- `code inspection — verify dispatch matches patterns` → subjective, requires reading and judging code
+**Good programmatic MoV examples:**
+```json
+{
+  "text": "Pattern present in output file",
+  "mov_type": "programmatic",
+  "mov_command": "rg -c 'pattern' file",
+  "mov_timeout": 10
+}
+```
+```json
+{
+  "text": "Scratchpad file created",
+  "mov_type": "programmatic",
+  "mov_command": "test -f .scratchpad/file.md",
+  "mov_timeout": 5
+}
+```
+
+**Bad MoV examples (do not use):**
+```json
+{
+  "text": "Both patterns present and diff consistent",
+  "mov_type": "programmatic",
+  "mov_command": "rg X && rg Y && git diff --stat",
+  "mov_timeout": 30
+}
+```
+Reason: compound AND-chain — any failure masks which part failed.
+```json
+{
+  "text": "Dispatch matches expected patterns",
+  "mov_type": "programmatic",
+  "mov_command": "code inspection — verify dispatch matches patterns",
+  "mov_timeout": 30
+}
+```
+Reason: subjective — no exit code semantics. Use `mov_type: "semantic"` for this instead.
+
+**Agent escape hatch:** If a programmatic check persistently fails with an `mov_error` diagnostic (exit 127/126/2 or structural command brokenness), STOP and describe the failure in your final return. Do not retry structurally broken checks.
 
 ### Winding Down Sessions
 

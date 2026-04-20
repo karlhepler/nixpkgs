@@ -999,22 +999,25 @@ def _run_malfunction_retry(
     outer_session_id: str,
     working_directory: str,
 ) -> bool:
-    """Run a single AC review pass as a malfunction retry.
+    """Run up to two AC review passes as a malfunction retry.
 
     Uses build_malfunction_retry_prompt (stripped-down, transcript-based
     prompt) and the same subprocess pattern as run_inner_loop. Writes metrics
-    to claudit DB with iteration=99 as a sentinel for malfunction retry.
+    to claudit DB with iteration=99 and 100 as sentinels for the first and
+    second malfunction retry attempts respectively.
 
-    Returns True if the card reached done, False otherwise.
+    Makes two attempts before falling through — the first failure may be
+    stochastic (Haiku sometimes skips pass/fail calls); a second attempt
+    improves the odds of recovery before escalating to redo+block.
+
+    Returns True if the card reached done on either attempt, False otherwise.
     Does NOT wrap in try/except — caller is responsible for exception handling.
     """
-    log_info(f"Malfunction retry: launching single AC review pass for card #{card_number}")
+    _MALFUNCTION_RETRY_MAX_ATTEMPTS = 2
 
     prompt = build_malfunction_retry_prompt(card_number, session, transcript_path)
     ac_reviewer_system_prompt = read_ac_reviewer_agent_definition()
-
     ac_env = {**os.environ, "KANBAN_AGENT": "ac-reviewer", "CLAUDIT_ROLE": "ac-reviewer"}
-
     claude_cmd = [
         "claude", "-p", "--model", "haiku", "--max-turns", str(CLAUDE_MAX_TURNS),
         "--system-prompt", ac_reviewer_system_prompt,
@@ -1022,48 +1025,63 @@ def _run_malfunction_retry(
         "--dangerously-skip-permissions",
     ]
 
-    result = subprocess.run(
-        claude_cmd,
-        input=prompt,
-        capture_output=True,
-        text=True,
-        timeout=300,
-        env=ac_env,
+    for attempt in range(1, _MALFUNCTION_RETRY_MAX_ATTEMPTS + 1):
+        log_info(
+            f"Malfunction retry attempt {attempt}/{_MALFUNCTION_RETRY_MAX_ATTEMPTS}: "
+            f"launching AC review pass for card #{card_number}"
+        )
+
+        result = subprocess.run(
+            claude_cmd,
+            input=prompt,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            env=ac_env,
+        )
+
+        if result.stderr.strip():
+            log_info(f"Malfunction retry attempt {attempt} claude -p stderr: {result.stderr.strip()}")
+
+        # Parse JSON output and write metrics.
+        # Iteration sentinel: 99 = first retry attempt, 100 = second retry attempt.
+        if result.stdout.strip():
+            try:
+                json_response = json.loads(result.stdout)
+                usage = json_response.get("usage") or {}
+                input_tokens = int(usage.get("input_tokens", 0) or 0)
+                output_tokens = int(usage.get("output_tokens", 0) or 0)
+                cache_read_tokens = int(usage.get("cache_read_input_tokens", 0) or 0)
+                cache_write_tokens = int(usage.get("cache_creation_input_tokens", 0) or 0)
+
+                _claudit_write_ac_reviewer_metrics(
+                    outer_session_id=outer_session_id,
+                    kanban_session=session,
+                    card_number=card_number,
+                    working_directory=working_directory,
+                    iteration=98 + attempt,  # 99 = first attempt, 100 = second attempt
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    cache_read_tokens=cache_read_tokens,
+                    cache_write_tokens=cache_write_tokens,
+                )
+            except (json.JSONDecodeError, TypeError, ValueError) as exc:
+                log_error(f"Malfunction retry attempt {attempt}: failed to parse claude -p JSON output: {exc}")
+
+        status = get_card_status(card_number, session)
+        if status == "done":
+            log_info(f"Malfunction retry attempt {attempt}: card #{card_number} reached done")
+            return True
+
+        log_info(
+            f"Malfunction retry attempt {attempt}: card #{card_number} "
+            f"status='{status}' — not done"
+        )
+
+    log_info(
+        f"Malfunction retry: all {_MALFUNCTION_RETRY_MAX_ATTEMPTS} attempts exhausted "
+        f"for card #{card_number} — falling through to caller"
     )
-
-    if result.stderr.strip():
-        log_info(f"Malfunction retry claude -p stderr: {result.stderr.strip()}")
-
-    # Parse JSON output and write metrics with iteration=99 (sentinel)
-    if result.stdout.strip():
-        try:
-            json_response = json.loads(result.stdout)
-            usage = json_response.get("usage") or {}
-            input_tokens = int(usage.get("input_tokens", 0) or 0)
-            output_tokens = int(usage.get("output_tokens", 0) or 0)
-            cache_read_tokens = int(usage.get("cache_read_input_tokens", 0) or 0)
-            cache_write_tokens = int(usage.get("cache_creation_input_tokens", 0) or 0)
-
-            _claudit_write_ac_reviewer_metrics(
-                outer_session_id=outer_session_id,
-                kanban_session=session,
-                card_number=card_number,
-                working_directory=working_directory,
-                iteration=99,  # sentinel for malfunction retry
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                cache_read_tokens=cache_read_tokens,
-                cache_write_tokens=cache_write_tokens,
-            )
-        except (json.JSONDecodeError, TypeError, ValueError) as exc:
-            log_error(f"Malfunction retry: failed to parse claude -p JSON output: {exc}")
-
-    status = get_card_status(card_number, session)
-    if status == "done":
-        log_info(f"Malfunction retry: card #{card_number} reached done")
-        return True
-
-    log_info(f"Malfunction retry: card #{card_number} status after retry='{status}' — not done")
     return False
 
 
@@ -1094,6 +1112,252 @@ def get_deferred_cards(session: str) -> list[str]:
     except Exception:
         pass
     return []
+
+
+# ---------------------------------------------------------------------------
+# Programmatic MoV execution (hook-side reviewer dispatch)
+# ---------------------------------------------------------------------------
+
+# Exit codes that indicate MoV tooling/infrastructure failure (not work failure).
+# These are treated as mov_error: no pass/fail, structured diagnostic emitted.
+# Note: exit 2 is intentionally excluded — diff-family tools (diff, rg, grep) use it for
+# legitimate work failures (e.g., "differences found"), so it should be treated as a
+# work failure rather than a tooling error. This keeps semantics aligned with the kanban CLI.
+_MOV_ERROR_EXIT_CODES = frozenset([126, 127, 124])
+
+
+def get_git_root() -> str:
+    """Return the git repository root for use as cwd during MoV execution.
+
+    Uses git rev-parse --show-toplevel. Falls back to the current working
+    directory if the git command fails (e.g. not in a git repo).
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            root = result.stdout.strip()
+            if root:
+                return root
+    except Exception as exc:
+        log_error(f"get_git_root: git rev-parse failed: {exc}")
+    return os.getcwd()
+
+
+def get_card_criteria(card_number: str, session: str) -> list[dict]:
+    """Load card criteria as structured dicts from kanban show XML output.
+
+    Each returned dict has at minimum:
+      - index (int): 1-based criterion position
+      - text (str): criterion statement
+      - mov_type (str): "programmatic" or "semantic" (defaults to "semantic" if absent)
+      - mov_command (str | None): shell command for programmatic criteria
+      - mov_timeout (int): timeout in seconds (defaults to 30)
+      - agent_met (bool): whether the agent checked this criterion
+      - reviewer_met (str | None): "pass", "fail", or None
+
+    Returns an empty list on any error.
+    """
+    try:
+        result = run_kanban(["show", card_number, "--output-style=xml", "--session", session])
+        if result.returncode != 0:
+            log_error(f"get_card_criteria: kanban show failed for card #{card_number}")
+            return []
+
+        xml_output = result.stdout
+        ac_pattern = re.compile(r'<ac\b([^>]*?)>(.*?)</ac>', re.DOTALL)
+        criteria = []
+        for idx, match in enumerate(ac_pattern.finditer(xml_output), 1):
+            attrs_str = match.group(1)
+            text = match.group(2).strip()
+
+            def _attr(name: str, default: str = "") -> str:
+                m = re.search(rf'{re.escape(name)}="([^"]*)"', attrs_str)
+                return html.unescape(m.group(1)) if m else default
+
+            mov_type = _attr("mov-type") or _attr("mov_type") or "semantic"
+            mov_command = _attr("mov-command") or _attr("mov_command") or None
+            mov_timeout_str = _attr("mov-timeout") or _attr("mov_timeout") or "30"
+            try:
+                mov_timeout = int(mov_timeout_str)
+            except ValueError:
+                mov_timeout = 30
+
+            agent_met_str = _attr("agent-met") or _attr("agent_met") or "false"
+            agent_met = agent_met_str.lower() == "true"
+
+            reviewer_met_str = _attr("reviewer-met") or _attr("reviewer_met") or ""
+            reviewer_met: str | None = reviewer_met_str if reviewer_met_str in ("pass", "fail") else None
+
+            criteria.append({
+                "index": idx,
+                "text": text,
+                "mov_type": mov_type,
+                "mov_command": mov_command if mov_command else None,
+                "mov_timeout": mov_timeout,
+                "agent_met": agent_met,
+                "reviewer_met": reviewer_met,
+            })
+
+        return criteria
+
+    except Exception as exc:
+        log_error(f"get_card_criteria for card #{card_number}: {exc}")
+        return []
+
+
+def run_programmatic_mov(
+    criterion: dict,
+    card_number: str,
+    session: str,
+    git_root: str,
+) -> str | None:
+    """Execute a single programmatic MoV and dispatch to pass/fail.
+
+    Exit code classification:
+      - 0: kanban criteria pass
+      - 127/126/2/124: mov_error — emit structured diagnostic, leave reviewer_met as None
+      - other nonzero: kanban criteria fail with captured output as reason
+
+    Returns a mov_error diagnostic string if the exit code was a tooling error,
+    or None if the criterion was passed or failed cleanly.
+    """
+    idx = criterion["index"]
+    mov_command = criterion["mov_command"]
+    mov_timeout = criterion["mov_timeout"]
+
+    log_info(
+        f"run_programmatic_mov: card #{card_number} criterion {idx}: "
+        f"command={mov_command!r} timeout={mov_timeout}s cwd={git_root!r}"
+    )
+
+    try:
+        proc = subprocess.run(
+            mov_command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=mov_timeout,
+            cwd=git_root,
+            env={**os.environ},
+        )
+        exit_code = proc.returncode
+        stdout_out = proc.stdout.strip()
+        stderr_out = proc.stderr.strip()
+    except subprocess.TimeoutExpired:
+        # Treat timeout as exit code 124 (same as GNU timeout convention)
+        log_error(
+            f"run_programmatic_mov: card #{card_number} criterion {idx} timed out "
+            f"after {mov_timeout}s"
+        )
+        diagnostic = (
+            f"\n=== MoV ERROR (criterion {idx}, card {card_number}) ===\n"
+            f"Command: {mov_command}\n"
+            f"Exit code: 124 (timeout after {mov_timeout}s)\n"
+            f"Stderr: (timeout — no output captured)\n"
+            f"Stdout: (timeout — no output captured)\n"
+            f"This is likely an MoV bug, not an agent work failure. "
+            f"Coordinator should review.\n"
+            f"=== END ==="
+        )
+        return diagnostic
+    except Exception as exc:
+        log_error(
+            f"run_programmatic_mov: card #{card_number} criterion {idx} subprocess "
+            f"error: {exc}"
+        )
+        diagnostic = (
+            f"\n=== MoV ERROR (criterion {idx}, card {card_number}) ===\n"
+            f"Command: {mov_command}\n"
+            f"Exit code: (subprocess error — command could not be launched)\n"
+            f"Stderr: {exc}\n"
+            f"Stdout: \n"
+            f"This is likely an MoV bug, not an agent work failure. "
+            f"Coordinator should review.\n"
+            f"=== END ==="
+        )
+        return diagnostic
+
+    log_info(
+        f"run_programmatic_mov: card #{card_number} criterion {idx}: "
+        f"exit_code={exit_code} stdout={stdout_out[:120]!r} stderr={stderr_out[:120]!r}"
+    )
+
+    if exit_code == 0:
+        run_kanban(["criteria", "pass", card_number, str(idx), "--session", session])
+        log_info(f"run_programmatic_mov: card #{card_number} criterion {idx} PASSED")
+        return None
+
+    if exit_code in _MOV_ERROR_EXIT_CODES:
+        diagnostic = (
+            f"\n=== MoV ERROR (criterion {idx}, card {card_number}) ===\n"
+            f"Command: {mov_command}\n"
+            f"Exit code: {exit_code}\n"
+            f"Stderr: {stderr_out or '(empty)'}\n"
+            f"Stdout: {stdout_out or '(empty)'}\n"
+            f"This is likely an MoV bug, not an agent work failure. "
+            f"Coordinator should review.\n"
+            f"=== END ==="
+        )
+        log_info(
+            f"run_programmatic_mov: card #{card_number} criterion {idx} mov_error "
+            f"(exit {exit_code})"
+        )
+        return diagnostic
+
+    # Other nonzero — treat as work failure
+    combined_output = "\n".join(filter(None, [stderr_out, stdout_out])) or f"exit {exit_code}"
+    run_kanban([
+        "criteria", "fail", card_number, str(idx),
+        "--reason", combined_output[:500],
+        "--session", session,
+    ])
+    log_info(
+        f"run_programmatic_mov: card #{card_number} criterion {idx} FAILED "
+        f"(exit {exit_code})"
+    )
+    return None
+
+
+def run_programmatic_criteria(
+    card_number: str,
+    session: str,
+    criteria: list[dict],
+    git_root: str,
+) -> list[str]:
+    """Execute all programmatic criteria for a card and return any mov_error diagnostics.
+
+    Only processes criteria where mov_type == "programmatic" and mov_command is set.
+    Skips criteria already reviewed (reviewer_met is not None).
+
+    Returns a list of mov_error diagnostic strings (may be empty).
+    """
+    programmatic = [
+        c for c in criteria
+        if c.get("mov_type") == "programmatic" and c.get("mov_command")
+    ]
+    log_info(
+        f"run_programmatic_criteria: card #{card_number} has "
+        f"{len(programmatic)} programmatic criterion/criteria to evaluate"
+    )
+
+    mov_errors: list[str] = []
+    for criterion in programmatic:
+        if criterion.get("reviewer_met") is not None:
+            log_info(
+                f"run_programmatic_criteria: card #{card_number} criterion "
+                f"{criterion['index']} already reviewed ({criterion['reviewer_met']}) — skipping"
+            )
+            continue
+        diagnostic = run_programmatic_mov(criterion, card_number, session, git_root)
+        if diagnostic is not None:
+            mov_errors.append(diagnostic)
+
+    return mov_errors
 
 
 def format_deferred_notification(session: str) -> str:
@@ -1185,6 +1449,11 @@ Step 1: Run this command to read the card:
 
 {important_section}
 
+MANDATORY: You MUST call `kanban criteria pass` or `kanban criteria fail` for EVERY criterion
+listed in the card, regardless of whether agent_met is already true. The agent_met flag is the
+agent's self-report. Your independent pass/fail call is the required verification step. Skipping
+it leaves reviewer_met=None and the card cannot complete.
+
 Step 3: For each criterion you verify:
   - If it PASSES: kanban criteria pass {card_number} <n> --session {session}
   - If it FAILS: kanban criteria fail {card_number} <n> --reason '<why it failed>' --session {session}
@@ -1214,15 +1483,22 @@ def run_inner_loop(
     transcript_path: str = "",
     outer_session_id: str = "",
     working_directory: str = "",
-) -> bool:
+) -> tuple[bool, list[str]]:
     """
     Run the inner AC review loop (max MAX_INNER_ITERATIONS iterations).
 
-    Each iteration launches claude -p --model haiku to review criteria.
-    After each iteration, checks if the card reached the done column.
-    Token usage from each iteration is written to the claudit SQLite DB.
+    Dispatch flow:
+    1. Load card criteria and partition into programmatic (has mov_type="programmatic"
+       and a mov_command) vs semantic.
+    2. For each programmatic criterion: run mov_command via subprocess, classify exit
+       code, call kanban criteria pass/fail (or emit mov_error diagnostic).
+    3. If any semantic criteria remain: launch claude -p --model haiku as before.
+    4. If no semantic criteria: skip Haiku entirely; call kanban done directly.
 
-    Returns True if the card reached done, False otherwise.
+    Returns (card_done: bool, mov_error_diagnostics: list[str]).
+    mov_error_diagnostics contains structured diagnostic blocks for exit codes
+    127/126/124 — these indicate MoV tooling failures, not work failures.
+    Callers should surface them to the coordinator.
     """
     accumulated_context = ""
     agent_output = extract_agent_output(transcript_path) if transcript_path else ""
@@ -1233,6 +1509,60 @@ def run_inner_loop(
     card_type = get_card_type(card_number, session)
     log_info(f"Card #{card_number} type: {card_type}")
 
+    # Resolve git root once — used as cwd for all programmatic MoV executions
+    git_root = get_git_root()
+    log_info(f"run_inner_loop: git root for MoV execution: {git_root!r}")
+
+    # --- Step 1: Load and partition criteria ---
+    criteria = get_card_criteria(card_number, session)
+    programmatic_criteria = [
+        c for c in criteria
+        if c.get("mov_type") == "programmatic" and c.get("mov_command")
+    ]
+    semantic_criteria = [
+        c for c in criteria
+        if not (c.get("mov_type") == "programmatic" and c.get("mov_command"))
+    ]
+    log_info(
+        f"run_inner_loop: card #{card_number} criteria partition: "
+        f"{len(programmatic_criteria)} programmatic, {len(semantic_criteria)} semantic"
+    )
+
+    # --- Step 2: Run programmatic criteria ---
+    mov_error_diagnostics: list[str] = []
+    if programmatic_criteria:
+        # Pass programmatic_criteria directly — run_programmatic_criteria re-filters
+        # by mov_type/mov_command, so passing the already-filtered list avoids the
+        # redundant filter at line ~1318.
+        mov_error_diagnostics = run_programmatic_criteria(
+            card_number, session, programmatic_criteria, git_root
+        )
+        if mov_error_diagnostics:
+            log_info(
+                f"run_inner_loop: card #{card_number} has "
+                f"{len(mov_error_diagnostics)} mov_error diagnostic(s)"
+            )
+
+    # --- Step 3: If no semantic criteria, skip Haiku and attempt kanban done ---
+    if not semantic_criteria:
+        log_info(
+            f"run_inner_loop: card #{card_number} has no semantic criteria — "
+            f"skipping Haiku reviewer, attempting kanban done directly"
+        )
+        done_result = run_kanban(
+            ["done", card_number, "Programmatic MoV criteria verified by hook", "--session", session]
+        )
+        if done_result.returncode == 0:
+            log_info(f"run_inner_loop: card #{card_number} reached done via programmatic-only path")
+            return True, mov_error_diagnostics
+        # kanban done failed (some criteria still not passing) — signal failure
+        log_info(
+            f"run_inner_loop: card #{card_number} kanban done failed on programmatic-only path: "
+            f"{done_result.stderr.strip() or done_result.stdout.strip()}"
+        )
+        return False, mov_error_diagnostics
+
+    # --- Step 4: Semantic criteria exist — launch Haiku reviewer ---
     # Read ac-reviewer agent definition for use as system prompt
     # (same pattern as staff.bash: read agent definition, pass via --system-prompt)
     ac_reviewer_system_prompt = read_ac_reviewer_agent_definition()
@@ -1319,14 +1649,14 @@ def run_inner_loop(
         status = get_card_status(card_number, session)
         if status == "done":
             log_info(f"Card #{card_number} reached done after {i} inner iteration(s)")
-            return True
+            return True, mov_error_diagnostics
 
         # If card is not in review or done, something unexpected happened
         if status and status not in ("review", "doing", "done"):
             log_info(f"Card #{card_number} in unexpected status '{status}' — breaking inner loop")
             break
 
-    return False
+    return False, mov_error_diagnostics
 
 
 # ---------------------------------------------------------------------------
@@ -1474,10 +1804,11 @@ def process_subagent_stop(payload: dict) -> dict:
         message += format_deferred_notification(session)
         return allow(message)
 
-    # Step 3: Inner loop — Haiku AC verification
+    # Step 3: Inner loop — programmatic MoV dispatch + optional Haiku AC verification
     log_info(f"Starting AC review inner loop for card #{card_number}")
+    mov_error_diagnostics: list[str] = []
     try:
-        card_done = run_inner_loop(
+        card_done, mov_error_diagnostics = run_inner_loop(
             card_number,
             session,
             transcript_path,
@@ -1508,6 +1839,8 @@ def process_subagent_stop(payload: dict) -> dict:
     # intent may be unset — fetch it lazily only when needed.
     if card_done:
         message = f"Card #{card_number} AC review passed — card completed."
+        if mov_error_diagnostics:
+            message += "\n" + "\n".join(mov_error_diagnostics)
         message += format_deferred_notification(session)
         return allow(message)
 
@@ -1517,6 +1850,8 @@ def process_subagent_stop(payload: dict) -> dict:
     if status == "done":
         log_info(f"Card #{card_number} reached done (detected on re-check after inner loop)")
         message = f"Card #{card_number} AC review passed — card completed."
+        if mov_error_diagnostics:
+            message += "\n" + "\n".join(mov_error_diagnostics)
         message += format_deferred_notification(session)
         return allow(message)
 
@@ -1530,6 +1865,8 @@ def process_subagent_stop(payload: dict) -> dict:
             f"Card #{card_number} AC review failed after {review_cycles} review cycle(s). "
             f"Max cycles ({MAX_OUTER_CYCLES}) reached — requires manual intervention by staff engineer."
         )
+        if mov_error_diagnostics:
+            message += "\n" + "\n".join(mov_error_diagnostics)
         message += format_deferred_notification(session)
         return allow(message)
 
@@ -1567,23 +1904,46 @@ def process_subagent_stop(payload: dict) -> dict:
                 f"{traceback.format_exc()}"
             )
 
-        # Retry failed or crashed — fall through to existing allow-stop diagnostic
+        # All retry attempts failed or crashed — redo the card and block the agent.
+        # The reviewer's failure to call pass/fail is an infrastructure issue, not a work
+        # quality issue, so the block message explains the agent should NOT modify its work.
         log_error(
             f"Reviewer malfunction for card #{card_number} — "
-            f"allowing stop for staff intervention instead of redo"
+            f"all malfunction retries failed, issuing redo+block"
         )
-        agent_output = extract_agent_output(transcript_path) if transcript_path else ""
-        agent_excerpt = (agent_output[:500] + "...") if len(agent_output) > 500 else agent_output
-        message = (
-            f"Card #{card_number} AC reviewer malfunction — the reviewer ran but never "
-            f"called criteria pass/fail on any criterion. The sub-agent's work may be "
-            f"correct. Staff engineer should review manually or re-run AC review.\n\n"
+        redo_result = run_kanban(["redo", card_number, "--session", session])
+        if redo_result.returncode != 0:
+            log_error(
+                f"Reviewer malfunction redo failed for card #{card_number}: "
+                f"{redo_result.stderr.strip()}"
+            )
+            # redo failed — card may be stranded; fall back to allow with a diagnostic
+            message = (
+                f"Card #{card_number} AC reviewer malfunction — the reviewer ran but never "
+                f"called criteria pass/fail. Attempted to redo the card but redo also failed. "
+                f"Staff engineer must intervene manually.\n\n"
+                f"Reviewer diagnostic: {failure_details}"
+            )
+            message += format_deferred_notification(session)
+            return allow(message)
+
+        # Notify: review→doing (redo due to reviewer malfunction)
+        try:
+            _malfunction_redo_intent = intent
+        except NameError:
+            _malfunction_redo_intent = get_card_intent(card_number, session)
+        send_transition_notification(card_number, "redo", _malfunction_redo_intent)
+
+        block_reason = (
+            f"Card #{card_number} AC reviewer malfunction — the AC reviewer ran but never "
+            f"called `kanban criteria pass` or `kanban criteria fail` on any criterion. "
+            f"This is a reviewer infrastructure issue, NOT a problem with your work.\n\n"
+            f"The card has been returned to doing. Do NOT modify your work — simply stop "
+            f"again and the hook will launch a fresh reviewer. If this recurs, the staff "
+            f"engineer can review manually.\n\n"
             f"Reviewer diagnostic: {failure_details}"
         )
-        if agent_excerpt:
-            message += f"\n\nAgent output excerpt:\n{agent_excerpt}"
-        message += format_deferred_notification(session)
-        return allow(message)
+        return block(block_reason)
 
     # Check card status before attempting redo — if it's already in a terminal state, skip redo
     status_before_redo = get_card_status(card_number, session)
@@ -1606,8 +1966,12 @@ def process_subagent_stop(payload: dict) -> dict:
         message += format_deferred_notification(session)
         return allow(message)
 
-    # Notify: review→doing (redo) — reuse cached intent
-    card_intent_for_redo = intent if 'intent' in dir() else get_card_intent(card_number, session)
+    # Notify: review→doing (redo) — reuse cached intent from the doing→review transition
+    # above (if that path ran); otherwise fetch it now.
+    try:
+        card_intent_for_redo = intent
+    except NameError:
+        card_intent_for_redo = get_card_intent(card_number, session)
     send_transition_notification(card_number, "redo", card_intent_for_redo)
 
     # Stamp the rejection reasons onto the redo event row the kanban CLI just inserted.
@@ -1624,6 +1988,8 @@ def process_subagent_stop(payload: dict) -> dict:
         f"(cycle {review_cycles + 1}/{MAX_OUTER_CYCLES}). "
         f"The following criteria failed:\n\n{failure_details}"
     )
+    if mov_error_diagnostics:
+        reason += "\n" + "\n".join(mov_error_diagnostics)
     system_message = (
         f"The AC reviewer found issues with your work. "
         f"Investigate each failed criterion, fix the underlying issue, verify your fix "
