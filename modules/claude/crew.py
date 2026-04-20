@@ -127,6 +127,48 @@ def capture_pane(tmux_target: str, lines: Optional[int] = None) -> str:
     return "\n".join(stripped_lines) + "\n" if stripped_lines else ""
 
 
+def capture_pane_full(tmux_target: str) -> List[str]:
+    """Capture the full pane buffer and return as a list of lines (no trailing blanks)."""
+    cmd = ["tmux", "capture-pane", "-p", "-t", tmux_target, "-S", "-"]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    all_lines = result.stdout.splitlines()
+    # Strip trailing blank lines (tmux pads unused terminal rows with empty lines)
+    while all_lines and all_lines[-1].strip() == "":
+        all_lines.pop()
+    return all_lines
+
+
+def capture_pane_slice(
+    tmux_target: str,
+    offset: int,
+    lines: Optional[int],
+) -> Tuple[str, int, int, int]:
+    """Capture a slice of the pane buffer with position metadata.
+
+    Returns (content, first_line, last_line, total_lines) where line numbers
+    are 1-based and inclusive.  content ends with a newline when non-empty.
+
+    offset: 0-based starting line index into the full buffer.
+    lines:  number of lines to return (None -> all lines from offset onward).
+    """
+    all_lines = capture_pane_full(tmux_target)
+    total = len(all_lines)
+
+    start = min(offset, total)
+    end = total if lines is None else min(start + lines, total)
+
+    sliced = all_lines[start:end]
+    content = "\n".join(sliced) + "\n" if sliced else ""
+
+    # 1-based inclusive range for human-readable metadata.
+    # first_line is unconditionally start+1 so that past-end offsets yield
+    # the self-documenting empty-range form "lines 201-200 of 200" rather
+    # than the ambiguous "lines 200-200 of 200".
+    first_line = start + 1
+    last_line = end
+    return content, first_line, last_line, total
+
+
 # ---------------------------------------------------------------------------
 # XML output helpers
 # ---------------------------------------------------------------------------
@@ -218,34 +260,75 @@ def cmd_tell(message: str, targets_str: str, fmt: str) -> None:
 # Subcommand: read
 # ---------------------------------------------------------------------------
 
-def cmd_read(targets_str: str, lines: Optional[int], fmt: str) -> None:
-    resolved = resolve_targets(targets_str)
-    lines_attr = str(lines) if lines is not None else "all"
+def _read_one(
+    tmux_target: str,
+    label: str,
+    lines: Optional[int],
+    offset: Optional[int],
+    fmt: str,
+    parent: Optional[ET.Element] = None,
+) -> None:
+    """Read a single pane and emit output (xml child or human text).
 
-    if len(resolved) == 1:
-        tmux_target, label = resolved[0]
+    When offset is None the legacy path is used (tail last N lines) for full
+    backward compatibility.  When offset is provided the paginated slice path
+    is used and position metadata is included.
+    """
+    if offset is None:
+        # Legacy path: tail last N lines, no position metadata.
         content = capture_pane(tmux_target, lines)
+        lines_attr = str(lines) if lines is not None else "all"
         if fmt == "xml":
-            elem = ET.Element("output", crew=label, lines=lines_attr)
-            elem.text = content
-            print(xml_to_string(elem))
+            if parent is not None:
+                child = ET.SubElement(parent, "output", crew=label, lines=lines_attr)
+                child.text = content
+            else:
+                elem = ET.Element("output", crew=label, lines=lines_attr)
+                elem.text = content
+                print(xml_to_string(elem))
         else:
             print(f"--- {label} ---")
             print(content, end="")
     else:
+        # Paginated path: absolute offset + limit with position metadata.
+        content, first_line, last_line, total = capture_pane_slice(tmux_target, offset, lines)
+        position_header = f"lines {first_line}-{last_line} of {total}"
+        if fmt == "xml":
+            attrs = {
+                "crew": label,
+                "lines": str(lines) if lines is not None else "all",
+                "from": str(offset),
+                "position": position_header,
+            }
+            if parent is not None:
+                child = ET.SubElement(parent, "output", **attrs)
+                child.text = content
+            else:
+                elem = ET.Element("output", **attrs)
+                elem.text = content
+                print(xml_to_string(elem))
+        else:
+            print(f"--- {label} ({position_header}) ---")
+            print(content, end="")
+
+
+def cmd_read(targets_str: str, lines: Optional[int], offset: Optional[int], fmt: str) -> None:
+    resolved = resolve_targets(targets_str)
+
+    if len(resolved) == 1:
+        tmux_target, label = resolved[0]
+        _read_one(tmux_target, label, lines, offset, fmt, parent=None)
+    else:
         if fmt == "xml":
             root = ET.Element("reads")
             for tmux_target, label in resolved:
-                content = capture_pane(tmux_target, lines)
-                child = ET.SubElement(root, "output", crew=label, lines=lines_attr)
-                child.text = content
+                _read_one(tmux_target, label, lines, offset, fmt, parent=root)
             print(xml_to_string(root))
         else:
-            for tmux_target, label in resolved:
-                content = capture_pane(tmux_target, lines)
-                print(f"--- {label} ---")
-                print(content, end="")
-                print()
+            for i, (tmux_target, label) in enumerate(resolved):
+                _read_one(tmux_target, label, lines, offset, fmt, parent=None)
+                if i < len(resolved) - 1:
+                    print()
 
 
 # ---------------------------------------------------------------------------
@@ -364,6 +447,19 @@ def cmd_status(lines: int, fmt: str) -> None:
 # CLI wiring
 # ---------------------------------------------------------------------------
 
+def non_negative_int(value: str) -> int:
+    """Argparse type validator that accepts only non-negative integers."""
+    try:
+        n = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"'{value}' is not a valid integer")
+    if n < 0:
+        raise argparse.ArgumentTypeError(
+            f"--from value must be >= 0, got {n}"
+        )
+    return n
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="crew",
@@ -393,7 +489,20 @@ def build_parser() -> argparse.ArgumentParser:
         "--lines", "-n",
         type=int,
         default=None,
-        help="Tail last N lines from buffer (default: full buffer)"
+        help="Number of lines to return (default: full buffer or all lines from --from offset)"
+    )
+    p_read.add_argument(
+        "--from",
+        dest="from_line",
+        type=non_negative_int,
+        default=None,
+        metavar="N",
+        help=(
+            "0-based line offset into the full pane buffer (default: omitted — "
+            "uses legacy tail-last-N behavior). When set, enables paginated mode: "
+            "returns lines [N .. N+--lines-1] with a position metadata header "
+            "('lines X-Y of Z') per target."
+        )
     )
 
     # dismiss
@@ -442,7 +551,7 @@ def main() -> None:
     elif args.command == "tell":
         cmd_tell(args.message, args.targets, fmt)
     elif args.command == "read":
-        cmd_read(args.targets, args.lines, fmt)
+        cmd_read(args.targets, args.lines, args.from_line, fmt)
     elif args.command == "dismiss":
         cmd_dismiss(args.targets, fmt)
     elif args.command == "find":
