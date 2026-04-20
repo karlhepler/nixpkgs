@@ -249,6 +249,40 @@ def cmd_read(targets_str: str, lines: Optional[int], fmt: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Subcommand: dismiss
+# ---------------------------------------------------------------------------
+
+def cmd_dismiss(targets_str: str, fmt: str) -> None:
+    """Dismiss (kill) one or more tmux panes or windows.
+
+    When fmt == "xml", output is wrapped in a <dismiss> root element, e.g.:
+        <dismiss><target crew="worker.0" status="dismissed" /></dismiss>
+    The root element name matches the subcommand name, consistent with the
+    <tell> pattern used by cmd_tell.
+    """
+    raw_tokens = targets_str.split(",")
+    resolved = resolve_targets(targets_str)
+
+    if fmt == "xml":
+        root = ET.Element("dismiss")
+
+    for raw, (tmux_target, label) in zip(raw_tokens, resolved):
+        if "." in raw:
+            subprocess.run(["tmux", "kill-pane", "-t", tmux_target], check=False)
+        else:
+            # bare window: kill the whole window via session:window_index (drop pane suffix)
+            window_target = tmux_target.rsplit(".", 1)[0]
+            subprocess.run(["tmux", "kill-window", "-t", window_target], check=False)
+        if fmt == "xml":
+            ET.SubElement(root, "target", crew=label, status="dismissed")
+        else:
+            print(f"dismissed -> {label}")
+
+    if fmt == "xml":
+        print(xml_to_string(root))
+
+
+# ---------------------------------------------------------------------------
 # Subcommand: find
 # ---------------------------------------------------------------------------
 
@@ -362,6 +396,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Tail last N lines from buffer (default: full buffer)"
     )
 
+    # dismiss
+    p_dismiss = sub.add_parser("dismiss", help="Kill target pane(s) or window(s)")
+    p_dismiss.add_argument("targets", help="Comma-separated targets (window[.pane])")
+
     # find
     p_find = sub.add_parser("find", help="Search pane content for pattern")
     p_find.add_argument("pattern", help="Regex pattern to search for")
@@ -405,6 +443,8 @@ def main() -> None:
         cmd_tell(args.message, args.targets, fmt)
     elif args.command == "read":
         cmd_read(args.targets, args.lines, fmt)
+    elif args.command == "dismiss":
+        cmd_dismiss(args.targets, fmt)
     elif args.command == "find":
         cmd_find(args.pattern, args.targets, args.lines, fmt)
     elif args.command == "status":
