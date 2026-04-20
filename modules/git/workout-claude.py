@@ -23,8 +23,10 @@ Example Usage:
 
 import json
 import os
+import shlex
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import List, Dict, Optional
 
@@ -367,8 +369,30 @@ def create_worktree_with_prompt(worktree_def: Dict[str, str], command: str) -> b
     if not command_result or command_result.returncode != 0:
         return True  # Success - worktree and window created, command just not available
 
-    # Launch command with prompt in the window
-    # Use command "prompt" for interactive mode with prompt auto-execution
+    # Launch command with prompt in the window.
+    #
+    # The prompt must NOT be interpolated directly into the command string sent
+    # to tmux send-keys. Prompts routinely contain characters that zsh parses
+    # specially:
+    #   - newlines         → sent as Enter keystrokes, fragmenting the command
+    #                        into multiple lines that zsh executes as separate
+    #                        commands (e.g. '#pricing: command not found')
+    #   - backticks (`)    → trigger command substitution, so markdown code
+    #                        spans like `tests/foo` get executed as commands
+    #   - $ and \          → trigger parameter expansion / escape handling
+    #   - unbalanced "     → terminate the outer quoting early
+    #
+    # Previously only double-quotes were escaped, so any prompt containing the
+    # above would be partially executed by zsh instead of reaching Claude. The
+    # symptom was a stuck zsh prompt with the prompt text spilled as shell
+    # errors, and Claude never starting.
+    #
+    # Fix: write the prompt to a temp file and use `"$(cat FILE; rm -f FILE)"`
+    # in the outer command. Command substitution output is NOT re-parsed by the
+    # shell, so the prompt reaches the Claude command verbatim regardless of
+    # its contents. The outer command itself contains no newlines or special
+    # characters (only the temp file path, which shlex.quote handles), so tmux
+    # send-keys delivers it as a single atomic line to zsh.
     if prompt:
         # Prepend worktree context to orient the receiving Claude
         context_prefix = (
@@ -378,9 +402,21 @@ def create_worktree_with_prompt(worktree_def: Dict[str, str], command: str) -> b
         )
         full_prompt = context_prefix + prompt
 
-        # Escape double quotes in prompt for shell command
-        escaped_prompt = full_prompt.replace('"', '\\"')
-        claude_cmd = f'{command} "{escaped_prompt}"'
+        # Write prompt to a temp file (mode 0600 by default on POSIX).
+        # The shell command below reads and deletes the file in one go, so
+        # nothing stale is left on disk once the Claude command actually runs.
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            suffix=".txt",
+            prefix=f"workout-claude-{branch_suffix}-",
+            delete=False,
+            encoding="utf-8",
+        ) as pf:
+            pf.write(full_prompt)
+            prompt_path = pf.name
+
+        quoted_path = shlex.quote(prompt_path)
+        claude_cmd = f'{command} "$(cat {quoted_path}; rm -f {quoted_path})"'
     else:
         # No prompt - just launch command interactively
         claude_cmd = command
