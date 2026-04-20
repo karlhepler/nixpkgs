@@ -6,7 +6,7 @@ tools: Read, Grep, Glob, WebSearch, WebFetch, Write, Bash
 skills:
   - researcher
 permissionMode: acceptEdits
-maxTurns: 75
+maxTurns: 100
 background: true
 ---
 

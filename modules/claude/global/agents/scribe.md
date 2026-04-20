@@ -6,7 +6,7 @@ tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch
 skills:
   - scribe
 permissionMode: acceptEdits
-maxTurns: 45
+maxTurns: 100
 background: true
 ---
 

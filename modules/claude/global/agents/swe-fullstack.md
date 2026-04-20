@@ -6,7 +6,7 @@ tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch
 skills:
   - swe-fullstack
 permissionMode: acceptEdits
-maxTurns: 65
+maxTurns: 100
 background: true
 ---
 

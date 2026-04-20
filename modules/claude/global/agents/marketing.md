@@ -6,7 +6,7 @@ tools: Read, Write, Edit, Grep, Glob, WebSearch, Bash
 skills:
   - marketing
 permissionMode: acceptEdits
-maxTurns: 50
+maxTurns: 100
 background: true
 ---
 

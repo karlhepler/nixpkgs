@@ -6,7 +6,7 @@ tools: Read, Write, Edit, Grep, Glob, WebSearch, WebFetch, Bash
 skills:
   - lawyer
 permissionMode: acceptEdits
-maxTurns: 50
+maxTurns: 100
 background: true
 ---
 

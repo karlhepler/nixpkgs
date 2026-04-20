@@ -6,7 +6,7 @@ tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch
 skills:
   - swe-infra
 permissionMode: acceptEdits
-maxTurns: 40
+maxTurns: 100
 background: true
 ---
 

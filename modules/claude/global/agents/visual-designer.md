@@ -6,7 +6,7 @@ tools: Read, Write, Edit, Grep, Glob, WebFetch, WebSearch, Bash
 skills:
   - visual-designer
 permissionMode: acceptEdits
-maxTurns: 30
+maxTurns: 100
 background: true
 ---
 

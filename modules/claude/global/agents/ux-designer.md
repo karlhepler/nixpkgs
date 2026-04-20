@@ -6,7 +6,7 @@ tools: Read, Write, Edit, Grep, Glob, WebSearch, WebFetch, Bash
 skills:
   - ux-designer
 permissionMode: acceptEdits
-maxTurns: 40
+maxTurns: 100
 background: true
 ---
 
