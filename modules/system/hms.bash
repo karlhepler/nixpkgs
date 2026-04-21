@@ -4,7 +4,7 @@
 # - Temporarily tracks both files in git
 # - Runs home-manager switch
 # - Configures local git settings for this repo
-# - Optional --expunge flag to kill tmux server for complete environment refresh
+# - Optional --purge flag to kill tmux server for complete environment refresh
 
 set -eou pipefail
 
@@ -13,7 +13,7 @@ show_help() {
   echo
   echo "USAGE:"
   echo "  hms               Apply configuration changes"
-  echo "  hms --expunge     Apply changes and restart tmux server"
+  echo "  hms --purge       Apply changes and restart tmux server"
   echo "  hms --help        Show this help message"
   echo
   echo "DESCRIPTION:"
@@ -32,7 +32,7 @@ show_help() {
   echo "  - Optionally kills tmux server for complete environment refresh"
   echo
   echo "OPTIONS:"
-  echo "  --expunge      Kill tmux server after switch for complete refresh"
+  echo "  --purge        Kill tmux server after switch for complete refresh"
   echo "                 Use when tmux-related settings change"
   echo "                 WARNING: Closes all tmux sessions"
   echo "  -h, --help     Show this help message"
@@ -42,7 +42,7 @@ show_help() {
   echo "  hms"
   echo
   echo "  # Apply changes and restart tmux (for tmux config updates)"
-  echo "  hms --expunge"
+  echo "  hms --purge"
   echo
   echo "BACKUPS:"
   echo "  Automatic backups saved to:"
@@ -61,13 +61,13 @@ show_help() {
 }
 
 # Parse arguments
-EXPUNGE=false
+PURGE=false
 for arg in "$@"; do
   if [[ "$arg" == "-h" || "$arg" == "--help" ]]; then
     show_help
     exit 0
-  elif [[ "$arg" == "--expunge" ]]; then
-    EXPUNGE=true
+  elif [[ "$arg" == "--purge" ]]; then
+    PURGE=true
   fi
 done
 
@@ -162,8 +162,8 @@ fi
 git -C ~/.config/nixpkgs config --local user.name "$USER_NAME" 2>/dev/null
 git -C ~/.config/nixpkgs config --local user.email "$USER_EMAIL" 2>/dev/null
 
-# Expunge tmux server for complete refresh if flag was passed
-if [[ "$EXPUNGE" == "true" ]]; then
-  echo "Expunging tmux server for complete environment refresh..."
+# Purge tmux server for complete refresh if flag was passed
+if [[ "$PURGE" == "true" ]]; then
+  echo "Purging tmux server for complete environment refresh..."
   tmux kill-server 2>/dev/null || true
 fi

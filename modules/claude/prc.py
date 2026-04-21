@@ -3,7 +3,8 @@
 prc: PR Comment management CLI using GitHub GraphQL API exclusively
 
 Comprehensive PR comment operations using GraphQL for optimal efficiency.
-Outputs machine-readable JSON for consumption by Claude, Ralph, and Smithers.
+Outputs XML by default (machine-readable for Claude, Ralph, Smithers).
+Use --format json for JSON output, --format human for human-readable output.
 """
 
 import argparse
@@ -12,7 +13,10 @@ import re
 import subprocess
 import sys
 import time
+import xml.etree.ElementTree as ET
 from typing import Dict, List, Optional, Tuple
+
+from claude_tooling import error_response, get_current_branch, parse_pr_url, get_pr_info
 
 
 def run_gh_graphql(query: str, variables: Dict) -> Tuple[int, str, str]:
@@ -36,106 +40,6 @@ def run_gh_graphql(query: str, variables: Dict) -> Tuple[int, str, str]:
         return result.returncode, result.stdout, result.stderr
     except FileNotFoundError:
         return 1, "", "gh command not found. Please install GitHub CLI."
-
-
-def error_response(message: str, code: str = "ERROR", details: Dict = None) -> Dict:
-    """Build error response dict."""
-    return {
-        "error": message,
-        "error_code": code,
-        "details": details or {},
-    }
-
-
-def get_current_branch() -> Optional[str]:
-    """Get current git branch name."""
-    result = subprocess.run(
-        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode == 0:
-        return result.stdout.strip()
-    return None
-
-
-def get_pr_from_branch() -> Optional[str]:
-    """Get PR URL from current branch using gh pr view."""
-    code, stdout, stderr = run_gh_graphql(
-        "query { viewer { login } }",
-        {}
-    )
-
-    if code != 0:
-        return None
-
-    # Use gh pr view to get URL
-    result = subprocess.run(
-        ["gh", "pr", "view", "--json", "url", "--jq", ".url"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    if result.returncode == 0 and result.stdout.strip():
-        return result.stdout.strip()
-    return None
-
-
-def parse_pr_url(url: str) -> Optional[Tuple[str, str, int]]:
-    """Parse PR URL into (owner, repo, pr_number)."""
-    match = re.match(r"https://github\.com/([^/]+)/([^/]+)/pull/(\d+)", url)
-    if match:
-        return match.group(1), match.group(2), int(match.group(3))
-    return None
-
-
-def get_pr_info(arg: Optional[str]) -> Tuple[Optional[Tuple[str, str, int]], Optional[Dict]]:
-    """
-    Get PR info from argument or infer from current branch.
-    Returns ((owner, repo, pr_num), error_dict) - error_dict is None on success.
-    """
-    if arg is None:
-        # Infer from current branch
-        url = get_pr_from_branch()
-        if not url:
-            return None, error_response(
-                "Could not infer PR from current branch. Provide PR number or URL.",
-                "PR_NOT_FOUND",
-            )
-        parsed = parse_pr_url(url)
-        if not parsed:
-            return None, error_response(f"Failed to parse PR URL: {url}", "INVALID_URL")
-        return parsed, None
-
-    # Check if it's a number
-    if arg.isdigit():
-        # Get repo info using gh
-        result = subprocess.run(
-            ["gh", "repo", "view", "--json", "owner,name"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-
-        if result.returncode != 0:
-            return None, error_response("Not in a git repository", "NOT_A_REPO")
-
-        try:
-            repo_info = json.loads(result.stdout)
-            owner = repo_info["owner"]["login"]
-            repo = repo_info["name"]
-            return (owner, repo, int(arg)), None
-        except (json.JSONDecodeError, KeyError):
-            return None, error_response("Failed to parse repo info", "PARSE_ERROR")
-
-    # Assume it's a URL
-    parsed = parse_pr_url(arg)
-    if not parsed:
-        return None, error_response(f"Invalid PR URL: {arg}", "INVALID_URL")
-
-    return parsed, None
 
 
 def fetch_pr_comments_graphql(owner: str, repo: str, pr_num: int) -> Tuple[Optional[Dict], Optional[Dict]]:
@@ -369,6 +273,25 @@ def normalize_comments(raw_data: Dict) -> List[Dict]:
     return comments
 
 
+def strip_body_fields(comment: Dict, max_body_len: Optional[int] = None) -> Dict:
+    """
+    Return a copy of comment with body fields removed (metadata-only).
+    If max_body_len is provided, truncate body fields to that length instead.
+    """
+    result = {k: v for k, v in comment.items() if k not in ("body", "body_text", "diff_hunk")}
+    return result
+
+
+def truncate_body_fields(comment: Dict, max_body_len: int) -> Dict:
+    """Return a copy of comment with body fields truncated to max_body_len chars."""
+    result = dict(comment)
+    for field in ("body", "body_text", "diff_hunk"):
+        val = result.get(field)
+        if isinstance(val, str) and len(val) > max_body_len:
+            result[field] = val[:max_body_len] + "..."
+    return result
+
+
 def apply_filters(comments: List[Dict], args: argparse.Namespace) -> Tuple[Optional[List[Dict]], Optional[Dict]]:
     """
     Apply filters based on command-line arguments.
@@ -414,9 +337,56 @@ def apply_filters(comments: List[Dict], args: argparse.Namespace) -> Tuple[Optio
     return filtered, None
 
 
+def _dict_to_xml_element(parent: ET.Element, key: str, value) -> None:
+    """Recursively serialize a value into an XML child element under parent."""
+    child = ET.SubElement(parent, key)
+    if value is None:
+        child.set("null", "true")
+    elif isinstance(value, bool):
+        child.text = "true" if value else "false"
+    elif isinstance(value, (int, float)):
+        child.text = str(value)
+    elif isinstance(value, str):
+        child.text = value
+    elif isinstance(value, list):
+        for item in value:
+            if isinstance(item, dict):
+                item_el = ET.SubElement(child, "item")
+                for k, v in item.items():
+                    _dict_to_xml_element(item_el, k, v)
+            else:
+                item_el = ET.SubElement(child, "item")
+                item_el.text = str(item) if item is not None else ""
+                if item is None:
+                    item_el.set("null", "true")
+    elif isinstance(value, dict):
+        for k, v in value.items():
+            _dict_to_xml_element(child, k, v)
+    else:
+        child.text = str(value)
+
+
+def serialize_xml(result: Dict, root_tag: str = "response") -> str:
+    """Serialize a response dict to an indented XML string."""
+    root = ET.Element(root_tag)
+    for key, value in result.items():
+        _dict_to_xml_element(root, key, value)
+    ET.indent(root, space="  ")
+    return ET.tostring(root, encoding="unicode", xml_declaration=False)
+
+
+def emit_result(result: Dict, fmt: str) -> None:
+    """Print result to stdout in the requested format."""
+    if fmt == "xml":
+        print(serialize_xml(result))
+    else:
+        # json and human both emit JSON; human is reserved for future tabular output
+        print(json.dumps(result, indent=2))
+
+
 def cmd_list(args: argparse.Namespace) -> Dict:
     """List command: fetch, filter, and output comments."""
-    pr_info, error = get_pr_info(args.pr)
+    pr_info, error = get_pr_info(args.pr, validate_connection=True)
     if error:
         return error
 
@@ -435,6 +405,16 @@ def cmd_list(args: argparse.Namespace) -> Dict:
     if error:
         return error
 
+    # Apply body field handling based on --full / --max-body-len
+    full = getattr(args, "full", False)
+    max_body_len = getattr(args, "max_body_len", None)
+
+    if full and max_body_len is not None:
+        filtered = [truncate_body_fields(c, max_body_len) for c in filtered]
+    elif not full:
+        filtered = [strip_body_fields(c) for c in filtered]
+    # else: full=True, no max_body_len — return complete body fields as-is
+
     return {
         "comments": filtered,
         "rate_limit": raw_data["rate_limit"],
@@ -443,7 +423,7 @@ def cmd_list(args: argparse.Namespace) -> Dict:
 
 def cmd_reply(args: argparse.Namespace) -> Dict:
     """Reply to a comment using GraphQL mutation."""
-    pr_info, error = get_pr_info(None)
+    pr_info, error = get_pr_info(None, validate_connection=True)
     if error:
         return error
 
@@ -677,32 +657,37 @@ def cmd_unresolve(args: argparse.Namespace) -> Dict:
         return error_response(f"Failed to parse response: {e}", "PARSE_ERROR")
 
 
-def cmd_collapse(args: argparse.Namespace) -> Dict:
-    """Collapse (minimize) comments using GraphQL mutation."""
-    pr_info, error = get_pr_info(args.pr)
+def cmd_collapse(args: argparse.Namespace) -> None:
+    """
+    Collapse (minimize) comments using GraphQL mutation.
+
+    Silent on success (exit 0). Errors go to stderr + exit 1.
+    Pass --verbose / -v to emit a formatted success report.
+    """
+    pr_info, error = get_pr_info(args.pr, validate_connection=True)
     if error:
-        return error
+        print(error["error"], file=sys.stderr)
+        sys.exit(1)
 
     owner, repo, pr_num = pr_info
 
     # Fetch all comments
     raw_data, error = fetch_pr_comments_graphql(owner, repo, pr_num)
     if error:
-        return error
+        print(error["error"], file=sys.stderr)
+        sys.exit(1)
 
     comments = normalize_comments(raw_data)
 
     # Apply filters to determine which comments to collapse
     filtered, error = apply_filters(comments, args)
     if error:
-        return error
+        print(error["error"], file=sys.stderr)
+        sys.exit(1)
 
     if not filtered:
-        return {
-            "success": True,
-            "message": "No comments matched filters",
-            "collapsed_count": 0,
-        }
+        # Nothing to do — silent success
+        sys.exit(0)
 
     # Map reason to classifier
     reason_map = {
@@ -766,12 +751,23 @@ def cmd_collapse(args: argparse.Namespace) -> Dict:
                 "error": f"Parse error: {e}",
             })
 
-    return {
-        "success": True,
-        "collapsed_count": len(collapsed),
-        "collapsed_ids": collapsed,
-        "errors": errors,
-    }
+    if errors:
+        # Always report errors to stderr and exit non-zero
+        for err in errors:
+            print(f"Error collapsing comment {err['comment_id']}: {err['error']}", file=sys.stderr)
+        sys.exit(1)
+
+    # Success: emit verbose report only if requested
+    if args.verbose:
+        result = {
+            "success": True,
+            "collapsed_count": len(collapsed),
+            "collapsed_ids": collapsed,
+            "errors": errors,
+        }
+        emit_result(result, args.format)
+
+    sys.exit(0)
 
 
 def main():
@@ -779,6 +775,15 @@ def main():
     parser = argparse.ArgumentParser(
         description="PR Comment management CLI using GitHub GraphQL API",
         formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    # NOTE: This CLI uses --format (not --output-style). The kanban CLI uses
+    # --output-style=xml for historical reasons; these Python CLIs standardize
+    # on --format. Coordinators must use the correct flag per tool.
+    parser.add_argument(
+        "--format",
+        choices=["xml", "json", "human"],
+        default="xml",
+        help="Output format (default: xml). Note: kanban uses --output-style, not --format.",
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Subcommands")
@@ -793,6 +798,17 @@ def main():
     list_parser.add_argument("--max-replies", type=int, help="Maximum reply count")
     list_parser.add_argument("--resolved", action="store_true", help="Only resolved comments")
     list_parser.add_argument("--unresolved", action="store_true", help="Only unresolved comments")
+    list_parser.add_argument(
+        "--full",
+        action="store_true",
+        help="Include full comment body text (default: metadata-only, no body)",
+    )
+    list_parser.add_argument(
+        "--max-body-len",
+        type=int,
+        metavar="N",
+        help="Truncate each comment body to N chars (requires --full)",
+    )
 
     # reply command
     reply_parser = subparsers.add_parser("reply", help="Reply to a comment")
@@ -819,12 +835,22 @@ def main():
         default="resolved",
         help="Minimize reason (default: resolved)",
     )
+    collapse_parser.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Emit collapse summary on success (format controlled by --format)",
+    )
 
     args = parser.parse_args()
 
     if not args.command:
         parser.print_help()
         sys.exit(2)
+
+    # collapse has its own exit-code management; handle separately
+    if args.command == "collapse":
+        cmd_collapse(args)
+        return
 
     # Route to command handlers
     try:
@@ -836,24 +862,23 @@ def main():
             result = cmd_resolve(args)
         elif args.command == "unresolve":
             result = cmd_unresolve(args)
-        elif args.command == "collapse":
-            result = cmd_collapse(args)
         else:
             result = error_response(f"Unknown command: {args.command}", "INVALID_COMMAND")
 
-        # Output JSON
-        print(json.dumps(result, indent=2))
-
-        # Exit with appropriate code
+        # Error results: emit structured payload to stdout, caller distinguishes via exit 1
         if "error" in result:
+            emit_result(result, args.format)
             sys.exit(1)
+
+        # Emit successful result to stdout
+        emit_result(result, args.format)
         sys.exit(0)
 
     except KeyboardInterrupt:
-        print(json.dumps(error_response("Interrupted by user", "INTERRUPTED")), file=sys.stderr)
+        print(serialize_xml(error_response("Interrupted by user", "INTERRUPTED")), file=sys.stderr)
         sys.exit(130)
     except Exception as e:
-        print(json.dumps(error_response(f"Unexpected error: {e}", "UNEXPECTED_ERROR")), file=sys.stderr)
+        print(serialize_xml(error_response(f"Unexpected error: {e}", "UNEXPECTED_ERROR")), file=sys.stderr)
         sys.exit(1)
 
 

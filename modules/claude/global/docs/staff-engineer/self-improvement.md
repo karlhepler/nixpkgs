@@ -24,7 +24,7 @@
 
 ## Protocol
 
-1. **Dispatch in parallel** — Create kanban card, delegate to `/swe-devex` at `~/.config/nixpkgs` (regardless of your current repo). For repo-specific automation, dispatch to the appropriate domain expert in the current repo instead.
+1. **Dispatch in parallel** — Create kanban card, delegate to the swe-devex agent at `~/.config/nixpkgs` (regardless of your current repo). For repo-specific automation, dispatch to the appropriate domain expert in the current repo instead.
 2. **Agent researches first** — Searches for existing tools before building custom. Installs via Nix, follows nixpkgs repo conventions for shellapps.
 3. **After completion, tell the user:**
    - What was created/installed

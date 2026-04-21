@@ -4,8 +4,14 @@ let
   # Import shared shellApp helper
   shellApp = import ../lib/shellApp.nix { inherit pkgs lib; moduleDir = ./.; };
 
-  # Common hook library functions (inlined at build time)
-  hookCommon = builtins.readFile ./claude-hook-common.bash;
+  # Shared Python utilities for hook scripts (notification, kanban transition)
+  claudeHookCommonDir = pkgs.writeTextDir "claude_hook_common.py" (builtins.readFile ./claude_hook_common.py);
+
+  # sys.path shim injected into hook scripts so they can import claude_hook_common.py
+  claudeHookCommonPathShim = ''
+    import sys as _sys
+    _sys.path.insert(0, "${claudeHookCommonDir}")
+  '';
 
   # Strip YAML frontmatter from a markdown file
   stripFrontmatter = raw:
@@ -60,14 +66,14 @@ let
   # Assemble all hat YAML blocks from templates
   hatYaml = lib.concatStrings [
     (builtins.readFile ./global/hats/monty-burns.yml.tmpl)
-    (processTemplate ./global/hats/swe-backend.yml.tmpl  (processSkillFile ./global/commands/swe-backend.md))
-    (processTemplate ./global/hats/swe-frontend.yml.tmpl (processSkillFile ./global/commands/swe-frontend.md))
-    (processTemplate ./global/hats/swe-fullstack.yml.tmpl (processSkillFile ./global/commands/swe-fullstack.md))
-    (processTemplate ./global/hats/swe-devex.yml.tmpl    (processSkillFile ./global/commands/swe-devex.md))
-    (processTemplate ./global/hats/swe-infra.yml.tmpl    (processSkillFile ./global/commands/swe-infra.md))
-    (processTemplate ./global/hats/swe-security.yml.tmpl (processSkillFile ./global/commands/swe-security.md))
-    (processTemplate ./global/hats/swe-sre.yml.tmpl      (processSkillFile ./global/commands/swe-sre.md))
-    (processTemplate ./global/hats/researcher.yml.tmpl   (processSkillFile ./global/commands/researcher.md))
+    (processTemplate ./global/hats/swe-backend.yml.tmpl  (processSkillFile ./global/agents/swe-backend.md))
+    (processTemplate ./global/hats/swe-frontend.yml.tmpl (processSkillFile ./global/agents/swe-frontend.md))
+    (processTemplate ./global/hats/swe-fullstack.yml.tmpl (processSkillFile ./global/agents/swe-fullstack.md))
+    (processTemplate ./global/hats/swe-devex.yml.tmpl    (processSkillFile ./global/agents/swe-devex.md))
+    (processTemplate ./global/hats/swe-infra.yml.tmpl    (processSkillFile ./global/agents/swe-infra.md))
+    (processTemplate ./global/hats/swe-security.yml.tmpl (processSkillFile ./global/agents/swe-security.md))
+    (processTemplate ./global/hats/swe-sre.yml.tmpl      (processSkillFile ./global/agents/swe-sre.md))
+    (processTemplate ./global/hats/researcher.yml.tmpl   (processSkillFile ./global/agents/researcher.md))
   ];
 
   # Generate multi-hat Ralph YAML with Monty Burns coordinator + 8 specialists
@@ -101,15 +107,24 @@ let
     ${builtins.readFile ./smithers.py}
   '';
 
+  # Shared Python utilities for prc/prr (and future Python CLIs)
+  claudeToolingDir = pkgs.writeTextDir "claude_tooling.py" (builtins.readFile ./claude_tooling.py);
+
+  # sys.path shim injected into prc/prr so they can import claude_tooling
+  claudeToolingPathShim = ''
+    import sys as _sys
+    _sys.path.insert(0, "${claudeToolingDir}")
+  '';
+
   # PRC Python CLI (PR comment management using GraphQL)
   prcScript = pkgs.writers.writePython3Bin "prc" {
-    flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
-  } (builtins.readFile ./prc.py);
+    flakeIgnore = [ "E265" "E402" "E501" "F401" "W503" "W504" ];  # E402/F401: shim injects sys.path before imports
+  } (claudeToolingPathShim + builtins.readFile ./prc.py);
 
   # PRR Python CLI (PR review submission using REST API)
   prrScript = pkgs.writers.writePython3Bin "prr" {
-    flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
-  } (builtins.readFile ./prr.py);
+    flakeIgnore = [ "E265" "E402" "E501" "F401" "W503" "W504" ];  # E402/F401: shim injects sys.path before imports
+  } (claudeToolingPathShim + builtins.readFile ./prr.py);
 
   # Crew Python CLI (unified tmux window/pane interaction)
   crewScript = pkgs.writers.writePython3Bin "crew" {
@@ -139,40 +154,24 @@ in {
   # ============================================================================
 
   _module.args.claudeShellapps = rec {
-    claude-notification-hook = shellApp {
-      name = "claude-notification-hook";
-      runtimeInputs = [ pkgs.python3 ];
-      text = builtins.replaceStrings
-        ["# @COMMON_FUNCTIONS@ - Will be replaced by Nix at build time"]
-        [hookCommon]
-        (builtins.readFile ./claude-notification-hook.bash);
-      description = "Hook for Claude Code desktop notifications with tmux integration";
-      sourceFile = "claude-notification-hook.bash";
-    };
-    claude-complete-hook = shellApp {
-      name = "claude-complete-hook";
-      runtimeInputs = [];
-      text = builtins.readFile ./claude-complete-hook.bash;
-      description = "Hook for Claude Code completion events";
-      sourceFile = "claude-complete-hook.bash";
-    };
-    claude-csharp-format-hook = shellApp {
-      name = "claude-csharp-format-hook";
-      runtimeInputs = [ pkgs.csharpier pkgs.python3 ];
-      text = builtins.readFile ./claude-csharp-format-hook.bash;
-      description = "Hook for automatic C# code formatting with csharpier";
-      sourceFile = "claude-csharp-format-hook.bash";
-    };
-    claude-kanban-transition-hook = shellApp {
-      name = "claude-kanban-transition-hook";
-      runtimeInputs = [ pkgs.python3 ];
-      text = builtins.replaceStrings
-        ["# @COMMON_FUNCTIONS@ - Will be replaced by Nix at build time"]
-        [hookCommon]
-        (builtins.readFile ./claude-kanban-transition-hook.bash);
-      description = "PostToolUse(Bash) hook that sends macOS notifications on kanban state transitions (start, defer, cancel)";
-      sourceFile = "claude-kanban-transition-hook.bash";
-    };
+    claude-notification-hook = pkgs.writers.writePython3Bin "claude-notification-hook" {
+      flakeIgnore = [ "E265" "E402" "E501" "F401" "W503" "W504" ];
+    } (claudeHookCommonPathShim + builtins.readFile ./claude-notification-hook.py);
+    claude-complete-hook = pkgs.writers.writePython3Bin "claude-complete-hook" {
+      flakeIgnore = [ "E265" "E501" "W503" "W504" ];
+    } (builtins.readFile ./claude-complete-hook.py);
+    git-no-verify-hook = pkgs.writers.writePython3Bin "git-no-verify-hook" {
+      flakeIgnore = [ "E265" "E501" "W503" "W504" ];
+    } (builtins.readFile ./git-no-verify-hook.py);
+    kanban-done-reminder-hook = pkgs.writers.writePython3Bin "kanban-done-reminder-hook" {
+      flakeIgnore = [ "E265" "E501" "W503" "W504" ];
+    } (builtins.readFile ./kanban-done-reminder-hook.py);
+    taskstop-reminder-hook = pkgs.writers.writePython3Bin "taskstop-reminder-hook" {
+      flakeIgnore = [ "E265" "E501" "W503" "W504" ];
+    } (builtins.readFile ./taskstop-reminder-hook.py);
+    claude-kanban-transition-hook = pkgs.writers.writePython3Bin "claude-kanban-transition-hook" {
+      flakeIgnore = [ "E265" "E402" "E501" "F401" "W503" "W504" ];
+    } (claudeHookCommonPathShim + builtins.readFile ./claude-kanban-transition-hook.py);
     claude-session-start-hook = let
       extractKanbanName = pkgs.writeText "extract-kanban-name.py" ''
         import re, sys
@@ -226,16 +225,40 @@ in {
           exit 0
         fi
         json=$(cat)
+        # F5: capture session timestamp once for all warning messages
+        session_ts=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
         mkdir -p .scratchpad
-        kanban_output=$(echo "$json" | kanban session-hook)
-        kanban_name=$(echo "$kanban_output" | python3 ${extractKanbanName})
-        if [ -n "$kanban_name" ] && [ -n "''${CLAUDE_ENV_FILE:-}" ]; then
-          echo "export KANBAN_SESSION=$kanban_name" >> "$CLAUDE_ENV_FILE"
-        elif [ -n "$kanban_name" ] && [ -z "''${CLAUDE_ENV_FILE:-}" ]; then
-          echo "Warning: CLAUDE_ENV_FILE is not set; KANBAN_SESSION=$kanban_name will not be exported to the shell environment" >&2
+        kanban_output=""
+        if kanban_output=$(echo "$json" | kanban session-hook 2>/dev/null); then
+          kanban_name=$(echo "$kanban_output" | python3 ${extractKanbanName})
+          if [ -n "$kanban_name" ] && [ -n "''${CLAUDE_ENV_FILE:-}" ]; then
+            echo "export KANBAN_SESSION=$kanban_name" >> "$CLAUDE_ENV_FILE"
+          elif [ -n "$kanban_name" ] && [ -z "''${CLAUDE_ENV_FILE:-}" ]; then
+            # F4: emit to the result context (not stderr) so Claude Code does not
+            # label this as a hook error. The model seeing it in context is more
+            # useful than a false UI error label at every startup.
+            kanban_output="$kanban_output
+[$session_ts] Warning: CLAUDE_ENV_FILE is not set; KANBAN_SESSION=$kanban_name will not be exported to the shell environment."
+          fi
+        else
+          kanban_exit=$?
+          # F5: include timestamp in kanban failure warning.
+          # Gate the "kanban doctor" suggestion on whether kanban is in PATH.
+          if command -v kanban >/dev/null 2>&1; then
+            kanban_remedy="Run kanban doctor to diagnose."
+          else
+            kanban_remedy="kanban is not in PATH — check CLI installation."
+          fi
+          kanban_output="[$session_ts] Warning: kanban session-hook failed (exit ''${kanban_exit}). Cards will not be tracked in this session. $kanban_remedy"
         fi
         ${perm}/bin/perm cleanup-stale 2>/dev/null || true
-        echo "$json" | ${perm}/bin/perm session-hook 2>/dev/null || true
+        perm_exit=0
+        echo "$json" | ${perm}/bin/perm session-hook 2>/dev/null || perm_exit=$?
+        if [ "$perm_exit" -ne 0 ]; then
+          # F5: include timestamp in perm failure warning
+          kanban_output="$kanban_output
+[$session_ts] Warning: perm session-hook failed (exit $perm_exit). Permission gates may not work in this session."
+        fi
         output="$kanban_output"
         if [ -f ~/.claude/TOOLS.md ]; then
           tools_md=$(cat ~/.claude/TOOLS.md)
@@ -354,13 +377,9 @@ $orphan_warning"
       };
     };
 
-    perm = shellApp {
-      name = "perm";
-      runtimeInputs = [ pkgs.jq ];
-      text = builtins.readFile ./perm.bash;
-      description = "Manage Claude Code permissions in .claude/settings.local.json (allow, always, cleanup, list)";
-      sourceFile = "perm.bash";
-    };
+    perm = pkgs.writers.writePython3Bin "perm" {
+      flakeIgnore = [ "E265" "E501" "W503" "W504" ];
+    } (builtins.readFile ./perm.py);
 
     claude-inspect = claudeInspectScript // {
       meta = {
@@ -386,21 +405,13 @@ $orphan_warning"
       };
     };
 
-    kanban-permission-hook = shellApp {
-      name = "kanban-permission-hook";
-      runtimeInputs = [ pkgs.jq ];
-      text = builtins.readFile ./kanban-permission-hook.bash;
-      description = "PermissionRequest hook that auto-approves any Bash command starting with kanban";
-      sourceFile = "kanban-permission-hook.bash";
-    };
+    kanban-permission-hook = pkgs.writers.writePython3Bin "kanban-permission-hook" {
+      flakeIgnore = [ "E265" "E501" "W503" "W504" ];
+    } (builtins.readFile ./kanban-permission-hook.py);
 
-    senior-staff-staleness-hook = shellApp {
-      name = "senior-staff-staleness-hook";
-      runtimeInputs = [ pkgs.jq ];
-      text = builtins.readFile ./senior-staff-staleness-hook.bash;
-      description = "PreToolUse(Bash) hook that polls Senior Staff session windows when >60s stale";
-      sourceFile = "senior-staff-staleness-hook.bash";
-    };
+    senior-staff-staleness-hook = pkgs.writers.writePython3Bin "senior-staff-staleness-hook" {
+      flakeIgnore = [ "E265" "E501" "W503" "W504" ];
+    } (builtins.readFile ./senior-staff-staleness-hook.py);
 
   };
 
@@ -1006,25 +1017,37 @@ $orphan_warning"
             }
             {
               matcher = "Bash";
-              hooks = [{
-                type = "command";
-                command = "${shellapps.senior-staff-staleness-hook}/bin/senior-staff-staleness-hook";
-              }];
+              hooks = [
+                {
+                  type = "command";
+                  command = "${shellapps.senior-staff-staleness-hook}/bin/senior-staff-staleness-hook";
+                }
+                {
+                  type = "command";
+                  command = "${shellapps.git-no-verify-hook}/bin/git-no-verify-hook";
+                }
+              ];
             }
           ];
           PostToolUse = [
             {
-              matcher = "Edit|MultiEdit|Write";
-              hooks = [{
-                type = "command";
-                command = "${shellapps.claude-csharp-format-hook}/bin/claude-csharp-format-hook";
-              }];
+              matcher = "Bash";
+              hooks = [
+                {
+                  type = "command";
+                  command = "${shellapps.claude-kanban-transition-hook}/bin/claude-kanban-transition-hook";
+                }
+                {
+                  type = "command";
+                  command = "${shellapps.kanban-done-reminder-hook}/bin/kanban-done-reminder-hook";
+                }
+              ];
             }
             {
-              matcher = "Bash";
+              matcher = "TaskStop";
               hooks = [{
                 type = "command";
-                command = "${shellapps.claude-kanban-transition-hook}/bin/claude-kanban-transition-hook";
+                command = "${shellapps.taskstop-reminder-hook}/bin/taskstop-reminder-hook";
               }];
             }
           ];
@@ -1037,6 +1060,10 @@ $orphan_warning"
           PostCompact = [{
             hooks = [{
               type = "command";
+              # F6: add 30s timeout — consistent with KANBAN_TIMEOUT=10 in
+              # claude-kanban-transition-hook.py; prevents indefinite hang if
+              # kanban CLI is blocked (e.g. locked SQLite).
+              timeout = 30000;
               command = pkgs.writeShellScript "claude-postcompact-hook" ''
                 set -euo pipefail
 
@@ -1131,6 +1158,37 @@ EOF
       $DRY_RUN_CMD rm -f ~/.claude/commands/review.md
       $DRY_RUN_CMD rm -f ~/.claude/commands/review-domains.md
       $DRY_RUN_CMD rm -f ~/.claude/commands/review-citation-guide.md
+
+      # F1 migration stale-file cleanup
+      # Delegatable team member commands (17) — commands/ files deleted in F1 Phase 4
+      # (skill content now lives in agents/ files; commands/ entries removed)
+      $DRY_RUN_CMD rm -f ~/.claude/commands/ac-reviewer.md
+      $DRY_RUN_CMD rm -f ~/.claude/commands/ai-expert.md
+      $DRY_RUN_CMD rm -f ~/.claude/commands/debugger.md
+      $DRY_RUN_CMD rm -f ~/.claude/commands/finance.md
+      $DRY_RUN_CMD rm -f ~/.claude/commands/lawyer.md
+      $DRY_RUN_CMD rm -f ~/.claude/commands/marketing.md
+      $DRY_RUN_CMD rm -f ~/.claude/commands/researcher.md
+      $DRY_RUN_CMD rm -f ~/.claude/commands/scribe.md
+      $DRY_RUN_CMD rm -f ~/.claude/commands/swe-backend.md
+      $DRY_RUN_CMD rm -f ~/.claude/commands/swe-devex.md
+      $DRY_RUN_CMD rm -f ~/.claude/commands/swe-frontend.md
+      $DRY_RUN_CMD rm -f ~/.claude/commands/swe-fullstack.md
+      $DRY_RUN_CMD rm -f ~/.claude/commands/swe-infra.md
+      $DRY_RUN_CMD rm -f ~/.claude/commands/swe-security.md
+      $DRY_RUN_CMD rm -f ~/.claude/commands/swe-sre.md
+      $DRY_RUN_CMD rm -f ~/.claude/commands/ux-designer.md
+      $DRY_RUN_CMD rm -f ~/.claude/commands/visual-designer.md
+      # Workout skills (4) — deleted in F1 Phase 3
+      $DRY_RUN_CMD rm -f ~/.claude/commands/workout-burns.md
+      $DRY_RUN_CMD rm -f ~/.claude/commands/workout-staff.md
+      $DRY_RUN_CMD rm -f ~/.claude/commands/workout-smithers.md
+      $DRY_RUN_CMD rm -f ~/.claude/commands/workout-shared.md
+      # Exception skills (4) — migrated to skills/<name>/SKILL.md in F1 Phase 3
+      $DRY_RUN_CMD rm -f ~/.claude/commands/learn.md
+      $DRY_RUN_CMD rm -f ~/.claude/commands/project-planner.md
+      $DRY_RUN_CMD rm -f ~/.claude/commands/manage-pr-comments.md
+      $DRY_RUN_CMD rm -f ~/.claude/commands/review-pr-comments.md
 
       # Add generated TOOLS.md (use install to handle read-only destination from previous build)
       $DRY_RUN_CMD install -m 644 ${toolsMarkdown} ~/.claude/TOOLS.md

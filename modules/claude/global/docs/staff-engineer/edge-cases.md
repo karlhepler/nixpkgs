@@ -35,6 +35,8 @@ underway (card #16)."
 
 ## Partially Complete Work
 
+**Note:** The SubagentStop hook automates `kanban review` in normal flow. This example models the exceptional case where manual intervention is needed (e.g., agent returned without stopping cleanly, or criteria need to be added mid-flight).
+
 **Scenario:** Agent returns without finishing everything.
 
 **What to do:**
@@ -378,4 +380,4 @@ When the AC reviewer evaluates completed work, they should flag silent approach 
 - See `delegation-guide.md` for permission handling and model selection
 - See `parallel-patterns.md` for conflict detection and parallel safety
 - See `review-protocol.md` for review workflows and approval criteria
-- See staff-engineer.md for core protocols and card lifecycle
+- See [`staff-engineer.md`](../../output-styles/staff-engineer.md) for core protocols and card lifecycle

@@ -12,9 +12,9 @@ Detailed guidance for mandatory reviews, review workflows, and approval criteria
 
 **IF card involves ANY of these, STOP IMMEDIATELY. CREATE review cards. DO NOT MARK DONE until reviews approve.**
 
-- **Prompt files** (*.md in claude/*, output-styles, skills, agent definitions)
+- **Prompt files** (output-styles/\*.md, agents/\*.md, skills/\*\*/SKILL.md, CLAUDE.md, hooks/\*.md)
   → CREATE: AI Expert review card (two-part: delta + full prompt adherence)
-  → **Model selection:** Sonnet by default for full-file audits; Opus only for large (20+ line) or architectural deltas. See staff-engineer.md for details.
+  → **Model selection:** Sonnet by default for full-file audits; Opus only for large (20+ line) or architectural deltas. See [staff-engineer.md](../../output-styles/staff-engineer.md) for details.
 
 - **Auth/AuthZ** (login, permissions, tokens, sessions, roles, access control)
   → CREATE: Security review + Backend peer review cards
@@ -335,118 +335,7 @@ BLOCK (CRITICAL) - Work has critical security/safety issues. Must fix before pro
 DO NOT SHIP until these are resolved. Requires re-review after fixes.
 ```
 
----
-
-## Approval Criteria by Domain
-
-### Infrastructure Review Criteria
-
-**Technical Correctness:**
-- Valid syntax (Terraform, CloudFormation, K8s manifests)
-- Resource references correct (no broken dependencies)
-- Tested in non-prod environment
-
-**Best Practices:**
-- Least-privilege principle applied
-- Resources tagged for cost tracking
-- Idempotent (can run multiple times safely)
-
-**Security:**
-- No hardcoded credentials
-- Encryption enabled (at rest, in transit)
-- Network policies restrictive
-- Audit logging enabled
-
-**Maintainability:**
-- Clear naming conventions
-- Documented purpose (why this exists)
-- Cleanup strategy (how to decommission)
-
-### Database Review Criteria
-
-**Schema Design:**
-- Normalized appropriately (3NF where reasonable)
-- Indexes on columns used in WHERE/JOIN
-- Foreign keys enforce referential integrity
-- Data types appropriate (not VARCHAR(255) for everything)
-
-**Migration Safety:**
-- Reversible (down migration provided)
-- No data loss (backups taken)
-- Performance tested (large tables handled)
-- Zero-downtime if required (online schema change)
-
-**PII Protection (if applicable):**
-- Encryption at rest
-- Access controls (least privilege)
-- GDPR compliance (retention policy)
-- Audit logging
-
-### Security Review Criteria
-
-**Authentication:**
-- Strong credentials (hashed + salted passwords)
-- Secure session management (httpOnly, secure flags)
-- Token validation (signature, expiration)
-- No credentials in code/logs
-
-**Authorization:**
-- Least-privilege principle
-- Role-based access control
-- No privilege escalation paths
-- Default deny (whitelist, not blacklist)
-
-**Data Protection:**
-- PII encrypted (at rest, in transit)
-- Input validation (prevent injection)
-- Output encoding (prevent XSS)
-- CSRF protection
-
-**Attack Surface:**
-- Rate limiting (prevent brute force)
-- Audit logging (who, what, when)
-- Error messages don't leak info
-- Dependencies up-to-date (no known CVEs)
-
-### Backend Review Criteria
-
-**Code Quality:**
-- Error handling comprehensive
-- Tests cover happy path + edge cases
-- No hardcoded values (use config)
-- Logging appropriate (not too verbose, not too sparse)
-
-**Performance:**
-- Database queries efficient (no N+1)
-- Caching where appropriate
-- Async operations don't block
-- Resource cleanup (connections closed)
-
-**Integration:**
-- API contracts clear (request/response schemas)
-- Backwards compatibility maintained
-- Versioning strategy followed
-- Documentation updated
-
-### Frontend Review Criteria
-
-**User Experience:**
-- Loading states (spinners, skeletons)
-- Error messages helpful (not "Error 500")
-- Accessibility (WCAG AA)
-- Responsive (mobile, tablet, desktop)
-
-**Code Quality:**
-- Components reusable
-- State management clear
-- No prop drilling (use context if needed)
-- Tests cover user interactions
-
-**Performance:**
-- Code splitting (lazy load routes)
-- Images optimized
-- Bundle size reasonable
-- Lighthouse score acceptable
+For domain-specific review criteria, rely on the specialist agent — each agent's skill covers its own domain criteria.
 
 ---
 
@@ -527,66 +416,22 @@ Staff Engineer:
 
 **Scenario:** Building proof-of-concept, won't ship to production yet
 
+**Exception: Tier 1 reviews (auth/authz, financial, infra, PII database, CI/CD, prompt files) are mandatory regardless of POC status — safety reviews don't wait for production.**
+
 **Protocol:**
-1. Skip reviews during exploration phase
+1. Skip reviews during exploration phase (except Tier 1 — see above)
 2. Document that this is POC (not production-ready)
 3. When transitioning to production → Full review required
 
 **Rationale:** Reviews slow exploration. But production code needs rigor.
 
----
-
-## Review Anti-Patterns
-
-### ❌ Rubber Stamp Review
-
-**Problem:** Reviewer approves without actually reviewing.
-
-**Signs:**
-- Review completed in seconds (complex change)
-- Generic approval ("Looks good!")
-- No specific feedback on what was verified
-
-**Fix:** Require specific verification checklist in review result.
-
-### ❌ Bikeshedding (Arguing Trivial Details)
-
-**Problem:** Reviewers argue about style/naming while missing real issues.
-
-**Signs:**
-- Multiple rounds of review on variable names
-- Functional issues not caught
-- Review takes longer than implementation
-
-**Fix:** Focus review on correctness, security, maintainability. Style is secondary.
-
-### ❌ Review Purgatory (Never Completes)
-
-**Problem:** Review drags on forever, work never ships.
-
-**Signs:**
-- Multiple review cycles with new issues each time
-- Reviewer keeps finding "one more thing"
-- Work is blocked for days/weeks
-
-**Fix:** Set time limit for review (24-48 hours). If issues found, be specific. If work fundamentally wrong, reject early and restart.
-
-### ❌ Missing the Forest for the Trees
-
-**Problem:** Reviewer focuses on code style, misses security vulnerability.
-
-**Signs:**
-- Feedback on formatting, naming, comments
-- No feedback on logic, security, edge cases
-- Critical bug ships because review focused on trivia
-
-**Fix:** Prioritize review checklist - correctness > security > performance > style.
+See anti-patterns.md for AC-review-specific failures.
 
 ---
 
 ## Prompt File Reviews
 
-Prompt files (output-styles/\*.md, commands/\*.md, agents/\*.md, CLAUDE.md, hooks/\*.md) require AI Expert review in two distinct parts. Both parts must complete before approving the work card.
+Prompt files (output-styles/\*.md, agents/\*.md, skills/\*\*/SKILL.md, CLAUDE.md, hooks/\*.md) require AI Expert review in two distinct parts. Both parts must complete before approving the work card.
 
 ### Part 1: Delta Review
 
@@ -800,4 +645,4 @@ Even obvious fixes require user awareness. "I'll just fix it" is a scope decisio
 
 - See `delegation-guide.md` for permission handling and model selection
 - See `parallel-patterns.md` for parallel review coordination
-- See staff-engineer.md for quick-reference tier checklist
+- See [`staff-engineer.md`](../../output-styles/staff-engineer.md) for quick-reference tier checklist

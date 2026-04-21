@@ -1,0 +1,552 @@
+"""
+Tests for modules/claude/kanban-pretool-hook.py.
+
+Covered paths:
+- Agent call missing run_in_background → denied with expected error message
+- Agent call missing description → denied
+- Agent call missing subagent_type → denied
+- Agent call with invalid subagent_type (general-purpose) → denied
+- Agent call with card number → card XML injected into prompt
+- Agent call without card number → denied unless SKILL_AGENT_BYPASS marker
+- Agent call with FOREGROUND_AUTHORIZED marker → allows run_in_background: false
+- Agent call with SKILL_AGENT_BYPASS marker → bypasses all enforcement
+
+All kanban CLI and subprocess calls are monkeypatched — no real kanban cards
+are created or read during these tests.
+"""
+
+import importlib.util
+import json
+import os
+import sys
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from .conftest import KanbanMockResponses, make_pretool_payload
+
+# ---------------------------------------------------------------------------
+# Hook module loader
+# ---------------------------------------------------------------------------
+
+_HOOK_PATH = Path(__file__).parent.parent / "kanban-pretool-hook.py"
+
+
+def load_hook():
+    """Import kanban-pretool-hook.py as a module without executing main()."""
+    spec = importlib.util.spec_from_file_location("kanban_pretool_hook", _HOOK_PATH)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+@pytest.fixture(scope="module")
+def hook():
+    """Load the pretool hook module once per test module."""
+    return load_hook()
+
+
+# ---------------------------------------------------------------------------
+# Helper: run main() with a JSON payload via monkeypatched stdin / stdout
+# ---------------------------------------------------------------------------
+
+def run_hook_main(hook_mod, payload: dict, env: dict | None = None) -> dict:
+    """
+    Call hook_mod.main() with the given payload dict as stdin JSON.
+    Returns the parsed JSON written to stdout.
+    """
+    import io
+
+    raw = json.dumps(payload)
+
+    captured_output: list[str] = []
+
+    def fake_print(val, **kwargs):
+        captured_output.append(val)
+
+    env_patch = env or {}
+
+    with patch.object(sys, "stdin", io.StringIO(raw)):
+        with patch("builtins.print", side_effect=fake_print):
+            with patch.dict(os.environ, env_patch, clear=False):
+                # Suppress log writes
+                with patch.object(hook_mod, "log_error"):
+                    with patch.object(hook_mod, "log_info"):
+                        hook_mod.main()
+
+    assert captured_output, "Hook produced no output"
+    return json.loads(captured_output[-1])
+
+
+# ---------------------------------------------------------------------------
+# Helpers to assert decision outcomes
+# ---------------------------------------------------------------------------
+
+def assert_denied(result: dict, substring: str = ""):
+    decision = result.get("hookSpecificOutput", {}).get("permissionDecision")
+    assert decision == "deny", f"Expected deny, got {decision!r}. Full result: {result}"
+    if substring:
+        reason = result.get("hookSpecificOutput", {}).get("permissionDecisionReason", "")
+        assert substring.lower() in reason.lower(), (
+            f"Expected {substring!r} in deny reason. Got: {reason!r}"
+        )
+
+
+def assert_allowed(result: dict):
+    decision = result.get("hookSpecificOutput", {}).get("permissionDecision")
+    assert decision == "allow", f"Expected allow, got {decision!r}. Full result: {result}"
+
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+
+class TestMissingRunInBackground:
+    """Agent call missing run_in_background → denied with expected error message."""
+
+    def test_false_run_in_background_denied(self, hook):
+        payload = make_pretool_payload(run_in_background=False)
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "run_in_background")
+
+    def test_missing_run_in_background_denied(self, hook):
+        # Omit the key entirely from tool_input
+        payload = make_pretool_payload(run_in_background=None)
+        # Remove the key — make_pretool_payload omits it when None
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "run_in_background")
+
+    def test_deny_reason_mentions_background(self, hook):
+        payload = make_pretool_payload(run_in_background=False)
+        result = run_hook_main(hook, payload)
+        reason = result.get("hookSpecificOutput", {}).get("permissionDecisionReason", "")
+        assert "run_in_background" in reason
+        assert "true" in reason.lower() or "background" in reason.lower()
+
+
+class TestMissingDescription:
+    """Agent call missing or empty description → denied."""
+
+    def test_empty_description_denied(self, hook):
+        payload = make_pretool_payload(description="")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "description")
+
+    def test_whitespace_only_description_denied(self, hook):
+        payload = make_pretool_payload(description="   ")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "description")
+
+    def test_deny_reason_mentions_description(self, hook):
+        payload = make_pretool_payload(description="")
+        result = run_hook_main(hook, payload)
+        reason = result.get("hookSpecificOutput", {}).get("permissionDecisionReason", "")
+        assert "description" in reason.lower()
+
+
+class TestMissingSubagentType:
+    """Agent call missing or empty subagent_type → denied."""
+
+    def test_empty_subagent_type_denied(self, hook):
+        payload = make_pretool_payload(subagent_type="")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "subagent_type")
+
+    def test_whitespace_only_subagent_type_denied(self, hook):
+        payload = make_pretool_payload(subagent_type="  ")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "subagent_type")
+
+    def test_deny_reason_mentions_subagent_type(self, hook):
+        payload = make_pretool_payload(subagent_type="")
+        result = run_hook_main(hook, payload)
+        reason = result.get("hookSpecificOutput", {}).get("permissionDecisionReason", "")
+        assert "subagent_type" in reason.lower()
+
+
+class TestInvalidSubagentType:
+    """Agent call with 'general-purpose' subagent_type → denied."""
+
+    def test_general_purpose_denied(self, hook):
+        payload = make_pretool_payload(subagent_type="general-purpose")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "general-purpose")
+
+    def test_general_purpose_case_insensitive(self, hook):
+        payload = make_pretool_payload(subagent_type="General-Purpose")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "general-purpose")
+
+    def test_specific_subagent_allowed(self, hook):
+        """swe-backend is a valid subagent type — hook proceeds past the subagent_type check."""
+        payload = make_pretool_payload(subagent_type="swe-backend")
+        # The card reference check fires next; mock kanban show to succeed
+        card_xml = KanbanMockResponses.card_xml()
+
+        def fake_subprocess_run(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd[0] == "kanban" and cmd[1] == "show":
+                return KanbanMockResponses.success(stdout=card_xml)
+            if isinstance(cmd, list) and cmd[0] == "kanban" and cmd[1] == "agent":
+                return KanbanMockResponses.success()
+            return KanbanMockResponses.failure()
+
+        with patch("subprocess.run", side_effect=fake_subprocess_run):
+            result = run_hook_main(hook, payload)
+        # Must be allowed (card injected) — not denied for subagent_type
+        assert_allowed(result)
+
+
+class TestCardInjection:
+    """Agent call with card number → card XML injected into prompt."""
+
+    def test_card_xml_injected_into_prompt(self, hook):
+        payload = make_pretool_payload(
+            prompt="KANBAN CARD #42 | Session: test-session\nDo some work.",
+        )
+        card_xml = KanbanMockResponses.card_xml(card_number="42", session="test-session")
+
+        def fake_subprocess_run(cmd, **kwargs):
+            if cmd[0] == "kanban" and cmd[1] == "show":
+                return KanbanMockResponses.success(stdout=card_xml)
+            if cmd[0] == "kanban" and cmd[1] == "agent":
+                return KanbanMockResponses.success()
+            return KanbanMockResponses.failure()
+
+        with patch("subprocess.run", side_effect=fake_subprocess_run):
+            result = run_hook_main(hook, payload)
+
+        assert_allowed(result)
+        updated_input = result.get("hookSpecificOutput", {}).get("updatedInput", {})
+        new_prompt = updated_input.get("prompt", "")
+        assert "Kanban card #42" in new_prompt
+        assert "injected by PreToolUse hook" in new_prompt
+
+    def test_card_injection_preserves_original_fields(self, hook):
+        """updatedInput must contain ALL original tool_input fields."""
+        payload = make_pretool_payload(
+            prompt="KANBAN CARD #42 | Session: test-session\nDo some work.",
+            subagent_type="swe-devex",
+            description="Test description",
+            run_in_background=True,
+        )
+        card_xml = KanbanMockResponses.card_xml()
+
+        def fake_subprocess_run(cmd, **kwargs):
+            if cmd[0] == "kanban" and cmd[1] == "show":
+                return KanbanMockResponses.success(stdout=card_xml)
+            if cmd[0] == "kanban" and cmd[1] == "agent":
+                return KanbanMockResponses.success()
+            return KanbanMockResponses.failure()
+
+        with patch("subprocess.run", side_effect=fake_subprocess_run):
+            result = run_hook_main(hook, payload)
+
+        updated_input = result.get("hookSpecificOutput", {}).get("updatedInput", {})
+        assert updated_input.get("subagent_type") == "swe-devex"
+        assert updated_input.get("description") == "Test description"
+        assert updated_input.get("run_in_background") is True
+
+    def test_kanban_show_failure_fails_open(self, hook):
+        """If kanban show fails, hook should fail open (allow unchanged)."""
+        payload = make_pretool_payload(
+            prompt="KANBAN CARD #42 | Session: test-session\nDo some work.",
+        )
+
+        def fake_subprocess_run(cmd, **kwargs):
+            if cmd[0] == "kanban" and cmd[1] == "show":
+                return KanbanMockResponses.failure(returncode=1)
+            return KanbanMockResponses.success()
+
+        with patch("subprocess.run", side_effect=fake_subprocess_run):
+            result = run_hook_main(hook, payload)
+
+        assert_allowed(result)
+        # No updatedInput — fails open means no injection
+        updated_input = result.get("hookSpecificOutput", {}).get("updatedInput")
+        assert updated_input is None
+
+    def test_fetch_card_xml_failure_logs_error(self, hook):
+        """fetch_card_xml logs an error when kanban show fails (diagnostic path)."""
+        # Test fetch_card_xml directly to assert log_error is called on failure
+        mock_result = KanbanMockResponses.failure(returncode=1, stderr="not found")
+        with patch("subprocess.run", return_value=mock_result):
+            with patch.object(hook, "log_error") as mock_log_error:
+                result = hook.fetch_card_xml("42", "test-session")
+        assert result is None
+        mock_log_error.assert_called_once()
+
+    def test_sqlite_backfill_called_on_successful_kanban_agent(self, hook):
+        """After successful kanban agent call, sqlite3.connect is called to backfill DB."""
+        payload = make_pretool_payload(
+            prompt="KANBAN CARD #42 | Session: test-session\nDo some work.",
+            subagent_type="swe-devex",
+        )
+        card_xml = KanbanMockResponses.card_xml(card_number="42", session="test-session")
+
+        def fake_subprocess_run(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd[0] == "kanban" and cmd[1] == "show":
+                return KanbanMockResponses.success(stdout=card_xml)
+            if isinstance(cmd, list) and cmd[0] == "kanban" and cmd[1] == "agent":
+                return KanbanMockResponses.success()
+            return KanbanMockResponses.failure()
+
+        mock_conn = MagicMock()
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=False)
+
+        with patch("subprocess.run", side_effect=fake_subprocess_run):
+            with patch("sqlite3.connect", return_value=mock_conn) as mock_sqlite:
+                result = run_hook_main(hook, payload)
+
+        assert_allowed(result)
+        mock_sqlite.assert_called_once()
+        # Verify the UPDATE was executed with expected parameters
+        execute_calls = mock_conn.execute.call_args_list
+        update_calls = [c for c in execute_calls if "UPDATE" in str(c) and "kanban_card_events" in str(c)]
+        assert len(update_calls) >= 1, "Expected UPDATE kanban_card_events to be called"
+        # Verify the normalized agent value and card number are passed
+        update_args = update_calls[0][0]  # positional args of the first UPDATE call
+        params = update_args[1] if len(update_args) > 1 else ()
+        assert "swe-devex" in params, f"Expected swe-devex in UPDATE params: {params}"
+        assert "42" in params, f"Expected card number 42 in UPDATE params: {params}"
+
+    def test_sqlite_backfill_not_called_when_kanban_agent_fails(self, hook):
+        """If kanban agent call fails, sqlite3.connect should NOT be called."""
+        payload = make_pretool_payload(
+            prompt="KANBAN CARD #42 | Session: test-session\nDo some work.",
+            subagent_type="swe-devex",
+        )
+        card_xml = KanbanMockResponses.card_xml(card_number="42", session="test-session")
+
+        def fake_subprocess_run(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd[0] == "kanban" and cmd[1] == "show":
+                return KanbanMockResponses.success(stdout=card_xml)
+            if isinstance(cmd, list) and cmd[0] == "kanban" and cmd[1] == "agent":
+                # kanban agent fails
+                return KanbanMockResponses.failure(returncode=1)
+            return KanbanMockResponses.failure()
+
+        with patch("subprocess.run", side_effect=fake_subprocess_run):
+            with patch("sqlite3.connect") as mock_sqlite:
+                result = run_hook_main(hook, payload)
+
+        assert_allowed(result)
+        mock_sqlite.assert_not_called()
+
+    def test_sqlite_exception_swallowed_does_not_propagate(self, hook):
+        """If sqlite3.connect raises, the error is swallowed and hook still allows."""
+        payload = make_pretool_payload(
+            prompt="KANBAN CARD #42 | Session: test-session\nDo some work.",
+            subagent_type="swe-devex",
+        )
+        card_xml = KanbanMockResponses.card_xml(card_number="42", session="test-session")
+
+        def fake_subprocess_run(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd[0] == "kanban" and cmd[1] == "show":
+                return KanbanMockResponses.success(stdout=card_xml)
+            if isinstance(cmd, list) and cmd[0] == "kanban" and cmd[1] == "agent":
+                return KanbanMockResponses.success()
+            return KanbanMockResponses.failure()
+
+        with patch("subprocess.run", side_effect=fake_subprocess_run):
+            with patch("sqlite3.connect", side_effect=Exception("DB not available")):
+                # Must not raise — exception must be swallowed
+                result = run_hook_main(hook, payload)
+
+        # Hook should still allow despite DB failure
+        assert_allowed(result)
+
+
+class TestNoCardReference:
+    """Agent call without card number → denied unless SKILL_AGENT_BYPASS."""
+
+    def test_no_card_reference_denied(self, hook):
+        payload = make_pretool_payload(prompt="Please do some work without any card reference.")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "kanban card")
+
+    def test_deny_reason_explains_card_requirement(self, hook):
+        payload = make_pretool_payload(prompt="Work without a card.")
+        result = run_hook_main(hook, payload)
+        reason = result.get("hookSpecificOutput", {}).get("permissionDecisionReason", "")
+        assert "kanban" in reason.lower() or "card" in reason.lower()
+
+
+class TestForegroundAuthorized:
+    """FOREGROUND_AUTHORIZED marker → allows run_in_background: false."""
+
+    def test_foreground_authorized_bypasses_background_check(self, hook):
+        payload = make_pretool_payload(
+            run_in_background=False,
+            prompt="FOREGROUND_AUTHORIZED\nKANBAN CARD #42 | Session: test-session\nDo some work.",
+        )
+        card_xml = KanbanMockResponses.card_xml()
+
+        def fake_subprocess_run(cmd, **kwargs):
+            if cmd[0] == "kanban" and cmd[1] == "show":
+                return KanbanMockResponses.success(stdout=card_xml)
+            if cmd[0] == "kanban" and cmd[1] == "agent":
+                return KanbanMockResponses.success()
+            return KanbanMockResponses.failure()
+
+        with patch("subprocess.run", side_effect=fake_subprocess_run):
+            result = run_hook_main(hook, payload)
+
+        assert_allowed(result)
+
+    def test_foreground_authorized_still_enforces_description(self, hook):
+        """FOREGROUND_AUTHORIZED does NOT bypass description check."""
+        payload = make_pretool_payload(
+            run_in_background=False,
+            description="",
+            prompt="FOREGROUND_AUTHORIZED\nKANBAN CARD #42 | Session: test-session\nDo some work.",
+        )
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "description")
+
+
+class TestSkillAgentBypass:
+    """SKILL_AGENT_BYPASS marker → bypasses all enforcement."""
+
+    def test_bypass_skips_description_check(self, hook):
+        payload = make_pretool_payload(
+            run_in_background=None,
+            description=None,
+            subagent_type=None,
+            prompt="SKILL_AGENT_BYPASS\nsome skill invocation",
+        )
+        result = run_hook_main(hook, payload)
+        # Should be allow (no card found so fails open)
+        assert_allowed(result)
+
+    def test_bypass_skips_subagent_type_check(self, hook):
+        payload = make_pretool_payload(
+            subagent_type=None,
+            prompt="SKILL_AGENT_BYPASS\nsome skill invocation",
+        )
+        result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+    def test_bypass_skips_run_in_background_check(self, hook):
+        payload = make_pretool_payload(
+            run_in_background=False,
+            prompt="SKILL_AGENT_BYPASS\nsome skill invocation",
+        )
+        result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+    def test_bypass_with_card_reference_still_injects(self, hook):
+        """With SKILL_AGENT_BYPASS and a card reference, injection still occurs."""
+        payload = make_pretool_payload(
+            run_in_background=None,
+            description=None,
+            subagent_type=None,
+            prompt="SKILL_AGENT_BYPASS\nKANBAN CARD #99 | Session: bypass-session\nDo work.",
+        )
+        card_xml = KanbanMockResponses.card_xml(card_number="99", session="bypass-session")
+
+        def fake_subprocess_run(cmd, **kwargs):
+            if cmd[0] == "kanban" and cmd[1] == "show":
+                return KanbanMockResponses.success(stdout=card_xml)
+            if cmd[0] == "kanban" and cmd[1] == "agent":
+                return KanbanMockResponses.success()
+            return KanbanMockResponses.failure()
+
+        with patch("subprocess.run", side_effect=fake_subprocess_run):
+            result = run_hook_main(hook, payload)
+
+        assert_allowed(result)
+        updated_input = result.get("hookSpecificOutput", {}).get("updatedInput", {})
+        new_prompt = updated_input.get("prompt", "")
+        # Both the card reference AND the injection marker must be present
+        assert "Kanban card #99" in new_prompt, (
+            f"Expected 'Kanban card #99' in injected prompt, got: {new_prompt[:200]!r}"
+        )
+        assert "injected by PreToolUse hook" in new_prompt, (
+            f"Expected injection marker in prompt, got: {new_prompt[:200]!r}"
+        )
+
+
+class TestBurnsSession:
+    """BURNS_SESSION=1 → hook skips all processing and allows unchanged."""
+
+    def test_burns_session_allows_unchanged(self, hook):
+        payload = make_pretool_payload(run_in_background=False, description="", subagent_type="")
+        result = run_hook_main(hook, payload, env={"BURNS_SESSION": "1"})
+        assert_allowed(result)
+        # No updatedInput — completely unchanged
+        assert "updatedInput" not in result.get("hookSpecificOutput", {})
+
+
+class TestNonAgentTool:
+    """Non-Agent tool_name → allow unchanged (hook is Agent-only)."""
+
+    def test_non_agent_tool_allowed(self, hook):
+        payload = make_pretool_payload()
+        payload["tool_name"] = "Bash"
+        result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+
+class TestResponseStructure:
+    """Verify the hook always produces structurally valid JSON output."""
+
+    def test_allow_response_has_required_fields(self, hook):
+        payload = make_pretool_payload()
+        card_xml = KanbanMockResponses.card_xml()
+        with patch("subprocess.run", return_value=KanbanMockResponses.success(stdout=card_xml)):
+            result = run_hook_main(hook, payload)
+        assert "continue" in result
+        assert "hookSpecificOutput" in result
+        hook_out = result["hookSpecificOutput"]
+        assert "hookEventName" in hook_out
+        assert hook_out["hookEventName"] == "PreToolUse"
+        assert "permissionDecision" in hook_out
+
+    def test_deny_response_has_required_fields(self, hook):
+        payload = make_pretool_payload(run_in_background=False)
+        result = run_hook_main(hook, payload)
+        assert result["continue"] is False
+        hook_out = result["hookSpecificOutput"]
+        assert hook_out["permissionDecision"] == "deny"
+        assert "permissionDecisionReason" in hook_out
+
+
+class TestCardPatternExtraction:
+    """Unit tests for extract_card_and_session directly."""
+
+    def test_full_pattern(self, hook):
+        prompt = "KANBAN CARD #123 | Session: my-session\nDo work."
+        result = hook.extract_card_and_session(prompt)
+        assert result == ("123", "my-session")
+
+    def test_card_session_pattern(self, hook):
+        prompt = "#456 --session another-session do something"
+        result = hook.extract_card_and_session(prompt)
+        assert result == ("456", "another-session")
+
+    def test_bare_card_pattern(self, hook):
+        prompt = "Work on card #789 please.\nSession: bare-session"
+        result = hook.extract_card_and_session(prompt)
+        assert result == ("789", "bare-session")
+
+    def test_no_match_returns_none(self, hook):
+        prompt = "No card reference here at all."
+        result = hook.extract_card_and_session(prompt)
+        assert result is None
+
+    def test_card_session_pattern_requires_same_line(self, hook):
+        """Pattern 2 (_CARD_SESSION_PATTERN) requires card # and --session on the same line.
+        When they are on different lines, it falls through to Pattern 3 (bare card + bare session).
+        """
+        # Card number on one line, --session on a different line — Pattern 2 must NOT match.
+        # Pattern 3 (bare card + bare session) should pick this up instead.
+        prompt = "card #456\n--session cross-line-session\nDo work."
+        result = hook.extract_card_and_session(prompt)
+        # Pattern 3 (bare card + bare session) can still match here
+        # The important thing is Pattern 2 didn't match (which would also give the right answer)
+        # We verify the result is correct regardless of which pattern matched
+        assert result is not None, "Expected some match via Pattern 3 fallthrough"
+        assert result[0] == "456"
+        assert result[1] == "cross-line-session"

@@ -26,6 +26,7 @@ import re
 import sqlite3
 import subprocess
 import sys
+import time
 import traceback
 import uuid
 import warnings
@@ -43,6 +44,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 ERROR_LOG_PATH = Path.home() / ".claude" / "metrics" / "kanban-subagent-stop-hook-errors.log"
 MAX_INNER_ITERATIONS = 2
 MAX_OUTER_CYCLES = 3
+MAX_REVIEWER_DONE_RETRIES = 2  # Max times hook re-launches reviewer for reviewer_met incomplete
 CLAUDE_MAX_TURNS = 50
 AC_REVIEWER_AGENT_PATH = Path.home() / ".claude" / "agents" / "ac-reviewer.md"
 
@@ -330,10 +332,28 @@ _KANBAN_CRITERIA_BASH: re.Pattern[str] = re.compile(
 # Error logging
 # ---------------------------------------------------------------------------
 
+_LOG_MAX_BYTES = 10 * 1024 * 1024  # 10 MB cap before rotation
+
+
+def _rotate_log_if_needed(path: Path) -> None:
+    """Rotate path → path.1 when the file exceeds _LOG_MAX_BYTES. Never raises."""
+    try:
+        if path.exists() and path.stat().st_size >= _LOG_MAX_BYTES:
+            rotated = path.with_suffix(path.suffix + ".1")
+            path.rename(rotated)
+    except Exception:
+        pass
+
+
 def log_error(message: str) -> None:
-    """Append an error to the hook error log. Never raises."""
+    """Append an error to the hook error log. Never raises.
+
+    Rotates the log file to <path>.1 when it exceeds _LOG_MAX_BYTES,
+    then starts a fresh file (one backup generation kept).
+    """
     try:
         ERROR_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _rotate_log_if_needed(ERROR_LOG_PATH)
         timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
         with open(ERROR_LOG_PATH, "a", encoding="utf-8") as fh:
             fh.write(f"[{timestamp}] {message}\n")
@@ -349,9 +369,12 @@ def log_info(message: str) -> None:
 
     Previously wrote to stderr, but Claude Code interprets any stderr output
     from hooks as errors — causing false 'hook error' labels in the UI.
+    Rotates the log file to <path>.1 when it exceeds _LOG_MAX_BYTES,
+    then starts a fresh file (one backup generation kept).
     """
     try:
         INFO_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _rotate_log_if_needed(INFO_LOG_PATH)
         timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
         with open(INFO_LOG_PATH, "a", encoding="utf-8") as fh:
             fh.write(f"[{timestamp}] {message}\n")
@@ -577,6 +600,21 @@ def detect_criteria_gaming(transcript_path: str) -> bool:
         True if gaming is detected, False otherwise (including on any error).
     """
     try:
+        # Size guard: skip gaming detection for very large transcripts to avoid
+        # spiking Python memory usage (50 MB transcript → ~200-300 MB in-memory).
+        # Fail open: a large transcript is unlikely to be gaming anyway.
+        _TRANSCRIPT_MAX_BYTES = 50 * 1024 * 1024  # 50 MB
+        try:
+            transcript_size = Path(transcript_path).stat().st_size
+            if transcript_size > _TRANSCRIPT_MAX_BYTES:
+                log_info(
+                    f"detect_criteria_gaming: transcript too large "
+                    f"({transcript_size} bytes > {_TRANSCRIPT_MAX_BYTES}) — skipping gaming check"
+                )
+                return False
+        except OSError:
+            pass  # file stat failure is non-fatal; proceed to load attempt
+
         # --- Pass 1: load all entries and find the last block-feedback index ---
         entries: list[dict] = []
         try:
@@ -661,8 +699,11 @@ def detect_criteria_gaming(transcript_path: str) -> bool:
                         log_info(f"detect_criteria_gaming: substantive Bash command found: {cmd[:80]!r}")
                         break
 
+            # Two-level break pattern: the inner `break` above exits the content
+            # block loop for *this* entry. This outer check exits the entry loop
+            # entirely once substantive work is confirmed — no need to scan further.
             if has_substantive_work:
-                break  # no need to keep scanning
+                break
 
         gaming = has_criteria_recheck and not has_substantive_work
         log_info(
@@ -681,7 +722,15 @@ def detect_criteria_gaming(transcript_path: str) -> bool:
 # ---------------------------------------------------------------------------
 
 def run_kanban(args: list[str], timeout: int = 30) -> subprocess.CompletedProcess:
-    """Run a kanban CLI command, capturing output."""
+    """Run a kanban CLI command, capturing output.
+
+    Always returns a CompletedProcess — never returns None, never re-raises.
+    On TimeoutExpired: returns a synthetic result with returncode=124 and a
+    timeout message in stderr (consistent with GNU timeout's exit code).
+    On FileNotFoundError: returns a synthetic result with returncode=127 and
+    a "kanban not found" message in stderr (consistent with shell exit code
+    for command-not-found).
+    """
     cmd = ["kanban"] + args
     try:
         result = subprocess.run(
@@ -695,9 +744,20 @@ def run_kanban(args: list[str], timeout: int = 30) -> subprocess.CompletedProces
         return result
     except subprocess.TimeoutExpired:
         log_error(f"kanban {' '.join(args)} timed out after {timeout}s")
-        raise
+        return subprocess.CompletedProcess(
+            args=cmd,
+            returncode=124,
+            stdout="",
+            stderr=f"kanban {' '.join(args)} timed out after {timeout}s",
+        )
     except FileNotFoundError:
         log_error("kanban CLI not found in PATH")
+        return subprocess.CompletedProcess(
+            args=cmd,
+            returncode=127,
+            stdout="",
+            stderr="kanban: command not found",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -998,6 +1058,7 @@ def _run_malfunction_retry(
     transcript_path: str,
     outer_session_id: str,
     working_directory: str,
+    hook_start_time: float | None = None,
 ) -> bool:
     """Run up to two AC review passes as a malfunction retry.
 
@@ -1010,10 +1071,19 @@ def _run_malfunction_retry(
     stochastic (Haiku sometimes skips pass/fail calls); a second attempt
     improves the odds of recovery before escalating to redo+block.
 
+    hook_start_time: epoch seconds from time.time() when the hook began. When
+    provided, each attempt is skipped if elapsed time exceeds 480s, leaving a
+    120s buffer before the 600s hook timeout. This prevents malfunction retries
+    from pushing total wall-clock time beyond the hook deadline (F11 fix).
+
     Returns True if the card reached done on either attempt, False otherwise.
     Does NOT wrap in try/except — caller is responsible for exception handling.
     """
     _MALFUNCTION_RETRY_MAX_ATTEMPTS = 2
+    # Budget guard: leave 120s buffer before the 600s hook timeout.
+    # If hook_start_time is not supplied, the guard is disabled (safe fallback).
+    _HOOK_TIMEOUT_S = 600
+    _BUDGET_GUARD_S = 480  # 600 - 120 buffer
 
     prompt = build_malfunction_retry_prompt(card_number, session, transcript_path)
     ac_reviewer_system_prompt = read_ac_reviewer_agent_definition()
@@ -1026,6 +1096,17 @@ def _run_malfunction_retry(
     ]
 
     for attempt in range(1, _MALFUNCTION_RETRY_MAX_ATTEMPTS + 1):
+        # Budget guard: skip attempt if we are within 120s of the hook timeout.
+        if hook_start_time is not None:
+            elapsed = time.time() - hook_start_time
+            if elapsed >= _BUDGET_GUARD_S:
+                log_info(
+                    f"Malfunction retry attempt {attempt}: budget guard triggered — "
+                    f"elapsed {elapsed:.0f}s >= {_BUDGET_GUARD_S}s threshold "
+                    f"(hook timeout {_HOOK_TIMEOUT_S}s). Skipping remaining attempts."
+                )
+                return False
+
         log_info(
             f"Malfunction retry attempt {attempt}/{_MALFUNCTION_RETRY_MAX_ATTEMPTS}: "
             f"launching AC review pass for card #{card_number}"
@@ -1236,6 +1317,9 @@ def run_programmatic_mov(
     )
 
     try:
+        # shell=True is required: MoV commands are shell expressions (pipes, redirection,
+        # compound tests). Commands are coordinator-authored and stored in card XML —
+        # not user-supplied at runtime. Validate at card-authoring time.
         proc = subprocess.run(
             mov_command,
             shell=True,
@@ -1440,7 +1524,8 @@ whatever evidence is appropriate."""
 
     return f"""You are an AC reviewer for kanban card #{card_number} (session {session}).
 
-Your job: Verify each acceptance criterion, then complete the card.
+Your job: Verify each acceptance criterion and set the board state (pass/fail per criterion).
+The SubagentStop hook calls `kanban done` after you finish — do NOT call it yourself.
 
 Step 1: Run this command to read the card:
   kanban show {card_number} --output-style=xml --session {session}
@@ -1458,11 +1543,8 @@ Step 3: For each criterion you verify:
   - If it PASSES: kanban criteria pass {card_number} <n> --session {session}
   - If it FAILS: kanban criteria fail {card_number} <n> --reason '<why it failed>' --session {session}
 
-Step 4: After all criteria have a pass or fail verdict, run:
-  kanban done {card_number} '<one-sentence summary>' --session {session}
-
-If kanban done fails (some criteria are unchecked or failed), that is expected.
-Just ensure every criterion has been evaluated with pass or fail.
+Step 4: After all criteria have a pass or fail verdict, STOP.
+DO NOT call `kanban done` — the SubagentStop hook handles that transition.
 {agent_output_section}{previous_section}
 """
 
@@ -1475,6 +1557,34 @@ def read_ac_reviewer_agent_definition() -> str:
     If missing, that is a deployment failure and should crash loudly.
     """
     return AC_REVIEWER_AGENT_PATH.read_text(encoding="utf-8")
+
+
+def _classify_done_failure(card_number: str, session: str) -> str:
+    """Inspect card criteria state to classify a kanban done failure.
+
+    Returns one of:
+      "agent_met_incomplete"   — some criteria have agent_met=False (agent didn't finish)
+      "reviewer_met_incomplete" — all agent_met=True but some reviewer_met is None/unchecked
+      "reviewer_met_failed"    — all criteria evaluated but some reviewer_met="fail"
+      "unknown"                — cannot determine (criteria fetch failed or other)
+    """
+    criteria = get_card_criteria(card_number, session)
+    if not criteria:
+        return "unknown"
+
+    any_agent_unmet = any(not c.get("agent_met", False) for c in criteria)
+    if any_agent_unmet:
+        return "agent_met_incomplete"
+
+    any_reviewer_unchecked = any(c.get("reviewer_met") is None for c in criteria)
+    if any_reviewer_unchecked:
+        return "reviewer_met_incomplete"
+
+    any_reviewer_failed = any(c.get("reviewer_met") == "fail" for c in criteria)
+    if any_reviewer_failed:
+        return "reviewer_met_failed"
+
+    return "unknown"
 
 
 def run_inner_loop(
@@ -1492,8 +1602,14 @@ def run_inner_loop(
        and a mov_command) vs semantic.
     2. For each programmatic criterion: run mov_command via subprocess, classify exit
        code, call kanban criteria pass/fail (or emit mov_error diagnostic).
-    3. If any semantic criteria remain: launch claude -p --model haiku as before.
-    4. If no semantic criteria: skip Haiku entirely; call kanban done directly.
+    3. If no semantic criteria: skip Haiku entirely; call kanban done directly
+       (all-programmatic path).
+    4. If semantic criteria exist: launch claude -p --model haiku to verify them.
+       After Haiku finishes, hook calls kanban done (unified done call path).
+       On done failure, inspect card state and branch:
+         - agent_met_incomplete  → return False (outer loop sends agent back for redo)
+         - reviewer_met_incomplete → re-launch Haiku (bounded by MAX_REVIEWER_DONE_RETRIES)
+         - reviewer_met_failed / other → return False (outer loop handles redo/surface)
 
     Returns (card_done: bool, mov_error_diagnostics: list[str]).
     mov_error_diagnostics contains structured diagnostic blocks for exit codes
@@ -1568,94 +1684,172 @@ def run_inner_loop(
     ac_reviewer_system_prompt = read_ac_reviewer_agent_definition()
     log_info("Loaded ac-reviewer agent definition as system prompt")
 
-    for i in range(1, MAX_INNER_ITERATIONS + 1):
-        log_info(f"Inner loop iteration {i}/{MAX_INNER_ITERATIONS} for card #{card_number}")
+    # Two-tier retry structure (F2 fix):
+    #
+    # Tier 1 — inner iterations (MAX_INNER_ITERATIONS=2): Normal review passes.
+    #           Each iteration launches Haiku to evaluate semantic criteria.
+    #
+    # Tier 2 — reviewer-done retries (MAX_REVIEWER_DONE_RETRIES=2): Extra passes
+    #           triggered only when the reviewer ran but left criteria unchecked
+    #           (reviewer_met_incomplete). These are separate from Tier 1 iterations
+    #           so the contract "up to 2 reviewer-done retries on top of normal
+    #           iterations" is truly honoured.
+    #
+    # Maximum total Haiku calls: MAX_INNER_ITERATIONS + MAX_REVIEWER_DONE_RETRIES = 4.
+    # (Previously the two counters shared the same for-loop budget, capping the
+    # combined total at MAX_INNER_ITERATIONS=2 despite the documented intent of 4.)
+    #
+    # Iteration counter is a global sequence number used for claudit metrics and
+    # log messages; it increments across both tiers.
+    ac_env = {**os.environ, "KANBAN_AGENT": "ac-reviewer", "CLAUDIT_ROLE": "ac-reviewer"}
+    claude_cmd = [
+        "claude", "-p", "--model", "haiku", "--max-turns", str(CLAUDE_MAX_TURNS),
+        "--system-prompt", ac_reviewer_system_prompt,
+        "--output-format", "json",
+        "--dangerously-skip-permissions",
+    ]
+    haiku_call_number = 0  # global sequence across both tiers (for metrics / logs)
 
+    def _run_one_haiku_pass(iteration_label: str) -> str:
+        """Launch one Haiku pass. Returns the iteration output text (may be empty)."""
+        nonlocal accumulated_context, haiku_call_number
+        haiku_call_number += 1
         prompt = build_haiku_prompt(card_number, session, accumulated_context, agent_output, card_type)
-
         try:
-            # Set agent identity env vars so metrics identify this as ac-reviewer
-            # (same pattern as staff.bash: KANBAN_AGENT + CLAUDIT_ROLE)
-            ac_env = {**os.environ, "KANBAN_AGENT": "ac-reviewer", "CLAUDIT_ROLE": "ac-reviewer"}
-
-            # Build claude command: load ac-reviewer agent definition as system prompt
-            # (same mechanism as staff.bash loads staff-engineer via --system-prompt)
-            # --output-format json enables structured response with usage stats
-            claude_cmd = [
-                "claude", "-p", "--model", "haiku", "--max-turns", str(CLAUDE_MAX_TURNS),
-                "--system-prompt", ac_reviewer_system_prompt,
-                "--output-format", "json",
-                "--dangerously-skip-permissions",
-            ]
-
             result = subprocess.run(
                 claude_cmd,
                 input=prompt,
                 capture_output=True,
                 text=True,
-                timeout=300,  # 5 minutes per iteration
+                timeout=300,  # 5 minutes per pass
                 env=ac_env,
             )
             iteration_stderr = result.stderr.strip()
-
             if iteration_stderr:
-                log_info(f"claude -p stderr (iter {i}): {iteration_stderr}")
+                log_info(f"claude -p stderr ({iteration_label}): {iteration_stderr}")
 
-            # Parse JSON output and extract result text + token usage
             iteration_output = ""
             if result.stdout.strip():
                 try:
                     json_response = json.loads(result.stdout)
                     iteration_output = json_response.get("result", "") or ""
-
-                    # Extract token usage and write to claudit DB
                     usage = json_response.get("usage") or {}
-                    input_tokens = int(usage.get("input_tokens", 0) or 0)
-                    output_tokens = int(usage.get("output_tokens", 0) or 0)
-                    cache_read_tokens = int(usage.get("cache_read_input_tokens", 0) or 0)
-                    cache_write_tokens = int(usage.get("cache_creation_input_tokens", 0) or 0)
-
                     _claudit_write_ac_reviewer_metrics(
                         outer_session_id=outer_session_id,
                         kanban_session=session,
                         card_number=card_number,
                         working_directory=working_directory,
-                        iteration=i,
-                        input_tokens=input_tokens,
-                        output_tokens=output_tokens,
-                        cache_read_tokens=cache_read_tokens,
-                        cache_write_tokens=cache_write_tokens,
+                        iteration=haiku_call_number,
+                        input_tokens=int(usage.get("input_tokens", 0) or 0),
+                        output_tokens=int(usage.get("output_tokens", 0) or 0),
+                        cache_read_tokens=int(usage.get("cache_read_input_tokens", 0) or 0),
+                        cache_write_tokens=int(usage.get("cache_creation_input_tokens", 0) or 0),
                     )
                 except (json.JSONDecodeError, TypeError, ValueError) as exc:
-                    log_error(f"Failed to parse claude -p JSON output on iter {i}: {exc}")
+                    log_error(f"Failed to parse claude -p JSON output on {iteration_label}: {exc}")
                     iteration_output = result.stdout.strip()
 
-            accumulated_context += f"\n--- Pass {i} ---\n{iteration_output}\n"
+            accumulated_context += f"\n--- {iteration_label} ---\n{iteration_output}\n"
+            return iteration_output
 
         except subprocess.TimeoutExpired:
-            log_error(f"claude -p timed out on iteration {i}")
-            accumulated_context += f"\n--- Pass {i} ---\n[TIMED OUT]\n"
-            continue
+            log_error(f"claude -p timed out on {iteration_label}")
+            accumulated_context += f"\n--- {iteration_label} ---\n[TIMED OUT]\n"
+            return ""
         except FileNotFoundError:
             # Let this propagate — caught by process_subagent_stop's except block
             # which surfaces a clear systemic error instead of burning redo cycles
             raise
         except Exception as exc:
-            log_error(f"claude -p failed on iteration {i}: {exc}")
-            accumulated_context += f"\n--- Pass {i} ---\n[ERROR: {exc}]\n"
-            continue
+            log_error(f"claude -p failed on {iteration_label}: {exc}")
+            accumulated_context += f"\n--- {iteration_label} ---\n[ERROR: {exc}]\n"
+            return ""
 
-        # Check if card reached done column
-        status = get_card_status(card_number, session)
-        if status == "done":
+    # --- Tier 1: Normal inner iterations ---
+    for i in range(1, MAX_INNER_ITERATIONS + 1):
+        log_info(f"Inner loop iteration {i}/{MAX_INNER_ITERATIONS} for card #{card_number}")
+        _run_one_haiku_pass(f"Pass {i}")
+
+        # --- Unified kanban done call (hook owns this, not the reviewer) ---
+        log_info(
+            f"run_inner_loop: reviewer finished iter {i} for card #{card_number} — "
+            f"hook attempting kanban done"
+        )
+        done_result = run_kanban(
+            ["done", card_number, "AC criteria verified by hook after reviewer pass", "--session", session]
+        )
+        if done_result.returncode == 0:
             log_info(f"Card #{card_number} reached done after {i} inner iteration(s)")
             return True, mov_error_diagnostics
 
-        # If card is not in review or done, something unexpected happened
-        if status and status not in ("review", "doing", "done"):
-            log_info(f"Card #{card_number} in unexpected status '{status}' — breaking inner loop")
+        done_failure_mode = _classify_done_failure(card_number, session)
+        log_info(
+            f"run_inner_loop: kanban done failed for card #{card_number} "
+            f"(iter {i}), failure mode: {done_failure_mode}"
+        )
+
+        if done_failure_mode == "agent_met_incomplete":
+            log_info(
+                f"run_inner_loop: agent_met incomplete for card #{card_number} — "
+                f"signalling failure for agent redo"
+            )
+            return False, mov_error_diagnostics
+
+        if done_failure_mode == "reviewer_met_incomplete":
+            # Reviewer left criteria unchecked — fall through to Tier 2 retries
+            # rather than re-using the Tier 1 budget. Log and break out of Tier 1.
+            log_info(
+                f"run_inner_loop: reviewer_met incomplete at iter {i} for card #{card_number} — "
+                f"exhausting Tier 1; entering Tier 2 reviewer-done retries"
+            )
             break
 
+        # reviewer_met_failed or unknown — signal failure
+        log_info(
+            f"run_inner_loop: done failure mode '{done_failure_mode}' for card #{card_number} — "
+            f"signalling failure"
+        )
+        return False, mov_error_diagnostics
+
+    # --- Tier 2: Reviewer-done retries (reviewer_met_incomplete only) ---
+    # Only reached when Tier 1 exhausted and the last failure was reviewer_met_incomplete.
+    # Provides up to MAX_REVIEWER_DONE_RETRIES additional Haiku passes so a partially-
+    # completing reviewer gets a fair second (and third) chance before we give up.
+    for retry in range(1, MAX_REVIEWER_DONE_RETRIES + 1):
+        log_info(
+            f"run_inner_loop: reviewer-done retry {retry}/{MAX_REVIEWER_DONE_RETRIES} "
+            f"for card #{card_number}"
+        )
+        _run_one_haiku_pass(f"ReviewerRetry {retry}")
+
+        done_result = run_kanban(
+            ["done", card_number, "AC criteria verified by hook after reviewer-done retry", "--session", session]
+        )
+        if done_result.returncode == 0:
+            log_info(
+                f"Card #{card_number} reached done on reviewer-done retry {retry}"
+            )
+            return True, mov_error_diagnostics
+
+        done_failure_mode = _classify_done_failure(card_number, session)
+        log_info(
+            f"run_inner_loop: kanban done failed on reviewer-done retry {retry} "
+            f"for card #{card_number}, failure mode: {done_failure_mode}"
+        )
+
+        if done_failure_mode != "reviewer_met_incomplete":
+            # State changed (agent_met_incomplete / reviewer_met_failed / unknown) —
+            # stop retrying and signal failure normally.
+            log_info(
+                f"run_inner_loop: failure mode changed to '{done_failure_mode}' on retry {retry} — "
+                f"signalling failure"
+            )
+            return False, mov_error_diagnostics
+
+    log_info(
+        f"run_inner_loop: reviewer-done retries exhausted for card #{card_number} — "
+        f"signalling failure"
+    )
     return False, mov_error_diagnostics
 
 
@@ -1677,6 +1871,7 @@ def process_subagent_stop(payload: dict) -> dict:
     transcript_path = payload.get("agent_transcript_path", "")
     outer_session_id = payload.get("session_id", "")
     working_directory = payload.get("cwd") or os.getcwd()
+    hook_start_time = time.time()
 
     if not transcript_path or not os.path.exists(transcript_path):
         log_info("No transcript path or file not found — allowing stop")
@@ -1889,6 +2084,7 @@ def process_subagent_stop(payload: dict) -> dict:
                 transcript_path=transcript_path,
                 outer_session_id=outer_session_id,
                 working_directory=working_directory,
+                hook_start_time=hook_start_time,
             )
             if retry_succeeded:
                 message = f"Card #{card_number} AC review passed on malfunction retry — card completed."

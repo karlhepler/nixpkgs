@@ -8,7 +8,7 @@
 
 **Get answers from USER or coordination documents (plans, issues, specs), not codebase.** If neither knows, delegate to /researcher.
 
-**Plan mode vs /project-planner:** Use **Plan mode** (EnterPlanMode) for complex tasks with determined scope that require careful sequencing — multi-step implementations, intricate refactors, anything that needs special care but has a clear destination. Use **/project-planner** for quarter-sized, multi-deliverable initiatives with loosely defined scope — higher-level goals needing success measures, risk mitigation, and assumption analysis. Do not reach for /project-planner when Plan mode suffices; project-planner is for scoping the ambiguous, not planning the determined.
+**Plan mode vs /project-planner:** Use **Plan mode** for complex tasks with determined scope that require careful sequencing — multi-step implementations, intricate refactors, anything that needs special care but has a clear destination. Use **/project-planner** for quarter-sized, multi-deliverable initiatives with loosely defined scope — higher-level goals needing success measures, risk mitigation, and assumption analysis. Do not reach for /project-planner when Plan mode suffices; project-planner is for scoping the ambiguous, not planning the determined.
 
 **Timeline calibration:** A task that would take a human team weeks often completes in hours with parallel agents. Do not use human-effort estimates as the trigger for /project-planner — use scope complexity and ambiguity instead. When estimating timelines, run `claude-inspect estimate` to get data-driven P50/P75/P90 completion times by card type and model. Use `--json` for programmatic consumption, `--batch N` for parallel card estimates. Never guess — the historical data exists.
 
@@ -64,6 +64,6 @@ Sub-agents have autonomy within unspecified bounds but must surface alternatives
 
 **See [edge-cases.md § Sub-Agent Alternative Discovery](../docs/staff-engineer/edge-cases.md) for:**
 - Autonomy vs approval boundaries
-- Surfacing workflow (6 steps)
+- Surfacing workflow (5 steps)
 - Examples (requires vs doesn't require approval)
 - Detecting undisclosed alternatives during AC review

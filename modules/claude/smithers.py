@@ -14,16 +14,16 @@ Usage:
     smithers <url>    # Use specific PR URL
     smithers --max-ralph-iterations N 123  # Custom Ralph iterations
     smithers --max-iterations N 123        # Custom watch cycles
-    smithers --expunge 123                 # Delete .ralph memory, then watch
+    smithers --purge 123                   # Delete .ralph memory, then watch
     smithers --debug                       # Enable Ralph diagnostics mode
     smithers --debug 123                   # Debug mode with explicit PR number
 
 Options:
     --max-ralph-iterations N    How many times to ask Ralph to fix issues (default: 4)
                                 Can also set via SMITHERS_MAX_RALPH_ITERATIONS env var
-    --max-iterations N          How many CI check cycles to monitor (default: 4)
+    --max-iterations N          How many CI check cycles to monitor (default: 10)
                                 Can also set via SMITHERS_MAX_ITERATIONS env var
-    --expunge                   Delete .ralph memory directory before starting for a
+    --purge                     Delete .ralph memory directory before starting for a
                                 clean-slate restart (uses trash CLI, not rm -rf)
     --debug                     Enable Ralph diagnostics mode (passes --debug to burns,
                                 sets RALPH_DIAGNOSTICS=1, generates JSONL logs in .ralph/diagnostics/)
@@ -42,8 +42,6 @@ import sys
 import tempfile
 import time
 from datetime import datetime
-from wcwidth import wcswidth
-import requests
 
 # Constants
 POLL_INTERVAL = 30  # seconds
@@ -620,6 +618,7 @@ def truncate_title(title: str, max_width: int = 60) -> str:
     Returns:
         Title truncated to fit within max_width, with ellipsis if needed
     """
+    from wcwidth import wcswidth  # noqa: PLC0415 — deferred to allow --help without full deps
     display_width = wcswidth(title)
     if display_width < 0:  # Control characters or invalid
         display_width = len(title)
@@ -661,6 +660,7 @@ def ljust_display(text: str, width: int) -> str:
     Returns:
         The text padded with spaces to the specified display width
     """
+    from wcwidth import wcswidth  # noqa: PLC0415 — deferred to allow --help without full deps
     display_len = wcswidth(text)
     if display_len < 0:  # Control characters or invalid
         display_len = len(text)
@@ -735,6 +735,7 @@ def format_status_card(
     # Calculate minimum card width based on URL length
     # Link line format: "│ 🔗 {url} │"
     # 🔗 emoji has display width of 2
+    from wcwidth import wcswidth  # noqa: PLC0415 — deferred to allow --help without full deps
     link_emoji_width = 2
     url_display_width = wcswidth(pr_url)
     if url_display_width < 0:
@@ -1084,6 +1085,7 @@ def post_to_slack_webhook(pr_url: str, pr_info: dict) -> None:
             return
 
         # POST to webhook
+        import requests  # noqa: PLC0415 — deferred to allow --help without full deps
         response = requests.post(webhook_url, json=payload, timeout=10)
         response.raise_for_status()
         log("✓ Posted to Slack webhook")
@@ -1931,7 +1933,7 @@ def main():
         help=f"Max watch loop cycles (default: {DEFAULT_MAX_CYCLES}). Override with SMITHERS_MAX_ITERATIONS env var"
     )
     parser.add_argument(
-        "--expunge",
+        "--purge",
         action="store_true",
         default=False,
         help="Delete .ralph memory directory before starting for a clean-slate restart"
@@ -1945,11 +1947,11 @@ def main():
 
     args = parser.parse_args()
 
-    # Expunge .ralph and .agent memory directories if requested
-    if args.expunge:
+    # Purge .ralph and .agent memory directories if requested
+    if args.purge:
         for directory in [".ralph", ".agent"]:
             if os.path.exists(directory):
-                print(f"Expunging {directory} memory...", flush=True)
+                print(f"Purging {directory} memory...", flush=True)
                 result = subprocess.run(["trash", directory], check=False)
                 if result.returncode != 0:
                     print(
@@ -2074,7 +2076,7 @@ def main():
             f"PR #{pr_number} watch interrupted by user",
             "Basso"
         )
-        return 130  # Standard exit code for SIGINT
+        sys.exit(130)
 
     # Max cycles reached without PR being ready
     elapsed = time.time() - start_time

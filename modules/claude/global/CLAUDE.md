@@ -25,14 +25,15 @@
 
 ### Outright Prohibitions (Never Run)
 
-- `kanban clean` / `kanban clean --expunge` / `kanban clean <column>` — **PROHIBITED**. Use `kanban cancel` instead.
-- `perm nuke` — **USER-ONLY.** Claude agents must NEVER call this.
+- `kanban clean` / `kanban clean --expunge` / `kanban clean <column>` — **PROHIBITED**. Use `kanban cancel` instead. (Future: `kanban purge` is the intended rename once the external kanban CLI is updated.)
+- `perm purge` — **USER-ONLY.** Claude agents must NEVER call this.
 
 ### Ask-First Operations (Require User Approval)
 
 **NEVER run without explicit user approval:**
 
-- `hms --expunge` - Removes stale Home Manager generations
+- `hms --purge` - Kills tmux server (closes ALL active tmux sessions)
+- `smithers --purge` - Deletes `.ralph/` and `.agent/` memory directories
 - `git reset --hard` - Discards local changes permanently
 - `git push --force` - Overwrites remote history
 - `rm -rf` commands - Permanent file deletion
@@ -185,6 +186,90 @@ void Foo(Request req, Action<Message> send)
 
 Apply from the start on every new handler, service boundary, or core API. Do not reach for EventEmitter, global state, or tightly coupled I/O when this pattern fits.
 
+### YAGNI + KISS
+
+- **You Aren't Gonna Need It** — don't build for speculative futures; build for what's actually needed NOW. Solve the problem at hand, not hypothetical future problems.
+- **Keep It Simple, Stupid** — prefer boring, obvious solutions over clever ones. Clarity beats brevity.
+- **LLM-specific trap:** DO NOT default to building abstractions for hypothetical future use cases. Concrete problem first; abstraction only after 3+ concrete uses prove it.
+- Warning signs: abstractions with one caller, interfaces with one implementation, config flags that are never flipped.
+
+See also: § Scope Discipline (one deliverable, no "while I'm here" additions).
+
+### SOLID (minimal form)
+
+- **SRP (Single Responsibility):** every function, class, and module does ONE thing. At function level: if you can't describe what it does without saying "and", split it.
+- **OCP (Open/Closed):** prefer extending behavior via new code over modifying existing code — but only when extension is an actual pattern, not hypothetical (see YAGNI).
+- **LSP (Liskov Substitution):** subtypes behave like their parent — no surprising exceptions, no stronger preconditions, no weaker postconditions.
+- **ISP (Interface Segregation):** prefer many small interfaces over one large one. Clients shouldn't depend on methods they don't use.
+- **DIP (Dependency Inversion):** already covered by Ports & Adapters above — depend on the `send` abstraction, not concrete consumers.
+
+### DRY with nuance
+
+- Default: avoid duplication WHEN the repeated code represents the same concept.
+- **Prefer duplication over wrong abstraction.** If two pieces of code look similar but represent DIFFERENT concepts that happen to share syntax, duplicating is better than forcing them into a single abstraction.
+- **Rule of three:** wait for 3+ repetitions of genuinely-same logic before abstracting. Premature DRY (2 repetitions) is the most common over-engineering mistake in LLM-generated code.
+- Warning sign: "shared" helpers that multiple callers have to fight against ("pass this flag to make it work for my case").
+
+**Additional ports & adapters rules:**
+- **Handlers MUST NOT throw exceptions.** All outputs — success, failure, partial results, errors, domain violations — flow through `send`. A handler that throws is bypassing its output port. If a handler calls a function that might throw, catch the exception inside the handler and emit a typed failure message via `send`. Exception-throwing is an anti-pattern that defeats the purpose of the port abstraction.
+- **`send` SHOULD be an interface, not a single function, when handlers emit multiple message categories.** The simple `(msg: Message) => void` signature works for handlers that emit one kind of thing. When a handler legitimately emits distinct message categories (e.g., progress updates, domain events, terminal results), model `send` as an object whose methods correspond to each category. Example: `send: { progress(pct: number): void; result(data: Result): void; failure(err: Error): void }`. The handler is still pure — it just has a richer output surface.
+- **Constructor injection for capabilities.** Capabilities a handler needs (logging, clock, random, id generation) are provided by construction — either via class constructor parameters or higher-order function closures. Never access global/static instances for these. Injection makes handlers testable and keeps the port abstraction honest.
+
+(Why `send` vs `response`: `send` is chosen over `response` because a handler does not always produce a single response — it may stream progress, emit multiple domain events, or bifurcate by outcome. `send` signals an output port, not a return value.)
+
+---
+
+## 12-Factor Configuration
+
+All runtime configuration comes from environment variables, bound to typed constants in a single `config` file at the top of the source tree.
+
+**File location:** `src/config.ts` / `config.go` / `config.py` / equivalent — as close to the top of the source tree as possible (typically right under `src/` or the equivalent package root).
+
+**File contents:** exports of typed constants only. No logic, no conditionals beyond env-var fallbacks. Example in TypeScript:
+
+```typescript
+// src/config.ts
+export const API_URL = process.env.API_URL ?? "https://api.default.com";
+export const MAX_RETRIES = 3;
+export const DEFAULT_TIMEOUT_MS = 5000;
+export const DEBUG_MODE = process.env.DEBUG === "1";
+```
+
+And in Go:
+```go
+// config/config.go
+package config
+
+var (
+    APIURL           = getenv("API_URL", "https://api.default.com")
+    MaxRetries       = 3
+    DefaultTimeoutMS = 5000
+    DebugMode        = os.Getenv("DEBUG") == "1"
+)
+```
+
+**Rules:**
+- Every config constant that VARIES BY ENVIRONMENT is populated from an environment variable with a sensible default.
+- Pure constants (do not vary by environment) are defined inline.
+- All config surface is exported from this ONE file. Components import constants from `config` — never access `process.env` / `os.Getenv` / env-reading primitives directly elsewhere.
+- Required env vars with no sensible default should fail fast on startup in production (simple assertion at config module load).
+
+This matches 12-factor app principles: configuration lives in the environment, not the code.
+
+---
+
+## Epistemic Honesty
+
+**The default posture is doubt, not confidence.** To assume is to make an ass out of you and me. Don't lean on assumptions — verify before claiming.
+
+- **Before stating any technical claim, ask:** Have I actually verified this — run the command, read the file, checked the data? If no: say the words "I haven't verified this" or "I'm not 100% sure — let me double-check" and then do quick research. A quick web search, a one-line grep, a file read, a CLI invocation — even a 30-second check beats confident wrongness.
+- **Be self-skeptical.** The skepticism isn't about rejecting ideas — it's about being suspicious of your own confidence. The more fluently you can explain something, the more dangerous it is if unverified (fluency mimics expertise).
+- **Cite sources.** Every technical claim should be backed by a specific citation: `file:line`, command output, web URL, doc page. "I think X typically works this way" is not a source. Actual evidence is.
+- **Uncertainty is not a hedge — it's intellectual honesty.** Saying "I don't know — let me find out" is more useful than a plausible-sounding guess. Do not frame uncertainty apologetically.
+- **Pressure doesn't justify guessing.** When production is broken and stress is high, the urge to give fast answers is strongest — and the cost of wrong answers is highest. Under pressure, slow down and verify; don't speed up and guess.
+
+This applies across every level: coordinators, sub-agent specialists, and the human. When the user asks a factual question, the right answer is often "Let me check" followed by a quick check. Not "I believe X" without evidence.
+
 ---
 
 **Bash/Shell Conventions:**
@@ -329,6 +414,28 @@ Use `pinact run` to pin, `pinact run -u` to update, `pinact run --check` in CI t
 ## Scratchpad
 
 `.scratchpad/` (at the project root, sibling to `.kanban/`) is the canonical location for temporary working files. Not git-tracked, persists across sessions.
+
+---
+
+## Team Member Terminology
+
+**Delegatable team members** are defined in `agents/<name>.md` — the source of truth for sub-agents Claude Code can delegate work to. Each agent definition is self-contained: full skill content in the file body, agent metadata in the frontmatter.
+
+**Adding a team member:**
+- Create `agents/<name>.md` with full skill content and agent frontmatter
+- Deploy via `hms` to make it available in `~/.claude/agents/`
+
+**Exception/workflow skills** run via Skill tool directly — not delegated as background sub-agents:
+- learn, project-planner — interactive exception skills; live at `skills/<name>/SKILL.md`
+- review-pr-comments, manage-pr-comments — workflow skills; live at `skills/<name>/SKILL.md`
+- review — multi-file skill with supporting files; lives at `skills/review/SKILL.md`
+
+**Your Team (delegatable agents):**
+- Engineering: swe-backend, swe-frontend, swe-fullstack, swe-devex, swe-infra, swe-security, swe-sre
+- QA: qa-engineer
+- Design: product-ux, visual-designer
+- Support: researcher, scribe, ai-expert, ac-reviewer, debugger
+- Business: finance, lawyer, marketing
 
 ---
 

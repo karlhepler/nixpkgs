@@ -81,6 +81,7 @@ unstable.gh  # GitHub CLI from unstable channel
     # Python
     python3
     python3Packages.pip
+    python3Packages.pytest
     python3Packages.watchdog
     python3Packages.wcwidth
     pyright

@@ -13,6 +13,8 @@ import subprocess
 import sys
 from typing import Dict, List, Optional, Tuple
 
+from claude_tooling import error_response, get_current_branch, parse_pr_url, get_pr_info
+
 
 def run_gh_api(path: str, method: str = "GET", payload: Optional[Dict] = None) -> Tuple[int, str, str]:
     """Execute gh api REST command and return (exit_code, stdout, stderr)."""
@@ -35,95 +37,6 @@ def run_gh_api(path: str, method: str = "GET", payload: Optional[Dict] = None) -
             check=False,
         )
     return result.returncode, result.stdout, result.stderr
-
-
-def error_response(message: str, code: str = "ERROR", details: Dict = None) -> Dict:
-    """Build error response dict."""
-    return {
-        "error": message,
-        "error_code": code,
-        "details": details or {},
-    }
-
-
-def get_current_branch() -> Optional[str]:
-    """Get current git branch name."""
-    result = subprocess.run(
-        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode == 0:
-        return result.stdout.strip()
-    return None
-
-
-def get_pr_from_branch() -> Optional[str]:
-    """Get PR URL from current branch using gh pr view."""
-    result = subprocess.run(
-        ["gh", "pr", "view", "--json", "url", "--jq", ".url"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode == 0 and result.stdout.strip():
-        return result.stdout.strip()
-    return None
-
-
-def parse_pr_url(url: str) -> Optional[Tuple[str, str, int]]:
-    """Parse PR URL into (owner, repo, pr_number)."""
-    match = re.match(r"https://github\.com/([^/]+)/([^/]+)/pull/(\d+)", url)
-    if match:
-        return match.group(1), match.group(2), int(match.group(3))
-    return None
-
-
-def get_pr_info(arg: Optional[str]) -> Tuple[Optional[Tuple[str, str, int]], Optional[Dict]]:
-    """
-    Get PR info from argument or infer from current branch.
-    Returns ((owner, repo, pr_num), error_dict) - error_dict is None on success.
-    """
-    if arg is None:
-        # Infer from current branch
-        url = get_pr_from_branch()
-        if not url:
-            return None, error_response(
-                "Could not infer PR from current branch. Provide PR number or URL.",
-                "PR_NOT_FOUND",
-            )
-        parsed = parse_pr_url(url)
-        if not parsed:
-            return None, error_response(f"Failed to parse PR URL: {url}", "INVALID_URL")
-        return parsed, None
-
-    # Check if it's a number
-    if arg.isdigit():
-        result = subprocess.run(
-            ["gh", "repo", "view", "--json", "owner,name"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-
-        if result.returncode != 0:
-            return None, error_response("Not in a git repository", "NOT_A_REPO")
-
-        try:
-            repo_info = json.loads(result.stdout)
-            owner = repo_info["owner"]["login"]
-            repo = repo_info["name"]
-            return (owner, repo, int(arg)), None
-        except (json.JSONDecodeError, KeyError):
-            return None, error_response("Failed to parse repo info", "PARSE_ERROR")
-
-    # Assume it's a URL
-    parsed = parse_pr_url(arg)
-    if not parsed:
-        return None, error_response(f"Invalid PR URL: {arg}", "INVALID_URL")
-
-    return parsed, None
 
 
 def get_head_sha(owner: str, repo: str, pr_num: int) -> Tuple[Optional[str], Optional[Dict]]:
@@ -177,7 +90,7 @@ def cmd_submit(args: argparse.Namespace) -> Dict:
 
     # Resolve PR info
     pr_arg = str(args.pr) if args.pr is not None else None
-    pr_info, error = get_pr_info(pr_arg)
+    pr_info, error = get_pr_info(pr_arg, validate_connection=False)
     if error:
         return error
     owner, repo, pr_num = pr_info

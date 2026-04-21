@@ -33,7 +33,6 @@ Task tool:
   model: sonnet
   run_in_background: true
   prompt: |
-    YOU MUST invoke the /swe-infra skill using the Skill tool.
     **Your kanban card is #51.**
 
     ## Task
@@ -47,7 +46,6 @@ Task tool:
   model: sonnet
   run_in_background: true
   prompt: |
-    YOU MUST invoke the /swe-security skill using the Skill tool.
     **Your kanban card is #52.**
 
     ## Task
@@ -56,7 +54,7 @@ Task tool:
     [Full review instructions...]
 
 # Step 3: Move original card to REVIEW
-kanban move 50 review
+kanban review 50
 
 # Step 4: Wait for BOTH to approve, THEN move to done
 ```
@@ -133,7 +131,6 @@ Task tool:
   model: sonnet
   run_in_background: true
   prompt: |
-    YOU MUST invoke the /swe-frontend skill.
     **Your kanban card is #60.**
     [Dark mode task...]
 
@@ -142,7 +139,6 @@ Task tool:
   model: sonnet
   run_in_background: true
   prompt: |
-    YOU MUST invoke the /swe-backend skill.
     **Your kanban card is #61.**
     [Password reset task...]
 ```
@@ -413,30 +409,7 @@ Before launching parallel reviews, verify:
 - [ ] **Review prompts prepared** - Each reviewer knows what to check
 - [ ] **All Task calls in SAME message** - Not sequential messages
 - [ ] **Original card moved to review** - Waiting for reviews
-- [ ] **User notified** - "Reviews running in parallel, will update when complete"
-
----
-
-## Measuring Parallel Effectiveness
-
-**Metrics to track:**
-
-1. **Time saved:** Sequential reviews take 2x time, parallel cuts in half
-2. **Conflict rate:** How often do parallel reviews disagree? (Low = good contracts)
-3. **Rework rate:** How often does parallel work cause merge conflicts? (High = bad parallelization decisions)
-
-**Example:**
-```
-Sequential (2 reviews):
-  Review 1: 15 minutes
-  Review 2: 15 minutes
-  Total: 30 minutes
-
-Parallel (2 reviews):
-  Both reviews: max(15, 15) = 15 minutes
-  Total: 15 minutes
-  Time saved: 50%
-```
+- [ ] **User notified** - User informed that reviews are running in parallel
 
 ---
 
@@ -444,4 +417,4 @@ Parallel (2 reviews):
 
 - See `delegation-guide.md` for permission handling and model selection
 - See `review-protocol.md` for detailed review workflows and approval criteria
-- See staff-engineer.md for core delegation protocol and kanban management
+- See [`staff-engineer.md`](../../output-styles/staff-engineer.md) for core delegation protocol and kanban management

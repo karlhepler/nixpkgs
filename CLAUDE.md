@@ -52,43 +52,41 @@ This repository (`~/.config/nixpkgs`) is the **single source of truth** for syst
 
 ## Team Member Terminology
 
-**Important:** When the user says "team member", "update a team member", "add a team member", or "remove a team member", they are referring to BOTH:
+**Important:** When the user says "team member", "update a team member", "add a team member", or "remove a team member", they are referring to the agent definition file:
 
-1. **The skill file:** `modules/claude/global/commands/<name>.md` - Contains the skill's system prompt, expertise, and workflows
-2. **The agent definition:** `modules/claude/global/agents/<name>.md` - Custom sub-agent with the skill preloaded via `skills:` frontmatter
+1. **The agent definition:** `modules/claude/global/agents/<name>.md` - The source of truth for delegatable team members. Contains the full skill body (system prompt, expertise, workflows) directly in the file body, with agent metadata in the frontmatter.
 
 **Adding a team member** means:
-- Create skill file in `commands/<name>.md` with skill prompt and expertise
-- Create agent definition in `agents/<name>.md` with `skills: [<name>]` frontmatter
-- Add to git: `git add modules/claude/global/{commands,agents}/<name>.md`
-- Run `hms` to deploy both files to `~/.claude/`
+- Create agent definition in `agents/<name>.md` with full skill content and agent frontmatter (name, description, model, tools, permissionMode, maxTurns, background, mcp)
+- Add to git: `git add modules/claude/global/agents/<name>.md`
+- Run `hms` to deploy to `~/.claude/agents/`
 - Update staff-engineer team table if needed
 
 **Updating a team member** means:
-- Edit both the skill file AND agent definition as needed
+- Edit `agents/<name>.md` as needed
 - Run `hms` to deploy changes
 
 **Removing a team member** means:
-- Delete both `commands/<name>.md` AND `agents/<name>.md`
+- Delete `agents/<name>.md`
 - Run `hms` to remove from deployment
 - Update staff-engineer team table
 
-**Why both files:** Skills contain the detailed expertise and prompts. Agent definitions enable reliable skill injection (95%+ vs 70% reliability) by preloading the skill content into the sub-agent's context at startup.
+**Why agent definitions are self-contained:** The agent definition preloads all skill content directly into the sub-agent's context at startup (95%+ reliability vs 70% with separate skill files). No `skills:` frontmatter indirection needed.
 
 ### Exception Skills
 
-Some skills intentionally lack agent definitions because they are exception or workflow skills that run differently:
+Some capabilities intentionally have no agent definition because they run differently:
 
-- **Exception skills** (learn, workout-burns, workout-staff, workout-smithers, project-planner) — Run via Skill tool directly, not delegated as background sub-agents. These are specialized capabilities invoked for specific use cases, not general-purpose team members. (`workout-smithers`: multi-PR parallel watcher, invoked via Skill tool directly)
-- **Workflow skills** (manage-pr-comments, review-pr-comments) — Run via Skill tool with specific CLI tooling integration. These coordinate external processes and don't fit the standard team member pattern.
-- **Multi-file skills** (review) — Live in `skills/<name>/SKILL.md` instead of `commands/<name>.md` because they have supporting files (e.g., `skills/review/review-citation-guide.md`, `skills/review/review-domains.md`). Deployed via `default.nix` skill copy rules, not the standard commands glob. No agent definition — invoked via Skill tool directly.
+- **Exception skills** (learn, project-planner) — Run via Skill tool directly, not delegated as background sub-agents. These are specialized capabilities invoked for specific use cases, not general-purpose team members.
+- **Workflow skills** (manage-pr-comments, review-pr-comments) — Live at `skills/<name>/SKILL.md`. Run via Skill tool with specific CLI tooling integration. These coordinate external processes and don't fit the standard team member pattern.
+- **Multi-file skills** (review) — Live in `skills/<name>/SKILL.md` instead of `agents/<name>.md` because they have supporting files (e.g., `skills/review/review-citation-guide.md`, `skills/review/review-domains.md`). Deployed via `default.nix` skill copy rules. Invoked via Skill tool directly.
 
-**Important:** The "Adding a team member" process (skill + agent) applies to standard delegatable team members only, not these exceptions. When updating or adding skills, distinguish between standard delegatable skills and exception/workflow skills.
+**Important:** The "Adding a team member" process (agent definition) applies to standard delegatable team members only, not these exceptions. When updating or adding capabilities, distinguish between delegatable agents and exception/workflow skills.
 
 ## Quick Commands
 
 ### Configuration Management
-- `hms`: Apply Home Manager changes (Claude Code must never use `--expunge` flag)
+- `hms`: Apply Home Manager changes (Claude Code must never use `--purge` flag)
 - `hme`: Edit the `home.nix` file (main configuration)
 - `hmu`: Edit the `user.nix` file (user-specific identity)
 - `hmo`: Edit the `overconfig.nix` file (machine-specific customizations)
@@ -130,7 +128,7 @@ For kanban workflow and command reference, see global CLAUDE.md.
 
 1. **Repository Location**: MUST be installed at `~/.config/nixpkgs`
 2. **Backup Synchronization**: Sync `~/.backup` folder with cloud storage for machine-specific configuration safety (human maintenance task — not Claude-actionable)
-3. **--expunge Flag**: Claude Code must NEVER use the `--expunge` flag with `hms`
+3. **--purge Flag**: Claude Code must NEVER use the `--purge` flag with `hms`
 4. **macOS ARM Only**: This configuration is locked to `aarch64-darwin` (Apple Silicon Macs)
 
 ## Configuration Structure
@@ -178,13 +176,13 @@ brew install colima  # ❌ FORBIDDEN
 5. Command automatically available system-wide
 6. Documentation auto-generated in `~/.claude/TOOLS.md`
 
-**Add Claude Code skill:**
-1. Create `modules/claude/global/commands/your-skill.md` with frontmatter
-2. Add to git: `git add modules/claude/global/commands/your-skill.md`
+**Add delegatable team member:**
+1. Create `modules/claude/global/agents/your-agent.md` with full skill content and agent frontmatter
+2. Add to git: `git add modules/claude/global/agents/your-agent.md`
 3. Run `hms` to deploy
-4. Skill automatically discovered in `~/.claude/commands/`
+4. Agent automatically available in `~/.claude/agents/`
 
-For team member skills (delegatable sub-agents), see § Team Member Terminology above for the full process including agent definition creation.
+For exception/workflow skills (invoked via Skill tool), create at `modules/claude/global/skills/<name>/SKILL.md` instead. See § Team Member Terminology for the full distinction.
 
 **Update Nix dependencies:**
 1. `nix flake update` (updates flake.lock)
@@ -299,7 +297,7 @@ user.nix and overconfig.nix are made git-invisible by `hms` after first run. Bac
 
 **Configuration deployment:**
 - Global settings: `modules/claude/global/CLAUDE.md` → `~/.claude/CLAUDE.md`
-- Skills: `modules/claude/global/commands/*.md` → `~/.claude/commands/`
+- Agents: `modules/claude/global/agents/*.md` → `~/.claude/agents/`
 - Hooks: notification-hook, complete-hook, csharp-format-hook (configured in `modules/claude/default.nix`)
 - Commands: `~/.claude/TOOLS.md` auto-generated from shellapp metadata
 
@@ -331,13 +329,13 @@ The mandatory review protocol that determines when work requires review is defin
 **Ralph vs. Kanban:**
 Ralph is a self-contained event-loop orchestrator with its own memory system. Kanban is the human-facing coordination layer for staff engineers. These systems are separate. When burns runs, it sets `BURNS_SESSION=1` to suppress kanban session instructions — injecting kanban context would confuse the model. Ralph uses its internal memory system (`ralph tools memory`) instead of kanban cards.
 
-**Available skills:**
+**Available agents (delegatable team members):**
 - Engineering: swe-backend, swe-frontend, swe-fullstack, swe-devex, swe-infra, swe-security, swe-sre
-- Design: ux-designer, visual-designer
-- Support: researcher, scribe, ai-expert, ac-reviewer, debugger, learn
-- Workflow: review-pr-comments, manage-pr-comments
+- QA: qa-engineer
+- Design: product-ux, visual-designer
+- Support: researcher, scribe, ai-expert, ac-reviewer, debugger
 - Business: finance, lawyer, marketing
-- Exception Skills (invoked via Skill tool directly): workout-burns, workout-staff, workout-smithers, project-planner
+- Exception Skills (invoked via Skill tool directly): learn, project-planner, review-pr-comments, manage-pr-comments, review
 
 ## Your Team
 
@@ -357,8 +355,6 @@ For the full team roster, see global CLAUDE.md.
 - `nix search nixpkgs <package>`: Search packages
 
 **Implementation details:** See source files in `modules/` directories for specific configurations (theme, LSP, activation hooks, etc).
-
-**Permission system research:** See `modules/claude/perm-research.md` for empirical findings on how Claude Code permission settings files merge, how the `perm` CLI works, and why background sub-agent kanban permission gates fire (or don't).
 
 **perm CLI mechanics (authoritative summary):**
 - `perm allow <pattern> --session <id>` and `perm always <pattern> --session <id>` both write the permission pattern to `.claude/settings.local.json` — that file never contains a session ID.

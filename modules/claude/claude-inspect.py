@@ -18,7 +18,7 @@ Commands:
   ac-rejections                    AC reviewer rejection patterns
     [--agent AGENT] [--card-type TYPE] [--model MODEL]
     [--session SESSION] [--since DATE]
-    [--verbose] [--summary]
+    [--summary]
 """
 
 import argparse
@@ -27,6 +27,7 @@ import math
 import os
 import sqlite3
 import sys
+import xml.etree.ElementTree as ET
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -41,8 +42,7 @@ DB_PATH = os.path.expanduser("~/.claude/metrics/claudit.db")
 def connect() -> sqlite3.Connection:
     """Open a read-only connection to the metrics DB."""
     if not os.path.exists(DB_PATH):
-        print(f"Error: metrics DB not found at {DB_PATH}", file=sys.stderr)
-        sys.exit(1)
+        raise RuntimeError(f"metrics DB not found at {DB_PATH}")
     conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     return conn
@@ -126,25 +126,88 @@ def section(title: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Structured output helpers (matching prc.py house style)
+# ---------------------------------------------------------------------------
+
+def _dict_to_xml_element(parent: ET.Element, key: str, value: Any) -> None:
+    """Recursively serialize a value into an XML child element under parent."""
+    child = ET.SubElement(parent, key)
+    if value is None:
+        child.set("null", "true")
+    elif isinstance(value, bool):
+        child.text = "true" if value else "false"
+    elif isinstance(value, (int, float)):
+        child.text = str(value)
+    elif isinstance(value, str):
+        child.text = value
+    elif isinstance(value, list):
+        for item in value:
+            if isinstance(item, dict):
+                item_el = ET.SubElement(child, "item")
+                for k, v in item.items():
+                    _dict_to_xml_element(item_el, k, v)
+            else:
+                item_el = ET.SubElement(child, "item")
+                item_el.text = str(item) if item is not None else ""
+                if item is None:
+                    item_el.set("null", "true")
+    elif isinstance(value, dict):
+        for k, v in value.items():
+            _dict_to_xml_element(child, k, v)
+    else:
+        child.text = str(value)
+
+
+def serialize_xml(result: Dict, root_tag: str = "response") -> str:
+    """Serialize a response dict to an indented XML string."""
+    root = ET.Element(root_tag)
+    for key, value in result.items():
+        _dict_to_xml_element(root, key, value)
+    ET.indent(root, space="  ")
+    return ET.tostring(root, encoding="unicode", xml_declaration=False)
+
+
+def emit_result(result: Dict, fmt: str) -> None:
+    """Print result to stdout in the requested format."""
+    if fmt == "xml":
+        print(serialize_xml(result))
+    else:
+        # json and human both emit JSON; human is reserved for future tabular output
+        print(json.dumps(result, indent=2))
+
+
+def emit_error(message: str, fmt: str, code: str = "ERROR") -> None:
+    """
+    Emit a structured error.
+
+    xml/json: error goes to STDOUT as structured payload (exit 1 is caller's responsibility).
+    human: error goes to STDERR as plain text (exit 1 is caller's responsibility).
+    """
+    error_payload = {"error": message, "error_code": code}
+    if fmt in ("xml", "json"):
+        emit_result(error_payload, fmt)
+    else:
+        print(f"Error: {message}", file=sys.stderr)
+
+
+# ---------------------------------------------------------------------------
 # Command: session
 # ---------------------------------------------------------------------------
 
-def cmd_session(kanban_session: str) -> None:
+def cmd_session(kanban_session: str, fmt: str) -> None:
     """Full session overview grouped by agent type."""
     conn = connect()
     try:
-        # Total agent count
         row = conn.execute(
             "SELECT COUNT(*) as cnt FROM agent_metrics WHERE kanban_session = ?",
             (kanban_session,),
         ).fetchone()
         if row is None or row["cnt"] == 0:
-            print(f"No data found for kanban session: {kanban_session}")
-            return
+            emit_error(f"No data found for kanban session: {kanban_session}", fmt, "NOT_FOUND")
+            sys.exit(1)
 
         total_agents = row["cnt"]
 
-        # Aggregate totals
         totals = conn.execute(
             """
             SELECT
@@ -160,7 +223,6 @@ def cmd_session(kanban_session: str) -> None:
             (kanban_session,),
         ).fetchone()
 
-        # By agent type
         by_agent = conn.execute(
             """
             SELECT
@@ -180,6 +242,36 @@ def cmd_session(kanban_session: str) -> None:
             """,
             (kanban_session,),
         ).fetchall()
+
+        if fmt != "human":
+            result = {
+                "session": kanban_session,
+                "total_agents": total_agents,
+                "totals": {
+                    "input_tokens": totals["input_tokens"],
+                    "output_tokens": totals["output_tokens"],
+                    "cache_write_tokens": totals["cache_write"],
+                    "cache_read_tokens": totals["cache_read"],
+                    "cost_usd": totals["cost"],
+                    "total_turns": totals["total_turns"],
+                },
+                "by_agent": [
+                    {
+                        "agent": r["agent"],
+                        "model": r["model"],
+                        "count": r["agents"],
+                        "total_turns": r["total_turns"],
+                        "input_tokens": r["input_tokens"],
+                        "output_tokens": r["output_tokens"],
+                        "cache_read_tokens": r["cache_read"],
+                        "cache_write_tokens": r["cache_write"],
+                        "cost_usd": r["cost"],
+                    }
+                    for r in by_agent
+                ],
+            }
+            emit_result(result, fmt)
+            return
 
         print(f"Session: {kanban_session}")
         print(f"Total agents: {total_agents}")
@@ -219,7 +311,7 @@ def cmd_session(kanban_session: str) -> None:
 # Command: agents
 # ---------------------------------------------------------------------------
 
-def cmd_agents(kanban_session: str) -> None:
+def cmd_agents(kanban_session: str, fmt: str) -> None:
     """Per-agent row table sorted by first_seen_at."""
     conn = connect()
     try:
@@ -245,7 +337,31 @@ def cmd_agents(kanban_session: str) -> None:
         ).fetchall()
 
         if not rows_raw:
-            print(f"No agents found for kanban session: {kanban_session}")
+            emit_error(f"No agents found for kanban session: {kanban_session}", fmt, "NOT_FOUND")
+            sys.exit(1)
+
+        if fmt != "human":
+            result = {
+                "session": kanban_session,
+                "agent_count": len(rows_raw),
+                "agents": [
+                    {
+                        "agent": r["agent"],
+                        "model": r["model"],
+                        "card_number": r["card_number"],
+                        "git_repo": r["git_repo"],
+                        "total_turns": r["total_turns"],
+                        "input_tokens": r["input_tokens"],
+                        "output_tokens": r["output_tokens"],
+                        "cache_read_tokens": r["cache_read_tokens"],
+                        "cache_write_tokens": r["cache_write_tokens"],
+                        "cost_usd": r["cost_usd"],
+                        "first_seen_at": r["first_seen_at"],
+                    }
+                    for r in rows_raw
+                ],
+            }
+            emit_result(result, fmt)
             return
 
         print(f"Session: {kanban_session}  ({len(rows_raw)} agents)")
@@ -280,7 +396,7 @@ def cmd_agents(kanban_session: str) -> None:
 # Command: tools
 # ---------------------------------------------------------------------------
 
-def cmd_tools(kanban_session: str) -> None:
+def cmd_tools(kanban_session: str, fmt: str) -> None:
     """Tool usage breakdown per agent, sorted by call_count desc."""
     conn = connect()
     try:
@@ -302,13 +418,33 @@ def cmd_tools(kanban_session: str) -> None:
         ).fetchall()
 
         if not rows_raw:
-            print(f"No tool usage data found for kanban session: {kanban_session}")
+            emit_error(f"No tool usage data found for kanban session: {kanban_session}", fmt, "NOT_FOUND")
+            sys.exit(1)
+
+        if fmt != "human":
+            # Group by agent for structured output
+            agents_map: Dict[str, List[Dict]] = {}
+            for r in rows_raw:
+                agent = fmt_str(r["agent"])
+                agents_map.setdefault(agent, []).append({
+                    "tool_name": r["tool_name"],
+                    "bash_command": r["bash_command"],
+                    "bash_subcommand": r["bash_subcommand"],
+                    "calls": r["calls"],
+                })
+            result = {
+                "session": kanban_session,
+                "agents": [
+                    {"agent": agent, "tools": tools}
+                    for agent, tools in agents_map.items()
+                ],
+            }
+            emit_result(result, fmt)
             return
 
         print(f"Session: {kanban_session}")
         print()
 
-        # Group by agent for display
         current_agent = None
         agent_rows: List[List[str]] = []
         headers = ["Tool", "Command", "Subcommand", "Calls"]
@@ -345,7 +481,7 @@ def cmd_tools(kanban_session: str) -> None:
 # Command: cards
 # ---------------------------------------------------------------------------
 
-def cmd_cards(kanban_session: str) -> None:
+def cmd_cards(kanban_session: str, fmt: str) -> None:
     """Card event timeline with duration where available."""
     conn = connect()
     try:
@@ -370,7 +506,50 @@ def cmd_cards(kanban_session: str) -> None:
         ).fetchall()
 
         if not rows_raw:
-            print(f"No card events found for kanban session: {kanban_session}")
+            emit_error(f"No card events found for kanban session: {kanban_session}", fmt, "NOT_FOUND")
+            sys.exit(1)
+
+        def _compute_duration(created_at: Any, completed_at: Any) -> Optional[str]:
+            if not created_at or not completed_at:
+                return None
+            try:
+                created = datetime.fromisoformat(str(created_at).replace("Z", "+00:00"))
+                completed = datetime.fromisoformat(str(completed_at).replace("Z", "+00:00"))
+                delta = completed - created
+                total_secs = int(delta.total_seconds())
+                h = total_secs // 3600
+                m = (total_secs % 3600) // 60
+                s = total_secs % 60
+                if h > 0:
+                    return f"{h}h{m}m{s}s"
+                if m > 0:
+                    return f"{m}m{s}s"
+                return f"{s}s"
+            except Exception:
+                return None
+
+        if fmt != "human":
+            result = {
+                "session": kanban_session,
+                "event_count": len(rows_raw),
+                "events": [
+                    {
+                        "card_number": r["card_number"],
+                        "card_type": r["card_type"],
+                        "event_type": r["event_type"],
+                        "model": r["model"],
+                        "from_column": r["from_column"],
+                        "to_column": r["to_column"],
+                        "recorded_at": r["recorded_at"],
+                        "card_created_at": r["card_created_at"],
+                        "card_completed_at": r["card_completed_at"],
+                        "duration": _compute_duration(r["card_created_at"], r["card_completed_at"]),
+                        "persona": r["persona"],
+                    }
+                    for r in rows_raw
+                ],
+            }
+            emit_result(result, fmt)
             return
 
         print(f"Session: {kanban_session}  ({len(rows_raw)} events)")
@@ -379,7 +558,6 @@ def cmd_cards(kanban_session: str) -> None:
         headers = ["Card", "Type", "Event", "Model", "Transition", "Duration", "Recorded At"]
         rows = []
         for r in rows_raw:
-            # Build column transition string
             from_col = fmt_str(r["from_column"])
             to_col = fmt_str(r["to_column"])
             if from_col != "-" and to_col != "-":
@@ -391,26 +569,7 @@ def cmd_cards(kanban_session: str) -> None:
             else:
                 transition = "-"
 
-            # Compute duration if both timestamps available
-            duration = "-"
-            if r["card_created_at"] and r["card_completed_at"]:
-                try:
-
-                    created = datetime.fromisoformat(str(r["card_created_at"]).replace("Z", "+00:00"))
-                    completed = datetime.fromisoformat(str(r["card_completed_at"]).replace("Z", "+00:00"))
-                    delta = completed - created
-                    total_secs = int(delta.total_seconds())
-                    h = total_secs // 3600
-                    m = (total_secs % 3600) // 60
-                    s = total_secs % 60
-                    if h > 0:
-                        duration = f"{h}h{m}m{s}s"
-                    elif m > 0:
-                        duration = f"{m}m{s}s"
-                    else:
-                        duration = f"{s}s"
-                except Exception:
-                    duration = "-"
+            duration = _compute_duration(r["card_created_at"], r["card_completed_at"]) or "-"
 
             rows.append([
                 fmt_str(r["card_number"]),
@@ -450,7 +609,7 @@ def _session_sub_totals(conn: sqlite3.Connection, kanban_session: str) -> Option
     ).fetchone()
 
 
-def cmd_compare(session1: str, session2: str) -> None:
+def cmd_compare(session1: str, session2: str, fmt: str) -> None:
     """Delta view: side-by-side sub-agent metrics with % change."""
     conn = connect()
     try:
@@ -458,10 +617,39 @@ def cmd_compare(session1: str, session2: str) -> None:
         b = _session_sub_totals(conn, session2)
 
         if a is None or a["agents"] == 0:
-            print(f"No sub-agent data found for session: {session1}")
-            return
+            emit_error(f"No sub-agent data found for session: {session1}", fmt, "NOT_FOUND")
+            sys.exit(1)
         if b is None or b["agents"] == 0:
-            print(f"No sub-agent data found for session: {session2}")
+            emit_error(f"No sub-agent data found for session: {session2}", fmt, "NOT_FOUND")
+            sys.exit(1)
+
+        metric_keys = [
+            ("agents", "Agents"),
+            ("total_turns", "Turns"),
+            ("input_tokens", "Input tokens"),
+            ("output_tokens", "Output tokens"),
+            ("cache_read", "Cache read tokens"),
+            ("cache_write", "Cache write tokens"),
+            ("cost", "Cost"),
+        ]
+
+        if fmt != "human":
+            metrics_data = {}
+            for key, label in metric_keys:
+                a_val = a[key]
+                b_val = b[key]
+                metrics_data[key] = {
+                    "label": label,
+                    session1: a_val,
+                    session2: b_val,
+                    "pct_change": pct_change(a_val, b_val),
+                }
+            result = {
+                "session1": session1,
+                "session2": session2,
+                "metrics": metrics_data,
+            }
+            emit_result(result, fmt)
             return
 
         print(f"Sub-agent comparison (agent_id != '')")
@@ -469,27 +657,15 @@ def cmd_compare(session1: str, session2: str) -> None:
         print(f"  {'Metric':<30} {session1:>20} {session2:>20} {'Change':>10}")
         print(f"  {'-'*30} {'-'*20} {'-'*20} {'-'*10}")
 
-        metrics: List[Tuple[str, str, str]] = [
-            ("Agents", fmt_int(a["agents"]), fmt_int(b["agents"])),
-            ("Turns", fmt_int(a["total_turns"]), fmt_int(b["total_turns"])),
-            ("Input tokens", fmt_int(a["input_tokens"]), fmt_int(b["input_tokens"])),
-            ("Output tokens", fmt_int(a["output_tokens"]), fmt_int(b["output_tokens"])),
-            ("Cache read tokens", fmt_int(a["cache_read"]), fmt_int(b["cache_read"])),
-            ("Cache write tokens", fmt_int(a["cache_write"]), fmt_int(b["cache_write"])),
-            ("Cost", fmt_cost(a["cost"]), fmt_cost(b["cost"])),
-        ]
-
-        raw_metrics = [
-            ("Agents", a["agents"], b["agents"]),
-            ("Turns", a["total_turns"], b["total_turns"]),
-            ("Input tokens", a["input_tokens"], b["input_tokens"]),
-            ("Output tokens", a["output_tokens"], b["output_tokens"]),
-            ("Cache read tokens", a["cache_read"], b["cache_read"]),
-            ("Cache write tokens", a["cache_write"], b["cache_write"]),
-            ("Cost", a["cost"], b["cost"]),
-        ]
-
-        for (label, av, bv), (_, a_raw, b_raw) in zip(metrics, raw_metrics):
+        for key, label in metric_keys:
+            a_raw = a[key]
+            b_raw = b[key]
+            if key == "cost":
+                av = fmt_cost(a_raw)
+                bv = fmt_cost(b_raw)
+            else:
+                av = fmt_int(a_raw)
+                bv = fmt_int(b_raw)
             change = pct_change(a_raw, b_raw)
             print(f"  {label:<30} {av:>20} {bv:>20} {change:>10}")
 
@@ -501,7 +677,7 @@ def cmd_compare(session1: str, session2: str) -> None:
 # Command: list
 # ---------------------------------------------------------------------------
 
-def cmd_list(n: int) -> None:
+def cmd_list(n: int, fmt: str) -> None:
     """List N most recent kanban sessions with total cost and agent count."""
     conn = connect()
     try:
@@ -523,7 +699,23 @@ def cmd_list(n: int) -> None:
         ).fetchall()
 
         if not rows_raw:
-            print("No kanban sessions found in the metrics DB.")
+            emit_error("No kanban sessions found in the metrics DB.", fmt, "NOT_FOUND")
+            sys.exit(1)
+
+        if fmt != "human":
+            result = {
+                "sessions": [
+                    {
+                        "session": r["kanban_session"],
+                        "agents": r["agents"],
+                        "total_cost_usd": r["total_cost"],
+                        "first_seen": r["first_seen"],
+                        "last_seen": r["last_seen"],
+                    }
+                    for r in rows_raw
+                ],
+            }
+            emit_result(result, fmt)
             return
 
         print(f"Recent kanban sessions (last {n}):")
@@ -561,11 +753,10 @@ def _percentile(sorted_values: List[float], p: float) -> float:
     return sorted_values[f] * (c - k) + sorted_values[c] * (k - f)
 
 
-def cmd_estimate(card_type: Optional[str], model: Optional[str], batch: int, json_output: bool) -> None:
+def cmd_estimate(card_type: Optional[str], model: Optional[str], batch: int, fmt: str) -> None:
     """Card completion time estimates based on historical data."""
     conn = connect()
     try:
-        # Build query with optional filters
         conditions = ["event_type = 'done'", "card_created_at IS NOT NULL", "card_completed_at IS NOT NULL"]
         params: list = []
 
@@ -598,10 +789,9 @@ def cmd_estimate(card_type: Optional[str], model: Optional[str], batch: int, jso
             if model:
                 filters.append(f"model={model}")
             filter_str = ", ".join(filters) if filters else "none"
-            print(f"No completed card data found (filters: {filter_str})")
-            return
+            emit_error(f"No completed card data found (filters: {filter_str})", fmt, "NOT_FOUND")
+            sys.exit(1)
 
-        # Group by (card_type, model)
         groups: dict[tuple, list[float]] = {}
         for r in rows_raw:
             key = (r["card_type"] or "unknown", r["model"] or "unknown")
@@ -611,15 +801,13 @@ def cmd_estimate(card_type: Optional[str], model: Optional[str], batch: int, jso
             groups.setdefault(key, []).append(minutes)
 
         if not groups:
-            print("No valid durations found (all filtered as negative — possible clock skew)")
-            return
+            emit_error("No valid durations found (all filtered as negative — possible clock skew)", fmt, "NO_DATA")
+            sys.exit(1)
 
-        # Sort each group for percentile calculation
         for key in groups:
             groups[key].sort()
 
-        if json_output:
-            import json as json_mod
+        if fmt != "human":
             result: dict = {}
             for (ct, mdl), values in sorted(groups.items()):
                 bucket_key = f"{ct}/{mdl}"
@@ -639,10 +827,9 @@ def cmd_estimate(card_type: Optional[str], model: Optional[str], batch: int, jso
                     entry["batch_p90_minutes"] = round(p90, 1)
                     entry["note"] = "parallel cards — wall clock equals single card time"
                 result[bucket_key] = entry
-            print(json_mod.dumps(result, indent=2))
+            emit_result(result, fmt)
             return
 
-        # Human-readable output
         print("Card Completion Estimates (from historical data)")
         print()
 
@@ -667,7 +854,6 @@ def cmd_estimate(card_type: Optional[str], model: Optional[str], batch: int, jso
             print()
             print(f"Batch estimate ({batch} parallel cards):")
             print(f"  Wall-clock time equals single card P90 (parallel execution).")
-            # Show the slowest P90 across all groups as the batch estimate
             max_p90 = max(_percentile(v, 90) for v in groups.values())
             print(f"  Estimated wall-clock: ~{max_p90:.1f}m")
 
@@ -679,12 +865,11 @@ def cmd_estimate(card_type: Optional[str], model: Optional[str], batch: int, jso
 # Command: throughput
 # ---------------------------------------------------------------------------
 
-def cmd_throughput(kanban_session: Optional[str]) -> None:
+def cmd_throughput(kanban_session: Optional[str], fmt: str) -> None:
     """Cards completed per hour, optionally filtered by session."""
     conn = connect()
     try:
         if kanban_session:
-            # Session-specific throughput
             rows_raw = conn.execute(
                 """
                 SELECT
@@ -701,10 +886,9 @@ def cmd_throughput(kanban_session: Optional[str]) -> None:
             ).fetchall()
 
             if not rows_raw:
-                print(f"No completed cards found for session: {kanban_session}")
-                return
+                emit_error(f"No completed cards found for session: {kanban_session}", fmt, "NOT_FOUND")
+                sys.exit(1)
 
-            # Overall session span
             span = conn.execute(
                 """
                 SELECT
@@ -718,33 +902,60 @@ def cmd_throughput(kanban_session: Optional[str]) -> None:
                 (kanban_session,),
             ).fetchone()
 
-            print(f"Throughput: {kanban_session}")
-            print()
-
+            span_hours = None
+            overall_rate = None
             if span and span["first_created"] and span["last_completed"]:
-
                 first = datetime.fromisoformat(str(span["first_created"]).replace("Z", "+00:00"))
                 last = datetime.fromisoformat(str(span["last_completed"]).replace("Z", "+00:00"))
                 span_hours = (last - first).total_seconds() / 3600
                 if span_hours > 0:
-                    rate = span["total_completed"] / span_hours
-                    print(f"  Session span: {span_hours:.1f}h")
-                    print(f"  Cards completed: {span['total_completed']}")
-                    print(f"  Overall rate: {rate:.1f} cards/hour")
-                else:
-                    print(f"  Cards completed: {span['total_completed']}")
-                    print(f"  Session span: <1 minute")
+                    overall_rate = span["total_completed"] / span_hours
+
+            if fmt != "human":
+                by_type = []
+                for r in rows_raw:
+                    entry: Dict[str, Any] = {
+                        "card_type": r["card_type"],
+                        "completed": r["completed"],
+                    }
+                    if r["first_created"] and r["last_completed"]:
+                        first = datetime.fromisoformat(str(r["first_created"]).replace("Z", "+00:00"))
+                        last = datetime.fromisoformat(str(r["last_completed"]).replace("Z", "+00:00"))
+                        sh = (last - first).total_seconds() / 3600
+                        entry["rate_cards_per_hour"] = round(r["completed"] / sh, 1) if sh > 0 else None
+                    else:
+                        entry["rate_cards_per_hour"] = None
+                    by_type.append(entry)
+                result = {
+                    "session": kanban_session,
+                    "span_hours": round(span_hours, 1) if span_hours is not None else None,
+                    "total_completed": span["total_completed"] if span else None,
+                    "overall_rate_cards_per_hour": round(overall_rate, 1) if overall_rate is not None else None,
+                    "by_type": by_type,
+                }
+                emit_result(result, fmt)
+                return
+
+            print(f"Throughput: {kanban_session}")
+            print()
+
+            if span_hours is not None and span_hours > 0 and overall_rate is not None:
+                print(f"  Session span: {span_hours:.1f}h")
+                print(f"  Cards completed: {span['total_completed']}")
+                print(f"  Overall rate: {overall_rate:.1f} cards/hour")
+            elif span:
+                print(f"  Cards completed: {span['total_completed']}")
+                print(f"  Session span: <1 minute")
             print()
 
             headers = ["Type", "Completed", "Rate (cards/hr)"]
             rows = []
             for r in rows_raw:
-
                 if r["first_created"] and r["last_completed"]:
                     first = datetime.fromisoformat(str(r["first_created"]).replace("Z", "+00:00"))
                     last = datetime.fromisoformat(str(r["last_completed"]).replace("Z", "+00:00"))
-                    span_hours = (last - first).total_seconds() / 3600
-                    rate = r["completed"] / span_hours if span_hours > 0 else 0
+                    sh = (last - first).total_seconds() / 3600
+                    rate = r["completed"] / sh if sh > 0 else 0
                     rows.append([
                         fmt_str(r["card_type"]),
                         str(r["completed"]),
@@ -759,7 +970,6 @@ def cmd_throughput(kanban_session: Optional[str]) -> None:
             print_table(headers, rows)
 
         else:
-            # Aggregate throughput across all sessions
             rows_raw = conn.execute(
                 """
                 SELECT
@@ -778,7 +988,28 @@ def cmd_throughput(kanban_session: Optional[str]) -> None:
             ).fetchall()
 
             if not rows_raw:
-                print("No completed cards found.")
+                emit_error("No completed cards found.", fmt, "NOT_FOUND")
+                sys.exit(1)
+
+            if fmt != "human":
+                sessions_data = []
+                for r in rows_raw:
+                    entry: Dict[str, Any] = {
+                        "session": r["kanban_session"],
+                        "completed": r["completed"],
+                    }
+                    if r["first_created"] and r["last_completed"]:
+                        first = datetime.fromisoformat(str(r["first_created"]).replace("Z", "+00:00"))
+                        last = datetime.fromisoformat(str(r["last_completed"]).replace("Z", "+00:00"))
+                        sh = (last - first).total_seconds() / 3600
+                        entry["span_hours"] = round(sh, 2)
+                        entry["rate_cards_per_hour"] = round(r["completed"] / sh, 1) if sh > 0 else None
+                    else:
+                        entry["span_hours"] = None
+                        entry["rate_cards_per_hour"] = None
+                    sessions_data.append(entry)
+                result = {"sessions": sessions_data}
+                emit_result(result, fmt)
                 return
 
             print("Throughput by Session (last 20)")
@@ -787,17 +1018,13 @@ def cmd_throughput(kanban_session: Optional[str]) -> None:
             headers = ["Session", "Cards", "Span", "Rate (cards/hr)"]
             rows = []
             for r in rows_raw:
-
                 if r["first_created"] and r["last_completed"]:
                     first = datetime.fromisoformat(str(r["first_created"]).replace("Z", "+00:00"))
                     last = datetime.fromisoformat(str(r["last_completed"]).replace("Z", "+00:00"))
-                    span_hours = (last - first).total_seconds() / 3600
-                    if span_hours > 0:
-                        rate = r["completed"] / span_hours
-                        if span_hours >= 1:
-                            span_str = f"{span_hours:.1f}h"
-                        else:
-                            span_str = f"{span_hours * 60:.0f}m"
+                    sh = (last - first).total_seconds() / 3600
+                    if sh > 0:
+                        rate = r["completed"] / sh
+                        span_str = f"{sh:.1f}h" if sh >= 1 else f"{sh * 60:.0f}m"
                         rows.append([
                             fmt_str(r["kanban_session"]),
                             str(r["completed"]),
@@ -856,6 +1083,7 @@ def cmd_ac_rejections(
     since: Optional[str],
     verbose: bool,
     summary: bool,
+    fmt: str,
 ) -> None:
     """Show redo events with rejection reasons, with optional filters."""
     conn = connect()
@@ -902,12 +1130,10 @@ def cmd_ac_rejections(
         ).fetchall()
 
         if not rows_raw:
-            print("No AC rejections found matching the given filters.")
-            return
+            emit_error("No AC rejections found matching the given filters.", fmt, "NOT_FOUND")
+            sys.exit(1)
 
         if summary:
-            # Aggregate rejection patterns by agent and card_type
-            # Count criterion text occurrences
             pattern_counts: Dict[Tuple[str, str, str], int] = {}
             for r in rows_raw:
                 a = fmt_str(r["agent"])
@@ -919,7 +1145,19 @@ def cmd_ac_rejections(
                     pattern_counts[key] = pattern_counts.get(key, 0) + 1
 
             if not pattern_counts:
-                print("No parseable rejection reasons found.")
+                emit_error("No parseable rejection reasons found.", fmt, "NO_DATA")
+                sys.exit(1)
+
+            if fmt != "human":
+                patterns = [
+                    {"agent": a, "card_type": ct, "count": count, "criterion": criterion}
+                    for (a, ct, criterion), count in sorted(pattern_counts.items(), key=lambda x: -x[1])
+                ]
+                result = {
+                    "redo_event_count": len(rows_raw),
+                    "patterns": patterns,
+                }
+                emit_result(result, fmt)
                 return
 
             print(f"AC Rejection Patterns ({len(rows_raw)} redo events)")
@@ -939,12 +1177,30 @@ def cmd_ac_rejections(
             print_table(headers, rows_out)
 
         else:
-            # Default table view
+            if fmt != "human":
+                events = []
+                for r in rows_raw:
+                    reasons = _parse_rejection_reasons(r["rejection_reasons"])
+                    events.append({
+                        "card_number": r["card_number"],
+                        "kanban_session": r["kanban_session"],
+                        "agent": r["agent"],
+                        "card_type": r["card_type"],
+                        "model": r["model"],
+                        "recorded_at": r["recorded_at"],
+                        "rejection_reasons": reasons if reasons else r["rejection_reasons"],
+                    })
+                result = {
+                    "redo_event_count": len(rows_raw),
+                    "events": events,
+                }
+                emit_result(result, fmt)
+                return
+
             print(f"AC Rejections ({len(rows_raw)} redo events)")
             print()
 
             if verbose:
-                # Full rejection reasons, one block per row
                 for r in rows_raw:
                     reasons = _parse_rejection_reasons(r["rejection_reasons"])
                     print(f"Card #{fmt_str(r['card_number'])}  Session: {fmt_str(r['kanban_session'])}  "
@@ -963,7 +1219,6 @@ def cmd_ac_rejections(
                         print(f"  (unparseable: {fmt_str(r['rejection_reasons'])})")
                     print()
             else:
-                # Compact table with truncated reasons
                 headers = ["Card", "Session", "Agent", "Type", "Model", "Timestamp", "Rejection Reasons"]
                 rows_out = []
                 for r in rows_raw:
@@ -1007,6 +1262,7 @@ def main() -> None:
 Examples:
   claude-inspect list
   claude-inspect list 20
+  claude-inspect --format json list
   claude-inspect session kind-vale
   claude-inspect agents kind-vale
   claude-inspect tools kind-vale
@@ -1015,15 +1271,31 @@ Examples:
   claude-inspect estimate
   claude-inspect estimate --type work --model sonnet
   claude-inspect estimate --type work --batch 5
-  claude-inspect estimate --json
+  claude-inspect --format json estimate
   claude-inspect throughput
   claude-inspect throughput kind-vale
   claude-inspect ac-rejections
   claude-inspect ac-rejections --agent swe-backend
   claude-inspect ac-rejections --card-type work --since 2025-01-01
-  claude-inspect ac-rejections --verbose
+  claude-inspect --verbose ac-rejections
   claude-inspect ac-rejections --summary
 """,
+    )
+
+    # Top-level flags (apply to all subcommands)
+    # NOTE: This CLI uses --format (not --output-style). The kanban CLI uses
+    # --output-style=xml for historical reasons; these Python CLIs standardize
+    # on --format. Coordinators must use the correct flag per tool.
+    parser.add_argument(
+        "--format",
+        choices=["xml", "json", "human"],
+        default="xml",
+        help="Output format (default: xml). Note: kanban uses --output-style, not --format.",
+    )
+    parser.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Verbose output (subcommand-specific detail)",
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Subcommand")
@@ -1058,7 +1330,6 @@ Examples:
     estimate_parser.add_argument("--type", dest="card_type", choices=["work", "review", "research"], help="Filter by card type")
     estimate_parser.add_argument("--model", help="Filter by model (e.g., sonnet, haiku, opus)")
     estimate_parser.add_argument("--batch", type=int, default=1, help="Estimate wall-clock for N parallel cards (default: 1)")
-    estimate_parser.add_argument("--json", dest="json_output", action="store_true", help="Output as JSON (for programmatic consumption)")
 
     # throughput
     throughput_parser = subparsers.add_parser("throughput", help="Cards completed per hour")
@@ -1071,7 +1342,6 @@ Examples:
     ac_rej_parser.add_argument("--model", help="Filter by model (e.g., sonnet, haiku, opus)")
     ac_rej_parser.add_argument("--session", dest="session", help="Filter by kanban session name")
     ac_rej_parser.add_argument("--since", help="Filter by date (ISO format, e.g., 2025-01-01)")
-    ac_rej_parser.add_argument("--verbose", action="store_true", help="Show full rejection reason text")
     ac_rej_parser.add_argument("--summary", action="store_true", help="Aggregate view: top rejection reason patterns by agent and card type")
 
     args = parser.parse_args()
@@ -1080,23 +1350,26 @@ Examples:
         parser.print_help()
         sys.exit(2)
 
+    fmt = args.format
+    verbose = args.verbose
+
     try:
         if args.command == "session":
-            cmd_session(args.kanban_session)
+            cmd_session(args.kanban_session, fmt)
         elif args.command == "agents":
-            cmd_agents(args.kanban_session)
+            cmd_agents(args.kanban_session, fmt)
         elif args.command == "tools":
-            cmd_tools(args.kanban_session)
+            cmd_tools(args.kanban_session, fmt)
         elif args.command == "cards":
-            cmd_cards(args.kanban_session)
+            cmd_cards(args.kanban_session, fmt)
         elif args.command == "compare":
-            cmd_compare(args.session1, args.session2)
+            cmd_compare(args.session1, args.session2, fmt)
         elif args.command == "list":
-            cmd_list(args.n)
+            cmd_list(args.n, fmt)
         elif args.command == "estimate":
-            cmd_estimate(args.card_type, args.model, args.batch, args.json_output)
+            cmd_estimate(args.card_type, args.model, args.batch, fmt)
         elif args.command == "throughput":
-            cmd_throughput(args.kanban_session)
+            cmd_throughput(args.kanban_session, fmt)
         elif args.command == "ac-rejections":
             cmd_ac_rejections(
                 agent=args.agent,
@@ -1104,17 +1377,21 @@ Examples:
                 model=args.model,
                 session=args.session,
                 since=args.since,
-                verbose=args.verbose,
+                verbose=verbose,
                 summary=args.summary,
+                fmt=fmt,
             )
         else:
-            print(f"Unknown command: {args.command}", file=sys.stderr)
+            emit_error(f"Unknown command: {args.command}", fmt, "INVALID_COMMAND")
             sys.exit(1)
     except KeyboardInterrupt:
         print("\nInterrupted.", file=sys.stderr)
         sys.exit(130)
+    except RuntimeError as e:
+        emit_error(str(e), fmt)
+        sys.exit(1)
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
+        emit_error(f"Unexpected error: {e}", fmt)
         sys.exit(1)
 
 

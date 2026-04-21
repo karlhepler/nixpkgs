@@ -30,6 +30,14 @@ kanban do '{"type":"work","action":"...","intent":"...","criteria":["AC1","AC2",
 
 **AC quality and format:** `type` required: "work", "review", or "research". `AC` required: 3-5 specific, measurable items. `editFiles/readFiles`: Coordination metadata showing which files the agent intends to modify (e.g. `["src/auth/*.ts"]`). Displayed on card so staff engineers across sessions can see file overlap. Supports glob patterns.
 
+**Research card example** (findings returned as agent output, not file changes):
+
+```bash
+kanban do '{"type":"research","action":"Investigate caching strategies for API responses","intent":"Understand options to inform architecture decision","model":"sonnet","criteria":["Options documented with tradeoffs [MoV: test -f .scratchpad/caching-findings.md]","Performance characteristics compared [MoV: rg tradeoff .scratchpad/caching-findings.md]","Recommendation provided with rationale [MoV: rg recommendation .scratchpad/caching-findings.md]"]}' --session <id>
+```
+
+Research cards use `readFiles` (not `editFiles`) and their AC verifies that findings are documented and returned — not that source files were changed.
+
 > **⚠️ fnmatch glob behavior:** `*` matches path separators (`/`) — so `src/*.ts` matches files at any depth under `src/`, not just direct children. This is more permissive than shell glob behavior.
 
 Be accurate — these are not placeholder guesses, they define the actual scope boundary. When editFiles is non-empty on a work card, the agent is required to produce file changes. Bulk: Pass JSON array.

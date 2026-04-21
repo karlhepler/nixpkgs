@@ -6,7 +6,7 @@ Common failure modes to avoid during staff engineer coordination. Each anti-patt
 
 ## Source Code Traps
 
-See § Hard Rules in staff-engineer.md for the rules these anti-patterns violate.
+See § Hard Rules in [staff-engineer.md](../../output-styles/staff-engineer.md) for the rules these anti-patterns violate.
 
 - "Let me check..." then reading source files, config files, scripts, or tests (reading coordination docs like project plans or GitHub issues to understand what to delegate is fine — that is your job)
 - "Just a quick look at the code..." (no such thing for source code)
@@ -76,7 +76,7 @@ See § Hard Rules in staff-engineer.md for the rules these anti-patterns violate
 
 ## AC Review Failures
 
-See § AC Review Workflow in staff-engineer.md for the correct sequence.
+See § AC Review Workflow in [staff-engineer.md](../../output-styles/staff-engineer.md) for the correct sequence.
 
 - Manually checking AC yourself
 - Reading/parsing AC reviewer output
@@ -84,7 +84,7 @@ See § AC Review Workflow in staff-engineer.md for the correct sequence.
 - **Calling `kanban show` before the AC reviewer confirms done** — After the AC reviewer confirms done, brief the user from the sub-agent's return (already in context). `kanban show` is a fallback for when the return is insufficient, not a default step. Do not read the card during the review lifecycle.
 - **Parsing agent transcript files for findings** — Agent findings are returned directly via the Task return value. If findings are not in the agent's return message, the agent failed to surface them in its output. `kanban redo` and re-delegate with clearer "When Done" instructions to return findings in the final message. The SubagentStop hook extracts agent output from the transcript for AC review purposes — that is infrastructure, not something the staff engineer does. Writing ad-hoc scripts to parse transcript files yourself is always wrong.
 - Passing AC list in AC reviewer delegation prompt (AC reviewer fetches its own AC via kanban show)
-- Calling `kanban criteria check/uncheck` (sub-agent's job) or `kanban criteria verify/unverify` (AC reviewer's job)
+- Calling `kanban criteria check/uncheck` (sub-agent's job) or `kanban criteria pass/fail` (AC reviewer's job)
 - Skipping review column (doing -> done directly)
 - Moving to done without AC reviewer
 - Acting on findings before completing AC lifecycle (review → AC reviewer → done)
@@ -96,7 +96,7 @@ See § AC Review Workflow in staff-engineer.md for the correct sequence.
 
 ## Review Protocol Failures
 
-See § Mandatory Review Protocol in staff-engineer.md.
+See § Mandatory Review Protocol in [staff-engineer.md](../../output-styles/staff-engineer.md).
 
 - "Looks low-risk" without checking tier tables
 - Only checking Tier 1 (must check all tiers)
@@ -108,7 +108,7 @@ See § Mandatory Review Protocol in staff-engineer.md.
 
 ## Pending Question Failures
 
-See § Pending Questions in staff-engineer.md.
+See § Pending Questions in [staff-engineer.md](../../output-styles/staff-engineer.md).
 
 - Repeating a decision question in prose instead of escalating to ▌ template (Stage 2 is mechanical, not optional)
 - Re-asking the same question multiple responses in a row without switching format
@@ -127,7 +127,7 @@ See § Pending Questions in staff-engineer.md.
 
 ## User Role Failures
 
-See § User Role in staff-engineer.md.
+See § User Role in [staff-engineer.md](../../output-styles/staff-engineer.md).
 
 - Asking user to run manual validation commands
 - Treating user as executor instead of strategic partner
@@ -137,14 +137,14 @@ See § User Role in staff-engineer.md.
 
 ## Destructive Operations
 
-- **Running `kanban clean` or `kanban clean --expunge`** -- These commands are absolutely prohibited. They permanently delete cards across all sessions with no recovery. When user says "clear the board," use `kanban cancel` instead after confirming scope. See § Hard Rules #4 in staff-engineer.md.
-- **Running `perm reset`** -- This command is absolutely prohibited for all Claude agents. It nukes ALL entries from `permissions.allow` and is user-only. The command reads confirmation directly from `/dev/tty` specifically to block automated invocation — do not attempt to call it, pipe input to it, or suggest it as a solution. If the user needs a permission slate wipe, direct them to run `perm reset` themselves.
+- **Running `kanban clean` or `kanban clean --expunge`** -- These commands are absolutely prohibited. They permanently delete cards across all sessions with no recovery. When user says "clear the board," use `kanban cancel` instead after confirming scope. See § Hard Rules #4 in [staff-engineer.md](../../output-styles/staff-engineer.md). (Future direction: the kanban CLI verb will be renamed to `kanban purge`; prohibition remains regardless of verb.)
+- **Running `perm purge`** -- This command is absolutely prohibited for all Claude agents. It purges ALL entries from `permissions.allow` and is user-only. The command reads confirmation directly from `/dev/tty` specifically to block automated invocation — do not attempt to call it, pipe input to it, or suggest it as a solution. If the user needs a permission slate wipe, direct them to run `perm purge` themselves.
 - **Bypassing CLI safety prompts** -- Never pipe input, use `yes`, or otherwise programmatically bypass interactive confirmation prompts on destructive commands. If a command asks for confirmation, it exists for a reason.
 
 ---
 
 ## References
 
-- See `staff-engineer.md` for the behavioral rules that these anti-patterns violate
+- See [`staff-engineer.md`](../../output-styles/staff-engineer.md) for the behavioral rules that these anti-patterns violate
 - See `delegation-guide.md` for permission handling details
 - See `review-protocol.md` for review workflow details

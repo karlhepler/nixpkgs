@@ -73,10 +73,28 @@ _SESSION_BARE_PATTERN = re.compile(r'[Ss]ession[:\s]+([a-z0-9][a-z0-9-]+)')
 # Error logging
 # ---------------------------------------------------------------------------
 
+_LOG_MAX_BYTES = 10 * 1024 * 1024  # 10 MB cap before rotation
+
+
+def _rotate_log_if_needed(path: Path) -> None:
+    """Rotate path → path.1 when the file exceeds _LOG_MAX_BYTES. Never raises."""
+    try:
+        if path.exists() and path.stat().st_size >= _LOG_MAX_BYTES:
+            rotated = path.with_suffix(path.suffix + ".1")
+            path.rename(rotated)
+    except Exception:
+        pass
+
+
 def _write_log(path: Path, message: str) -> None:
-    """Append a timestamped message to a log file. Never raises."""
+    """Append a timestamped message to a log file. Never raises.
+
+    Rotates the log file to <path>.1 when it exceeds _LOG_MAX_BYTES,
+    then starts a fresh file (one backup generation kept).
+    """
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
+        _rotate_log_if_needed(path)
         from datetime import datetime, timezone
         timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
         with open(path, "a", encoding="utf-8") as fh:
@@ -274,11 +292,25 @@ def main() -> None:
 
     prompt = tool_input.get("prompt", "")
 
+    # Extract only the pre-injection portion of the prompt for marker checks.
+    # inject_card_into_prompt prepends card XML ending with
+    # "<!-- End of injected card content -->". When an agent prompt already
+    # contains a previous injection (e.g. nested delegation), the injected card
+    # XML could contain arbitrary text including bypass markers. Checking only
+    # the original (post-injection-delimiter) portion prevents card content from
+    # influencing enforcement decisions.
+    _INJECTION_END = "<!-- End of injected card content -->"
+    if _INJECTION_END in prompt:
+        pre_injection_prompt = prompt[prompt.index(_INJECTION_END) + len(_INJECTION_END):]
+    else:
+        pre_injection_prompt = prompt
+
     # SKILL_AGENT_BYPASS: Skills (e.g. /commit) may spawn Agent calls without
     # kanban cards, background mode, or subagent_type. If the prompt contains
     # the bypass marker, skip all enforcement deny rules but still attempt card
     # injection if a card reference is present.
-    skill_bypass = bool(prompt and "SKILL_AGENT_BYPASS" in prompt)
+    # Only check the pre-injection portion to prevent card XML from injecting bypass.
+    skill_bypass = bool(pre_injection_prompt and "SKILL_AGENT_BYPASS" in pre_injection_prompt)
     if skill_bypass:
         log_info("SKILL_AGENT_BYPASS detected — skipping enforcement rules")
 
@@ -332,7 +364,8 @@ def main() -> None:
         # Option C is explicitly authorized via FOREGROUND_AUTHORIZED marker in prompt.
         run_in_background = tool_input.get("run_in_background")
         if run_in_background is not True:
-            if "FOREGROUND_AUTHORIZED" not in prompt:
+            # Only check the pre-injection portion to prevent card XML from injecting bypass.
+            if "FOREGROUND_AUTHORIZED" not in pre_injection_prompt:
                 reason = (
                     "Agent tool call denied: missing `run_in_background: true`. "
                     "All Agent tool calls MUST run in the background to keep the "
