@@ -5,6 +5,7 @@ Covered paths:
 - git commit --no-verify → blocked
 - git commit --no-verify with CLAUDE_NOVERIFY_AUTHORIZED=1 → allowed
 - git commit -m "msg" (no bypass flag) → allowed
+- git commit -m "message body mentions --no-verify" → NOT blocked (false-positive fix)
 - git push --no-verify → blocked
 - git push --no-gpg-sign → blocked
 - git commit -c commit.gpgsign=false → blocked
@@ -225,6 +226,57 @@ class TestLegitimateGitCommands:
         payload = make_bash_payload("git add -A")
         result = run_hook_main(hook, payload)
         assert_allowed(result)
+
+
+# ---------------------------------------------------------------------------
+# Allowed: bypass-flag strings in commit message body (false-positive regression)
+# ---------------------------------------------------------------------------
+
+class TestBypassStringInMessageBody:
+    """
+    Bypass-flag strings appearing only inside a -m message value must NOT block.
+    Regression tests for the false-positive bug fixed by shlex tokenization.
+    """
+
+    def test_no_verify_in_message_body_allowed(self, hook):
+        """The string --no-verify in the commit message body is NOT a bypass flag."""
+        payload = make_bash_payload(
+            'git commit -m "this commit skips --no-verify bypass pattern"'
+        )
+        result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+    def test_no_gpg_sign_in_message_body_allowed(self, hook):
+        """The string --no-gpg-sign in the commit message body is NOT a bypass flag."""
+        payload = make_bash_payload(
+            'git commit -m "do not use --no-gpg-sign in production"'
+        )
+        result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+    def test_gpgsign_false_in_message_body_allowed(self, hook):
+        """The string commit.gpgsign=false in the commit message body is NOT a bypass flag."""
+        payload = make_bash_payload(
+            "git commit -m 'message mentions commit.gpgsign=false configuration'"
+        )
+        result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+    def test_no_verify_in_long_message_flag_form_allowed(self, hook):
+        """--message flag form: bypass string in message value is NOT a bypass flag."""
+        payload = make_bash_payload(
+            'git commit --message "chore: document --no-verify hook bypass"'
+        )
+        result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+    def test_real_bypass_after_message_still_blocked(self, hook):
+        """Even when a message contains a bypass string, an actual bypass flag still blocks."""
+        payload = make_bash_payload(
+            'git commit -m "remove --no-verify from CI" --no-verify'
+        )
+        result = run_hook_main(hook, payload)
+        assert_blocked(result)
 
 
 # ---------------------------------------------------------------------------

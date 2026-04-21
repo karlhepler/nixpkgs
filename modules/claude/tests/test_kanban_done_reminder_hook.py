@@ -177,6 +177,24 @@ class TestNonMatchingCommandsSilent:
         result = run_hook_main(hook, payload)
         assert result is None
 
+    def test_git_commit_with_kanban_done_in_message_silent(self, hook):
+        """git commit -m containing 'kanban done' must NOT fire (mid-string match)."""
+        payload = make_bash_posttool_payload('git commit -m "kanban done 42"')
+        result = run_hook_main(hook, payload)
+        assert result is None, (
+            f"Expected silent for git commit with 'kanban done' in message, got: {result}"
+        )
+
+    def test_kanban_list_silent(self, hook):
+        payload = make_bash_posttool_payload("kanban list")
+        result = run_hook_main(hook, payload)
+        assert result is None, f"Expected silent for 'kanban list', got: {result}"
+
+    def test_kanban_start_silent(self, hook):
+        payload = make_bash_posttool_payload("kanban start 42")
+        result = run_hook_main(hook, payload)
+        assert result is None, f"Expected silent for 'kanban start 42', got: {result}"
+
 
 # ---------------------------------------------------------------------------
 # Regex boundary: subcommands that contain "done" should NOT match

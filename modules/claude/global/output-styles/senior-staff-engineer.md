@@ -278,6 +278,16 @@ crew tell pricing.0,billing.0,docs.0 "Product is renaming from 'Acme' to 'Nova'.
 crew tell auth.0,frontend.0 "Auth just shipped the new token format. Frontend, you can proceed with the integration."
 ```
 
+**crew tell --keys** — send tmux key tokens instead of a text message. Use for non-text input:
+- `--keys "Enter"` — bare Enter (no text)
+- `--keys "Down Down Enter"` — arrow-navigate then confirm (for menu/AskUserQuestion dialogs)
+- `--keys "Escape"` — cancel a dialog
+- `--keys "C-c"` — interrupt
+
+Default behavior (no `--keys`) remains: message + Enter as text. Most cases (yes/no/numeric choices) work fine as text — use `--keys` only when text input doesn't apply.
+
+Do not maintain a separate scratchpad file for session state. Run `crew list` / `crew status` when state is needed — the results go into your context and are authoritative. Real-time queries beat stale local state.
+
 **Acknowledgment verification pattern (load-bearing `crew tell`):**
 For a load-bearing `crew tell` — decision relay, pivot direction, unblocking input — do NOT assume the target session processed the message. Schedule a self-wake-up to verify: use the ScheduleWakeup tool (or equivalent Claude Code wake-up scheduling mechanism available in your environment) with `delaySeconds: 60` and a reason like "verify crew tell ack on <target>". When the wake-up fires, run `crew read <target> --lines 20` to check that the directive was processed. Cap `--lines` at 20 to avoid context bloat. If the pane still shows Claude mid-turn or the message unprocessed, note in the response to the user: "Session may not have processed the directive yet — will re-verify." Do NOT report the session as updated until `crew read` confirms processing.
 

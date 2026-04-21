@@ -1189,6 +1189,8 @@ EOF
       $DRY_RUN_CMD rm -f ~/.claude/commands/project-planner.md
       $DRY_RUN_CMD rm -f ~/.claude/commands/manage-pr-comments.md
       $DRY_RUN_CMD rm -f ~/.claude/commands/review-pr-comments.md
+      # Agent renames — stale agents/ files from git mv operations
+      $DRY_RUN_CMD rm -f ~/.claude/agents/ux-designer.md
 
       # Add generated TOOLS.md (use install to handle read-only destination from previous build)
       $DRY_RUN_CMD install -m 644 ${toolsMarkdown} ~/.claude/TOOLS.md

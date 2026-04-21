@@ -47,11 +47,13 @@ def show_help() -> None:
     print("  Configured in modules/claude/default.nix as PostToolUse(Bash) hook.")
 
 
-# Match "kanban done <something>" — avoids false matches on subcommands like
-# "kanban done-something-else". Pattern: optional leading whitespace, "kanban done ",
-# then at least one non-space character.
+# Match "kanban done <something>" anchored to the start of the command (after
+# stripping leading whitespace). Avoids false positives on:
+# - "kanban done-something" (no space after "done")
+# - "git commit -m 'kanban done 42'" ("kanban done" appears mid-string, not at start)
+# Pattern: start-of-string, "kanban done ", then at least one non-space character.
 _KANBAN_DONE_PATTERN = re.compile(
-    r'(^|[\s])kanban\s+done\s+\S',
+    r'^kanban\s+done\s+\S',
 )
 
 
@@ -74,9 +76,9 @@ def main() -> None:
     except json.JSONDecodeError:
         sys.exit(0)
 
-    command = payload.get("tool_input", {}).get("command", "")
+    command = payload.get("tool_input", {}).get("command", "").lstrip()
 
-    if _KANBAN_DONE_PATTERN.search(command):
+    if _KANBAN_DONE_PATTERN.match(command):
         print(json.dumps({
             "hookSpecificOutput": {
                 "hookEventName": "PostToolUse",

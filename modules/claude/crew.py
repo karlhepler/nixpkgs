@@ -416,7 +416,7 @@ def _looks_like_message_not_target(s: str) -> bool:
     return bool(_LEGACY_ORDER_RE.search(s))
 
 
-def cmd_tell(targets_str: str, message: str, fmt: str) -> None:
+def cmd_tell(targets_str: str, message: str, fmt: str, use_keys: bool = False) -> None:
     resolved = resolve_targets(targets_str, fmt=fmt)
 
     if fmt == "xml":
@@ -425,16 +425,25 @@ def cmd_tell(targets_str: str, message: str, fmt: str) -> None:
         json_targets: List[Dict] = []
 
     for tmux_target, label, _window_id in resolved:
-        # send message then Enter as two separate send-keys calls
-        subprocess.run(
-            ["tmux", "send-keys", "-t", tmux_target, message],
-            check=False
-        )
-        time.sleep(0.15)
-        subprocess.run(
-            ["tmux", "send-keys", "-t", tmux_target, "Enter"],
-            check=False
-        )
+        if use_keys:
+            # Keys mode: split message into tmux key tokens and pass directly.
+            # No -l flag — tokens are interpreted as tmux key names (Enter, Escape, C-c, etc.).
+            tokens = message.split()
+            subprocess.run(
+                ["tmux", "send-keys", "-t", tmux_target] + tokens,
+                check=False
+            )
+        else:
+            # Text mode: send message as literal text, then Enter as a separate key.
+            subprocess.run(
+                ["tmux", "send-keys", "-t", tmux_target, message],
+                check=False
+            )
+            time.sleep(0.15)
+            subprocess.run(
+                ["tmux", "send-keys", "-t", tmux_target, "Enter"],
+                check=False
+            )
         if fmt == "xml":
             ET.SubElement(root, "target", crew=label, status="sent")
         elif fmt == "json":
@@ -1028,9 +1037,40 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     # tell
-    p_tell = sub.add_parser("tell", help="Send message + Enter to target pane(s)")
+    p_tell = sub.add_parser(
+        "tell",
+        help="Send message + Enter to target pane(s)",
+        description=(
+            "Send input to one or more target pane(s).\n\n"
+            "Default (no --keys): message is sent as literal text followed by Enter.\n"
+            "With --keys: message is interpreted as space-separated tmux key tokens\n"
+            "passed directly to tmux send-keys (no Enter appended automatically).\n\n"
+            "Key token examples:\n"
+            "  crew tell pricing.0 --keys \"Enter\"            # bare Enter\n"
+            "  crew tell pricing.0 --keys \"Down Down Enter\"  # arrow-nav then confirm\n"
+            "  crew tell pricing.0 --keys \"Escape\"           # cancel a dialog\n"
+            "  crew tell pricing.0 --keys \"C-c\"              # interrupt (Ctrl-C)\n"
+            "  crew tell pricing.0 --keys \"Tab Space\"        # tab then space\n\n"
+            "Supported token conventions: Enter, Return, Escape, Tab, Space, BSpace,\n"
+            "Up, Down, Left, Right, PageUp, PageDown, Home, End, F1-F12,\n"
+            "C-<letter> (Ctrl), M-<letter> (Meta/Alt). Tokens are passed through to\n"
+            "tmux directly — tmux will error on unrecognized names."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     p_tell.add_argument("targets", help="Comma-separated targets (window[.pane])")
-    p_tell.add_argument("message", help="Message to send")
+    p_tell.add_argument("message", help="Message to send (text) or space-separated key tokens (with --keys)")
+    p_tell.add_argument(
+        "--keys",
+        action="store_true",
+        default=False,
+        dest="use_keys",
+        help=(
+            "Interpret message as space-separated tmux key tokens instead of literal text. "
+            "Tokens are passed directly to tmux send-keys without the -l literal flag and "
+            "without an automatic Enter. Example: --keys \"Down Down Enter\""
+        ),
+    )
 
     # read
     p_read = sub.add_parser("read", help="Capture pane buffer content")
@@ -1140,7 +1180,7 @@ def main() -> None:
                     error_code="LEGACY_ARG_ORDER",
                     exit_code=2,
                 )
-            cmd_tell(args.targets, args.message, fmt)
+            cmd_tell(args.targets, args.message, fmt, use_keys=args.use_keys)
         elif args.command == "read":
             cmd_read(args.targets, args.lines, args.from_line, fmt)
         elif args.command == "dismiss":
