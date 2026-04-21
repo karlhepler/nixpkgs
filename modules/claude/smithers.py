@@ -366,10 +366,18 @@ def _prc_retry(pr_number: int, max_retries: int, backoff_base: int) -> dict:
 
     Returns:
         Parsed prc response dict, or {"comments": [], "error": ..., "retries_exhausted": True}
+
+    Note on prc flags:
+        --format json is required because prc's default output format is XML.
+        Smithers parses the result with json.loads(), so JSON must be requested explicitly.
+
+        --full is required because prc list defaults to summary-only mode (body fields
+        stripped). Smithers reads comment.body to include comment text in the Claude
+        prompt it constructs; without --full that field is absent from the response.
     """
     for attempt in range(1, max_retries + 1):
         result = subprocess.run(
-            ["prc", "list", str(pr_number), "--unresolved", "--bots-only", "--inline-only", "--max-replies", "0"],
+            ["prc", "--format", "json", "list", str(pr_number), "--unresolved", "--bots-only", "--inline-only", "--max-replies", "0", "--full"],
             capture_output=True,
             text=True,
             check=False
