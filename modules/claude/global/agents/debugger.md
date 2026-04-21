@@ -332,7 +332,7 @@ Work backwards from the observed failure to the root cause by asking "why" repea
    - Which previously Unchecked assumptions need verification first?
    - **Mandatory gap hunt — find new assumptions:** What parts of the infection chain have NOT been questioned yet? What did you implicitly assume but never state? What new surface area did last round's experiment expose? What would have to be true for the remaining unexplained symptoms to exist?
    - **The assumption list must grow every round.** If you finish Phase 7 without appending new assumptions, you haven't looked hard enough. After 10 rounds, a healthy ledger has 50+ assumptions spanning all three zones. That density is the evidence of systematic work, not just re-running old checks.
-4. **Add a new round section to the ledger** — insert a new `### Round N — [timestamp]` block BEFORE `<!-- END ROUNDS -->` (never modify previous round sections)
+4. **Add a new round section to the ledger** — insert a new `### Round N — [date +'%Y-%m-%d %H:%M:%S %Z']` block BEFORE `<!-- END ROUNDS -->` (never modify previous round sections)
 5. **Proceed from the appropriate phase** based on your assessment:
    - New symptoms appeared → Phase 1 (re-triage)
    - Previous hypothesis was wrong → Phase 2 or 3 (new assumptions or re-verification)
@@ -352,7 +352,7 @@ The ledger must always land in the repository root `.scratchpad/` directory rega
 Where:
 - `<repo-root>` is the absolute path returned by `git rev-parse --show-toplevel`
 - `<slug>` is a short, hyphenated description derived from the bug (e.g., `auth-token-expiry`, `cart-null-pointer`, `race-condition-job-processor`)
-- `<timestamp>` is when the first round started (ISO format: `YYYYMMDD-HHMMSS`)
+- `<timestamp>` is when the first round started — generate with `$(date +'%Y%m%d-%H%M%S')` (e.g., `20260215-143022`). **Always include time (HH:MM:SS), not just the date** — a date-only format produces a midnight default instead of the real local time. Local timezone is used; do not pass `-u` (UTC flag).
 - Example: `/Users/karlhepler/project/.scratchpad/debug-auth-token-expiry-20260215-143022.md`
 
 ### Scratchpad Protocol
@@ -373,7 +373,7 @@ On the first round, use Write to create the ledger from scratch using this exact
 ```markdown
 # Debug Ledger: [Bug Title]
 
-**Opened:** [timestamp]
+**Opened:** [run: `date +'%Y-%m-%d %H:%M:%S %Z'` — e.g., `2026-02-15 14:30:22 EST`]
 **Bug:** [one-sentence description of the failure]
 **Reproduction:** [exact steps to reproduce]
 **Environment:** [OS, runtime version, relevant dependency versions]
@@ -402,7 +402,7 @@ On the first round, use Write to create the ledger from scratch using this exact
 
 ## Rounds
 
-### Round 1 — [timestamp]
+### Round 1 — [run: `date +'%Y-%m-%d %H:%M:%S %Z'` — e.g., `2026-02-15 14:30:22 EST`]
 
 #### What Was Done
 [narrative of round 1 investigation]
@@ -480,7 +480,7 @@ Edit: replace in ledger file
   old_string:
     <!-- END ROUNDS -->
   new_string:
-    ### Round 2 — [timestamp]
+    ### Round 2 — [run: `date +'%Y-%m-%d %H:%M:%S %Z'` — e.g., `2026-02-15 15:45:10 EST`]
 
     #### What Was Done
     [narrative]
@@ -522,11 +522,11 @@ Edit: replace in ledger file
 <!-- END HYPOTHESES -->
 
 ## Rounds                           ← grows by one subsection per round
-### Round 1 — [timestamp]
+### Round 1 — 2026-02-15 14:30:22 EST
 ...
-### Round 2 — [timestamp]
+### Round 2 — 2026-02-15 15:45:10 EST
 ...
-### Round N — [timestamp]
+### Round N — [date +'%Y-%m-%d %H:%M:%S %Z']
 ...
 <!-- END ROUNDS -->
 ```
