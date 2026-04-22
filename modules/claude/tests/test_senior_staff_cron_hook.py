@@ -228,3 +228,41 @@ class TestFailOpen:
             {"KANBAN_AGENT": "staff-engineer"},
         )
         assert result is None, f"Expected silence for staff-engineer with empty stdin, got: {result}"
+
+
+# ---------------------------------------------------------------------------
+# Always-fire: hook emits CronCreate on every SessionStart, no deduplication
+# ---------------------------------------------------------------------------
+
+class TestAlwaysFireOnRestart:
+    """Hook emits CronCreate prompt on every SessionStart invocation, even when called
+    multiple times in the same process (e.g., sstaff resumed mid-session).
+
+    This test locks in the intentional always-fire contract. The plan at
+    .scratchpad/crew-cli-improvements-plan.md documents the known double-fire
+    tradeoff when sstaff is resumed mid-session ("Two identical cron entries produce
+    two crew status calls every 10 minutes — wasteful but not harmful. YAGNI tradeoff:
+    accept"). The hook deliberately never checks for prior registration state. This test
+    guards against a future de-duplication change that would silently break that design.
+    """
+
+    def test_cron_prompt_emitted_on_every_session_start_even_if_previously_registered(self, hook):
+        """Hook always emits CronCreate — no deduplication on repeated invocations.
+
+        Simulates 3 consecutive SessionStart fires (e.g., sstaff resumed twice after
+        original start). All three must emit the CronCreate prompt. The hook must not
+        suppress or gate on any .scratchpad/-style state file or global flag.
+        """
+        payload = make_session_start_payload()
+        env = {"KANBAN_AGENT": "senior-staff-engineer"}
+
+        for invocation in range(1, 4):
+            result = run_hook_main(hook, payload, env)
+            assert result is not None, (
+                f"Expected CronCreate prompt on invocation {invocation}, got None. "
+                "The hook must always fire — no deduplication."
+            )
+            assert "CronCreate" in result.get("result", ""), (
+                f"Expected 'CronCreate' in result on invocation {invocation}, "
+                f"got: {result.get('result', '')[:200]}"
+            )

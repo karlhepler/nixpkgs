@@ -103,8 +103,6 @@ def main() -> None:
     except Exception:
         pass  # Fail open — never break SessionStart for all sessions
 
-    sys.exit(0)
-
 
 if __name__ == "__main__":
     main()
