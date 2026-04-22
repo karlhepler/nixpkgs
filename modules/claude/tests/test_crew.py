@@ -24,11 +24,15 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import crew as crew_module
 from crew import (
     _looks_like_message_not_target,
+    _mangle_path_to_project_key,
     _resolve_targets_with_lookup,
     build_parser,
     cmd_create,
     cmd_find,
     cmd_list,
+    cmd_project_path,
+    cmd_resume,
+    cmd_sessions,
     cmd_status,
     cmd_tell,
     get_all_panes,
@@ -501,3 +505,474 @@ class TestLegacyArgOrder:
     def test_valid_window_name_does_not_trigger_heuristic(self):
         """A valid crew window name (no spaces, ASCII only) does not trigger detection."""
         assert _looks_like_message_not_target("my-worker") is False
+
+
+# ---------------------------------------------------------------------------
+# _mangle_path_to_project_key
+# ---------------------------------------------------------------------------
+
+class TestManglePathToProjectKey:
+    def test_simple_path_mangled_correctly(self):
+        """/foo/bar maps to -foo-bar (each / becomes -)."""
+        assert _mangle_path_to_project_key("/foo/bar") == "-foo-bar"
+
+    def test_deeply_nested_path(self):
+        """Realistic worktree path is mangled to match ~/.claude/projects/ layout."""
+        path = "/Users/karlhepler/worktrees/mazedesignhq/maze-monorepo"
+        expected = "-Users-karlhepler-worktrees-mazedesignhq-maze-monorepo"
+        assert _mangle_path_to_project_key(path) == expected
+
+    def test_single_slash_becomes_leading_dash(self):
+        """Root path '/' maps to a single '-'."""
+        assert _mangle_path_to_project_key("/") == "-"
+
+    def test_path_with_dot_preserved(self):
+        """Dots in directory names are preserved unchanged."""
+        path = "/Users/user/my.project/sub.dir"
+        expected = "-Users-user-my.project-sub.dir"
+        assert _mangle_path_to_project_key(path) == expected
+
+
+# ---------------------------------------------------------------------------
+# cmd_project_path
+# ---------------------------------------------------------------------------
+
+class _SpySend:
+    """Test spy for the cmd_project_path send port."""
+
+    def __init__(self) -> None:
+        self.result_calls: List[tuple] = []
+        self.failure_calls: List[tuple] = []
+
+    def result(self, worktree_path, project_key, sessions_dir_exists, session_files):
+        self.result_calls.append((worktree_path, project_key, sessions_dir_exists, session_files))
+
+    def failure(self, error_code, message):
+        self.failure_calls.append((error_code, message))
+
+
+class TestCmdProjectPath:
+    def test_emits_mangled_key_for_worktree(self, tmp_path):
+        """Happy path: existing directory emits correct project key via send.result."""
+        send = _SpySend()
+        cmd_project_path(str(tmp_path), fmt="xml", send=send)
+
+        assert len(send.result_calls) == 1
+        assert len(send.failure_calls) == 0
+
+        worktree_path, project_key, sessions_dir_exists, session_files = send.result_calls[0]
+        assert worktree_path == str(tmp_path)
+        assert project_key == _mangle_path_to_project_key(str(tmp_path))
+        # The ~/.claude/projects/ dir for tmp_path won't exist in tests.
+        assert sessions_dir_exists is False
+        assert session_files == []
+
+    def test_emits_failure_for_nonexistent_path(self, tmp_path):
+        """Non-existent path emits send.failure with PATH_NOT_FOUND error code."""
+        send = _SpySend()
+        nonexistent = str(tmp_path / "does_not_exist")
+        cmd_project_path(nonexistent, fmt="xml", send=send)
+
+        assert len(send.result_calls) == 0
+        assert len(send.failure_calls) == 1
+
+        error_code, message = send.failure_calls[0]
+        assert error_code == "PATH_NOT_FOUND"
+        assert "does_not_exist" in message
+
+    def test_handles_dot_as_cwd(self, monkeypatch, tmp_path):
+        """'.' resolves to cwd and is mangled correctly via send.result."""
+        monkeypatch.chdir(tmp_path)
+        send = _SpySend()
+        cmd_project_path(".", fmt="xml", send=send)
+
+        assert len(send.result_calls) == 1
+        assert len(send.failure_calls) == 0
+
+        worktree_path, project_key, _, _ = send.result_calls[0]
+        assert worktree_path == str(tmp_path)
+        assert project_key == _mangle_path_to_project_key(str(tmp_path))
+
+
+# ---------------------------------------------------------------------------
+# cmd_sessions
+# ---------------------------------------------------------------------------
+
+class _SessionsSpySend:
+    """Test spy for the cmd_sessions send port."""
+
+    def __init__(self) -> None:
+        self.session_calls: List[tuple] = []
+        self.warning_calls: List[str] = []
+        self.failure_calls: List[tuple] = []
+
+    def session(self, window: str, worktree: str, session_id: str, last_modified: str) -> None:
+        self.session_calls.append((window, worktree, session_id, last_modified))
+
+    def warning(self, message: str) -> None:
+        self.warning_calls.append(message)
+
+    def failure(self, error_code: str, message: str) -> None:
+        self.failure_calls.append((error_code, message))
+
+
+class TestCmdSessions:
+    def test_emits_sessions_for_active_window(self, tmp_path, monkeypatch):
+        """Happy path: emits one session per .jsonl file found for the window's worktree."""
+        # Set up a fake ~/.claude/projects/ directory with one .jsonl file.
+        worktree_path = str(tmp_path / "my-worktree")
+        project_key = _mangle_path_to_project_key(worktree_path)
+        projects_dir = tmp_path / ".claude" / "projects" / project_key
+        projects_dir.mkdir(parents=True)
+        session_file = projects_dir / "abc123.jsonl"
+        session_file.write_text("{}")
+
+        # Patch Path.home() to point at tmp_path.
+        monkeypatch.setattr(
+            "crew.Path.home",
+            lambda: tmp_path,
+        )
+
+        # Fake tmux: window lookup returns one window, display-message returns worktree_path.
+        def fake_run(cmd, **kwargs):
+            joined = " ".join(str(c) for c in cmd)
+            if "display-message" in joined and "session_name" in joined:
+                return fake_run_result(stdout="test-session\n")
+            if "list-windows" in joined:
+                return fake_run_result(
+                    stdout=f"test-session:0|@1|my-worker\n"
+                )
+            if "display-message" in joined and "pane_current_path" in joined:
+                return fake_run_result(stdout=worktree_path + "\n")
+            return fake_run_result()
+
+        send = _SessionsSpySend()
+        with patch("subprocess.run", side_effect=fake_run):
+            cmd_sessions(fmt="xml", send=send)
+
+        assert len(send.session_calls) == 1
+        assert len(send.failure_calls) == 0
+        window, worktree, session_id, last_modified = send.session_calls[0]
+        assert window == "my-worker"
+        assert worktree == worktree_path
+        assert session_id == "abc123"
+
+    def test_filters_by_window_name(self, tmp_path, monkeypatch):
+        """--window filter restricts output to the named window only."""
+        worktree_path = str(tmp_path / "my-worktree")
+        project_key = _mangle_path_to_project_key(worktree_path)
+        projects_dir = tmp_path / ".claude" / "projects" / project_key
+        projects_dir.mkdir(parents=True)
+        (projects_dir / "session-xyz.jsonl").write_text("{}")
+
+        monkeypatch.setattr("crew.Path.home", lambda: tmp_path)
+
+        def fake_run(cmd, **kwargs):
+            joined = " ".join(str(c) for c in cmd)
+            if "display-message" in joined and "session_name" in joined:
+                return fake_run_result(stdout="test-session\n")
+            if "list-windows" in joined:
+                # Two windows: target-window and other-window
+                return fake_run_result(
+                    stdout=(
+                        "test-session:0|@1|target-window\n"
+                        "test-session:1|@2|other-window\n"
+                    )
+                )
+            if "display-message" in joined and "pane_current_path" in joined:
+                return fake_run_result(stdout=worktree_path + "\n")
+            return fake_run_result()
+
+        send = _SessionsSpySend()
+        with patch("subprocess.run", side_effect=fake_run):
+            cmd_sessions(fmt="xml", send=send, window_filter="target-window")
+
+        # Only the target-window sessions should be emitted.
+        assert len(send.session_calls) == 1
+        assert send.session_calls[0][0] == "target-window"
+        assert len(send.failure_calls) == 0
+
+    def test_emits_warning_when_no_sessions(self, tmp_path, monkeypatch):
+        """Empty projects dir (no .jsonl files) emits a warning via send.warning."""
+        worktree_path = str(tmp_path / "my-worktree")
+        # Do NOT create any .jsonl files — projects dir is absent entirely.
+
+        monkeypatch.setattr("crew.Path.home", lambda: tmp_path)
+
+        def fake_run(cmd, **kwargs):
+            joined = " ".join(str(c) for c in cmd)
+            if "display-message" in joined and "session_name" in joined:
+                return fake_run_result(stdout="test-session\n")
+            if "list-windows" in joined:
+                return fake_run_result(stdout="test-session:0|@1|empty-window\n")
+            if "display-message" in joined and "pane_current_path" in joined:
+                return fake_run_result(stdout=worktree_path + "\n")
+            return fake_run_result()
+
+        send = _SessionsSpySend()
+        with patch("subprocess.run", side_effect=fake_run):
+            cmd_sessions(fmt="xml", send=send, window_filter="empty-window")
+
+        assert len(send.session_calls) == 0
+        assert len(send.warning_calls) == 1
+        assert "empty-window" in send.warning_calls[0]
+        assert len(send.failure_calls) == 0
+
+    def test_emits_failure_when_window_not_found(self, tmp_path, monkeypatch):
+        """--window missing emits send.failure with WINDOW_NOT_FOUND error code."""
+        monkeypatch.setattr("crew.Path.home", lambda: tmp_path)
+
+        def fake_run(cmd, **kwargs):
+            joined = " ".join(str(c) for c in cmd)
+            if "display-message" in joined and "session_name" in joined:
+                return fake_run_result(stdout="test-session\n")
+            if "list-windows" in joined:
+                return fake_run_result(stdout="test-session:0|@1|real-window\n")
+            return fake_run_result()
+
+        send = _SessionsSpySend()
+        with patch("subprocess.run", side_effect=fake_run):
+            cmd_sessions(fmt="xml", send=send, window_filter="missing-window")
+
+        assert len(send.session_calls) == 0
+        assert len(send.warning_calls) == 0
+        assert len(send.failure_calls) == 1
+        error_code, message = send.failure_calls[0]
+        assert error_code == "WINDOW_NOT_FOUND"
+        assert "missing-window" in message
+
+
+# ---------------------------------------------------------------------------
+# cmd_resume
+# ---------------------------------------------------------------------------
+
+class _ResumeSpySend:
+    """Test spy for the cmd_resume send port."""
+
+    def __init__(self) -> None:
+        self.resumed_calls: List[tuple] = []
+        self.warning_calls: List[str] = []
+        self.failure_calls: List[tuple] = []
+
+    def resumed(self, window: str, session_id: str, worktree: str, command: str) -> None:
+        self.resumed_calls.append((window, session_id, worktree, command))
+
+    def warning(self, message: str) -> None:
+        self.warning_calls.append(message)
+
+    def failure(self, error_code: str, message: str) -> None:
+        self.failure_calls.append((error_code, message))
+
+
+class TestCmdResume:
+    """Tests for cmd_resume: recreate tmux window and resume a Claude session."""
+
+    def _make_session_dir(self, tmp_path, worktree_path: str, session_ids: List[str]):
+        """Create a fake ~/.claude/projects/<key>/ with the given .jsonl files.
+
+        session_ids is treated as oldest-first, newest-last. The last entry in the
+        list will have the highest mtime so _find_session_files picks it first.
+        """
+        project_key = _mangle_path_to_project_key(worktree_path)
+        sessions_dir = tmp_path / ".claude" / "projects" / project_key
+        sessions_dir.mkdir(parents=True)
+        import time as _time
+        base_mtime = _time.time()
+        # Assign ascending mtimes: session_ids[0] = oldest, session_ids[-1] = newest.
+        for i, sid in enumerate(session_ids):
+            f = sessions_dir / f"{sid}.jsonl"
+            f.write_text("{}")
+            os.utime(f, (base_mtime + i, base_mtime + i))
+        return sessions_dir
+
+    def test_resumes_window_with_inferred_session(self, tmp_path, monkeypatch):
+        """Happy path: no --session given; most recent .jsonl is picked; window + send-keys called."""
+        worktree_path = str(tmp_path / "my-worktree")
+        os.makedirs(worktree_path)
+        self._make_session_dir(tmp_path, worktree_path, ["older-uuid", "newest-uuid"])
+
+        monkeypatch.setattr("crew.Path.home", lambda: tmp_path)
+        # Patch worktree resolution so the test-controlled path is returned.
+        monkeypatch.setattr("crew._resolve_worktree_for_name", lambda name: worktree_path)
+
+        def fake_run(cmd, **kwargs):
+            joined = " ".join(str(c) for c in cmd)
+            if "list-windows" in joined:
+                # No existing window named my-worker (_tmux_window_exists check)
+                return fake_run_result(stdout="")
+            if "new-window" in joined:
+                return fake_run_result()
+            if "send-keys" in joined:
+                return fake_run_result()
+            return fake_run_result()
+
+        send = _ResumeSpySend()
+        with patch("subprocess.run", side_effect=fake_run):
+            cmd_resume("my-worker", None, "xml", send)
+
+        assert len(send.failure_calls) == 0
+        assert len(send.resumed_calls) == 1
+        window, session_id, worktree, command = send.resumed_calls[0]
+        assert window == "my-worker"
+        assert worktree == worktree_path
+        # The most-recent file (newest-uuid, highest mtime) must be selected.
+        assert session_id == "newest-uuid"
+        assert "--resume newest-uuid" in command
+
+    def test_resumes_window_with_explicit_session_id(self, tmp_path, monkeypatch):
+        """Explicit --session ID bypasses mtime inference and uses the given ID directly."""
+        worktree_path = str(tmp_path / "explicit-worktree")
+        os.makedirs(worktree_path)
+        self._make_session_dir(tmp_path, worktree_path, ["old-session", "explicit-session"])
+
+        monkeypatch.setattr("crew.Path.home", lambda: tmp_path)
+        monkeypatch.setattr("crew._resolve_worktree_for_name", lambda name: worktree_path)
+
+        def fake_run(cmd, **kwargs):
+            joined = " ".join(str(c) for c in cmd)
+            if "list-windows" in joined:
+                return fake_run_result(stdout="")
+            if "new-window" in joined:
+                return fake_run_result()
+            if "send-keys" in joined:
+                return fake_run_result()
+            return fake_run_result()
+
+        send = _ResumeSpySend()
+        with patch("subprocess.run", side_effect=fake_run):
+            cmd_resume("explicit-worktree", "explicit-session", "xml", send)
+
+        assert len(send.failure_calls) == 0
+        assert len(send.resumed_calls) == 1
+        _, session_id, _, command = send.resumed_calls[0]
+        assert session_id == "explicit-session"
+        assert "--resume explicit-session" in command
+
+    def test_emits_failure_when_window_exists(self, tmp_path, monkeypatch):
+        """If the tmux window already exists, emit WINDOW_EXISTS failure and abort."""
+        monkeypatch.setattr("crew.Path.home", lambda: tmp_path)
+
+        def fake_run(cmd, **kwargs):
+            joined = " ".join(str(c) for c in cmd)
+            if "list-windows" in joined:
+                # Window 'existing-window' is already present
+                return fake_run_result(stdout="existing-window\n")
+            return fake_run_result()
+
+        send = _ResumeSpySend()
+        with patch("subprocess.run", side_effect=fake_run):
+            cmd_resume("existing-window", None, "xml", send)
+
+        assert len(send.resumed_calls) == 0
+        assert len(send.failure_calls) == 1
+        error_code, message = send.failure_calls[0]
+        assert error_code == "WINDOW_EXISTS"
+        assert "existing-window" in message
+
+    def test_emits_failure_when_no_session_found(self, tmp_path, monkeypatch):
+        """When no .jsonl files exist for the worktree, emit NO_SESSION failure."""
+        worktree_path = str(tmp_path / "empty-worktree")
+        os.makedirs(worktree_path)
+        # Do NOT create any .jsonl files — projects dir is absent
+
+        monkeypatch.setattr("crew.Path.home", lambda: tmp_path)
+        # Patch worktree resolution so the resolver returns the test path.
+        monkeypatch.setattr("crew._resolve_worktree_for_name", lambda name: worktree_path)
+
+        def fake_run(cmd, **kwargs):
+            joined = " ".join(str(c) for c in cmd)
+            if "list-windows" in joined:
+                return fake_run_result(stdout="")
+            return fake_run_result()
+
+        send = _ResumeSpySend()
+        with patch("subprocess.run", side_effect=fake_run):
+            cmd_resume("empty-worktree", None, "xml", send)
+
+        assert len(send.resumed_calls) == 0
+        assert len(send.failure_calls) == 1
+        error_code, message = send.failure_calls[0]
+        assert error_code == "NO_SESSION"
+        assert "crew create" in message
+
+    def test_warns_when_multiple_sessions_and_picks_most_recent(self, tmp_path, monkeypatch):
+        """When multiple sessions exist and no --session given, pick most recent and emit warning."""
+        worktree_path = str(tmp_path / "multi-session-worktree")
+        os.makedirs(worktree_path)
+        self._make_session_dir(tmp_path, worktree_path, ["alpha-uuid", "beta-uuid", "gamma-uuid"])
+
+        monkeypatch.setattr("crew.Path.home", lambda: tmp_path)
+        monkeypatch.setattr("crew._resolve_worktree_for_name", lambda name: worktree_path)
+
+        def fake_run(cmd, **kwargs):
+            joined = " ".join(str(c) for c in cmd)
+            if "list-windows" in joined:
+                return fake_run_result(stdout="")
+            if "new-window" in joined:
+                return fake_run_result()
+            if "send-keys" in joined:
+                return fake_run_result()
+            return fake_run_result()
+
+        send = _ResumeSpySend()
+        with patch("subprocess.run", side_effect=fake_run):
+            cmd_resume("multi-session-worktree", None, "xml", send)
+
+        # Must succeed
+        assert len(send.failure_calls) == 0
+        assert len(send.resumed_calls) == 1
+        # Must emit exactly one warning about multiple sessions
+        assert len(send.warning_calls) == 1
+        assert "multiple sessions" in send.warning_calls[0]
+        # The most recent session must be selected (gamma-uuid has the highest mtime)
+        _, session_id, _, _ = send.resumed_calls[0]
+        assert session_id == "gamma-uuid"
+
+    def test_emits_failure_when_worktree_not_found(self, tmp_path, monkeypatch):
+        """When _resolve_worktree_for_name returns None, emit WORKTREE_NOT_FOUND failure."""
+        monkeypatch.setattr("crew.Path.home", lambda: tmp_path)
+        # Patch worktree resolution to return None — no tmux window and no ~/worktrees/<name>.
+        monkeypatch.setattr("crew._resolve_worktree_for_name", lambda name: None)
+
+        def fake_run(cmd, **kwargs):
+            joined = " ".join(str(c) for c in cmd)
+            if "list-windows" in joined:
+                return fake_run_result(stdout="")
+            return fake_run_result()
+
+        send = _ResumeSpySend()
+        with patch("subprocess.run", side_effect=fake_run):
+            cmd_resume("missing-worktree", None, "xml", send)
+
+        assert len(send.resumed_calls) == 0
+        assert len(send.failure_calls) == 1
+        error_code, message = send.failure_calls[0]
+        assert error_code == "WORKTREE_NOT_FOUND"
+        assert "crew create" in message
+
+    def test_emits_failure_when_tmux_new_window_fails(self, tmp_path, monkeypatch):
+        """When tmux new-window returns non-zero, emit TMUX_WINDOW_FAILED failure."""
+        worktree_path = str(tmp_path / "valid-worktree")
+        os.makedirs(worktree_path)
+        self._make_session_dir(tmp_path, worktree_path, ["some-session"])
+
+        monkeypatch.setattr("crew.Path.home", lambda: tmp_path)
+        monkeypatch.setattr("crew._resolve_worktree_for_name", lambda name: worktree_path)
+
+        def fake_run(cmd, **kwargs):
+            joined = " ".join(str(c) for c in cmd)
+            if "list-windows" in joined:
+                return fake_run_result(stdout="")
+            if "new-window" in joined:
+                # Simulate tmux new-window failure
+                return fake_run_result(returncode=1)
+            return fake_run_result()
+
+        send = _ResumeSpySend()
+        with patch("subprocess.run", side_effect=fake_run):
+            cmd_resume("valid-worktree", None, "xml", send)
+
+        assert len(send.resumed_calls) == 0
+        assert len(send.failure_calls) == 1
+        error_code, message = send.failure_calls[0]
+        assert error_code == "TMUX_WINDOW_FAILED"

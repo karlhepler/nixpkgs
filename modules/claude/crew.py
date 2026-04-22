@@ -31,6 +31,8 @@ import subprocess
 import sys
 import time
 import xml.etree.ElementTree as ET
+from datetime import datetime
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 
@@ -345,6 +347,503 @@ def emit_error(message: str, fmt: str, error_code: str = "", exit_code: int = 1)
         sys.exit(130)
     else:
         sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# Path mangling utility
+# ---------------------------------------------------------------------------
+
+def _mangle_path_to_project_key(path: str) -> str:
+    """Convert an absolute filesystem path to a Claude Code project directory key.
+
+    Claude Code stores per-project session files under ~/.claude/projects/<key>/,
+    where <key> is derived from the project path by replacing every '/' with '-'
+    and prepending a leading '-'.
+
+    Example:
+        /Users/karlhepler/worktrees/mazedesignhq/maze-monorepo
+        → -Users-karlhepler-worktrees-mazedesignhq-maze-monorepo
+
+    Rule is derived from observed ~/.claude/projects/ layout; may need updating
+    on Claude Code upgrades.
+    """
+    return path.replace("/", "-")
+
+
+# ---------------------------------------------------------------------------
+# Subcommand: project-path
+# ---------------------------------------------------------------------------
+
+def cmd_project_path(worktree: str, fmt: str, send: object) -> None:
+    """Resolve a worktree path to its Claude Code project directory key.
+
+    Accepts an absolute path or '.' (which resolves to cwd). Emits the mangled
+    project key and lists any .jsonl session files found at that path.
+
+    send port (object-style):
+        send.result(worktree_path, project_key, sessions_dir_exists, session_files)
+        send.failure(error_code, message)
+    """
+    # Resolve the path — '.' expands to cwd.
+    raw_path = worktree if worktree != "." else os.getcwd()
+    resolved = os.path.abspath(raw_path)
+
+    if not os.path.exists(resolved):
+        send.failure("PATH_NOT_FOUND", f"path does not exist: {resolved}")
+        return
+    if not os.path.isdir(resolved):
+        send.failure("NOT_A_DIRECTORY", f"path is not a directory: {resolved}")
+        return
+
+    project_key = _mangle_path_to_project_key(resolved)
+    sessions_dir = Path.home() / ".claude" / "projects" / project_key
+    sessions_dir_exists = sessions_dir.exists()
+
+    session_files: List[Dict] = []
+    if sessions_dir_exists:
+        for entry in sorted(sessions_dir.glob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True):
+            mtime = datetime.fromtimestamp(entry.stat().st_mtime).isoformat(timespec="seconds")
+            session_files.append({"id": entry.stem, "mtime": mtime})
+
+    send.result(resolved, project_key, sessions_dir_exists, session_files)
+
+
+class _ProjectPathSend:
+    """Presenter-binding for cmd_project_path that emits structured output."""
+
+    def __init__(self, fmt: str) -> None:
+        self._fmt = fmt
+
+    def result(
+        self,
+        worktree_path: str,
+        project_key: str,
+        sessions_dir_exists: bool,
+        session_files: List[Dict],
+    ) -> None:
+        if self._fmt == "xml":
+            root = ET.Element(
+                "project-path",
+                worktree=worktree_path,
+                key=project_key,
+                sessions_dir_exists=str(sessions_dir_exists).lower(),
+            )
+            for sf in session_files:
+                ET.SubElement(root, "session", id=sf["id"], mtime=sf["mtime"])
+            print(xml_to_string(root))
+        elif self._fmt == "json":
+            print(json.dumps({
+                "worktree": worktree_path,
+                "project_key": project_key,
+                "sessions_dir_exists": sessions_dir_exists,
+                "sessions": session_files,
+            }, indent=2))
+        else:
+            print(f"worktree:    {worktree_path}")
+            print(f"project_key: {project_key}")
+            print(f"sessions_dir_exists: {sessions_dir_exists}")
+            if session_files:
+                print("sessions:")
+                for sf in session_files:
+                    print(f"  {sf['id']}  (mtime: {sf['mtime']})")
+            else:
+                print("sessions: (none)")
+
+    def failure(self, error_code: str, message: str) -> None:
+        emit_error(message, self._fmt, error_code=error_code, exit_code=1)
+
+
+# ---------------------------------------------------------------------------
+# Subcommand: sessions
+# ---------------------------------------------------------------------------
+
+def cmd_sessions(
+    fmt: str,
+    send: object,
+    window_filter: Optional[str] = None,
+    worktree_filter: Optional[str] = None,
+) -> None:
+    """List Claude session IDs for tmux windows in the current session.
+
+    For each active tmux window (or a filtered subset), determines the
+    worktree path, mangles it to a Claude project directory key, and scans
+    ~/.claude/projects/<key>/ for .jsonl session files.
+
+    Args:
+        fmt: Output format (xml, json, human).
+        send: Output port object with methods:
+            send.session(window, worktree, session_id, last_modified) — one per session file
+            send.warning(message) — no sessions found for a requested window
+            send.failure(error_code, message) — window not found or filesystem error
+        window_filter: If given, restrict to this single window name.
+        worktree_filter: If given, use this explicit path instead of tmux windows.
+    """
+    current_session = get_current_session()
+
+    if worktree_filter is not None:
+        # Explicit worktree path: emit sessions for that path directly.
+        resolved = os.path.abspath(worktree_filter)
+        _emit_sessions_for_worktree(
+            window_name="(explicit)",
+            worktree_path=resolved,
+            send=send,
+        )
+        return
+
+    # Build window list from current tmux session.
+    lookup = get_window_lookup(session=current_session)
+
+    if window_filter is not None:
+        if window_filter not in lookup:
+            send.failure(
+                "WINDOW_NOT_FOUND",
+                f"tmux window '{window_filter}' not found in current session. "
+                f"Available: {', '.join(sorted(lookup.keys())) or '(none)'}",
+            )
+            return
+        windows_to_scan = {window_filter: lookup[window_filter]}
+    else:
+        windows_to_scan = lookup
+
+    found_any = False
+    last_worktree: Optional[str] = None
+    for window_name, (session_idx, _window_id) in windows_to_scan.items():
+        # Determine the pane's current working directory.
+        result = subprocess.run(
+            ["tmux", "display-message", "-t", f"{session_idx}.0", "-p", "#{pane_current_path}"],
+            capture_output=True, text=True, check=False,
+        )
+        worktree_path = result.stdout.strip()
+        if not worktree_path:
+            continue
+
+        last_worktree = worktree_path
+        found_any = _emit_sessions_for_worktree(
+            window_name=window_name,
+            worktree_path=worktree_path,
+            send=send,
+            found_any=found_any,
+        )
+
+    if window_filter is not None and not found_any:
+        location = f" at {last_worktree}" if last_worktree else ""
+        send.warning(f"no Claude sessions found for window '{window_filter}'{location}")
+
+
+def _emit_sessions_for_worktree(
+    window_name: str,
+    worktree_path: str,
+    send: object,
+    found_any: bool = False,
+) -> bool:
+    """Scan ~/.claude/projects/<key>/ for .jsonl files and emit via send.session.
+
+    Returns True if at least one session was emitted (or found_any was already True).
+    """
+    project_key = _mangle_path_to_project_key(worktree_path)
+    sessions_dir = Path.home() / ".claude" / "projects" / project_key
+
+    if not sessions_dir.exists():
+        return found_any
+
+    session_files = sorted(
+        sessions_dir.glob("*.jsonl"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+
+    for entry in session_files:
+        mtime = datetime.fromtimestamp(entry.stat().st_mtime).isoformat(timespec="seconds")
+        send.session(window_name, worktree_path, entry.stem, mtime)
+        found_any = True
+
+    return found_any
+
+
+class _SessionsSend:
+    """Presenter-binding for cmd_sessions that buffers output until flush().
+
+    All methods buffer their output. Call flush() once after cmd_sessions
+    returns to emit the final structured document. The human format emits
+    session rows inline (they are naturally streaming), but warnings/failures
+    are emitted via flush() as well.
+    """
+
+    def __init__(self, fmt: str) -> None:
+        self._fmt = fmt
+        self._sessions: List[Dict] = []
+        self._warning: Optional[str] = None
+        self._root: Optional[ET.Element] = None
+        if fmt == "xml":
+            self._root = ET.Element("sessions")
+
+    def session(
+        self,
+        window: str,
+        worktree: str,
+        session_id: str,
+        last_modified: str,
+    ) -> None:
+        if self._fmt == "xml":
+            ET.SubElement(
+                self._root,
+                "session",
+                window=window,
+                worktree=worktree,
+                id=session_id,
+                modified=last_modified,
+            )
+        elif self._fmt == "json":
+            self._sessions.append({
+                "window": window,
+                "worktree": worktree,
+                "id": session_id,
+                "modified": last_modified,
+            })
+        else:
+            print(f"{session_id}  window={window}  worktree={worktree}  modified={last_modified}")
+
+    def warning(self, message: str) -> None:
+        # Store the warning; flush() emits it as part of the final document.
+        self._warning = message
+
+    def failure(self, error_code: str, message: str) -> None:
+        emit_error(message, self._fmt, error_code=error_code, exit_code=1)
+
+    def flush(self) -> None:
+        """Emit buffered output. Must be called after cmd_sessions returns."""
+        if self._fmt == "xml":
+            if self._warning is not None:
+                ET.SubElement(self._root, "warning", message=self._warning)
+            print(xml_to_string(self._root))
+        elif self._fmt == "json":
+            obj: Dict = {"sessions": self._sessions}
+            if self._warning is not None:
+                obj["warning"] = self._warning
+            print(json.dumps(obj, indent=2))
+        else:
+            # human format: session rows already emitted inline; emit warning to stderr
+            if self._warning is not None:
+                print(f"warning: {self._warning}", file=sys.stderr)
+
+
+# ---------------------------------------------------------------------------
+# Subcommand: resume
+# ---------------------------------------------------------------------------
+
+def _find_session_files(worktree_path: str) -> List[Dict]:
+    """Scan ~/.claude/projects/<key>/ for .jsonl files sorted by mtime descending.
+
+    Returns a list of dicts: [{"id": "<uuid>", "mtime": "<iso>", "path": Path}, ...].
+    Returns empty list if the projects directory does not exist.
+    """
+    project_key = _mangle_path_to_project_key(worktree_path)
+    sessions_dir = Path.home() / ".claude" / "projects" / project_key
+
+    if not sessions_dir.exists():
+        return []
+
+    results = []
+    for entry in sorted(sessions_dir.glob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True):
+        mtime = datetime.fromtimestamp(entry.stat().st_mtime).isoformat(timespec="seconds")
+        results.append({"id": entry.stem, "mtime": mtime, "path": entry})
+    return results
+
+
+def _resolve_worktree_for_name(name: str) -> Optional[str]:
+    """Resolve a worktree path for a given window name.
+
+    Strategy:
+    1. Check active tmux windows: if a window named <name> exists, return its pane's
+       current working directory.
+    2. Fall back to scanning ~/worktrees/ for a directory matching the name.
+
+    Returns the resolved path string, or None if not found.
+    """
+    # Deliberately cross-session: on recovery we may need to locate a worktree
+    # whose originating tmux session no longer exists, so we scan ALL tmux
+    # windows first, then fall back to ~/worktrees/<name>. This is the one
+    # intentional deviation from crew's single-session-scope discipline.
+    #
+    # Strategy 1: look for an active tmux window with this name.
+    lookup = get_window_lookup()
+    if name in lookup:
+        session_idx, _window_id = lookup[name]
+        result = subprocess.run(
+            ["tmux", "display-message", "-t", f"{session_idx}.0", "-p", "#{pane_current_path}"],
+            capture_output=True, text=True, check=False,
+        )
+        path = result.stdout.strip()
+        if path and os.path.isdir(path):
+            return path
+
+    # Strategy 2: scan ~/worktrees/ for a matching directory.
+    candidate = os.path.expanduser(f"~/worktrees/{name}")
+    if os.path.isdir(candidate):
+        return candidate
+
+    return None
+
+
+def cmd_resume(
+    name: str,
+    session_id: Optional[str],
+    fmt: str,
+    send: object,
+) -> None:
+    """Recreate a tmux window and resume a Claude session inside it.
+
+    Steps:
+    1. Validate window name via _SAFE_NAME_RE.
+    2. Abort if window <name> already exists.
+    3. Resolve worktree path from active tmux windows or ~/worktrees/<name>.
+    4. Scan ~/.claude/projects/<key>/ for .jsonl session files.
+    5. If --session not given, pick the most recent .jsonl by mtime.
+    6. If no session file found, emit NO_SESSION failure.
+    7. Create tmux window: tmux new-window -n <name> -c <worktree_path> -d
+    8. Launch: staff --name <name> --resume <session_id> via tmux send-keys.
+    9. Emit structured success.
+
+    send port (object-style):
+        send.resumed(window, session_id, worktree, command) — success
+        send.warning(message) — advisory (e.g. multiple sessions, picked most recent)
+        send.failure(error_code, message) — abort on error
+    """
+    # --- 1. Validate name ---
+    if not name:
+        send.failure("INVALID_NAME", "name must not be empty")
+        return
+
+    if not _SAFE_NAME_RE.match(name):
+        send.failure(
+            "INVALID_NAME",
+            f"name '{name}' is not filesystem-safe: use only alphanumeric characters, "
+            "hyphens, and underscores",
+        )
+        return
+
+    # --- 2. Check for existing tmux window ---
+    if _tmux_window_exists(name):
+        send.failure(
+            "WINDOW_EXISTS",
+            f"tmux window '{name}' already exists — dismiss it first or choose a different name",
+        )
+        return
+
+    # --- 3. Resolve worktree path ---
+    worktree_path = _resolve_worktree_for_name(name)
+    if worktree_path is None:
+        send.failure(
+            "WORKTREE_NOT_FOUND",
+            f"could not find a worktree for '{name}'. "
+            "No active tmux window with that name and no directory at ~/worktrees/{name}. "
+            "Use `crew create` to start a new session instead.",
+        )
+        return
+
+    # --- 4. Scan for session files ---
+    if session_id is not None:
+        # Explicit session ID: verify it exists.
+        project_key = _mangle_path_to_project_key(worktree_path)
+        sessions_dir = Path.home() / ".claude" / "projects" / project_key
+        session_file = sessions_dir / f"{session_id}.jsonl"
+        if not session_file.exists():
+            send.failure(
+                "NO_SESSION",
+                f"session file '{session_id}.jsonl' not found at {sessions_dir}. "
+                "Use `crew sessions` to list available sessions, or `crew create` to start a new one.",
+            )
+            return
+        chosen_session_id = session_id
+    else:
+        # Infer most recent session.
+        session_files = _find_session_files(worktree_path)
+        if not session_files:
+            send.failure(
+                "NO_SESSION",
+                f"no Claude session files found for worktree '{worktree_path}'. "
+                "Use `crew create` to start a new session instead.",
+            )
+            return
+
+        chosen_session_id = session_files[0]["id"]
+
+        # Warn if multiple sessions exist and we picked the most recent.
+        if len(session_files) > 1:
+            others = ", ".join(sf["id"] for sf in session_files[1:])
+            send.warning(
+                f"multiple sessions found for '{name}'; using most recent ({chosen_session_id}). "
+                f"Other candidates: {others}. "
+                f"Use --session <id> to select a specific session."
+            )
+
+    # --- 7. Create tmux window ---
+    result = subprocess.run(
+        ["tmux", "new-window", "-n", name, "-c", worktree_path, "-d"],
+        capture_output=True, text=True, check=False,
+    )
+    if result.returncode != 0:
+        send.failure(
+            "TMUX_WINDOW_FAILED",
+            f"tmux new-window failed: {result.stderr.strip()}",
+        )
+        return
+
+    # --- 8. Launch staff --name <name> --resume <session_id> ---
+    spawn_cmd = f"staff --name {name} --resume {chosen_session_id}"
+    subprocess.run(
+        ["tmux", "send-keys", "-t", name, spawn_cmd, "Enter"],
+        capture_output=True, check=False,
+    )
+
+    # --- 9. Emit success ---
+    send.resumed(name, chosen_session_id, worktree_path, spawn_cmd)
+
+
+class _ResumeSend:
+    """Presenter-binding for cmd_resume that emits structured output."""
+
+    def __init__(self, fmt: str) -> None:
+        self._fmt = fmt
+        self._warned = False
+
+    def resumed(
+        self,
+        window: str,
+        session_id: str,
+        worktree: str,
+        command: str,
+    ) -> None:
+        if self._fmt == "xml":
+            elem = ET.Element(
+                "resumed",
+                window=window,
+                session=session_id,
+                worktree=worktree,
+                command=command,
+            )
+            print(xml_to_string(elem))
+        elif self._fmt == "json":
+            print(json.dumps({
+                "window": window,
+                "session": session_id,
+                "worktree": worktree,
+                "command": command,
+            }, indent=2))
+        else:
+            print(f"resumed: window={window} session={session_id} worktree={worktree}")
+            print(f"  {command}")
+
+    def warning(self, message: str) -> None:
+        if self._fmt in ("xml", "json"):
+            # Warnings before success are printed to stderr in structured modes
+            # so they don't corrupt the primary structured output.
+            print(f"warning: {message}", file=sys.stderr)
+        else:
+            print(f"warning: {message}", file=sys.stderr)
+
+    def failure(self, error_code: str, message: str) -> None:
+        emit_error(message, self._fmt, error_code=error_code, exit_code=1)
 
 
 # ---------------------------------------------------------------------------
@@ -1280,6 +1779,83 @@ def build_parser() -> argparse.ArgumentParser:
         help="Include all panes regardless of running command (default: Claude panes only)"
     )
 
+    # project-path
+    p_project_path = sub.add_parser(
+        "project-path",
+        help="Show the Claude Code project directory key for a worktree path",
+        description=(
+            "Resolve a worktree path to its Claude Code project directory key.\n\n"
+            "Claude Code stores session files under ~/.claude/projects/<key>/. This\n"
+            "command shows the key for a given worktree and lists any .jsonl session\n"
+            "files found there.\n\n"
+            "Examples:\n"
+            "  crew project-path .                                 # current directory\n"
+            "  crew project-path ~/worktrees/myorg/my-repo         # explicit path\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_project_path.add_argument(
+        "worktree",
+        help="Path to the worktree directory (use '.' for current working directory)",
+    )
+
+    # resume
+    p_resume = sub.add_parser(
+        "resume",
+        help="Recreate a tmux window and resume an existing Claude session",
+        description=(
+            "Resume a previously created crew session by recreating the tmux window\n"
+            "and launching `staff --name <name> --resume <session_id>`.\n\n"
+            "The worktree path is resolved from active tmux windows or ~/worktrees/<name>.\n"
+            "If --session is omitted, the most recent session file (by mtime) is used.\n\n"
+            "Examples:\n"
+            "  crew resume mirrordx                    # infer most recent session\n"
+            "  crew resume mirrordx --session <uuid>   # use explicit session ID\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_resume.add_argument(
+        "name",
+        help="Window name (must match a worktree in ~/worktrees/ or an active tmux window)",
+    )
+    p_resume.add_argument(
+        "--session",
+        default=None,
+        metavar="ID",
+        help=(
+            "Session UUID to resume (default: most recent .jsonl by mtime). "
+            "Use `crew sessions --window <name>` to list available session IDs."
+        ),
+    )
+
+    # sessions
+    p_sessions = sub.add_parser(
+        "sessions",
+        help="List Claude session IDs for tmux windows in the current session",
+        description=(
+            "Enumerate Claude Code session files for active tmux windows.\n\n"
+            "For each window, resolves the pane's working directory to a Claude\n"
+            "project key and lists .jsonl session files sorted by most-recent first.\n\n"
+            "Examples:\n"
+            "  crew sessions                         # all windows in current session\n"
+            "  crew sessions --window mirrordx        # sessions for a specific window\n"
+            "  crew sessions --worktree ~/worktrees/foo  # sessions for an explicit path\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_sessions.add_argument(
+        "--window",
+        default=None,
+        metavar="NAME",
+        help="Restrict to sessions for this tmux window name",
+    )
+    p_sessions.add_argument(
+        "--worktree",
+        default=None,
+        metavar="PATH",
+        help="Use an explicit worktree path instead of tmux window lookup",
+    )
+
     return parser
 
 
@@ -1319,6 +1895,16 @@ def main() -> None:
         elif args.command == "create":
             cmd_create(args.name, args.repo, args.branch, args.base, fmt,
                        cmd_override=args.cmd_override, tell=args.tell)
+        elif args.command == "project-path":
+            send = _ProjectPathSend(fmt)
+            cmd_project_path(args.worktree, fmt, send)
+        elif args.command == "resume":
+            send = _ResumeSend(fmt)
+            cmd_resume(args.name, args.session, fmt, send)
+        elif args.command == "sessions":
+            send = _SessionsSend(fmt)
+            cmd_sessions(fmt, send, window_filter=args.window, worktree_filter=args.worktree)
+            send.flush()
         else:
             emit_error(f"unknown subcommand: {args.command}", fmt, error_code="UNKNOWN_SUBCOMMAND", exit_code=2)
     except KeyboardInterrupt:
