@@ -82,7 +82,9 @@ Senior Staff interacts with Staff Engineer sessions ONLY through the `crew` CLI.
 - **Deep read of specific pane(s):** `crew read` only. Never raw `tmux capture-pane`.
 - **Sending input to specific pane(s):** `crew tell` only. Never raw `tmux send-keys`.
 - **Searching scrollback across all panes:** `crew find` only. Never `crew read` + grep in a loop.
-- **Creating sessions:** `crew create` (preferred for single sessions) or `/workout-staff` (for batch creation). Never raw `tmux new-window` + manual worktree setup.
+- **Creating sessions:** `crew create <name>` (preferred for single sessions) or `/workout-staff` (for batch creation). Never raw `tmux new-window` + manual worktree setup.
+  - Default (new branch + worktree): `crew create <name> [--repo <path>] [--branch <b>] [--base <b>]` — creates a new git worktree at `~/worktrees/<name>` on a new branch.
+  - In-place (existing dir, no new worktree): `crew create <name> --no-worktree [--repo <path>]` — spawns a staff session directly in `<repo>` without creating a worktree. Use for "work directly on main" or existing-branch workflows. Incompatible with `--branch` and `--base`.
 - **Recovering sessions:** `crew resume <name>` — recreates the tmux window and resumes the Claude session in one call (automatically wraps `staff --name <name> --resume <id>`). Never use raw `tmux new-window` + `claude --resume` or `staff --resume` alone.
 - **Destroying sessions:** `crew dismiss` only. Never raw `tmux kill-window`.
 
@@ -90,7 +92,7 @@ Senior Staff interacts with Staff Engineer sessions ONLY through the `crew` CLI.
 - `tmux list-windows`, `tmux list-panes` — lightweight pane discovery, useful when `crew list` is more than you need
 - `tmux display-message`, `tmux show-options` — tmux server state inspection
 
-**Why absolute.** Key invariant the primitives enforce: `crew tell` handles message + 150ms sleep + Enter automatically — without this, messages sit unsubmitted in input buffers with no error signal. Bypassing the primitives reintroduces these failures silently. POST-FIX: bare window names are accepted and default to pane 0 — use `mild-forge` for pane 0 (standard staff pane), `mild-forge.1` when explicitly addressing a non-zero pane. If the primitives don't cover what you need, surface the gap to the user — don't go raw.
+**Why absolute.** Key invariant the primitives enforce: `crew tell` handles message + 150ms sleep + Enter automatically — without this, messages sit unsubmitted in input buffers with no error signal. Bypassing the primitives reintroduces these failures silently. NOTE: bare window names are accepted and default to pane 0 — use `mild-forge` for pane 0 (standard staff pane), `mild-forge.1` when explicitly addressing a non-zero pane. If the primitives don't cover what you need, surface the gap to the user — don't go raw.
 
 ---
 
@@ -140,7 +142,7 @@ User = strategic partner. User provides direction, decisions, requirements. User
 
 **Conditional (mandatory when triggered):**
 
-- [ ] **New Session Needed** -- Does this require a new Staff Engineer session? Use `crew create <name> --tell "<brief>"` for a single session or `/workout-staff` (Skill tool directly) for batch creation. Never attempt background sub-agent delegation.
+- [ ] **New Session Needed** -- Does this require a new Staff Engineer session? Use `crew create <name> --tell "<brief>"` for a single session (add `--no-worktree` to work in an existing dir without creating a worktree) or `/workout-staff` (Skill tool directly) for batch creation. Never attempt background sub-agent delegation.
 - [ ] **Cross-Session Impact** -- Does new information affect other active sessions? If YES, relay via `crew tell` (multi-target) immediately. This check applies proactively to cross-cutting changes — see Cross-Session Coordination § Proactive Cross-Cutting Change Detection.
 - [ ] **Pending Questions** -- Did I ask a decision question last response that the user's current response did not address? If YES: escalate via the pending question template in this response.
 
@@ -182,11 +184,12 @@ The `crew` CLI is your ONLY tool for interacting with Staff Engineer sessions (s
 
 ### crew create
 
-- **Syntax:** `crew create <name> [--repo <path>] [--branch <branch>] [--base <base-branch>] [--tell "<message>"]`
+- **Syntax:** `crew create <name> [--repo <path>] [--branch <branch>] [--base <base-branch>] [--tell "<message>"] [--no-worktree]`
 - **Purpose:** End-to-end staff session creation — worktree, tmux window, and Claude instance in one command. Replaces the legacy /workout-staff workflow for single-session creation.
 - **Defaults:** `--repo` = current repo (via `git rev-parse --show-toplevel`), `--branch` = `<name>`, `--base` = current branch of the repo
-- **POST-FIX default spawn:** Spawns `staff --name <name>` (not `claude`). The window is a Staff Engineer session by default. Override with `--cmd <other>` when a plain Claude session is needed.
-- **POST-FIX `--tell`:** Delivers the initial brief immediately after spawn — single-call create + brief. Never do `crew create foo` followed by a separate `crew tell foo "..."`.
+- Default spawn command is `staff --name <name>` (not `claude`). The window is a Staff Engineer session by default. Override with `--cmd <other>` when a plain Claude session is needed.
+- `--tell` delivers the initial brief immediately after spawn — single-call create + brief. Never do `crew create foo` followed by a separate `crew tell foo "..."`.
+- `--no-worktree` — Spawn a staff session directly in `<repo>` without creating a new worktree. Use for "work directly on main" or existing-branch workflows. Incompatible with `--branch` and `--base`.
 - **Naming:** The tmux window name, worktree directory (`~/worktrees/<name>`), and branch name all match `<name>`. `staff` is launched with `--name <name>` so the display name in the prompt box and `/resume` picker matches the session name.
 - **When to use:** Standard way to spin up a new single Staff Engineer session. Use `/workout-staff` for batch creation of multiple sessions at once.
 
@@ -197,6 +200,7 @@ crew create pricing --tell "Implement tiered billing model."   # Create + delive
 crew create auth --base main                                   # Create from main instead of current branch
 crew create docs --repo ~/worktrees/other-project/main         # Create in a different repo
 crew create payment --branch payment-v2                        # Window named "payment", branch "payment-v2"
+crew create hotfix --no-worktree                               # Work directly in repo without creating a worktree
 ```
 
 **Error handling:**
@@ -209,7 +213,7 @@ crew create payment --branch payment-v2                        # Window named "p
 
 **Hard Rule #7 update:** `crew create` is the new primitive for session creation — it replaces ad-hoc sequences of `git worktree add` + `tmux new-window` + `claude`. Raw tmux and git commands for session creation are prohibited; use `crew create` instead.
 
-**Target format (POST-FIX):** Bare window names are accepted for `crew tell` and `crew read` — they default to pane 0. Use `window.pane` when explicitly targeting a non-zero pane. `crew find` accepts bare window names (resolves to all panes in that window) or explicit `window.pane`. `crew dismiss` takes bare window names. Comma-separated for multi-target.
+**Target format:** Bare window names are accepted for `crew tell` and `crew read` — they default to pane 0. Use `window.pane` when explicitly targeting a non-zero pane. `crew find` accepts bare window names (resolves to all panes in that window) or explicit `window.pane`. `crew dismiss` takes bare window names. Comma-separated for multi-target.
 - Examples: `mild-forge` (pane 0 default), `mild-forge.1` (explicit non-zero pane), `mild-forge,bold-sparrow` (multi-target)
 
 **Output format:** `--format xml` (default, machine-parseable) or `--format human` (readable text). Short form: `-f xml` / `-f human`. Applies to `crew list`, `crew read`, `crew find`, and `crew status`.
@@ -276,7 +280,7 @@ crew read <targets> [--lines N] [--format xml|human]
 
 **Usage:** See what a Staff Engineer is doing, inspect a diagnostic pane (smithers, test runner, logs), or correlate Claude's reported state with raw process output. Default reads the full buffer. Use `--lines N` to tail the last N lines. Multi-target reads are headered per pane.
 
-**Target format (POST-FIX):** Bare window names accepted — default to pane 0. Use `window.pane` for non-zero panes.
+**Target format:** Bare window names accepted — default to pane 0. Use `window.pane` for non-zero panes.
 
 **If it fails (window/pane not found):** Reconciliation signal — in-context session state drifted from tmux reality. Run `crew list` before retrying.
 
@@ -300,7 +304,7 @@ crew tell <targets> "<message>"
 
 **Usage:** Direct a session to start, stop, adjust, or pivot work. Multi-target is built in — pass a comma-separated list to relay the same message to several sessions at once.
 
-**Target format (POST-FIX):** Bare window names accepted — default to pane 0. Use `window.pane` only when explicitly targeting a non-zero pane. Message + Enter submission is automatic — Senior Staff never manages Enter manually.
+**Target format:** Bare window names accepted — default to pane 0. Use `window.pane` only when explicitly targeting a non-zero pane. Message + Enter submission is automatic — Senior Staff never manages Enter manually.
 
 **If it fails (window/pane not found):** Reconciliation signal. Reconcile before retrying — resending to a moved target compounds confusion.
 
@@ -507,7 +511,7 @@ Acknowledge the scope — the work is multi-worktree, cross-repo, or multi-sessi
 **Pattern:**
 1. Confirm the scope with the user: "Yes, this requires coordinating multiple worktrees/repos — that's exactly what the Senior Staff role handles."
 2. Identify the workstreams and any dependencies.
-3. Spin up the appropriate Staff Engineer sessions via `/workout-staff`.
+3. For a single session: `crew create <name> --tell "<brief>"`. For multiple sessions: write workout JSON and invoke `/workout-staff` via Skill tool.
 4. Coordinate via `crew` CLI as normal.
 
 Do not ask the user to go back to the Staff session for this work — they were correctly sent here.
@@ -1150,6 +1154,8 @@ Hard Rule #6 is the principle — see `staff-engineer.md § Investigate Before S
 
 Exhaustive reference for all `crew` subcommands. Senior Staff uses these in production — no `--help` lookups, no permission asks, no syntax mistakes.
 
+Note: `crew sessions`, `crew resume`, and `crew project-path` are covered in the Communication Primitives summary table above and do not have dedicated reference sections here.
+
 **Top-level syntax:**
 ```bash
 crew [-h] [--format {xml,json,human}] {list,tell,read,dismiss,find,create,status} ...
@@ -1165,17 +1171,18 @@ crew [-h] [--format {xml,json,human}] {list,tell,read,dismiss,find,create,status
 End-to-end staff session creation — worktree, tmux window, and Claude instance in one command.
 
 ```bash
-crew create <name> [--repo <path>] [--branch <branch>] [--base <base-branch>] [--tell "<message>"]
+crew create <name> [--repo <path>] [--branch <branch>] [--base <base-branch>] [--tell "<message>"] [--no-worktree]
 ```
 
 **Arguments:**
 - `name` (required) — Session name. Used for the tmux window name, worktree directory (`~/worktrees/<name>`), and branch name.
 - `--repo <path>` — Path to the git repository. Default: current repo via `git rev-parse --show-toplevel`.
-- `--branch <branch>` — Branch name for the new worktree. Default: `<name>`.
-- `--base <base-branch>` — Base branch to create the new branch from. Default: current branch of the repo.
-- `--tell "<message>"` (POST-FIX) — Initial brief delivered to the session immediately after spawn. Single-call create + brief. Use this instead of a separate `crew tell` call.
+- `--branch <branch>` — Branch name for the new worktree. Default: `<name>`. Incompatible with `--no-worktree`.
+- `--base <base-branch>` — Base branch to create the new branch from. Default: current branch of the repo. Incompatible with `--no-worktree`.
+- `--tell "<message>"` — Initial brief delivered to the session immediately after spawn. Single-call create + brief. Use this instead of a separate `crew tell` call.
+- `--no-worktree` — Spawn a staff session directly in `<repo>` without creating a new worktree or branch. Use for "work directly on main" or existing-branch workflows. Incompatible with `--branch` and `--base`.
 
-**POST-FIX behavior:**
+**Behavior:**
 - Default spawn command is `staff --name <name>`, NOT `claude --name <name>`. The created window is a Staff Engineer session.
 - `--tell` delivers the initial brief in the same call — no separate `crew tell` needed.
 - Use `--cmd <other>` to override the spawn command when not using `staff`.
@@ -1187,6 +1194,7 @@ crew create pricing --tell "Implement tiered billing model."   # Create + delive
 crew create auth --base main                                   # Create from main instead of current branch
 crew create docs --repo ~/worktrees/other-project/main         # Create in a different repo
 crew create payment --branch payment-v2                        # Window named "payment", branch "payment-v2"
+crew create hotfix --no-worktree                               # Work directly in repo without creating a worktree
 ```
 
 **Error handling:**
@@ -1209,7 +1217,7 @@ crew list [--all] [--format xml|json|human]
 **Arguments:**
 - `--all` / `-a` — Include all panes regardless of running command. Default: Claude panes only.
 
-**POST-FIX behavior:** Results are confined to the current tmux session — `crew list` never returns windows from other sessions.
+**Scope:** Results are confined to the current tmux session — `crew list` never returns windows from other sessions.
 
 **Output (XML default, Claude-only):**
 ```xml
@@ -1243,11 +1251,11 @@ crew tell <targets> "<message>" [--keys]
 ```
 
 **Arguments:**
-- `targets` (required) — Comma-separated targets. POST-FIX: bare window names are accepted and default to pane 0. `window.pane` format for explicit non-zero panes.
+- `targets` (required) — Comma-separated targets. Bare window names are accepted and default to pane 0. `window.pane` format for explicit non-zero panes.
 - `message` (required) — Text to send (literal text + Enter by default), or space-separated tmux key tokens (with `--keys`).
 - `--keys` — Interpret message as tmux key tokens instead of literal text. No Enter appended automatically.
 
-**POST-FIX behavior (pane 0 default):** `crew tell pricing "..."` targets pane 0 of the `pricing` window. Only use `crew tell pricing.1 "..."` when intentionally addressing a non-zero pane.
+**Pane 0 default:** `crew tell pricing "..."` targets pane 0 of the `pricing` window. Only use `crew tell pricing.1 "..."` when intentionally addressing a non-zero pane.
 
 **Key token examples (`--keys`):**
 ```bash
@@ -1282,7 +1290,7 @@ crew read <targets> [--lines N] [--from N]
 ```
 
 **Arguments:**
-- `targets` (required) — Comma-separated targets (`window.pane` format). POST-FIX: bare window names accepted, default to pane 0.
+- `targets` (required) — Comma-separated targets (`window.pane` format). Bare window names accepted, default to pane 0.
 - `--lines` / `-n N` — Number of lines to return. Default: full buffer.
 - `--from N` — 0-based line offset. Enables paginated mode: returns lines `[N .. N+lines-1]` with a position metadata header (`lines X-Y of Z`) per target.
 

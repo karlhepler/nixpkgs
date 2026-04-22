@@ -1293,6 +1293,15 @@ def _branch_exists(repo: str, branch: str) -> bool:
     return result.returncode == 0
 
 
+def _git_has_uncommitted_changes(repo: str) -> bool:
+    """Return True if the repo has any uncommitted changes (staged or unstaged)."""
+    result = subprocess.run(
+        ["git", "status", "--porcelain"],
+        capture_output=True, text=True, check=False, cwd=repo
+    )
+    return result.returncode == 0 and bool(result.stdout.strip())
+
+
 def _tmux_window_exists(name: str) -> bool:
     """Return True if a tmux window named exactly `name` exists in any session."""
     result = subprocess.run(
@@ -1340,11 +1349,13 @@ def cmd_create(
     fmt: str,
     cmd_override: Optional[str] = None,
     tell: Optional[str] = None,
+    no_worktree: bool = False,
 ) -> None:
     """Create a git worktree, tmux window, and staff session end-to-end.
 
     Steps:
     1. Validate name (non-empty, filesystem-safe).
+    1b. Validate --no-worktree flag combinations.
     2. Check for existing tmux window named <name>.
     3. Resolve repo (default: current git root).
     4. Resolve branch (default: <name>).
@@ -1357,6 +1368,9 @@ def cmd_create(
     11. Start staff (or --cmd override) in the new window (with --name <name> for display).
     12. If --tell was given: wait for prompt-ready, then deliver the initial message.
     13. Emit structured result.
+
+    When no_worktree=True, steps 4-9 are skipped and the repo directory itself is
+    used as the tmux window cwd. Incompatible with --branch and --base.
     """
 
     # --- 1. Validate name ---
@@ -1371,6 +1385,27 @@ def cmd_create(
             error_code="INVALID_NAME",
             exit_code=2,
         )
+
+    # --- 1b. Validate --no-worktree flag combinations ---
+    if no_worktree:
+        if branch is not None:
+            emit_error(
+                "--branch is incompatible with --no-worktree: no worktree is being "
+                "created, so there is no branch to check out. Use --repo to point at "
+                "the directory containing the branch you want.",
+                fmt,
+                error_code="INCOMPATIBLE_FLAGS",
+                exit_code=2,
+            )
+        if base is not None:
+            emit_error(
+                "--base is incompatible with --no-worktree: --base specifies the "
+                "branch to create a new worktree from, which is not applicable when "
+                "--no-worktree is set.",
+                fmt,
+                error_code="INCOMPATIBLE_FLAGS",
+                exit_code=2,
+            )
 
     # --- 2. Check for existing tmux window ---
     if _tmux_window_exists(name):
@@ -1411,70 +1446,91 @@ def cmd_create(
                 exit_code=1,
             )
 
-    # --- 4. Resolve branch ---
-    if branch is None:
-        branch = name
+    if no_worktree:
+        # --- No-worktree path: use repo dir directly as the tmux window cwd ---
+        # Steps 4 (branch), 5 (base), 6 (worktree path expansion),
+        # 7 (existing worktree check), 8 (branch creation), 9 (git worktree add)
+        # are all skipped.
 
-    # --- 5. Resolve base branch ---
-    if base is None:
-        base = _git_current_branch(repo)
-        if base is None:
-            emit_error(
-                f"could not determine current branch of '{repo}' (detached HEAD?) — "
-                "specify --base explicitly",
-                fmt,
-                error_code="DETACHED_HEAD",
-                exit_code=1,
+        # Git-repo invariant is already enforced by step 3 before reaching here.
+
+        # Warn on uncommitted changes — don't block.
+        if _git_has_uncommitted_changes(repo):
+            print(
+                f"warning: '{repo}' has uncommitted changes. "
+                "The staff session will start in a dirty working tree.",
+                file=sys.stderr,
             )
 
-    # --- 6. Expand worktree path ---
-    worktree_path = os.path.expanduser(f"~/worktrees/{name}")
+        worktree_path = repo  # tmux cwd = repo root
 
-    # --- 7. Check for existing worktree at that path ---
-    if os.path.exists(worktree_path):
-        emit_error(
-            f"worktree path '{worktree_path}' already exists — remove it or choose "
-            "a different name",
-            fmt,
-            error_code="WORKTREE_EXISTS",
-            exit_code=2,
-        )
+    else:
+        # --- Worktree path (existing behavior) ---
 
-    # --- 8. Create branch if it doesn't exist ---
-    branch_was_new = False
-    if not _branch_exists(repo, branch):
+        # --- 4. Resolve branch ---
+        if branch is None:
+            branch = name
+
+        # --- 5. Resolve base branch ---
+        if base is None:
+            base = _git_current_branch(repo)
+            if base is None:
+                emit_error(
+                    f"could not determine current branch of '{repo}' (detached HEAD?) — "
+                    "specify --base explicitly",
+                    fmt,
+                    error_code="DETACHED_HEAD",
+                    exit_code=1,
+                )
+
+        # --- 6. Expand worktree path ---
+        worktree_path = os.path.expanduser(f"~/worktrees/{name}")
+
+        # --- 7. Check for existing worktree at that path ---
+        if os.path.exists(worktree_path):
+            emit_error(
+                f"worktree path '{worktree_path}' already exists — remove it or choose "
+                "a different name",
+                fmt,
+                error_code="WORKTREE_EXISTS",
+                exit_code=2,
+            )
+
+        # --- 8. Create branch if it doesn't exist ---
+        branch_was_new = False
+        if not _branch_exists(repo, branch):
+            result = subprocess.run(
+                ["git", "branch", branch, base],
+                capture_output=True, text=True, check=False, cwd=repo
+            )
+            if result.returncode != 0:
+                emit_error(
+                    f"failed to create branch '{branch}' from '{base}': "
+                    f"{result.stderr.strip()}",
+                    fmt,
+                    error_code="BRANCH_CREATE_FAILED",
+                    exit_code=1,
+                )
+            branch_was_new = True
+
+        # --- 9. Create git worktree ---
         result = subprocess.run(
-            ["git", "branch", branch, base],
+            ["git", "worktree", "add", worktree_path, branch],
             capture_output=True, text=True, check=False, cwd=repo
         )
         if result.returncode != 0:
+            # Clean up branch if we just created it
+            if branch_was_new:
+                subprocess.run(
+                    ["git", "branch", "-D", branch],
+                    capture_output=True, check=False, cwd=repo
+                )
             emit_error(
-                f"failed to create branch '{branch}' from '{base}': "
-                f"{result.stderr.strip()}",
+                f"git worktree add failed: {result.stderr.strip()}",
                 fmt,
-                error_code="BRANCH_CREATE_FAILED",
+                error_code="WORKTREE_ADD_FAILED",
                 exit_code=1,
             )
-        branch_was_new = True
-
-    # --- 9. Create git worktree ---
-    result = subprocess.run(
-        ["git", "worktree", "add", worktree_path, branch],
-        capture_output=True, text=True, check=False, cwd=repo
-    )
-    if result.returncode != 0:
-        # Clean up branch if we just created it
-        if branch_was_new:
-            subprocess.run(
-                ["git", "branch", "-D", branch],
-                capture_output=True, check=False, cwd=repo
-            )
-        emit_error(
-            f"git worktree add failed: {result.stderr.strip()}",
-            fmt,
-            error_code="WORKTREE_ADD_FAILED",
-            exit_code=1,
-        )
 
     # --- 10. Create tmux window ---
     result = subprocess.run(
@@ -1484,11 +1540,20 @@ def cmd_create(
     if result.returncode != 0:
         # Worktree exists but window creation failed — report partial state, do NOT
         # auto-remove the worktree (user may have other uses for it).
+        if no_worktree:
+            partial_state_msg = (
+                f"No worktree was created (--no-worktree mode). "
+                f"You can manually open the window with: "
+                f"tmux new-window -n {name} -c {worktree_path}"
+            )
+        else:
+            partial_state_msg = (
+                f"Worktree was created at '{worktree_path}' but no tmux window was opened. "
+                f"You can manually open the window with: "
+                f"tmux new-window -n {name} -c {worktree_path}"
+            )
         emit_error(
-            f"tmux new-window failed: {result.stderr.strip()}. "
-            f"Worktree was created at '{worktree_path}' but no tmux window was opened. "
-            "You can manually open the window with: "
-            f"tmux new-window -n {name} -c {worktree_path}",
+            f"tmux new-window failed: {result.stderr.strip()}. {partial_state_msg}",
             fmt,
             error_code="TMUX_WINDOW_FAILED",
             exit_code=1,
@@ -1534,11 +1599,14 @@ def cmd_create(
             window=name,
             pane="0",
             worktree=worktree_path,
-            branch=branch,
             repo=repo,
             session_name=name,
             command=base_cmd,
         )
+        if no_worktree:
+            attrs["no_worktree"] = "true"
+        else:
+            attrs["branch"] = branch  # type: ignore[assignment]
         if told:
             attrs["told"] = "true"
         elem = ET.Element("created", **attrs)
@@ -1548,16 +1616,22 @@ def cmd_create(
             "window": name,
             "pane": "0",
             "worktree": worktree_path,
-            "branch": branch,
             "repo": repo,
             "session_name": name,
             "command": base_cmd,
         }
+        if no_worktree:
+            obj["no_worktree"] = True
+        else:
+            obj["branch"] = branch
         if told:
             obj["told"] = True
         print(json.dumps(obj, indent=2))
     else:
-        print(f"created: window={name} pane=0 worktree={worktree_path} branch={branch}")
+        if no_worktree:
+            print(f"created: window={name} pane=0 worktree={worktree_path} no_worktree=true")
+        else:
+            print(f"created: window={name} pane=0 worktree={worktree_path} branch={branch}")
         print(f"  {base_cmd} started with --name {name}")
         if told:
             print(f"  initial message delivered: {tell!r}")
@@ -1759,6 +1833,17 @@ def build_parser() -> argparse.ArgumentParser:
             "`crew create foo && crew tell foo '...'`."
         ),
     )
+    p_create.add_argument(
+        "--no-worktree",
+        action="store_true",
+        default=False,
+        dest="no_worktree",
+        help=(
+            "Start the staff session directly in the --repo directory WITHOUT creating "
+            "a new git worktree. Use this for 'work directly on main' or existing-branch "
+            "workflows. Incompatible with --branch and --base."
+        ),
+    )
 
     # status
     p_status = sub.add_parser(
@@ -1894,7 +1979,8 @@ def main() -> None:
             cmd_status(args.lines, fmt, show_all=args.show_all)
         elif args.command == "create":
             cmd_create(args.name, args.repo, args.branch, args.base, fmt,
-                       cmd_override=args.cmd_override, tell=args.tell)
+                       cmd_override=args.cmd_override, tell=args.tell,
+                       no_worktree=args.no_worktree)
         elif args.command == "project-path":
             send = _ProjectPathSend(fmt)
             cmd_project_path(args.worktree, fmt, send)

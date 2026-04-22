@@ -976,3 +976,252 @@ class TestCmdResume:
         assert len(send.failure_calls) == 1
         error_code, message = send.failure_calls[0]
         assert error_code == "TMUX_WINDOW_FAILED"
+
+
+# ---------------------------------------------------------------------------
+# crew create --no-worktree
+# ---------------------------------------------------------------------------
+
+class TestCmdCreateNoWorktree:
+    """Tests for the --no-worktree flag on crew create."""
+
+    def _setup_no_worktree_mocks(self, mock_run, dirty=False):
+        """Configure mock_run for a no-worktree create flow."""
+        def side_effect(cmd, **kwargs):
+            cmd_list = cmd if isinstance(cmd, list) else [cmd]
+            joined = " ".join(str(c) for c in cmd_list)
+            if "list-windows" in joined:
+                return fake_run_result(stdout="")  # no existing windows
+            if "rev-parse" in joined and "show-toplevel" in joined:
+                return fake_run_result(stdout="/some/repo\n")
+            if "status" in joined and "--porcelain" in joined:
+                return fake_run_result(stdout="M file.txt\n" if dirty else "")
+            if "new-window" in joined:
+                return fake_run_result()
+            if "send-keys" in joined:
+                return fake_run_result()
+            if "capture-pane" in joined:
+                return fake_run_result(stdout="> \n")
+            return fake_run_result()
+        mock_run.side_effect = side_effect
+
+    def test_no_worktree_happy_path_succeeds(self, capsys):
+        """--no-worktree with valid git repo: tmux window created at repo path."""
+        with patch("subprocess.run") as mock_run:
+            with patch("os.path.isdir", return_value=True):
+                self._setup_no_worktree_mocks(mock_run, dirty=False)
+                cmd_create(
+                    name="test-nw",
+                    repo="/some/repo",
+                    branch=None,
+                    base=None,
+                    fmt="xml",
+                    no_worktree=True,
+                )
+
+        all_calls = mock_run.call_args_list
+        # git worktree add must NOT be called
+        worktree_add_calls = [
+            c for c in all_calls
+            if "worktree" in " ".join(str(x) for x in c[0][0])
+            and "add" in " ".join(str(x) for x in c[0][0])
+        ]
+        assert worktree_add_calls == [], "git worktree add must not be called with --no-worktree"
+
+        # tmux new-window must be called with -c /some/repo
+        new_window_calls = [
+            c for c in all_calls
+            if "new-window" in " ".join(str(x) for x in c[0][0])
+        ]
+        assert len(new_window_calls) == 1
+        new_window_args = new_window_calls[0][0][0]
+        assert "-c" in new_window_args
+        c_idx = new_window_args.index("-c")
+        assert new_window_args[c_idx + 1] == "/some/repo"
+
+        # staff --name test-nw must be sent via send-keys
+        send_keys_calls = [
+            c for c in all_calls
+            if "send-keys" in " ".join(str(x) for x in c[0][0])
+        ]
+        spawn_call = next(
+            (c for c in send_keys_calls if "staff" in " ".join(str(x) for x in c[0][0])),
+            None,
+        )
+        assert spawn_call is not None
+
+        # No error/warning output
+        captured = capsys.readouterr()
+        assert "error" not in captured.err.lower()
+        assert "warning" not in captured.err.lower()
+
+    def test_no_worktree_branch_flag_errors_cleanly(self, capsys):
+        """--no-worktree + --branch must error with INCOMPATIBLE_FLAGS."""
+        with patch("subprocess.run") as mock_run:
+            self._setup_no_worktree_mocks(mock_run)
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_create(
+                    name="test-nw",
+                    repo="/some/repo",
+                    branch="some-branch",
+                    base=None,
+                    fmt="xml",
+                    no_worktree=True,
+                )
+        assert exc_info.value.code == 2
+        captured = capsys.readouterr()
+        assert "INCOMPATIBLE_FLAGS" in captured.out
+
+        # tmux new-window must NOT be called
+        new_window_calls = [
+            c for c in mock_run.call_args_list
+            if "new-window" in " ".join(str(x) for x in c[0][0])
+        ]
+        assert new_window_calls == []
+
+    def test_no_worktree_base_flag_errors_cleanly(self, capsys):
+        """--no-worktree + --base must error with INCOMPATIBLE_FLAGS."""
+        with patch("subprocess.run") as mock_run:
+            self._setup_no_worktree_mocks(mock_run)
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_create(
+                    name="test-nw",
+                    repo="/some/repo",
+                    branch=None,
+                    base="main",
+                    fmt="xml",
+                    no_worktree=True,
+                )
+        assert exc_info.value.code == 2
+        captured = capsys.readouterr()
+        assert "INCOMPATIBLE_FLAGS" in captured.out
+
+        new_window_calls = [
+            c for c in mock_run.call_args_list
+            if "new-window" in " ".join(str(x) for x in c[0][0])
+        ]
+        assert new_window_calls == []
+
+    def test_no_worktree_uncommitted_changes_warning_fires(self, capsys):
+        """--no-worktree with dirty repo: warning on stderr, window still created."""
+        with patch("subprocess.run") as mock_run:
+            with patch("os.path.isdir", return_value=True):
+                self._setup_no_worktree_mocks(mock_run, dirty=True)
+                cmd_create(
+                    name="test-nw",
+                    repo="/some/repo",
+                    branch=None,
+                    base=None,
+                    fmt="xml",
+                    no_worktree=True,
+                )
+
+        captured = capsys.readouterr()
+        assert "uncommitted changes" in captured.err
+
+        # Window is still created
+        all_calls = mock_run.call_args_list
+        new_window_calls = [
+            c for c in all_calls
+            if "new-window" in " ".join(str(x) for x in c[0][0])
+        ]
+        assert len(new_window_calls) == 1
+
+    def test_no_worktree_skips_git_worktree_add_even_with_dirty_tree(self, capsys):
+        """--no-worktree with a dirty tree: git worktree add is still never called.
+
+        Combines the skip assertion with a distinct setup (uncommitted changes)
+        to verify that a dirty working tree does not cause --no-worktree to fall
+        back to creating a worktree.
+        """
+        with patch("subprocess.run") as mock_run:
+            with patch("os.path.isdir", return_value=True):
+                self._setup_no_worktree_mocks(mock_run, dirty=True)
+                cmd_create(
+                    name="test-nw",
+                    repo="/some/repo",
+                    branch=None,
+                    base=None,
+                    fmt="xml",
+                    no_worktree=True,
+                )
+
+        for c in mock_run.call_args_list:
+            cmd_args = c[0][0]
+            joined = " ".join(str(x) for x in cmd_args)
+            assert not ("worktree" in joined and "add" in joined), (
+                f"Expected no 'git worktree add' call even with dirty tree, but found: {joined}"
+            )
+
+    def test_no_worktree_non_git_dir_errors(self, capsys):
+        """Passing a non-git --repo always errors with NOT_A_GIT_REPO (exit 1).
+
+        This verifies step 3's NOT_A_GIT_REPO guard, which fires regardless of
+        --no-worktree. The no-worktree block itself relies on step 3 having
+        already enforced the git-repo invariant before it runs.
+        """
+        def side_effect(cmd, **kwargs):
+            cmd_list = cmd if isinstance(cmd, list) else [cmd]
+            joined = " ".join(str(c) for c in cmd_list)
+            if "list-windows" in joined:
+                return fake_run_result(stdout="")
+            if "rev-parse" in joined and "show-toplevel" in joined:
+                # Fail: not a git repo
+                return fake_run_result(returncode=128, stdout="")
+            return fake_run_result()
+
+        with patch("subprocess.run", side_effect=side_effect):
+            with patch("os.path.isdir", return_value=True):
+                with pytest.raises(SystemExit) as exc_info:
+                    cmd_create(
+                        name="test-nw",
+                        repo="/not/a/git/repo",
+                        branch=None,
+                        base=None,
+                        fmt="xml",
+                        no_worktree=True,
+                    )
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "NOT_A_GIT_REPO" in captured.out
+
+    def test_no_worktree_tmux_window_cwd_is_repo_not_worktrees_subdir(self, capsys):
+        """--no-worktree: tmux new-window -c is the repo path, not ~/worktrees/<name>."""
+        repo_path = "/some/path"
+        with patch("subprocess.run") as mock_run:
+            with patch("os.path.isdir", return_value=True):
+                self._setup_no_worktree_mocks(mock_run, dirty=False)
+                # Pass repo directly — step 3 validates the provided path without
+                # needing rev-parse to return the same value, so no side-effect
+                # override is necessary.
+                cmd_create(
+                    name="test-nw",
+                    repo=repo_path,
+                    branch=None,
+                    base=None,
+                    fmt="xml",
+                    no_worktree=True,
+                )
+
+        new_window_calls = [
+            c for c in mock_run.call_args_list
+            if "new-window" in " ".join(str(x) for x in c[0][0])
+        ]
+        assert len(new_window_calls) == 1
+        new_window_args = new_window_calls[0][0][0]
+        c_idx = new_window_args.index("-c")
+        cwd_used = new_window_args[c_idx + 1]
+        assert cwd_used == repo_path
+        assert "worktrees" not in cwd_used
+
+    def test_parser_accepts_no_worktree_flag(self):
+        """build_parser parses --no-worktree as True."""
+        p = build_parser()
+        args = p.parse_args(["create", "my-worker", "--no-worktree"])
+        assert args.no_worktree is True
+
+    def test_parser_no_worktree_defaults_to_false(self):
+        """build_parser defaults no_worktree to False when flag is absent."""
+        p = build_parser()
+        args = p.parse_args(["create", "my-worker"])
+        assert args.no_worktree is False
