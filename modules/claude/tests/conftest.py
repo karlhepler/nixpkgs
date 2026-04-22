@@ -207,25 +207,43 @@ class KanbanMockResponses:
         review_cycles: int = 0,
         criteria: list[dict] | None = None,
     ) -> str:
-        """Build a minimal card XML string matching what kanban show produces."""
+        """Build a minimal card XML string matching what kanban show produces.
+
+        Accepts criteria dicts in v5 schema (mov_commands array of {cmd, timeout}).
+        Emits v5 <movCommands><command cmd="..." timeout="..."/></movCommands> subtree.
+        """
         if criteria is None:
             criteria = [
-                {"text": "File exists", "mov_type": "programmatic", "mov_command": "test -f /tmp/file", "mov_timeout": "5"},
+                {
+                    "text": "File exists",
+                    "mov_type": "programmatic",
+                    "mov_commands": [{"cmd": "test -f /tmp/file", "timeout": 5}],
+                },
                 {"text": "Output is correct", "mov_type": "semantic"},
             ]
 
         ac_elements = []
         for i, c in enumerate(criteria, 1):
             mov_type = c.get("mov_type", "semantic")
-            mov_command = c.get("mov_command", "")
-            mov_timeout = c.get("mov_timeout", "30")
+            mov_commands = c.get("mov_commands") or []
             agent_met = c.get("agent_met", "false")
             reviewer_met = c.get("reviewer_met", "unchecked")
             text = c.get("text", f"criterion {i}")
+
+            # Build v5 <movCommands> subtree
+            if mov_commands:
+                cmd_entries = "".join(
+                    f'<command cmd="{entry["cmd"]}" timeout="{entry.get("timeout", 30)}"/>'
+                    for entry in mov_commands
+                )
+                mov_commands_xml = f"<movCommands>{cmd_entries}</movCommands>"
+                ac_content = f"{text}{mov_commands_xml}"
+            else:
+                ac_content = text
+
             ac_elements.append(
                 f'    <ac agent-met="{agent_met}" reviewer-met="{reviewer_met}" '
-                f'mov-type="{mov_type}" mov-command="{mov_command}" '
-                f'mov-timeout="{mov_timeout}">{text}</ac>'
+                f'mov-type="{mov_type}">{ac_content}</ac>'
             )
 
         ac_block = "\n".join(ac_elements)

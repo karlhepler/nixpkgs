@@ -956,7 +956,14 @@ def _extract_criteria_failures(card_number: str, session: str) -> str:
                 reviewer_interacted_count += 1
             if not fail_pattern.search(attrs):
                 continue
-            criterion_text = match.group(2).strip()
+            inner_text = match.group(2)
+            # Strip <movCommands>...</movCommands> subtree so programmatic criteria don't
+            # pollute the reason hint with XML noise (mirrors get_card_criteria() stripping).
+            mov_commands_match = re.search(r'<movCommands>.*?</movCommands>', inner_text, re.DOTALL)
+            if mov_commands_match:
+                criterion_text = inner_text[:mov_commands_match.start()].strip()
+            else:
+                criterion_text = inner_text.strip()
             reason_match = reason_pattern.search(attrs)
             reason = reason_match.group(1) if reason_match else "no reason provided"
             failures.append(f"{ac_index}. [{criterion_text}]: {reason}")
@@ -1201,10 +1208,11 @@ def get_deferred_cards(session: str) -> list[str]:
 
 # Exit codes that indicate MoV tooling/infrastructure failure (not work failure).
 # These are treated as mov_error: no pass/fail, structured diagnostic emitted.
-# Note: exit 2 is intentionally excluded — diff-family tools (diff, rg, grep) use it for
-# legitimate work failures (e.g., "differences found"), so it should be treated as a
-# work failure rather than a tooling error. This keeps semantics aligned with the kanban CLI.
-_MOV_ERROR_EXIT_CODES = frozenset([126, 127, 124])
+# exit 2 = bash syntax error at runtime (e.g. unclosed brackets, invalid substitutions).
+# This matches kanban.py's cmd_criteria_check classification (line 1697: treats 127, 126, 2
+# as mov_error). Without exit 2 here, a MoV authoring bug surfaces to the agent as a work
+# failure — the agent wastes a retry cycle chasing a phantom deficiency.
+_MOV_ERROR_EXIT_CODES = frozenset([126, 127, 124, 2])
 
 
 def get_git_root() -> str:
@@ -1236,10 +1244,12 @@ def get_card_criteria(card_number: str, session: str) -> list[dict]:
       - index (int): 1-based criterion position
       - text (str): criterion statement
       - mov_type (str): "programmatic" or "semantic" (defaults to "semantic" if absent)
-      - mov_command (str | None): shell command for programmatic criteria
-      - mov_timeout (int): timeout in seconds (defaults to 30)
+      - mov_commands (list[dict]): list of {cmd, timeout} for programmatic criteria (v5 schema)
       - agent_met (bool): whether the agent checked this criterion
       - reviewer_met (str | None): "pass", "fail", or None
+
+    Parses the v5 <movCommands><command cmd="..." timeout="..."/>...</movCommands> subtree.
+    v4 singular mov-command/mov-timeout attributes are not supported.
 
     Returns an empty list on any error.
     """
@@ -1250,36 +1260,52 @@ def get_card_criteria(card_number: str, session: str) -> list[dict]:
             return []
 
         xml_output = result.stdout
+        # Match <ac ...> ... </ac> blocks, capturing attributes and full inner content
         ac_pattern = re.compile(r'<ac\b([^>]*?)>(.*?)</ac>', re.DOTALL)
+        # Match <command cmd="..." timeout="..."/> entries inside <movCommands>
+        mov_cmd_pattern = re.compile(r'<command\s[^>]*cmd="([^"]*)"[^>]*timeout="([^"]*)"[^>]*/>')
         criteria = []
         for idx, match in enumerate(ac_pattern.finditer(xml_output), 1):
             attrs_str = match.group(1)
-            text = match.group(2).strip()
+            inner = match.group(2)
 
             def _attr(name: str, default: str = "") -> str:
                 m = re.search(rf'{re.escape(name)}="([^"]*)"', attrs_str)
                 return html.unescape(m.group(1)) if m else default
 
-            mov_type = _attr("mov-type") or _attr("mov_type") or "semantic"
-            mov_command = _attr("mov-command") or _attr("mov_command") or None
-            mov_timeout_str = _attr("mov-timeout") or _attr("mov_timeout") or "30"
-            try:
-                mov_timeout = int(mov_timeout_str)
-            except ValueError:
-                mov_timeout = 30
+            mov_type = _attr("mov-type") or "semantic"
 
-            agent_met_str = _attr("agent-met") or _attr("agent_met") or "false"
+            agent_met_str = _attr("agent-met") or "false"
             agent_met = agent_met_str.lower() == "true"
 
-            reviewer_met_str = _attr("reviewer-met") or _attr("reviewer_met") or ""
+            reviewer_met_str = _attr("reviewer-met") or ""
             reviewer_met: str | None = reviewer_met_str if reviewer_met_str in ("pass", "fail") else None
+
+            # Parse v5 <movCommands> subtree from inner content
+            mov_commands: list[dict] = []
+            mov_commands_match = re.search(r'<movCommands>(.*?)</movCommands>', inner, re.DOTALL)
+            if mov_commands_match:
+                mov_commands_inner = mov_commands_match.group(1)
+                for cmd_match in mov_cmd_pattern.finditer(mov_commands_inner):
+                    cmd_str = html.unescape(cmd_match.group(1))
+                    timeout_str = cmd_match.group(2)
+                    try:
+                        timeout_val = int(timeout_str)
+                    except ValueError:
+                        timeout_val = 30
+                    mov_commands.append({"cmd": cmd_str, "timeout": timeout_val})
+
+            # Extract criterion text: everything in inner before <movCommands> (or all of inner)
+            if mov_commands_match:
+                text = inner[:mov_commands_match.start()].strip()
+            else:
+                text = inner.strip()
 
             criteria.append({
                 "index": idx,
                 "text": text,
                 "mov_type": mov_type,
-                "mov_command": mov_command if mov_command else None,
-                "mov_timeout": mov_timeout,
+                "mov_commands": mov_commands,
                 "agent_met": agent_met,
                 "reviewer_met": reviewer_met,
             })
@@ -1297,112 +1323,136 @@ def run_programmatic_mov(
     session: str,
     git_root: str,
 ) -> str | None:
-    """Execute a single programmatic MoV and dispatch to pass/fail.
+    """Execute a programmatic MoV criterion by iterating its mov_commands array.
 
-    Exit code classification:
-      - 0: kanban criteria pass
-      - 127/126/2/124: mov_error — emit structured diagnostic, leave reviewer_met as None
+    Iterates mov_commands in array order. Short-circuits on the first non-zero exit,
+    recording which command failed (by index) along with its stdout/stderr.
+
+    Exit code classification per command:
+      - 0: continue to next command (or pass criterion if last command)
+      - 127/126/124: mov_error — emit structured diagnostic, leave reviewer_met as None
       - other nonzero: kanban criteria fail with captured output as reason
 
-    Returns a mov_error diagnostic string if the exit code was a tooling error,
+    Returns a mov_error diagnostic string if any command produced a tooling error,
     or None if the criterion was passed or failed cleanly.
     """
     idx = criterion["index"]
-    mov_command = criterion["mov_command"]
-    mov_timeout = criterion["mov_timeout"]
+    mov_commands = criterion.get("mov_commands") or []
 
-    log_info(
-        f"run_programmatic_mov: card #{card_number} criterion {idx}: "
-        f"command={mov_command!r} timeout={mov_timeout}s cwd={git_root!r}"
-    )
-
-    try:
-        # shell=True is required: MoV commands are shell expressions (pipes, redirection,
-        # compound tests). Commands are coordinator-authored and stored in card XML —
-        # not user-supplied at runtime. Validate at card-authoring time.
-        proc = subprocess.run(
-            mov_command,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=mov_timeout,
-            cwd=git_root,
-            env={**os.environ},
+    if not mov_commands:
+        log_info(
+            f"run_programmatic_mov: card #{card_number} criterion {idx}: "
+            f"no mov_commands — skipping"
         )
-        exit_code = proc.returncode
-        stdout_out = proc.stdout.strip()
-        stderr_out = proc.stderr.strip()
-    except subprocess.TimeoutExpired:
-        # Treat timeout as exit code 124 (same as GNU timeout convention)
-        log_error(
-            f"run_programmatic_mov: card #{card_number} criterion {idx} timed out "
-            f"after {mov_timeout}s"
-        )
-        diagnostic = (
-            f"\n=== MoV ERROR (criterion {idx}, card {card_number}) ===\n"
-            f"Command: {mov_command}\n"
-            f"Exit code: 124 (timeout after {mov_timeout}s)\n"
-            f"Stderr: (timeout — no output captured)\n"
-            f"Stdout: (timeout — no output captured)\n"
-            f"This is likely an MoV bug, not an agent work failure. "
-            f"Coordinator should review.\n"
-            f"=== END ==="
-        )
-        return diagnostic
-    except Exception as exc:
-        log_error(
-            f"run_programmatic_mov: card #{card_number} criterion {idx} subprocess "
-            f"error: {exc}"
-        )
-        diagnostic = (
-            f"\n=== MoV ERROR (criterion {idx}, card {card_number}) ===\n"
-            f"Command: {mov_command}\n"
-            f"Exit code: (subprocess error — command could not be launched)\n"
-            f"Stderr: {exc}\n"
-            f"Stdout: \n"
-            f"This is likely an MoV bug, not an agent work failure. "
-            f"Coordinator should review.\n"
-            f"=== END ==="
-        )
-        return diagnostic
-
-    log_info(
-        f"run_programmatic_mov: card #{card_number} criterion {idx}: "
-        f"exit_code={exit_code} stdout={stdout_out[:120]!r} stderr={stderr_out[:120]!r}"
-    )
-
-    if exit_code == 0:
-        run_kanban(["criteria", "pass", card_number, str(idx), "--session", session])
-        log_info(f"run_programmatic_mov: card #{card_number} criterion {idx} PASSED")
         return None
 
-    if exit_code in _MOV_ERROR_EXIT_CODES:
-        diagnostic = (
-            f"\n=== MoV ERROR (criterion {idx}, card {card_number}) ===\n"
-            f"Command: {mov_command}\n"
-            f"Exit code: {exit_code}\n"
-            f"Stderr: {stderr_out or '(empty)'}\n"
-            f"Stdout: {stdout_out or '(empty)'}\n"
-            f"This is likely an MoV bug, not an agent work failure. "
-            f"Coordinator should review.\n"
-            f"=== END ==="
-        )
-        log_info(
-            f"run_programmatic_mov: card #{card_number} criterion {idx} mov_error "
-            f"(exit {exit_code})"
-        )
-        return diagnostic
+    for cmd_idx, cmd_entry in enumerate(mov_commands):
+        mov_command = cmd_entry.get("cmd", "")
+        mov_timeout = cmd_entry.get("timeout", 30)
 
-    # Other nonzero — treat as work failure
-    combined_output = "\n".join(filter(None, [stderr_out, stdout_out])) or f"exit {exit_code}"
-    run_kanban([
-        "criteria", "fail", card_number, str(idx),
-        "--reason", combined_output[:500],
-        "--session", session,
-    ])
+        log_info(
+            f"run_programmatic_mov: card #{card_number} criterion {idx} "
+            f"command[{cmd_idx}]={mov_command!r} timeout={mov_timeout}s cwd={git_root!r}"
+        )
+
+        try:
+            # shell=True is required: MoV commands are shell expressions (pipes, redirection,
+            # compound tests). Commands are coordinator-authored and stored in card XML —
+            # not user-supplied at runtime. Validate at card-authoring time.
+            proc = subprocess.run(
+                mov_command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=mov_timeout,
+                cwd=git_root,
+                env={**os.environ},
+            )
+            exit_code = proc.returncode
+            stdout_out = proc.stdout.strip()
+            stderr_out = proc.stderr.strip()
+        except subprocess.TimeoutExpired:
+            # Treat timeout as exit code 124 (same as GNU timeout convention)
+            log_error(
+                f"run_programmatic_mov: card #{card_number} criterion {idx} "
+                f"command[{cmd_idx}] timed out after {mov_timeout}s"
+            )
+            diagnostic = (
+                f"\n=== MoV ERROR (criterion {idx}, card {card_number}) ===\n"
+                f"Failed command index: {cmd_idx}\n"
+                f"Command: {mov_command}\n"
+                f"Exit code: 124 (timeout after {mov_timeout}s)\n"
+                f"Stderr: (timeout — no output captured)\n"
+                f"Stdout: (timeout — no output captured)\n"
+                f"This is likely an MoV bug, not an agent work failure. "
+                f"Coordinator should review.\n"
+                f"=== END ==="
+            )
+            return diagnostic
+        except Exception as exc:
+            log_error(
+                f"run_programmatic_mov: card #{card_number} criterion {idx} "
+                f"command[{cmd_idx}] subprocess error: {exc}"
+            )
+            diagnostic = (
+                f"\n=== MoV ERROR (criterion {idx}, card {card_number}) ===\n"
+                f"Failed command index: {cmd_idx}\n"
+                f"Command: {mov_command}\n"
+                f"Exit code: (subprocess error — command could not be launched)\n"
+                f"Stderr: {exc}\n"
+                f"Stdout: \n"
+                f"This is likely an MoV bug, not an agent work failure. "
+                f"Coordinator should review.\n"
+                f"=== END ==="
+            )
+            return diagnostic
+
+        log_info(
+            f"run_programmatic_mov: card #{card_number} criterion {idx} "
+            f"command[{cmd_idx}]: exit_code={exit_code} "
+            f"stdout={stdout_out[:120]!r} stderr={stderr_out[:120]!r}"
+        )
+
+        if exit_code == 0:
+            # This command passed — continue to next command in array
+            continue
+
+        if exit_code in _MOV_ERROR_EXIT_CODES:
+            diagnostic = (
+                f"\n=== MoV ERROR (criterion {idx}, card {card_number}) ===\n"
+                f"Failed command index: {cmd_idx}\n"
+                f"Command: {mov_command}\n"
+                f"Exit code: {exit_code}\n"
+                f"Stderr: {stderr_out or '(empty)'}\n"
+                f"Stdout: {stdout_out or '(empty)'}\n"
+                f"This is likely an MoV bug, not an agent work failure. "
+                f"Coordinator should review.\n"
+                f"=== END ==="
+            )
+            log_info(
+                f"run_programmatic_mov: card #{card_number} criterion {idx} "
+                f"command[{cmd_idx}] mov_error (exit {exit_code}) — short-circuiting"
+            )
+            return diagnostic
+
+        # Other nonzero — work failure; short-circuit
+        combined_output = "\n".join(filter(None, [stderr_out, stdout_out])) or f"exit {exit_code}"
+        run_kanban([
+            "criteria", "fail", card_number, str(idx),
+            "--reason", combined_output[:500],
+            "--session", session,
+        ])
+        log_info(
+            f"run_programmatic_mov: card #{card_number} criterion {idx} "
+            f"command[{cmd_idx}] FAILED (exit {exit_code}) — short-circuiting"
+        )
+        return None
+
+    # All commands passed
+    run_kanban(["criteria", "pass", card_number, str(idx), "--session", session])
     log_info(
-        f"run_programmatic_mov: card #{card_number} criterion {idx} FAILED "
-        f"(exit {exit_code})"
+        f"run_programmatic_mov: card #{card_number} criterion {idx} PASSED "
+        f"(all {len(mov_commands)} command(s) exited 0)"
     )
     return None
 
@@ -1415,14 +1465,14 @@ def run_programmatic_criteria(
 ) -> list[str]:
     """Execute all programmatic criteria for a card and return any mov_error diagnostics.
 
-    Only processes criteria where mov_type == "programmatic" and mov_command is set.
+    Only processes criteria where mov_type == "programmatic" and mov_commands is non-empty.
     Skips criteria already reviewed (reviewer_met is not None).
 
     Returns a list of mov_error diagnostic strings (may be empty).
     """
     programmatic = [
         c for c in criteria
-        if c.get("mov_type") == "programmatic" and c.get("mov_command")
+        if c.get("mov_type") == "programmatic" and c.get("mov_commands")
     ]
     log_info(
         f"run_programmatic_criteria: card #{card_number} has "
@@ -1633,11 +1683,11 @@ def run_inner_loop(
     criteria = get_card_criteria(card_number, session)
     programmatic_criteria = [
         c for c in criteria
-        if c.get("mov_type") == "programmatic" and c.get("mov_command")
+        if c.get("mov_type") == "programmatic" and c.get("mov_commands")
     ]
     semantic_criteria = [
         c for c in criteria
-        if not (c.get("mov_type") == "programmatic" and c.get("mov_command"))
+        if not (c.get("mov_type") == "programmatic" and c.get("mov_commands"))
     ]
     log_info(
         f"run_inner_loop: card #{card_number} criteria partition: "
@@ -2107,6 +2157,29 @@ def process_subagent_stop(payload: dict) -> dict:
             f"Reviewer malfunction for card #{card_number} — "
             f"all malfunction retries failed, issuing redo+block"
         )
+
+        # P2.3 — Auto-uncheck on malfunction-redo path.
+        # Apply the same auto-uncheck invariant as the normal redo path: if any criteria
+        # have reviewer_met=fail (mixed malfunction+failure state), uncheck them so the
+        # agent cannot coast on stale checked-but-failed criteria after redo.
+        malfunction_pre_redo_criteria = get_card_criteria(card_number, session)
+        for c in malfunction_pre_redo_criteria:
+            if c.get("reviewer_met") == "fail":
+                n = c["index"]
+                uncheck_result = run_kanban(
+                    ["criteria", "uncheck", card_number, str(n), "--session", session]
+                )
+                if uncheck_result.returncode == 0:
+                    log_info(
+                        f"auto-uncheck (malfunction): unchecked criterion {n} for card #{card_number} "
+                        f"(reviewer_met=fail)"
+                    )
+                else:
+                    log_error(
+                        f"auto-uncheck (malfunction): failed to uncheck criterion {n} for card #{card_number}: "
+                        f"{uncheck_result.stderr.strip()}"
+                    )
+
         redo_result = run_kanban(["redo", card_number, "--session", session])
         if redo_result.returncode != 0:
             log_error(
@@ -2153,6 +2226,28 @@ def process_subagent_stop(payload: dict) -> dict:
     # so this must happen before the redo call below.
     rejection_reasons_json = _extract_criteria_failures_as_json(card_number, session)
 
+    # P2.3 — Auto-uncheck failing criteria BEFORE kanban redo.
+    # This guarantees the state machine: after redo, every criterion that failed is
+    # unchecked so the agent cannot coast on stale checked-but-failed criteria.
+    # Read the criteria freshly so we have accurate reviewer_met state.
+    pre_redo_criteria = get_card_criteria(card_number, session)
+    for c in pre_redo_criteria:
+        if c.get("reviewer_met") == "fail":
+            n = c["index"]
+            uncheck_result = run_kanban(
+                ["criteria", "uncheck", card_number, str(n), "--session", session]
+            )
+            if uncheck_result.returncode == 0:
+                log_info(
+                    f"auto-uncheck: unchecked criterion {n} for card #{card_number} "
+                    f"(reviewer_met=fail)"
+                )
+            else:
+                log_error(
+                    f"auto-uncheck: failed to uncheck criterion {n} for card #{card_number}: "
+                    f"{uncheck_result.stderr.strip()}"
+                )
+
     # Run kanban redo to send card back to doing (increments review_cycles)
     redo_result = run_kanban(["redo", card_number, "--session", session])
     if redo_result.returncode != 0:
@@ -2178,17 +2273,61 @@ def process_subagent_stop(payload: dict) -> dict:
             rejection_reasons_json=rejection_reasons_json,
         )
 
-    # Block the agent with failure details
+    # P2.4 — Retry feedback redesign: LOCKED PASSED / MUST FIX partition.
+    # Partition criteria into those that passed (locked) vs those that failed (must fix).
+    # Use pre_redo_criteria which has the reviewer_met state before redo cleared it.
+    locked_passed_lines = []
+    must_fix_lines = []
+    for c in pre_redo_criteria:
+        n = c["index"]
+        text = c["text"]
+        reviewer_met = c.get("reviewer_met")
+        if reviewer_met == "pass":
+            locked_passed_lines.append(f"  {n}. [{text}]")
+        elif reviewer_met == "fail":
+            # Find failure reason from failure_details string or fall back to generic message
+            reason_hint = ""
+            for line in failure_details.splitlines():
+                if line.startswith(f"{n}. "):
+                    # Format: "N. [text]: reason" — extract after the colon
+                    colon_idx = line.find("]: ")
+                    if colon_idx != -1:
+                        reason_hint = line[colon_idx + 3:]
+                    break
+            must_fix_lines.append(f"  {n}. [{text}]{': ' + reason_hint if reason_hint else ''}")
+
+    locked_section = ""
+    if locked_passed_lines:
+        locked_section = (
+            "\n✅ LOCKED PASSED — do NOT re-verify these:\n"
+            + "\n".join(locked_passed_lines)
+        )
+
+    must_fix_section = ""
+    if must_fix_lines:
+        must_fix_section = (
+            "\n❌ MUST FIX — re-check after fixing:\n"
+            + "\n".join(must_fix_lines)
+        )
+
     reason = (
         f"AC review failed for card #{card_number} "
-        f"(cycle {review_cycles + 1}/{MAX_OUTER_CYCLES}). "
-        f"The following criteria failed:\n\n{failure_details}"
+        f"(cycle {review_cycles + 1}/{MAX_OUTER_CYCLES})."
+        f"{locked_section}"
+        f"{must_fix_section}\n\n"
+        f"Fix only the MUST FIX items. Do not touch code governing LOCKED PASSED criteria. "
+        f"After each MUST FIX is complete, run "
+        f"`kanban criteria check {card_number} <n> --session {session}` "
+        f"for that specific criterion."
     )
     if mov_error_diagnostics:
         reason += "\n" + "\n".join(mov_error_diagnostics)
+
     system_message = (
         f"The AC reviewer found issues with your work. "
-        f"Investigate each failed criterion, fix the underlying issue, verify your fix "
+        f"Focus only on unchecked criteria. LOCKED PASSED criteria are done — "
+        f"don't re-check, don't modify their governing code. "
+        f"Investigate each MUST FIX criterion, fix the underlying issue, verify your fix "
         f"is correct, and run `kanban criteria check {card_number} <n> --session {session}` "
         f"for each criterion you fix. The SubagentStop hook will call `kanban review` "
         f"automatically when you stop — do NOT call it yourself."

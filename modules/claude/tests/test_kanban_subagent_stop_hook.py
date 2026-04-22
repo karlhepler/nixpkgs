@@ -101,8 +101,8 @@ class TestAllProgrammaticCriteria:
             session="sess-a",
             status="doing",
             criteria=[
-                {"text": "File A exists", "mov_type": "programmatic", "mov_command": "test -f /tmp/a", "mov_timeout": "5"},
-                {"text": "File B exists", "mov_type": "programmatic", "mov_command": "test -f /tmp/b", "mov_timeout": "5"},
+                {"text": "File A exists", "mov_type": "programmatic", "mov_commands": [{"cmd": "test -f /tmp/a", "timeout": 5}]},
+                {"text": "File B exists", "mov_type": "programmatic", "mov_commands": [{"cmd": "test -f /tmp/b", "timeout": 5}]},
             ],
         )
 
@@ -153,7 +153,7 @@ class TestAllProgrammaticCriteria:
             session="sess-b",
             status="doing",
             criteria=[
-                {"text": "Check", "mov_type": "programmatic", "mov_command": "true", "mov_timeout": "5"},
+                {"text": "Check", "mov_type": "programmatic", "mov_commands": [{"cmd": "true", "timeout": 5}]},
             ],
         )
 
@@ -300,7 +300,7 @@ class TestUncheckedCriteriaBlocking:
             session="sess-e",
             status="doing",
             criteria=[
-                {"text": "Unchecked", "mov_type": "programmatic", "mov_command": "test -f /missing", "agent_met": "false"},
+                {"text": "Unchecked", "mov_type": "programmatic", "mov_commands": [{"cmd": "test -f /missing", "timeout": 5}], "agent_met": "false"},
             ],
         )
 
@@ -484,7 +484,7 @@ class TestProgrammaticMovFailure:
             session="sess-i",
             status="review",
             criteria=[
-                {"text": "Test passes", "mov_type": "programmatic", "mov_command": "false", "mov_timeout": "5"},
+                {"text": "Test passes", "mov_type": "programmatic", "mov_commands": [{"cmd": "false", "timeout": 5}]},
             ],
         )
         criteria_fail_calls = []
@@ -535,7 +535,7 @@ class TestProgrammaticMovFailure:
             session="sess-j",
             status="doing",
             criteria=[
-                {"text": "Test passes", "mov_type": "programmatic", "mov_command": "true", "mov_timeout": "5"},
+                {"text": "Test passes", "mov_type": "programmatic", "mov_commands": [{"cmd": "true", "timeout": 5}]},
             ],
         )
         criteria_pass_calls = []
@@ -580,6 +580,7 @@ class TestMovErrorExitCodes:
         (127, "command not found"),
         (126, "permission denied"),
         (124, "timeout"),
+        (2, "bash syntax error"),
     ])
     def test_mov_error_exit_code_emits_diagnostic(self, hook, tmp_transcript, exit_code, label):
         """MoV exit 127/126/124 → no criteria fail/pass call; diagnostic surfaced."""
@@ -593,7 +594,7 @@ class TestMovErrorExitCodes:
             status="doing",
             criteria=[
                 {"text": "Check", "mov_type": "programmatic",
-                 "mov_command": "nonexistent_command_xyz", "mov_timeout": "5"},
+                 "mov_commands": [{"cmd": "nonexistent_command_xyz", "timeout": 5}]},
             ],
         )
         criteria_calls = []
@@ -638,8 +639,7 @@ class TestMovErrorExitCodes:
             "index": 1,
             "text": "Check",
             "mov_type": "programmatic",
-            "mov_command": "nonexistent_xyz",
-            "mov_timeout": 5,
+            "mov_commands": [{"cmd": "nonexistent_xyz", "timeout": 5}],
             "agent_met": False,
             "reviewer_met": None,
         }
@@ -1404,3 +1404,176 @@ class TestExtractAgentOutput:
             result = hook.extract_agent_output(transcript)
 
         assert "Analysis complete. Files look good." in result
+
+
+# ---------------------------------------------------------------------------
+# Auto-uncheck before redo (F5 — MEDIUM)
+# ---------------------------------------------------------------------------
+
+class TestAutoUncheckBeforeRedo:
+    """kanban criteria uncheck must be called for each failing criterion BEFORE kanban redo."""
+
+    def test_auto_uncheck_called_before_redo(self, hook, tmp_transcript):
+        """When reviewer marks criteria fail, uncheck is called before redo — in that order.
+
+        If the auto-uncheck block at process_subagent_stop were deleted, this test must fail:
+        no uncheck call would appear in the ordered call log before redo.
+        """
+        entries = [make_card_header_entry("70", "sess-uncheck")]
+        transcript = tmp_transcript(entries)
+        payload = make_stop_payload(transcript_path=transcript)
+
+        # Card in review with one failing criterion
+        criteria_xml = KanbanMockResponses.card_xml(
+            card_number="70",
+            session="sess-uncheck",
+            status="review",
+            review_cycles=0,
+            criteria=[
+                {"text": "Must be fixed", "mov_type": "semantic", "reviewer_met": "fail"},
+            ],
+        )
+
+        # Track all kanban subcommand calls in order
+        ordered_kanban_calls = []
+
+        def fake_subprocess_run(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd[0] == "kanban":
+                sub = cmd[1] if len(cmd) > 1 else ""
+                ordered_kanban_calls.append(list(cmd))
+                if sub == "show":
+                    return KanbanMockResponses.success(stdout=criteria_xml)
+                if sub == "status":
+                    return KanbanMockResponses.success(stdout="review")
+                if sub == "done":
+                    return KanbanMockResponses.failure(returncode=1)
+                if sub in ("redo", "criteria"):
+                    return KanbanMockResponses.success()
+                return KanbanMockResponses.success()
+            if isinstance(cmd, list) and cmd[0] == "claude":
+                return KanbanMockResponses.success(stdout=json.dumps({"result": "reviewed", "usage": {}}))
+            return KanbanMockResponses.success()
+
+        with patch.object(hook, "read_ac_reviewer_agent_definition", return_value="sys"):
+            with patch.object(hook, "send_transition_notification"):
+                with patch("subprocess.run", side_effect=fake_subprocess_run):
+                    result = run_process_stop(hook, payload)
+
+        assert_block(result)
+
+        # Extract uncheck and redo positions from the ordered call log
+        uncheck_indices = [
+            i for i, c in enumerate(ordered_kanban_calls)
+            if len(c) > 2 and c[1] == "criteria" and c[2] == "uncheck"
+        ]
+        redo_indices = [
+            i for i, c in enumerate(ordered_kanban_calls)
+            if c[1] == "redo"
+        ]
+
+        assert len(uncheck_indices) >= 1, (
+            f"Expected at least one 'kanban criteria uncheck' call, but none found. "
+            f"Ordered calls: {ordered_kanban_calls}"
+        )
+        assert len(redo_indices) >= 1, (
+            f"Expected at least one 'kanban redo' call, but none found. "
+            f"Ordered calls: {ordered_kanban_calls}"
+        )
+
+        last_uncheck = max(uncheck_indices)
+        first_redo = min(redo_indices)
+        assert last_uncheck < first_redo, (
+            f"Expected all uncheck calls to precede redo, but last uncheck at index "
+            f"{last_uncheck} is not before first redo at index {first_redo}. "
+            f"Ordered calls: {ordered_kanban_calls}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# LOCKED PASSED / MUST FIX partition in block reason (F6 — MEDIUM)
+# ---------------------------------------------------------------------------
+
+class TestLockedPassedMustFixPartition:
+    """Block reason on redo must partition criteria into LOCKED PASSED and MUST FIX sections."""
+
+    def test_block_reason_contains_locked_passed_and_must_fix_sections(self, hook, tmp_transcript):
+        """Mixed-state card (one passing, one failing) → block reason includes both sections.
+
+        Asserts:
+        - LOCKED PASSED section lists the passing criterion
+        - MUST FIX section lists the failing criterion
+        - LOCKED PASSED section does NOT include the failing criterion
+        """
+        entries = [make_card_header_entry("71", "sess-partition")]
+        transcript = tmp_transcript(entries)
+        payload = make_stop_payload(transcript_path=transcript)
+
+        # Card in review: criterion 1 passed, criterion 2 failed
+        criteria_xml = KanbanMockResponses.card_xml(
+            card_number="71",
+            session="sess-partition",
+            status="review",
+            review_cycles=0,
+            criteria=[
+                {"text": "Already done criterion", "mov_type": "semantic", "reviewer_met": "pass"},
+                {"text": "Broken criterion", "mov_type": "semantic", "reviewer_met": "fail"},
+            ],
+        )
+
+        def fake_subprocess_run(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd[0] == "kanban":
+                sub = cmd[1] if len(cmd) > 1 else ""
+                if sub == "show":
+                    return KanbanMockResponses.success(stdout=criteria_xml)
+                if sub == "status":
+                    return KanbanMockResponses.success(stdout="review")
+                if sub == "done":
+                    return KanbanMockResponses.failure(returncode=1)
+                if sub in ("redo", "criteria"):
+                    return KanbanMockResponses.success()
+                return KanbanMockResponses.success()
+            if isinstance(cmd, list) and cmd[0] == "claude":
+                return KanbanMockResponses.success(stdout=json.dumps({"result": "reviewed", "usage": {}}))
+            return KanbanMockResponses.success()
+
+        with patch.object(hook, "read_ac_reviewer_agent_definition", return_value="sys"):
+            with patch.object(hook, "send_transition_notification"):
+                with patch("subprocess.run", side_effect=fake_subprocess_run):
+                    result = run_process_stop(hook, payload)
+
+        assert_block(result)
+        reason = result.get("reason", "")
+
+        assert "LOCKED PASSED" in reason, (
+            f"Expected 'LOCKED PASSED' section in block reason. Got:\n{reason}"
+        )
+        assert "MUST FIX" in reason, (
+            f"Expected 'MUST FIX' section in block reason. Got:\n{reason}"
+        )
+        assert "Already done criterion" in reason, (
+            f"Expected passing criterion text in LOCKED PASSED section. Got:\n{reason}"
+        )
+        assert "Broken criterion" in reason, (
+            f"Expected failing criterion text in MUST FIX section. Got:\n{reason}"
+        )
+
+        # Verify the partition is clean: passing criterion should NOT appear in MUST FIX,
+        # and failing criterion should NOT appear in LOCKED PASSED.
+        locked_section_start = reason.find("LOCKED PASSED")
+        must_fix_section_start = reason.find("MUST FIX")
+
+        # Passing criterion should appear before MUST FIX (i.e., in LOCKED PASSED section)
+        passing_text_pos = reason.find("Already done criterion")
+        assert passing_text_pos < must_fix_section_start, (
+            f"'Already done criterion' should appear in LOCKED PASSED (before MUST FIX), "
+            f"but found at position {passing_text_pos} vs MUST FIX at {must_fix_section_start}. "
+            f"Reason:\n{reason}"
+        )
+
+        # Failing criterion should appear after LOCKED PASSED (i.e., in MUST FIX section)
+        failing_text_pos = reason.find("Broken criterion")
+        assert failing_text_pos > locked_section_start, (
+            f"'Broken criterion' should appear after LOCKED PASSED section, "
+            f"but found at position {failing_text_pos} vs LOCKED PASSED at {locked_section_start}. "
+            f"Reason:\n{reason}"
+        )
