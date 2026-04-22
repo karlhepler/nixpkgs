@@ -413,7 +413,9 @@ Use `pinact run` to pin, `pinact run -u` to update, `pinact run --check` in CI t
 
 ## Scratchpad
 
-`.scratchpad/` (at the project root, sibling to `.kanban/`) is the canonical location for temporary working files. Not git-tracked, persists across sessions.
+`.scratchpad/` (at the project root, sibling to `.kanban/`) is the canonical location for temporary working files. Not git-tracked, persists across sessions. The directory is guaranteed to exist — the SessionStart hook creates it automatically.
+
+**Do NOT** run `ls .scratchpad` or `mkdir -p .scratchpad` before writing scratchpad files — just write.
 
 ---
 

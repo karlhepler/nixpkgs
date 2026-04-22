@@ -215,7 +215,7 @@ in {
       '';
     in shellApp {
       name = "claude-session-start-hook";
-      runtimeInputs = [ pkgs.python3 ];
+      runtimeInputs = [ pkgs.python3 pkgs.fd ];
       text = ''
         # System agents (e.g. ac-reviewer) set KANBAN_AGENT to signal they do not
         # need kanban session registration, perm setup, board state injection, or
@@ -228,6 +228,7 @@ in {
         # F5: capture session timestamp once for all warning messages
         session_ts=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
         mkdir -p .scratchpad
+        fd --type f --changed-before 90d . .scratchpad -X rm 2>/dev/null || true
         kanban_output=""
         if kanban_output=$(echo "$json" | kanban session-hook 2>/dev/null); then
           kanban_name=$(echo "$kanban_output" | python3 ${extractKanbanName})
