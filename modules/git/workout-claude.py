@@ -127,6 +127,11 @@ NOTES:
   - Prompts passed as positional argument: '<command> "prompt"'
   - Context automatically prepended to orient Claude to correct worktree
   - Invalid JSON or missing fields will cause immediate error
+  - workout is IDEMPOTENT: if the branch is already checked out in a worktree,
+    workout navigates to it rather than creating a new one. This is INTENDED
+    behavior in workout.bash. workout-claude emits a stderr warning when it
+    detects this case so the caller is aware they are attaching to a pre-existing
+    worktree rather than a fresh one.
 
 SEE ALSO:
   workout --help    Original worktree command
@@ -294,6 +299,68 @@ def check_prerequisites(command: str, check_git_cwd: bool = True) -> bool:
     return True
 
 
+def _check_worktree_preexists(full_branch_name: str, cwd: Optional[str]) -> bool:
+    """Check if the branch is already checked out in an existing worktree.
+
+    Queries `git worktree list` to determine whether the branch referenced by
+    full_branch_name is already present in a worktree before the `workout` call
+    runs. This is the pre-existence check used to emit the caller-visibility
+    warning in create_worktree_with_prompt.
+
+    Args:
+        full_branch_name: Fully-qualified branch name (e.g., 'karlhepler/fix-auth')
+        cwd: Working directory for git commands (None = current directory)
+
+    Returns:
+        True if the branch is already checked out in a worktree, False otherwise
+    """
+    result = run_command(["git", "worktree", "list", "--porcelain"], cwd=cwd)
+    if not result or result.returncode != 0:
+        return False
+    # Each worktree entry contains a 'branch refs/heads/<name>' line.
+    target_ref = f"branch refs/heads/{full_branch_name}"
+    return target_ref in result.stdout
+
+
+def _get_worktree_info(worktree_path: str) -> tuple[str, int]:
+    """Get branch name and commit count ahead of trunk for a worktree path.
+
+    Args:
+        worktree_path: Absolute path to the worktree
+
+    Returns:
+        Tuple of (branch_name, commits_ahead_of_trunk).
+        Returns ('unknown', 0) on any error.
+    """
+    branch_result = run_command(
+        ["git", "-C", worktree_path, "branch", "--show-current"]
+    )
+    branch_name = (
+        branch_result.stdout.strip()
+        if branch_result and branch_result.returncode == 0
+        else "unknown"
+    )
+
+    # Determine trunk branch (main or master)
+    trunk_result = run_command(
+        ["git", "-C", worktree_path, "symbolic-ref", "refs/remotes/origin/HEAD"]
+    )
+    if trunk_result and trunk_result.returncode == 0:
+        trunk = trunk_result.stdout.strip().replace("refs/remotes/origin/", "")
+    else:
+        trunk = "main"
+
+    count_result = run_command(
+        ["git", "-C", worktree_path, "rev-list", "--count", f"{trunk}..HEAD"]
+    )
+    try:
+        commits_ahead = int(count_result.stdout.strip()) if count_result and count_result.returncode == 0 else 0
+    except ValueError:
+        commits_ahead = 0
+
+    return branch_name, commits_ahead
+
+
 def create_worktree_with_prompt(worktree_def: Dict[str, str], command: str) -> bool:
     """Create worktree and launch Claude command with prompt
 
@@ -303,6 +370,11 @@ def create_worktree_with_prompt(worktree_def: Dict[str, str], command: str) -> b
 
     Returns:
         True if successful, False otherwise
+
+    If the worktree already exists (branch previously checked out), `workout` is
+    idempotent and navigates to it rather than creating it. This is the INTENDED
+    design of `workout.bash`, not a bug. This function emits a stderr warning in
+    that case for caller visibility.
     """
     branch_suffix, full_branch_name = normalize_branch_name(worktree_def["worktree"])
     prompt = worktree_def["prompt"]
@@ -323,6 +395,10 @@ def create_worktree_with_prompt(worktree_def: Dict[str, str], command: str) -> b
         print(f"  Using repo: {expanded}", file=sys.stderr)
 
     print(f"Processing: {branch_suffix}...", file=sys.stderr)
+
+    # Check pre-existence BEFORE calling workout so the caller knows whether
+    # this is a fresh worktree or an existing one being reused.
+    worktree_preexisted = _check_worktree_preexists(full_branch_name, cwd)
 
     # Call existing workout command to create/navigate to worktree
     result = run_command(["workout", full_branch_name], cwd=cwd)
@@ -347,6 +423,21 @@ def create_worktree_with_prompt(worktree_def: Dict[str, str], command: str) -> b
     if not worktree_path:
         print("  ⚠ Could not determine worktree path from workout output", file=sys.stderr)
         return False
+
+    if worktree_preexisted:
+        branch_name, commits_ahead = _get_worktree_info(worktree_path)
+        print(
+            f"  ⚠ Warning: attaching to EXISTING worktree at {worktree_path}",
+            file=sys.stderr,
+        )
+        print(
+            f"    branch: {branch_name}, {commits_ahead} commit(s) ahead of trunk",
+            file=sys.stderr,
+        )
+        print(
+            "    This is NOT a fresh worktree. Review git log and status before proceeding.",
+            file=sys.stderr,
+        )
 
     print(f"  ✓ Created worktree: {worktree_path}", file=sys.stderr)
 

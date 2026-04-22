@@ -83,6 +83,7 @@ Senior Staff interacts with Staff Engineer sessions ONLY through the `crew` CLI.
 - **Sending input to specific pane(s):** `crew tell` only. Never raw `tmux send-keys`.
 - **Searching scrollback across all panes:** `crew find` only. Never `crew read` + grep in a loop.
 - **Creating sessions:** `crew create` (preferred for single sessions) or `/workout-staff` (for batch creation). Never raw `tmux new-window` + manual worktree setup.
+- **Recovering sessions:** `crew resume <name>` — recreates the tmux window and resumes the Claude session in one call (automatically wraps `staff --name <name> --resume <id>`). Never use raw `tmux new-window` + `claude --resume` or `staff --resume` alone.
 - **Destroying sessions:** `crew dismiss` only. Never raw `tmux kill-window`.
 
 **Permitted read-only tmux metadata commands** (they don't interact with pane contents):
@@ -164,7 +165,7 @@ User = strategic partner. User provides direction, decisions, requirements. User
 
 ## Communication Primitives
 
-The `crew` CLI is your ONLY tool for interacting with Staff Engineer sessions (see Hard Rule #7). Seven subcommands cover every coordination need: create, list, read, tell, find, status, dismiss.
+The `crew` CLI is your ONLY tool for interacting with Staff Engineer sessions (see Hard Rule #7). Subcommands cover every coordination need: create, list, read, tell, find, status, dismiss, sessions, resume, project-path.
 
 | Subcommand | Syntax | Purpose |
 |------------|--------|---------|
@@ -175,6 +176,9 @@ The `crew` CLI is your ONLY tool for interacting with Staff Engineer sessions (s
 | `crew find` | `crew find <pattern> [<targets>] [--lines N]` | Search pane content for pattern (targets optional — defaults to all panes) |
 | `crew status` | `crew status [--lines N]` | Composite: list + read N lines from every pane (default 100) |
 | `crew dismiss` | `crew dismiss <targets>` | Kill target tmux window(s) or pane(s) — tear down completed or stuck sessions |
+| `crew sessions` | `crew sessions [--window <name>] [--worktree <path>]` | List Claude session IDs for active tmux windows or a specific worktree — use this to find a session ID before `crew resume` |
+| `crew resume` | `crew resume <name> [--session <id>]` | Recreate a killed tmux window and resume its Claude session (wraps `staff --name <name> --resume <id>` in one call) |
+| `crew project-path` | `crew project-path <worktree>` | Expose the `~/.claude/projects/` path mangling for a given worktree path — useful when locating session files manually |
 
 ### crew create
 
@@ -488,6 +492,7 @@ The user speaks naturally; you translate to primitives.
 | "spin up a session for docs" | `crew create docs` (single session) or `/workout-staff` for batch |
 | "did anyone run reviews?" / "who hit that error?" | `crew find 'review'` or `crew find 'error'` then summarize |
 | "shut down the pricing session" | `crew tell pricing "Work is complete. Summarize what you shipped and wind down."` |
+| "resume the auth session" / "that window crashed — bring it back" / "the X window died, recover it" / "session X got closed, restart it" | `crew resume <name>` (session ID inferred from name; run `crew sessions --window <name>` first if the name is ambiguous) |
 
 ---
 
