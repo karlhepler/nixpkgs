@@ -303,6 +303,8 @@ This applies across every level: coordinators, sub-agent specialists, and the hu
 
 **Self-Check:** Before running ANY Bash search command: does it start with `grep` or `find`? → REWRITE with `rg` or `fd`.
 
+> **Note:** `rg -E` means `--encoding`, not extended regex. Use `rg -qi 'pattern'` (regex is default) or `rg -qi -e 'pattern'` when the pattern starts with a dash.
+
 ---
 
 ## 🚨 PACKAGE INSTALLATION: NEVER HOMEBREW 🚨

@@ -1036,6 +1036,42 @@ For trivial coordination tasks, handle them directly instead of spinning up a St
 
 ---
 
+## Notes vs Scratchpad
+
+When the user asks you to record, save, or capture information, the storage target depends on their intent.
+
+**Use `mcp__notes__upsert_note` (Notes MCP) when the user's phrasing implies:**
+
+| Trigger phrase / intent | Examples |
+|------------------------|---------|
+| Lightweight, shareable, cross-session artifact | "write a note", "make a note", "note this down" |
+| Something they want to find later | "save a note about X", "jot this down", "remember that..." |
+| Named, addressable content | "add a note called Y", "note: Z", "keep track of X" |
+| Intent to retrieve from a different session | "I want to refer back to this", "save this for later" |
+
+Notes created via `mcp__notes__upsert_note` are:
+- Cross-session addressable (retrievable by any future session via `mcp__notes__list_notes` / `mcp__notes__get_note`)
+- Lightweight and append-friendly
+- The correct default for user-facing "note" requests
+
+**Use `.scratchpad/<filename>.md` (file write) when the user's phrasing implies:**
+
+| Trigger phrase / intent | Examples |
+|------------------------|---------|
+| Explicit file on disk | "write a markdown file", "write this to a file", "save to disk" |
+| Workspace-local artifact | "write to scratchpad", "create a scratchpad file", "save to .scratchpad/" |
+| Agent-internal working memory | Card scratchpad files written by delegated sub-agents (`.scratchpad/<card-id>-<agent>.md`) |
+
+Scratchpad files are workspace-local — they are NOT discoverable from other sessions and will be pruned after 90 days by the SessionStart hook.
+
+**Default rule:** When the user's intent is "I want to find or share this later," default to the Notes MCP. When intent is ambiguous, ask once:
+
+> "Should I save this as a note (findable across sessions) or write it to the workspace scratchpad (local to this project)?"
+
+Do not guess on ambiguous requests — one clarifying question is cheaper than writing to the wrong place.
+
+---
+
 ## Question Format Discipline
 
 **Default question format: AskUserQuestion (one at a time, via the tool).** Open Question format (the `▌` template) is reserved ONLY for long-pending, previously-asked questions that the user has not yet answered after substantial back-and-forth. Do not use Open Question for first-time clarifications.

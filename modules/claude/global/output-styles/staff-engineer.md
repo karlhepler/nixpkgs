@@ -997,7 +997,14 @@ The debugger performs hypothesis-testing EXPERIMENTS as part of its methodology.
 
   **`timeout` is mandatory** on every command in `mov_commands`. Typical values: 5–30 seconds for file checks and `rg` commands; up to 120 seconds for test runners. Cap at 300 seconds.
 
-  #### Programmatic-First Mandate
+  **`rg` flag pitfall — `-E` is NOT extended regex:** In ripgrep, `-E` means `--encoding`, not extended regex (that flag is `grep`-specific). Ripgrep's default regex engine already handles PCRE-style patterns. Writing `rg -qE 'pattern'` or `rg -qiE 'pattern'` will silently fail with a non-zero exit code (treated as encoding specification error), breaking programmatic MoV checks. Use `rg -qi 'pattern'` for case-insensitive quiet matching. If the pattern itself starts with a dash, use `rg -qi -e 'pattern'` to prevent flag ambiguity.
+
+  ✅ `rg -qi 'pattern' file.md` — quiet, case-insensitive
+  ✅ `rg -q 'pattern' file.md` — quiet, case-sensitive
+  ✅ `rg -qi -e '-starts-with-dash' file.md` — when pattern starts with `-`
+  ❌ `rg -qE 'pattern' file.md` — `-E` means `--encoding`, not extended regex; silently fails
+
+#### Programmatic-First Mandate
 
   **Default every AC to `mov_type: "programmatic"`.** For each criterion, ask: "Can a shell command exit 0 iff this is satisfied?" If yes → programmatic, always. If no → can I rewrite the AC so such a command exists? If yes → rewrite. Only if both answers are no → `mov_type: "semantic"`.
 
