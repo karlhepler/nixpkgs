@@ -85,13 +85,18 @@ def get_window_lookup(session: Optional[str] = None) -> Dict[str, Tuple[str, str
     return lookup
 
 
-def get_all_panes() -> List[Tuple[str, str, str, str, str]]:
-    """Return list of (session, window_index, window_name, pane_index, pane_current_command) tuples."""
-    result = subprocess.run(
-        ["tmux", "list-panes", "-a", "-F",
-         "#{session_name}|#{window_index}|#{window_name}|#{pane_index}|#{pane_current_command}"],
-        capture_output=True, text=True, check=False
-    )
+def get_all_panes(session: Optional[str] = None) -> List[Tuple[str, str, str, str, str]]:
+    """Return list of (session, window_index, window_name, pane_index, pane_current_command) tuples.
+
+    If session is provided, only panes in that session are returned.
+    """
+    if session is not None:
+        cmd = ["tmux", "list-panes", "-t", session, "-s", "-F",
+               "#{session_name}|#{window_index}|#{window_name}|#{pane_index}|#{pane_current_command}"]
+    else:
+        cmd = ["tmux", "list-panes", "-a", "-F",
+               "#{session_name}|#{window_index}|#{window_name}|#{pane_index}|#{pane_current_command}"]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
     panes = []
     for line in result.stdout.splitlines():
         parts = line.split("|", 4)
@@ -347,7 +352,10 @@ def emit_error(message: str, fmt: str, error_code: str = "", exit_code: int = 1)
 # ---------------------------------------------------------------------------
 
 def cmd_list(fmt: str, show_all: bool = False) -> None:
-    all_panes = get_all_panes()
+    # Confine to the current tmux session only (P6.1).
+    # Equivalent to: tmux list-windows -t <current-session> (not list-windows -a).
+    current_session = get_current_session()
+    all_panes = get_all_panes(session=current_session)
     # By default, filter to Claude panes only. Pass show_all=True to include everything.
     panes = all_panes if show_all else [
         p for p in all_panes if is_claude_pane(p[4])
@@ -651,8 +659,9 @@ def cmd_find(pattern: str, targets_str: Optional[str], lines: Optional[int], fmt
     if targets_str:
         resolved = resolve_targets(targets_str, fmt=fmt)
     else:
-        # all panes — window_id not needed here (no kill), use empty string placeholder
-        panes = get_all_panes()
+        # Confine to the current tmux session only (M-01 fix: mirrors cmd_list/cmd_status).
+        current_session = get_current_session()
+        panes = get_all_panes(session=current_session)
         resolved = []
         for session, window_index, window_name, pane_index, _pane_cmd in panes:
             tmux_target = f"{session}:{window_index}.{pane_index}"
@@ -695,7 +704,9 @@ def cmd_find(pattern: str, targets_str: Optional[str], lines: Optional[int], fmt
 # ---------------------------------------------------------------------------
 
 def cmd_status(lines: int, fmt: str, show_all: bool = False) -> None:
-    all_panes = get_all_panes()
+    # Confine to the current tmux session only (P6.1).
+    current_session = get_current_session()
+    all_panes = get_all_panes(session=current_session)
     # By default, filter to Claude panes only. Pass show_all=True to include everything.
     panes = all_panes if show_all else [
         p for p in all_panes if is_claude_pane(p[4])
@@ -790,14 +801,44 @@ def _tmux_window_exists(name: str) -> bool:
     return name in result.stdout.splitlines()
 
 
+def _wait_for_prompt_ready(window_name: str, timeout: float = 30.0, poll_interval: float = 0.5) -> bool:
+    """Poll the target window's pane 0 until it looks like Claude is ready for input.
+
+    Looks for a prompt indicator: the '>' character that Claude Code shows when
+    waiting for input, or the word 'claude' in the recent output.  Returns True
+    when a ready signal is detected; returns False on timeout.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        result = subprocess.run(
+            ["tmux", "capture-pane", "-p", "-t", f"{window_name}.0", "-S", "-20"],
+            capture_output=True, text=True, check=False
+        )
+        content = result.stdout
+        # Claude Code prompt indicators: the '>' prompt char, or the assistant
+        # turn marker (◆ or similar) that appears when Claude is ready.
+        if content and (
+            content.rstrip().endswith(">")
+            or "> " in content
+            or "claude" in content.lower()
+            or "◆" in content
+            or "✓" in content
+        ):
+            return True
+        time.sleep(poll_interval)
+    return False
+
+
 def cmd_create(
     name: str,
     repo: Optional[str],
     branch: Optional[str],
     base: Optional[str],
     fmt: str,
+    cmd_override: Optional[str] = None,
+    tell: Optional[str] = None,
 ) -> None:
-    """Create a git worktree, tmux window, and Claude session end-to-end.
+    """Create a git worktree, tmux window, and staff session end-to-end.
 
     Steps:
     1. Validate name (non-empty, filesystem-safe).
@@ -810,8 +851,9 @@ def cmd_create(
     8. Create branch if it doesn't exist.
     9. Create git worktree.
     10. Create tmux window.
-    11. Start Claude Code in the new window (with --name <name> for display).
-    12. Emit structured result.
+    11. Start staff (or --cmd override) in the new window (with --name <name> for display).
+    12. If --tell was given: wait for prompt-ready, then deliver the initial message.
+    13. Emit structured result.
     """
 
     # --- 1. Validate name ---
@@ -949,45 +991,73 @@ def cmd_create(
             exit_code=1,
         )
 
-    # --- 11. Start Claude Code in the new window ---
-    # claude supports -n/--name for display name — this sets the session display
-    # name shown in the prompt box, /resume picker, and terminal title.
-    # Note: --session-id requires a valid UUID; -n/--name is the correct flag for
-    # human-readable session naming. The Claude CLI does NOT support arbitrary
-    # string session IDs — it assigns its own UUID internally. We use -n <name>
-    # so the display name matches the tmux window name.
-    # name is pre-validated by _SAFE_NAME_RE (alphanumeric/hyphens/underscores only) —
-    # no shell quoting needed. If that regex ever relaxes, quote name here.
-    claude_cmd = f"claude --name {name}"
+    # --- 11. Start staff (or --cmd override) in the new window ---
+    # Default command is `staff --name <name>` (spawns a staff engineer session).
+    # The `--cmd` flag overrides the default; callers that need plain `claude` can
+    # pass `--cmd claude`.
+    #
+    # Both `staff` and `claude` support -n/--name for display name — this sets the
+    # session display name shown in the prompt box, /resume picker, and terminal
+    # title. name is pre-validated by _SAFE_NAME_RE (alphanumeric/hyphens/underscores
+    # only) — no shell quoting needed.
+    base_cmd = cmd_override if cmd_override is not None else "staff"
+    spawn_cmd = f"{base_cmd} --name {name}"
     subprocess.run(
-        ["tmux", "send-keys", "-t", name, claude_cmd, "Enter"],
+        ["tmux", "send-keys", "-t", name, spawn_cmd, "Enter"],
         capture_output=True, check=False
     )
 
-    # --- 12. Emit structured result ---
+    # --- 12. Deliver initial message (--tell) ---
+    # If --tell was provided, wait for the spawned process to reach a prompt-ready
+    # state, then send the message.  Failure to detect prompt-ready within the
+    # timeout is non-fatal — we still deliver the message on a best-effort basis
+    # (the pane may have started but the prompt indicator may not have been seen).
+    if tell is not None:
+        _wait_for_prompt_ready(name)
+        subprocess.run(
+            ["tmux", "send-keys", "-t", f"{name}.0", tell],
+            check=False
+        )
+        time.sleep(0.15)
+        subprocess.run(
+            ["tmux", "send-keys", "-t", f"{name}.0", "Enter"],
+            check=False
+        )
+
+    # --- 13. Emit structured result ---
+    told = tell is not None
     if fmt == "xml":
-        elem = ET.Element(
-            "created",
+        attrs: Dict[str, str] = dict(
             window=name,
             pane="0",
             worktree=worktree_path,
             branch=branch,
             repo=repo,
             session_name=name,
+            command=base_cmd,
         )
+        if told:
+            attrs["told"] = "true"
+        elem = ET.Element("created", **attrs)
         print(xml_to_string(elem))
     elif fmt == "json":
-        print(json.dumps({
+        obj: Dict = {
             "window": name,
             "pane": "0",
             "worktree": worktree_path,
             "branch": branch,
             "repo": repo,
             "session_name": name,
-        }, indent=2))
+            "command": base_cmd,
+        }
+        if told:
+            obj["told"] = True
+        print(json.dumps(obj, indent=2))
     else:
         print(f"created: window={name} pane=0 worktree={worktree_path} branch={branch}")
-        print(f"  claude started with --name {name}")
+        print(f"  {base_cmd} started with --name {name}")
+        if told:
+            print(f"  initial message delivered: {tell!r}")
         print(f"  switch to window: tmux select-window -t {name}")
 
 
@@ -1027,7 +1097,20 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     # list
-    p_list = sub.add_parser("list", help="Enumerate tmux windows and panes (Claude panes only by default)")
+    p_list = sub.add_parser(
+        "list",
+        help="Enumerate tmux windows and panes in the current session (Claude panes only by default)",
+        description=(
+            "List tmux windows and panes confined to the CURRENT tmux session.\n\n"
+            "Output format: defaults to XML (--format xml). No flag is required for\n"
+            "structured AI-coordinator output — XML is the default. Example:\n"
+            "  crew list              # XML output for current session\n"
+            "  crew list --format human   # human-readable\n"
+            "  crew list --all        # include non-Claude panes\n\n"
+            "Note: crew list never returns windows from other tmux sessions."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     p_list.add_argument(
         "--all", "-a",
         action="store_true",
@@ -1042,11 +1125,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Send message + Enter to target pane(s)",
         description=(
             "Send input to one or more target pane(s).\n\n"
+            "Pane 0 is the default — omit the pane suffix for normal use:\n"
+            "  crew tell platform-bootstrap \"Your initial brief here.\"\n"
+            "Use the dot-suffix only for exceptional multi-pane windows:\n"
+            "  crew tell platform-bootstrap.1 \"message to pane 1\"\n\n"
             "Default (no --keys): message is sent as literal text followed by Enter.\n"
             "With --keys: message is interpreted as space-separated tmux key tokens\n"
             "passed directly to tmux send-keys (no Enter appended automatically).\n\n"
             "Key token examples:\n"
-            "  crew tell pricing.0 --keys \"Enter\"            # bare Enter\n"
+            "  crew tell pricing --keys \"Enter\"            # bare Enter to pane 0\n"
             "  crew tell pricing.0 --keys \"Down Down Enter\"  # arrow-nav then confirm\n"
             "  crew tell pricing.0 --keys \"Escape\"           # cancel a dialog\n"
             "  crew tell pricing.0 --keys \"C-c\"              # interrupt (Ctrl-C)\n"
@@ -1058,7 +1145,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    p_tell.add_argument("targets", help="Comma-separated targets (window[.pane])")
+    p_tell.add_argument("targets", help="Comma-separated targets (window[.pane]); pane defaults to 0")
     p_tell.add_argument("message", help="Message to send (text) or space-separated key tokens (with --keys)")
     p_tell.add_argument(
         "--keys",
@@ -1116,7 +1203,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     # create
-    p_create = sub.add_parser("create", description="End-to-end staff session creation: create a git worktree, open a tmux window, and start Claude Code in that window — all in one command.", help="Create worktree + tmux window + Claude session (staff session end-to-end)")
+    p_create = sub.add_parser(
+        "create",
+        description=(
+            "End-to-end staff session creation: create a git worktree, open a tmux "
+            "window, and start a staff engineer session in that window — all in one command.\n\n"
+            "Default spawn command: `staff --name <name>` (staff engineer session).\n"
+            "Override with --cmd if you need a different process (e.g. --cmd claude).\n\n"
+            "Optionally deliver an initial brief in the same call with --tell:\n"
+            "  crew create platform-bootstrap --tell \"Build the auth service...\"\n"
+            "This replaces the two-step `crew create foo; crew tell foo \"...\"`.\n\n"
+            "Pane targeting: all windows start with a single pane (index 0). Use\n"
+            "`crew tell <window> <msg>` to reach it — the .0 suffix is optional."
+        ),
+        help="Create worktree + tmux window + staff session (end-to-end)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     p_create.add_argument("name", help="Session name: used for the tmux window, worktree directory, and branch name")
     p_create.add_argument(
         "--repo",
@@ -1132,6 +1234,27 @@ def build_parser() -> argparse.ArgumentParser:
         "--base",
         default=None,
         help="Base branch to create the new branch from (default: current branch of the repo)",
+    )
+    p_create.add_argument(
+        "--cmd",
+        default=None,
+        dest="cmd_override",
+        help=(
+            "Command to spawn in the new window (default: 'staff'). "
+            "The command is invoked as '<cmd> --name <name>'. "
+            "Example: --cmd claude  (spawn plain Claude instead of staff engineer)"
+        ),
+    )
+    p_create.add_argument(
+        "--tell",
+        default=None,
+        dest="tell",
+        metavar="MESSAGE",
+        help=(
+            "Initial message to send once the session is ready. Waits for a prompt-ready "
+            "signal then delivers the message automatically. Replaces the two-call pattern "
+            "`crew create foo && crew tell foo '...'`."
+        ),
     )
 
     # status
@@ -1190,7 +1313,8 @@ def main() -> None:
         elif args.command == "status":
             cmd_status(args.lines, fmt, show_all=args.show_all)
         elif args.command == "create":
-            cmd_create(args.name, args.repo, args.branch, args.base, fmt)
+            cmd_create(args.name, args.repo, args.branch, args.base, fmt,
+                       cmd_override=args.cmd_override, tell=args.tell)
         else:
             emit_error(f"unknown subcommand: {args.command}", fmt, error_code="UNKNOWN_SUBCOMMAND", exit_code=2)
     except KeyboardInterrupt:
