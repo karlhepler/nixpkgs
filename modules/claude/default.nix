@@ -141,6 +141,9 @@ let
     flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
   } (builtins.readFile ./kanban-subagent-stop-hook.py);
 
+  # Bash cd-compound PreToolUse hook — blocks `cd <dir> && cmd` / `cd <dir>; cmd` patterns
+  bashCdCompoundHookScript = pkgs.writers.writePython3Bin "bash-cd-compound-hook" { flakeIgnore = [ "E265" "E501" "W503" "W504" ]; } (builtins.readFile ./bash-cd-compound-hook.py); # Ignore shebang, line length, line breaks
+
   # Claude Inspect — CLI for introspecting Claude session metrics
   claudeInspectScript = pkgs.writers.writePython3Bin "claude-inspect" {
     flakeIgnore = [ "E226" "E265" "E501" "F541" "W503" "W504" ];
@@ -401,6 +404,14 @@ $orphan_warning"
         description = "SubagentStop hook that runs dual-loop AC review via haiku before allowing agent stop";
         mainProgram = "kanban-subagent-stop-hook";
         homepage = "${builtins.toString ./.}/kanban-subagent-stop-hook.py";
+      };
+    };
+
+    bash-cd-compound-hook = bashCdCompoundHookScript // {
+      meta = {
+        description = "PreToolUse(Bash) hook that blocks cd-compound anti-pattern (cd <dir> && cmd / cd <dir>; cmd)";
+        mainProgram = "bash-cd-compound-hook";
+        homepage = "${builtins.toString ./.}/bash-cd-compound-hook.py";
       };
     };
 
@@ -1027,6 +1038,10 @@ $orphan_warning"
             {
               matcher = "Bash";
               hooks = [
+                {
+                  type = "command";
+                  command = "${shellapps.bash-cd-compound-hook}/bin/bash-cd-compound-hook";
+                }
                 {
                   type = "command";
                   command = "${shellapps.senior-staff-staleness-hook}/bin/senior-staff-staleness-hook";

@@ -80,8 +80,7 @@ When researching, investigating, or looking up information, ALWAYS follow this p
    - Query Context7 BEFORE implementing to get authoritative, up-to-date documentation from source
    - Tools: `mcp__context7__resolve-library-id` (find library), then `mcp__context7__query-docs` (query documentation)
    - **🚨 WARNING**: External docs may suggest Homebrew - ALWAYS translate to Nix
-
-**🚨 BACKGROUND SUB-AGENTS:** Cannot access MCP servers directly. Staff engineer must pre-fetch Context7 results and pass via card content or `.scratchpad/` files.
+   - **🚨 BACKGROUND SUB-AGENTS:** Cannot access MCP servers directly. Staff engineer must pre-fetch Context7 results and pass via card content or `.scratchpad/` files.
 
 4. **Web search** - ONLY when above sources don't have what you need
    - Triangulate with multiple sources; verify credibility and recency
@@ -262,7 +261,7 @@ This matches 12-factor app principles: configuration lives in the environment, n
 
 **The default posture is doubt, not confidence.** To assume is to make an ass out of you and me. Don't lean on assumptions — verify before claiming.
 
-- **Before stating any technical claim, ask:** Have I actually verified this — run the command, read the file, checked the data? If no: say the words "I haven't verified this" or "I'm not 100% sure — let me double-check" and then do quick research. A quick web search, a one-line grep, a file read, a CLI invocation — even a 30-second check beats confident wrongness.
+- **Before stating any technical claim, ask:** Have I actually verified this — run the command, read the file, checked the data? If no: say the words "I haven't verified this" or "I'm not 100% sure — let me double-check" and then do quick research. A quick web search, a one-line rg query, a file read, a CLI invocation — even a 30-second check beats confident wrongness.
 - **Be self-skeptical.** The skepticism isn't about rejecting ideas — it's about being suspicious of your own confidence. The more fluently you can explain something, the more dangerous it is if unverified (fluency mimics expertise).
 - **Cite sources.** Every technical claim should be backed by a specific citation: `file:line`, command output, web URL, doc page. "I think X typically works this way" is not a source. Actual evidence is.
 - **Uncertainty is not a hedge — it's intellectual honesty.** Saying "I don't know — let me find out" is more useful than a plausible-sounding guess. Do not frame uncertainty apologetically.
@@ -272,6 +271,8 @@ This applies across every level: coordinators, sub-agent specialists, and the hu
 
 ---
 
+## Bash/Shell Guidelines
+
 **Bash/Shell Conventions:**
 - Environment variables: ALL_CAPS_WITH_UNDERSCORES (e.g., `KANBAN_SESSION`, `CONTEXT7_API_KEY`)
 - Script-local variables: lowercase_with_underscores (e.g., `card_number`, `output_file`)
@@ -280,15 +281,14 @@ This applies across every level: coordinators, sub-agent specialists, and the hu
 **Bash Tool Usage — One Command Per Call:**
 - **Do NOT chain multiple logical operations with `&&` in a single Bash tool call.** Each distinct operation must be its own Bash call.
 - ❌ `cd /path && npm run lint && npm run test`
-- ✅ Three separate Bash calls: `cd /path`, `npm run lint`, `npm run test`
+- ✅ Three separate Bash calls: `npm run lint`, `npm run test`, `npm run build` (ensure pwd is correct before the Bash calls, or pass paths via `--prefix`)
 - **Exception:** Chain only when all commands form a single atomic git intent (stage + commit) or are purely informational.
+- **Never issue a standalone `cd <dir>` call before another command** — whether chained (`cd /path && cmd`) or as a separate preceding Bash call (`cd /path` then `cmd`). Shell state persists between Bash tool calls, so git, ls, rg, etc. already operate in the current working directory. If you need a different directory, pass it as an argument or use a subshell (`cd /path && cmd`).
 
 **Save Output, Don't Re-Run:**
 - When you plan to analyze the output of a command multiple times, **run it once and save to a file**, then analyze that file. Use a unique filename (e.g., card number) to avoid collisions with parallel agents.
 - ❌ `npm test | rg 'FAIL'` → `npm test | rg 'Error'` → `npm test | rg 'snapshot'`
 - ✅ `npm test > .scratchpad/test-output-42.txt 2>&1` → then `rg 'FAIL' .scratchpad/test-output-42.txt`, etc.
-
-**Mindset:** Always Be Curious - investigate thoroughly, ask why, verify claims, cite sources
 
 ---
 
@@ -381,7 +381,7 @@ Use `pinact run` to pin, `pinact run -u` to update, `pinact run --check` in CI t
 
 **Sub-agent:** A background agent spawned via Task tool to handle delegated work
 
-**Skill:** A specialized capability loaded via Skill tool (markdown file in `~/.claude/commands/`)
+**Skill:** A specialized capability invoked via Skill tool. Exception/workflow skills live at `skills/<name>/SKILL.md`; slash-commands live at `~/.claude/commands/`.
 
 **Session ID:** Friendly name identifier for Claude session (e.g., `clear-vale`, `swift-falcon`, `smart-bell`). Automatically injected at startup. Use with `--session` flag on kanban commands.
 
@@ -423,9 +423,7 @@ Use `pinact run` to pin, `pinact run -u` to update, `pinact run --check` in CI t
 
 **Delegatable team members** are defined in `agents/<name>.md` — the source of truth for sub-agents Claude Code can delegate work to. Each agent definition is self-contained: full skill content in the file body, agent metadata in the frontmatter.
 
-**Adding a team member:**
-- Create `agents/<name>.md` with full skill content and agent frontmatter
-- Deploy via `hms` to make it available in `~/.claude/agents/`
+See project CLAUDE.md § Team Member Terminology for the full add/update/remove workflow with Nix source paths.
 
 **Exception/workflow skills** run via Skill tool directly — not delegated as background sub-agents:
 - learn, project-planner — interactive exception skills; live at `skills/<name>/SKILL.md`
