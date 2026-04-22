@@ -169,8 +169,14 @@ class TestCmdStatusSessionScoping:
 class TestCmdCreate:
     """Test crew create behavior: default staff command, --tell support."""
 
-    def _setup_create_mocks(self, mock_run, worktree_path_exists=False):
-        """Configure mock_run side_effect for a typical successful create flow."""
+    def _setup_create_mocks(self, mock_run, worktree_path_exists=False, fetch_should_fail=False):
+        """Configure mock_run side_effect for a typical successful create flow.
+
+        Args:
+            mock_run: The patched subprocess.run mock to configure.
+            worktree_path_exists: If True, simulate the worktree path already existing.
+            fetch_should_fail: If True, simulate git fetch origin failing (returncode=1).
+        """
         def side_effect(cmd, **kwargs):
             cmd_list = cmd if isinstance(cmd, list) else [cmd]
             joined = " ".join(str(c) for c in cmd_list)
@@ -184,6 +190,16 @@ class TestCmdCreate:
                 return fake_run_result(stdout="/some/repo\n")
             if "symbolic-ref" in joined:
                 return fake_run_result(stdout="main\n")
+            if "rev-parse" in joined and "upstream" in joined:
+                # Default: branch tracks origin
+                return fake_run_result(stdout="origin/main\n")
+            if "rev-parse" in joined and "--verify" in joined and "refs/heads" not in joined:
+                # Base existence check: base ref resolves
+                return fake_run_result(stdout="abc1234\n")
+            if "fetch" in joined and "origin" in joined:
+                if fetch_should_fail:
+                    return fake_run_result(returncode=1, stdout="")
+                return fake_run_result()
             if "rev-parse" in joined and "refs/heads" in joined:
                 return fake_run_result(returncode=1)  # branch doesn't exist
             if "branch" in joined and "main" in joined:
@@ -199,11 +215,11 @@ class TestCmdCreate:
             return fake_run_result()
         mock_run.side_effect = side_effect
 
-    def _run_create(self, mock_run, **kwargs):
+    def _run_create(self, mock_run, fetch_should_fail=False, **kwargs):
         """Run cmd_create with standard mocks for filesystem checks."""
         with patch("os.path.isdir", return_value=True):
             with patch("os.path.exists", return_value=False):
-                self._setup_create_mocks(mock_run)
+                self._setup_create_mocks(mock_run, fetch_should_fail=fetch_should_fail)
                 cmd_create(**kwargs)
 
     def test_default_command_is_staff(self, capsys, tmp_path):
@@ -337,6 +353,136 @@ class TestCmdCreate:
                 )
         out = capsys.readouterr().out
         assert 'told="true"' in out
+
+    def test_fetch_called_when_base_tracks_origin(self, capsys, tmp_path):
+        """When base tracks origin, git fetch origin <base> is called before worktree add."""
+        with patch("subprocess.run") as mock_run:
+            self._run_create(
+                mock_run,
+                name="test-worker",
+                repo="/some/repo",
+                branch="test-worker",
+                base="main",
+                fmt="xml",
+            )
+
+            all_cmds = [" ".join(str(x) for x in c[0][0]) for c in mock_run.call_args_list]
+            fetch_cmds = [c for c in all_cmds if "fetch" in c and "origin" in c and "main" in c]
+            assert len(fetch_cmds) == 1, f"Expected exactly 1 fetch call, got: {fetch_cmds}"
+
+            # Fetch must occur BEFORE worktree add
+            fetch_idx = next(i for i, c in enumerate(all_cmds) if "fetch" in c and "origin" in c)
+            worktree_idx = next(i for i, c in enumerate(all_cmds) if "worktree" in c and "add" in c)
+            assert fetch_idx < worktree_idx, "fetch must happen before worktree add"
+
+    def test_fetch_failure_falls_back_to_local_ref(self, capsys, tmp_path):
+        """When fetch fails, cmd_create continues with local ref (non-fatal)."""
+        with patch("subprocess.run") as mock_run:
+            self._run_create(
+                mock_run,
+                name="test-worker",
+                repo="/some/repo",
+                branch="test-worker",
+                base="main",
+                fmt="xml",
+                fetch_should_fail=True,
+            )
+
+        err = capsys.readouterr().err
+        assert "warning: fetch origin/main failed" in err
+        # Worktree add must still have been called (fallback succeeded)
+        all_cmds = [" ".join(str(x) for x in c[0][0]) for c in mock_run.call_args_list]
+        worktree_cmds = [c for c in all_cmds if "worktree" in c and "add" in c]
+        assert len(worktree_cmds) == 1, "worktree add must still be called after fetch failure"
+
+    def test_local_only_base_skips_fetch(self, capsys, tmp_path):
+        """When base has no upstream tracking ref, fetch is skipped entirely."""
+        def side_effect_no_upstream(cmd, **kwargs):
+            cmd_list = cmd if isinstance(cmd, list) else [cmd]
+            joined = " ".join(str(c) for c in cmd_list)
+            if "fetch" in joined:
+                raise AssertionError("fetch must NOT be called for local-only base")
+            if "display-message" in joined and "session_name" in joined:
+                return fake_run_result(stdout="tidy-crown\n")
+            if "display-message" in joined and "window_id" in joined:
+                return fake_run_result(stdout="@1\n")
+            if "list-windows" in joined:
+                return fake_run_result(stdout="")
+            if "rev-parse" in joined and "show-toplevel" in joined:
+                return fake_run_result(stdout="/some/repo\n")
+            if "symbolic-ref" in joined:
+                return fake_run_result(stdout="local-feature\n")
+            if "rev-parse" in joined and "upstream" in joined:
+                # No upstream tracking ref
+                return fake_run_result(returncode=128)
+            if "rev-parse" in joined and "--verify" in joined and "refs/heads" not in joined:
+                return fake_run_result(stdout="abc1234\n")
+            if "rev-parse" in joined and "refs/heads" in joined:
+                return fake_run_result(returncode=1)
+            if "branch" in joined and "local-feature" in joined:
+                return fake_run_result()
+            if "worktree" in joined and "add" in joined:
+                return fake_run_result()
+            if "new-window" in joined:
+                return fake_run_result()
+            if "send-keys" in joined:
+                return fake_run_result()
+            if "capture-pane" in joined:
+                return fake_run_result(stdout="> \n")
+            return fake_run_result()
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = side_effect_no_upstream
+            with patch("os.path.isdir", return_value=True):
+                with patch("os.path.exists", return_value=False):
+                    cmd_create(
+                        name="test-worker",
+                        repo="/some/repo",
+                        branch="test-worker",
+                        base="local-feature",
+                        fmt="xml",
+                    )
+
+        err = capsys.readouterr().err
+        assert "local-only" in err
+
+    def test_nonexistent_base_errors_cleanly(self, capsys, tmp_path):
+        """When base doesn't exist locally or remotely, emit BRANCH_NOT_FOUND."""
+        def side_effect_no_base(cmd, **kwargs):
+            cmd_list = cmd if isinstance(cmd, list) else [cmd]
+            joined = " ".join(str(c) for c in cmd_list)
+            if "display-message" in joined and "session_name" in joined:
+                return fake_run_result(stdout="tidy-crown\n")
+            if "display-message" in joined and "window_id" in joined:
+                return fake_run_result(stdout="@1\n")
+            if "list-windows" in joined:
+                return fake_run_result(stdout="")
+            if "rev-parse" in joined and "show-toplevel" in joined:
+                return fake_run_result(stdout="/some/repo\n")
+            if "symbolic-ref" in joined:
+                return fake_run_result(stdout="main\n")
+            if "rev-parse" in joined and "--verify" in joined and "refs/heads" not in joined:
+                # Base existence check fails — branch doesn't exist
+                return fake_run_result(returncode=128)
+            return fake_run_result()
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = side_effect_no_base
+            with patch("os.path.isdir", return_value=True):
+                with patch("os.path.exists", return_value=False):
+                    with pytest.raises(SystemExit) as exc_info:
+                        cmd_create(
+                            name="test-worker",
+                            repo="/some/repo",
+                            branch="test-worker",
+                            base="does-not-exist",
+                            fmt="xml",
+                        )
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        output = captured.out + captured.err
+        assert "BRANCH_NOT_FOUND" in output or "does not exist" in output
 
 
 # ---------------------------------------------------------------------------

@@ -1302,6 +1302,49 @@ def _git_has_uncommitted_changes(repo: str) -> bool:
     return result.returncode == 0 and bool(result.stdout.strip())
 
 
+def _fetch_base_if_tracked(repo: str, base: str) -> str:
+    """Fetch latest origin/<base> if base tracks a remote.
+
+    Returns the effective base ref to use for branch creation:
+    - If tracks origin and fetch succeeded → 'origin/<base>'
+    - If tracks origin but fetch failed    → '<base>' (local fallback)
+    - If local-only                        → '<base>'
+
+    Note: assumes a single remote named 'origin' (standard git convention).
+    Multi-remote setups are not supported by this helper; extend with explicit
+    remote selection if needed.
+    """
+    upstream_result = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", f"{base}@{{upstream}}"],
+        capture_output=True, text=True, check=False, cwd=repo
+    )
+
+    if upstream_result.returncode != 0:
+        # Local-only: no upstream tracking ref
+        print(
+            f"Base '{base}' is local-only, using local ref",
+            file=sys.stderr,
+        )
+        return base
+
+    # Branch tracks a remote — attempt fetch
+    print(f"Fetching latest origin/{base}...", file=sys.stderr)
+    fetch_result = subprocess.run(
+        ["git", "fetch", "origin", base],
+        capture_output=True, text=True, check=False, cwd=repo
+    )
+
+    if fetch_result.returncode != 0:
+        print(
+            f"warning: fetch origin/{base} failed (using local ref): "
+            f"{fetch_result.stderr.strip()}",
+            file=sys.stderr,
+        )
+        return base  # fallback: use local branch ref
+
+    return f"origin/{base}"  # use remote-tracking ref for branch creation
+
+
 def _tmux_window_exists(name: str) -> bool:
     """Return True if a tmux window named exactly `name` exists in any session."""
     result = subprocess.run(
@@ -1483,6 +1526,22 @@ def cmd_create(
                     exit_code=1,
                 )
 
+        # --- 5a. Verify base exists (local or remote) ---
+        base_ref_result = subprocess.run(
+            ["git", "rev-parse", "--verify", base],
+            capture_output=True, text=True, check=False, cwd=repo
+        )
+        if base_ref_result.returncode != 0:
+            emit_error(
+                f"base branch '{base}' does not exist locally or as a remote-tracking ref",
+                fmt,
+                error_code="BRANCH_NOT_FOUND",
+                exit_code=1,
+            )
+
+        # --- 5b. Fetch base from origin if tracked (before worktree creation) ---
+        effective_base = _fetch_base_if_tracked(repo, base)
+
         # --- 6. Expand worktree path ---
         worktree_path = os.path.expanduser(f"~/worktrees/{name}")
 
@@ -1500,7 +1559,7 @@ def cmd_create(
         branch_was_new = False
         if not _branch_exists(repo, branch):
             result = subprocess.run(
-                ["git", "branch", branch, base],
+                ["git", "branch", branch, effective_base],
                 capture_output=True, text=True, check=False, cwd=repo
             )
             if result.returncode != 0:
