@@ -18,6 +18,9 @@ in {
     # Claudit module (on-demand metrics viewer + claudit shellapp + metrics hook)
     ./modules/claudit
 
+    # Agent browser (Vercel Labs AI web agent)
+    ./modules/agent-browser
+
     # Simple modules (no scripts)
     ./modules/alacritty.nix  # Alacritty terminal emulator
     ./modules/direnv.nix     # Direnv configuration + activation

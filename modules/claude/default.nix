@@ -261,11 +261,9 @@ in {
 [$session_ts] Warning: perm session-hook failed (exit $perm_exit). Permission gates may not work in this session."
         fi
         output="$kanban_output"
-        if [ -f ~/.claude/TOOLS.md ]; then
-          tools_md=$(cat ~/.claude/TOOLS.md)
-          output="$output
-$tools_md"
-        fi
+        output="$output
+
+Custom commands: reference ~/.claude/TOOLS.md on demand (read the file if you need the full catalog — it is NOT injected into context)."
         kanban_xml=$(kanban list --output-style=xml 2>/dev/null || true)
         if [ -n "$kanban_xml" ]; then
           orphan_warning=$(echo "$kanban_xml" | python3 ${findOrphanedCards} 2>/dev/null || true)
@@ -929,6 +927,12 @@ $orphan_warning"
           block = [
             # AWS ECR credential commands (returns 12-hour auth tokens)
             "Bash(aws ecr get-login-password *)"
+
+            # agent-browser — prevent policy-violating subcommands
+            # (skill's allowed-tools grants everything; these deny-overrides are required)
+            "Bash(agent-browser eval*)"
+            "Bash(agent-browser install*)"
+            "Bash(agent-browser upgrade*)"
 
             "Bash(kubectl apply *)"
             "Bash(kubectl create *)"
