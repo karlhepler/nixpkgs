@@ -412,6 +412,10 @@ $orphan_warning"
       flakeIgnore = [ "E265" "E501" "W503" "W504" ];
     } (builtins.readFile ./senior-staff-staleness-hook.py);
 
+    senior-staff-cron-hook = pkgs.writers.writePython3Bin "senior-staff-cron-hook" {
+      flakeIgnore = [ "E265" "E501" "W503" "W504" ];
+    } (builtins.readFile ./senior-staff-cron-hook.py);
+
   };
 
   home.activation = {
@@ -1057,10 +1061,17 @@ $orphan_warning"
             }
           ];
           SessionStart = [{
-            hooks = [{
-              type = "command";
-              command = "${shellapps.claude-session-start-hook}/bin/claude-session-start-hook";
-            }];
+            hooks = [
+              {
+                type = "command";
+                command = "${shellapps.claude-session-start-hook}/bin/claude-session-start-hook";
+              }
+              {
+                type = "command";
+                timeout = 10000;
+                command = "${shellapps.senior-staff-cron-hook}/bin/senior-staff-cron-hook";
+              }
+            ];
           }];
           PostCompact = [{
             hooks = [{
