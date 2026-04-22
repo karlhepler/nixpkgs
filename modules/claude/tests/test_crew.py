@@ -23,6 +23,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import crew as crew_module
 from crew import (
+    _looks_like_message_not_target,
     _resolve_targets_with_lookup,
     build_parser,
     cmd_create,
@@ -474,3 +475,29 @@ class TestIsClaudePaneRegression:
     ])
     def test_is_claude_pane(self, cmd, expected):
         assert is_claude_pane(cmd) == expected
+
+
+# ---------------------------------------------------------------------------
+# Legacy arg-order heuristic — _looks_like_message_not_target
+# ---------------------------------------------------------------------------
+
+class TestLegacyArgOrder:
+    def test_multi_word_msg_triggers_legacy_error(self):
+        """Multi-word phrase (space between words) is detected as a message."""
+        assert _looks_like_message_not_target("Deploy the service") is True
+
+    def test_single_space_msg_triggers_legacy_error(self):
+        """Two-word phrase with a single space triggers detection (widened heuristic)."""
+        assert _looks_like_message_not_target("fix it") is True
+
+    def test_non_ascii_triggers_legacy_error(self):
+        """Non-ASCII characters (e.g. emoji) trigger detection."""
+        assert _looks_like_message_not_target("Fix 🚀") is True
+
+    def test_sentence_punctuation_triggers_legacy_error(self):
+        """Trailing sentence punctuation triggers detection."""
+        assert _looks_like_message_not_target("Fix it.") is True
+
+    def test_valid_window_name_does_not_trigger_heuristic(self):
+        """A valid crew window name (no spaces, ASCII only) does not trigger detection."""
+        assert _looks_like_message_not_target("my-worker") is False

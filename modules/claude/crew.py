@@ -404,16 +404,20 @@ def cmd_list(fmt: str, show_all: bool = False) -> None:
 # Heuristic to detect legacy argument order (message first, targets last).
 # A first positional arg that looks like a natural-language message rather than
 # a target spec is flagged. Target specs are short identifiers: word characters,
-# hyphens, dots, digits, commas — no spaces and no multi-word sentences.
+# hyphens, digits — no spaces (_SAFE_NAME_RE at the bottom of this file enforces
+# this for crew-managed window names). Any space in the first positional arg is
+# therefore unambiguously a message, not a target.
 # The heuristic fires when the first arg:
-#   - contains two or more spaces (multi-word phrase), OR
+#   - contains any space (messages have spaces; target specs never do), OR
 #   - contains non-ASCII characters (emoji, Unicode punctuation), OR
 #   - ends with common sentence-ending punctuation (. ? !)
 #
 # For ambiguous single-word or punctuation-free messages the heuristic stays
 # silent and the new behavior (targets-first) is used — the user corrects if needed.
 _LEGACY_ORDER_RE = re.compile(
-    r"  "               # two or more spaces → multi-word phrase
+    r" "                # any space — _SAFE_NAME_RE prohibits spaces in crew-managed window
+                        # names, so any space in the first positional arg is unambiguously
+                        # a message, not a target spec
     r"|[^\x00-\x7F]"   # non-ASCII (Unicode punctuation, emoji)
     r"|[.?!]$"         # ends with sentence-ending punctuation
 )
