@@ -25,8 +25,8 @@ This repository (`~/.config/nixpkgs`) is the **single source of truth** for syst
 4. Nix automatically copies/symlinks files to correct locations
 
 **❌ WRONG workflow:**
-- ❌ Manually editing `~/.claude/commands/skill.md`
-- ❌ Manually copying files to `~/.claude/`
+- ❌ Manually editing `~/.claude/agents/swe-backend.md`
+- ❌ Manually copying files to `~/.claude/commands/`
 - ❌ Directly modifying files in `~/.nix-profile/`
 - ❌ Editing anything in user directories that hms manages
 
@@ -45,7 +45,7 @@ This repository (`~/.config/nixpkgs`) is the **single source of truth** for syst
 ### Common Mistakes to Avoid
 
 1. **Skill not deploying?** → Add to git, then run hms (don't copy manually)
-2. **Command not available?** → Add shellapp to `default.nix`, run hms (don't create symlinks)
+2. **Command not available?** → Add shellapp to the appropriate module's `default.nix`, run hms (don't create symlinks)
 3. **Config not applying?** → Edit in source, run hms (don't edit deployed files)
 
 **Remember:** This repository controls your computer. Work in the source, deploy with hms.
@@ -57,17 +57,18 @@ This repository (`~/.config/nixpkgs`) is the **single source of truth** for syst
 1. **The agent definition:** `modules/claude/global/agents/<name>.md` - The source of truth for delegatable team members. Contains the full skill body (system prompt, expertise, workflows) directly in the file body, with agent metadata in the frontmatter.
 
 **Adding a team member** means:
-- Create agent definition in `agents/<name>.md` with full skill content and agent frontmatter (name, description, model, tools, permissionMode, maxTurns, background, mcp)
+- Create agent definition in `modules/claude/global/agents/<name>.md` with full skill content and agent frontmatter (name, description, model, tools, permissionMode, maxTurns, background, mcp)
 - Add to git: `git add modules/claude/global/agents/<name>.md`
 - Run `hms` to deploy to `~/.claude/agents/`
 - Update staff-engineer team table if needed
 
 **Updating a team member** means:
-- Edit `agents/<name>.md` as needed
+- Edit `modules/claude/global/agents/<name>.md` as needed
+- If adding new files: `git add <new-files>`
 - Run `hms` to deploy changes
 
 **Removing a team member** means:
-- Delete `agents/<name>.md`
+- Delete `modules/claude/global/agents/<name>.md`
 - Run `hms` to remove from deployment
 - Update staff-engineer team table
 
@@ -144,6 +145,8 @@ For detailed architecture, see README.md and source files in modules/.
 **🚨 Deployment Order: `git add` (if needed) → `hms` → `commit` → `push`**
 
 Wait for `hms` to succeed before running `git commit`. The `hms` build is the validation step — a failing build means the change is broken, not just undeployed. Stage files with `git add` if needed before running `hms`, but only commit after the build passes.
+
+**`hms` flake8 is stricter than `nix flake check` — `hms` is the real gate.** `nix flake check` does not build derivations and never runs flake8 — Python source files that `hms` rejects on flake8 lint (F541 unnecessary f-string, F841 unused variable observed in practice) will pass `nix flake check` silently. Do not treat `nix flake check` passing as a green light to commit. Always run `hms` as the final pre-commit gate.
 
 **Add new package:**
 
@@ -329,7 +332,7 @@ The mandatory review protocol that determines when work requires review is defin
 **Ralph vs. Kanban:**
 Ralph is a self-contained event-loop orchestrator with its own memory system. Kanban is the human-facing coordination layer for staff engineers. These systems are separate. When burns runs, it sets `BURNS_SESSION=1` to suppress kanban session instructions — injecting kanban context would confuse the model. Ralph uses its internal memory system (`ralph tools memory`) instead of kanban cards.
 
-**Available agents (delegatable team members):**
+**Available agents (delegatable team members):** (For the authoritative list, see `modules/claude/global/agents/` — this list may not include system/internal agents.)
 - Engineering: swe-backend, swe-frontend, swe-fullstack, swe-devex, swe-infra, swe-security, swe-sre
 - QA: qa-engineer
 - Design: product-ux, visual-designer
@@ -339,7 +342,7 @@ Ralph is a self-contained event-loop orchestrator with its own memory system. Ka
 
 ## Your Team
 
-For the full team roster, see global CLAUDE.md.
+See "Available agents" in the Burns and Ralph Architecture section above. For the full roster, see global CLAUDE.md.
 
 ## Reference Documentation
 
@@ -350,7 +353,7 @@ For the full team roster, see global CLAUDE.md.
 **Nix development:**
 - `nix run nixpkgs#nix-prefetch-github -- owner repo --rev main`: Get hash for GitHub packages
 - `nix flake update`: Update dependencies
-- `nix flake check`: Validate syntax
+- `nix flake check`: Partial validation only — does NOT catch flake8 errors. Use `hms` as the real gate.
 - `nix flake metadata`: Show flake info
 - `nix search nixpkgs <package>`: Search packages
 
