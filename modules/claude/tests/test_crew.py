@@ -275,32 +275,21 @@ class TestCmdCreate:
         assert "claude --name test-worker" in cmd_str
 
     def test_tell_sends_message_after_spawn(self, capsys, tmp_path):
-        """--tell delivers initial message after prompt-ready (P6.2)."""
+        """--tell delivers initial message after Claude Code is ready (P6.2)."""
         with patch("subprocess.run") as mock_run:
-            with patch.object(crew_module, "_wait_for_prompt_ready", return_value=True):
-                self._run_create(
-                    mock_run,
-                    name="test-worker",
-                    repo="/some/repo",
-                    branch="test-worker",
-                    base="main",
-                    fmt="xml",
-                    tell="Build the auth service",
-                )
+            with patch.object(crew_module, "_wait_for_claude_ready", return_value=True):
+                with patch.object(crew_module, "_deliver_tell", return_value=(True, "verified")) as mock_deliver:
+                    self._run_create(
+                        mock_run,
+                        name="test-worker",
+                        repo="/some/repo",
+                        branch="test-worker",
+                        base="main",
+                        fmt="xml",
+                        tell="Build the auth service",
+                    )
 
-        # Look for the tell send-keys call
-        send_keys_calls = [
-            c for c in mock_run.call_args_list
-            if c[0][0][0] == "tmux" and "send-keys" in c[0][0]
-        ]
-        tell_call = next(
-            (
-                c for c in send_keys_calls
-                if "Build the auth service" in " ".join(str(x) for x in c[0][0])
-            ),
-            None,
-        )
-        assert tell_call is not None, "Expected a send-keys call with the --tell message"
+        mock_deliver.assert_called_once_with("test-worker", "Build the auth service")
 
     def test_no_tell_skips_message_delivery(self, capsys, tmp_path):
         """Without --tell, no extra send-keys for a message is issued (P6.2)."""
@@ -339,9 +328,109 @@ class TestCmdCreate:
         assert 'command="staff"' in out
 
     def test_xml_output_includes_told_when_tell_given(self, capsys, tmp_path):
-        """XML output includes told='true' when --tell is used (P6.2)."""
+        """XML output includes told='true' when --tell delivery is verified (P6.2)."""
         with patch("subprocess.run") as mock_run:
-            with patch.object(crew_module, "_wait_for_prompt_ready", return_value=True):
+            with patch.object(crew_module, "_wait_for_claude_ready", return_value=True):
+                with patch.object(crew_module, "_deliver_tell", return_value=(True, "verified")):
+                    self._run_create(
+                        mock_run,
+                        name="test-worker",
+                        repo="/some/repo",
+                        branch="test-worker",
+                        base="main",
+                        fmt="xml",
+                        tell="Hello crew",
+                    )
+        out = capsys.readouterr().out
+        assert 'told="true"' in out
+
+    def test_tell_text_verified_in_pane_after_delivery(self, capsys, tmp_path):
+        """told='true' requires brief text to be observed in capture-pane (regression for race bug)."""
+        tell_text = "Build the auth service"
+        call_count = {"n": 0}
+
+        def side_effect(cmd, **kwargs):
+            cmd_list = cmd if isinstance(cmd, list) else [cmd]
+            joined = " ".join(str(c) for c in cmd_list)
+            if "capture-pane" in joined:
+                call_count["n"] += 1
+                if call_count["n"] == 1:
+                    # First call: Claude-ready signal
+                    return fake_run_result(stdout="╭─ Claude Code ─╮\n│ > │\n")
+                else:
+                    # Subsequent calls: brief text visible in pane
+                    return fake_run_result(stdout=f"╭─ Claude Code ─╮\n{tell_text}\n")
+            if "send-keys" in joined:
+                return fake_run_result()
+            if "display-message" in joined and "session_name" in joined:
+                return fake_run_result(stdout="tidy-crown\n")
+            if "display-message" in joined and "window_id" in joined:
+                return fake_run_result(stdout="@1\n")
+            if "list-windows" in joined:
+                return fake_run_result(stdout="")
+            if "rev-parse" in joined and "show-toplevel" in joined:
+                return fake_run_result(stdout="/some/repo\n")
+            if "symbolic-ref" in joined:
+                return fake_run_result(stdout="main\n")
+            if "rev-parse" in joined and "upstream" in joined:
+                return fake_run_result(stdout="origin/main\n")
+            if "fetch" in joined and "origin" in joined:
+                return fake_run_result()
+            if "rev-parse" in joined and "--verify" in joined and "refs/heads" not in joined:
+                return fake_run_result(stdout="abc1234\n")
+            if "rev-parse" in joined and "refs/heads" in joined:
+                return fake_run_result(returncode=1)
+            if "branch" in joined and "main" in joined:
+                return fake_run_result()
+            if "worktree" in joined and "add" in joined:
+                return fake_run_result()
+            if "new-window" in joined:
+                return fake_run_result()
+            return fake_run_result()
+
+        with patch("subprocess.run", side_effect=side_effect):
+            with patch("os.path.isdir", return_value=True):
+                with patch("os.path.exists", return_value=False):
+                    cmd_create(
+                        name="test-worker",
+                        repo="/some/repo",
+                        branch="test-worker",
+                        base="main",
+                        fmt="xml",
+                        tell=tell_text,
+                    )
+
+        out = capsys.readouterr().out
+        assert 'told="true"' in out
+        assert "told_reason" not in out
+
+    def test_tell_told_false_when_verification_times_out(self, capsys, tmp_path):
+        """told='false' + told_reason when tell text never appears in pane."""
+        with patch("subprocess.run") as mock_run:
+            with patch.object(crew_module, "_wait_for_claude_ready", return_value=True):
+                with patch.object(
+                    crew_module,
+                    "_deliver_tell",
+                    return_value=(False, "verification timeout: tell text not observed in pane"),
+                ):
+                    self._run_create(
+                        mock_run,
+                        name="test-worker",
+                        repo="/some/repo",
+                        branch="test-worker",
+                        base="main",
+                        fmt="xml",
+                        tell="Build the auth service",
+                    )
+
+        out = capsys.readouterr().out
+        assert 'told="false"' in out
+        assert "told_reason" in out
+
+    def test_tell_told_false_when_claude_never_ready(self, capsys, tmp_path):
+        """told='false' when _wait_for_claude_ready times out (Claude didn't start)."""
+        with patch("subprocess.run") as mock_run:
+            with patch.object(crew_module, "_wait_for_claude_ready", return_value=False):
                 self._run_create(
                     mock_run,
                     name="test-worker",
@@ -349,10 +438,12 @@ class TestCmdCreate:
                     branch="test-worker",
                     base="main",
                     fmt="xml",
-                    tell="Hello crew",
+                    tell="Build the auth service",
                 )
+
         out = capsys.readouterr().out
-        assert 'told="true"' in out
+        assert "told_reason" in out
+        assert 'told="false"' in out
 
     def test_fetch_called_when_base_tracks_origin(self, capsys, tmp_path):
         """When base tracks origin, git fetch origin <base> is called before worktree add."""

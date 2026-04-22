@@ -1356,32 +1356,91 @@ def _tmux_window_exists(name: str) -> bool:
     return name in result.stdout.splitlines()
 
 
-def _wait_for_prompt_ready(window_name: str, timeout: float = 30.0, poll_interval: float = 0.5) -> bool:
-    """Poll the target window's pane 0 until it looks like Claude is ready for input.
+def _wait_for_claude_ready(
+    window_name: str,
+    timeout: float = 60.0,
+    poll_interval: float = 0.5,
+) -> bool:
+    """Poll the target window's pane 0 until Claude Code's TUI is visible.
 
-    Looks for a prompt indicator: the '>' character that Claude Code shows when
-    waiting for input, or the word 'claude' in the recent output.  Returns True
-    when a ready signal is detected; returns False on timeout.
+    Claude Code's interactive prompt renders box-drawing characters (╭, │) that
+    are NOT present in a bare shell prompt. We wait for these to appear, which
+    indicates Claude Code has fully started and is ready for input.
+
+    Returns True when Claude Code's UI is detected; False on timeout.
     """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         result = subprocess.run(
-            ["tmux", "capture-pane", "-p", "-t", f"{window_name}.0", "-S", "-20"],
-            capture_output=True, text=True, check=False
+            ["tmux", "capture-pane", "-p", "-t", f"{window_name}.0", "-S", "-30"],
+            capture_output=True, text=True, check=False,
         )
         content = result.stdout
-        # Claude Code prompt indicators: the '>' prompt char, or the assistant
-        # turn marker (◆ or similar) that appears when Claude is ready.
-        if content and (
-            content.rstrip().endswith(">")
-            or "> " in content
-            or "claude" in content.lower()
-            or "◆" in content
-            or "✓" in content
-        ):
+        # Claude Code's TUI uses box-drawing characters in the input prompt box.
+        # These chars do NOT appear in a bare zsh/bash prompt, so they are
+        # a reliable signal that Claude Code is running and ready for input.
+        if content and ("╭" in content or "│ " in content):
             return True
         time.sleep(poll_interval)
     return False
+
+
+def _deliver_tell(
+    window_name: str,
+    tell: str,
+    verify_timeout: float = 5.0,
+    poll_interval: float = 0.25,
+) -> Tuple[bool, str]:
+    """Deliver the tell payload via send-keys and verify it appears in the pane.
+
+    Returns (success: bool, reason: str).
+    success=True means the tell text was observed in the pane after delivery.
+    success=False means either send-keys failed or verification timed out.
+
+    Note: newlines in the tell payload will fragment the message because
+    tmux send-keys converts literal newlines to Enter keystrokes. Callers
+    needing multi-line briefs should pre-process the payload or use the
+    tempfile injection pattern (see modules/git/workout-claude.py).
+    """
+    # Guard: empty or whitespace-only tell cannot be verified — return failure
+    # immediately rather than letting "" in result.stdout produce a false
+    # told=true (empty string is always a substring of any string in Python).
+    tell_excerpt = tell[:40].strip()
+    if not tell_excerpt:
+        return False, "empty tell: nothing to deliver"
+
+    # Send the message text
+    r1 = subprocess.run(
+        ["tmux", "send-keys", "-t", f"{window_name}.0", tell],
+        capture_output=True, check=False,
+    )
+    if r1.returncode != 0:
+        return False, f"send-keys text failed (exit {r1.returncode})"
+
+    time.sleep(0.15)
+
+    # Send Enter
+    r2 = subprocess.run(
+        ["tmux", "send-keys", "-t", f"{window_name}.0", "Enter"],
+        capture_output=True, check=False,
+    )
+    if r2.returncode != 0:
+        return False, f"send-keys Enter failed (exit {r2.returncode})"
+
+    # Verify: poll until the tell text appears in the pane (or timeout).
+    # Use a short excerpt to keep the check stable across line wrapping.
+    # tell_excerpt is computed at the top of this function.
+    deadline = time.monotonic() + verify_timeout
+    while time.monotonic() < deadline:
+        result = subprocess.run(
+            ["tmux", "capture-pane", "-p", "-t", f"{window_name}.0", "-S", "-50"],
+            capture_output=True, text=True, check=False,
+        )
+        if tell_excerpt in result.stdout:
+            return True, "verified"
+        time.sleep(poll_interval)
+
+    return False, "verification timeout: tell text not observed in pane"
 
 
 def cmd_create(
@@ -1635,24 +1694,27 @@ def cmd_create(
     )
 
     # --- 12. Deliver initial message (--tell) ---
-    # If --tell was provided, wait for the spawned process to reach a prompt-ready
-    # state, then send the message.  Failure to detect prompt-ready within the
-    # timeout is non-fatal — we still deliver the message on a best-effort basis
-    # (the pane may have started but the prompt indicator may not have been seen).
+    # Wait for Claude Code's TUI (box-drawing chars) before delivering the brief
+    # to avoid the race where send-keys fires before Claude Code's input handler
+    # is active, resulting in the text being consumed by the shell.
+    told = False
+    told_reason: Optional[str] = None
+
     if tell is not None:
-        _wait_for_prompt_ready(name)
-        subprocess.run(
-            ["tmux", "send-keys", "-t", f"{name}.0", tell],
-            check=False
-        )
-        time.sleep(0.15)
-        subprocess.run(
-            ["tmux", "send-keys", "-t", f"{name}.0", "Enter"],
-            check=False
-        )
+        ready = _wait_for_claude_ready(name)
+        if not ready:
+            # Claude Code didn't reach a ready state within the timeout.
+            # Record told=false; do NOT attempt delivery (would go to shell).
+            told_reason = "timeout waiting for Claude Code to start"
+        else:
+            told, told_reason = _deliver_tell(name, tell)
+            if not told:
+                print(
+                    f"warning: --tell delivery failed: {told_reason}",
+                    file=sys.stderr,
+                )
 
     # --- 13. Emit structured result ---
-    told = tell is not None
     if fmt == "xml":
         attrs: Dict[str, str] = dict(
             window=name,
@@ -1666,8 +1728,11 @@ def cmd_create(
             attrs["no_worktree"] = "true"
         else:
             attrs["branch"] = branch  # type: ignore[assignment]
-        if told:
-            attrs["told"] = "true"
+        # told field now reflects VERIFIED delivery, not just attempt
+        if tell is not None:
+            attrs["told"] = "true" if told else "false"
+            if not told and told_reason:
+                attrs["told_reason"] = told_reason
         elem = ET.Element("created", **attrs)
         print(xml_to_string(elem))
     elif fmt == "json":
@@ -1683,8 +1748,10 @@ def cmd_create(
             obj["no_worktree"] = True
         else:
             obj["branch"] = branch
-        if told:
-            obj["told"] = True
+        if tell is not None:
+            obj["told"] = told
+            if not told and told_reason:
+                obj["told_reason"] = told_reason
         print(json.dumps(obj, indent=2))
     else:
         if no_worktree:
@@ -1692,8 +1759,10 @@ def cmd_create(
         else:
             print(f"created: window={name} pane=0 worktree={worktree_path} branch={branch}")
         print(f"  {base_cmd} started with --name {name}")
-        if told:
+        if tell is not None and told:
             print(f"  initial message delivered: {tell!r}")
+        elif tell is not None and not told:
+            print(f"  initial message delivery failed: {told_reason}")
         print(f"  switch to window: tmux select-window -t {name}")
 
 
