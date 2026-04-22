@@ -14,7 +14,7 @@ Usage:
     smithers <url>    # Use specific PR URL
     smithers --max-ralph-iterations N 123  # Custom Ralph iterations
     smithers --max-iterations N 123        # Custom watch cycles
-    smithers --purge 123                   # Delete .ralph memory, then watch
+    smithers --purge 123                   # Delete .ralph memory, then watch (--expunge is an alias)
     smithers --debug                       # Enable Ralph diagnostics mode
     smithers --debug 123                   # Debug mode with explicit PR number
 
@@ -23,7 +23,7 @@ Options:
                                 Can also set via SMITHERS_MAX_RALPH_ITERATIONS env var
     --max-iterations N          How many CI check cycles to monitor (default: 10)
                                 Can also set via SMITHERS_MAX_ITERATIONS env var
-    --purge                     Delete .ralph memory directory before starting for a
+    --purge, --expunge          Delete .ralph memory directory before starting for a
                                 clean-slate restart (uses trash CLI, not rm -rf)
     --debug                     Enable Ralph diagnostics mode (passes --debug to burns,
                                 sets RALPH_DIAGNOSTICS=1, generates JSONL logs in .ralph/diagnostics/)
@@ -1941,10 +1941,11 @@ def main():
         help=f"Max watch loop cycles (default: {DEFAULT_MAX_CYCLES}). Override with SMITHERS_MAX_ITERATIONS env var"
     )
     parser.add_argument(
-        "--purge",
+        "--purge", "--expunge",
         action="store_true",
         default=False,
-        help="Delete .ralph memory directory before starting for a clean-slate restart"
+        dest="purge",
+        help="Delete .ralph memory directory before starting for a clean-slate restart (alias: --expunge)"
     )
     parser.add_argument(
         "--debug",
