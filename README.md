@@ -139,7 +139,7 @@ This command automatically:
 If you need to completely refresh your environment (kills tmux, rebuilds everything):
 
 ```bash
-hms --expunge
+hms --purge  # --expunge is also accepted as an alias
 ```
 
 **Warning**: This will kill your tmux server. Use sparingly.

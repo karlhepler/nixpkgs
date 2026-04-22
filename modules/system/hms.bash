@@ -4,7 +4,7 @@
 # - Temporarily tracks both files in git
 # - Runs home-manager switch
 # - Configures local git settings for this repo
-# - Optional --purge flag to kill tmux server for complete environment refresh
+# - Optional --purge (alias: --expunge) flag to kill tmux server for complete environment refresh
 
 set -eou pipefail
 
@@ -33,6 +33,7 @@ show_help() {
   echo
   echo "OPTIONS:"
   echo "  --purge        Kill tmux server after switch for complete refresh"
+  echo "                 (alias: --expunge)"
   echo "                 Use when tmux-related settings change"
   echo "                 WARNING: Closes all tmux sessions"
   echo "  -h, --help     Show this help message"
@@ -66,10 +67,17 @@ for arg in "$@"; do
   if [[ "$arg" == "-h" || "$arg" == "--help" ]]; then
     show_help
     exit 0
-  elif [[ "$arg" == "--purge" ]]; then
+  elif [[ "$arg" == "--purge" || "$arg" == "--expunge" ]]; then
     PURGE=true
   fi
 done
+
+# Register expunge action as an EXIT trap so it runs regardless of how the script
+# exits — normal completion, set -e abort inside the ralph block, or any other path.
+# This decouples the ralph-lock prompt decision from the expunge sequence entirely.
+if [[ "$PURGE" == "true" ]]; then
+  trap 'echo "Purging tmux server for complete environment refresh..."; tmux kill-server 2>/dev/null || true' EXIT
+fi
 
 # Validate user.nix exists and is configured
 if [[ ! -f ~/.config/nixpkgs/user.nix ]]; then
@@ -161,9 +169,3 @@ fi
 # USER_NAME and USER_EMAIL are provided as env vars by the nix wrapper
 git -C ~/.config/nixpkgs config --local user.name "$USER_NAME" 2>/dev/null
 git -C ~/.config/nixpkgs config --local user.email "$USER_EMAIL" 2>/dev/null
-
-# Purge tmux server for complete refresh if flag was passed
-if [[ "$PURGE" == "true" ]]; then
-  echo "Purging tmux server for complete environment refresh..."
-  tmux kill-server 2>/dev/null || true
-fi
