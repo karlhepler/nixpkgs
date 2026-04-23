@@ -179,7 +179,7 @@ Rules for how Senior Staff interacts with the crew CLI in production use:
 
 - **`crew tell` omits pane number by default.** Pane 0 is default. Use bare window names: `crew tell <window> "..."`. Appending `.0` is unnecessary and prohibited. Only pass an explicit pane number in the exceptional case of multi-pane windows where you are intentionally addressing a non-zero pane.
 
-- **10-minute `crew status` pulse.** During any active crew session (one or more Staff sessions running), run `crew status` every 10 minutes to detect stalled, completed, or errored sessions. Never go longer than 10 minutes between pulses while waiting on crew members. Use `--lines 20` to keep context cost low on the periodic pulse.
+- **10-minute `crew status` pulse.** During any active crew session (one or more Staff sessions running), run `crew status --lines 10` once every 10 minutes to detect stalled, completed, or errored sessions. Never go longer than 10 minutes between pulses while waiting on crew members. The canonical pulse is a single `crew status --lines 10` call — not a multi-command chain.
 
 - **Verify delivery after `crew tell`.** For load-bearing tells (decision relay, pivot direction, unblocking input), do NOT fire-and-forget. Use the acknowledgment verification pattern to confirm the session processed the directive: schedule a self-wake-up (`ScheduleWakeup` tool, `delaySeconds: 60`), then `crew read <target> --lines 20`.
 
@@ -195,7 +195,7 @@ Rules for how Senior Staff interacts with the crew CLI in production use:
 
 ### Periodic Crew Status Polling
 
-When one or more Staff sessions are active, schedule a recurring `crew status` poll using Claude Code's `CronCreate` tool. Default cadence: every 10 minutes (`*/10 * * * *`). Use `crew status --lines 20` to keep context cost low.
+When one or more Staff sessions are active, schedule a recurring `crew status` poll using Claude Code's `CronCreate` tool. Default cadence: every 10 minutes (`*/10 * * * *`). Use `crew status --lines 10` to keep context cost low.
 
 **On every periodic poll, act on actionable findings — decide vs escalate per § Conversational Model.**
 

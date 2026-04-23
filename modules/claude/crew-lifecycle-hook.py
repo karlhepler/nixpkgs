@@ -105,9 +105,24 @@ def _detect_own_window_index() -> str | None:
     if result.returncode != 0:
         return None
     window_index = result.stdout.strip()
-    return window_index if window_index else None
+    if not window_index:
+        return None
+    if not re.fullmatch(r'\d+', window_index):
+        print(
+            f'[crew-lifecycle-hook] unexpected non-digit window index: {window_index!r}; returning None',
+            file=sys.stderr,
+        )
+        return None
+    return window_index
 
 
+# The returned pulse prompt has three steps executed on one `crew status`
+# call:
+#   STEP 1: run the single call.
+#   STEP 2: self-termination check — CronDelete if all other windows are idle.
+#   STEP 3: actionability scan — surface stalls/completions/errors otherwise.
+# STEP 2 and STEP 3 are mutually exclusive; STEP 3 only runs when STEP 2
+# does not self-terminate.
 def _build_pulse_cron_command(own_window_index: str) -> str:
     """Build the pulse cron command prompt with the dynamic window index injected.
 
@@ -119,17 +134,17 @@ def _build_pulse_cron_command(own_window_index: str) -> str:
     """
     return (
         f"{_PULSE_CRON_SENTINEL}\n"
-        f"STEP 1: Run `crew list` to enumerate active Claude panes in the current tmux session. "
-        f"Your window index is `{own_window_index}` — if the only pane listed belongs to window index {own_window_index}, "
-        f"exit silently, send no response. "
-        f"STEP 2: If any `crew` command below errors, skip this pulse cycle silently. "
-        f"Otherwise, run `crew find '{_ACTIVITY_INDICATORS}' --lines 30` to check whether any Staff pane is actively working. "
-        f"IMPORTANT: ignore any match whose window index is {own_window_index} — that is sstaff's own window running this pulse; only count matches from OTHER windows. "
+        f"STEP 1: Run `crew status --lines 10` once to get recent output from all active Claude panes. "
+        f"If this command errors, skip this pulse cycle silently. "
+        f"STEP 2 (self-termination check): Scan the `crew status` output. IGNORE any pane whose window index is `{own_window_index}` — "
+        f"that is sstaff's own window running this pulse; only count activity from OTHER windows. "
         f"Active-work indicators: 'local agents still running', 'Working for', 'Churned for', 'Baked for', '✻ ' followed by a verb, or braille spinner characters (⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏). "
-        f"If `crew find` returns no matches from windows other than {own_window_index}, all Staff panes are idle — "
+        f"If NO OTHER window shows active-work indicators, all Staff panes are idle — "
         f"call CronList to find the cron whose prompt starts with '{_PULSE_CRON_SENTINEL}', "
         f"then call CronDelete with that cron's ID, then exit silently. "
-        f"STEP 3: If `crew find` matched at least one active-work indicator in a window other than {own_window_index}, run `crew status --lines 20` and surface any actionable items (stalled, completed, or errored Staff sessions) per your normal pulse behavior."
+        f"STEP 3 (actionability scan): If STEP 2 did NOT self-terminate (at least one other window has active-work indicators), "
+        f"scan the same `crew status` output for actionable items (stalled panes, completed work, errors, permission prompts) "
+        f"and surface them. Stay silent if nothing actionable."
     )
 
 
@@ -190,6 +205,7 @@ def _on_crew_dismiss() -> None:
         print(_additional_context(msg))
         return
 
+    crew_find_cmd = "crew find '" + _ACTIVITY_INDICATORS + "' --lines 30"
     msg = (
         f"{_SENTINEL} A Staff session was just dismissed. "
         f"If any `crew` command errors, leave the cron running. "
@@ -197,7 +213,7 @@ def _on_crew_dismiss() -> None:
         f"Count windows whose index is NOT {own_window_index} (those are Staff session windows, not sstaff's own window). "
         f"If zero such windows remain, call CronList to find the cron whose prompt starts with '{_PULSE_CRON_SENTINEL}', "
         f"then call CronDelete with that cron's ID. "
-        f"If one or more Staff windows remain, run `crew find '{_ACTIVITY_INDICATORS}' --lines 30` "
+        f"If one or more Staff windows remain, run `{crew_find_cmd}` "
         f"against those windows. "
         f"Active-work indicators: 'local agents still running', 'Working for', 'Churned for', 'Baked for', '✻ ' followed by a verb, or braille spinner characters (⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏). "
         f"If `crew find` returns no matches across all remaining Staff windows, all sessions are idle — "
