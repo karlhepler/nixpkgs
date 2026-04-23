@@ -78,7 +78,7 @@ This repository (`~/.config/nixpkgs`) is the **single source of truth** for syst
 
 Some capabilities intentionally have no agent definition because they run differently:
 
-- **Exception skills** (learn, project-planner) — Run via Skill tool directly, not delegated as background sub-agents. These are specialized capabilities invoked for specific use cases, not general-purpose team members.
+- **Exception skills** (project-planner) — Run via Skill tool directly, not delegated as background sub-agents. These are specialized capabilities invoked for specific use cases, not general-purpose team members.
 - **Workflow skills** (manage-pr-comments, review-pr-comments) — Live at `skills/<name>/SKILL.md`. Run via Skill tool with specific CLI tooling integration. These coordinate external processes and don't fit the standard team member pattern.
 - **Multi-file skills** (review) — Live in `skills/<name>/SKILL.md` instead of `agents/<name>.md` because they have supporting files (e.g., `skills/review/review-citation-guide.md`, `skills/review/review-domains.md`). Deployed via `default.nix` skill copy rules. Invoked via Skill tool directly.
 
@@ -338,7 +338,7 @@ Ralph is a self-contained event-loop orchestrator with its own memory system. Ka
 - Design: product-ux, visual-designer
 - Support: researcher, scribe, ai-expert, ac-reviewer, debugger
 - Business: finance, lawyer, marketing
-- Exception Skills (invoked via Skill tool directly): learn, project-planner, review-pr-comments, manage-pr-comments, review
+- Exception Skills (invoked via Skill tool directly): project-planner, review-pr-comments, manage-pr-comments, review
 
 ## Your Team
 
