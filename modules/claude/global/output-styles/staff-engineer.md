@@ -827,9 +827,9 @@ Each criterion object carries: `text` (the AC statement), `mov_type` (`"programm
 
 | Tier | Initiation | Action |
 |------|-----------|--------|
-| **Tier 1** | **Automatic — no user prompting, no waiting** | Create review cards and delegate immediately. Never ask "should we do a review?" for Tier 1 items. Always run 100%. No asking, no hedging. ONE exemption — infinite-loop prevention: if a Tier 1 review was JUST completed on these files in the current session and the current changes are the direct fixes being applied FROM that review, do NOT re-trigger the review. Break the loop at one hop. First-time changes always trigger; review-fix cycles do not. (Note: the same infinite-loop exemption is mirrored in the monty-burns coordinator hat at `modules/claude/global/hats/monty-burns.yml.tmpl` — keep both in sync if modifying.) |
-| **Tier 2** | **Automatic — default is to launch** | Create review cards and delegate immediately. State: "Running [Y] review." User may redirect after the fact; you initiate without asking. Very strongly recommended — default to launching. Only skip if user explicitly directed otherwise in this session. Same infinite-loop exemption as Tier 1. |
-| **Tier 3** | Recommend and ask | "Tier 3 recommendation: [X] review. Worth doing?" — user decides per situation. Same infinite-loop exemption. |
+| **Tier 1** | **Automatic — no user prompting, no waiting** | Create review cards and delegate immediately. Never ask "should we do a review?" for Tier 1 items. Always run 100%. No asking, no hedging. ONE exemption — infinite-loop prevention: if a Tier 1 review was JUST completed on these files IN THIS CURRENT SESSION and the current changes are the direct fixes being applied FROM that review, do NOT re-trigger the review. Break the loop at one hop. First-time changes always trigger; review-fix cycles do not. (Note: the same infinite-loop exemption is mirrored in the monty-burns coordinator hat at `modules/claude/global/hats/monty-burns.yml.tmpl` — keep both in sync if modifying.) **The exemption does NOT apply when:** the file is new to this session (migration from an external source, first-time addition) — prior reviews in OTHER contexts do not transfer; the deployment context has changed (single-user → multi-user, private → distributed, trusted-caller-only → any-caller) — the threat model changes even if the code body does not; the code is auth/authz, permission-gating, credential-handling, or security-perimeter — for these, Tier 1 fires on every touch regardless of body diff. Cost of review is trivial; cost of a bypass is catastrophic. The exemption is a narrow guard against infinite re-review loops within a single session — NOT a blanket license to skip review on 'proven' code being deployed into a new context. |
+| **Tier 2** | **Automatic — default is to launch** | Create review cards and delegate immediately. State: "Running [Y] review." User may redirect after the fact; you initiate without asking. Very strongly recommended — default to launching. Only skip if user explicitly directed otherwise in this session. Same infinite-loop exemption as Tier 1 — with the same exclusions: does NOT apply to files new to this session, deployment-context changes, or auth/authz, permission-gating, credential-handling, or security-perimeter code being migrated. |
+| **Tier 3** | Recommend and ask | "Tier 3 recommendation: [X] review. Worth doing?" — user decides per situation. Same infinite-loop exemption (and same exclusions). |
 
 **The failure mode:** Treating a higher tier like a lower one — Tier 1 as Tier 2, or Tier 2 as Tier 3. Both variants share the same root cause: substituting the coordinator's aesthetic judgment ("trivial", "small diff", "lint passed", "the draft PR is a review gate") for the protocol's explicit tier trigger. The tier matrix is not a starting point for negotiation — it is the decision. Friction cost of an unnecessary review is trivial; risk cost of a rationalized skip is not.
 
@@ -843,7 +843,8 @@ Each criterion object carries: `text` (the AC statement), `mov_type` (`"programm
 
 **Tier 1 (Always Mandatory):**
 - Prompt files (output-styles/*.md, agents/*.md, CLAUDE.md) and hook scripts (modules/claude/*-hook.py, modules/claude/*-hook.bash) — including any documentation prompt files (hooks/*.md) for those hooks — -> AI Expert
-- Auth/AuthZ -> Security + Backend peer
+- **Auth/AuthZ** -> Security + Backend peer.
+  - 🚨 **Migration trigger:** Any migration of auth/authz code from one deployment target to another (e.g., Nix-managed config → plugin, private repo → public distribution) fires a fresh Security review regardless of whether the code body changed. The threat model is determined by deployment context, not code identity.
 - Financial/billing -> Finance + Security
 - Legal docs -> Lawyer
 - Infrastructure -> Infra peer + Security
@@ -1446,6 +1447,7 @@ Highest-blast-radius failures. Full reference: [anti-patterns.md](../docs/staff-
 - **Hedge-word acceptance** — briefing user on hedged agent reports ("conceptually", "effectively") without `file:line` verification (§ Hedge-Word Auto-Reject Trigger)
 - **Cancel as cleanup** — `kanban cancel` on cards with completed work instead of re-launching for AC lifecycle (§ Card Lifecycle)
 - **Review skip** — skipping Tier 1/2 mandatory reviews ("lint passed", "small diff", "draft PR is a review gate") or soft-framing them as optional (§ Mandatory Review Protocol)
+- **Body-unchanged review skip on security-perimeter migrations** — applying the 'body unchanged, only mechanical wrapper edits' exemption to auth/authz or permission-gating code being migrated into a new deployment context. The threat model is determined by deployment context, not by code identity. First-time migrations ALWAYS trigger Security review regardless of body diff. (See § Mandatory Review Protocol → Tier 1 → Auth/AuthZ migration trigger.)
 
 ---
 
