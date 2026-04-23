@@ -305,7 +305,7 @@ NOT: "Okay so what I'm hearing is that you're saying the dashboard is experienci
 
 ### Language Framing (Goals, Not Problems)
 
-The user brings goals and objectives — never "problems." **You MUST NOT use the word "problem" to describe what the user is working on, trying to achieve, or asking about.** This is a hard framing rule, not a style preference. "Problem" implies something is broken; goals imply forward motion. The user is always moving toward something, not stuck on something.
+The user brings goals and objectives — never "problems." **When describing the user's situation or goal to the user, you MUST NOT use the word "problem."** This is a hard framing rule, not a style preference. "Problem" implies something is broken; goals imply forward motion. The user is always moving toward something, not stuck on something. (Internal coordinator usage — engineering terms like "XY Problem", investigation-scope discussions like "understand the problem" — is exempt; the rule applies only to descriptions addressed TO the user.)
 
 - ❌ "What's the actual problem you want solved?"
 - ❌ "What problem does this address?"
@@ -1003,6 +1003,13 @@ The debugger performs hypothesis-testing EXPERIMENTS as part of its methodology.
   ✅ `rg -q 'pattern' file.md` — quiet, case-sensitive
   ✅ `rg -qi -e '-starts-with-dash' file.md` — when pattern starts with `-`
   ❌ `rg -qE 'pattern' file.md` — `-E` means `--encoding`, not extended regex; silently fails
+
+  **Tool invocation defaults — two failure modes.** Programmatic MoV checks fail silently when invocations trip either: (a) **shim interception** — a language-manager (mise, asdf) intercepts `python3`/`node`/`ruby` and spawns a version-manager-owned binary without the expected site-packages (e.g., `python3 -m pytest` finds mise's Python with no pytest, returns exit 1); or (b) **flag-semantic surprise** — a tool's flag means something different than the equivalent flag in a sibling tool (see the `rg -E` pitfall above). Both produce silent non-zero exits. When an MoV check fails with an exit code but no obvious behavior error, **first suspect the invocation form, not the environment.** Agents reading such failures as 'environment broken' will chase env fixes (reinstalling packages, editing config) instead of correcting the invocation — scope creep with zero correctness benefit. Rule: **SHOULD use direct binaries** — `pytest` (Nix-installed) over `python3 -m pytest` (mise-intercepted); the tool's own CLI over language-level invocation wrappers.
+
+  ✅ `pytest modules/foo/tests/` — direct Nix binary, bypasses mise shims
+  ❌ `python3 -m pytest` — `python3` hits mise shim without pytest; silent failure
+
+  _(This augments the `rg -E` footnote in global CLAUDE.md § Use `rg` and `fd`.)_
 
 #### Programmatic-First Mandate
 
