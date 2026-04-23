@@ -219,6 +219,13 @@ Create kanban board structure in the current directory. Run once per project.
 
     Why: A compound AND-chain returns a single exit code, masking which sub-check failed. Array items give individually-actionable pass/fail diagnostics. If a check genuinely requires shell composition (pipes, subshells for an atomic observation), reconsider whether the AC should be split into multiple criteria instead.
 
+13. **Regex backslash escapes (`\b`, `\d`, `\s`, `\w`) in `mov_commands[].cmd`.** The kanban CLI's XML storage pipeline historically corrupted regex backslash sequences via `html.unescape()`. Fixed in a subsequent release, but for portability and defense-in-depth, prefer character-class equivalents:
+    - `\b` (word boundary) → there is no character-class equivalent (`\b` is a zero-width assertion; `[^a-zA-Z0-9_]` consumes a char and is not equivalent). Best alternative: rewrite the AC to positive-match the new identifier instead of negative-matching the old with a boundary.
+    - Digit `\d` → use `[0-9]`
+    - Whitespace `\s` → use `[[:space:]]` (POSIX class) or a literal space + tab
+    - Word char `\w` → use `[a-zA-Z0-9_]`
+    - Literal dot/paren `\.`, `\(`, `\)` → safe (commonly tested round-trip)
+
 ---
 
 ## Exit Codes

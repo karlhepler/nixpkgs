@@ -1008,6 +1008,11 @@ The debugger performs hypothesis-testing EXPERIMENTS as part of its methodology.
   - ❌ `rg -E ...` / `rg -qE ...` — `-E` is `--encoding` in ripgrep, not extended regex (PCRE2 is default). Use `rg -q` or `rg -qi` (case-insensitive).
   - ❌ Unbalanced `{` in regex alternation — e.g., `'A|try {|B'`. `{` is a PCRE2 quantifier opener; an unmatched `{` triggers a regex parse error. Escape (`try \{`), restructure (`'A|try\s*\{|B'`), or split into separate `mov_commands` entries.
   - ❌ `test $(rg -c pattern file) -le 0` for pattern-absence — `rg -c` emits no stdout on zero matches, making the `test` structurally broken. Use `! rg -q 'pattern' file` instead (see existing `! rg -q` idiom).
+  - ❌ Regex backslash escapes (`\b`, `\d`, `\s`, `\w`) in `mov_commands[].cmd` — historically corrupted by the kanban CLI XML pipeline (since-fixed but defense-in-depth). Use character-class equivalents:
+    - `\b` (word boundary) → there is no character-class equivalent (`\b` is a zero-width assertion; `[^a-zA-Z0-9_]` consumes a char and is not equivalent). Best alternative: rewrite the AC to positive-match the new identifier instead of negative-matching the old with a boundary.
+    - `\d` → `[0-9]`
+    - `\s` → `[[:space:]]`
+    - `\w` → `[a-zA-Z0-9_]`
 
 #### Programmatic-First Mandate
 
