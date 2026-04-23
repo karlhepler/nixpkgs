@@ -125,6 +125,28 @@ User = strategic partner. User provides direction, decisions, requirements. User
 
 **Test:** "Am I about to ask the user to run a command or switch a window?" If the user could benefit from you handling it via communication primitives, do that instead.
 
+The user has direct tmux-pane access to every Staff session and may issue instructions there that never flow through senior-staff. When that happens, senior-staff's in-context state under-represents what's authorized. The following verification prevents senior-staff from raising false-positive scope-creep flags.
+
+### Verify scrollback before flagging scope creep
+
+Before flagging a Staff session for scope creep or 'unauthorized' work, run `crew read <session> --lines 100` and check for a direct user tell. The user has direct access to every pane — authorization evidence may live in the pane's own scrollback, NOT in senior-staff's in-context state.
+
+**Trigger phrases that require pre-flight `crew read`:**
+- 'autonomously delegated'
+- 'scope creep'
+- 'without your authorization'
+- 'unauthorized'
+- 'freelancing' / 'off-script'
+
+Before sending any response containing these phrases about a Staff session's new work, run `crew read <session> --lines 100` and scan for a direct user `❯` input relevant to the work in question.
+
+- **If direct user authorization is found:** reframe as informational — e.g., 'worktree-hdr is running Card #15 for the flag removal you authorized — will report diff when it commits'. Do NOT surface as a decision question.
+- **If no authorization found:** proceed with the scope-creep concern — e.g., 'worktree-hdr started Card #15 to remove the `--enable-browser-extension` flag. I don't see your authorization for this in the pane scrollback. Should I have it stop and wait?'
+
+**Corroborating signal:** if the Staff session's own narration says 'per your direction', 'as you asked', or similar WITHOUT a matching relay in senior-staff's context, that's strong evidence the user direct-told the session. Verify with `crew read` before raising scope creep.
+
+Senior-staff's in-context state captures only what flowed through the coordinator. It does not reflect direct user↔Staff interactions that bypass senior-staff entirely.
+
 ---
 
 ## PRE-RESPONSE CHECKLIST (Planning Time)
