@@ -789,8 +789,8 @@ def cmd_resume(
         )
         return
 
-    # --- 8. Launch staff --name <name> --resume <session_id> ---
-    spawn_cmd = f"staff --name {name} --resume {chosen_session_id}"
+    # --- 8. Launch staff --model sonnet --name <name> --resume <session_id> ---
+    spawn_cmd = f"staff --model sonnet --name {name} --resume {chosen_session_id}"
     subprocess.run(
         ["tmux", "send-keys", "-t", name, spawn_cmd, "Enter"],
         capture_output=True, check=False,
@@ -1802,16 +1802,20 @@ def cmd_create(
         )
 
     # --- 11. Start staff (or --cmd override) in the new window ---
-    # Default command is `staff --name <name>` (spawns a staff engineer session).
-    # The `--cmd` flag overrides the default; callers that need plain `claude` can
-    # pass `--cmd claude`.
+    # Default command is `staff --model sonnet --name <name>` (spawns a staff
+    # engineer session pinned to Sonnet — prevents accidental Opus burns on
+    # crew-spawned sessions). The `--cmd` flag overrides the default entirely;
+    # callers that need plain `claude` or a different model can pass `--cmd claude`.
     #
     # Both `staff` and `claude` support -n/--name for display name — this sets the
     # session display name shown in the prompt box, /resume picker, and terminal
     # title. name is pre-validated by _SAFE_NAME_RE (alphanumeric/hyphens/underscores
     # only) — no shell quoting needed.
     base_cmd = cmd_override if cmd_override is not None else "staff"
-    spawn_cmd = f"{base_cmd} --name {name}"
+    if cmd_override is None:
+        spawn_cmd = f"staff --model sonnet --name {name}"
+    else:
+        spawn_cmd = f"{cmd_override} --name {name}"
     subprocess.run(
         ["tmux", "send-keys", "-t", name, spawn_cmd, "Enter"],
         capture_output=True, check=False
@@ -2061,7 +2065,7 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "End-to-end staff session creation: create a git worktree, open a tmux "
             "window, and start a staff engineer session in that window — all in one command.\n\n"
-            "Default spawn command: `staff --name <name>` (staff engineer session).\n"
+            "Default spawn command: `staff --model sonnet --name <name>` (staff engineer session).\n"
             "Override with --cmd if you need a different process (e.g. --cmd claude).\n\n"
             "Optionally deliver an initial brief in the same call with --tell:\n"
             "  crew create platform-bootstrap --tell \"Build the auth service...\"\n"
@@ -2093,8 +2097,10 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         dest="cmd_override",
         help=(
-            "Command to spawn in the new window (default: 'staff'). "
-            "The command is invoked as '<cmd> --name <name>'. "
+            "Command to spawn in the new window. "
+            "When omitted, the default is 'staff --model sonnet --name <name>'. "
+            "When provided, the command is invoked as '<cmd> --name <name>' — "
+            "--model sonnet is NOT injected (caller controls the model). "
             "Example: --cmd claude  (spawn plain Claude instead of staff engineer)"
         ),
     )

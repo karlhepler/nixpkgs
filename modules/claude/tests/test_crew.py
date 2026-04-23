@@ -224,7 +224,7 @@ class TestCmdCreate:
                 cmd_create(**kwargs)
 
     def test_default_command_is_staff(self, capsys, tmp_path):
-        """cmd_create must spawn 'staff --name <name>' by default (P6.3)."""
+        """cmd_create must spawn 'staff --model sonnet --name <name>' by default (P6.3)."""
         with patch("subprocess.run") as mock_run:
             self._run_create(
                 mock_run,
@@ -246,9 +246,36 @@ class TestCmdCreate:
         )
         assert spawn_call is not None, "Expected a send-keys call with 'staff'"
         cmd_str = " ".join(str(x) for x in spawn_call[0][0])
-        assert "staff --name test-worker" in cmd_str
+        assert "staff --model sonnet --name test-worker" in cmd_str
         # Must NOT spawn bare 'claude' as the first command
         assert "claude --name test-worker" not in cmd_str
+
+    def test_cmd_override_does_not_include_model_sonnet(self, capsys, tmp_path):
+        """--cmd override must NOT have --model sonnet injected (caller controls model)."""
+        with patch("subprocess.run") as mock_run:
+            self._run_create(
+                mock_run,
+                name="test-worker",
+                repo="/some/repo",
+                branch="test-worker",
+                base="main",
+                fmt="xml",
+                cmd_override="claude",
+            )
+
+        send_keys_calls = [
+            c for c in mock_run.call_args_list
+            if c[0][0][0] == "tmux" and "send-keys" in c[0][0]
+        ]
+        spawn_call = next(
+            (c for c in send_keys_calls if "claude" in " ".join(str(x) for x in c[0][0])),
+            None,
+        )
+        assert spawn_call is not None, "Expected a send-keys call with 'claude'"
+        cmd_str = " ".join(str(x) for x in spawn_call[0][0])
+        assert "--model sonnet" not in cmd_str, (
+            f"--model sonnet must not be injected into --cmd override, got: {cmd_str!r}"
+        )
 
     def test_cmd_override_replaces_staff(self, capsys, tmp_path):
         """--cmd claude overrides the default 'staff' spawn (P6.3 override path)."""
@@ -1214,6 +1241,104 @@ class TestCmdResume:
         assert len(send.failure_calls) == 1
         error_code, message = send.failure_calls[0]
         assert error_code == "TMUX_WINDOW_FAILED"
+
+    def test_resume_command_includes_model_sonnet(self, tmp_path, monkeypatch):
+        """cmd_resume spawn command must include --model sonnet to pin the model on resume."""
+        worktree_path = str(tmp_path / "resume-worktree")
+        os.makedirs(worktree_path)
+        self._make_session_dir(tmp_path, worktree_path, ["some-session-id"])
+
+        monkeypatch.setattr("crew.Path.home", lambda: tmp_path)
+        monkeypatch.setattr("crew._resolve_worktree_for_name", lambda name: worktree_path)
+
+        send_keys_captured = []
+
+        def fake_run(cmd, **kwargs):
+            joined = " ".join(str(c) for c in cmd)
+            if "list-windows" in joined:
+                return fake_run_result(stdout="")
+            if "new-window" in joined:
+                return fake_run_result()
+            if "send-keys" in joined:
+                send_keys_captured.append(cmd)
+                return fake_run_result()
+            return fake_run_result()
+
+        send = _ResumeSpySend()
+        with patch("subprocess.run", side_effect=fake_run):
+            cmd_resume("resume-worktree", None, "xml", send)
+
+        assert len(send.failure_calls) == 0
+        assert len(send.resumed_calls) == 1
+        _, _, _, command = send.resumed_calls[0]
+        assert "--model sonnet" in command, (
+            f"Expected '--model sonnet' in resume spawn command, got: {command!r}"
+        )
+        assert "staff --model sonnet --name resume-worktree --resume some-session-id" in command
+
+    def test_cmd_staff_override_does_not_include_model_sonnet(self, capsys, tmp_path):
+        """Passing --cmd staff fires the else branch: --model sonnet is NOT injected.
+
+        This is intentional: --cmd is an explicit override that gives the caller full
+        control of the invocation. Sonnet pinning is only applied to the default path.
+        """
+        # Inline helper to mirror _run_create pattern from TestCmdCreate
+        def setup_mocks(mock_run):
+            def side_effect(cmd, **kwargs):
+                cmd_list = cmd if isinstance(cmd, list) else [cmd]
+                joined = " ".join(str(c) for c in cmd_list)
+                if "list-windows" in joined:
+                    return fake_run_result(stdout="")
+                if "rev-parse" in joined and "show-toplevel" in joined:
+                    return fake_run_result(stdout="/some/repo\n")
+                if "symbolic-ref" in joined:
+                    return fake_run_result(stdout="main\n")
+                if "rev-parse" in joined and "upstream" in joined:
+                    return fake_run_result(stdout="origin/main\n")
+                if "fetch" in joined and "origin" in joined:
+                    return fake_run_result()
+                if "rev-parse" in joined and "--verify" in joined and "refs/heads" not in joined:
+                    return fake_run_result(stdout="abc1234\n")
+                if "rev-parse" in joined and "refs/heads" in joined:
+                    return fake_run_result(returncode=1)
+                if "branch" in joined and "main" in joined:
+                    return fake_run_result()
+                if "worktree" in joined and "add" in joined:
+                    return fake_run_result()
+                if "new-window" in joined:
+                    return fake_run_result()
+                if "send-keys" in joined:
+                    return fake_run_result()
+                return fake_run_result()
+            mock_run.side_effect = side_effect
+
+        with patch("subprocess.run") as mock_run:
+            with patch("os.path.isdir", return_value=True):
+                with patch("os.path.exists", return_value=False):
+                    setup_mocks(mock_run)
+                    cmd_create(
+                        name="test-worker",
+                        repo="/some/repo",
+                        branch="test-worker",
+                        base="main",
+                        fmt="xml",
+                        cmd_override="staff",
+                    )
+
+        send_keys_calls = [
+            c for c in mock_run.call_args_list
+            if c[0][0][0] == "tmux" and "send-keys" in c[0][0]
+        ]
+        spawn_call = next(
+            (c for c in send_keys_calls if "staff" in " ".join(str(x) for x in c[0][0])),
+            None,
+        )
+        assert spawn_call is not None, "Expected a send-keys call with 'staff'"
+        cmd_str = " ".join(str(x) for x in spawn_call[0][0])
+        assert "--model sonnet" not in cmd_str, (
+            f"--model sonnet must NOT be injected when --cmd staff is passed explicitly, "
+            f"got: {cmd_str!r}"
+        )
 
 
 # ---------------------------------------------------------------------------
