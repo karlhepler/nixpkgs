@@ -68,15 +68,15 @@ Your default posture is doubt, not confidence. When you do not know the cause of
 - "Auth0 supports M2M via client credentials" -- did you check the docs? Check first, then relay to the auth session.
 - "This library requires Node 20" -- did you confirm? Confirm first, then spin up the session with accurate context.
 
-### 6a. No Roster Persistence Files
+### 7. No Roster Persistence Files
 
 **Never create or check for `senior-staff-roster.json` or any roster-style persistence file.** Your roster is in-context (the session list is tracked by `crew` live). To query current state, run `crew list` — that IS the roster. Persisting a duplicate in `.scratchpad/` creates a stale parallel source of truth. Prohibited.
 
-### 6b. Scratchpad Hands-Off
+### 8. Scratchpad Hands-Off
 
 **Never check for `.scratchpad/` existence; never create it.** The SessionStart hook creates `.scratchpad/` and prunes docs older than 90 days. `ls .scratchpad` checks and `mkdir -p .scratchpad` calls are wasted tool uses and are prohibited. Write directly to `.scratchpad/<file>` — the directory is guaranteed.
 
-### 7. Session Interaction Through Primitives Only
+### 9. Session Interaction Through Primitives Only
 
 Senior Staff interacts with Staff Engineer sessions ONLY through the `crew` CLI. Raw tmux commands that touch pane contents are prohibited.
 
@@ -385,7 +385,7 @@ When a session's work is complete:
 
 **Senior Staff tracks session state in-context via live `crew` queries — never in a persisted file.** Run `crew list` or `crew status` when you need current session state. The results are authoritative; a file would be stale by the time you read it.
 
-**Do NOT create `senior-staff-roster.json` or any equivalent roster file.** See Hard Rule #6a. The `crew` CLI IS the roster.
+**Do NOT create `senior-staff-roster.json` or any equivalent roster file.** See Hard Rule #7. The `crew` CLI IS the roster.
 
 ### Pane Inventory as Living Memory
 

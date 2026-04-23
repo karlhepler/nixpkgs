@@ -585,6 +585,8 @@ Your job is to migrate the users table to add a `last_login_at` column. The migr
 
 Sub-agents must NEVER call `kanban redo` or `kanban review`. All lifecycle commands (`kanban done`, `kanban redo`, `kanban review`, `kanban cancel`, `kanban start`, `kanban defer`) are prohibited for sub-agents. The SubagentStop hook handles `kanban review` automatically when the agent stops — sub-agents only check criteria as they complete work.
 
+**Sub-agents must NEVER call `kanban criteria add` or `kanban criteria remove`.** If a sub-agent encounters a broken or unverifiable MoV (structural command error, wrong tool-invocation flag, typo), it MUST stop and report the issue in its final return — not mutate the card's criteria to bypass the problem. Only the staff engineer (or the SubagentStop hook) may add or remove criteria. Reshaping AC mid-work to make them passable defeats the quality gate the AC exists to enforce.
+
 **When creating cards for library/framework work (ANY task type — implementation, debugging, or investigation):** Background sub-agents cannot access MCP servers, so YOU must do the Context7 lookup before creating cards (see Context7 checklist item above). After fetching the docs, encode the results where sub-agents can use them: for a single card, include the relevant documentation context inline in the card's `action` field; for multiple cards covering the same library, write the results to `.scratchpad/context7-<library>-<session>.md` and reference that path in each card's `action` field. (For debugger-specific docs-first guidance, see § Understanding Requirements "Docs-first for external libraries")
 
 **When a card touches both source code AND `.claude/` files:** Split into two cards. Delegate source code changes to the sub-agent. Handle `.claude/` file edits directly after the sub-agent completes. Before editing, confirm with user per § Rare Exceptions item 4. Background agents cannot perform `.claude/` edits (see § Rare Exceptions).
@@ -996,6 +998,13 @@ The debugger performs hypothesis-testing EXPERIMENTS as part of its methodology.
   Reason: subjective inspection command — no exit code semantics, requires reading and judging code. Use `mov_type: "semantic"` for this.
 
   **`timeout` is mandatory** on every command in `mov_commands`. Typical values: 5–30 seconds for file checks and `rg` commands; up to 120 seconds for test runners. Cap at 300 seconds.
+
+  **Pattern-absence assertions — use `! rg -q` not `test $(rg -c ...) -le 0`.** When an MoV asserts that a pattern does NOT appear in a file, the correct idiom is:
+
+  ✅ `! rg -q 'pattern' file` — negated quiet-match; exits 0 if pattern is absent, 1 if present
+  ❌ `test $(rg -c 'pattern' file) -le 0` — fragile: `rg -c` produces NO stdout on zero matches, so `test $(empty) -le 0` is syntactically broken (exit 2 — 'unary operator expected')
+
+  The `rg -c` idiom only works when the file is guaranteed to contain at least one match; for absence assertions it fails structurally. Prefer `! rg -q` universally — it is correct in both the match and no-match cases.
 
   **`rg` flag pitfall — `-E` is NOT extended regex:** In ripgrep, `-E` means `--encoding`, not extended regex (that flag is `grep`-specific). Ripgrep's default regex engine already handles PCRE-style patterns. Writing `rg -qE 'pattern'` or `rg -qiE 'pattern'` will silently fail with a non-zero exit code (treated as encoding specification error), breaking programmatic MoV checks. Use `rg -qi 'pattern'` for case-insensitive quiet matching. If the pattern itself starts with a dash, use `rg -qi -e 'pattern'` to prevent flag ambiguity.
 
