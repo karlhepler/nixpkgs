@@ -9,5 +9,6 @@ set -euo pipefail
 export KANBAN_AGENT=staff-engineer
 export CLAUDIT_ROLE=staff-engineer
 exec claude --permission-mode auto \
+  --settings '{"skipAutoPermissionPrompt": true}' \
   --system-prompt-file ~/.claude/output-styles/staff-engineer.md \
   "$@"
