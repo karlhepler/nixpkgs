@@ -1,17 +1,15 @@
 ---
 name: crew-cli
-description: crew CLI full command reference. Auto-load when about to run any crew subcommand and need exact arguments, flag syntax, or error handling. Covers all subcommands: create, list, tell, read, find, status, dismiss. Includes --format flag behavior, exit code table, pane targeting rules (window vs window.pane), multi-target comma syntax, and crew create vs crew tell sequencing discipline. Note: crew sessions, crew resume, and crew project-path are NOT covered here — see senior-staff-engineer.md Communication Primitives section.
+description: crew CLI full command reference. Auto-load when about to run any crew subcommand and need exact arguments, flag syntax, or error handling. Covers all subcommands: create, list, tell, read, find, status, dismiss, sessions, resume, project-path. Includes --format flag behavior, exit code table, pane targeting rules (window vs window.pane), multi-target comma syntax, and crew create vs crew tell sequencing discipline. This skill is the canonical source for all crew CLI syntax — no external pointer needed.
 ---
 
 # crew CLI — Full Command Reference
 
 Exhaustive reference for all `crew` subcommands. Senior Staff uses these in production — no `--help` lookups, no permission asks, no syntax mistakes.
 
-Note: `crew sessions`, `crew resume`, and `crew project-path` are covered in the Communication Primitives section of `senior-staff-engineer.md` and do not have dedicated reference sections in this skill.
-
 **Top-level syntax:**
 ```bash
-crew [-h] [--format {xml,json,human}] {list,tell,read,dismiss,find,create,status} ...
+crew [-h] [--format {xml,json,human}] {list,tell,read,dismiss,find,create,status,sessions,resume,project-path} ...
 ```
 
 **Global flag:**
@@ -251,6 +249,142 @@ crew dismiss <targets>
 crew dismiss pricing              # Dismiss single window after work verified
 crew dismiss pricing,auth         # Bulk dismiss multiple completed sessions
 ```
+
+---
+
+## crew sessions
+
+List Claude session IDs for tmux windows in the current session. Used to find a session ID before `crew resume`.
+
+```bash
+crew sessions [--window <name>] [--worktree <path>] [--format xml|json|human]
+```
+
+**Arguments:**
+- `--window <name>` — Restrict to sessions for this single tmux window name. If no sessions are found for the window, emits a warning (not an error).
+- `--worktree <path>` — Use an explicit worktree path instead of tmux window lookup. Bypasses the window-to-path resolution step entirely.
+
+**Behavior:**
+- Default (no flags): scans all windows in the current tmux session, resolves each pane's working directory to a Claude project key (`~/.claude/projects/<key>/`), and lists `.jsonl` session files sorted by most-recently-modified first.
+- With `--window <name>`: restricts to that single window. Window must exist in the current tmux session; exits 1 (`WINDOW_NOT_FOUND`) if not found.
+- With `--worktree <path>`: bypasses tmux lookup entirely — scans the projects directory for the given path.
+- Session files are sorted by mtime descending (most recent first).
+- Output is buffered and emitted atomically after all windows are scanned.
+
+**Output (XML default):**
+```xml
+<sessions>
+  <session window="pricing" worktree="/Users/me/worktrees/pricing" id="<uuid>" modified="2026-04-22T10:00:00" />
+  <session window="auth" worktree="/Users/me/worktrees/auth" id="<uuid>" modified="2026-04-21T14:30:00" />
+</sessions>
+```
+
+**Examples:**
+```bash
+crew sessions                              # All windows in current session
+crew sessions --window pricing             # Sessions for the pricing window only
+crew sessions --window pricing --format json  # JSON output
+crew sessions --worktree ~/worktrees/auth  # Explicit path bypass
+```
+
+**Error handling:**
+- `--window <name>` window not found → exit 1, error code `WINDOW_NOT_FOUND`
+- Window found but no `.jsonl` files → warning (not error) in output: `no Claude sessions found for window '<name>'`
+- Filesystem error reading sessions dir → exit 1
+
+**When to use:** Run before `crew resume` when you need to list available session IDs for a window, or when you need to verify which session is the most recent.
+
+---
+
+## crew resume
+
+Recreate a killed tmux window and resume its Claude session in one call.
+
+```bash
+crew resume <name> [--session <id>] [--format xml|json|human]
+```
+
+**Arguments:**
+- `name` (required) — Window name. Must match a worktree in `~/worktrees/<name>` or an active tmux window with that name. Must be filesystem-safe (alphanumeric, hyphens, underscores only).
+- `--session <id>` — Explicit session UUID to resume. Default: most recent `.jsonl` file by mtime. Use `crew sessions --window <name>` to list available IDs.
+
+**Behavior:**
+1. Validates `name` against the filesystem-safe name regex.
+2. Aborts if a tmux window named `<name>` already exists (error: `WINDOW_EXISTS`).
+3. Resolves the worktree path: first checks active tmux windows (cross-session), then falls back to `~/worktrees/<name>`.
+4. Scans `~/.claude/projects/<key>/` for `.jsonl` session files.
+5. If `--session` not given, picks the most recent `.jsonl` by mtime.
+6. Emits a warning if multiple sessions exist and the most recent was picked.
+7. Creates a new tmux window: `tmux new-window -n <name> -c <worktree_path> -d`.
+8. Launches: `staff --name <name> --resume <session_id>` via tmux send-keys.
+9. Emits structured success output.
+
+**Note:** Worktree resolution is intentionally cross-session (unlike other crew subcommands). On recovery, the originating tmux session may no longer exist — so `crew resume` scans all tmux windows first, then falls back to `~/worktrees/<name>`.
+
+**Output (XML default):**
+```xml
+<resumed window="pricing" session="<uuid>" worktree="/Users/me/worktrees/pricing" command="staff --name pricing --resume <uuid>" />
+```
+
+**Examples:**
+```bash
+crew resume pricing                        # Infer most recent session
+crew resume pricing --session <uuid>       # Explicit session ID
+crew resume auth --format json             # JSON output
+```
+
+**Error handling:**
+- Window already exists → exit 1, error code `WINDOW_EXISTS` (dismiss first or choose a different name)
+- Worktree not found (no active window and no `~/worktrees/<name>`) → exit 1, error code `WORKTREE_NOT_FOUND`
+- Explicit `--session <id>` file not found → exit 1, error code `NO_SESSION`
+- No session files at all for the worktree → exit 1, error code `NO_SESSION`
+- tmux window creation fails → exit 1, error code `TMUX_WINDOW_FAILED`
+- Invalid name (spaces, slashes, etc.) → exit 1, error code `INVALID_NAME`
+
+**Warning (non-fatal):** Multiple sessions found — most recent selected. Message printed to stderr in XML/JSON modes; includes list of other candidate IDs.
+
+---
+
+## crew project-path
+
+Resolve a worktree path to its Claude Code project directory key. Shows the mangled key Claude uses to store session files and lists any `.jsonl` session files found there.
+
+```bash
+crew project-path <worktree> [--format xml|json|human]
+```
+
+**Arguments:**
+- `worktree` (required) — Path to the worktree directory. Use `.` for the current working directory. Accepts absolute paths or `~`-prefixed paths.
+
+**Behavior:**
+- Resolves `.` to `cwd` via `os.getcwd()`.
+- Mangles the path to a project key: replaces every `/` with `-` (Claude Code's path mangling scheme).
+- Checks if `~/.claude/projects/<key>/` exists.
+- Lists any `.jsonl` session files in that directory, sorted by mtime descending.
+- Does NOT modify any files — read-only diagnostic command.
+
+**Path mangling:** Claude Code converts a worktree path to a project key by replacing every `/` with `-`. Example: `/Users/me/worktrees/pricing` → `-Users-me-worktrees-pricing`. The project directory is then `~/.claude/projects/-Users-me-worktrees-pricing/`.
+
+**Output (XML default):**
+```xml
+<project-path worktree="/Users/me/worktrees/pricing" key="-Users-me-worktrees-pricing" sessions_dir_exists="true">
+  <session id="<uuid>" mtime="2026-04-22T10:00:00" />
+  <session id="<uuid>" mtime="2026-04-21T08:00:00" />
+</project-path>
+```
+
+**Examples:**
+```bash
+crew project-path .                              # Current directory
+crew project-path ~/worktrees/pricing            # Explicit path
+crew project-path ~/worktrees/pricing --format json  # JSON output
+```
+
+**Error handling:**
+- Path does not exist → exit 1, error code `PATH_NOT_FOUND`
+- Path exists but is not a directory → exit 1, error code `NOT_A_DIRECTORY`
+
+**When to use:** Debugging session file locations when `crew sessions` doesn't find what you expect, or when manually locating session files for a given worktree.
 
 ---
 
