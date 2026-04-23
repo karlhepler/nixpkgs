@@ -21,4 +21,4 @@ ${senior_staff_engineer_content}"
 # Launch Claude Code with date-aware senior staff engineer output style
 export KANBAN_AGENT=senior-staff-engineer
 export CLAUDIT_ROLE=senior-staff-engineer
-exec claude --system-prompt "$system_prompt" "$@"
+exec claude --permission-mode auto --system-prompt "$system_prompt" "$@"
