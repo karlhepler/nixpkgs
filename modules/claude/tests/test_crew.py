@@ -1462,3 +1462,265 @@ class TestCmdCreateNoWorktree:
         p = build_parser()
         args = p.parse_args(["create", "my-worker"])
         assert args.no_worktree is False
+
+
+# ---------------------------------------------------------------------------
+# --tell-file flag — crew create
+# ---------------------------------------------------------------------------
+
+class TestCreateTellFile:
+    """Tests for crew create --tell-file PATH."""
+
+    def _setup_create_mocks(self, mock_run):
+        """Configure mock_run for a minimal successful create flow."""
+        def side_effect(cmd, **kwargs):
+            cmd_list = cmd if isinstance(cmd, list) else [cmd]
+            joined = " ".join(str(c) for c in cmd_list)
+            if "display-message" in joined and "session_name" in joined:
+                return fake_run_result(stdout="tidy-crown\n")
+            if "display-message" in joined and "window_id" in joined:
+                return fake_run_result(stdout="@1\n")
+            if "list-windows" in joined:
+                return fake_run_result(stdout="")
+            if "rev-parse" in joined and "show-toplevel" in joined:
+                return fake_run_result(stdout="/some/repo\n")
+            if "symbolic-ref" in joined:
+                return fake_run_result(stdout="main\n")
+            if "rev-parse" in joined and "upstream" in joined:
+                return fake_run_result(stdout="origin/main\n")
+            if "rev-parse" in joined and "--verify" in joined and "refs/heads" not in joined:
+                return fake_run_result(stdout="abc1234\n")
+            if "fetch" in joined and "origin" in joined:
+                return fake_run_result()
+            if "rev-parse" in joined and "refs/heads" in joined:
+                return fake_run_result(returncode=1)
+            if "branch" in joined and "main" in joined:
+                return fake_run_result()
+            if "worktree" in joined and "add" in joined:
+                return fake_run_result()
+            if "new-window" in joined:
+                return fake_run_result()
+            if "send-keys" in joined:
+                return fake_run_result()
+            if "capture-pane" in joined:
+                return fake_run_result(stdout="╭─ Claude Code ─╮\n│ > │\n")
+            return fake_run_result()
+        mock_run.side_effect = side_effect
+
+    def test_tell_file_content_used_as_tell_body_on_success(self, tmp_path, capsys):
+        """--tell-file reads file contents and uses them as the tell body."""
+        brief = "Build the auth service with JWT support."
+        brief_file = tmp_path / "brief.txt"
+        brief_file.write_text(brief + "\n")  # trailing newline should be stripped
+
+        with patch("subprocess.run") as mock_run:
+            with patch("os.path.isdir", return_value=True):
+                with patch("os.path.exists", return_value=False):
+                    with patch.object(crew_module, "_wait_for_claude_ready", return_value=True):
+                        with patch.object(crew_module, "_deliver_tell", return_value=(True, "verified")) as mock_deliver:
+                            self._setup_create_mocks(mock_run)
+                            cmd_create(
+                                name="test-worker",
+                                repo="/some/repo",
+                                branch="test-worker",
+                                base="main",
+                                fmt="xml",
+                                tell_file=str(brief_file),
+                            )
+
+        # File content (stripped) must be the tell body
+        mock_deliver.assert_called_once_with("test-worker", brief)
+
+    def test_tell_file_deleted_on_successful_delivery(self, tmp_path, capsys):
+        """--tell-file auto-deletes the file when delivery succeeds (told=true)."""
+        brief_file = tmp_path / "brief.txt"
+        brief_file.write_text("Some brief.\n")
+
+        with patch("subprocess.run") as mock_run:
+            with patch("os.path.isdir", return_value=True):
+                with patch("os.path.exists", return_value=False):
+                    with patch.object(crew_module, "_wait_for_claude_ready", return_value=True):
+                        with patch.object(crew_module, "_deliver_tell", return_value=(True, "verified")):
+                            self._setup_create_mocks(mock_run)
+                            cmd_create(
+                                name="test-worker",
+                                repo="/some/repo",
+                                branch="test-worker",
+                                base="main",
+                                fmt="xml",
+                                tell_file=str(brief_file),
+                            )
+
+        assert not brief_file.exists(), "File must be deleted after successful delivery"
+
+    def test_tell_file_preserved_on_delivery_failure(self, tmp_path, capsys):
+        """--tell-file does NOT delete the file when delivery fails (told=false)."""
+        brief_file = tmp_path / "brief.txt"
+        brief_file.write_text("Some brief.\n")
+
+        with patch("subprocess.run") as mock_run:
+            with patch("os.path.isdir", return_value=True):
+                with patch("os.path.exists", return_value=False):
+                    with patch.object(crew_module, "_wait_for_claude_ready", return_value=True):
+                        with patch.object(
+                            crew_module, "_deliver_tell",
+                            return_value=(False, "verification timeout: tell text not observed in pane"),
+                        ):
+                            self._setup_create_mocks(mock_run)
+                            cmd_create(
+                                name="test-worker",
+                                repo="/some/repo",
+                                branch="test-worker",
+                                base="main",
+                                fmt="xml",
+                                tell_file=str(brief_file),
+                            )
+
+        assert brief_file.exists(), "File must be preserved when delivery fails"
+
+    def test_tell_file_nonexistent_errors_cleanly(self, tmp_path, capsys):
+        """--tell-file with a nonexistent path fails immediately with TELL_FILE_ERROR."""
+        nonexistent = str(tmp_path / "does_not_exist.txt")
+
+        with patch("subprocess.run") as mock_run:
+            with patch("os.path.isdir", return_value=True):
+                with patch("os.path.exists", return_value=False):
+                    self._setup_create_mocks(mock_run)
+                    with pytest.raises(SystemExit) as exc_info:
+                        cmd_create(
+                            name="test-worker",
+                            repo="/some/repo",
+                            branch="test-worker",
+                            base="main",
+                            fmt="xml",
+                            tell_file=nonexistent,
+                        )
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "TELL_FILE_ERROR" in captured.out
+
+    def test_tell_and_tell_file_mutex_at_parser_level(self):
+        """--tell and --tell-file are mutually exclusive in crew create (argparse group)."""
+        p = build_parser()
+        with pytest.raises(SystemExit):
+            p.parse_args(["create", "my-worker", "--tell", "msg", "--tell-file", "/tmp/f.txt"])
+
+    def test_tell_file_flag_parsed_correctly(self, tmp_path):
+        """build_parser parses --tell-file for crew create."""
+        p = build_parser()
+        args = p.parse_args(["create", "my-worker", "--tell-file", "/tmp/brief.txt"])
+        assert args.tell_file == "/tmp/brief.txt"
+        assert args.tell is None
+
+    def test_tell_file_preserved_when_claude_never_ready(self, tmp_path, capsys):
+        """--tell-file preserved when Claude Code doesn't start (told=false, no delivery attempted)."""
+        brief_file = tmp_path / "brief.txt"
+        brief_file.write_text("Some brief.\n")
+
+        with patch("subprocess.run") as mock_run:
+            with patch("os.path.isdir", return_value=True):
+                with patch("os.path.exists", return_value=False):
+                    with patch.object(crew_module, "_wait_for_claude_ready", return_value=False):
+                        self._setup_create_mocks(mock_run)
+                        cmd_create(
+                            name="test-worker",
+                            repo="/some/repo",
+                            branch="test-worker",
+                            base="main",
+                            fmt="xml",
+                            tell_file=str(brief_file),
+                        )
+
+        assert brief_file.exists(), "File must be preserved when Claude Code doesn't start"
+
+
+# ---------------------------------------------------------------------------
+# --tell-file flag — crew tell
+# ---------------------------------------------------------------------------
+
+class TestTellTellFile:
+    """Tests for crew tell --tell-file PATH."""
+
+    def test_tell_file_content_used_as_message(self, tmp_path, capsys):
+        """crew tell --tell-file reads file contents and sends them to the target."""
+        message = "Hello from file."
+        tell_file = tmp_path / "msg.txt"
+        tell_file.write_text(message + "\n")  # trailing newline stripped
+
+        lookup = {"my-worker": ("session:0", "@1")}
+        with patch.object(crew_module, "resolve_targets", return_value=[("session:0.0", "my-worker.0", "@1")]):
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = fake_run_result()
+                cmd_tell("my-worker", None, "xml", tell_file=str(tell_file))
+
+        # The send-keys call for the message should use the file content
+        send_keys_calls = [
+            c for c in mock_run.call_args_list
+            if c[0][0][0] == "tmux" and "send-keys" in c[0][0]
+        ]
+        # Find the call that carries the message text
+        msg_call = next(
+            (c for c in send_keys_calls if message in " ".join(str(x) for x in c[0][0])),
+            None,
+        )
+        assert msg_call is not None, f"Expected send-keys with '{message}'"
+
+    def test_tell_file_deleted_after_delivery(self, tmp_path, capsys):
+        """crew tell --tell-file auto-deletes the file after send completes."""
+        tell_file = tmp_path / "msg.txt"
+        tell_file.write_text("Some message.\n")
+
+        with patch.object(crew_module, "resolve_targets", return_value=[("session:0.0", "my-worker.0", "@1")]):
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = fake_run_result()
+                cmd_tell("my-worker", None, "xml", tell_file=str(tell_file))
+
+        assert not tell_file.exists(), "File must be deleted after crew tell delivery"
+
+    def test_tell_file_preserved_on_delivery_failure(self, tmp_path, capsys):
+        """crew tell --tell-file preserves the file when tmux send-keys returns non-zero exit."""
+        tell_file = tmp_path / "msg.txt"
+        tell_file.write_text("Some message.\n")
+
+        with patch.object(crew_module, "resolve_targets", return_value=[("session:0.0", "my-worker.0", "@1")]):
+            with patch("subprocess.run") as mock_run:
+                # Simulate tmux send-keys failure (non-zero returncode)
+                mock_run.return_value = fake_run_result(returncode=1)
+                cmd_tell("my-worker", None, "xml", tell_file=str(tell_file))
+
+        assert tell_file.exists(), "File must be preserved when tmux delivery fails"
+
+    def test_tell_file_nonexistent_errors_cleanly(self, tmp_path, capsys):
+        """crew tell --tell-file with nonexistent path fails with TELL_FILE_ERROR (exit 1)."""
+        nonexistent = str(tmp_path / "does_not_exist.txt")
+        with pytest.raises(SystemExit) as exc_info:
+            cmd_tell("my-worker", None, "xml", tell_file=nonexistent)
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "TELL_FILE_ERROR" in captured.out
+
+    def test_tell_file_flag_parsed_for_tell_subcommand(self, tmp_path):
+        """build_parser parses --tell-file for crew tell."""
+        p = build_parser()
+        args = p.parse_args(["tell", "my-worker", "--tell-file", "/tmp/msg.txt"])
+        assert args.tell_file == "/tmp/msg.txt"
+        assert args.message is None
+
+    def test_tell_and_tell_file_both_given_errors_at_parser_level(self):
+        """crew tell with both positional message and --tell-file errors at argparse level (exit 2)."""
+        p = build_parser()
+        with pytest.raises(SystemExit) as exc_info:
+            p.parse_args(["tell", "my-worker", "some message", "--tell-file", "/tmp/f.txt"])
+        assert exc_info.value.code == 2
+
+    def test_no_message_and_no_tell_file_errors(self, capsys):
+        """crew tell with no message and no --tell-file errors with MISSING_MESSAGE."""
+        import sys
+        with patch.object(sys, "argv", ["crew", "tell", "my-worker"]):
+            with pytest.raises(SystemExit) as exc_info:
+                from crew import main
+                main()
+        assert exc_info.value.code == 2
+        captured = capsys.readouterr()
+        assert "MISSING_MESSAGE" in captured.out

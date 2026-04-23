@@ -927,7 +927,23 @@ def _looks_like_message_not_target(s: str) -> bool:
     return bool(_LEGACY_ORDER_RE.search(s))
 
 
-def cmd_tell(targets_str: str, message: str, fmt: str, use_keys: bool = False) -> None:
+def cmd_tell(targets_str: str, message: Optional[str], fmt: str, use_keys: bool = False, tell_file: Optional[str] = None) -> None:
+    # --tell-file: read message from file; delete only after all targets received successfully.
+    file_path_to_delete: Optional[str] = None
+    if tell_file is not None:
+        try:
+            with open(tell_file, encoding="utf-8") as fh:
+                message = fh.read().rstrip("\n")
+        except OSError as exc:
+            emit_error(
+                f"--tell-file '{tell_file}': {exc.strerror}",
+                fmt,
+                error_code="TELL_FILE_ERROR",
+                exit_code=1,
+            )
+        else:
+            file_path_to_delete = tell_file
+
     resolved = resolve_targets(targets_str, fmt=fmt)
 
     if fmt == "xml":
@@ -935,26 +951,40 @@ def cmd_tell(targets_str: str, message: str, fmt: str, use_keys: bool = False) -
     elif fmt == "json":
         json_targets: List[Dict] = []
 
+    # Track delivery success across all targets: file is only deleted when every
+    # tmux send-keys subprocess exits 0. Any failure (non-zero returncode or
+    # exception) prevents deletion so the caller can retry.
+    all_delivered = True
     for tmux_target, label, _window_id in resolved:
-        if use_keys:
-            # Keys mode: split message into tmux key tokens and pass directly.
-            # No -l flag — tokens are interpreted as tmux key names (Enter, Escape, C-c, etc.).
-            tokens = message.split()
-            subprocess.run(
-                ["tmux", "send-keys", "-t", tmux_target] + tokens,
-                check=False
-            )
-        else:
-            # Text mode: send message as literal text, then Enter as a separate key.
-            subprocess.run(
-                ["tmux", "send-keys", "-t", tmux_target, message],
-                check=False
-            )
-            time.sleep(0.15)
-            subprocess.run(
-                ["tmux", "send-keys", "-t", tmux_target, "Enter"],
-                check=False
-            )
+        try:
+            if use_keys:
+                # Keys mode: split message into tmux key tokens and pass directly.
+                # No -l flag — tokens are interpreted as tmux key names (Enter, Escape, C-c, etc.).
+                tokens = (message or "").split()
+                result = subprocess.run(
+                    ["tmux", "send-keys", "-t", tmux_target] + tokens,
+                    check=False
+                )
+                if result.returncode != 0:
+                    all_delivered = False
+            else:
+                # Text mode: send message as literal text, then Enter as a separate key.
+                result = subprocess.run(
+                    ["tmux", "send-keys", "-t", tmux_target, message or ""],
+                    check=False
+                )
+                if result.returncode != 0:
+                    all_delivered = False
+                else:
+                    time.sleep(0.15)
+                    result_enter = subprocess.run(
+                        ["tmux", "send-keys", "-t", tmux_target, "Enter"],
+                        check=False
+                    )
+                    if result_enter.returncode != 0:
+                        all_delivered = False
+        except Exception:
+            all_delivered = False
         if fmt == "xml":
             ET.SubElement(root, "target", crew=label, status="sent")
         elif fmt == "json":
@@ -966,6 +996,11 @@ def cmd_tell(targets_str: str, message: str, fmt: str, use_keys: bool = False) -
         print(xml_to_string(root))
     elif fmt == "json":
         print(json.dumps({"targets": json_targets}, indent=2))
+
+    # Delete only after all targets received successfully (mirrors kanban do --file semantics).
+    # File is preserved on any delivery failure so the caller can retry.
+    if file_path_to_delete is not None and all_delivered:
+        os.unlink(file_path_to_delete)
 
 
 # ---------------------------------------------------------------------------
@@ -1466,12 +1501,14 @@ def cmd_create(
     cmd_override: Optional[str] = None,
     tell: Optional[str] = None,
     no_worktree: bool = False,
+    tell_file: Optional[str] = None,
 ) -> None:
     """Create a git worktree, tmux window, and staff session end-to-end.
 
     Steps:
     1. Validate name (non-empty, filesystem-safe).
     1b. Validate --no-worktree flag combinations.
+    1c. Resolve --tell-file into tell payload (read file, schedule delete on success).
     2. Check for existing tmux window named <name>.
     3. Resolve repo (default: current git root).
     4. Resolve branch (default: <name>).
@@ -1484,6 +1521,7 @@ def cmd_create(
     11. Start staff (or --cmd override) in the new window (with --name <name> for display).
     12. If --tell was given: wait for prompt-ready, then deliver the initial message.
     13. Emit structured result.
+    14. Auto-delete --tell-file on successful tell delivery.
 
     When no_worktree=True, steps 4-9 are skipped and the repo directory itself is
     used as the tmux window cwd. Incompatible with --branch and --base.
@@ -1522,6 +1560,23 @@ def cmd_create(
                 error_code="INCOMPATIBLE_FLAGS",
                 exit_code=2,
             )
+
+    # --- 1c. Resolve --tell-file into tell payload ---
+    # Read file content now (fail fast if unreadable) and schedule deletion on
+    # successful delivery. The file is preserved if delivery fails.
+    tell_file_path: Optional[str] = None
+    if tell_file is not None:
+        try:
+            with open(tell_file, encoding="utf-8") as fh:
+                tell = fh.read().rstrip("\n")
+        except OSError as exc:
+            emit_error(
+                f"--tell-file '{tell_file}': {exc.strerror}",
+                fmt,
+                error_code="TELL_FILE_ERROR",
+                exit_code=1,
+            )
+        tell_file_path = tell_file
 
     # --- 2. Check for existing tmux window ---
     if _tmux_window_exists(name):
@@ -1779,6 +1834,10 @@ def cmd_create(
             print(f"  initial message delivery failed: {told_reason}")
         print(f"  switch to window: tmux select-window -t {name}")
 
+    # --- 14. Auto-delete --tell-file on successful tell delivery ---
+    if tell_file_path is not None and told:
+        os.unlink(tell_file_path)
+
 
 # ---------------------------------------------------------------------------
 # CLI wiring
@@ -1865,7 +1924,27 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p_tell.add_argument("targets", help="Comma-separated targets (window[.pane]); pane defaults to 0")
-    p_tell.add_argument("message", help="Message to send (text) or space-separated key tokens (with --keys)")
+    tell_msg_group = p_tell.add_mutually_exclusive_group()
+    tell_msg_group.add_argument(
+        "message",
+        nargs="?",
+        default=None,
+        help=(
+            "Message to send (text) or space-separated key tokens (with --keys). "
+            "Required unless --tell-file is given."
+        ),
+    )
+    tell_msg_group.add_argument(
+        "--tell-file",
+        default=None,
+        dest="tell_file",
+        metavar="PATH",
+        help=(
+            "Alternative to the positional message — read tell body from PATH (UTF-8). "
+            "File is auto-deleted after all targets receive successfully (mirrors `kanban do --file`). "
+            "Mutually exclusive with the positional message argument."
+        ),
+    )
     p_tell.add_argument(
         "--keys",
         action="store_true",
@@ -1964,7 +2043,8 @@ def build_parser() -> argparse.ArgumentParser:
             "Example: --cmd claude  (spawn plain Claude instead of staff engineer)"
         ),
     )
-    p_create.add_argument(
+    create_tell_group = p_create.add_mutually_exclusive_group()
+    create_tell_group.add_argument(
         "--tell",
         default=None,
         dest="tell",
@@ -1972,7 +2052,18 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Initial message to send once the session is ready. Waits for a prompt-ready "
             "signal then delivers the message automatically. Replaces the two-call pattern "
-            "`crew create foo && crew tell foo '...'`."
+            "`crew create foo && crew tell foo '...'`. Mutually exclusive with --tell-file."
+        ),
+    )
+    create_tell_group.add_argument(
+        "--tell-file",
+        default=None,
+        dest="tell_file",
+        metavar="PATH",
+        help=(
+            "Alternative to --tell — read the initial message from PATH (UTF-8). "
+            "File is auto-deleted on successful delivery (mirrors `kanban do --file`). "
+            "Mutually exclusive with --tell."
         ),
     )
     p_create.add_argument(
@@ -2110,7 +2201,22 @@ def main() -> None:
                     error_code="LEGACY_ARG_ORDER",
                     exit_code=2,
                 )
-            cmd_tell(args.targets, args.message, fmt, use_keys=args.use_keys)
+            # At least one source of message content must be provided.
+            # (argparse mutually_exclusive_group handles the both-given case.)
+            if args.message is None and args.tell_file is None:
+                emit_error(
+                    "crew tell: a message is required — provide a positional message or --tell-file PATH.",
+                    fmt,
+                    error_code="MISSING_MESSAGE",
+                    exit_code=2,
+                )
+            cmd_tell(
+                args.targets,
+                args.message,
+                fmt,
+                use_keys=args.use_keys,
+                tell_file=args.tell_file,
+            )
         elif args.command == "read":
             cmd_read(args.targets, args.lines, args.from_line, fmt)
         elif args.command == "dismiss":
@@ -2122,7 +2228,7 @@ def main() -> None:
         elif args.command == "create":
             cmd_create(args.name, args.repo, args.branch, args.base, fmt,
                        cmd_override=args.cmd_override, tell=args.tell,
-                       no_worktree=args.no_worktree)
+                       no_worktree=args.no_worktree, tell_file=args.tell_file)
         elif args.command == "project-path":
             send = _ProjectPathSend(fmt)
             cmd_project_path(args.worktree, fmt, send)

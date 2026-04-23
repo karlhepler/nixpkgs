@@ -17,12 +17,13 @@ crew [-h] [--format {xml,json,human}] {list,tell,read,dismiss,find,create,status
 
 ---
 
-## crew create
+## `crew create`
+`crew create <name> [--repo <path>] [--branch <branch>] [--base <base-branch>] [--tell "<message>" | --tell-file PATH] [--no-worktree]`
 
 End-to-end staff session creation — worktree, tmux window, and Claude instance in one command.
 
 ```bash
-crew create <name> [--repo <path>] [--branch <branch>] [--base <base-branch>] [--tell "<message>"] [--no-worktree]
+crew create <name> [--repo <path>] [--branch <branch>] [--base <base-branch>] [--tell "<message>" | --tell-file PATH] [--no-worktree]
 ```
 
 **Arguments:**
@@ -30,19 +31,22 @@ crew create <name> [--repo <path>] [--branch <branch>] [--base <base-branch>] [-
 - `--repo <path>` — Path to the git repository. Default: current repo via `git rev-parse --show-toplevel`.
 - `--branch <branch>` — Branch name for the new worktree. Default: `<name>`. Incompatible with `--no-worktree`.
 - `--base <base-branch>` — Base branch to create the new branch from. Default: current branch of the repo. Incompatible with `--no-worktree`.
-- `--tell "<message>"` — Initial brief delivered to the session immediately after spawn. Single-call create + brief. Use this instead of a separate `crew tell` call.
+- `--tell "<message>"` — Initial brief delivered to the session immediately after spawn. Single-call create + brief. Use this instead of a separate `crew tell` call. Mutually exclusive with `--tell-file`.
+- `--tell-file PATH` — Alternative to `--tell` — read tell message from file (UTF-8). File is auto-deleted on successful delivery (mirrors `kanban do --file`). Mutually exclusive with `--tell`.
 - `--no-worktree` — Spawn a staff session directly in `<repo>` without creating a new worktree or branch. Use for "work directly on main" or existing-branch workflows. Incompatible with `--branch` and `--base`.
 - `--cmd <command>` — Override the spawn command. Default: `staff --name <name>`. Use when the target session should run something other than `staff`.
 
 **Behavior:**
 - Default spawn command is `staff --name <name>`, NOT `claude --name <name>`. The created window is a Staff Engineer session.
 - `--tell` delivers the initial brief in the same call — no separate `crew tell` needed.
+- `--tell-file PATH` reads the brief from a file. The file is deleted automatically after successful delivery. If delivery fails (e.g., Claude Code didn't start), the file is preserved so you can retry.
 - Use `--cmd <other>` to override the spawn command when not using `staff`.
 
 **Examples:**
 ```bash
 crew create pricing                                            # Branch + worktree + window all named "pricing"
 crew create pricing --tell "Implement tiered billing model."   # Create + deliver initial brief in one call
+crew create pricing --tell-file /tmp/brief.txt                 # Create + deliver brief from file (file auto-deleted on success)
 crew create auth --base main                                   # Create from main instead of current branch
 crew create docs --repo ~/worktrees/other-project/main         # Create in a different repo
 crew create payment --branch payment-v2                        # Window named "payment", branch "payment-v2"
@@ -100,12 +104,14 @@ Send input to one or more specific pane(s).
 
 ```bash
 crew tell <targets> "<message>" [--keys]
+crew tell <targets> --tell-file PATH [--keys]
 ```
 
 **Arguments:**
 - `targets` (required) — Comma-separated targets. Bare window names are accepted and default to pane 0. `window.pane` format for explicit non-zero panes.
-- `message` (required) — Text to send (literal text + Enter by default), or space-separated tmux key tokens (with `--keys`).
+- `message` (optional) — Text to send (literal text + Enter by default), or space-separated tmux key tokens (with `--keys`). Required unless `--tell-file` is given.
 - `--keys` — Interpret message as tmux key tokens instead of literal text. No Enter appended automatically.
+- `--tell-file PATH` — Alternative to the positional message — read tell body from PATH (UTF-8). File is auto-deleted on successful delivery (mirrors `kanban do --file`). Mutually exclusive with the positional message argument.
 
 **Pane 0 default:** `crew tell pricing "..."` targets pane 0 of the `pricing` window. Only use `crew tell pricing.1 "..."` when intentionally addressing a non-zero pane.
 
@@ -125,6 +131,7 @@ crew tell pricing "Pause. Pivoting to usage-based billing."
 crew tell auth "The OAuth2 provider changed — use Auth0 instead of Okta."
 crew tell pricing,billing,docs "Product renamed from 'Acme' to 'Nova'. Update all references."
 crew tell auth.1 "<message>"              # Target non-default pane explicitly
+crew tell pricing --tell-file /tmp/brief.txt   # Send from file; file auto-deleted on delivery
 ```
 
 **Multi-target:** Comma-separated. Same message sent to each target. Use for cross-cutting relays.
@@ -403,3 +410,4 @@ crew project-path ~/worktrees/pricing --format json  # JSON output
 - `crew list` / `crew status` scope: current tmux session only — no cross-session visibility.
 - `--format` is `crew`'s flag; `kanban` uses `--output-style` (not `--format`). Do not confuse them.
 - No `--human` shorthand — use `--format human` if human-readable output is ever needed (not recommended for AI coordination).
+- `--tell-file` auto-delete: the file at PATH is deleted **only after all targets receive successfully**. For `crew create`, delivery is verified by the tell-verification logic (`told=true`). For `crew tell`, delivery is verified by checking that every `tmux send-keys` subprocess exits 0. If any delivery fails, the file is **preserved** — you can retry without re-creating the file. This mirrors `kanban do --file` auto-delete semantics. If the file does not exist or is unreadable at invocation time, the command fails immediately with `TELL_FILE_ERROR` (exit code 1).
