@@ -1158,7 +1158,7 @@ def cmd_dismiss(targets_str: str, fmt: str) -> None:
 # Subcommand: find
 # ---------------------------------------------------------------------------
 
-def cmd_find(pattern: str, targets_str: Optional[str], lines: Optional[int], fmt: str) -> None:
+def cmd_find(pattern: str, targets_str: Optional[str], lines: Optional[int], fmt: str) -> None:  # filter: is_claude_pane + self-exclusion (no-targets path)
     if targets_str:
         resolved = resolve_targets(targets_str, fmt=fmt)
     else:
