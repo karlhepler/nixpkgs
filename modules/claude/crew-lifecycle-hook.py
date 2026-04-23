@@ -36,8 +36,8 @@ _PULSE_CRON_LABEL = "pulse-cron"
 _PULSE_CRON_COMMAND = (
     "STEP 1: Run `crew list` to enumerate active Claude panes in the current tmux session. "
     "Your window name is `senior-staff-engineer` — if the only pane listed is your own, exit silently, send no response. "
-    "STEP 2: Run `crew find 'local agents still running|Working for|Churned for|Baked for|\\u2733 \\w+|[\\u280b\\u2819\\u2839\\u2838\\u283c\\u2834\\u2826\\u2827\\u2807\\u280f]' --lines 30` to check whether any other Claude pane is actively working. "
-    "Active-work indicators: 'local agents still running', 'Working for', 'Churned for', 'Baked for', '\\u2733 ' followed by a verb, or braille spinner characters. "
+    "STEP 2: Run `crew find 'local agents still running|Working for|Churned for|Baked for|✻ \\w+|[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]' --lines 30` to check whether any other Claude pane is actively working. "
+    "Active-work indicators: 'local agents still running', 'Working for', 'Churned for', 'Baked for', '✻ ' followed by a verb, or braille spinner characters (⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏). "
     "If `crew find` returns no matches across all panes, all panes are idle — exit silently, send no response. "
     "If any `crew` command errors, skip this pulse cycle silently. "
     "STEP 3: If `crew find` matched at least one active-work indicator, run `crew status --lines 20` and surface any actionable items (stalled, completed, or errored Staff sessions) per your normal pulse behavior."
@@ -45,11 +45,11 @@ _PULSE_CRON_COMMAND = (
 
 _SENTINEL = "<<pulse-cron-lifecycle>>"
 
-# Match 'crew create <name>' at the start of the command (after stripping leading whitespace).
-_CREW_CREATE_RE = re.compile(r"^\s*crew\s+create\s+\S")
+# Match 'crew create <name>' at the start of the command (.strip() removes leading whitespace before match).
+_CREW_CREATE_RE = re.compile(r"crew\s+create\s+\S")
 
-# Match 'crew dismiss <name>' at the start of the command (after stripping leading whitespace).
-_CREW_DISMISS_RE = re.compile(r"^\s*crew\s+dismiss\s+\S")
+# Match 'crew dismiss <name>' at the start of the command (.strip() removes leading whitespace before match).
+_CREW_DISMISS_RE = re.compile(r"crew\s+dismiss\s+\S")
 
 
 def _additional_context(msg: str) -> str:
@@ -71,12 +71,9 @@ def _on_crew_create() -> None:
     """Emit CronCreate directive (idempotent: model checks CronList first)."""
     msg = (
         f"{_SENTINEL} A new Staff session was just created. "
-        f"Call CronList now. "
-        f"If no cron with label '{_PULSE_CRON_LABEL}' exists, "
-        f"call CronCreate with schedule '{_PULSE_CRON_SCHEDULE}', "
-        f"label '{_PULSE_CRON_LABEL}', "
-        f"and command: {_PULSE_CRON_COMMAND} "
-        f"If a cron with that label already exists, skip CronCreate."
+        f"Call CronList now. If a cron with label containing '{_PULSE_CRON_LABEL}' already exists, skip CronCreate. "
+        f"Otherwise call CronCreate with schedule '{_PULSE_CRON_SCHEDULE}' and label '{_PULSE_CRON_LABEL}' and this command:\n\n"
+        f"```\n{_PULSE_CRON_COMMAND}\n```"
     )
     print(_additional_context(msg))
 
@@ -87,7 +84,8 @@ def _on_crew_dismiss() -> None:
         f"{_SENTINEL} A Staff session was just dismissed. "
         f"Call `crew list --format xml` now. "
         f"Count windows whose name is NOT 'senior-staff-engineer' (these are Staff sessions). "
-        f"If zero such windows remain, call CronDelete for the cron with label '{_PULSE_CRON_LABEL}'. "
+        f"If zero such windows remain, call CronList to find the cron whose label contains '{_PULSE_CRON_LABEL}', "
+        f"then call CronDelete with that cron's ID. "
         f"If one or more Staff windows remain, leave the cron running."
     )
     print(_additional_context(msg))
@@ -146,11 +144,15 @@ def main() -> None:
     except json.JSONDecodeError:
         sys.exit(0)
 
+    # Fast-path: only process Bash tool calls (defense-in-depth if matcher config changes).
+    if payload.get("tool_name") != "Bash":
+        sys.exit(0)
+
     # Only act for Senior Staff sessions
     if not _is_senior_staff():
         sys.exit(0)
 
-    command = payload.get("tool_input", {}).get("command", "").lstrip()
+    command = payload.get("tool_input", {}).get("command", "").strip()
 
     if _CREW_CREATE_RE.match(command):
         _on_crew_create()
