@@ -20,10 +20,10 @@ import pytest
 
 
 # ---------------------------------------------------------------------------
-# Module loader (same pattern as test_kanban_v5.py)
+# Module loader
 # ---------------------------------------------------------------------------
 
-_KANBAN_PATH = Path(__file__).parent.parent.parent / "kanban" / "kanban.py"
+_KANBAN_PATH = Path(__file__).parent.parent / "kanban.py"
 
 
 def load_kanban():
@@ -101,7 +101,7 @@ class TestCollectAmpersandErrors:
     """_collect_ampersand_errors returns correct violation tuples."""
 
     def test_returns_empty_for_no_ampersand(self, kanban):
-        """No && in any cmd → empty list returned."""
+        """No && in any cmd -> empty list returned."""
         criteria = [make_programmatic_criterion(cmd="rg -q X")]
         result = kanban._collect_ampersand_errors(criteria)
         assert result == []
@@ -148,7 +148,7 @@ class TestCollectAmpersandErrors:
         assert result == []
 
     def test_ampersand_in_text_field_not_detected(self, kanban):
-        """&& in criterion text field is NOT flagged — only mov_commands[].cmd is checked."""
+        """&& in criterion text field is NOT flagged -- only mov_commands[].cmd is checked."""
         criteria = [
             {
                 "text": "Run rg -q X && rg -q Y",  # && in text, not in cmd
@@ -225,7 +225,7 @@ class TestValidateAndBuildCardAmpersand:
         try:
             card = kanban.validate_and_build_card(data, session="test")
         except SystemExit as e:
-            pytest.fail(f"Valid card raised SystemExit({e.code}) — no && should be fine")
+            pytest.fail(f"Valid card raised SystemExit({e.code}) -- no && should be fine")
         assert card is not None
 
     def test_semantic_criterion_only_passes(self, kanban):
@@ -258,7 +258,7 @@ class TestValidateAndBuildCardAmpersand:
 
 
 # ---------------------------------------------------------------------------
-# Integration tests: cmd_do batch — all violations reported
+# Integration tests: cmd_do batch -- all violations reported
 # ---------------------------------------------------------------------------
 
 class TestCmdDoBatchAmpersandValidation:
@@ -349,7 +349,7 @@ class TestCmdDoBatchAmpersandValidation:
 
 
 # ---------------------------------------------------------------------------
-# Integration tests: cmd_todo batch — all violations reported
+# Integration tests: cmd_todo batch -- all violations reported
 # ---------------------------------------------------------------------------
 
 class TestCmdTodoBatchAmpersandValidation:
