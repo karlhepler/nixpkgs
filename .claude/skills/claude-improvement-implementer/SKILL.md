@@ -1,6 +1,6 @@
 ---
 name: claude-improvement-implementer
-description: Processes pending claude-improvement notes from Notes MCP and applies fixes to this repo with full staff-engineer review discipline. Invoke as `/claude-improvement-implementer` inside a dedicated tmux session running Claude Code from ~/.config/nixpkgs. Designed to run via /loop wrapper every 15 minutes — executes ONE cycle per call.
+description: Processes pending claude-improvement notes from Notes MCP and applies fixes to this repo with full staff-engineer review discipline. Invoke as `/claude-improvement-implementer` inside a dedicated tmux session running Claude Code from ~/.config/nixpkgs. Self-schedules via session-scoped CronCreate to run every 15 minutes — executes ONE cycle per firing.
 ---
 
 # Claude Improvement Implementer
@@ -10,10 +10,10 @@ description: Processes pending claude-improvement notes from Notes MCP and appli
 Run inside a dedicated tmux session with Claude Code open in `~/.config/nixpkgs`:
 
 ```
-/loop 15m /claude-improvement-implementer
+/claude-improvement-implementer
 ```
 
-This skill does **ONE cycle per invocation**. The `/loop 15m` wrapper handles the 15-minute cadence. Do not invoke this skill directly without `/loop` unless debugging a single cycle.
+On first invocation, the skill installs a session-scoped cron (in-memory, 15-min cadence) that re-fires the skill automatically. Each firing runs ONE cycle. The cron lives only in the current Claude session — when Claude exits, the cron dies and the user must re-invoke the skill once to re-arm.
 
 ---
 
@@ -42,11 +42,39 @@ Do not proceed further. Do not call any MCP tools.
 
 ---
 
-### Step 2 — Board Awareness (Staff Engineer Discipline)
+### Step 2 — Ensure Self-Scheduling
+
+<!-- Runs AFTER scope gate (don't schedule if wrong repo) but BEFORE board/MCP checks (schedule should survive later failures so retries happen). -->
+
+Call `CronList`.
+
+Scan returned jobs for one whose prompt contains `"/claude-improvement-implementer"`.
+
+**If found:** already scheduled. Print:
+`"Self-schedule active: cron <id> already present."`
+Proceed to the next step.
+
+**If not found:** call `CronCreate` with:
+- `cron`: `"7,22,37,52 * * * *"` (15-min cadence, offset off the :00/:30 fleet-alignment marks)
+- `prompt`: `"/claude-improvement-implementer"`
+- `recurring`: `true` (pass explicitly — must be true for 15-min cadence; default may not be reliable)
+- `durable`: `false` (pass explicitly — session-scoped, in-memory only)
+
+Print:
+`"Scheduled self: next cycle fires within 15 min (session-scoped; lost on Claude exit)."`
+
+**Notes:**
+- Cron is **in-memory session-scoped.** When the Claude session ends, the cron is gone. The user must re-invoke `/claude-improvement-implementer` once to re-arm.
+- Recurring crons auto-expire after 7 days. The final fire will run this step and re-arm — self-healing as long as the session stays alive.
+- If `CronList` or `CronCreate` fails, print the error and proceed with the cycle regardless. Scheduling is best-effort; it must not block the actual work.
+
+---
+
+### Step 3 — Board Awareness (Staff Engineer Discipline)
 
 Call `kanban list --output-style=xml` with no session filter to get ALL sessions' in-flight work.
 
-If `kanban list` returns an error (non-zero exit, connection failure, or malformed output), print the error and **STOP the cycle entirely** — same pattern as MCP disconnect. Do not proceed with an incomplete board picture. The `/loop` wrapper will retry in 15 min.
+If `kanban list` returns an error (non-zero exit, connection failure, or malformed output), print the error and **STOP the cycle entirely** — same pattern as MCP disconnect. Do not proceed with an incomplete board picture. The self-scheduled cron will retry in 15 min.
 
 Build a mental picture of which files are being edited by other sessions (look at cards in `doing` or `review` status). If any improvement this cycle would touch the same files, **defer those improvements** to the next cycle — do not create file conflicts.
 
@@ -57,20 +85,20 @@ DEFERRED: "<note title>" — conflicts with in-flight work on <file> in session 
 
 ---
 
-### Step 3 — Notes MCP Connectivity Check
+### Step 4 — Notes MCP Connectivity Check
 
-<!-- Ordering rationale: scope gate runs first (never touch MCP if wrong repo); board awareness runs second (cheap local check — catches conflicts before MCP round-trip); MCP connectivity check runs third. -->
+<!-- Ordering rationale: scope gate runs first (Step 1); self-scheduling runs second (Step 2 — schedule must survive later failures so retries happen); board awareness runs third (Step 3 — cheap local check before MCP round-trip); MCP connectivity check runs fourth (Step 4). -->
 
 Call `mcp__notes__status`.
 
 If the call errors (connection failure, timeout, or any non-success response):
-- Print: `"Notes MCP disconnected — reconnect and re-run the loop."`
+- Print: `"Notes MCP disconnected — reconnect and re-invoke /claude-improvement-implementer to re-arm."`
 - **STOP the cycle entirely.** Do not proceed to any other steps.
-- The `/loop` wrapper will call again in 15 min, but the user needs to see this signal now.
+- The self-scheduled cron will call again in 15 min, but the user needs to see this signal now.
 
 ---
 
-### Step 4 — Surface Failure Backlog
+### Step 5 — Surface Failure Backlog
 
 Call `mcp__notes__list_notes` with `filter_tag: "claude-improvement-failed"`.
 
@@ -87,29 +115,31 @@ The cycle continues regardless — the user may intervene separately.
 
 ---
 
-### Step 5 — Fetch Pending Improvements
+### Step 6 — Fetch Pending Improvements
 
 Call `mcp__notes__list_notes` with `filter_tag: "claude-improvement"`.
 
-If zero notes returned, print:
+If zero notes returned:
+- If Step 5 found a non-zero failure backlog, re-surface the warning: `"WARNING: N claude-improvement-failed notes pending human review (see Step 5 output)."`
+- Print:
 ```
-No pending improvements. Sleeping 15 min.
+No pending improvements. Next cycle in ~15 min (self-scheduled).
 ```
 Exit cleanly.
 
 ---
 
-### Step 6 — Process Notes Sequentially
+### Step 7 — Process Notes Sequentially
 
-Process each note **one at a time** in the order returned. Notes that would conflict with in-flight cross-session work are NOT fetched via `get_note` and NOT deleted — they remain in the `claude-improvement` queue for the next cycle to retry. Deferral happens at the top of processing (informed by Step 2 board picture); no special deferral tag or mechanism is used.
+Process each note **one at a time** in the order returned. Notes that would conflict with in-flight cross-session work are NOT fetched via `get_note` and NOT deleted — they remain in the `claude-improvement` queue for the next cycle to retry. Deferral happens at the top of processing (informed by Step 3 board picture); no special deferral tag or mechanism is used.
 
 For each note:
 
-#### 6a. Fetch Full Content
+#### 7a. Fetch Full Content
 
 Call `mcp__notes__get_note` with `ids: [<note-id>]` to retrieve the full note content.
 
-#### 6b. Delete Note IMMEDIATELY (Before Any Implementation)
+#### 7b. Delete Note IMMEDIATELY (Before Any Implementation)
 
 Call `mcp__notes__delete_note` with `ids: [<note-id>]` **immediately after reading** — before scope check, before any implementation work.
 
@@ -117,28 +147,28 @@ This is crash-loop prevention: if the implementer fails mid-fix, the note is alr
 
 **Do not skip this step. Do not implement first.**
 
-#### 6c. Scope Check
+#### 7c. Scope Check
 
 The proposed fix must target one of:
 - A file inside `modules/claude/` (any subdirectory — prompts, hooks, agents, shellapps, nix configs, output styles, etc.)
 - A new project-local `.claude/skills/...` file
 
-If the fix targets any other path, write a failure note using the SAME full format as Step 7:
+If the fix targets any other path, write a failure note using the SAME full format as Step 8:
 - `title`: `"FAILED: <original improvement title>"`
 - `tags`: `["claude-improvement-failed"]`
 - `content`: original note content verbatim + `## Failure reason` section explaining `out of scope for implementer: <proposed path>`
 
 Then move to the next note.
 
-#### 6c-self. Self-Modification Safety
+#### 7c-self. Self-Modification Safety
 
 If the note proposes changes to THIS skill file (`.claude/skills/claude-improvement-implementer/SKILL.md`), process it normally — the scope gate allows `.claude/skills/` paths. However:
 
 - Add a flag to the cycle summary: `"Self-modification occurred — review this commit with extra attention."`
 - Treat self-modification like any other prompt-file change: run the full Tier 1 `ai-expert` review before committing.
-- The change takes effect on the NEXT `/loop` invocation (the skill file is re-read per invocation). Do NOT attempt to hot-reload mid-cycle.
+- The change takes effect on the NEXT self-scheduled firing (the skill file is re-read per invocation). Do NOT attempt to hot-reload mid-cycle.
 
-#### 6d. Implement the Fix
+#### 7d. Implement the Fix
 
 As a staff engineer, follow the card-first workflow:
 
@@ -151,7 +181,7 @@ As a staff engineer, follow the card-first workflow:
 
 Model selection for delegation: use `model: sonnet` by default. Use `model: opus` only for architectural complexity (multi-file restructures, cross-cutting behavior changes). Use `model: haiku` only for strictly mechanical edits with zero ambiguity. See staff-engineer.md § Model Selection for the full decision tree.
 
-#### 6e. Mandatory Reviews (No Exceptions)
+#### 7e. Mandatory Reviews (No Exceptions)
 
 **ALWAYS run mandatory reviews for every change.** Do not skip even for "trivial" edits.
 
@@ -161,15 +191,15 @@ Review tiers by artifact type:
 - **Tier 2 (mandatory, high-risk):** Shellapps / nix / CLI tooling → `swe-devex` review
 - **Tier 3 (mandatory):** New `.claude/skills/` entries → `ai-expert` review
 
-**Default review-findings policy:** Implement all review findings — BLOCKING + HIGH + MEDIUM + LOW — without asking the coordinator for approval on individual findings. Only skip a finding if the improvement note itself explicitly says to. The single exception is a BLOCKING finding that requires architectural judgment the implementer cannot make (see 6f below).
+**Default review-findings policy:** Implement all review findings — BLOCKING + HIGH + MEDIUM + LOW — without asking the coordinator for approval on individual findings. Only skip a finding if the improvement note itself explicitly says to. The single exception is a BLOCKING finding that requires architectural judgment the implementer cannot make (see 7f below).
 
-#### 6f. Post-Review Actions
+#### 7f. Post-Review Actions
 
 - Apply all **blocking** findings before proceeding. If a blocking finding requires architectural judgment the implementer cannot determine how to make (e.g., requires human architectural decision), do NOT attempt a guess — write a failure note with the blocking finding text and mark the step as `"blocked on review finding — requires human architectural decision"`, then move to the next note.
 - Surface **non-blocking** findings to stdout
 - Implement non-blocking findings by default (per staff-engineer § After Review Cards Complete)
 
-#### 6g. Deploy and Verify
+#### 7g. Deploy and Verify
 
 Run in sequence:
 ```bash
@@ -183,21 +213,21 @@ git commit -m "claude-improvement: <short title from note>"
 git push
 ```
 
-Each command must succeed before the next. If any fail, go to Step 7 (failure handling).
+Each command must succeed before the next. If any fail, go to Step 8 (failure handling).
 
 Note: every git / hms / kanban call relies on cwd being `~/.config/nixpkgs`. Do NOT `cd` during the cycle.
 
-#### 6h. On Success
+#### 7h. On Success
 
 Move to the next note. Increment success counter.
 
 ---
 
-### Step 7 — Failure Handling
+### Step 8 — Failure Handling
 
-**If step 6a fails** (the `get_note` call errors out after `list_notes` succeeded): the note has NOT been deleted yet — it remains in the `claude-improvement` queue for the next cycle to retry automatically. Write NO failure note (no duplication risk). Increment the failure counter and move to the next note.
+**If step 7a fails** (the `get_note` call errors out after `list_notes` succeeded): the note has NOT been deleted yet — it remains in the `claude-improvement` queue for the next cycle to retry automatically. Write NO failure note (no duplication risk). Increment the failure counter and move to the next note.
 
-If **any step (6b through 6g)** fails and cannot be automatically recovered:
+If **any step (7b through 7g)** fails and cannot be automatically recovered:
 
 1. Write a `claude-improvement-failed` note via `mcp__notes__upsert_note`:
    - `title`: `"FAILED: <original improvement title>"`
@@ -208,7 +238,7 @@ If **any step (6b through 6g)** fails and cannot be automatically recovered:
 
      ## Failure reason
 
-     **Step that failed:** <step name, e.g., "6g — hms">
+     **Step that failed:** <step name, e.g., "7g — hms">
 
      **Error output:**
      <stack trace or error output>
@@ -222,7 +252,7 @@ If **any step (6b through 6g)** fails and cannot be automatically recovered:
 
 ---
 
-### Step 8 — End-of-Cycle Summary
+### Step 9 — End-of-Cycle Summary
 
 After all notes are processed, print:
 
@@ -232,7 +262,7 @@ Cycle complete. Processed N notes (M succeeded, K failed). Failure backlog: X no
 
 If self-modification occurred this cycle, append: `Self-modification occurred — review this commit with extra attention.`
 
-The failure backlog count (X) comes from Step 4's `claude-improvement-failed` list count.
+The failure backlog count (X) comes from Step 5's `claude-improvement-failed` list count.
 
 ---
 
@@ -282,6 +312,7 @@ One commit per successfully processed note. **Never batch multiple improvements 
 |-----------|--------|
 | Scope gate fails (not in ~/.config/nixpkgs) | Print error, stop immediately |
 | Notes MCP disconnected | Print error, stop cycle — user must reconnect |
+| Kanban board error (Step 3) | Print error, stop cycle — cron will retry in 15 min |
 | Zero pending notes | Clean exit with "No pending improvements" message |
 | Single note fails | Write failure note, continue to next note |
 | All notes processed | Print summary, clean exit |
