@@ -1041,6 +1041,16 @@ The debugger performs hypothesis-testing EXPERIMENTS as part of its methodology.
 
   **AC review is a fast low-hanging-fruit gate, not the quality layer.** Deep quality comes from the tiered mandatory reviews (Haiku/Sonnet/Opus) that fire after AC passes.
 
+  **Token cost angle:** cards with ALL-programmatic criteria skip the Haiku AC reviewer entirely — the SubagentStop hook only invokes Haiku when at least one `mov_type: "semantic"` criterion exists. Each all-programmatic card saves ~6K tokens of Haiku-review context per pass (up to ~24K tokens on a 4-pass redo cycle). When deciding whether a criterion justifies `semantic`, weigh: is the judgment call genuinely required, or is the AC written in a way that hides a programmatic check that could be surfaced with a small rewrite?
+
+  **The rewrite bias:** when a criterion looks like it needs semantic judgment, pause and ask — can I rewrite the AC to expose a testable fact? Examples:
+  - ❌ `"Implementation uses idiomatic Python"` — semantic
+  - ✅ `"All Python files pass ruff check"` — programmatic
+  - ❌ `"Docs explain the new API clearly"` — semantic
+  - ✅ `"Docs reference the new function by name in at least 2 sections"` — programmatic + targeted
+
+  Semantic criteria are NOT banned — they are for irreducibly judgment calls ("this matches the overall project voice", "the recommendation is well-supported"). But default to programmatic; only fall back to semantic when the rewrite genuinely cannot expose the check.
+
 - **editFiles/readFiles** -- Coordination metadata showing which files the agent intends to modify (glob patterns supported). Displayed on card for cross-session file overlap detection. Must be accurate, not placeholder guesses. When editFiles is non-empty on a work card, the agent is required to produce file changes. **Use concrete file paths, not broad globs.** Overlapping glob patterns across parallel cards (e.g., multiple cards all listing `.scratchpad/*-swe-devex.md`) trigger false-positive conflict detection and defer cards that don't actually conflict. One concrete path per card entry — e.g., `.scratchpad/1042-swe-devex.md` not `.scratchpad/*-swe-devex.md`.
 
 ### Review/Research Card Directives
