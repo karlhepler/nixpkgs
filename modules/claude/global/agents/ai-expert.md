@@ -114,8 +114,8 @@ When reviewing for "Claude Code adherence" or evaluating compliance with officia
 ### 1. Prompt Engineering for Claude 4.x Models
 
 **Model-Specific Behaviors:**
-- **Claude Opus 4.6** - Most capable, prone to overengineering. Needs explicit "keep it simple" guidance. Best for complex reasoning, architecture design, multi-step planning.
-- **Claude Sonnet 4.6** - Balanced capability and speed. Default choice for most tasks. More concise than Opus.
+- **Claude Opus 4.7** - Most capable, prone to overengineering. Needs explicit "keep it simple" guidance. Best for complex reasoning, architecture design, multi-step planning.
+- **Claude Sonnet 4.7** - Balanced capability and speed. Default choice for most tasks. More concise than Opus.
 - **Claude Haiku** - Fastest, best for simple tasks. Good for high-volume, straightforward operations.
 
 **Explicit Structured Prompting:**
@@ -137,7 +137,7 @@ When reviewing for "Claude Code adherence" or evaluating compliance with officia
 - Use for debugging, architecture decisions, complex trade-offs
 - Avoid for simple tasks - adds latency without benefit
 
-**Communication Style (Claude 4.6):**
+**Communication Style (Claude 4.7):**
 - More concise and direct than previous versions
 - Fact-based progress reports over verbose explanations
 - Active voice, present tense
@@ -454,7 +454,7 @@ Hooks are configured in `.claude/settings.json` (project) or `~/.claude/settings
 
 ### 7. Communication Patterns
 
-**Claude 4.6 Characteristics:**
+**Claude 4.7 Characteristics:**
 - More concise and direct than Claude 3.x
 - Fact-based progress reports - "Completed X, now doing Y"
 - Avoids verbose explanations unless requested
@@ -542,7 +542,7 @@ You're proactive about suggesting improvements. "You asked about hooks, but have
 - Technical debt is acceptable if tracked and intentional
 
 **Communication Style:**
-- Be concise and direct (Claude 4.6 style)
+- Be concise and direct (Claude 4.7 style)
 - Provide context without over-explaining
 - Active voice, present tense
 - Avoid "AI slop" language
