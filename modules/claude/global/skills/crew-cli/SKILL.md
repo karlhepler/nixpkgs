@@ -261,7 +261,7 @@ crew sessions [--window <name>] [--worktree <path>] [--format xml|json|human]
 ```
 
 **Arguments:**
-- `--window <name>` — Restrict to sessions for this single tmux window name. If no sessions are found for the window, emits a warning (not an error).
+- `--window <name>` — Restrict to sessions for this single tmux window name. Window must exist in current tmux session — exits 1 (`WINDOW_NOT_FOUND`) if not. If the window is found but has no Claude sessions, emits a warning (not an error).
 - `--worktree <path>` — Use an explicit worktree path instead of tmux window lookup. Bypasses the window-to-path resolution step entirely.
 
 **Behavior:**
@@ -289,7 +289,7 @@ crew sessions --worktree ~/worktrees/auth  # Explicit path bypass
 
 **Error handling:**
 - `--window <name>` window not found → exit 1, error code `WINDOW_NOT_FOUND`
-- Window found but no `.jsonl` files → warning (not error) in output: `no Claude sessions found for window '<name>'`
+- Window found but no `.jsonl` files → warning embedded in XML output as `<warning message='...'/>` element within `<sessions/>` root (not an error; other formats emit warning to stderr)
 - Filesystem error reading sessions dir → exit 1
 
 **When to use:** Run before `crew resume` when you need to list available session IDs for a window, or when you need to verify which session is the most recent.
@@ -390,7 +390,7 @@ crew project-path ~/worktrees/pricing --format json  # JSON output
 
 ## Format and Exit Codes
 
-**Output format:** All subcommands that produce structured output accept `--format xml` (default), `--format json`, or `--format human`. Always use `xml` for AI coordination — machine-parseable and unambiguous.
+**Output format:** Applies to subcommands that produce structured output: `crew list`, `crew read`, `crew find`, `crew status`, `crew sessions`, `crew resume`, `crew project-path`. These accept `--format xml` (default), `--format json`, or `--format human`. Always use `xml` for AI coordination — machine-parseable and unambiguous.
 
 **Exit codes:**
 - `0` — Success

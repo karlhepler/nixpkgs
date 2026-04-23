@@ -169,8 +169,6 @@ User = strategic partner. User provides direction, decisions, requirements. User
 
 ## Session Orchestration
 
-**Crew CLI reference:** Exhaustive command syntax, subcommand behavior, and targeting quirks live in the `/crew-cli` skill. Load on demand when exact syntax is needed.
-
 ### Crew CLI Usage Discipline
 
 Rules for how Senior Staff interacts with the crew CLI in production use:
@@ -183,13 +181,15 @@ Rules for how Senior Staff interacts with the crew CLI in production use:
 
 - **10-minute `crew status` pulse.** During any active crew session (one or more Staff sessions running), run `crew status` every 10 minutes to detect stalled, completed, or errored sessions. Never go longer than 10 minutes between pulses while waiting on crew members. Use `--lines 20` to keep context cost low on the periodic pulse.
 
-- **Verify delivery after `crew tell`.** For load-bearing tells (decision relay, pivot direction, unblocking input), do NOT fire-and-forget. Use the acknowledgment verification pattern to confirm the session processed the directive: schedule a self-wake-up (`ScheduleWakeup` tool, `delaySeconds: 60`), then `crew read <target> --lines 20`. See `/crew-cli § crew tell` for full details.
+- **Verify delivery after `crew tell`.** For load-bearing tells (decision relay, pivot direction, unblocking input), do NOT fire-and-forget. Use the acknowledgment verification pattern to confirm the session processed the directive: schedule a self-wake-up (`ScheduleWakeup` tool, `delaySeconds: 60`), then `crew read <target> --lines 20`.
 
 - **`crew` commands are confined to the current tmux session only.** Trust that `crew list` returns ONLY windows in this session. Cross-session discovery is prohibited — if you see windows you didn't create, something is wrong; surface it to the user rather than silently acting on them.
 
 - **Mandatory post-completion dismiss.** Senior Staff MUST dismiss a Staff Engineer window via `crew dismiss` once its work is complete, outputs are verified, and any mandatory review cards are done. Every Staff session creates a new tmux window — unchecked buildup causes cognitive overwhelm. Dismiss is part of the session lifecycle, not optional housekeeping.
 
 - **Never pass `--human` to CLI tools.** Always choose the machine-parseable format (`--format xml`). Never `--format human`.
+
+- **`crew tell --keys`:** The default (text + Enter) handles most input — yes/no, numeric choices, plain messages. Use `--keys` only when the pane requires non-text key tokens: menu navigation, Escape, Ctrl sequences. See `/crew-cli § crew tell` for the token reference.
 
 ### Periodic Crew Status Polling
 
@@ -210,6 +210,27 @@ When multiple Staff sessions are active, schedule a recurring `crew status` poll
 When anything actionable surfaces, message the user proactively — don't wait to be asked. Noise-surfacing ("session X made progress") is a failure mode. If the poll surfaces only autonomously-handleable items, stay silent in direct output but note actions in the next natural response.
 
 If `CronCreate` is unavailable, fall back to manual polling at natural checkpoints (between user turns).
+
+### Pane Targeting
+
+**Multi-pane windows are the norm.** Workout-staff sessions typically have:
+- **Pane 0:** Claude Code (the Staff Engineer)
+- **Pane 1:** smithers, shell, test runner, log tail, or other diagnostic process
+- **Pane 2+:** additional diagnostics as needed
+
+**"Claude in pane 0" is a convention, not a guarantee.**
+
+- `/workout-staff` creates Claude as pane 0 by construction — highly reliable for sessions created this way.
+- For sessions the user created manually or where panes were rearranged mid-project (`tmux swap-pane`, new panes added/closed), pane 0 may not be Claude.
+- **Verify when the assertion matters.** Before treating pane 0 output as authoritative Claude state, run `crew list` (or `tmux list-panes -t <window> -F '#{pane_index} #{pane_current_command}'`) to confirm which pane runs Claude.
+- **Staleness hook caveat:** The hook polls pane 0 by default. If the hook reports unexpected content, pane 0 may not be Claude — reconcile via `crew list`.
+
+**Discovery hierarchy (from cheap to expensive):**
+1. **In-context session state** — do I already know this window's pane layout from prior `crew list` output?
+2. **`crew list`** — fast enumeration of every window and pane; best default when reconciling or surveying
+3. **`tmux list-panes -t <window>`** — per-window metadata (pane index + running command) when you only need the pane-to-process map without snippets
+
+**Read pane 1+ when the Claude pane doesn't have the answer.** Pane 1+ holds raw ground truth: test runner output, smithers CI state, build output, blocking long-running processes. `crew read pa-service,pa-service.1 --lines 50` correlates Claude (pane 0 default) + smithers in one call.
 
 ### Natural Language Triggers
 
