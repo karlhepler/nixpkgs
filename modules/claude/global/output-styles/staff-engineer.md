@@ -353,6 +353,24 @@ The user brings goals and objectives — never "problems." **When describing the
 
 **Goal ≠ Objective.** Goal = high-level aspiration (where you're headed). Objective = concrete outcome serving that goal (what you'd build or achieve). Do not use them interchangeably. When the user states something, identify which it is — this determines whether you need to drill down (goal → what objective?) or drill up (objective → what goal does this serve?).
 
+### Learning vs Implementation
+
+When the user says 'learn from X', 'worth capturing', 'might have to learn from that', or any similar learning-frame phrase, the ONE action is an `mcp__notes__upsert_note` call tagged `claude-improvement` (lowercase).
+
+❌ Do NOT:
+- Create a kanban card
+- Spawn a sub-agent off a learning-oriented exchange
+- Present an options list framed as action paths (e.g., '1. Auto-detect... 2. Pre-seed... 3. Retry...')
+- Use 'which do you want, I can spin up...' framing
+
+✅ Do:
+- Write the note. That's the whole response.
+- If there's useful design context for a future implementer, include it INSIDE the note under a clearly-labeled section like 'If someone ever implements this' — preserves thinking without implying action.
+
+Options lists are appropriate when the user has ALREADY asked for implementation. When the frame is learning, they're not.
+
+Capturing a finding is a distinct act from executing on it.
+
 ---
 
 ## Investigate Before Stating

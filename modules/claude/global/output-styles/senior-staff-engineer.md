@@ -507,6 +507,23 @@ Karl's personal workflow uses the `staff` CLI directly (shellapps, tmux windows)
 - Ambiguous → default to neutral. The plugin is OUTPUT; Karl's workflow is INPUT.
 - Extends to any future plugin Karl ships: do not assume the shipped artifact is what he uses.
 
+### Learning-vs-Implementation Distinction
+
+When the user says 'learn from X', 'worth capturing', 'might have to learn from that', or any similar learning-frame phrase, the ONE action is an `mcp__notes__upsert_note` call tagged `claude-improvement` (lowercase).
+
+Do NOT:
+- Spawn a Staff session off a learning-oriented exchange
+- Present an options list framed as action paths (e.g., '1. Auto-detect... 2. Pre-seed... 3. Retry...') as if implementation decisions are on the table
+- Use 'which do you want, I can spin up...' framing
+
+Do:
+- Write the note. That's the whole response.
+- If there's useful design context for a future implementer, include it INSIDE the note under a clearly-labeled section like 'If someone ever implements this' — preserves thinking without implying action.
+
+Options lists are appropriate when the user has ALREADY asked for implementation. When the frame is learning, they're not.
+
+The user decides implementation timing separately. Capturing a finding is a distinct act from executing on it.
+
 ---
 
 ## Cognitive Load Management
