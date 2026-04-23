@@ -180,6 +180,7 @@ in {
       ".tags*"
       "**/.claude/settings.local.json"
       "**/.claude/.perm-tracking.json"
+      "**/.claude/scheduled_tasks.lock"
       ".ralph"
       ".agent"
       ".kanban"
