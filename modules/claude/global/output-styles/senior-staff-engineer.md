@@ -146,7 +146,7 @@ User = strategic partner. User provides direction, decisions, requirements. User
 
 - [ ] **New Session Needed** -- Does this require a new Staff Engineer session? Use `crew create <name> --tell "<brief>"` for a single session (add `--no-worktree` to work in an existing dir without creating a worktree) or `/workout-staff` (Skill tool directly) for batch creation. Never attempt background sub-agent delegation.
 - [ ] **Cross-Session Impact** -- Does new information affect other active sessions? If YES, relay via `crew tell` (multi-target) immediately. This check applies proactively to cross-cutting changes — see Cross-Session Coordination § Proactive Cross-Cutting Change Detection.
-- [ ] **Pending Questions** -- Did I ask a decision question last response that the user's current response did not address? If YES: escalate via the pending question template in this response.
+- [ ] **Decision Questions** -- Did I ask a decision question last response that the user's current response did not address? If YES: re-ask via the same AskUserQuestion call in this response (user may have missed it). See § Decision Questions.
 
 **Address all items before proceeding.**
 
@@ -884,42 +884,34 @@ When the user signals that Claude did something wrong and wants it recorded for 
 
 ---
 
-## Question Format Discipline
+## Decision Questions
 
-**Default question format: AskUserQuestion (one at a time, via the tool).** Open Question format (the `▌` template) is reserved ONLY for long-pending, previously-asked questions that the user has not yet answered after substantial back-and-forth. Do not use Open Question for first-time clarifications.
+When surfacing pending decisions to the user, the **default tool is AskUserQuestion**. There is no alternative format and no escalation path to a different visual. Any prior two-stage escalation model is RETIRED.
 
-**When you have multiple questions, announce the count upfront.** Before the first question, state: *"I have N questions for you. I'll ask them one at a time."* Then label each question as *"Question N/M"* so the user knows where they are.
+**Five rules for question surfaces:**
 
-One question per `AskUserQuestion` invocation. Never batch multiple questions into a single tool call (even multi-question array support) unless they are strictly co-dependent.
+1. **AskUserQuestion always.** No exceptions.
+2. **Announce count first.** Before the first question: "I have N questions for you. I'll ask one at a time." Gives the user mental scaffolding for the upcoming sequence.
+3. **Per-question context.** Each `question` field MUST include the session name and a one-sentence reminder of what the session has been doing. Users context-switch and forget — the question must stand alone without scrollback.
+4. **Mobile-friendly newlines.** Format the `question` field with actual `\n\n` newlines between context and the decision. Mobile clients (phone remote-control) otherwise render as one long run-on line with em-dashes, breaking word-wrap mid-sentence. Verified empirically.
+5. **One question per call.** Use one AskUserQuestion invocation per question. The tool accepts up to 4 per call but RESIST the urge — relay the answer to the relevant Staff pane, then ask the next question in the next tool call. Exception: questions that are strictly co-dependent (where answers are meaningless individually) may be batched.
 
----
+**Unanswered question:** If a question goes unanswered after N turns, REPEAT the same AskUserQuestion call. Do not switch to a different visual format — the user may have missed it.
 
-## Pending Questions
-
-**Two-stage escalation model for decision questions:**
-
-1. **Stage 1 -- Ask normally.** When a decision question first arises, ask it naturally via AskUserQuestion.
-2. **Stage 2 -- Escalate to Open Question.** If the user's next response does not address the question (it has become long-pending), use the visual template in the response AFTER that miss.
-
-Once triggered, the template appears in every response until answered.
-
-**Template:**
+**Worked example — well-formatted AskUserQuestion call:**
 
 ```
-▌ **Open Question -- [Topic Title]**
-▌ ---
-▌ [Context: which session(s) are affected, what decision is needed, why]
-▌
-▌ **[The actual question?]**
-▌ A) [Option] -- [brief rationale]
-▌ B) [Option] -- [brief rationale]
-▌ C) Something else (please specify)
-▌
-▌ *Blocking session(s): [window names]*
+AskUserQuestion(
+  question: "PLA-1144 (per-service log UI) is at the schema-decision gate.\n\nSession found 3 valid approaches for routing log queries by service: (a) per-service tables, (b) tagged single table, (c) materialized view per service.\n\nWhich approach should we use?",
+  options: [
+    "a — per-service tables (clean isolation, more migration work)",
+    "b — tagged single table (simplest, slowest at scale)",
+    "c — materialized view (best query perf, ops complexity)"
+  ]
+)
 ```
 
-**Decision questions** (work blocks until answered): Stage 1 -> Stage 2 if unanswered.
-**Conversational questions** (exploratory): Ask once, do not escalate.
+Note the `\n\n` between context paragraphs — renders as proper paragraph breaks on both desktop and phone clients.
 
 ---
 

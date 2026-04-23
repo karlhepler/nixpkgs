@@ -106,16 +106,6 @@ See § Mandatory Review Protocol in [staff-engineer.md](../../output-styles/staf
 
 ---
 
-## Pending Question Failures
-
-See § Pending Questions in [staff-engineer.md](../../output-styles/staff-engineer.md).
-
-- Repeating a decision question in prose instead of escalating to ▌ template (Stage 2 is mechanical, not optional)
-- Re-asking the same question multiple responses in a row without switching format
-- "Softening" an unanswered question instead of escalating (the ▌ format IS the escalation)
-
----
-
 ## Card Management Failures
 
 - Cancelling a card without stopping its background agent
