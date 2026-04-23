@@ -1163,8 +1163,22 @@ def cmd_find(pattern: str, targets_str: Optional[str], lines: Optional[int], fmt
         resolved = resolve_targets(targets_str, fmt=fmt)
     else:
         # Confine to the current tmux session only (M-01 fix: mirrors cmd_list/cmd_status).
+        # By default, filter to Claude panes only and exclude the caller's own window
+        # (mirrors cmd_list/cmd_status behavior to prevent false positives from sstaff pane).
         current_session = get_current_session()
-        panes = get_all_panes(session=current_session)
+        current_window_id = get_current_window_id()
+        lookup = get_window_lookup(session=current_session)
+        # Build reverse map: window_name -> window_id for self-exclusion.
+        window_id_by_name: Dict[str, str] = {
+            name: wid for name, (_idx, wid) in lookup.items()
+        }
+        all_panes = get_all_panes(session=current_session)
+        # Filter to Claude panes; exclude panes in the caller's own window.
+        panes = [
+            p for p in all_panes
+            if is_claude_pane(p[4])
+            and (not current_window_id or window_id_by_name.get(p[2]) != current_window_id)
+        ]
         resolved = []
         for session, window_index, window_name, pane_index, _pane_cmd in panes:
             tmux_target = f"{session}:{window_index}.{pane_index}"
