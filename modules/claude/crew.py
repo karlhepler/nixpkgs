@@ -1492,6 +1492,42 @@ def _deliver_tell(
     return False, "verification timeout: tell text not observed in pane"
 
 
+def run_post_switch_hook(source_repo: str, worktree_path: str, branch: str) -> Optional[Tuple[int, str]]:
+    """Run .git/workout-hooks/post-switch if it exists in the source repo.
+
+    Returns None if the hook is absent (no-op).
+    Returns (returncode, tail_output) if the hook ran, where tail_output is the
+    last 20 lines of combined stdout+stderr for failure diagnosis.
+    """
+    hook_path = os.path.join(source_repo, ".git", "workout-hooks", "post-switch")
+    if not os.path.isfile(hook_path):
+        return None
+    if not os.access(hook_path, os.X_OK):
+        print(f"[crew] warning: {hook_path} exists but is not executable; skipping post-switch hook", file=sys.stderr)
+        return None
+
+    # Env var contract: WORKTREE_PATH, SOURCE_REPO, BRANCH provided for hooks
+    # that need them. The maze-monorepo reference hook uses only `cwd` today;
+    # these are forward-looking.
+    env = os.environ.copy()
+    env["WORKTREE_PATH"] = worktree_path
+    env["SOURCE_REPO"] = source_repo
+    env["BRANCH"] = branch
+
+    result = subprocess.run(
+        [hook_path],
+        cwd=worktree_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    combined = result.stdout + result.stderr
+    tail_lines = combined.splitlines()[-20:]
+    tail_output = "\n".join(tail_lines)
+    return result.returncode, tail_output
+
+
 def cmd_create(
     name: str,
     repo: Optional[str],
@@ -1517,6 +1553,7 @@ def cmd_create(
     7. Check for existing worktree at that path.
     8. Create branch if it doesn't exist.
     9. Create git worktree.
+    9b. Run .git/workout-hooks/post-switch if present (silent no-op if absent).
     10. Create tmux window.
     11. Start staff (or --cmd override) in the new window (with --name <name> for display).
     12. If --tell was given: wait for prompt-ready, then deliver the initial message.
@@ -1718,6 +1755,24 @@ def cmd_create(
                 error_code="WORKTREE_ADD_FAILED",
                 exit_code=1,
             )
+
+    # --- 9b. Run post-switch hook (worktree path only) ---
+    # The legacy workout CLI runs .git/workout-hooks/post-switch after worktree creation.
+    # crew create mirrors that behavior so spawned sessions start fully initialized
+    # (mise trust, pnpm install, etc.). Absent hook = silent no-op.
+    if not no_worktree:
+        assert branch is not None
+        hook_result = run_post_switch_hook(repo, worktree_path, branch)
+        if hook_result is not None:
+            hook_rc, hook_tail = hook_result
+            if hook_rc != 0:
+                emit_error(
+                    f"post-switch hook exited {hook_rc} — worktree setup incomplete. "
+                    f"Last output:\n{hook_tail}",
+                    fmt,
+                    error_code="POST_SWITCH_HOOK_FAILED",
+                    exit_code=1,
+                )
 
     # --- 10. Create tmux window ---
     result = subprocess.run(

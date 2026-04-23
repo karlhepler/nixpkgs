@@ -39,6 +39,7 @@ from crew import (
     get_current_session,
     get_window_lookup,
     is_claude_pane,
+    run_post_switch_hook,
 )
 
 
@@ -1724,3 +1725,274 @@ class TestTellTellFile:
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
         assert "MISSING_MESSAGE" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# post-switch hook — run_post_switch_hook unit tests
+# ---------------------------------------------------------------------------
+
+class TestRunPostSwitchHook:
+    """Unit tests for run_post_switch_hook — isolated from cmd_create."""
+
+    def test_absent_hook_returns_none(self, tmp_path):
+        """No hook file → returns None (silent no-op)."""
+        source_repo = str(tmp_path / "repo")
+        os.makedirs(source_repo)
+        result = run_post_switch_hook(source_repo, "/some/worktree", "my-branch")
+        assert result is None
+
+    def test_non_executable_hook_returns_none(self, tmp_path, capsys):
+        """Hook file exists but is not executable → warning emitted to stderr, returns None."""
+        hook_dir = tmp_path / "repo" / ".git" / "workout-hooks"
+        hook_dir.mkdir(parents=True)
+        hook_file = hook_dir / "post-switch"
+        hook_file.write_text("#!/usr/bin/env bash\nexit 0\n")
+        # Not chmod +x — leave non-executable
+        result = run_post_switch_hook(str(tmp_path / "repo"), "/some/worktree", "my-branch")
+        assert result is None
+        captured = capsys.readouterr()
+        assert "warning" in captured.err
+        assert "not executable" in captured.err
+
+    def test_hook_success_returns_zero_returncode(self, tmp_path):
+        """Hook exits 0 → returns (0, tail_output)."""
+        hook_dir = tmp_path / "repo" / ".git" / "workout-hooks"
+        hook_dir.mkdir(parents=True)
+        hook_file = hook_dir / "post-switch"
+        hook_file.write_text("#!/usr/bin/env bash\necho 'bootstrap ok'\n")
+        os.chmod(hook_file, 0o755)
+
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
+
+        rc, tail = run_post_switch_hook(str(tmp_path / "repo"), str(worktree), "my-branch")
+        assert rc == 0
+        assert "bootstrap ok" in tail
+
+    def test_hook_failure_returns_nonzero_returncode(self, tmp_path):
+        """Hook exits non-zero → returns (returncode, tail_output)."""
+        hook_dir = tmp_path / "repo" / ".git" / "workout-hooks"
+        hook_dir.mkdir(parents=True)
+        hook_file = hook_dir / "post-switch"
+        hook_file.write_text("#!/usr/bin/env bash\necho 'setup failed'\nexit 42\n")
+        os.chmod(hook_file, 0o755)
+
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
+
+        rc, tail = run_post_switch_hook(str(tmp_path / "repo"), str(worktree), "my-branch")
+        assert rc == 42
+        assert "setup failed" in tail
+
+    def test_hook_env_vars_passed_correctly(self, tmp_path):
+        """WORKTREE_PATH, SOURCE_REPO, and BRANCH are passed to the hook."""
+        hook_dir = tmp_path / "repo" / ".git" / "workout-hooks"
+        hook_dir.mkdir(parents=True)
+        hook_file = hook_dir / "post-switch"
+        # Print the env vars so we can assert them in the tail output
+        hook_file.write_text(
+            "#!/usr/bin/env bash\n"
+            'echo "WORKTREE_PATH=$WORKTREE_PATH"\n'
+            'echo "SOURCE_REPO=$SOURCE_REPO"\n'
+            'echo "BRANCH=$BRANCH"\n'
+        )
+        os.chmod(hook_file, 0o755)
+
+        source_repo = str(tmp_path / "repo")
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
+
+        rc, tail = run_post_switch_hook(source_repo, str(worktree), "feature-x")
+        assert rc == 0
+        assert f"WORKTREE_PATH={worktree}" in tail
+        assert f"SOURCE_REPO={source_repo}" in tail
+        assert "BRANCH=feature-x" in tail
+
+    def test_hook_runs_with_cwd_set_to_worktree(self, tmp_path):
+        """Hook cwd is the new worktree path (not the source repo)."""
+        hook_dir = tmp_path / "repo" / ".git" / "workout-hooks"
+        hook_dir.mkdir(parents=True)
+        hook_file = hook_dir / "post-switch"
+        hook_file.write_text("#!/usr/bin/env bash\npwd\n")
+        os.chmod(hook_file, 0o755)
+
+        source_repo = str(tmp_path / "repo")
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
+
+        rc, tail = run_post_switch_hook(source_repo, str(worktree), "my-branch")
+        assert rc == 0
+        # Resolve symlinks so macOS /private/var/... paths compare correctly
+        assert os.path.realpath(tail.strip()) == os.path.realpath(str(worktree))
+
+    def test_tail_truncated_to_20_lines(self, tmp_path):
+        """Only the last 20 lines of combined output are returned."""
+        hook_dir = tmp_path / "repo" / ".git" / "workout-hooks"
+        hook_dir.mkdir(parents=True)
+        hook_file = hook_dir / "post-switch"
+        lines = "\n".join(f'echo "line {i}"' for i in range(40))
+        hook_file.write_text(f"#!/usr/bin/env bash\n{lines}\nexit 1\n")
+        os.chmod(hook_file, 0o755)
+
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
+
+        rc, tail = run_post_switch_hook(str(tmp_path / "repo"), str(worktree), "my-branch")
+        assert rc == 1
+        tail_lines = tail.splitlines()
+        assert len(tail_lines) <= 20
+        # Last line should be line 39
+        assert "line 39" in tail_lines[-1]
+
+
+# ---------------------------------------------------------------------------
+# post-switch hook — cmd_create integration tests
+# ---------------------------------------------------------------------------
+
+class TestCmdCreatePostSwitchHook:
+    """Integration tests for post-switch hook behavior within cmd_create."""
+
+    def _setup_create_mocks(self, mock_run):
+        """Standard successful create flow mocks."""
+        def side_effect(cmd, **kwargs):
+            cmd_list = cmd if isinstance(cmd, list) else [cmd]
+            joined = " ".join(str(c) for c in cmd_list)
+            if "display-message" in joined and "session_name" in joined:
+                return fake_run_result(stdout="tidy-crown\n")
+            if "display-message" in joined and "window_id" in joined:
+                return fake_run_result(stdout="@1\n")
+            if "list-windows" in joined:
+                return fake_run_result(stdout="")
+            if "rev-parse" in joined and "show-toplevel" in joined:
+                return fake_run_result(stdout="/some/repo\n")
+            if "symbolic-ref" in joined:
+                return fake_run_result(stdout="main\n")
+            if "rev-parse" in joined and "upstream" in joined:
+                return fake_run_result(stdout="origin/main\n")
+            if "rev-parse" in joined and "--verify" in joined and "refs/heads" not in joined:
+                return fake_run_result(stdout="abc1234\n")
+            if "fetch" in joined and "origin" in joined:
+                return fake_run_result()
+            if "rev-parse" in joined and "refs/heads" in joined:
+                return fake_run_result(returncode=1)
+            if "branch" in joined and "main" in joined:
+                return fake_run_result()
+            if "worktree" in joined and "add" in joined:
+                return fake_run_result()
+            if "new-window" in joined:
+                return fake_run_result()
+            if "send-keys" in joined:
+                return fake_run_result()
+            if "capture-pane" in joined:
+                return fake_run_result(stdout="> \n")
+            return fake_run_result()
+        mock_run.side_effect = side_effect
+
+    def test_hook_present_exits_zero_staff_launched(self, capsys):
+        """Hook present and exits 0 → staff is launched normally."""
+        with patch("subprocess.run") as mock_run:
+            with patch("os.path.isdir", return_value=True):
+                with patch("os.path.exists", return_value=False):
+                    with patch.object(
+                        crew_module,
+                        "run_post_switch_hook",
+                        return_value=(0, "bootstrap ok"),
+                    ) as mock_hook:
+                        self._setup_create_mocks(mock_run)
+                        cmd_create(
+                            name="test-worker",
+                            repo="/some/repo",
+                            branch="test-worker",
+                            base="main",
+                            fmt="xml",
+                        )
+
+        call_args = mock_hook.call_args
+        assert call_args[0][0] == "/some/repo"
+        assert call_args[0][1].endswith("/worktrees/test-worker")
+        assert call_args[0][2] == "test-worker"
+        # Staff should have been launched (send-keys call present)
+        send_keys_calls = [
+            c for c in mock_run.call_args_list
+            if c[0][0][0] == "tmux" and "send-keys" in c[0][0]
+        ]
+        assert len(send_keys_calls) >= 1
+
+    def test_hook_present_exits_nonzero_staff_not_launched(self, capsys):
+        """Hook exits non-zero → POST_SWITCH_HOOK_FAILED error, staff NOT launched."""
+        with patch("subprocess.run") as mock_run:
+            with patch("os.path.isdir", return_value=True):
+                with patch("os.path.exists", return_value=False):
+                    with patch.object(
+                        crew_module,
+                        "run_post_switch_hook",
+                        return_value=(1, "pnpm: command not found"),
+                    ):
+                        self._setup_create_mocks(mock_run)
+                        with pytest.raises(SystemExit) as exc_info:
+                            cmd_create(
+                                name="test-worker",
+                                repo="/some/repo",
+                                branch="test-worker",
+                                base="main",
+                                fmt="xml",
+                            )
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "POST_SWITCH_HOOK_FAILED" in captured.out
+        assert "exited 1" in captured.out  # hook's exit code present in error message body
+
+        # Staff must NOT have been launched
+        send_keys_calls = [
+            c for c in mock_run.call_args_list
+            if c[0][0][0] == "tmux" and "send-keys" in c[0][0]
+        ]
+        assert len(send_keys_calls) == 0
+
+    def test_hook_absent_staff_launched_normally(self, capsys):
+        """Hook absent (returns None) → no-op, staff launched as before."""
+        with patch("subprocess.run") as mock_run:
+            with patch("os.path.isdir", return_value=True):
+                with patch("os.path.exists", return_value=False):
+                    with patch.object(
+                        crew_module,
+                        "run_post_switch_hook",
+                        return_value=None,
+                    ) as mock_hook:
+                        self._setup_create_mocks(mock_run)
+                        cmd_create(
+                            name="test-worker",
+                            repo="/some/repo",
+                            branch="test-worker",
+                            base="main",
+                            fmt="xml",
+                        )
+
+        mock_hook.assert_called_once()
+        send_keys_calls = [
+            c for c in mock_run.call_args_list
+            if c[0][0][0] == "tmux" and "send-keys" in c[0][0]
+        ]
+        assert len(send_keys_calls) >= 1
+
+    def test_hook_not_called_with_no_worktree(self, capsys):
+        """--no-worktree mode skips the post-switch hook entirely."""
+        with patch("subprocess.run") as mock_run:
+            with patch("os.path.isdir", return_value=True):
+                with patch("os.path.exists", return_value=False):
+                    with patch.object(
+                        crew_module,
+                        "run_post_switch_hook",
+                    ) as mock_hook:
+                        self._setup_create_mocks(mock_run)
+                        cmd_create(
+                            name="test-worker",
+                            repo="/some/repo",
+                            branch=None,
+                            base=None,
+                            fmt="xml",
+                            no_worktree=True,
+                        )
+
+        mock_hook.assert_not_called()

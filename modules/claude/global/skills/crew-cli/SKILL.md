@@ -42,6 +42,14 @@ crew create <name> [--repo <path>] [--branch <branch>] [--base <base-branch>] [-
 - `--tell-file PATH` reads the brief from a file. The file is deleted automatically after successful delivery. If delivery fails (e.g., Claude Code didn't start), the file is preserved so you can retry.
 - Use `--cmd <other>` to override the spawn command when not using `staff`.
 
+**Post-switch hook:**
+After `git worktree add` and before launching the staff session, `crew create` automatically runs the repository's `.git/workout-hooks/post-switch` script if it exists and is executable. This mirrors the legacy `workout` CLI behavior so spawned worktrees are fully initialized (e.g., `mise trust`, `pnpm bootstrap`) before Staff starts work.
+
+- **When it runs:** After worktree creation, before tmux window open. Skipped when `--no-worktree` is used.
+- **Env vars passed:** `WORKTREE_PATH` (new worktree absolute path), `SOURCE_REPO` (source repo absolute path), `BRANCH` (branch checked out). Note: the reference implementation at `maze-monorepo/.git/workout-hooks/post-switch` currently uses only `cwd` (runs `mise trust --yes && pnpm bootstrap`) and does not consume these env vars. The vars are provided as a forward-looking contract for hooks that need them.
+- **Absent hook:** Silent no-op — no error, no output. Proceed as normal.
+- **Non-zero exit:** `crew create` emits `POST_SWITCH_HOOK_FAILED` error (exit 1) with the hook's exit code and last 20 lines of output. Staff session is NOT launched — worktree setup is incomplete.
+
 **Examples:**
 ```bash
 crew create pricing                                            # Branch + worktree + window all named "pricing"
@@ -50,7 +58,7 @@ crew create pricing --tell-file /tmp/brief.txt                 # Create + delive
 crew create auth --base main                                   # Create from main instead of current branch
 crew create docs --repo ~/worktrees/other-project/main         # Create in a different repo
 crew create payment --branch payment-v2                        # Window named "payment", branch "payment-v2"
-crew create hotfix --no-worktree                               # Work directly in repo without creating a worktree
+crew create hotfix --no-worktree                               # Work directly in repo without creating a worktree (hook skipped)
 ```
 
 **Error handling:**
@@ -58,6 +66,7 @@ crew create hotfix --no-worktree                               # Work directly i
 - Invalid name (spaces, slashes, shell chars) → exit 2
 - Existing worktree at `~/worktrees/<name>` → exit 2
 - Branch creation fails → exit 1, worktree not created
+- Post-switch hook exits non-zero → exit 1 (`POST_SWITCH_HOOK_FAILED`), staff NOT launched, worktree left intact
 - tmux window fails after worktree created → exit 1, worktree left intact (partial state — do NOT auto-remove)
 
 ---
