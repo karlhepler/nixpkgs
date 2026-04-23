@@ -1248,6 +1248,24 @@ See § MoV discipline for the pattern-absence idiom (prefer `! rg -q` over `test
 
 **Anti-pattern from PLA-1124:** Card #14 (scribe docs) had AC 5: "No source code files were modified" with MoV `git diff --stat main -- packages/mirrordx/src/`. Card #14 ran in parallel with card #13 (swe-backend modifying `packages/mirrordx/src/`). The MoV returned non-empty output driven by card #13's work, failing AC 5 forever no matter what the scribe did. Scribe went through multiple redo cycles unable to satisfy the AC. The staff engineer eventually had to `kanban criteria remove` AC 5 to unstick the card. The AC asserted a scope ("packages/mirrordx/src/") broader than the card's own edit set — when parallel cards share paths, negative assertions about modifications are structurally broken.
 
+**Scope-count assertions are the most dangerous negative-assertion sub-class.** An AC that counts files changed in a directory broader than the card's `editFiles` is structurally broken even in a single-session scenario — prior uncommitted work from other cards (completed but not yet committed) will fail the count, and Haiku-class agents may "fix" the count by reverting out-of-scope files.
+
+**Banned MoV pattern (do not use):**
+
+```
+test $(git diff --name-only HEAD -- <dir> | wc -l) -eq N
+```
+
+where `<dir>` is broader than the card's editFiles list. This has led to real data loss — a sub-agent ran `git checkout --` on unrelated files to satisfy the count.
+
+**Corrective patterns (use instead):**
+
+- If the card edits exactly ONE file: `git diff --name-only HEAD -- <exact/file/path>` returns that file and nothing else. The count MoV becomes `test "$(git diff --name-only HEAD -- <exact/file/path> | wc -l)" -eq 1` — scoped to the single file, not a directory.
+- If the card edits a KNOWN set of files: scope the MoV to each file explicitly, not the parent directory.
+- If the card's edit set is actually indeterminate: drop the count AC entirely. Use suite-pass MoVs (`npm test`, build passes) plus per-file positive assertions instead.
+
+**Per-edit isolation rule:** `mov_commands` whose cmd contains `git diff --name-only ... -- <path>` must target either (a) a single file path in the card's editFiles, or (b) a glob pattern that is a strict subset of editFiles. Never target a parent directory that contains files outside editFiles.
+
 ### Refactor-Test-Parity Rule
 
 **Any card that introduces new I/O in production code — disk reads/writes, network calls, process spawns, timers, filesystem watchers, DB connections (collectively "I/O" below) — MUST also ship the injection seam and updated test mocks in the SAME card.**
@@ -1476,6 +1494,7 @@ Highest-blast-radius failures. Full reference: [anti-patterns.md](../docs/staff-
 - **Cancel as cleanup** — `kanban cancel` on cards with completed work instead of re-launching for AC lifecycle (§ Card Lifecycle)
 - **Review skip** — skipping Tier 1/2 mandatory reviews ("lint passed", "small diff", "draft PR is a review gate") or soft-framing them as optional (§ Mandatory Review Protocol)
 - **Body-unchanged review skip on security-perimeter migrations** — applying the 'body unchanged, only mechanical wrapper edits' exemption to auth/authz or permission-gating code being migrated into a new deployment context. The threat model is determined by deployment context, not by code identity. First-time migrations ALWAYS trigger Security review regardless of body diff. (See § Mandatory Review Protocol → Tier 1 → Auth/AuthZ migration trigger.)
+- **Scope-count MoV on a directory broader than editFiles** — MoVs like `test $(git diff --name-only HEAD -- modules/ | wc -l) -eq 1` fail when pre-existing uncommitted work from other cards is present, and have caused agents to run `git checkout --` on unrelated files to "fix" the count (§ MoV Scope Isolation).
 
 ---
 
