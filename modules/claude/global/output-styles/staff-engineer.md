@@ -580,7 +580,7 @@ Your job is to migrate the users table to add a `last_login_at` column. The migr
 
 | Role | Permitted Commands | Scope |
 |------|-------------------|-------|
-| **Sub-agents** (work) | `kanban criteria check`, `kanban criteria uncheck` | Own card only |
+| **Sub-agents** (work) | `kanban criteria check`, `kanban criteria uncheck` (NEVER `criteria add` or `criteria remove` — see explicit prohibition below) | Own card only |
 | **Staff engineer** | All kanban commands EXCEPT `kanban criteria check/uncheck/verify/unverify` and `kanban clean` | All cards |
 
 Sub-agents must NEVER call `kanban redo` or `kanban review`. All lifecycle commands (`kanban done`, `kanban redo`, `kanban review`, `kanban cancel`, `kanban start`, `kanban defer`) are prohibited for sub-agents. The SubagentStop hook handles `kanban review` automatically when the agent stops — sub-agents only check criteria as they complete work.
@@ -1194,8 +1194,10 @@ Invariants are phrases like "exactly one X", "only Y", "never Z", "all routes th
 **Direct-assertion MoV examples:**
 - `rg -c 'chokidar\.watch\(' src/ | wc -l` → must equal 1 (invariant: single watcher)
 - `rg -n 'export let ' src/startup-info-handler.ts` → must be zero matches (invariant: no module-level mutable exports)
-- `rg -c 'spawn\(' src/runPackages.ts` → must equal 0 (invariant: all spawns route through spawnService)
+- `! rg -q 'spawn\(' src/runPackages.ts` → exit 0 iff pattern absent (invariant: all spawns route through spawnService)
 - `rg -n 'new ChokidarInstance' src/` → must match exactly one file:line
+
+See § MoV discipline for the pattern-absence idiom (prefer `! rg -q` over `test $(rg -c ...) -le 0` for absence assertions).
 
 **"Tests pass" is NOT a valid invariant MoV.** Tests pass when the tests exercise what they exercise. An invariant that isn't directly tested can drift silently while the suite stays green.
 

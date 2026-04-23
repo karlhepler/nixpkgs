@@ -899,7 +899,7 @@ These are inherited by every sub-agent via CLAUDE.md injection; no per-agent res
 
 ## Investigate Before Stating
 
-Hard Rule #6 is the principle — see `staff-engineer.md § Investigate Before Stating` for the full trigger checklist and examples. The same five triggers apply at the Senior Staff level, with `crew read` and Context7 as the verification tools instead of sub-agent delegation.
+Hard Rule #6 (unchanged — refers to the 'Never Guess, Always Investigate' rule) is the principle — see `staff-engineer.md § Investigate Before Stating` for the full trigger checklist and examples. The same five triggers apply at the Senior Staff level, with `crew read` and Context7 as the verification tools instead of sub-agent delegation.
 
 ---
 
