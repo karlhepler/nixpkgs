@@ -27,14 +27,17 @@ Known Issues:
       See: https://github.com/anthropics/claude-code/issues/15897
 """
 
+import fnmatch
 import json
 import os
 import re
+import shlex
 import sqlite3
 import subprocess
 import sys
 import traceback
 import warnings
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 # Suppress Python deprecation warnings to prevent stderr output,
@@ -82,7 +85,7 @@ def _rotate_log_if_needed(path: Path) -> None:
         if path.exists() and path.stat().st_size >= _LOG_MAX_BYTES:
             rotated = path.with_suffix(path.suffix + ".1")
             path.rename(rotated)
-    except Exception:
+    except Exception:  # intentional: last-resort log utility must never raise
         pass
 
 
@@ -99,7 +102,7 @@ def _write_log(path: Path, message: str) -> None:
         timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
         with open(path, "a", encoding="utf-8") as fh:
             fh.write(f"[{timestamp}] {message}\n")
-    except Exception:
+    except Exception:  # intentional: last-resort log utility must never raise
         pass
 
 
@@ -202,6 +205,460 @@ def inject_card_into_prompt(prompt: str, card_xml: str, card_number: str, sessio
 
 
 # ---------------------------------------------------------------------------
+# Destructive git operation validation (Bash tool calls from sub-agents)
+# ---------------------------------------------------------------------------
+
+# Shell operator tokens used to split compound commands.
+_SHELL_OPS = frozenset(["&&", "||", ";", "|", "&"])
+
+
+def _is_sub_agent(payload: dict) -> bool:
+    """Return True if this hook call comes from inside a sub-agent.
+
+    Claude Code populates 'agent_id' in the hook payload only when the hook
+    fires inside a subagent call. The field is absent in main-session calls.
+
+    RELIABILITY NOTE (verified against Claude Code 2.1.118, 2026-04-23):
+    This is a single-point-of-failure. If 'agent_id' is ever absent from a
+    sub-agent payload (version regression, format change) or present in a
+    main-session payload (future session IDs), the safeguard silently bypasses.
+    Recommend revisiting on major Claude Code version bumps to verify the
+    'agent_id' field remains a reliable sub-agent discriminator.
+    """
+    return bool(payload.get("agent_id"))
+
+
+def _normalize_semicolons(tokens: list) -> list:
+    """Expand tokens that embed bare semicolons into separate operator tokens.
+
+    shlex.split does not treat ';' as an operator — it merges it with adjacent
+    content when there is no surrounding whitespace (e.g., 'cmd;next'). This
+    function splits those embedded semicolons so _split_on_shell_ops can
+    correctly identify command segment boundaries.
+    """
+    result = []
+    for tok in tokens:
+        if ';' not in tok:
+            result.append(tok)
+            continue
+        parts = tok.split(';')
+        for i, part in enumerate(parts):
+            if part:
+                result.append(part)
+            if i < len(parts) - 1:
+                result.append(';')
+    return result
+
+
+def _split_on_shell_ops(tokens: list) -> list:
+    """Split token list on shell control operators into command segments."""
+    segments = []
+    current = []
+    for tok in tokens:
+        if tok in _SHELL_OPS:
+            if current:
+                segments.append(current)
+            current = []
+        else:
+            current.append(tok)
+    if current:
+        segments.append(current)
+    return segments
+
+
+def _tokenize_command(command: str) -> list:
+    """Tokenize a shell command string using shlex, splitting on operators.
+
+    Returns a list of segments where each segment is a list of tokens.
+    Fails open (returns empty list) on shlex errors.
+    """
+    if not command or not command.strip():
+        return []
+    segments_out = []
+    for line in command.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            tokens = shlex.split(line)
+        except ValueError:
+            # Unterminated quotes or other shlex error — fail open
+            continue
+        tokens = _normalize_semicolons(tokens)
+        segments_out.extend(_split_on_shell_ops(tokens))
+    return segments_out
+
+
+# Result type for destructive op detection:
+#   "stash_drop"         → unconditional denial (no file target)
+#   list[str]            → file paths that are targets of destructive ops
+#   None                 → no destructive op detected (allow)
+def _extract_destructive_git_targets(segment: list) -> "str | list | None":
+    """Analyse a single tokenized command segment for destructive git ops.
+
+    Returns:
+        "stash_drop"  — if the segment is `git stash drop` (unconditional denial)
+        list[str]     — file paths targeted by a destructive op (may be empty if
+                        the op takes files but none were parsed, treated as safe)
+        None          — not a destructive git op
+    """
+    if not segment or segment[0] != "git":
+        return None
+
+    if len(segment) < 2:
+        return None
+
+    subcmd = segment[1]
+
+    # git stash drop — no file target; unconditional denial
+    if subcmd == "stash" and len(segment) >= 3 and segment[2] == "drop":
+        return "stash_drop"
+
+    # git checkout: destructive only with '--' flag or '-p' flag with file arg.
+    # git checkout <branch> and git checkout -b <branch> are NOT destructive.
+    if subcmd == "checkout":
+        rest = segment[2:]
+        if "--" in rest:
+            # git checkout -- [files...]
+            dd_idx = rest.index("--")
+            files = rest[dd_idx + 1:]
+            return files if files else []
+        if "-p" in rest:
+            # git checkout -p [file] — interactive hunk revert
+            p_idx = rest.index("-p")
+            files = [t for t in rest[p_idx + 1:] if not t.startswith("-")]
+            # If no explicit file, treat as potentially any file — block
+            return files if files else ["<interactive-hunk-revert>"]
+        # Non-destructive: branch switch, -b, etc.
+        return None
+
+    # git restore [--staged] <file>
+    if subcmd == "restore":
+        rest = segment[2:]
+        files = [t for t in rest if not t.startswith("-")]
+        return files if files else []
+
+    # git reset -- <file> and git reset HEAD -- <file>
+    # Special case: git reset --hard unconditionally reverts all tracked files.
+    # Only detect file-targeted resets when '--' separator is explicitly present to
+    # avoid false-positives on mode resets like `git reset --soft HEAD~1`.
+    if subcmd == "reset":
+        rest = segment[2:]
+        if "--hard" in rest:
+            # git reset --hard reverts ALL tracked files — no file target needed
+            return ["<all-tracked>"]
+        if "--" in rest:
+            dd_idx = rest.index("--")
+            files = rest[dd_idx + 1:]
+            return files if files else []
+        # Without '--', we cannot reliably distinguish file args from tree-ish refs.
+        # Fail open to avoid blocking legitimate mode resets (e.g. --soft, --mixed).
+        # Known gap: `git reset HEAD <file>` (without --) is not detected.
+        return None
+
+    # git clean [-f] [-d] [--] [<file>...] / git clean -fd
+    if subcmd == "clean":
+        rest = segment[2:]
+        files = [t for t in rest if not t.startswith("-")]
+        # Remove '--' separator if present
+        files = [f for f in files if f != "--"]
+        # Even with no file target, git clean is destructive
+        return files if files else ["<all-untracked>"]
+
+    return None
+
+
+def _parse_destructive_git_ops(command: str) -> list:
+    """Parse a (possibly compound) shell command for destructive git operations.
+
+    Returns a list of (segment_tokens, result) tuples where result is either
+    "stash_drop" or a list of file path strings.  Returns empty list when no
+    destructive ops are detected.
+
+    Fails open (returns empty list) on any parsing error.
+    """
+    findings = []
+    try:
+        segments = _tokenize_command(command)
+        for seg in segments:
+            result = _extract_destructive_git_targets(seg)
+            if result is not None:
+                findings.append((seg, result))
+    except Exception as e:
+        log_error(f"destructive-git parse failure: {e}")
+        return []
+    return findings
+
+
+def _fetch_doing_card_for_session(session_id: str) -> "tuple[str, list[str]] | None":
+    """Fetch the 'doing' kanban card for the given session.
+
+    Returns (card_number, edit_files_list) or None on any failure.
+    edit_files_list is a (possibly empty) list of path strings from <edit-files>.
+    """
+    try:
+        result = subprocess.run(
+            ["kanban", "list", "--session", session_id, "--column", "doing",
+             "--output-style=xml"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return None
+        root = ET.fromstring(result.stdout.strip())
+        # Find the first card element anywhere in the XML
+        card_el = root.find(".//c")
+        if card_el is None:
+            return None
+        card_number = card_el.get("n", "")
+        if not card_number:
+            return None
+        # The list output doesn't include edit-files — fetch the full card
+        return _fetch_card_editfiles(card_number, session_id)
+    except Exception as e:
+        log_error(f"_fetch_doing_card_for_session failed for session={session_id}: {e}")
+        return None
+
+
+def _fetch_card_editfiles(card_number: str, session_id: str) -> "tuple[str, list[str]] | None":
+    """Fetch edit-files for a specific card via kanban show.
+
+    Returns (card_number, edit_files_list) or None on failure.
+    """
+    try:
+        result = subprocess.run(
+            ["kanban", "show", card_number, "--output-style=xml", "--session", session_id],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return None
+        root = ET.fromstring(result.stdout.strip())
+        ef_el = root.find("edit-files")
+        if ef_el is None:
+            return (card_number, [])
+        files = [f.text.strip() for f in ef_el.findall("f") if f.text and f.text.strip()]
+        return (card_number, files)
+    except Exception as e:
+        log_error(f"_fetch_card_editfiles failed for card={card_number}: {e}")
+        return None
+
+
+def _normalize_path(path_str: str, cwd: str) -> str:
+    """Normalize a target path string to a relative path from cwd.
+
+    Absolute paths are made relative to cwd. Relative paths are kept as-is
+    (already relative to cwd for comparison purposes).
+
+    Path.resolve() is called on both arguments before comparison to canonicalize
+    dot-segments (e.g. a/b/../c → a/c) and resolve symlinks. If resolve() fails
+    (e.g. symlink loop, permission error), falls back to the unresolved path.
+    """
+    p = Path(path_str)
+    if p.is_absolute():
+        try:
+            resolved_p = p.resolve()
+            resolved_cwd = Path(cwd).resolve()
+            return str(resolved_p.relative_to(resolved_cwd))
+        except OSError:
+            # resolve() failed (e.g. symlink loop) — fall back to unresolved comparison
+            log_error(f"_normalize_path: resolve() failed for {path_str!r}, falling back to unresolved")
+        except ValueError:
+            # Path is outside cwd — return as-is for rejection
+            pass
+        return path_str
+    return path_str
+
+
+def _file_in_editfiles(target: str, edit_files: list, cwd: str) -> bool:
+    """Return True if target matches any pattern in edit_files.
+
+    Uses fnmatch for glob support. Compares normalized (relative) paths.
+
+    Glob matching notes:
+    - fnmatch '*' does NOT cross path separators (e.g. '*.py' won't match 'src/foo.py'
+      via primary check, but WILL match via the basename fallback below).
+    - The basename fallback is ONLY applied when the pattern contains no path separator.
+      This prevents 'foo.py' (intended as a root-level filename) from matching
+      'src/foo.py' or 'deep/nested/foo.py' — which would be over-permissive.
+    - '**' globstar is NOT supported by fnmatch and will silently never match.
+      Card authors wanting recursive matches should use bare filename patterns like
+      '*.py' (matches via basename fallback) or list files explicitly.
+    """
+    normalized = _normalize_path(target, cwd)
+    for pattern in edit_files:
+        # Primary match: full normalized path against pattern
+        if fnmatch.fnmatch(normalized, pattern):
+            return True
+        # Basename fallback: only for glob patterns (containing * or ?) that have no path
+        # separator. This lets '*.py' match the basename of 'src/foo.py', while preventing
+        # a plain filename like 'foo.py' from incorrectly matching 'src/foo.py' (over-permission).
+        # Gated on two conditions:
+        #   1. Pattern has no '/' — prevents path-qualified patterns from using basename fallback.
+        #   2. Pattern contains '*' or '?' — prevents plain filenames from over-matching.
+        # Note: '**' globstar is NOT supported by fnmatch and will silently never match.
+        # Card authors wanting recursive matches should use '*.py' (matches via this fallback)
+        # or list files explicitly.
+        has_glob = "*" in pattern or "?" in pattern
+        if "/" not in pattern and has_glob and fnmatch.fnmatch(Path(normalized).name, pattern):
+            return True
+    return False
+
+
+def _validate_bash_destructive_git(payload: dict) -> "dict | None":
+    """Validate a Bash tool call for destructive git operations on out-of-scope files.
+
+    Returns a deny response dict if the command should be blocked, or None to allow.
+
+    Rules:
+    - Only applies when running inside a sub-agent (agent_id present in payload).
+    - BURNS_SESSION=1 is handled upstream (early return in main).
+    - Parses the command for destructive git ops.
+    - Fetches the doing card's editFiles for the sub-agent's session.
+    - Rejects if any target file is not in editFiles.
+    - git stash drop → rejected unconditionally (no file target, global destruction).
+    - git reset --hard → rejected unconditionally (reverts ALL tracked files).
+    - git checkout -p (no file) → rejected unconditionally (interactive session blocked).
+
+    Fails-open paths (any of these allows the op through without blocking):
+    1. shlex parse error in _tokenize_command: unterminated quotes cause that line to be
+       skipped (fail open) — ensures a parse bug never blocks legitimate work.
+    2. kanban lookup failure: if _fetch_doing_card_for_session raises or returns None,
+       the check is skipped with a log_error call. A sustained kanban outage creates a
+       bypass window; monitor log_error calls for operational awareness.
+    3. Exception in _parse_destructive_git_ops: any unexpected error during op detection
+       returns an empty findings list (allow), logged via log_error.
+
+    The fail-open design is intentional: this is a defense-in-depth layer, not the
+    primary access control. Infrastructure failures must not block legitimate sub-agent work.
+    """
+    if not _is_sub_agent(payload):
+        return None  # Main session — bypass
+
+    command = payload.get("tool_input", {}).get("command", "")
+    if not command:
+        return None
+
+    findings = _parse_destructive_git_ops(command)
+    if not findings:
+        return None
+
+    # Lazy-load card info only if destructive ops were found
+    session_id = payload.get("session_id", "")
+    cwd = payload.get("cwd", "")
+
+    card_info = None
+    if session_id:
+        card_info = _fetch_doing_card_for_session(session_id)
+
+    for seg, result in findings:
+        cmd_repr = " ".join(seg)
+
+        if result == "stash_drop":
+            card_num = card_info[0] if card_info else "unknown"
+            reason = (
+                f"DENIED: `{cmd_repr}` — `git stash drop` is unconditionally blocked for sub-agents.\n"
+                f"Card: #{card_num}\n"
+                "git stash drop destroys stashed changes that may contain uncommitted work from other cards.\n"
+                "If a stash is blocking you, STOP and report the issue in your final return — "
+                "do not destroy stash contents outside your card's scope."
+            )
+            log_info(f"Bash denied — git stash drop from sub-agent session={session_id}")
+            return deny_with_reason(reason)
+
+        # result is a list of file paths (possibly with sentinel values)
+        file_targets = result
+
+        # Handle <interactive-hunk-revert> sentinel: git checkout -p with no file arg.
+        # This is blocked unconditionally — not because the file is out of scope, but
+        # because launching an interactive session is incompatible with sub-agent execution.
+        if file_targets == ["<interactive-hunk-revert>"]:
+            card_num = card_info[0] if card_info else "unknown"
+            reason = (
+                f"DENIED: `{cmd_repr}` — `git checkout -p` launches an interactive hunk-revert "
+                f"session and is blocked for sub-agents regardless of editFiles.\n"
+                f"Card: #{card_num}\n"
+                "Interactive sessions cannot run inside a sub-agent. Surface the underlying scope "
+                "issue in your final return instead of reverting."
+            )
+            log_info(f"Bash denied — git checkout -p (interactive) from sub-agent session={session_id}")
+            return deny_with_reason(reason)
+
+        # Handle <all-tracked> sentinel: git reset --hard reverts ALL tracked files.
+        # Always blocked for sub-agents — no editFiles check needed.
+        if "<all-tracked>" in file_targets:
+            card_num = card_info[0] if card_info else "unknown"
+            reason = (
+                f"DENIED: `{cmd_repr}` — `git reset --hard` reverts ALL tracked files and is "
+                f"always out of scope for a card-bounded sub-agent.\n"
+                f"Card: #{card_num}\n"
+                "This operation would revert files outside your card's editFiles scope.\n"
+                "If an AC is failing, STOP and report the broken AC in your final return — "
+                "do not revert the entire working tree."
+            )
+            log_info(f"Bash denied — git reset --hard from sub-agent session={session_id}")
+            return deny_with_reason(reason)
+
+        if not file_targets:
+            # Destructive op but no parseable file targets (e.g. git clean <all>)
+            card_num = card_info[0] if card_info else "unknown"
+            card_ef = card_info[1] if card_info else []
+            reason = (
+                f"DENIED: `{cmd_repr}` — destructive git operation with no specific file target.\n"
+                f"Card: #{card_num}\n"
+                f"Card editFiles: {card_ef if card_ef else '(none listed)'}\n"
+                "Destructive operations that affect the whole working tree are blocked for sub-agents.\n"
+                "If an AC is failing, STOP and report the broken AC in your final return — "
+                "do not attempt to revert or clean files outside your card's scope."
+            )
+            log_info(f"Bash denied — destructive git op (no file target) from sub-agent session={session_id}")
+            return deny_with_reason(reason)
+
+        # Check each file against editFiles
+        if card_info is None:
+            # Could not fetch card info — fail open (do not block)
+            log_error(f"Could not fetch card for session={session_id} — skipping destructive git check")
+            return None
+
+        card_num, edit_files = card_info
+
+        if not edit_files:
+            # Card has no editFiles defined — block all destructive ops
+            reason = (
+                f"DENIED: `{cmd_repr}` — destructive git operation on file(s) that are NOT in card editFiles.\n"
+                f"Card: #{card_num}\n"
+                f"Card editFiles: (none listed)\n"
+                f"Target file(s): {file_targets}\n"
+                "This kind of destructive operation on out-of-scope files has caused data loss.\n"
+                "If an AC is failing because of this file's state, STOP and report the broken AC in your "
+                "final return — do not revert files outside your card's scope."
+            )
+            log_info(f"Bash denied — destructive git op on {file_targets}, card #{card_num} has no editFiles, session={session_id}")
+            return deny_with_reason(reason)
+
+        out_of_scope = [
+            f for f in file_targets
+            if not _file_in_editfiles(f, edit_files, cwd)
+        ]
+
+        if out_of_scope:
+            reason = (
+                f"DENIED: `{cmd_repr}` — target file(s) are NOT in card #{card_num} editFiles.\n"
+                f"Out-of-scope file(s): {out_of_scope}\n"
+                f"Card editFiles: {edit_files}\n"
+                "This kind of destructive operation on out-of-scope files has caused data loss.\n"
+                "If an AC is failing because of this file's state, STOP and report the broken AC in your "
+                "final return — do not revert files outside your card's scope."
+            )
+            log_info(f"Bash denied — destructive git op on out-of-scope files {out_of_scope}, card #{card_num}, session={session_id}")
+            return deny_with_reason(reason)
+
+    return None  # All checks passed — allow
+
+
+# ---------------------------------------------------------------------------
 # Allow response helpers
 # ---------------------------------------------------------------------------
 
@@ -278,8 +735,20 @@ def main() -> None:
         print(json.dumps(allow_unchanged()))
         return
 
-    # Verify this is an Agent tool call (matcher should guarantee this, but be safe)
+    # Verify tool name — handle Bash validation separately from Agent injection.
     tool_name = payload.get("tool_name", "")
+
+    # Destructive git operation check for Bash calls from sub-agents.
+    # This fires before the Agent-only injection logic below.
+    if tool_name == "Bash":
+        denial = _validate_bash_destructive_git(payload)
+        if denial is not None:
+            print(json.dumps(denial))
+            return
+        print(json.dumps(allow_unchanged()))
+        return
+
+    # For all other non-Agent tools, pass through unchanged.
     if tool_name != "Agent":
         print(json.dumps(allow_unchanged()))
         return

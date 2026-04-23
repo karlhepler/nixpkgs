@@ -18,6 +18,7 @@ are created or read during these tests.
 import importlib.util
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -550,3 +551,248 @@ class TestCardPatternExtraction:
         assert result is not None, "Expected some match via Pattern 3 fallthrough"
         assert result[0] == "456"
         assert result[1] == "cross-line-session"
+
+
+# ---------------------------------------------------------------------------
+# Helpers for destructive-git safeguard tests
+# ---------------------------------------------------------------------------
+
+def make_bash_payload(
+    command: str,
+    agent_id: str | None = "agent-abc123",
+    session_id: str = "test-session",
+    cwd: str = "/repo",
+) -> dict:
+    """Build a minimal PreToolUse Bash payload."""
+    payload = {
+        "tool_name": "Bash",
+        "tool_input": {"command": command},
+        "session_id": session_id,
+        "cwd": cwd,
+    }
+    if agent_id is not None:
+        payload["agent_id"] = agent_id
+    return payload
+
+
+def make_kanban_list_xml(card_number: str = "42") -> str:
+    """Build a minimal kanban list XML response containing one card."""
+    return f'<cards><c n="{card_number}" status="doing"/></cards>'
+
+
+def make_kanban_show_xml(card_number: str = "42", edit_files: list | None = None) -> str:
+    """Build a minimal kanban show XML with optional edit-files entries."""
+    if edit_files is None:
+        edit_files = ["modules/claude/kanban-pretool-hook.py"]
+    ef_entries = "".join(f"<f>{f}</f>" for f in edit_files)
+    ef_block = f"<edit-files>{ef_entries}</edit-files>" if ef_entries else "<edit-files/>"
+    return (
+        f'<card num="{card_number}" session="test-session" status="doing">'
+        f"<intent>Test card</intent>"
+        f"{ef_block}"
+        f"</card>"
+    )
+
+
+def patch_kanban_for_editfiles(edit_files: list | None = None, card_number: str = "42"):
+    """Return a fake subprocess.run that simulates successful kanban list + show."""
+    list_xml = make_kanban_list_xml(card_number)
+    show_xml = make_kanban_show_xml(card_number, edit_files)
+
+    def fake_run(cmd, **kwargs):
+        if isinstance(cmd, list) and cmd[0] == "kanban":
+            if cmd[1] == "list":
+                return KanbanMockResponses.success(stdout=list_xml)
+            if cmd[1] == "show":
+                return KanbanMockResponses.success(stdout=show_xml)
+        return KanbanMockResponses.failure()
+
+    return fake_run
+
+
+class TestDestructiveGitSafeguard:
+    """Tests for the destructive git operation safeguard in _validate_bash_destructive_git.
+
+    All kanban CLI calls are patched via subprocess.run — no real kanban state is read.
+    """
+
+    # 1. Sub-agent + git checkout -- <in-scope-file> → ALLOW
+    def test_checkout_in_scope_file_allowed(self, hook):
+        """git checkout -- on a file that IS in editFiles must be allowed."""
+        payload = make_bash_payload("git checkout -- modules/claude/kanban-pretool-hook.py")
+        with patch("subprocess.run", side_effect=patch_kanban_for_editfiles(
+            edit_files=["modules/claude/kanban-pretool-hook.py"]
+        )):
+            result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+    # 2. Sub-agent + git checkout -- <out-of-scope-file> → DENY
+    def test_checkout_out_of_scope_file_denied(self, hook):
+        """git checkout -- on a file NOT in editFiles must be denied with card + file info."""
+        payload = make_bash_payload("git checkout -- secret.py")
+        with patch("subprocess.run", side_effect=patch_kanban_for_editfiles(
+            edit_files=["modules/claude/kanban-pretool-hook.py"]
+        )):
+            result = run_hook_main(hook, payload)
+        assert_denied(result)
+        reason = result["hookSpecificOutput"]["permissionDecisionReason"]
+        assert "secret.py" in reason
+        assert "editFiles" in reason
+
+    # 3. Sub-agent + git restore <out-of-scope-file> → DENY
+    def test_restore_out_of_scope_file_denied(self, hook):
+        """git restore on an out-of-scope file must be denied."""
+        payload = make_bash_payload("git restore other_module.py")
+        with patch("subprocess.run", side_effect=patch_kanban_for_editfiles(
+            edit_files=["modules/claude/kanban-pretool-hook.py"]
+        )):
+            result = run_hook_main(hook, payload)
+        assert_denied(result)
+
+    # 4. Sub-agent + git restore --staged <out-of-scope-file> → DENY
+    def test_restore_staged_out_of_scope_denied(self, hook):
+        """git restore --staged on an out-of-scope file must be denied."""
+        payload = make_bash_payload("git restore --staged other_module.py")
+        with patch("subprocess.run", side_effect=patch_kanban_for_editfiles(
+            edit_files=["modules/claude/kanban-pretool-hook.py"]
+        )):
+            result = run_hook_main(hook, payload)
+        assert_denied(result)
+
+    # 5. Sub-agent + git reset -- <out-of-scope-file> → DENY
+    def test_reset_file_out_of_scope_denied(self, hook):
+        """git reset -- <file> on an out-of-scope file must be denied."""
+        payload = make_bash_payload("git reset -- secret.py")
+        with patch("subprocess.run", side_effect=patch_kanban_for_editfiles(
+            edit_files=["modules/claude/kanban-pretool-hook.py"]
+        )):
+            result = run_hook_main(hook, payload)
+        assert_denied(result)
+
+    # 6. Sub-agent + git reset --hard HEAD → DENY unconditionally
+    def test_reset_hard_denied_unconditionally(self, hook):
+        """git reset --hard is blocked regardless of editFiles — reverts ALL tracked files."""
+        payload = make_bash_payload("git reset --hard HEAD")
+        with patch("subprocess.run", side_effect=patch_kanban_for_editfiles(
+            edit_files=["modules/claude/kanban-pretool-hook.py"]
+        )):
+            result = run_hook_main(hook, payload)
+        assert_denied(result)
+        reason = result["hookSpecificOutput"]["permissionDecisionReason"]
+        assert "reset --hard" in reason or "all tracked" in reason.lower()
+
+    # 7. Sub-agent + git stash drop → DENY unconditionally
+    def test_stash_drop_denied_unconditionally(self, hook):
+        """git stash drop is always denied for sub-agents."""
+        payload = make_bash_payload("git stash drop")
+        with patch("subprocess.run", side_effect=patch_kanban_for_editfiles()):
+            result = run_hook_main(hook, payload)
+        assert_denied(result)
+        reason = result["hookSpecificOutput"]["permissionDecisionReason"]
+        assert "stash drop" in reason
+
+    # 8. Sub-agent + git clean -f → DENY (synthetic <all-untracked> target)
+    def test_clean_denied_all_untracked(self, hook):
+        """git clean -f is denied — no specific file, affects all untracked."""
+        payload = make_bash_payload("git clean -f")
+        with patch("subprocess.run", side_effect=patch_kanban_for_editfiles()):
+            result = run_hook_main(hook, payload)
+        assert_denied(result)
+
+    # 9. Sub-agent + git checkout <branch> → ALLOW (non-destructive branch switch)
+    def test_checkout_branch_allowed(self, hook):
+        """git checkout <branch> is a non-destructive branch switch and must be allowed."""
+        payload = make_bash_payload("git checkout main")
+        with patch("subprocess.run", side_effect=patch_kanban_for_editfiles()):
+            result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+    # 10. Sub-agent + git checkout -b <branch> → ALLOW
+    def test_checkout_new_branch_allowed(self, hook):
+        """git checkout -b <branch> creates a new branch — non-destructive, must be allowed."""
+        payload = make_bash_payload("git checkout -b feature/my-feature")
+        with patch("subprocess.run", side_effect=patch_kanban_for_editfiles()):
+            result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+    # 11. Main thread (no agent_id) + git checkout -- <any-file> → ALLOW (staff bypass)
+    def test_main_thread_bypasses_safeguard(self, hook):
+        """Without agent_id, the safeguard does not apply — staff engineer is allowed."""
+        payload = make_bash_payload(
+            "git checkout -- secret.py",
+            agent_id=None,  # No agent_id → main session
+        )
+        # Even with a mocked kanban that could respond, the guard should not be reached
+        result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+    # 12. Compound git status && git checkout -- <out-of-scope> → DENY
+    def test_compound_and_operator_denied(self, hook):
+        """Compound command with && must still catch the destructive git checkout."""
+        payload = make_bash_payload("git status && git checkout -- secret.py")
+        with patch("subprocess.run", side_effect=patch_kanban_for_editfiles(
+            edit_files=["modules/claude/kanban-pretool-hook.py"]
+        )):
+            result = run_hook_main(hook, payload)
+        assert_denied(result)
+
+    # 13. Compound git status; git checkout -- <out-of-scope> → DENY
+    def test_compound_semicolon_operator_denied(self, hook):
+        """Compound command with ; must still catch the destructive git checkout."""
+        payload = make_bash_payload("git status; git checkout -- secret.py")
+        with patch("subprocess.run", side_effect=patch_kanban_for_editfiles(
+            edit_files=["modules/claude/kanban-pretool-hook.py"]
+        )):
+            result = run_hook_main(hook, payload)
+        assert_denied(result)
+
+    # 14. Kanban lookup failure → ALLOW (fails open — documents accepted trade-off)
+    def test_kanban_lookup_failure_fails_open(self, hook):
+        """When kanban CLI is unavailable, the safeguard fails open to avoid blocking work.
+
+        This is an accepted trade-off: a kanban outage creates a bypass window,
+        but blocking all git ops during infrastructure issues is worse.
+        """
+        payload = make_bash_payload("git checkout -- secret.py")
+        with patch("subprocess.run", side_effect=subprocess.SubprocessError("kanban not found")):
+            result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+    # 15. Card with empty editFiles → DENY all destructive ops
+    def test_empty_edit_files_denies_all_destructive(self, hook):
+        """A card with no editFiles must deny all destructive git ops."""
+        payload = make_bash_payload("git checkout -- any_file.py")
+        with patch("subprocess.run", side_effect=patch_kanban_for_editfiles(edit_files=[])):
+            result = run_hook_main(hook, payload)
+        assert_denied(result)
+        reason = result["hookSpecificOutput"]["permissionDecisionReason"]
+        assert "none listed" in reason.lower() or "no editFiles" in reason.lower() or "editfiles" in reason.lower()
+
+    # 16. git checkout -p with no file target → DENY with clear error (not confusing sentinel)
+    def test_checkout_p_no_file_denied_with_clear_message(self, hook):
+        """git checkout -p (no file) must produce a human-readable error, not a sentinel name."""
+        payload = make_bash_payload("git checkout -p")
+        with patch("subprocess.run", side_effect=patch_kanban_for_editfiles()):
+            result = run_hook_main(hook, payload)
+        assert_denied(result)
+        reason = result["hookSpecificOutput"]["permissionDecisionReason"]
+        # Must NOT expose the raw sentinel token as a filename
+        assert "<interactive-hunk-revert>" not in reason
+        # Must explain WHY it was blocked
+        assert "interactive" in reason.lower() or "checkout -p" in reason.lower()
+
+    # 17. fnmatch basename fallback: bare 'foo.py' editFile + target 'src/foo.py' → NO match
+    def test_basename_fallback_not_over_permissive(self, hook):
+        """A bare 'foo.py' editFiles entry must NOT match 'src/foo.py' after the M3 fix.
+
+        The tightened basename fallback only applies when the pattern contains no path
+        separator, but the pattern 'foo.py' should only match a file literally named
+        'foo.py' at the root — NOT 'src/foo.py'.
+        """
+        # Use _file_in_editfiles directly to test the matching logic in isolation
+        hook_mod = hook
+        # 'foo.py' as a bare pattern should NOT match 'src/foo.py'
+        result = hook_mod._file_in_editfiles("src/foo.py", ["foo.py"], "/repo")
+        assert result is False, (
+            "bare 'foo.py' in editFiles must not match 'src/foo.py' after M3 basename fix"
+        )
