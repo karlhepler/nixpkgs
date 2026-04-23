@@ -14,8 +14,8 @@ Target format: <window>[.<pane>]  — pane defaults to 0
 
 Output format: --format xml (default), --format json, or --format human
 
-Claude-only filter (list, status):
-  By default, list and status filter to panes running Claude. Claude Code installs
+Claude-only filter (list, find, status):
+  By default, list, find (no-targets path), and status filter to panes running Claude. Claude Code installs
   as a versioned binary (e.g. ~/.local/share/claude/versions/2.1.116) symlinked from
   ~/.local/bin/claude, so tmux #{pane_current_command} reports the version number
   (e.g. "2.1.116") rather than "claude". The filter matches: literal "claude",

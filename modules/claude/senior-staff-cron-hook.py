@@ -28,7 +28,7 @@ _CRON_PROMPT = (
     "- Command (the prompt Claude will execute when the cron fires):\n"
     "  STEP 1: Run `crew list` to enumerate active Claude panes in the current tmux session.\n"
     "  Your window name is `senior-staff-engineer` — if the only pane listed is your own, exit silently, send no response.\n"
-    "  STEP 2: For the other panes present, run `crew find 'local agents still running|Working for|Churned for|Baked for|✻ \\w+|[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]' --lines 30` to check whether any pane is actively working.\n"
+    "  STEP 2: Run `crew find 'local agents still running|Working for|Churned for|Baked for|✻ \\w+|[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]' --lines 30` to check whether any other Claude pane is actively working. (crew find auto-filters to Claude panes and excludes your own window.)\n"
     "  Active-work indicators: 'local agents still running', 'Working for', 'Churned for', 'Baked for', '✻ ' followed by a verb (ongoing-action sigil), or braille spinner characters (⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏).\n"
     "  If `crew find` returns no matches across all panes, all panes are idle — exit silently, send no response.\n"
     "  If any `crew` command errors, skip this pulse cycle silently.\n"
