@@ -101,8 +101,7 @@ def poll_sessions(roster: dict, now: int) -> None:
     if not sessions:
         return
 
-    age = now - read_last_poll()
-    print(f"--- Senior Staff Session Update ({age}s since last poll) ---")
+    print("--- Senior Staff Session Update ---")
 
     for session_entry in sessions:
         window = session_entry.get("window", "")
