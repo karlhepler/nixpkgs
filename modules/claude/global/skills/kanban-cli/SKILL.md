@@ -48,6 +48,7 @@ Create one or more cards in `doing` state immediately.
   }
   ```
   For `mov_type: "semantic"`: omit `mov_commands` or pass empty array `[]`.
+- **No `&&` in `cmd`.** HARD RULE — split compound checks into separate array items. See Quirks Catalog item 12 (CLI-enforced).
 - **`__CARD_ID__` placeholder:** Use the literal token `__CARD_ID__` in `mov_commands[].cmd` or criterion `text` fields when you need to reference the card's own number (e.g., `"cmd": "rg -q 'pattern' .scratchpad/__CARD_ID__-findings.md"`). The CLI substitutes the actual assigned card number at card-create time. Scope: only `mov_commands[].cmd` and criterion `text` — not `action`, `intent`, or other fields.
 - **Returns:** Card number on stdout (e.g., `42`). The assigned number is what you use in all subsequent commands.
 
@@ -201,6 +202,23 @@ Create kanban board structure in the current directory. Run once per project.
 
 11. **`kanban clean` is PROHIBITED.** Never run `kanban clean`, `kanban clean <column>`, or `kanban clean --expunge`. These delete cards permanently with no recovery. Use `kanban cancel` instead. (See § Hard Rules item 4.)
 
+12. **`&&` is FORBIDDEN in `mov_commands[].cmd`.** HARD RULE. `mov_commands` is intentionally an array — multiple checks go in separate array items, never chained with `&&` in a single `cmd`. The kanban CLI rejects cards containing `&&` in any `mov_commands[].cmd` on creation.
+
+    ❌ WRONG:
+    ```json
+    "mov_commands": [{"cmd": "rg -q X && rg -q Y", "timeout": 10}]
+    ```
+
+    ✅ CORRECT:
+    ```json
+    "mov_commands": [
+      {"cmd": "rg -q X", "timeout": 10},
+      {"cmd": "rg -q Y", "timeout": 10}
+    ]
+    ```
+
+    Why: A compound AND-chain returns a single exit code, masking which sub-check failed. Array items give individually-actionable pass/fail diagnostics. If a check genuinely requires shell composition (pipes, subshells for an atomic observation), reconsider whether the AC should be split into multiple criteria instead.
+
 ---
 
 ## Exit Codes
@@ -241,6 +259,8 @@ kanban list --output-style=xml --session tidy-crown
 # Then:
 kanban do --file .scratchpad/kanban-card-tidy-crown.json --session tidy-crown
 ```
+
+> **Remember:** `mov_commands[].cmd` must NOT contain `&&`. Use separate array items for compound checks. See Quirks Catalog item 12.
 
 **Add a mid-flight requirement:**
 ```bash
