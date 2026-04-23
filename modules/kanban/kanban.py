@@ -873,6 +873,51 @@ def validate_criteria_schema(criteria: list) -> None:
                 sys.exit(1)
 
 
+def _collect_ampersand_errors(criteria: list) -> list:
+    """Return list of (criterion_num, cmd) tuples where cmd contains '&&'.
+
+    Only checks programmatic criteria (mov_type == 'programmatic') with a
+    mov_commands array. Semantic criteria are not checked.
+    """
+    violations = []
+    for i, criterion in enumerate(criteria, start=1):
+        if not isinstance(criterion, dict):
+            continue
+        if criterion.get("mov_type") != "programmatic":
+            continue
+        for entry in (criterion.get("mov_commands") or []):
+            if not isinstance(entry, dict):
+                continue
+            cmd = entry.get("cmd", "")
+            if "&&" in str(cmd):
+                violations.append((i, str(cmd)))
+    return violations
+
+
+def _print_ampersand_chain_errors(violations: list, card_label: str | None = None) -> None:
+    """Print a consolidated error message for all && violations to stderr.
+
+    violations: list of (criterion_num, cmd) tuples
+    card_label: optional string identifying the card (intent excerpt or index)
+    """
+    label_line = f" in card {card_label!r}" if card_label else ""
+    print(
+        f"Error: `&&` is forbidden in mov_commands[].cmd (hard rule){label_line}.",
+        file=sys.stderr,
+    )
+    for criterion_num, cmd in violations:
+        cmd_display = cmd if len(cmd) <= 80 else cmd[:77] + "..."
+        print(f"  Criterion {criterion_num}: {cmd_display!r}", file=sys.stderr)
+    print(
+        "\nFix: split into separate array items:\n"
+        '  "mov_commands": [\n'
+        '    {"cmd": "rg -q X", "timeout": 10},\n'
+        '    {"cmd": "rg -q Y", "timeout": 10}\n'
+        "  ]",
+        file=sys.stderr,
+    )
+
+
 def validate_and_build_card(data: dict, session: str | None) -> dict:
     """Validate card data and build card dict.
 
@@ -941,6 +986,12 @@ def validate_and_build_card(data: dict, session: str | None) -> dict:
     object_criteria = [c for c in criteria_check if isinstance(c, dict)]
     if object_criteria:
         validate_criteria_schema(object_criteria)
+        # Reject && in any mov_commands[].cmd — hard rule, fires only on card creation.
+        violations = _collect_ampersand_errors(object_criteria)
+        if violations:
+            card_label = str(data.get("action", ""))[:60] or None
+            _print_ampersand_chain_errors(violations, card_label=card_label)
+            sys.exit(1)
 
     # Remove readFiles entries that are already in editFiles (editing implies reading)
     edit_files = card.get("editFiles", [])
@@ -1061,6 +1112,25 @@ def cmd_do(args) -> None:
     # Detect array vs object
     if isinstance(data, list):
         # Bulk creation: validate all cards first (fail fast)
+        # Pre-pass: collect && violations across ALL cards before proceeding.
+        # This lets us report every violation in one shot rather than stopping
+        # at the first offending card.
+        all_ampersand_errors = []
+        for idx, card_data in enumerate(data):
+            if not isinstance(card_data, dict):
+                continue
+            raw_criteria = card_data.get("criteria") or card_data.get("ac", [])
+            object_criteria = [c for c in raw_criteria if isinstance(c, dict)]
+            violations = _collect_ampersand_errors(object_criteria)
+            if violations:
+                card_label = f"card[{idx}]: {str(card_data.get('action', ''))[:50]!r}"
+                all_ampersand_errors.append((card_label, violations))
+        if all_ampersand_errors:
+            for card_label, violations in all_ampersand_errors:
+                _print_ampersand_chain_errors(violations, card_label=card_label)
+                print("", file=sys.stderr)
+            sys.exit(1)
+
         cards = []
         for i, card_data in enumerate(data):
             if not isinstance(card_data, dict):
@@ -2627,6 +2697,25 @@ def cmd_todo(args) -> None:
     # Detect array vs object
     if isinstance(data, list):
         # Bulk creation: validate all cards first (fail fast)
+        # Pre-pass: collect && violations across ALL cards before proceeding.
+        # This lets us report every violation in one shot rather than stopping
+        # at the first offending card.
+        all_ampersand_errors = []
+        for idx, card_data in enumerate(data):
+            if not isinstance(card_data, dict):
+                continue
+            raw_criteria = card_data.get("criteria") or card_data.get("ac", [])
+            object_criteria = [c for c in raw_criteria if isinstance(c, dict)]
+            violations = _collect_ampersand_errors(object_criteria)
+            if violations:
+                card_label = f"card[{idx}]: {str(card_data.get('action', ''))[:50]!r}"
+                all_ampersand_errors.append((card_label, violations))
+        if all_ampersand_errors:
+            for card_label, violations in all_ampersand_errors:
+                _print_ampersand_chain_errors(violations, card_label=card_label)
+                print("", file=sys.stderr)
+            sys.exit(1)
+
         cards = []
         for i, card_data in enumerate(data):
             if not isinstance(card_data, dict):
