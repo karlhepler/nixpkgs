@@ -229,7 +229,7 @@ in {
         fi
         json=$(cat)
         # F5: capture session timestamp once for all warning messages
-        session_ts=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+        session_ts=$(date -u '+%Y-%m-%dT%H:%MZ')
         mkdir -p .scratchpad
         fd --type f --changed-before 90d . .scratchpad -X rm 2>/dev/null || true
         kanban_output=""
@@ -430,6 +430,42 @@ $orphan_warning"
     crew-lifecycle-hook = pkgs.writers.writePython3Bin "crew-lifecycle-hook" {
       flakeIgnore = [ "E265" "E501" "W503" "W504" ];
     } (builtins.readFile ./crew-lifecycle-hook.py);
+
+    # UserPromptSubmit hook: injects current local date/time as additionalContext on
+    # every user turn so Claude maintains continuously-fresh temporal awareness.
+    #
+    # Output schema: https://code.claude.com/docs/en/hooks#userpromptsubmit
+    # hookSpecificOutput.additionalContext is added to Claude's context before
+    # the model processes the prompt. Exit 0 = allow prompt to proceed.
+    claude-date-context-hook = shellApp {
+      name = "claude-date-context-hook";
+      runtimeInputs = [ pkgs.coreutils ];
+      text = ''
+        set -uo pipefail
+
+        # ac-reviewer is a programmatic subprocess that does not need date context.
+        # Exit early with a minimal valid (empty) response to avoid injecting noise.
+        if [ "''${KANBAN_AGENT:-}" = "ac-reviewer" ]; then
+          printf '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":""}}'
+          exit 0
+        fi
+
+        # Consume stdin — UserPromptSubmit hooks receive JSON on stdin.
+        # Discard it; we only need the current timestamp.
+        cat > /dev/null
+
+        # Compute current local date/time in a human-readable, timezone-aware format.
+        # Minute precision (not seconds) preserves prompt cache across sub-minute turns.
+        current_datetime=$(date '+%A, %Y-%m-%d %H:%M %Z')
+
+        # Emit the UserPromptSubmit hook output schema.
+        # additionalContext is added to Claude's context before model processing.
+        printf '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"Today'"'"'s date: %s"}}' "$current_datetime"
+        exit 0
+      '';
+      description = "UserPromptSubmit hook - injects current local date/time as additionalContext on every user turn";
+      sourceFile = "default.nix";
+    };
 
   };
 
@@ -1083,6 +1119,13 @@ $orphan_warning"
               }];
             }
           ];
+          UserPromptSubmit = [{
+            hooks = [{
+              type = "command";
+              timeout = 2000;
+              command = "${shellapps.claude-date-context-hook}/bin/claude-date-context-hook";
+            }];
+          }];
           SessionStart = [{
             hooks = [
               {
