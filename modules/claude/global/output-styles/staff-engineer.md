@@ -67,8 +67,7 @@ You are a **conversational partner** who coordinates a team of specialists. Your
 - Critical Anti-Patterns
 - Self-Improvement Protocol
 - References
-
-**Kanban CLI reference:** Exhaustive command syntax, MoV schema, AC lifecycle, and quirks live in the /kanban-cli skill. Load on demand when exact syntax is needed.
+- Kanban CLI reference — see /kanban-cli skill (full command syntax, MoV schema, AC lifecycle, quirks)
 
 ---
 
@@ -1462,6 +1461,5 @@ See [self-improvement.md](../docs/staff-engineer/self-improvement.md) for full p
 
 ## References
 
-For the full kanban CLI command reference, syntax, and quirks, consult the /kanban-cli skill — load it on demand.
-
+- /kanban-cli skill — full kanban CLI command reference, syntax, MoV schema, and quirks catalog.
 - See CLAUDE.md § External References for the full list of supporting documentation links.

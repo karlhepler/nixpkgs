@@ -1,11 +1,22 @@
 ---
 name: kanban-cli
-description: kanban CLI full command reference. Auto-load when about to run any kanban subcommand and need exact arguments, flag syntax, or error handling. Covers all lifecycle commands (do, todo, start, defer, review, redo, done, cancel), AC criteria schema (programmatic vs semantic, MoV commands, __CARD_ID__ placeholder), output-style conventions, common workflow examples, and exit codes. Note: this skill is the authoritative CLI reference — the staff-engineer output style carries only a pointer.
+description: kanban CLI full command reference. Auto-load when about to run any kanban subcommand and need exact arguments, flag syntax, or error handling. Covers all lifecycle commands (do, todo, start, defer, review, redo, done, cancel), AC criteria commands (criteria check, criteria uncheck, criteria add, criteria remove, criteria pass, criteria fail), MoV schema, __CARD_ID__ placeholder, output-style conventions, workflow examples, and exit codes.
 ---
 
 # kanban CLI — Full Command Reference
 
 Exhaustive reference built from `kanban --help` and `kanban <sub> --help`. Use this to avoid syntax mistakes. No `--help` lookups needed in production use.
+
+> **Skill loading:** This skill is a pure reference document — it loads in full on demand, no `$ARGUMENTS` parameterization. Consult the Commands at a Glance index below to jump to a specific command.
+
+## Commands at a Glance
+
+**Lifecycle:** `kanban do` · `kanban todo` · `kanban start` · `kanban defer` · `kanban review` · `kanban redo` · `kanban done` · `kanban cancel`
+**Inspection:** `kanban show` · `kanban status` · `kanban list` · `kanban rejections`
+**Criteria:** `kanban criteria add` · `kanban criteria remove` · `kanban criteria check` · `kanban criteria uncheck` · `kanban criteria pass` · `kanban criteria fail`
+**Other:** `kanban agent` · `kanban rename` · `kanban report` · `kanban session-hook` · `kanban init`
+
+---
 
 **Global flag available on every subcommand:**
 - `--session SESSION` — Filter by session ID. **Mandatory on all lifecycle commands** (do, todo, start, cancel, redo, defer, review, done, show, list, criteria, agent, etc.). Always pass `--session <session-id>` unless explicitly scoping across all sessions (e.g., destructive git op board checks).
@@ -136,13 +147,9 @@ Set `reviewer_met = true` on criterion `n`. Called by the AC reviewer (hook). St
 
 Set `reviewer_met = false` on criterion `n`, with optional reason. Called by the AC reviewer (hook). `--reason` is a flag (not positional) — unlike `criteria remove`. Staff engineer MUST NEVER call this.
 
-### `kanban criteria verify <card> <n> [--session SESSION]`
+### kanban criteria verify / unverify
 
-Internal/suppressed command (shown as `==SUPPRESS==` in `kanban criteria --help`). Sets `reviewer_met = true`. Equivalent to `kanban criteria pass` — use `pass` instead. Staff engineer MUST NEVER call this.
-
-### `kanban criteria unverify <card> <n> [--session SESSION]`
-
-Internal/suppressed command (shown as `==SUPPRESS==` in `kanban criteria --help`). Clears `reviewer_met`. Use `kanban criteria fail` instead for explicit reviewer rejection. Staff engineer MUST NEVER call this.
+Internal/suppressed commands — moved to § Internal / Suppressed Commands (Do Not Use) at the end of this skill. These are NOT usable by staff engineers or sub-agents.
 
 ---
 
@@ -158,7 +165,7 @@ Rename a session to a custom friendly name. `--session SESSION` is required and 
 
 ### `kanban report [--from FROM_DATE] [--to TO_DATE] [--output-style {human,xml}]`
 
-Generate reporting from completed cards. Date format: `YYYY-MM-DD`. Output style: `human` (readable, default) or `xml` (structured for parsing). No `--session` filter — reports across all sessions.
+Generate reporting from completed cards. Date format: `YYYY-MM-DD`. Output style: `human` (readable, default) or `xml` (structured for parsing). No `--session` filter (by design — reports aggregate across all sessions).
 
 ### `kanban session-hook [--session SESSION]`
 
@@ -260,3 +267,17 @@ kanban done 42 "Summary of completed work" --session tidy-crown
 kanban redo 42 --session tidy-crown
 # (update criteria if needed, then re-delegate via Agent tool)
 ```
+
+---
+
+## Internal / Suppressed Commands (Do Not Use)
+
+These commands are internal to the kanban CLI infrastructure. Staff engineers and sub-agents MUST NEVER invoke them. They are documented here only to prevent confusion when they appear in `--help` output.
+
+### `kanban criteria verify <card> <n> [--session SESSION]`
+
+Internal/suppressed command (shown as `==SUPPRESS==` in `kanban criteria --help`). Sets `reviewer_met = true`. Equivalent to `kanban criteria pass` — use `pass` instead. Staff engineer MUST NEVER call this.
+
+### `kanban criteria unverify <card> <n> [--session SESSION]`
+
+Internal/suppressed command (shown as `==SUPPRESS==` in `kanban criteria --help`). Clears `reviewer_met`. Use `kanban criteria fail` instead for explicit reviewer rejection. Staff engineer MUST NEVER call this.
