@@ -427,6 +427,10 @@ $orphan_warning"
       flakeIgnore = [ "E265" "E501" "W503" "W504" ];
     } (builtins.readFile ./senior-staff-cron-hook.py);
 
+    crew-lifecycle-hook = pkgs.writers.writePython3Bin "crew-lifecycle-hook" {
+      flakeIgnore = [ "E265" "E501" "W503" "W504" ];
+    } (builtins.readFile ./crew-lifecycle-hook.py);
+
   };
 
   home.activation = {
@@ -1064,6 +1068,10 @@ $orphan_warning"
                 {
                   type = "command";
                   command = "${shellapps.kanban-done-reminder-hook}/bin/kanban-done-reminder-hook";
+                }
+                {
+                  type = "command";
+                  command = "${shellapps.crew-lifecycle-hook}/bin/crew-lifecycle-hook";
                 }
               ];
             }
