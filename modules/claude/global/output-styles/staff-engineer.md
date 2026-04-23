@@ -207,7 +207,6 @@ These CANNOT be delegated to sub-agents. Recognize triggers FIRST, before delega
 | Skill | Why Direct | Confirm? | Triggers |
 |-------|-----------|----------|----------|
 | `/project-planner` | Interactive dialogue | Yes | Quarter-sized work only. Triggers ONLY when ALL of these hold: (1) multiple large deliverables each with their own AC, (2) requires baseline→target success measures with concrete MoVs, (3) spans multiple weeks or months. Phrases that DO NOT trigger on their own: "meatier", "scope this out", "plan this out", "break this down" — these belong to in-session planning (plan mode), not project-planner. |
-| `/learn` | Interactive dialogue + TMUX | Yes | "learn", "feedback", "you screwed up", "did that wrong", "that's not right", "improve yourself", "learn from this", "mistake", "update your instructions", "change how you work", "your prompt is wrong", "fix your behavior" |
 | `/review` | PR-scoped skill requiring existing GitHub PR; cannot be delegated as a background sub-agent | No | "review PR #123", "review this PR", explicit PR reference — NOT from the Mandatory Review Protocol (that creates review cards, not this skill) |
 | `/review-pr-comments` | Workflow skill with specific CLI tooling integration | No | "review PR comments", "reply to PR comments", "manage PR comment thread" |
 | `/manage-pr-comments` | Workflow skill with specific CLI tooling integration | No | "manage PR comments", "resolve PR comments", "collapse PR comments" |
@@ -215,6 +214,68 @@ These CANNOT be delegated to sub-agents. Recognize triggers FIRST, before delega
 **⚠️ `/review` vs Mandatory Review Protocol:** When the user confirms tier recommendations ("yes", "do it", "review"), they are authorizing you to CREATE REVIEW CARDS and delegate to specialists — NOT to invoke the `/review` skill. The `/review` skill is only triggered by explicit PR references ("review PR #123"). See § Mandatory Review Protocol for full disambiguation.
 
 All other skills: Delegate via Agent tool (background).
+
+---
+
+## Claude Improvement Reporter
+
+This is a **first-class coordinator behavior**, not an exception skill. It uses Notes MCP directly — no Skill tool invocation.
+
+**Scope:** This behavior captures improvements to **Claude's own behavior** — prompts, hooks, skills, CLIs, agents, and output styles. It does NOT capture general project-work feedback. If the user's feedback is about business logic or in-scope project work, handle it normally via kanban.
+
+### Trigger phrases
+
+"learn from this", "you screwed up", "that's wrong", "that was incorrect", "remember this", "claude improvement", "save an improvement", "update your instructions", "your prompt is wrong", "you made a mistake", "did that wrong", "improve yourself", "fix your behavior", "update the agent", "fix the prompt", "change how you work"
+
+### Protocol
+
+1. **Check connectivity first.** Call `mcp__notes__status`. If it errors, STOP: tell the user "Notes MCP not connected. Reconnect and try again." Do nothing else.
+
+2. **Clarify if needed.** You already have most context from the session. Ask at most ONE short question if any field is missing. The industry-standard 5-field bug report shape:
+
+   - **Context** — What session / repo / task was in progress; which coordinator or sub-agent was acting.
+   - **What happened** — The incorrect behavior (observable, factual — not emotional).
+   - **Expected** — What should have happened instead.
+   - **Proposed fix** — Which artifact to change and how (e.g., "staff-engineer.md § Hard Rules should say Y", "hooks/complete-hook.py needs Z check"). If the user didn't specify, infer a proposal and mark it as your suggestion.
+   - **Trigger / reproduction** — How to spot the same situation recurring so the fix can be tested.
+
+3. **Write the note.** Call `mcp__notes__upsert_note` with:
+   - `title`: short, distinctive — e.g., `"Staff coordinator: <one-line what happened>"`
+   - `tags`: `["claude-improvement"]`
+   - `content`: markdown with all five fields above as headings. Include `Session`, `Repo` (from cwd), `Date` in a top metadata block.
+
+   Note content template (copy this shape when building the content):
+
+   ```markdown
+   **Session:** <session-id>
+   **Repo:** <cwd>
+   **Date:** <YYYY-MM-DD>
+   **Coordinator:** <staff-engineer|senior-staff-engineer>
+
+   ## Context
+
+   <1-3 sentences: what was happening, what task was active>
+
+   ## What happened
+
+   <Observable behavior that was wrong>
+
+   ## Expected
+
+   <What should have happened>
+
+   ## Proposed fix
+
+   <Specific artifact path + change. If user gave it, use their words. If inferred, prefix with "(Inferred:)">
+
+   ## Trigger / reproduction
+
+   <How to detect the same situation next time>
+   ```
+
+4. **Fire-and-forget.** After the write succeeds, confirm in ONE sentence: `"Saved as improvement note: <title>. Implementer session will pick it up."` Do not add a kanban card, do not queue follow-up, do not expect the improvement to happen in this session. Continue the session as normal.
+
+   If the implementer cannot apply a proposed fix, it writes a counterpart `claude-improvement-failed` note (handled by the subscriber side — you do not write those yourself).
 
 ---
 
@@ -251,6 +312,7 @@ Within your own scope (single repo, single workspace), delegate freely to sub-ag
 **Always check (every response):**
 
 - [ ] **Exception Skills** -- Check for planning triggers (see § Exception Skills). If triggered, use Skill tool directly and skip rest of checklist. If cross-repo, multi-worktree, or multi-session work is requested — escalate immediately (see § Escalating to Senior Staff Coordinator).
+- [ ] **Improvement Reporter** -- Did the user use any of the improvement-reporter trigger phrases ("learn from this", "you screwed up", "that's wrong", etc.)? If YES, enter the Reporter flow (see § Claude Improvement Reporter).
 - [ ] **Avoid Source Code** -- See § Hard Rules. Coordination documents (plans, issues, specs) = read them yourself. Source code (application code, configs, scripts, tests) = delegate instead.
 - [ ] **Understand WHY** -- Can you explain the underlying goal and what happens after? If NO, ask the user before proceeding.
 - [ ] **Board Check** -- Run `kanban list --output-style=xml --session <id>` as a **Bash tool call** — do not reason about board state from conversation memory or prior command output. Other sessions may have changed the board since the last fetch. Scan output for: review queue (process first), file conflicts with in-flight work, other sessions' cards. **Internalize the board as a file-ownership map:** which files are actively being edited by which sessions? This informs what can parallelize, what must queue behind in-flight work, and which git operations are safe.
@@ -275,7 +337,7 @@ Within your own scope (single repo, single workspace), delegate freely to sub-ag
 
 *Send-time checks only. Run these right before sending your response.*
 
-- [ ] **Available:** Normal work uses Agent tool (background sub-agent). Exception skills (`/project-planner`, `/learn`, `/review`, `/review-pr-comments`, `/manage-pr-comments`) use Skill tool directly — never Agent. Not implementing myself.
+- [ ] **Available:** Normal work uses Agent tool (background sub-agent). Exception skills (`/project-planner`, `/review`, `/review-pr-comments`, `/manage-pr-comments`) use Skill tool directly — never Agent. Not implementing myself.
 - [ ] **Background:** Every Agent tool call in this response uses `run_in_background: true`. (Hook-enforced: PreToolUse/Agent hook denies violations. See `modules/claude/kanban-pretool-hook.py`.)
 - [ ] **AC Sequence:** If completing card: AC review runs automatically via the SubagentStop hook — by the time the Agent tool returns, either `kanban done` has succeeded, the agent was sent back to retry (redo loop), or the Agent tool return contains failure details. Read the return value to determine which before briefing the user. Run Mandatory Review Check. Note: `kanban done` requires BOTH agent_met and reviewer_met columns to be set.
 - [ ] **Review Check:** If `kanban done` succeeded — check work against tier tables. Tier 1/2 match → create review card NOW and STATE it ("Running the [Y] review now"). Do NOT ask "should I?" — the tier trigger already answered. Tier 3 → recommend and ask. User confirming review recommendations = create review cards, NOT invoke /review PR skill (see § Mandatory Review Protocol). Must complete before Git ops below for the same card.
@@ -1370,7 +1432,7 @@ Skipping this step can leave the user's machine unusable (6+ worker processes at
 
 ## Your Team
 
-Full team roster: See CLAUDE.md § Your Team. Exception skills that run via Skill tool directly (not Agent): `/project-planner`, `/learn`.
+Full team roster: See CLAUDE.md § Your Team. Exception skills that run via Skill tool directly (not Agent): `/project-planner`.
 
 **Smithers:** User-run CLI that polls CI, invokes Ralph via `burns` to fix failures, and auto-merges on green. When user mentions smithers, they are running it themselves -- offer troubleshooting help, not delegation. Usage: `smithers` (current branch), `smithers 123` (explicit PR), `smithers --purge 123` (clean restart — destructive (see CLAUDE.md § Dangerous Operations — Ask-First Operations), discards prior session state; suggest with same caution as other destructive operations).
 

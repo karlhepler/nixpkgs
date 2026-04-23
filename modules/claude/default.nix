@@ -1225,6 +1225,7 @@ EOF
       $DRY_RUN_CMD rm -f ~/.claude/commands/workout-shared.md
       # Exception skills (4) — migrated to skills/<name>/SKILL.md in F1 Phase 3
       $DRY_RUN_CMD rm -f ~/.claude/commands/learn.md
+      $DRY_RUN_CMD rm -rf ~/.claude/skills/learn
       $DRY_RUN_CMD rm -f ~/.claude/commands/project-planner.md
       $DRY_RUN_CMD rm -f ~/.claude/commands/manage-pr-comments.md
       $DRY_RUN_CMD rm -f ~/.claude/commands/review-pr-comments.md
