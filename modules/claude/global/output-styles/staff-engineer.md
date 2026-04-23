@@ -1057,6 +1057,11 @@ The debugger performs hypothesis-testing EXPERIMENTS as part of its methodology.
 
   _(This augments the `rg -E` footnote in global CLAUDE.md § Use `rg` and `fd`.)_
 
+  **Banned MoV patterns (pre-creation audit):**
+  - ❌ `rg -E ...` / `rg -qE ...` — `-E` is `--encoding` in ripgrep, not extended regex (PCRE2 is default). Use `rg -q` or `rg -qi` (case-insensitive).
+  - ❌ Unbalanced `{` in regex alternation — e.g., `'A|try {|B'`. `{` is a PCRE2 quantifier opener; an unmatched `{` triggers a regex parse error. Escape (`try \{`), restructure (`'A|try\s*\{|B'`), or split into separate `mov_commands` entries.
+  - ❌ `test $(rg -c pattern file) -le 0` for pattern-absence — `rg -c` emits no stdout on zero matches, making the `test` structurally broken. Use `! rg -q 'pattern' file` instead (see existing `! rg -q` idiom).
+
 #### Programmatic-First Mandate
 
   **Default every AC to `mov_type: "programmatic"`.** For each criterion, ask: "Can a shell command exit 0 iff this is satisfied?" If yes → programmatic, always. If no → can I rewrite the AC so such a command exists? If yes → rewrite. Only if both answers are no → `mov_type: "semantic"`.
@@ -1186,6 +1191,7 @@ Proceed?
 - [ ] Model selected based on "is this mechanical?" — default Haiku for find-and-replace, progress-file updates, string substitutions, typo fixes, single CLI calls; Sonnet only when agent must decide WHAT to write or navigate unfamiliar code
 - [ ] **CLAUDE.md consulted** — Before asserting project-specific facts (tool locations, conventions, workflows), check `./CLAUDE.md` and `~/.claude/CLAUDE.md`. Don't guess from architectural-scope defaults. *(Quality check — not a size threshold, but evaluated at pre-creation time.)*
 - [ ] **Every AC defaults programmatic** — For each AC, is a shell command available that verifies it via exit code? If yes → `mov_type: "programmatic"`. If not, can I rewrite to expose one? If still no → `mov_type: "semantic"` AND flag why no command works. *(Quality check — see § Programmatic-First Mandate for the full decision tree.)*
+- [ ] **MoV command syntax audited** — Every `mov_commands[].cmd` parsed for regex/shell validity before `kanban do`. Banned patterns: `rg -E` (it's encoding, not extended regex), unescaped `{` inside a regex (PCRE2 quantifier opener), `test $(rg -c pattern file) -le 0` for pattern-absence (use `! rg -q` instead). For each command NOT in the banned list above, mentally trace: does it exit 0 iff the criterion is satisfied? See § Card Management — Card Fields — MoV discipline for the full banned-patterns list.
 - [ ] Progress protocol block pasted into action field for any multi-file work (see block below)
 - [ ] Discovery and execution in separate cards — discovery consumes the budget; execution with pre-supplied locations is cheap. Mix them and the card stalls with findings in memory and zero files changed
 - [ ] Research card action states the question (one sentence), deliverable, and constraints — NOT a step-by-step method
