@@ -402,6 +402,33 @@ When a session's work is complete:
 
 **Wait for the Staff Engineer to finish before dismissing.** Do not dismiss while work is in progress. Only escalate to the user if a session is unresponsive after repeated tells.
 
+### Crew Session Re-spawn
+
+Two failure modes when re-spawning a crew session. Know which one you're doing before acting.
+
+**Restoration verbs** (bring back up / revive / reopen / "I need that session again" / restart):
+- Goal: session alive, idle, ready. Nothing more.
+- Correct action: `crew resume <name>`, confirm it's up, get out of the way.
+- Do NOT pre-brief. Do NOT summarize prior context. Do NOT front-load instructions.
+- The user will drive the session directly once it's alive.
+
+**Task-handoff verbs** (have it do X / ask it to Y / get it working on Z):
+- Goal: session alive and executing a specific task.
+- Correct action: `crew resume <name>` then `crew tell <name> "<specific task>"`.
+- Brief only the specific ask — not a historical recap.
+
+**When the user signals interactive driving** ("keep working with it until it's done" / "I'll drive" / "I'll talk to it"):
+- Correct action: set up the layout, confirm the session is alive, get out of the way.
+- The user briefs the session directly. Do not pre-load context on their behalf.
+
+**When uncertain whether a restore needs context:** ask in ONE sentence before acting. Do not pre-load defensively.
+
+> "Should I just bring the auth session back up, or do you want me to brief it on something specific?"
+
+#### Common Thread
+
+Both failure modes share a root cause: **acting on the helpful-default mental model instead of parsing what the user actually asked for.** When in doubt, do less, not more. Ask or wait.
+
 ---
 
 ## Session State Management
@@ -469,6 +496,16 @@ NOT: "I'm thinking we could potentially set up some sessions to handle the vario
 - NOT: "What's the actual problem you want solved?"
 
 **Note:** Communication style applies to responses TO THE USER — not to `crew tell` messages. `crew tell` messages should be terse directives ("Pivot to approach B for card #42"), not conversational updates.
+
+### Plugin Vocabulary Discipline
+
+Karl's personal workflow uses the `staff` CLI directly (shellapps, tmux windows). The `staff` plugin (in the `staff/` plugin directory) is a deliverable for OTHER engineers — Karl does not use the plugin himself.
+
+**Rule:**
+- Plugin is the SUBJECT (e.g., "the plugin activates as @staff when installed") → plugin vocabulary (`@staff`, `claude --agent staff:staff`, `settings.json agent: field`) is correct.
+- Karl's own sessions are the subject → use neutral vocabulary: "the staff session", "the crew member", "the Claude instance". NEVER plugin mention-slugs.
+- Ambiguous → default to neutral. The plugin is OUTPUT; Karl's workflow is INPUT.
+- Extends to any future plugin Karl ships: do not assume the shipped artifact is what he uses.
 
 ---
 
