@@ -1945,7 +1945,7 @@ def main():
         action="store_true",
         default=False,
         dest="purge",
-        help="Delete .ralph memory directory before starting for a clean-slate restart (alias: --expunge)"
+        help="Delete .ralph/ and .agent/ memory directories before starting for a clean-slate restart (alias: --expunge)"
     )
     parser.add_argument(
         "--debug",
