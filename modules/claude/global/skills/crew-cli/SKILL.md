@@ -1,6 +1,6 @@
 ---
 name: crew-cli
-description: crew CLI full command reference. Auto-load when about to run any crew subcommand and need exact arguments, flag syntax, or error handling. Covers all subcommands: create, list, tell, read, find, status, dismiss, sessions, resume, project-path. Includes --format flag behavior, exit code table, pane targeting rules (window vs window.pane), multi-target comma syntax, and crew create vs crew tell sequencing discipline. This skill is the canonical source for all crew CLI syntax — no external pointer needed.
+description: crew CLI full command reference. Auto-load when about to run any crew subcommand and need exact arguments, flag syntax, or error handling. Covers all subcommands: create, list, tell, read, find, status, dismiss, sessions, resume, project-path, smithers. Includes --format flag behavior, exit code table, pane targeting rules (window vs window.pane), multi-target comma syntax, and crew create vs crew tell sequencing discipline. This skill is the canonical source for all crew CLI syntax — no external pointer needed.
 ---
 
 # crew CLI — Full Command Reference
@@ -9,7 +9,7 @@ Exhaustive reference for all `crew` subcommands. Senior Staff uses these in prod
 
 **Top-level syntax:**
 ```bash
-crew [-h] [--format {xml,json,human}] {list,tell,read,dismiss,find,create,status,sessions,resume,project-path} ...
+crew [-h] [--format {xml,json,human}] {list,tell,read,dismiss,find,create,status,sessions,resume,project-path,smithers} ...
 ```
 
 **Global flag:**
@@ -237,6 +237,35 @@ crew status --lines 50         # Moderate read per pane
 crew status --all              # Include all panes
 ```
 
+**XML output schema** (default format — use this when parsing status programmatically):
+
+Single-pane window (staff engineer only, no smithers split):
+```xml
+<status lines="20">
+  <window name="feature-auth">
+    <pane index="0" command="2.1.100" crew="feature-auth.0">...captured output...</pane>
+  </window>
+</status>
+```
+
+Multi-pane window (staff engineer in pane 0, smithers in pane 1):
+```xml
+<status lines="20">
+  <window name="pricing">
+    <pane index="0" command="2.1.100" crew="pricing.0">...captured output...</pane>
+    <pane index="1" command="smithers" crew="pricing.1">...captured output...</pane>
+  </window>
+</status>
+```
+
+Attribute reference:
+- `<status lines="N">` — N is the `--lines` value passed to the command
+- `<window name="...">` — bare window name (no session prefix); groups panes in the same window
+- `<pane index="...">` — tmux pane index within the window (0-based string)
+- `<pane command="...">` — `pane_current_command` as reported by tmux (e.g., `2.1.100`, `smithers`, `zsh`)
+- `<pane crew="window.pane">` — crew address for use as a target in `crew tell`, `crew read`, etc.
+- pane text content — last N lines of scrollback from that pane
+
 ---
 
 ## crew dismiss
@@ -401,6 +430,55 @@ crew project-path ~/worktrees/pricing --format json  # JSON output
 - Path exists but is not a directory → exit 1, error code `NOT_A_DIRECTORY`
 
 **When to use:** Debugging session file locations when `crew sessions` doesn't find what you expect, or when manually locating session files for a given worktree.
+
+---
+
+## crew smithers
+
+Drop a smithers pane into a crew member's tmux window. **sstaff-only** — staff engineers do not invoke this command.
+
+```bash
+crew smithers <name> [--format xml|json|human]
+```
+
+**Arguments:**
+- `name` (required) — Crew member window name (the tmux window where smithers should run).
+
+**Behavior:**
+1. Looks up the window by name.
+2. Checks the window's current pane count:
+   - **No split (pane 0 only):** Creates a 25% bottom split (`split-window -v -l 25%`) matching the `prefix+s` tmux keybinding, sets cwd to pane 0's working directory (the worktree), then runs `smithers` in the new pane. smithers auto-detects the PR from the worktree's current branch — no arguments needed.
+   - **Split exists + smithers running:** Reports `smithers already running in pane <name>.<index>` and returns success (idempotent).
+   - **Split exists but NOT running smithers:** Returns error with `AMBIGUOUS_PANE_STATE` — refuses to overwrite so the user can decide.
+3. Emits structured output on success.
+
+**When to use:** After a staff session creates a draft PR and the user says "run smithers on it". sstaff invokes `crew smithers <name>` to drop smithers into the staff session's window alongside the staff engineer.
+
+**Output (XML default):**
+```xml
+<!-- started -->
+<smithers status="started" window="pricing" pane="1" message="started smithers in pane pricing.1" />
+
+<!-- already running -->
+<smithers status="already-running" window="pricing" pane="1" message="smithers already running in pane pricing.1" />
+```
+
+**Examples:**
+```bash
+crew smithers pricing          # Drop smithers pane into the pricing window
+crew smithers auth             # Drop smithers pane into the auth window
+crew smithers pricing --format json  # JSON output
+```
+
+**Exit codes:**
+- `0` — Success (started or already-running)
+- `1` — Error (window not found, ambiguous pane state, split failed)
+
+**Error codes:**
+- `WINDOW_NOT_FOUND` — No tmux window with the given name exists
+- `AMBIGUOUS_PANE_STATE` — Extra pane(s) exist but none are running smithers
+- `SPLIT_FAILED` — tmux split-window failed
+- `SEND_KEYS_FAILED` — Could not send the smithers command to the new pane
 
 ---
 

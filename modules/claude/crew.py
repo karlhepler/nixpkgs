@@ -8,6 +8,7 @@ Subcommands:
   read <targets>           Capture pane buffer content
   find <pattern> [targets] Search pane content for pattern
   status                   Composite: list + read N lines from every pane (Claude panes only by default)
+  smithers <name>          Create a horizontal split in the target window and run smithers in the new pane
 
 Target format: <window>[.<pane>]  — pane defaults to 0
   comma-separated for multi-target: mild-forge,bold-sparrow.1
@@ -1276,40 +1277,89 @@ def cmd_find(pattern: str, targets_str: Optional[str], lines: Optional[int], fmt
 # Subcommand: status
 # ---------------------------------------------------------------------------
 
+def _build_status_panes(
+    show_all: bool,
+    current_session: Optional[str],
+) -> List[Tuple[str, str, str, str, str]]:
+    """Build the list of panes to include in crew status output.
+
+    Default (show_all=False): include Claude panes (pane 0 of windows running Claude)
+    PLUS any additional panes in those same windows (e.g., smithers in pane 1).
+    This ensures that when a staff engineer window has a smithers split, both panes
+    appear in the status output so sstaff sees the full picture.
+
+    show_all=True: include all panes regardless of command (existing behaviour).
+    """
+    all_panes = get_all_panes(session=current_session)
+
+    if show_all:
+        return all_panes
+
+    # Identify windows that have at least one Claude pane.
+    claude_window_keys: set = set()
+    for session, window_index, _window_name, _pane_index, pane_cmd in all_panes:
+        if is_claude_pane(pane_cmd):
+            claude_window_keys.add(f"{session}:{window_index}")
+
+    # Include ALL panes from windows that have a Claude pane.
+    # This surfaces smithers (or any other pane) alongside the Claude pane.
+    return [
+        p for p in all_panes
+        if f"{p[0]}:{p[1]}" in claude_window_keys
+    ]
+
+
 def cmd_status(lines: int, fmt: str, show_all: bool = False) -> None:
     # Confine to the current tmux session only (P6.1).
     current_session = get_current_session()
-    all_panes = get_all_panes(session=current_session)
-    # By default, filter to Claude panes only. Pass show_all=True to include everything.
-    panes = all_panes if show_all else [
-        p for p in all_panes if is_claude_pane(p[4])
-    ]
+    panes = _build_status_panes(show_all=show_all, current_session=current_session)
 
     if fmt == "xml":
         root = ET.Element("status", lines=str(lines))
-        for session, window_index, window_name, pane_index, _pane_cmd in panes:
-            tmux_target = f"{session}:{window_index}.{pane_index}"
-            label = f"{window_name}.{pane_index}"
-            content = capture_pane(tmux_target, lines)
-            member = ET.SubElement(root, "member", crew=label)
-            member.text = content
-        print(xml_to_string(root))
-    elif fmt == "json":
-        members = []
-        for session, window_index, window_name, pane_index, _pane_cmd in panes:
-            tmux_target = f"{session}:{window_index}.{pane_index}"
-            label = f"{window_name}.{pane_index}"
-            content = capture_pane(tmux_target, lines)
-            members.append({"crew": label, "content": content})
-        print(json.dumps({"lines": lines, "members": members}, indent=2))
-    else:
-        # human: list first, then content per pane
-        current_window_key = None
+        current_window_key: Optional[str] = None
+        current_window_elem: Optional[ET.Element] = None
         for session, window_index, window_name, pane_index, pane_cmd in panes:
             wkey = f"{session}:{window_index}"
+            tmux_target = f"{session}:{window_index}.{pane_index}"
+            label = f"{window_name}.{pane_index}"
+            content = capture_pane(tmux_target, lines)
             if wkey != current_window_key:
-                print(f"window: {window_name}")
+                current_window_elem = ET.SubElement(root, "window", name=window_name)
                 current_window_key = wkey
+            pane_elem = ET.SubElement(
+                current_window_elem,  # type: ignore[arg-type]
+                "pane",
+                index=pane_index,
+                command=pane_cmd,
+                crew=label,
+            )
+            pane_elem.text = content
+        print(xml_to_string(root))
+    elif fmt == "json":
+        windows_out: List[Dict] = []
+        current_window_key_j: Optional[str] = None
+        current_window_obj: Optional[Dict] = None
+        for session, window_index, window_name, pane_index, pane_cmd in panes:
+            wkey = f"{session}:{window_index}"
+            tmux_target = f"{session}:{window_index}.{pane_index}"
+            label = f"{window_name}.{pane_index}"
+            content = capture_pane(tmux_target, lines)
+            if wkey != current_window_key_j:
+                current_window_obj = {"name": window_name, "panes": []}
+                windows_out.append(current_window_obj)
+                current_window_key_j = wkey
+            current_window_obj["panes"].append(  # type: ignore[index]
+                {"index": pane_index, "command": pane_cmd, "crew": label, "content": content}
+            )
+        print(json.dumps({"lines": lines, "windows": windows_out}, indent=2))
+    else:
+        # human: list first, then content per pane
+        current_window_key_h: Optional[str] = None
+        for session, window_index, window_name, pane_index, pane_cmd in panes:
+            wkey = f"{session}:{window_index}"
+            if wkey != current_window_key_h:
+                print(f"window: {window_name}")
+                current_window_key_h = wkey
             print(f"  pane: {pane_index} ({pane_cmd})")
 
         print()
@@ -2009,6 +2059,242 @@ def cmd_create(
 
 
 # ---------------------------------------------------------------------------
+# Subcommand: smithers
+# ---------------------------------------------------------------------------
+
+# Split percentage for `crew smithers` horizontal (top/bottom) splits.
+#
+# This value matches the tmux keybinding for prefix+s in modules/tmux/default.nix:
+#   bind-key -N "Split vertically (25% bottom)" s split-window -v -c "#{pane_current_path}" -l "25%"
+#
+# The keybinding creates a new bottom pane that is 25% of the total window height.
+# `crew smithers` uses the same percentage so the layout is consistent with the
+# user's existing muscle-memory keybinding for vertical splits.
+_SMITHERS_SPLIT_PERCENT = 25
+
+
+def _list_panes_in_window(session_idx: str) -> List[Tuple[str, str, str]]:
+    """Return panes in the given window as list of (pane_index, pane_current_command, pane_current_path).
+
+    session_idx is in 'session:window_index' format (e.g. 'free-brook:0').
+    """
+    result = subprocess.run(
+        [
+            "tmux", "list-panes",
+            "-t", session_idx,
+            "-F", "#{pane_index}|#{pane_current_command}|#{pane_current_path}",
+        ],
+        capture_output=True, text=True, check=False,
+    )
+    panes = []
+    for line in result.stdout.splitlines():
+        parts = line.split("|", 2)
+        if len(parts) == 3:
+            panes.append(tuple(parts))  # type: ignore[arg-type]
+    return panes  # type: ignore[return-value]
+
+
+def _pane_is_running_smithers(pane: Tuple[str, str, str]) -> bool:
+    """Return True if the pane appears to be running smithers.
+
+    Checks pane_current_command against 'smithers' (exact match).
+    smithers is a named Python wrapper installed by Nix, so pane_current_command
+    reports 'smithers' (not 'python3' or a version string). This is the simplest
+    and most reliable check — no scrollback scraping needed.
+
+    Subshell detection gap: when smithers spawns a child process (gh, python3,
+    etc.) that becomes the pane's foreground command, tmux reports the child as
+    pane_current_command and this function returns False. The failure mode is
+    SAFE — cmd_smithers returns AMBIGUOUS_PANE_STATE (rc=1) rather than
+    silently overwriting the pane. Workaround: wait for smithers to return to
+    idle, then re-invoke; or kill the pane and re-invoke from scratch.
+    """
+    _idx, pane_current_command, _path = pane
+    return pane_current_command == "smithers"
+
+
+def _split_window_horizontal(session_idx: str, percent: int, cwd: str) -> Optional[str]:
+    """Create a horizontal (top/bottom) split below the current pane in the given window.
+
+    Uses `split-window -v` which creates a new pane BELOW the existing one.
+    `-l <percent>%` sets the new pane size as a percentage of the total window height.
+    `-c <cwd>` sets the new pane's working directory.
+
+    Returns the new pane index as a string, or None on failure.
+    """
+    result = subprocess.run(
+        [
+            "tmux", "split-window",
+            "-v",
+            "-t", session_idx,
+            "-l", f"{percent}%",
+            "-c", cwd,
+            "-P",        # print new pane index to stdout
+            "-F", "#{pane_index}",
+        ],
+        capture_output=True, text=True, check=False,
+    )
+    if result.returncode != 0:
+        return None
+    pane_index = result.stdout.strip()
+    return pane_index if pane_index else None
+
+
+def _send_command_to_pane(pane_target: str, cmd: str) -> bool:
+    """Send a command string followed by Enter to the given pane target.
+
+    pane_target is in 'session:window_index.pane_index' format.
+    Returns True on success, False on failure.
+
+    Note: cmd must not contain shell-special characters that would confuse
+    tmux send-keys. 'smithers' (no args) is safe as-is.
+    """
+    result = subprocess.run(
+        ["tmux", "send-keys", "-t", pane_target, cmd, "Enter"],
+        capture_output=True, check=False,
+    )
+    return result.returncode == 0
+
+
+def cmd_smithers(name: str, fmt: str) -> int:
+    """Create a horizontal split in the target window and run smithers in the new pane.
+
+    Idempotency contract:
+      - No split exists → create 25% bottom split (matching prefix+s keybinding),
+        set cwd to pane 0's cwd (the worktree), run 'smithers' in the new pane.
+      - Split exists AND running smithers → report already-running, return 0 (success).
+      - Split exists but NOT running smithers → error with clear surface (ambiguous state;
+        refuse to overwrite so the user can decide).
+      - Window not found → error.
+
+    'smithers' auto-detects the PR from the worktree's current branch — no args needed.
+    """
+    lookup = get_window_lookup()
+    entry = lookup.get(name)
+    if entry is None:
+        available = sorted(lookup.keys())
+        msg = f"tmux window '{name}' not found"
+        if available:
+            msg += f". Available windows: {', '.join(available)}"
+        if fmt == "xml":
+            elem = ET.Element("error", message=msg, error_code="WINDOW_NOT_FOUND")
+            print(xml_to_string(elem))
+        elif fmt == "json":
+            print(json.dumps({"error": msg, "error_code": "WINDOW_NOT_FOUND"}))
+        else:
+            print(f"Error: {msg}", file=sys.stderr)
+        return 1
+
+    session_idx, _window_id = entry  # session_idx is 'session:window_index'
+
+    panes = _list_panes_in_window(session_idx)
+
+    if len(panes) > 1:
+        # A split already exists. Check whether smithers is running in any of the extra panes.
+        smithers_pane = next((p for p in panes if _pane_is_running_smithers(p)), None)
+        if smithers_pane is not None:
+            pane_index, _cmd, _path = smithers_pane
+            msg = f"smithers already running in pane {name}.{pane_index}"
+            if fmt == "xml":
+                elem = ET.Element(
+                    "smithers",
+                    status="already-running",
+                    window=name,
+                    pane=str(pane_index),
+                    message=msg,
+                )
+                print(xml_to_string(elem))
+            elif fmt == "json":
+                print(json.dumps({
+                    "status": "already-running",
+                    "window": name,
+                    "pane": pane_index,
+                    "message": msg,
+                }))
+            else:
+                print(msg)
+            return 0
+
+        # Extra pane(s) exist but none are running smithers — ambiguous state.
+        extra_pane_info = ", ".join(
+            f"pane {p[0]} ({p[1]})" for p in panes if p[0] != "0"
+        )
+        msg = (
+            f"window '{name}' has extra pane(s) but none running smithers "
+            f"({extra_pane_info}) — refusing to overwrite"
+        )
+        if fmt == "xml":
+            elem = ET.Element(
+                "error",
+                message=msg,
+                error_code="AMBIGUOUS_PANE_STATE",
+                window=name,
+            )
+            print(xml_to_string(elem))
+        elif fmt == "json":
+            print(json.dumps({"error": msg, "error_code": "AMBIGUOUS_PANE_STATE", "window": name}))
+        else:
+            print(f"Error: {msg}", file=sys.stderr)
+        return 1
+
+    # No split yet — pane 0 is the only pane. Get its cwd for the new pane.
+    pane_0_cwd = panes[0][2] if panes else ""
+    if not pane_0_cwd:
+        # Fallback: query pane 0 cwd via display-message if list-panes path was empty.
+        result = subprocess.run(
+            ["tmux", "display-message", "-t", f"{session_idx}.0", "-p", "#{pane_current_path}"],
+            capture_output=True, text=True, check=False,
+        )
+        pane_0_cwd = result.stdout.strip()
+
+    new_pane_index = _split_window_horizontal(session_idx, _SMITHERS_SPLIT_PERCENT, pane_0_cwd)
+    if new_pane_index is None:
+        msg = f"tmux split-window failed for window '{name}'"
+        if fmt == "xml":
+            elem = ET.Element("error", message=msg, error_code="SPLIT_FAILED", window=name)
+            print(xml_to_string(elem))
+        elif fmt == "json":
+            print(json.dumps({"error": msg, "error_code": "SPLIT_FAILED", "window": name}))
+        else:
+            print(f"Error: {msg}", file=sys.stderr)
+        return 1
+
+    pane_target = f"{session_idx}.{new_pane_index}"
+    ok = _send_command_to_pane(pane_target, "smithers")
+    if not ok:
+        msg = f"send-keys to pane {pane_target} failed"
+        if fmt == "xml":
+            elem = ET.Element("error", message=msg, error_code="SEND_KEYS_FAILED", window=name)
+            print(xml_to_string(elem))
+        elif fmt == "json":
+            print(json.dumps({"error": msg, "error_code": "SEND_KEYS_FAILED", "window": name}))
+        else:
+            print(f"Error: {msg}", file=sys.stderr)
+        return 1
+
+    msg = f"started smithers in pane {name}.{new_pane_index}"
+    if fmt == "xml":
+        elem = ET.Element(
+            "smithers",
+            status="started",
+            window=name,
+            pane=str(new_pane_index),
+            message=msg,
+        )
+        print(xml_to_string(elem))
+    elif fmt == "json":
+        print(json.dumps({
+            "status": "started",
+            "window": name,
+            "pane": new_pane_index,
+            "message": msg,
+        }))
+    else:
+        print(msg)
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # CLI wiring
 # ---------------------------------------------------------------------------
 
@@ -2345,6 +2631,32 @@ def build_parser() -> argparse.ArgumentParser:
         help="Use an explicit worktree path instead of tmux window lookup",
     )
 
+    # smithers
+    p_smithers = sub.add_parser(
+        "smithers",
+        help="Create a horizontal split in a crew member's window and run smithers in the new pane",
+        description=(
+            "Drop a smithers pane into the target crew member's tmux window.\n\n"
+            "Creates a horizontal split (25% bottom — matches prefix+s keybinding) below\n"
+            "pane 0 and runs `smithers` in the new pane. smithers auto-detects the PR\n"
+            "from the worktree's current branch — no arguments needed.\n\n"
+            "Idempotency:\n"
+            "  - No split exists → create split and start smithers.\n"
+            "  - Split exists AND smithers is running → report already-running (success).\n"
+            "  - Split exists but NOT running smithers → error (ambiguous state).\n\n"
+            "IMPORTANT: This subcommand is sstaff-only. Staff engineers do NOT invoke\n"
+            "`crew smithers` — sstaff uses it after a staff session creates a draft PR.\n\n"
+            "Examples:\n"
+            "  crew smithers pricing          # start smithers in pricing window\n"
+            "  crew smithers auth             # start smithers in auth window\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_smithers.add_argument(
+        "name",
+        help="Crew member window name (the tmux window where smithers should be launched)",
+    )
+
     return parser
 
 
@@ -2410,6 +2722,9 @@ def main() -> None:
             send = _SessionsSend(fmt)
             cmd_sessions(fmt, send, window_filter=args.window, worktree_filter=args.worktree)
             send.flush()
+        elif args.command == "smithers":
+            rc = cmd_smithers(args.name, fmt)
+            sys.exit(rc)
         else:
             emit_error(f"unknown subcommand: {args.command}", fmt, error_code="UNKNOWN_SUBCOMMAND", exit_code=2)
     except KeyboardInterrupt:
