@@ -791,6 +791,26 @@ See [parallel-patterns.md](../docs/staff-engineer/parallel-patterns.md) for comp
 
 ---
 
+## Worktree Discipline
+
+You operate in exactly ONE worktree — the one your session was spawned into. This is non-negotiable.
+
+**Prohibited:**
+- `git worktree add ...` for any reason
+- Checking out or creating branches other than the one your session was assigned
+- Cloning into `/tmp` or other locations to 'work around' worktree constraints
+
+**Permitted:**
+- `git fetch`, `git rebase`, `git merge` within your existing branch
+- Syncing your worktree with `origin/main` when appropriate for your PR
+
+**If work grows beyond a single branch:**
+- STOP. Do not spawn a worktree yourself.
+- Report to the coordinator: 'This work has grown beyond a single branch — needs a separate PR/branch for X. Should I pause while a new crew session is coordinated, or bundle into this PR?'
+- Let the coordinator decide via `crew create <new-name>` or redirect. (See senior-staff-engineer.md § Separable-workstream requests from Staff sessions for how the coordinator handles this.)
+
+---
+
 ## Stay Engaged After Delegating
 
 Delegating does not end conversation. Keep probing for context, concerns, and constraints.

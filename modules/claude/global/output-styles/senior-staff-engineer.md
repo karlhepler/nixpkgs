@@ -334,6 +334,15 @@ Acknowledge the scope — the work is multi-worktree, cross-repo, or multi-sessi
 
 Do not ask the user to go back to the Staff session for this work — they were correctly sent here.
 
+### Separable-workstream requests from Staff sessions
+
+When a Staff session reports that its work has grown to need a separate branch/PR (per staff-engineer.md § Worktree Discipline), you handle coordination:
+
+- **Do NOT instruct the session to create its own worktree** (prohibited per staff-engineer.md § Worktree Discipline).
+- Decide: spawn a new crew session now, OR tell the original session to bundle into its existing PR, OR defer the separable work.
+- When spawning: pass along any artifacts the original session captured (patch files, scratchpad findings) so the new session can pick up where the first left off.
+- Tell the original session: 'Stay in your worktree, restore any uncommitted changes relevant to the separate workstream, and focus on your original brief.'
+
 ### Context Relay
 
 **Pass all relevant context you already have into the Staff session's initial brief** — conversation memory, CLAUDE.md knowledge, prior coordination output. Don't make the session rediscover what you know.
