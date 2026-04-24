@@ -291,6 +291,7 @@ def _tokenize_command(command: str) -> list:
 
 # Result type for destructive op detection:
 #   "stash_drop"         → unconditional denial (no file target)
+#   "stash_push"         → unconditional denial for sub-agents (moves entire working tree)
 #   list[str]            → file paths that are targets of destructive ops
 #   None                 → no destructive op detected (allow)
 def _extract_destructive_git_targets(segment: list) -> "str | list | None":
@@ -298,6 +299,11 @@ def _extract_destructive_git_targets(segment: list) -> "str | list | None":
 
     Returns:
         "stash_drop"  — if the segment is `git stash drop` (unconditional denial)
+        "stash_push"  — if the segment is `git stash` / `git stash push` /
+                        `git stash save` / `git stash --keep-index` (unconditional
+                        denial for sub-agents — moves entire working tree into stash,
+                        hiding files from parallel cards; editFiles-based scoping is
+                        inapplicable because there are no file targets)
         list[str]     — file paths targeted by a destructive op (may be empty if
                         the op takes files but none were parsed, treated as safe)
         None          — not a destructive git op
@@ -313,6 +319,23 @@ def _extract_destructive_git_targets(segment: list) -> "str | list | None":
     # git stash drop — no file target; unconditional denial
     if subcmd == "stash" and len(segment) >= 3 and segment[2] == "drop":
         return "stash_drop"
+
+    # git stash push / git stash save / git stash (bare) / git stash --keep-index
+    # These all move the entire working tree into a stash, hiding files from parallel
+    # cards. editFiles-based scoping is inapplicable — block unconditionally for
+    # sub-agents. Non-destructive read forms (pop, apply, list, show) are not here.
+    if subcmd == "stash":
+        # Bare `git stash` with no subcommand (len == 2): equivalent to push
+        if len(segment) == 2:
+            return "stash_push"
+        third = segment[2]
+        # push, save, or --keep-index (with or without additional flags/args)
+        if third in ("push", "save", "--keep-index"):
+            return "stash_push"
+        # `git stash --keep-index` may appear as a top-level flag before any
+        # subcommand (e.g. `git stash --keep-index --include-untracked`)
+        if "--keep-index" in segment[2:]:
+            return "stash_push"
 
     # git checkout: destructive only with '--' flag or '-p' flag with file arg.
     # git checkout <branch> and git checkout -b <branch> are NOT destructive.
@@ -519,6 +542,8 @@ def _validate_bash_destructive_git(payload: dict) -> "dict | None":
     - Fetches the doing card's editFiles for the sub-agent's session.
     - Rejects if any target file is not in editFiles.
     - git stash drop → rejected unconditionally (no file target, global destruction).
+    - git stash / git stash push / git stash save / git stash --keep-index → rejected
+      unconditionally for sub-agents (moves entire working tree; no editFiles scoping possible).
     - git reset --hard → rejected unconditionally (reverts ALL tracked files).
     - git checkout -p (no file) → rejected unconditionally (interactive session blocked).
 
@@ -566,6 +591,19 @@ def _validate_bash_destructive_git(payload: dict) -> "dict | None":
                 "do not destroy stash contents outside your card's scope."
             )
             log_info(f"Bash denied — git stash drop from sub-agent session={session_id}")
+            return deny_with_reason(reason)
+
+        if result == "stash_push":
+            card_num = card_info[0] if card_info else "unknown"
+            reason = (
+                f"DENIED: `{cmd_repr}` — `git stash` is a destructive cross-card operation "
+                f"(moves working-tree files into a stash, hiding them from parallel cards). "
+                f"Sub-agents MUST NEVER run `git stash` / `git stash push` / `git stash save`.\n"
+                f"Card: #{card_num}\n"
+                "If an AC failure seems to require stashing, STOP and report in your final return — "
+                "the MoV is the issue, not the working tree."
+            )
+            log_info(f"Bash denied — git stash push/save/bare from sub-agent session={session_id}")
             return deny_with_reason(reason)
 
         # result is a list of file paths (possibly with sentinel values)

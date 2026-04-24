@@ -796,3 +796,89 @@ class TestDestructiveGitSafeguard:
         assert result is False, (
             "bare 'foo.py' in editFiles must not match 'src/foo.py' after M3 basename fix"
         )
+
+    # 18. git stash push → DENY unconditionally for sub-agents
+    def test_stash_push_blocked_for_sub_agent(self, hook):
+        """git stash push is blocked unconditionally for sub-agents."""
+        payload = make_bash_payload("git stash push")
+        with patch("subprocess.run", side_effect=patch_kanban_for_editfiles()):
+            result = run_hook_main(hook, payload)
+        assert_denied(result)
+        reason = result["hookSpecificOutput"]["permissionDecisionReason"]
+        assert "stash" in reason.lower()
+        assert "cross-card" in reason.lower() or "parallel" in reason.lower() or "working-tree" in reason.lower() or "working tree" in reason.lower()
+        assert "stop" in reason.lower() or "report" in reason.lower()
+
+    # 19. git stash save → DENY unconditionally for sub-agents
+    def test_stash_save_blocked_for_sub_agent(self, hook):
+        """git stash save is blocked unconditionally for sub-agents."""
+        payload = make_bash_payload("git stash save 'WIP changes'")
+        with patch("subprocess.run", side_effect=patch_kanban_for_editfiles()):
+            result = run_hook_main(hook, payload)
+        assert_denied(result)
+        reason = result["hookSpecificOutput"]["permissionDecisionReason"]
+        assert "stash" in reason.lower()
+
+    # 20. git stash (bare, no subcommand) → DENY unconditionally for sub-agents
+    def test_stash_bare_blocked_for_sub_agent(self, hook):
+        """Bare 'git stash' (equivalent to git stash push) is blocked for sub-agents."""
+        payload = make_bash_payload("git stash")
+        with patch("subprocess.run", side_effect=patch_kanban_for_editfiles()):
+            result = run_hook_main(hook, payload)
+        assert_denied(result)
+        reason = result["hookSpecificOutput"]["permissionDecisionReason"]
+        assert "stash" in reason.lower()
+
+    # 21. git stash --keep-index → DENY unconditionally for sub-agents
+    def test_stash_keep_index_blocked_for_sub_agent(self, hook):
+        """git stash --keep-index is blocked unconditionally for sub-agents."""
+        payload = make_bash_payload("git stash --keep-index")
+        with patch("subprocess.run", side_effect=patch_kanban_for_editfiles()):
+            result = run_hook_main(hook, payload)
+        assert_denied(result)
+        reason = result["hookSpecificOutput"]["permissionDecisionReason"]
+        assert "stash" in reason.lower()
+
+    # 22. git stash pop → ALLOW (non-destructive restore, not blocked)
+    def test_stash_pop_allowed(self, hook):
+        """git stash pop restores working tree from stash — not a push operation, must be allowed."""
+        payload = make_bash_payload("git stash pop")
+        with patch("subprocess.run", side_effect=patch_kanban_for_editfiles()):
+            result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+    # 23. git stash apply → ALLOW (non-destructive restore, not blocked)
+    def test_stash_apply_allowed(self, hook):
+        """git stash apply restores working tree from stash — not a push operation, must be allowed."""
+        payload = make_bash_payload("git stash apply stash@{0}")
+        with patch("subprocess.run", side_effect=patch_kanban_for_editfiles()):
+            result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+    # 24. git stash list → ALLOW (read-only inspection)
+    def test_stash_list_allowed(self, hook):
+        """git stash list is a read-only inspection command — must be allowed."""
+        payload = make_bash_payload("git stash list")
+        with patch("subprocess.run", side_effect=patch_kanban_for_editfiles()):
+            result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+    # 25. git stash drop → still DENY (regression — pre-existing block must not break)
+    def test_stash_drop_still_blocked(self, hook):
+        """Regression: git stash drop was already blocked — verify it stays blocked."""
+        payload = make_bash_payload("git stash drop stash@{0}")
+        with patch("subprocess.run", side_effect=patch_kanban_for_editfiles()):
+            result = run_hook_main(hook, payload)
+        assert_denied(result)
+        reason = result["hookSpecificOutput"]["permissionDecisionReason"]
+        assert "stash drop" in reason
+
+    # 26. Main thread (no agent_id) + git stash push → ALLOW (staff engineer bypass)
+    def test_main_thread_stash_push_allowed(self, hook):
+        """Without agent_id, stash push is not blocked — staff engineer may use git stash."""
+        payload = make_bash_payload(
+            "git stash push",
+            agent_id=None,  # No agent_id → main session (staff engineer)
+        )
+        result = run_hook_main(hook, payload)
+        assert_allowed(result)
