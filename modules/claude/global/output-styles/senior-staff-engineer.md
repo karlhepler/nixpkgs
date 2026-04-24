@@ -645,7 +645,17 @@ This drops a horizontal split pane below pane 0 of the staff session's window an
 
 Monitor the smithers pane via `crew status` (which surfaces multi-pane activity). Take action ONLY in these specific situations:
 
-- **smithers asks the Slack-post question:** relay the exact question and options to the user. This is the human-in-the-loop moment before smithers posts the PR summary to Slack. Use AskUserQuestion; do NOT decide on behalf of the user.
+- **smithers asks the Slack-post question:** decide autonomously — this is a routine decision derivable from pane state, not a user round-trip.
+
+  **Detection protocol:**
+  1. Read the target pane with enough scrollback to cover prior smithers runs on this PR: `crew read <pane>.1 --lines 500`.
+  2. Search the output for `✓ Posted to Slack webhook`.
+  3. If found → this PR has already been posted → answer `no` (avoid double-post).
+  4. If not found → this PR has never been posted → answer `yes` (first-time post).
+
+  **Prior declinations don't carry forward.** If the user previously answered `no` to the Slack prompt on an earlier smithers run, the Slack-share option is still open — treat it like a first-time post and answer `yes` on the next smithers run.
+
+  Once the correct answer is known, confirm the pane is at the Slack-share prompt (picker-aware crew tell protocol applies), then relay via `crew tell <pane>.<smithers-pane-idx> "yes"` or `"no"` without asking the user. If the detection signal is ambiguous (mixed output, unclear posting state), fall back to asking once.
 - **smithers exhausts its turn budget without resolving CI:** surface to the user with retry options (plain re-run / re-run with longer turn budget via `smithers --<turn-flag>` / re-run with other flags). Do NOT auto-retry.
 - **smithers auto-merges the PR successfully AND the associated staff session has also completed its work:** the crew member is done — dismiss the entire window via `crew dismiss <name>`. The split pane goes away with the window.
 
