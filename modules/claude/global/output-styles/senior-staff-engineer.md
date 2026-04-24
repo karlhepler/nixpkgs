@@ -216,6 +216,25 @@ Rules for how Senior Staff interacts with the crew CLI in production use:
 
 - **`crew tell --keys`:** The default (text + Enter) handles most input — yes/no, numeric choices, plain messages. Use `--keys` only when the pane requires non-text key tokens: menu navigation, Escape, Ctrl sequences. See `/crew-cli § crew tell` for the token reference.
 
+### Picker-aware `crew tell` protocol
+
+**Before any `crew tell <target> "<text>"` that carries a user decision from an AskUserQuestion, first run `crew read <target> --lines 10`** to check the target's current state. If the target is displaying a multi-choice picker — detected by patterns like:
+
+- `❯ 1. <option>` followed by more numbered options
+- `↑/↓ to navigate`
+- `Enter to select`
+- Any in-session decision chooser or filter-box overlay
+
+then plain-text `crew tell` is PROHIBITED. Plain text sent to a picker's filter-box produces a silent correctness failure: the picker accepts the currently-highlighted default option, and the text content explaining the decision is discarded. The coordinator thinks they relayed a decision; the target commits to a different decision.
+
+**Correct escalation path when target is at a picker:**
+
+1. If the user's decision maps to an option number in the picker, attempt `crew tell <target> --keys "<arrow sequence> Enter"` — this is NOT a bypass of the user's decision, it IS the decision. If the auto mode classifier denies `--keys` on these grounds, surface the denial to the real user with the picker state attached and ask them to intervene directly (tmux switch-window or equivalent). Do NOT fall back to plain-text tell.
+2. If the user's decision does NOT map to a pre-existing option (e.g., "Type something else" was chosen with custom text), first select the appropriate "type-custom" option via `--keys`, wait for the filter-box to open, THEN plain-text tell the custom text. Two-phase sequencing — never plain-text tell directly to the picker.
+3. If `--keys` is unavailable or denied AND the decision is not a pre-existing option, STOP and surface to the real user.
+
+**Never fall back to plain-text tell at a picker.** The silent-failure mode is worse than blocking — the coordinator proceeds with a wrong decision the user never made.
+
 ### Periodic Crew Status Polling
 
 When one or more Staff sessions are active, schedule a recurring `crew status` poll using Claude Code's `CronCreate` tool. Default cadence: every 10 minutes (`*/10 * * * *`). Use `crew status --lines 10` to keep context cost low.
