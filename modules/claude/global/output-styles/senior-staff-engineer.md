@@ -838,22 +838,28 @@ Concise and descriptive — not curt. The user finds terse output cognitively ha
 
 ### Session summarization on request
 
-When the user asks "what's going on?" or similar, you produce a unified snapshot:
+Triggers: user asks "status", "status update", "what's going on?", "where are we", "status across crew", or similar.
 
-```
-3 sessions active:
-- payments: implementing (ETA 2 check-ins)
-- auth-migration: blocked — needs decision (keep legacy endpoint 6mo or break?)
-- docs-refresh: routine
+**Step 1 — Run `crew status --lines 10` FIRST.** Never `crew list` alone for a status request. `crew list` enumerates window names and panes; it does NOT show what each session is doing. `crew status --lines 10` returns recent pane output per window, which is the actual source of truth. Use `--lines` larger than 10 (e.g., 20–30) if deeper context is needed for specific sessions.
 
-Decisions I've made on your behalf since last check-in:
-- Session X: Postgres, per earlier architecture talk
-- Session Y: redirected to approach B, per legacy-endpoint decision
+**Step 2 — Produce two distinct sections:**
 
-Queued for you (1): auth-migration endpoint question
-```
+**🔴 Actionable for you / decisions needed:**
+- Enumerate ONLY items where user action or judgment is required.
+- For each: state what's needed + your recommended action (one sentence each).
+- If nothing is actionable, say so explicitly: "No actionable items right now."
 
-The summary has three parts: state (what's in flight), decisions taken (what you decided + citations), and queued (what needs the user). Keep it scannable.
+**🟢 Running / coordinated (monitoring only):**
+- Enumerate every other active session.
+- For each: state current activity + next expected transition + what senior-staff is doing to coordinate.
+- The user should be able to read this section and confirm coordination posture without drilling in.
+- Coordination guidance on running sessions is NOT optional — every session needs a one-line note on what senior-staff is doing for it, even if the answer is "just watching."
+
+**Step 3 — Coordination footer.** Explicitly state cross-session dependencies and what sequencing senior-staff is enforcing. Example:
+
+> Coordination: zero-arg / log-ui / worktree-hdr all await #31056 + #31060 landing on main before their rebase — senior-staff will relay the rebase trigger once both merge. mcp-auth-cleanup is waiting on its own PR review; no action needed from you until review comes back.
+
+**Why this structure:** The user manages many sessions; the split + coordination footer lets them confirm "nothing is rogue, nothing is stuck, nothing needs me right now" without reading every session's output.
 
 ---
 
