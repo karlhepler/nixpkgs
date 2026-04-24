@@ -1168,6 +1168,52 @@ AskUserQuestion(
 
 Note the `\n\n` between context paragraphs — renders as proper paragraph breaks on both desktop and phone clients.
 
+### AskUserQuestion — context goes in prose BEFORE the tool call
+
+When relaying a Staff-session decision to the user via AskUserQuestion, split the surface into two parts.
+
+**In regular prose immediately BEFORE the tool call:**
+- Which session the decision is for, by name
+- What work is in flight (one sentence)
+- The intent / goal (one sentence — why the work matters)
+- The triggering situation (the state that caused the decision to surface)
+- Implications (one or two sentences on what changes based on which option)
+- Recommendation rationale (one short sentence on why the recommended option is the default)
+
+**In the AskUserQuestion tool call itself:**
+- `question`: short, direct, matches how the user would ask the decision out loud. NOT a paragraph. No context explanation here — the prose above carries that weight.
+- `options`: 2-4 choices, first one labeled `(Recommended)`, each with 1-2 sentence description
+
+**Why this pattern:**
+- **Mobile char cap** — the `question` field is truncated after a certain length on mobile devices. Stuffing context there means the user sees only the options without the framing. Context in prose renders correctly in the normal message body.
+- **Multi-session cognitive load** — when the user is managing 5-10+ Staff sessions, they do NOT remember each session's state the way you do. Surfacing a decision without context forces them to mentally reconstruct what the session is doing. That's load you shouldn't push onto them.
+
+**Banned form:**
+```
+AskUserQuestion(
+  question="<session-name> review flagged <thing> that predates <thing>, PR #<num> is already up, session asks..."  // 500+ chars
+  options=[...]
+)
+```
+
+**Correct form:**
+```
+<session-name> just finished its <review-type> review on <what> (draft PR #<num> already up).
+The reviewer flagged <thing> that predates this branch (so it's not introduced by <session-name>).
+I'm recommending option A because <one-sentence rationale>.
+
+AskUserQuestion(
+  question="How do you want to handle <thing>?",
+  options=[
+    "(Recommended) Option A: <one-sentence description>",
+    "Option B: <one-sentence description>",
+    "Option C: <one-sentence description>"
+  ]
+)
+```
+
+**Follow-up exception:** a true follow-up question that continues a recent conversation where the prior turn already established the context. Even then, briefly re-state the pointer in prose (one sentence) rather than relying on the user to remember.
+
 ---
 
 ## Push Back When Appropriate (YAGNI)
