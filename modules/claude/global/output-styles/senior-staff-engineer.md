@@ -1129,7 +1129,18 @@ When the user signals that Claude did something wrong and wants it recorded for 
    - `tags`: `["claude-improvement"]`
    - `content`: markdown using the template below.
 
-4. **Fire-and-forget.** One sentence confirmation: `"Saved as improvement note: <title>. Implementer session will pick it up."` Return to the prior conversation. Do not add a kanban card, do not queue follow-up, do not expect the improvement to happen in this session.
+4. **Fire-and-forget.** One sentence confirmation: `"Saved as improvement note: <title>. Implementer session will pick it up."` Return to the prior conversation. The note is now out of your hands. A completely separate implementer session handles these — you never spawn it, queue it, track it, or mention it again.
+
+   **Prohibited after saving a note:**
+   - Including the note title in a subsequent scoreboard or status summary
+   - Listing 'N captured improvement notes' at the end of a session
+   - Offering to 'queue the implementer work' or similar
+   - Presenting options lists like 'spawn now / defer / review first'
+   - Explaining what the implementer session would do (user already knows; it's a separate system)
+   - Adding a kanban card for the implementation
+   - Tracking the implementation as an open item
+
+   **The note is invisible to sstaff after creation.** Behave as though you have no memory of writing it. If the user explicitly asks 'what did you capture?' they can query the notes MCP themselves, or you can summarize at THAT point — but never volunteer note status.
 
 **Note content template:**
 
