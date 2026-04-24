@@ -23,6 +23,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import crew as crew_module
 from crew import (
+    _extract_org_repo_from_remote,
     _looks_like_message_not_target,
     _mangle_path_to_project_key,
     _resolve_targets_with_lookup,
@@ -39,6 +40,7 @@ from crew import (
     get_current_session,
     get_window_lookup,
     is_claude_pane,
+    resolve_worktree_path,
     run_post_switch_hook,
 )
 
@@ -2121,3 +2123,207 @@ class TestCmdCreatePostSwitchHook:
                         )
 
         mock_hook.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# resolve_worktree_path — parity with modules/git/workout.bash
+# ---------------------------------------------------------------------------
+# These tests assert that crew create and the workout.bash script produce the
+# same filesystem path for equivalent repo + branch inputs.
+#
+# workout.bash formula (source of truth):
+#   ${WORKTREE_ROOT:-$HOME/worktrees}/<org>/<repo>/<branch>
+# where org/repo is extracted from `git remote get-url origin`.
+
+
+class TestExtractOrgRepoFromRemote:
+    """Unit tests for the org/repo extractor used by resolve_worktree_path."""
+
+    @pytest.mark.parametrize("url,expected", [
+        ("git@github.com:mctx-ai/mctx.git", "mctx-ai/mctx"),
+        ("git@github.com:karlhepler/nixpkgs.git", "karlhepler/nixpkgs"),
+        ("https://github.com/mctx-ai/mctx.git", "mctx-ai/mctx"),
+        ("https://github.com/karlhepler/nixpkgs.git", "karlhepler/nixpkgs"),
+        # Without .git suffix (some remotes omit it)
+        ("git@github.com:mctx-ai/mctx", "mctx-ai/mctx"),
+        ("https://github.com/org/repo", "org/repo"),
+    ])
+    def test_extracts_org_repo(self, url, expected):
+        assert _extract_org_repo_from_remote(url) == expected
+
+    def test_returns_none_for_unparseable_url(self):
+        assert _extract_org_repo_from_remote("not-a-valid-url") is None
+
+
+class TestResolveWorktreePath:
+    """Parity tests: resolve_worktree_path must match workout.bash's path formula."""
+
+    def test_ssh_remote_produces_nested_path(self, monkeypatch, tmp_path):
+        """SSH remote URL → ~/worktrees/<org>/<repo>/<branch> (parity with workout.bash)."""
+        # workout.bash formula for git@github.com:mctx-ai/mctx.git + branch "fix":
+        #   ~/worktrees/mctx-ai/mctx/fix
+        worktree_root = str(tmp_path / "worktrees")
+        monkeypatch.setenv("WORKTREE_ROOT", worktree_root)
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = fake_run_result(
+                stdout="git@github.com:mctx-ai/mctx.git\n"
+            )
+            path, used_fallback = resolve_worktree_path("/fake/repo", "fix")
+
+        expected = str(tmp_path / "worktrees" / "mctx-ai" / "mctx" / "fix")
+        assert path == expected
+        assert used_fallback is False
+
+    def test_https_remote_produces_nested_path(self, monkeypatch, tmp_path):
+        """HTTPS remote URL → ~/worktrees/<org>/<repo>/<branch> (parity with workout.bash)."""
+        worktree_root = str(tmp_path / "worktrees")
+        monkeypatch.setenv("WORKTREE_ROOT", worktree_root)
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = fake_run_result(
+                stdout="https://github.com/karlhepler/nixpkgs.git\n"
+            )
+            path, used_fallback = resolve_worktree_path("/fake/repo", "karlhepler/my-feature")
+
+        expected = str(
+            tmp_path / "worktrees" / "karlhepler" / "nixpkgs" / "karlhepler" / "my-feature"
+        )
+        assert path == expected
+        assert used_fallback is False
+
+    def test_falls_back_to_flat_layout_when_no_remote(self, monkeypatch, tmp_path):
+        """No origin remote → flat ~/worktrees/<branch> fallback (graceful degradation)."""
+        worktree_root = str(tmp_path / "worktrees")
+        monkeypatch.setenv("WORKTREE_ROOT", worktree_root)
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = fake_run_result(returncode=2, stdout="")
+            path, used_fallback = resolve_worktree_path("/fake/repo", "my-branch")
+
+        expected = str(tmp_path / "worktrees" / "my-branch")
+        assert path == expected
+        assert used_fallback is True
+
+    def test_worktree_root_defaults_to_home_worktrees(self, monkeypatch):
+        """When WORKTREE_ROOT is unset, defaults to ~/worktrees/<org>/<repo>/<branch>."""
+        monkeypatch.delenv("WORKTREE_ROOT", raising=False)
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = fake_run_result(
+                stdout="git@github.com:myorg/myrepo.git\n"
+            )
+            path, used_fallback = resolve_worktree_path("/fake/repo", "feature-x")
+
+        expected = os.path.join(
+            os.path.expanduser("~/worktrees"), "myorg", "myrepo", "feature-x"
+        )
+        assert path == expected
+        assert used_fallback is False
+
+    def test_parity_with_workout_bash_formula(self, monkeypatch, tmp_path):
+        """Python-internal consistency check for the workout.bash path formula.
+
+        NOTE: This test is a Python-internal consistency check, NOT a live bash
+        invocation. workout.bash (modules/git/workout.bash) has no dry-run or
+        path-computation-only mode — it requires a live git repo with a configured
+        remote and performs real filesystem operations. Invoking it via subprocess
+        in a unit test would require significant test infrastructure (real git repos,
+        real remotes, or mock git binaries). Option (c) per card #1354 F5 applies:
+        annotate as Python-internal and add a secondary hardcoded-value assertion
+        that was manually verified against workout.bash.
+
+        Secondary hardcoded assertion (manually verified):
+            Input:  remote URL = "git@github.com:mctx-ai/mctx.git", branch = "my-feature"
+            workout.bash sed: sed -E 's#.*[:/]([^/]+/[^/]+)\\.git$#\\1#'
+                            → extracts "mctx-ai/mctx"
+            Expected path:  $WORKTREE_ROOT/mctx-ai/mctx/my-feature
+        """
+        worktree_root = str(tmp_path / "worktrees")
+        monkeypatch.setenv("WORKTREE_ROOT", worktree_root)
+
+        remote_url = "git@github.com:mctx-ai/mctx.git"
+        branch = "my-feature"
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = fake_run_result(stdout=remote_url + "\n")
+            crew_path, used_fallback = resolve_worktree_path("/fake/repo", branch)
+
+        # Hardcoded expected value manually verified against workout.bash formula:
+        #   echo "git@github.com:mctx-ai/mctx.git" | sed -E 's#.*[:/]([^/]+/[^/]+)\.git$#\1#'
+        #   → mctx-ai/mctx
+        #   path = $WORKTREE_ROOT/mctx-ai/mctx/my-feature
+        expected_path = os.path.join(worktree_root, "mctx-ai", "mctx", "my-feature")
+        assert crew_path == expected_path, (
+            f"crew path {crew_path!r} != workout.bash-verified path {expected_path!r}"
+        )
+        assert used_fallback is False
+
+    def test_cmd_create_uses_nested_worktree_path(self, capsys, monkeypatch, tmp_path):
+        """cmd_create must pass nested org/repo/branch path to git worktree add.
+
+        Integration test: verifies the full cmd_create path from remote URL to
+        the git worktree add invocation uses the nested layout, not the flat one.
+        """
+        worktree_root = str(tmp_path / "worktrees")
+        monkeypatch.setenv("WORKTREE_ROOT", worktree_root)
+
+        def side_effect(cmd, **kwargs):
+            cmd_list = cmd if isinstance(cmd, list) else [cmd]
+            joined = " ".join(str(c) for c in cmd_list)
+            if "remote" in joined and "get-url" in joined:
+                return fake_run_result(stdout="git@github.com:myorg/myrepo.git\n")
+            if "display-message" in joined and "session_name" in joined:
+                return fake_run_result(stdout="tidy-crown\n")
+            if "display-message" in joined and "window_id" in joined:
+                return fake_run_result(stdout="@1\n")
+            if "list-windows" in joined:
+                return fake_run_result(stdout="")
+            if "rev-parse" in joined and "show-toplevel" in joined:
+                return fake_run_result(stdout="/some/repo\n")
+            if "symbolic-ref" in joined:
+                return fake_run_result(stdout="main\n")
+            if "rev-parse" in joined and "upstream" in joined:
+                return fake_run_result(stdout="origin/main\n")
+            if "fetch" in joined and "origin" in joined:
+                return fake_run_result()
+            if "rev-parse" in joined and "--verify" in joined and "refs/heads" not in joined:
+                return fake_run_result(stdout="abc1234\n")
+            if "rev-parse" in joined and "refs/heads" in joined:
+                return fake_run_result(returncode=1)
+            if "branch" in joined and "main" in joined:
+                return fake_run_result()
+            if "worktree" in joined and "add" in joined:
+                return fake_run_result()
+            if "new-window" in joined:
+                return fake_run_result()
+            if "send-keys" in joined:
+                return fake_run_result()
+            if "capture-pane" in joined:
+                return fake_run_result(stdout="> \n")
+            return fake_run_result()
+
+        with patch("subprocess.run", side_effect=side_effect):
+            with patch("os.path.isdir", return_value=True):
+                with patch("os.path.exists", return_value=False):
+                    cmd_create(
+                        name="my-feature",
+                        repo="/some/repo",
+                        branch="my-feature",
+                        base="main",
+                        fmt="xml",
+                    )
+
+        out = capsys.readouterr().out
+        expected_nested_path = os.path.join(
+            worktree_root, "myorg", "myrepo", "my-feature"
+        )
+        # The nested path must appear in the XML output (worktree= attribute)
+        assert expected_nested_path in out, (
+            f"Expected nested path {expected_nested_path!r} in output:\n{out}"
+        )
+        # The flat layout must NOT appear
+        flat_path = os.path.join(worktree_root, "my-feature")
+        assert flat_path not in out, (
+            f"Flat path {flat_path!r} must not appear in output (nested layout required)"
+        )

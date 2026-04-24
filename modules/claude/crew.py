@@ -678,9 +678,28 @@ def _resolve_worktree_for_name(name: str) -> Optional[str]:
             return path
 
     # Strategy 2: scan ~/worktrees/ for a matching directory.
-    candidate = os.path.expanduser(f"~/worktrees/{name}")
-    if os.path.isdir(candidate):
-        return candidate
+    # New worktrees use the nested layout ~/worktrees/<org>/<repo>/<branch>.
+    # Pre-existing flat-layout worktrees use ~/worktrees/<name>.
+    # We check the nested layout first (preferred), then fall back to flat.
+    worktree_root = os.environ.get("WORKTREE_ROOT") or os.path.expanduser("~/worktrees")
+    worktree_root_path = Path(worktree_root)
+
+    # Nested layout: ~/worktrees/<org>/<repo>/<name>
+    # Scan two levels deep under the worktree root for a leaf directory named <name>.
+    for org_dir in sorted(worktree_root_path.iterdir()) if worktree_root_path.is_dir() else []:
+        if not org_dir.is_dir():
+            continue
+        for repo_dir in sorted(org_dir.iterdir()):
+            if not repo_dir.is_dir():
+                continue
+            nested_candidate = repo_dir / name
+            if nested_candidate.is_dir():
+                return str(nested_candidate)
+
+    # Flat layout: ~/worktrees/<name> (pre-existing worktrees, pre-fix)
+    flat_candidate = worktree_root_path / name
+    if flat_candidate.is_dir():
+        return str(flat_candidate)
 
     return None
 
@@ -696,7 +715,8 @@ def cmd_resume(
     Steps:
     1. Validate window name via _SAFE_NAME_RE.
     2. Abort if window <name> already exists.
-    3. Resolve worktree path from active tmux windows or ~/worktrees/<name>.
+    3. Resolve worktree path from active tmux windows or ~/worktrees/<org>/<repo>/<name>
+       (nested layout, e.g., ~/worktrees/orgA/repoB/<name>).
     4. Scan ~/.claude/projects/<key>/ for .jsonl session files.
     5. If --session not given, pick the most recent .jsonl by mtime.
     6. If no session file found, emit NO_SESSION failure.
@@ -736,7 +756,8 @@ def cmd_resume(
         send.failure(
             "WORKTREE_NOT_FOUND",
             f"could not find a worktree for '{name}'. "
-            "No active tmux window with that name and no directory at ~/worktrees/{name}. "
+            f"No active tmux window with that name and no worktree directory "
+            f"matching '{name}' under ~/worktrees/. "
             "Use `crew create` to start a new session instead.",
         )
         return
@@ -1342,6 +1363,79 @@ def _branch_exists(repo: str, branch: str) -> bool:
     return result.returncode == 0
 
 
+# Regex to extract org/repo from git remote URLs.
+# Handles both SSH (git@github.com:org/repo.git) and HTTPS (https://host/org/repo.git).
+# Source of truth: modules/git/workout.bash — sed -E 's#.*[:/]([^/]+/[^/]+)\.git$#\1#'
+#
+# Intentional extension beyond modules/git/workout.bash: the `.git` suffix is
+# optional in this regex so SSH URLs like `git@github.com:org/repo` (without
+# `.git`) extract correctly. workout.bash's sed formula requires `.git` and
+# exits with an error for those inputs. Safer for crew users.
+_REMOTE_URL_ORG_REPO_RE = re.compile(
+    r".*[:/]([^/]+/[^/]+?)(?:\.git)?$"
+)
+
+
+def _extract_org_repo_from_remote(remote_url: str) -> Optional[str]:
+    """Extract '<org>/<repo>' from a git remote URL.
+
+    Supports SSH (git@github.com:org/repo.git) and HTTPS
+    (https://github.com/org/repo.git) URLs, with or without .git suffix.
+
+    Returns the org/repo string, or None if the URL cannot be parsed.
+    """
+    m = _REMOTE_URL_ORG_REPO_RE.match(remote_url.strip())
+    if not m:
+        return None
+    return m.group(1)
+
+
+def _git_remote_url(repo: str, remote: str = "origin") -> Optional[str]:
+    """Return the URL of the given git remote, or None on failure."""
+    result = subprocess.run(
+        ["git", "remote", "get-url", remote],
+        capture_output=True, text=True, check=False, cwd=repo
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
+def resolve_worktree_path(repo: str, branch: str) -> Tuple[str, bool]:
+    """Resolve the canonical worktree path for a given repo and branch.
+
+    Matches the path formula used by modules/git/workout.bash:
+        ${WORKTREE_ROOT:-$HOME/worktrees}/<org>/<repo>/<branch>
+
+    Where <org>/<repo> is extracted from the git remote 'origin' URL.
+
+    Falls back to the flat layout (${WORKTREE_ROOT:-$HOME/worktrees}/<branch>)
+    if the origin remote is absent or the URL cannot be parsed.
+
+    Args:
+        repo:   Absolute path to the git repository root.
+        branch: The branch name to be checked out in the worktree.
+
+    Returns:
+        A tuple of (path, used_fallback) where:
+        - path is the absolute path string for the new worktree directory.
+        - used_fallback is True when the flat layout was used due to a missing
+          or unparseable remote, False when the nested org/repo layout was used.
+        Callers should warn the user when used_fallback is True, because flat
+        layout paths diverge from the nested layout that crew resume scans for.
+    """
+    worktree_root = os.environ.get("WORKTREE_ROOT") or os.path.expanduser("~/worktrees")
+
+    remote_url = _git_remote_url(repo)
+    if remote_url:
+        org_repo = _extract_org_repo_from_remote(remote_url)
+        if org_repo and ".." not in org_repo:
+            return os.path.join(worktree_root, org_repo, branch), False
+
+    # Fallback: no remote or unparseable URL — use flat layout for safety.
+    return os.path.join(worktree_root, branch), True
+
+
 def _git_has_uncommitted_changes(repo: str) -> bool:
     """Return True if the repo has any uncommitted changes (staged or unstaged)."""
     result = subprocess.run(
@@ -1549,7 +1643,7 @@ def cmd_create(
     3. Resolve repo (default: current git root).
     4. Resolve branch (default: <name>).
     5. Resolve base branch (default: current branch of repo).
-    6. Expand worktree path to ~/worktrees/<name>.
+    6. Resolve worktree path to ~/worktrees/<org>/<repo>/<branch>.
     7. Check for existing worktree at that path.
     8. Create branch if it doesn't exist.
     9. Create git worktree.
@@ -1707,8 +1801,24 @@ def cmd_create(
         # --- 5b. Fetch base from origin if tracked (before worktree creation) ---
         effective_base = _fetch_base_if_tracked(repo, base)
 
-        # --- 6. Expand worktree path ---
-        worktree_path = os.path.expanduser(f"~/worktrees/{name}")
+        # --- 6. Resolve worktree path ---
+        # Uses the same org/repo-nested formula as modules/git/workout.bash:
+        #   ${WORKTREE_ROOT:-~/worktrees}/<org>/<repo>/<branch>
+        # This avoids flat-namespace collisions when multiple repos share branch names.
+        assert repo is not None  # guaranteed by step 3
+        assert branch is not None  # guaranteed by step 4
+        worktree_path, used_fallback = resolve_worktree_path(repo, branch)
+        if used_fallback:
+            print(
+                f"warning: no 'origin' remote configured for '{repo}'; "
+                f"worktree placed at '{worktree_path}'\n"
+                "  crew create and workout normally use "
+                "~/worktrees/<org>/<repo>/<branch> layout.\n"
+                "  With no remote, falling back to flat layout. crew resume may not "
+                "find this worktree via the nested scan; specify the full path "
+                "manually if needed.",
+                file=sys.stderr,
+            )
 
         # --- 7. Check for existing worktree at that path ---
         if os.path.exists(worktree_path):
@@ -2185,7 +2295,7 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Resume a previously created crew session by recreating the tmux window\n"
             "and launching `staff --name <name> --resume <session_id>`.\n\n"
-            "The worktree path is resolved from active tmux windows or ~/worktrees/<name>.\n"
+            "The worktree path is resolved from active tmux windows or ~/worktrees/<org>/<repo>/<name>.\n"
             "If --session is omitted, the most recent session file (by mtime) is used.\n\n"
             "Examples:\n"
             "  crew resume mirrordx                    # infer most recent session\n"
@@ -2195,7 +2305,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_resume.add_argument(
         "name",
-        help="Window name (must match a worktree in ~/worktrees/ or an active tmux window)",
+        help="Window name (must match a worktree under ~/worktrees/ or an active tmux window)",
     )
     p_resume.add_argument(
         "--session",
