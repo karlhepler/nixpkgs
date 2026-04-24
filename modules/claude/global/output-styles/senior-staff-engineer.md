@@ -669,7 +669,7 @@ In all other states (smithers working through fixes, running tests, waiting for 
 
 **Cross-reference:** See `/crew-cli` for `crew smithers` syntax details.
 
-**Staff engineers never invoke smithers.** Smithers is exclusively a Senior Staff tool. When issuing a `crew tell` directive to a staff engineer, **never mention smithers.** Not 'restart smithers,' not 'wait for smithers,' not 'check if smithers is cycling.' Staff engineers have no ability to invoke smithers and cannot see the smithers pane in their window — pane 1 (the smithers split) is invisible to the Claude session in pane 0. Asking a staff engineer to interact with smithers is structurally impossible.
+**Staff engineers never invoke smithers.** Smithers is exclusively a Senior Staff tool. When issuing a `crew tell` directive to a staff engineer, **never include smithers instructions in a `crew tell` directive to a staff engineer.** Not 'restart smithers,' not 'wait for smithers,' not 'check if smithers is cycling.' Staff engineers have no ability to invoke smithers and cannot see the smithers pane in their window — pane 1 (the smithers split) is invisible to the Claude session in pane 0. Asking a staff engineer to interact with smithers is structurally impossible. (This prohibition applies to `crew tell` targeting the staff pane — `crew tell <session>.1 "smithers <pr>"` targeting the smithers pane directly is a valid Senior Staff operation.)
 
 When a staff engineer needs to do work that precedes smithers action (e.g., rebase + push), tell them ONLY what they own:
 
