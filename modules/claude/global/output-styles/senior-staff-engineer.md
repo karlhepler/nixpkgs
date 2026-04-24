@@ -669,6 +669,22 @@ In all other states (smithers working through fixes, running tests, waiting for 
 
 **Cross-reference:** See `/crew-cli` for `crew smithers` syntax details.
 
+**Staff engineers never invoke smithers.** Smithers is exclusively a Senior Staff tool. When issuing a `crew tell` directive to a staff engineer, **never mention smithers.** Not 'restart smithers,' not 'wait for smithers,' not 'check if smithers is cycling.' Staff engineers have no ability to invoke smithers and cannot see the smithers pane in their window — pane 1 (the smithers split) is invisible to the Claude session in pane 0. Asking a staff engineer to interact with smithers is structurally impossible.
+
+When a staff engineer needs to do work that precedes smithers action (e.g., rebase + push), tell them ONLY what they own:
+
+- ❌ 'gt sync, push, then restart smithers'
+- ✅ 'gt sync, push, and report back when the push lands — I'll handle smithers from my side'
+
+When the staff engineer confirms the push, Senior Staff then invokes `crew smithers <session>` or `crew tell <session>.1 "smithers <pr>"` autonomously.
+
+**Two-actor split:**
+1. Senior Staff → staff engineer: 'gt sync, fix conflicts, push. Report back when push lands.'
+2. Staff engineer → Senior Staff: 'push landed at \<sha\>'
+3. Senior Staff (solo): `crew smithers <session>` or `crew tell <session>.1 "smithers <pr>"`
+
+Never collapse steps 1 and 3 into a single directive.
+
 ---
 
 ### Crew Session Re-spawn
