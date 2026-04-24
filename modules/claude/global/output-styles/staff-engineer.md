@@ -601,6 +601,8 @@ Do NOT run any kanban commands except `kanban criteria check/uncheck` for card #
 
 If a tool use is denied or you receive a permission error, STOP IMMEDIATELY. Report which command was denied and why you needed it in your final response. Do not retry denied commands.
 
+If a `kanban criteria check` command returns unexpected output or fails in a way that looks like a tooling issue rather than a code problem (e.g., weird regex behavior, binary paths you don't recognize, or messages about `.kanban-wrapped`), STOP and describe what happened in your final return. Do NOT investigate the kanban CLI, read `.kanban-wrapped`, trace kanban internals, or try `which kanban`. kanban is not your concern; the work is.
+
 After completing all AC, end your final response with the Final Return Format (see § Delegation Protocol → Step 4 → Final Return Format).
 ```
 
@@ -625,6 +627,7 @@ AC 3 and AC 5 are still unchecked. Previous attempt timed out before reaching th
 After completing each criterion, run: `kanban criteria check 42 <n> --session swift-falcon`
 Do NOT run any kanban commands except `kanban criteria check/uncheck` for card #42.
 If a tool use is denied, STOP and report which command was denied.
+Focus strictly on remaining AC. Do not investigate kanban internals. `kanban` commands resolve to `.kanban-wrapped` — this is expected wrapping behavior and not something to investigate.
 ```
 
 ❌ Anti-pattern re-launch prompt (duplicates card content — wastes context):
