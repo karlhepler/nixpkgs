@@ -1549,33 +1549,140 @@ def _tmux_window_exists(name: str) -> bool:
     return name in result.stdout.splitlines()
 
 
+def _detect_modal_state(content: str) -> Optional[str]:
+    """Classify pane content as a modal state or None.
+
+    Returns:
+        "workspace_trust"  — workspace-trust modal detected
+        "mcp_trust"        — MCP server trust modal detected
+        "unknown_modal"    — unrecognised modal-like content (❯ 1. ... Enter to confirm)
+        None               — no modal detected
+
+    Detection is conservative: both-line signatures are required for known
+    modals to avoid false positives on incidental UI text.
+    """
+    # Workspace-trust modal: both lines must be present.
+    # Match is case-sensitive by design; future Claude Code localization or text
+    # changes will cause detection to silently fall to unknown_modal (which fails
+    # loud). Preferred over false-positive auto-answers on localized strings.
+    if "Accessing workspace:" in content and "Yes, I trust this folder" in content:
+        return "workspace_trust"
+
+    # MCP server trust modal: both lines must be present.
+    # The 49-char substring assumes crew-created windows inherit a wide terminal
+    # width (typically 220+ cols). If the tmux pane is narrower, the string
+    # wraps and detection fails. Not a practical concern today; documented for
+    # future readers.
+    if "New MCP server found in .mcp.json" in content and "Use this and all future MCP servers in this project" in content:
+        return "mcp_trust"
+
+    # Unknown modal: looks like a modal (numbered choice + confirm prompt) but
+    # doesn't match either known signature — do NOT dismiss; surface it.
+    if "❯ 1." in content and "Enter to confirm" in content:
+        return "unknown_modal"
+
+    return None
+
+
+# MCP trust flag → key to send when the MCP-trust modal fires.
+_MCP_TRUST_KEY: Dict[str, str] = {
+    "all": "1",   # Use this and all future MCP servers in this project
+    "this": "2",  # Use this MCP server
+    "none": "3",  # Continue without using this MCP server
+}
+
+
 def _wait_for_claude_ready(
     window_name: str,
     timeout: float = 60.0,
     poll_interval: float = 0.5,
-) -> bool:
+    mcp_trust: str = "all",
+) -> Tuple[bool, Optional[str]]:
     """Poll the target window's pane 0 until Claude Code's TUI is visible.
 
     Claude Code's interactive prompt renders box-drawing characters (╭, │) that
     are NOT present in a bare shell prompt. We wait for these to appear, which
     indicates Claude Code has fully started and is ready for input.
 
-    Returns True when Claude Code's UI is detected; False on timeout.
+    While waiting, this function also handles startup modals that can appear
+    before Claude Code is ready:
+      - Workspace-trust modal: always auto-answered with '1' (Yes, trust).
+        We just created this worktree — implicit trust is safe.
+      - MCP server trust modal: auto-answered according to the mcp_trust flag
+        ('all' → 1, 'this' → 2, 'none' → 3).
+      - Unknown modals (unrecognised numbered-choice + confirm-prompt): logged
+        to stderr but NOT auto-answered (fail-loud, do not silently dismiss).
+
+    After answering a modal, the loop continues immediately to detect the next
+    modal or the final chat-ready state. Multiple modals chain correctly.
+
+    Returns (ready, reason):
+      - (True, None) when Claude Code's UI is detected.
+      - (False, reason) on timeout; reason is a human-readable string describing
+        why the wait failed (e.g. unknown modal blocking, generic timeout).
     """
+    # argparse choices=["all","this","none"] enforces validity at the CLI boundary,
+    # so the .get(..., "1") default is defensive-only and won't fire in practice.
+    mcp_key = _MCP_TRUST_KEY.get(mcp_trust, "1")
+    pane_target = f"{window_name}.0"
     deadline = time.monotonic() + timeout
+    # Tracks the last unknown-modal signature we warned about; used to emit the
+    # warning only once per unique signature (not on every poll iteration).
+    last_warned_modal: Optional[str] = None
+    last_unknown_signature: Optional[str] = None
     while time.monotonic() < deadline:
         result = subprocess.run(
-            ["tmux", "capture-pane", "-p", "-t", f"{window_name}.0", "-S", "-30"],
+            ["tmux", "capture-pane", "-p", "-t", pane_target, "-S", "-30"],
             capture_output=True, text=True, check=False,
         )
         content = result.stdout
+
+        modal = _detect_modal_state(content)
+
+        if modal == "workspace_trust":
+            # Always trust — we just created this worktree.
+            subprocess.run(
+                ["tmux", "send-keys", "-t", pane_target, "1", "Enter"],
+                capture_output=True, check=False,
+            )
+            time.sleep(poll_interval)
+            continue
+
+        if modal == "mcp_trust":
+            subprocess.run(
+                ["tmux", "send-keys", "-t", pane_target, mcp_key, "Enter"],
+                capture_output=True, check=False,
+            )
+            time.sleep(poll_interval)
+            continue
+
+        if modal == "unknown_modal":
+            # Unknown modal — do NOT auto-answer. Warn once per unique signature
+            # (not on every poll iteration) to avoid flooding stderr with ~120
+            # identical lines over a 60 s timeout at 0.5 s poll interval.
+            current_signature = content[:120]
+            if last_warned_modal != current_signature:
+                last_warned_modal = current_signature
+                print(
+                    f"warning: unknown modal detected in pane '{pane_target}' — not auto-answering. "
+                    "Dismiss manually or the --tell delivery will time out.",
+                    file=sys.stderr,
+                )
+            last_unknown_signature = current_signature
+            time.sleep(poll_interval)
+            continue
+
         # Claude Code's TUI uses box-drawing characters in the input prompt box.
         # These chars do NOT appear in a bare zsh/bash prompt, so they are
         # a reliable signal that Claude Code is running and ready for input.
         if content and ("╭" in content or "│ " in content):
-            return True
+            return True, None
         time.sleep(poll_interval)
-    return False
+
+    # Timeout: provide a specific reason if an unknown modal was the blocker.
+    if last_unknown_signature is not None:
+        return False, "timeout: unknown modal blocked chat-ready"
+    return False, None
 
 
 def _deliver_tell(
@@ -1682,6 +1789,7 @@ def cmd_create(
     tell: Optional[str] = None,
     no_worktree: bool = False,
     tell_file: Optional[str] = None,
+    mcp_trust: str = "all",
 ) -> None:
     """Create a git worktree, tmux window, and staff session end-to-end.
 
@@ -1700,7 +1808,8 @@ def cmd_create(
     9b. Run .git/workout-hooks/post-switch if present (silent no-op if absent).
     10. Create tmux window.
     11. Start staff (or --cmd override) in the new window (with --name <name> for display).
-    12. If --tell was given: wait for prompt-ready, then deliver the initial message.
+    12. If --tell was given: wait for prompt-ready (handling startup modals), then
+        deliver the initial message.
     13. Emit structured result.
     14. Auto-delete --tell-file on successful tell delivery.
 
@@ -1989,11 +2098,13 @@ def cmd_create(
     told_reason: Optional[str] = None
 
     if tell is not None:
-        ready = _wait_for_claude_ready(name)
+        ready, wait_reason = _wait_for_claude_ready(name, mcp_trust=mcp_trust)
         if not ready:
             # Claude Code didn't reach a ready state within the timeout.
             # Record told=false; do NOT attempt delivery (would go to shell).
-            told_reason = "timeout waiting for Claude Code to start"
+            # Use the specific reason from _wait_for_claude_ready when available
+            # (e.g. an unknown modal blocked); fall back to the generic message.
+            told_reason = wait_reason if wait_reason else "timeout waiting for Claude Code to start"
         else:
             told, told_reason = _deliver_tell(name, tell)
             if not told:
@@ -2534,6 +2645,19 @@ def build_parser() -> argparse.ArgumentParser:
             "workflows. Incompatible with --branch and --base."
         ),
     )
+    p_create.add_argument(
+        "--mcp-trust",
+        default="all",
+        dest="mcp_trust",
+        choices=["all", "this", "none"],
+        help=(
+            "How to answer the MCP server trust modal when it appears during startup. "
+            "'all' (default) — trust this and all future MCP servers in this project. "
+            "'this' — trust only this MCP server. "
+            "'none' — continue without using this MCP server. "
+            "Only applies to MCP trust modals; workspace-trust is always auto-accepted."
+        ),
+    )
 
     # status
     p_status = sub.add_parser(
@@ -2711,7 +2835,8 @@ def main() -> None:
         elif args.command == "create":
             cmd_create(args.name, args.repo, args.branch, args.base, fmt,
                        cmd_override=args.cmd_override, tell=args.tell,
-                       no_worktree=args.no_worktree, tell_file=args.tell_file)
+                       no_worktree=args.no_worktree, tell_file=args.tell_file,
+                       mcp_trust=args.mcp_trust)
         elif args.command == "project-path":
             send = _ProjectPathSend(fmt)
             cmd_project_path(args.worktree, fmt, send)

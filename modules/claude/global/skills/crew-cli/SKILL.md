@@ -18,12 +18,12 @@ crew [-h] [--format {xml,json,human}] {list,tell,read,dismiss,find,create,status
 ---
 
 ## `crew create`
-`crew create <name> [--repo <path>] [--branch <branch>] [--base <base-branch>] [--tell "<message>" | --tell-file PATH] [--no-worktree]`
+`crew create <name> [--repo <path>] [--branch <branch>] [--base <base-branch>] [--tell "<message>" | --tell-file PATH] [--no-worktree] [--mcp-trust {all|this|none}]`
 
 End-to-end staff session creation — worktree, tmux window, and Claude instance in one command.
 
 ```bash
-crew create <name> [--repo <path>] [--branch <branch>] [--base <base-branch>] [--tell "<message>" | --tell-file PATH] [--no-worktree]
+crew create <name> [--repo <path>] [--branch <branch>] [--base <base-branch>] [--tell "<message>" | --tell-file PATH] [--no-worktree] [--mcp-trust {all|this|none}]
 ```
 
 **Arguments:**
@@ -35,12 +35,23 @@ crew create <name> [--repo <path>] [--branch <branch>] [--base <base-branch>] [-
 - `--tell-file PATH` — Alternative to `--tell` — read tell message from file (UTF-8). File is auto-deleted on successful delivery (mirrors `kanban do --file`). Mutually exclusive with `--tell`.
 - `--no-worktree` — Spawn a staff session directly in `<repo>` without creating a new worktree or branch. Use for "work directly on main" or existing-branch workflows. Incompatible with `--branch` and `--base`.
 - `--cmd <command>` — Override the spawn command. Default: `staff --name <name>`. Use when the target session should run something other than `staff`.
+- `--mcp-trust {all|this|none}` — How to respond to MCP server trust modals that appear during startup (default: `all`):
+  - `all` — trust this and all future MCP servers in this project (option 1)
+  - `this` — trust only this MCP server (option 2)
+  - `none` — continue without using this MCP server (option 3)
+  - Does NOT affect workspace-trust handling (always auto-accepted as 'Yes').
 
 **Behavior:**
 - Default spawn command is `staff --name <name>`, NOT `claude --name <name>`. The created window is a Staff Engineer session.
 - `--tell` delivers the initial brief in the same call — no separate `crew tell` needed.
 - `--tell-file PATH` reads the brief from a file. The file is deleted automatically after successful delivery. If delivery fails (e.g., Claude Code didn't start), the file is preserved so you can retry.
 - Use `--cmd <other>` to override the spawn command when not using `staff`.
+
+**Modal auto-handling (startup modals):**
+When `--tell` or `--tell-file` is used, `crew create` must wait for Claude Code to become ready before delivering the brief. During this wait, two categories of startup modals are automatically dismissed so they do not block delivery:
+- **Workspace-trust modal** (`Accessing workspace: ... Yes, I trust this folder`) — always answered with `1` (Yes, trust). The worktree was just created by `crew create`; trust is implicit.
+- **MCP server trust modal** (`New MCP server found in .mcp.json: ...`) — answered per `--mcp-trust` flag (`all`→1, `this`→2, `none`→3). Multiple MCP modals chain correctly — each is answered in sequence.
+- **Unknown modals** — if a numbered-choice + `Enter to confirm` prompt appears but does not match either known signature, it is NOT auto-dismissed. A warning is emitted to stderr and the wait loop continues; the `--tell` delivery will time out and report `told="false"` if the modal is not manually cleared.
 
 **Post-switch hook:**
 After `git worktree add` and before launching the staff session, `crew create` automatically runs the repository's `.git/workout-hooks/post-switch` script if it exists and is executable. This mirrors the legacy `workout` CLI behavior so spawned worktrees are fully initialized (e.g., `mise trust`, `pnpm bootstrap`) before Staff starts work.
@@ -52,13 +63,16 @@ After `git worktree add` and before launching the staff session, `crew create` a
 
 **Examples:**
 ```bash
-crew create pricing                                            # Branch + worktree + window all named "pricing"
-crew create pricing --tell "Implement tiered billing model."   # Create + deliver initial brief in one call
-crew create pricing --tell-file /tmp/brief.txt                 # Create + deliver brief from file (file auto-deleted on success)
-crew create auth --base main                                   # Create from main instead of current branch
-crew create docs --repo ~/worktrees/other-project/main         # Create in a different repo
-crew create payment --branch payment-v2                        # Window named "payment", branch "payment-v2"
-crew create hotfix --no-worktree                               # Work directly in repo without creating a worktree (hook skipped)
+crew create pricing                                                     # Branch + worktree + window all named "pricing"
+crew create pricing --tell "Implement tiered billing model."            # Create + deliver initial brief in one call
+crew create pricing --tell-file /tmp/brief.txt                         # Create + deliver brief from file (file auto-deleted on success)
+crew create auth --base main                                            # Create from main instead of current branch
+crew create docs --repo ~/worktrees/other-project/main                 # Create in a different repo
+crew create payment --branch payment-v2                                 # Window named "payment", branch "payment-v2"
+crew create hotfix --no-worktree                                        # Work directly in repo without creating a worktree (hook skipped)
+crew create pricing --tell "Build auth" --mcp-trust all                 # Trust all future MCPs (default)
+crew create pricing --tell "Build auth" --mcp-trust this                # Trust only the prompting MCP
+crew create pricing --tell "Build auth" --mcp-trust none                # Skip MCP server usage
 ```
 
 **Error handling:**
