@@ -310,8 +310,8 @@ If `CronCreate` is unavailable, fall back to manual polling at natural checkpoin
    - **Completed work?** New PR URL, new commit SHA, new "CI green" / "CI failed" marker, "Ready for Merge" banner, review-aggregation verdict.
    - **Decision gate?** Numbered option list, permission prompt, "which do you want?" phrasing, or any in-session chooser that needs a coordinator or user answer.
    - **Errored or stalled?** Ralph stagnation, hook-blocked commands, explicit error output, session idle without explanation. (See zero-tmux anti-pattern in Hard Rule #9.)
-   - **Smithers Slack prompt?** New Slack post, PR-watcher comment, or bot-generated alert from smithers.
-3. If **ANY** of the above is true for **ANY** pane: surface a compact state-change table **and** any pending decisions. For decision-surfacing format, follow the AskUserQuestion context-placement rule (prose-before-call anti-pattern — see § AskUserQuestion — context goes in prose BEFORE the tool call).
+   - **Smithers Slack prompt?** Smithers is asking whether to post to Slack — resolve autonomously via the watch-protocol detection logic (see § PR-review workflow — invoking smithers); do NOT surface to the user.
+3. If **ANY** of the above is true for **ANY** pane: surface a compact state-change table **and** any pending decisions (Smithers Slack prompt excluded — see above). For decision-surfacing format, follow the AskUserQuestion context-placement rule (prose-before-call anti-pattern — see § AskUserQuestion — context goes in prose BEFORE the tool call).
 4. If **NONE** of the above is true: exit silently. No output.
 
 **The threshold for narration is "state change worth narrating" — NOT "line count changed."** When in doubt, narrate. The user is actively watching multiple windows and needs Senior Staff to be the narrator, not a silent line-counter.
@@ -648,14 +648,14 @@ Monitor the smithers pane via `crew status` (which surfaces multi-pane activity)
 - **smithers asks the Slack-post question:** decide autonomously — this is a routine decision derivable from pane state, not a user round-trip.
 
   **Detection protocol:**
-  1. Read the target pane with enough scrollback to cover prior smithers runs on this PR: `crew read <pane>.1 --lines 500`.
+  1. Read the target pane with enough scrollback to cover prior smithers runs on this PR: `crew read <name>.1 --lines 500`.
   2. Search the output for `✓ Posted to Slack webhook`.
   3. If found → this PR has already been posted → answer `no` (avoid double-post).
   4. If not found → this PR has never been posted → answer `yes` (first-time post).
 
-  **Prior declinations don't carry forward.** If the user previously answered `no` to the Slack prompt on an earlier smithers run, the Slack-share option is still open — treat it like a first-time post and answer `yes` on the next smithers run.
+  **Prior declinations don't carry forward.** Detection already handles this — if the user previously said `no`, there will be no `✓ Posted to Slack webhook` in scrollback, so the rule yields `yes` correctly on the next smithers run.
 
-  Once the correct answer is known, confirm the pane is at the Slack-share prompt (picker-aware crew tell protocol applies), then relay via `crew tell <pane>.<smithers-pane-idx> "yes"` or `"no"` without asking the user. If the detection signal is ambiguous (mixed output, unclear posting state), fall back to asking once.
+  Once the correct answer is known, confirm the pane is at the Slack-share prompt (picker-aware crew tell protocol applies), then relay via `crew tell <name>.<smithers-pane-idx> "yes"` or `"no"` without asking the user. If the detection signal is ambiguous (mixed output, unclear posting state), fall back to asking the user once.
 - **smithers exhausts its turn budget without resolving CI:** surface to the user with retry options (plain re-run / re-run with longer turn budget via `smithers --<turn-flag>` / re-run with other flags). Do NOT auto-retry.
 - **smithers auto-merges the PR successfully AND the associated staff session has also completed its work:** the crew member is done — dismiss the entire window via `crew dismiss <name>`. The split pane goes away with the window.
 
