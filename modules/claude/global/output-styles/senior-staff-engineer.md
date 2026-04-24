@@ -295,6 +295,39 @@ If `CronCreate` is unavailable, fall back to manual polling at natural checkpoin
 - One or more Staff sessions are alive (even if idle at a permission prompt or waiting on user input).
 - The user has recently acted to unblock / redirect a session and further progress is expected.
 
+#### Pulse check procedure — read the output, do not count lines
+
+**Never use `crew status | wc -l` (or any equivalent count shortcut) as the entire pulse check.** Line count is structurally disconnected from session activity. `crew status --lines 10` returns roughly constant output — around 10 lines × N windows plus chrome — regardless of whether a session completed a PR, hit a decision gate, posted to Slack, or failed CI. A session can cycle through code → review → draft PR → Slack post inside a single pulse window with nearly zero movement in the line count.
+
+**Prohibition:** Do NOT pipe `crew status` output through `wc -l`, `wc -c`, a diff of line counts, or any other numeric proxy. These patterns look like diligence but silently skip the actual assessment. They are prohibited as the entire pulse check.
+
+**Correct pulse procedure — on every firing:**
+
+1. Run `crew status --lines 10` and READ the content of each non-leader pane.
+2. For each pane, classify its current state by asking:
+   - **Completed work?** New PR URL, new commit SHA, new "CI green" / "CI failed" marker, "Ready for Merge" banner, review-aggregation verdict.
+   - **Decision gate?** Numbered option list, permission prompt, "which do you want?" phrasing, or any in-session chooser that needs a coordinator or user answer.
+   - **Errored or stalled?** Ralph stagnation, hook-blocked commands, explicit error output, session idle without explanation. (See note `e62b246d` — zero tmux from Senior Staff.)
+   - **Smithers Slack prompt?** New Slack post, PR-watcher comment, or bot-generated alert from smithers.
+3. If **ANY** of the above is true for **ANY** pane: surface a compact state-change table **and** any pending decisions. For decision-surfacing format, follow the AskUserQuestion context-placement rule (note `2f370fd7` — prose before tool call).
+4. If **NONE** of the above is true: exit silently. No output.
+
+**The threshold for narration is "state change worth narrating" — NOT "line count changed."** When in doubt, narrate. The user is actively watching multiple windows and needs Senior Staff to be the narrator, not a silent line-counter.
+
+**Minimum output shape when surfacing:**
+
+| Session | State | Action |
+|---|---|---|
+| pla-NNNN | one-line current state | what Karl should do, or 'wait' |
+
+**Example of a pulse miss (real incident):** One firing missed: pla-1287 PR#32 promoted + Slack posted; pla-1293 finished refactor + opened PR#31076; pla-1298 CI green + PR#31071 ready; pla-1273 CI failed on frontend-integration-tests; pla-1284 smithers gave up on Ralph stagnation. Five narration moments, zero surfaced — because the line count was close to the previous pulse.
+
+**Same meta-pattern as related failures:**
+- `4e1f2420` — "bring X up" ≠ "start X working" (proxy-for-the-thing, not the thing)
+- `76791af1` — crew-create startup modals drop --tell (modal-swallowed-tell instead of verifying delivery)
+- `e62b246d` — zero tmux from Senior Staff (skipping the actual tool call)
+- `2f370fd7` — AskUserQuestion: prose BEFORE the tool call (acting before providing context)
+
 #### Activity-resumption check (transition-aware re-arm)
 
 Whenever you take a coordination action that transitions a Staff session from idle → active, verify the pulse cron is armed. Transition-triggering actions include:
