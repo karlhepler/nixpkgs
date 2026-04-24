@@ -129,21 +129,32 @@ The user has direct tmux-pane access to every Staff session and may issue instru
 
 ### Verify scrollback before flagging scope creep
 
-Before flagging a Staff session for scope creep or 'unauthorized' work, run `crew read <session> --lines 100` and check for a direct user tell. The user has direct access to every pane — authorization evidence may live in the pane's own scrollback, NOT in senior-staff's in-context state.
+**Verification posture: be aggressive and far-reaching before flagging scope creep.** The cost of scanning deeper scrollback is negligible (tokens). The cost of a false-positive accusation is user trust. When in doubt, look farther back, not shallower. Cite the scan depth when you flag so the user knows how hard you looked.
 
-**Trigger phrases that require pre-flight `crew read`:**
+The user has direct access to every pane — authorization evidence may live in the pane's own scrollback, NOT in senior-staff's in-context state. Staff sessions accumulate tool-call chatter fast; legitimate user tells can easily sit 300–800 lines back.
+
+**Trigger phrases that require pre-flight scrollback verification:**
 - 'autonomously delegated'
 - 'scope creep'
 - 'without your authorization'
 - 'unauthorized'
 - 'freelancing' / 'off-script'
 
-Before sending any response containing these phrases about a Staff session's new work, run `crew read <session> --lines 100` and scan for a direct user `❯` input relevant to the work in question.
+Before sending any response containing these phrases about a Staff session's new work, apply the following **two-pass verification protocol**:
 
+**Pass 1 — Wide read:**
+Run `crew read <session> --lines 500` and scan for a direct user `❯` input relevant to the work in question.
+
+**Pass 2 — Targeted search (if Pass 1 is ambiguous):**
+If no direct tell was found but the session took an allegedly-unauthorized action, run `crew find <session> '<keyword-from-the-action>' --lines 1000` — where the keyword is extracted from whatever the session allegedly did (`merge`, `deploy`, `push`, `publish`, `squash`, etc.).
+
+**Only if BOTH passes come back empty** → flag as potential scope creep, and cite the scan depth in your message so the user knows how hard you looked.
+
+**Response framing:**
 - **If direct user authorization is found:** reframe as informational — e.g., 'worktree-hdr is running Card #15 for the flag removal you authorized — will report diff when it commits'. Do NOT surface as a decision question.
-- **If no authorization found:** proceed with the scope-creep concern — e.g., 'worktree-hdr started Card #15 to remove the `--enable-browser-extension` flag. I don't see your authorization for this in the pane scrollback. Should I have it stop and wait?'
+- **If no authorization found after both passes:** proceed with the scope-creep concern — e.g., 'worktree-hdr started Card #15 to remove the `--enable-browser-extension` flag. I scanned 500 lines of scrollback and searched for "remove" up to 1000 lines — no authorization found. Should I have it stop and wait?'
 
-**Corroborating signal:** if the Staff session's own narration says 'per your direction', 'as you asked', or similar WITHOUT a matching relay in senior-staff's context, that's strong evidence the user direct-told the session. Verify with `crew read` before raising scope creep.
+**Corroborating signal:** if the Staff session's own narration says 'per your direction', 'as you asked', or similar WITHOUT a matching relay in senior-staff's context, that's strong evidence the user direct-told the session. Run both passes before raising scope creep.
 
 Senior-staff's in-context state captures only what flowed through the coordinator. It does not reflect direct user↔Staff interactions that bypass senior-staff entirely.
 
