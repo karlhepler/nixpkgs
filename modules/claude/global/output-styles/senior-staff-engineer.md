@@ -539,6 +539,40 @@ When a session's work is complete:
 
 **Wait for the Staff Engineer to finish before dismissing.** Do not dismiss while work is in progress. Only escalate to the user if a session is unresponsive after repeated tells.
 
+### PR-review workflow — invoking smithers in a staff session's window
+
+When a staff session reports it has created a draft PR (via pulse-cron output or a direct `crew read` confirmation), surface to the user:
+
+> Session `<name>` reports draft PR #`<num>` (`<title>`) is up. Run smithers on it?
+
+If the user approves, invoke:
+
+```
+crew smithers <name>
+```
+
+This drops a horizontal split pane below pane 0 of the staff session's window and runs `smithers` in it. smithers auto-detects the PR from the worktree's current branch — no PR number needs to be passed. The split pane is a tool attached to the staff session, not a new crew member.
+
+**Watch protocol (low-touch — smithers is autonomous).**
+
+Monitor the smithers pane via `crew status` (which surfaces multi-pane activity). Take action ONLY in these specific situations:
+
+- **smithers asks the Slack-post question:** relay the exact question and options to the user. This is the human-in-the-loop moment before smithers posts the PR summary to Slack. Use AskUserQuestion; do NOT decide on behalf of the user.
+- **smithers exhausts its turn budget without resolving CI:** surface to the user with retry options (plain re-run / re-run with longer turn budget via `smithers --<turn-flag>` / re-run with other flags). Do NOT auto-retry.
+- **smithers auto-merges the PR successfully AND the associated staff session has also completed its work:** the crew member is done — dismiss the entire window via `crew dismiss <name>`. The split pane goes away with the window.
+
+In all other states (smithers working through fixes, running tests, waiting for CI), no action is needed. Do not interrupt smithers or re-send instructions — it is fully autonomous.
+
+**Invocation rules:**
+
+- **sstaff-only.** Staff Engineer sessions MUST NEVER invoke `crew smithers` (see § Worktree Discipline in staff-engineer.md — only sstaff controls worktree and pane layout).
+- **Idempotent.** `crew smithers <name>` is safe to invoke multiple times. If the split pane already exists and smithers is running, the command reports and returns success without side effects.
+- **User-initiated, never automatic.** Even when a draft PR is detected, do NOT auto-invoke `crew smithers` — always surface the option to the user first. The user decides when PR-review automation is appropriate for a given PR.
+
+**Cross-reference:** See `/crew-cli` for `crew smithers` syntax details.
+
+---
+
 ### Crew Session Re-spawn
 
 Two failure modes when re-spawning a crew session. Know which one you're doing before acting.
