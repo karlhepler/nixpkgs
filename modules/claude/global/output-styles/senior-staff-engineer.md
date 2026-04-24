@@ -433,6 +433,69 @@ Reason: subjective — no exit code semantics. Use `mov_type: "semantic"` for th
 
 **Agent escape hatch:** If a programmatic check persistently fails with an `mov_error` diagnostic (exit 127/126/2 or structural command brokenness), STOP and describe the failure in your final return. Do not retry structurally broken checks.
 
+### Final Return Format (REQUIRED — sub-agent instruction)
+
+The coordinator reads sub-agent final-return values programmatically. Narrative prose is invisible overhead. Include this directive VERBATIM in every delegation prompt (append to the minimal delegation template):
+
+> Final return format: end your final response with EXACTLY this structure (7 labeled fields), no extra prose before or after.
+>
+> ```
+> Status: <done | partial | failed | blocked>
+> AC: <1:✓ 2:✓ 3:✗ 4:— ...>
+> Findings: <N blocking, N high, N medium, N low>     [omit line for pure work cards]
+> Scratchpad: <absolute path or "none">
+> Commits: <SHA list or "none">
+> Blocker: <one sentence or "none">
+> Notes: <≤2 sentences, coordinator-critical only, or "none">
+> ```
+>
+> Escape hatch: if the return genuinely cannot fit (e.g., open-ended question not tied to a card), begin your response with `[UNSTRUCTURED: <one-sentence reason>]` and then free prose. This signals a conscious skip, not accidental format violation.
+>
+> The format applies ONLY to the final response. In-progress work, tool calls, and scratchpad content are unchanged. Detailed findings belong in the scratchpad, NOT in the Notes field.
+
+**Card type applicability:**
+
+| Card Type | Status | AC | Findings | Scratchpad | Commits | Blocker | Notes |
+|-----------|--------|-----|----------|------------|---------|---------|-------|
+| Work | Always | Always | Omit | Always | If authorized | Always | Optional |
+| Review/Research | Always | Always | Always | Always | If authorized | Always | Optional |
+| AC-reviewer | Always | Always | Omit | If written | If authorized | Always | Optional |
+| Simple lookup/question | `[UNSTRUCTURED: reason]` prefix | n/a | n/a | n/a | n/a | n/a | n/a |
+
+**Examples:**
+
+Work card (all AC pass, no scratchpad):
+```
+Status: done
+AC: 1:✓ 2:✓ 3:✓ 4:✓
+Scratchpad: none
+Commits: none
+Blocker: none
+Notes: none
+```
+
+Review card with findings (scratchpad written):
+```
+Status: done
+AC: 1:✓ 2:✓ 3:✓ 4:✓ 5:✓
+Findings: 0 blocking, 0 high, 3 medium, 2 low
+Scratchpad: /Users/karlhepler/.config/nixpkgs/.scratchpad/1342-review.md
+Commits: none
+Blocker: none
+Notes: Finding #2 (medium) may affect card #1345 if it proceeds before fix.
+```
+
+Research card (finding-heavy):
+```
+Status: done
+AC: 1:✓ 2:✓ 3:✓ 4:✓ 5:✓ 6:✓
+Findings: 0 blocking, 1 high, 2 medium, 4 low
+Scratchpad: /Users/karlhepler/.config/nixpkgs/.scratchpad/1342-researcher.md
+Commits: none
+Blocker: none
+Notes: High finding invalidates assumption in card #1340; coordinator should review before proceeding.
+```
+
 ### Winding Down Sessions
 
 When a session's work is complete:
