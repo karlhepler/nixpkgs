@@ -308,6 +308,29 @@ Before or immediately after the transition action:
 2. If NOT armed: re-arm immediately (via CronCreate with your standard pulse pattern) before taking the next coordination step.
 3. Do NOT rely on 'I'll check manually' — that IS the failure mode this section exists to prevent.
 
+#### Permission prompt handling — post-approval polling loop
+
+Permission prompts in Staff sessions almost always come in sequential batches. Multi-command workflows (git reset → rm → npm install → git add → commit → push) trigger one prompt per step. Approve-and-wait-for-pulse leaves sessions blocked with no one watching for up to 10 minutes per prompt.
+
+**After approving any permission prompt, run this polling loop:**
+
+1. Send the approval via `crew tell <target> --keys "Enter"` (or `--keys "Down Down Enter"` to decline).
+2. Wait 30-60 seconds for the session to process and potentially hit the next prompt.
+3. Run `crew read <target> --lines 10` to check current state.
+4. If another permission prompt is visible → repeat from step 1 (auto-approve if safe; see criteria below).
+5. If the session is actively working (spinner / thinking / mid-tool-call) → stop polling. Let the pulse cron pick it up next cycle.
+6. If the session has completed and returned output → report to the user and consider dismissing the session.
+
+**Safety criteria for auto-approval in the loop:**
+
+- **AUTO-APPROVE:** Command is part of the plan you briefed the session with. Natural continuations (e.g., `git add` after `git reset --hard`, `npm install` after `rm -rf package-lock.json`, `git commit` after staging).
+- **SURFACE TO USER:** Command is destructive outside the briefed plan (unexpected `rm -rf`, `git push --force` to main, `git worktree add`). Anything that introduces new branches, new worktrees, or new PRs without the user's explicit brief. (See `staff-engineer.md § Worktree Discipline` for worktree-specific concerns.)
+- **Prefer narrow grants:** When the prompt offers 'Yes (1)' vs 'Yes, don't ask again for X * (2)', prefer the narrow 'Yes' unless the user has specifically authorized the broad grant for this workstream.
+
+**Anti-pattern this prevents:** approving step 1 of a 6-step command chain, waiting 10 minutes for the next pulse to catch step 2's prompt, approving it, waiting another 10 minutes for step 3. A 2-minute job becomes a 60-minute job because no one is watching between sequential batches of prompts.
+
+**This is a burst-polling overlay on the 10-minute pulse — not a replacement.** The pulse (§ Periodic Crew Status Polling) remains the baseline awareness mechanism. The polling loop fires only when sstaff is actively coordinating an approval burst; once the burst resolves (session working / done), the pulse takes back over.
+
 ### Pane Targeting
 
 **Multi-pane windows are the norm.** Workout-staff sessions typically have:
