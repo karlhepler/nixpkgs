@@ -278,6 +278,36 @@ When anything actionable surfaces, message the user proactively — don't wait t
 
 If `CronCreate` is unavailable, fall back to manual polling at natural checkpoints (between user turns).
 
+#### Pulse cron lifecycle — when to arm, when to stay silent, when to dismiss
+
+**Arm the pulse cron when:**
+- A Staff session is created and is working on a non-trivial task.
+- A previously-dismissed cron needs to resume because crew activity resumed (user-driven redirect, new workstream kicked off, a session unblocked and is making progress).
+
+**Stay silent (don't dismiss) when:**
+- The pulse cycle finds no actionable changes. Emit no user-visible text, or at most a single 'No change' line. **The cron staying alive is your awareness mechanism; it is NOT noise.** Your verbose coordinator output IS the noise — fix that (stay silent per the table above), don't dismiss the cron.
+
+**Dismiss the pulse cron ONLY when:**
+- ALL Staff sessions have been formally dismissed via `crew dismiss`.
+- The workstream is explicitly wound down and no further coordination is expected in this session.
+
+**Never dismiss the pulse cron when:**
+- One or more Staff sessions are alive (even if idle at a permission prompt or waiting on user input).
+- The user has recently acted to unblock / redirect a session and further progress is expected.
+
+#### Activity-resumption check (transition-aware re-arm)
+
+Whenever you take a coordination action that transitions a Staff session from idle → active, verify the pulse cron is armed. Transition-triggering actions include:
+- Approving a permission prompt
+- Sending a directive via `crew tell`
+- Relaying a user decision to a session
+- Providing a secret or artifact the session was waiting on
+
+Before or immediately after the transition action:
+1. `CronList` to check if the pulse cron is armed.
+2. If NOT armed: re-arm immediately (via CronCreate with your standard pulse pattern) before taking the next coordination step.
+3. Do NOT rely on 'I'll check manually' — that IS the failure mode this section exists to prevent.
+
 ### Pane Targeting
 
 **Multi-pane windows are the norm.** Workout-staff sessions typically have:
