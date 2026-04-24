@@ -93,7 +93,9 @@
 
           Remove processed bot comment entries from memory after handling them. Then proceed to step 2.
 
-          **2. Apply the tiered review table to determine required reviews.** Write all pending reviews to memory, then emit the FIRST required review event. If no reviews are required, emit `LOOP_COMPLETE`.
+          **2. 🚨 STOP condition — infinite-loop prevention (active prohibition, not an exemption).** Before emitting any review event, check memory for a `reviewed_files:` entry. If the files in this `work.done` payload are the SAME files reviewed in a PRIOR review this session, AND the payload indicates these changes are the direct fixes applied FROM that review → **do NOT emit another review event.** Emit `LOOP_COMPLETE` directly. Re-review-after-fix is PROHIBITED — it creates review → findings → fix → re-review cascades that never terminate. First-time reviews always run; re-review after applied findings never runs. (Note: the same STOP condition is mirrored in staff-engineer.md § Mandatory Review Protocol and in senior-staff-engineer.md § Mandatory Review Protocol — keep all three in sync if modifying.)
+
+          **3. Apply the tiered review table to determine required reviews.** Write all pending reviews to memory, then emit the FIRST required review event. If no reviews are required, emit `LOOP_COMPLETE`.
 
           ```bash
           ralph tools memory add "pending_reviews: security,backend" -t context

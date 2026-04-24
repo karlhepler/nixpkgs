@@ -169,6 +169,7 @@ Senior-staff's in-context state captures only what flowed through the coordinato
 - [ ] **New Session Needed** -- Does this require a new Staff Engineer session? Use `crew create <name> --tell "<brief>"` for a single session (add `--no-worktree` to work in an existing dir without creating a worktree) or `/workout-staff` (Skill tool directly) for batch creation. Never attempt background sub-agent delegation.
 - [ ] **Cross-Session Impact** -- Does new information affect other active sessions? If YES, relay via `crew tell` (multi-target) immediately. This check applies proactively to cross-cutting changes — see Cross-Session Coordination § Proactive Cross-Cutting Change Detection.
 - [ ] **Decision Questions** -- Did I ask a decision question last response that the user's current response did not address? If YES: re-ask via the same AskUserQuestion call in this response (user may have missed it). See § Decision Questions.
+- [ ] **Re-review detection** — About to instruct a Staff Engineer session to create a review card? Scan the target files against completed review cards in THAT SESSION. If any target file was reviewed earlier in that session AND the current changes are the applied findings from that review → STOP. Do not create the review card. Instruct the session to commit the fixes directly. (See § Mandatory Review Protocol STOP condition.)
 
 **Address all items before proceeding.**
 
@@ -812,9 +813,9 @@ The Staff Engineer in each session owns its own quality gates. Senior Staff does
 
 | Tier | Initiation | Action |
 |------|-----------|--------|
-| **Tier 1** | **Automatic — no user prompting, no waiting** | Staff Engineer creates review cards and delegates immediately. Never ask "should we do a review?" for Tier 1 items. Always run 100%. No asking, no hedging. ONE exemption — infinite-loop prevention: if a Tier 1 review was JUST completed on these files in the current session and the current changes are the direct fixes being applied FROM that review, do NOT re-trigger the review. Break the loop at one hop. First-time changes always trigger; review-fix cycles do not. |
-| **Tier 2** | **Automatic — default is to launch** | Staff Engineer creates review cards and delegates immediately. State: "Running [Y] review." User may redirect after the fact; you initiate without asking. Very strongly recommended — default to launching. Only skip if user explicitly directed otherwise in this session. Same infinite-loop exemption as Tier 1. |
-| **Tier 3** | Recommend and ask | "Tier 3 recommendation: [X] review. Worth doing?" — user decides per situation. Same infinite-loop exemption. |
+| **Tier 1** | **Automatic — no user prompting, no waiting** | Staff Engineer creates review cards and delegates immediately. Never ask "should we do a review?" for Tier 1 items. Always run 100%. No asking, no hedging. **🚨 STOP condition — infinite-loop prevention (applies to Tier 1 and Tier 2, not an exemption but an active prohibition).** Before creating any review card, check: are the target files the same files reviewed in an EARLIER review card THIS SESSION, where the current uncommitted changes are the direct fixes being applied from that review? If YES → **do NOT create the review card.** Apply findings and commit directly. Re-review-after-fix is PROHIBITED — it creates review → findings → fix → re-review cascades that never terminate. Break the loop at one hop. First-time reviews always run; re-review after applied findings never runs. (Note: the same STOP condition is mirrored in staff-engineer.md § Mandatory Review Protocol and in monty-burns.yml.tmpl — keep all three in sync if modifying.) |
+| **Tier 2** | **Automatic — default is to launch** | Staff Engineer creates review cards and delegates immediately. State: "Running [Y] review." User may redirect after the fact; you initiate without asking. Very strongly recommended — default to launching. Only skip if user explicitly directed otherwise in this session. Same STOP condition as Tier 1. |
+| **Tier 3** | Recommend and ask | "Tier 3 recommendation: [X] review. Worth doing?" — user decides per situation. Same STOP condition. |
 
 **Tier 1 (Always Mandatory):**
 - Prompt files (output-styles/*.md, agents/*.md, CLAUDE.md, hooks/*.md) -> AI Expert
@@ -1051,6 +1052,9 @@ Hard Rule #6 (unchanged — refers to the 'Never Guess, Always Investigate' rule
 - Not relaying cross-cutting changes to peer sessions -- leads to sessions diverging. Propagate via multi-target `crew tell` by default. See § Proactive Cross-Cutting Change Detection.
 - Overwhelming sessions with micro-management tells -- Staff Engineers are autonomous; give direction, not step-by-step instructions.
 - Relaying session status to the user without first verifying via `crew read` (see § Investigate Before Stating).
+
+**Review protocol violations:**
+- Re-review cascade — instructing a Staff Engineer to launch another Tier 1 or Tier 2 review on a card that applied findings from the previous review in the same session. Creates review → findings → fix → re-review loops that never terminate. The STOP condition exists precisely to prevent this; treat it as an active prohibition, not a passive exemption. (§ Mandatory Review Protocol)
 
 **Over-orchestration:**
 - Spinning up multiple sessions for single-focused work -- adds overhead without value.
