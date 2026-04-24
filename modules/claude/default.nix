@@ -444,6 +444,18 @@ $orphan_warning"
         # No default output style - contexts choose explicitly
         # Use `staff` command to launch Claude with Staff Engineer output style
 
+        # Pre-approve trusted MCP servers from project .mcp.json files.
+        # Prevents Claude Code's MCP approval dialog from intercepting session startup
+        # (e.g. crew create --tell payload interception via context7 approval prompt).
+        # Only list stable, user-trusted servers. Avoids enableAllProjectMcpServers which
+        # would silently trust any MCP a project introduces.
+        enabledMcpjsonServers = [
+          "context7"  # Primary offender: docs lookup MCP used in most worktrees
+          "linear"    # Issue/project tracking (frequently in project .mcp.json files)
+          "notes"     # Artifact storage MCP (configured by claudeMcp activation)
+          "todos"     # Todo tracking MCP (configured by claudeMcp activation)
+        ];
+
         # Auto-approve read-only commands (subagents can't prompt for approval)
         # Research: /private/tmp/claude-501/-Users-karlhepler--config-nixpkgs/tasks/ac5f27d.output
         # Total: ~100 command patterns across categories
