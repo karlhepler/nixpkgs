@@ -127,6 +127,8 @@ kanban list --since today                   # Date filter
 kanban list --session wise-cedar            # Session filter
 ```
 
+XML output is terse by design (contains only card number, status, session, and intent, each ≤200 chars). Use `kanban show` for full card content.
+
 ### Watch Mode
 
 Any command supports `--watch` for live auto-refresh on file changes:

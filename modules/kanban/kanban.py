@@ -2530,7 +2530,33 @@ def cmd_list(args) -> None:
             else:
                 other_cards[col].append((num, card))
 
-    # XML output: compact format with mine/others session delineation
+    # XML output: terse format for coordinator board awareness.
+    #
+    # Terse list schema (per <c> element) — designed for fast coordination
+    # queries, not content inspection. Coordinators need to know which cards
+    # are in flight, which files they are editing, and what each card is about
+    # at a glance. Full content belongs in `kanban show`.
+    #
+    # INCLUDED:
+    #   n   (attr)  — card number (required for all follow-up commands)
+    #   s   (attr)  — status/column (doing/review/todo/done/canceled)
+    #   ses (attr)  — session, only on <others> cards (omitted on <mine>)
+    #   <i>         — intent, truncated to 200 chars + "..." marker if longer.
+    #                 Intent is used instead of action: it is the "why" (concise
+    #                 by design), whereas action can be 2-3K chars of instructions.
+    #   <e>         — editFiles (coordination-critical: file conflict detection)
+    #
+    # EXCLUDED (use `kanban show <N> --output-style=xml` for these):
+    #   <a> / action    — main culprit; often 2000-3000 chars of instructions
+    #   <r> / readFiles — not coordination-critical; read access never conflicts.
+    #                     Excluded per user refinement to keep list maximally terse.
+    #   <criteria>      — full AC list including mov_commands
+    #   model, type, subagent_type, agent — not needed for list-level decisions
+    #   activity, comments — historical data; belongs in show/detail view
+    #
+    # INTENT TRUNCATION: 200 chars chosen to give enough context for a
+    # coordinator to identify what a card is about without blowing up
+    # token budgets on a 30-card board list.
     if output_style == "xml":
         esc = html.escape
 
@@ -2540,6 +2566,34 @@ def cmd_list(args) -> None:
         # Build session attribute for board tag
         session_attr = f' session="{esc(session_arg)}"' if session_arg else ""
         print(f"<board{session_attr}>")
+
+        _INTENT_MAX = 200  # chars; keep in sync with test_kanban_list_xml_schema.py
+
+        def _terse_intent(card: dict) -> str:
+            """Return intent truncated to _INTENT_MAX chars with ellipsis if cut."""
+            raw = card.get("intent", "").strip()
+            if len(raw) > _INTENT_MAX:
+                return esc(raw[:_INTENT_MAX]) + "..."
+            return esc(raw)
+
+        def _render_terse_card(num, card, col, ses_attr=""):
+            """Render one terse <c> element for list XML output.
+
+            Includes: card number (n), status (s), session (ses, others only),
+            intent <i> (truncated), editFiles <e>.
+            Excludes: readFiles, action, criteria, and all other metadata.
+            """
+            edit_files = card.get("editFiles") or card.get("writeFiles", [])
+            intent_text = _terse_intent(card)
+
+            parts = [f'<c n="{esc(num)}"{ses_attr} s="{esc(col)}">']
+            if intent_text:
+                parts.append(f"<i>{intent_text}</i>")
+            if edit_files:
+                edit_str = esc(",".join(sorted(edit_files)))
+                parts.append(f"<e>{edit_str}</e>")
+            parts.append("</c>")
+            return "".join(parts)
 
         # Determine which cards are mine vs others
         if session_arg:
@@ -2558,20 +2612,7 @@ def cmd_list(args) -> None:
             if mine_cards:
                 print("<mine>")
                 for num, card, col in mine_cards:
-                    action = esc(card.get("action", ""))
-                    edit_files = card.get("editFiles") or card.get("writeFiles", [])
-                    read_files = card.get("readFiles", [])
-
-                    parts = [f'<c n="{esc(num)}" s="{esc(col)}">']
-                    parts.append(f"<a>{action}</a>")
-                    if edit_files:
-                        edit_str = esc(",".join(sorted(edit_files)))
-                        parts.append(f"<e>{edit_str}</e>")
-                    if read_files:
-                        read_str = esc(",".join(sorted(read_files)))
-                        parts.append(f"<r>{read_str}</r>")
-                    parts.append("</c>")
-                    print("".join(parts))
+                    print(_render_terse_card(num, card, col))
                 print("</mine>")
 
             # Output <others> section
@@ -2579,21 +2620,8 @@ def cmd_list(args) -> None:
                 print("<others>")
                 for num, card, col in others_cards:
                     card_session = card.get("session", "")
-                    action = esc(card.get("action", ""))
-                    edit_files = card.get("editFiles") or card.get("writeFiles", [])
-                    read_files = card.get("readFiles", [])
-
                     ses_attr = f' ses="{esc(card_session)}"' if card_session else ""
-                    parts = [f'<c n="{esc(num)}"{ses_attr} s="{esc(col)}">']
-                    parts.append(f"<a>{action}</a>")
-                    if edit_files:
-                        edit_str = esc(",".join(sorted(edit_files)))
-                        parts.append(f"<e>{edit_str}</e>")
-                    if read_files:
-                        read_str = esc(",".join(sorted(read_files)))
-                        parts.append(f"<r>{read_str}</r>")
-                    parts.append("</c>")
-                    print("".join(parts))
+                    print(_render_terse_card(num, card, col, ses_attr=ses_attr))
                 print("</others>")
         else:
             # No session arg - treat all as mine
@@ -2608,20 +2636,7 @@ def cmd_list(args) -> None:
                 print("<mine>")
                 for col in columns_to_show:
                     for num, card in all_cards_by_column[col]:
-                        action = esc(card.get("action", ""))
-                        edit_files = card.get("editFiles") or card.get("writeFiles", [])
-                        read_files = card.get("readFiles", [])
-
-                        parts = [f'<c n="{esc(num)}" s="{esc(col)}">']
-                        parts.append(f"<a>{action}</a>")
-                        if edit_files:
-                            edit_str = esc(",".join(sorted(edit_files)))
-                            parts.append(f"<e>{edit_str}</e>")
-                        if read_files:
-                            read_str = esc(",".join(sorted(read_files)))
-                            parts.append(f"<r>{read_str}</r>")
-                        parts.append("</c>")
-                        print("".join(parts))
+                        print(_render_terse_card(num, card, col))
                 print("</mine>")
 
         print("</board>")
