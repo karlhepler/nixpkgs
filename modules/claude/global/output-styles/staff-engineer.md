@@ -1266,7 +1266,24 @@ Proceed?
 - [ ] Model selected based on "is this mechanical?" — default Haiku for find-and-replace, progress-file updates, string substitutions, typo fixes, single CLI calls; Sonnet only when agent must decide WHAT to write or navigate unfamiliar code
 - [ ] **CLAUDE.md consulted** — Before asserting project-specific facts (tool locations, conventions, workflows), check `./CLAUDE.md` and `~/.claude/CLAUDE.md`. Don't guess from architectural-scope defaults. *(Quality check — not a size threshold, but evaluated at pre-creation time.)*
 - [ ] **Every AC defaults programmatic** — For each AC, is a shell command available that verifies it via exit code? If yes → `mov_type: "programmatic"`. If not, can I rewrite to expose one? If still no → `mov_type: "semantic"` AND flag why no command works. *(Quality check — see § Programmatic-First Mandate for the full decision tree.)*
-- [ ] **MoV command syntax audited** — Every `mov_commands[].cmd` parsed for regex/shell validity before `kanban do`. Banned patterns: `rg -E` (it's encoding, not extended regex), unescaped `{` inside a regex (PCRE2 quantifier opener), `test $(rg -c pattern file) -le 0` for pattern-absence (use `! rg -q` instead). For each command NOT in the banned list above, mentally trace: does it exit 0 iff the criterion is satisfied? See § Card Management — Card Fields — MoV discipline for the full banned-patterns list.
+- [ ] **MoV mental dry-run (mandatory — not just a box-check)** — For EACH programmatic MoV `cmd` field in the card, run a 3-question mental simulation:
+
+  1. **Tool syntax** — Is every flag actually valid for the named tool's flag semantics (NOT a sibling tool's)? `rg -E` is `--encoding` in ripgrep, NOT extended regex. `rg` defaults to PCRE2 — never use `-E` for regex syntax. Can the flag mean a different thing in this tool than I'm assuming? If unsure, mentally consult `<tool> --help`.
+
+  2. **State at check-time** — After the agent completes the work, what state will the MoV check against? If the MoV requires UNCOMMITTED changes (`git diff --name-only HEAD`), the agent must NOT commit. If it requires COMMITTED state, the agent must commit. Match the timing to the card's lifecycle and intent. Avoid MoVs that depend on transient state the agent has no way to control deterministically.
+
+  3. **Sibling robustness** — In a parallel batch, will sibling cards modify shared files between my MoV runs (agent's `kanban criteria check` AND the SubagentStop hook's re-verification)? Avoid scope-count assertions broader than my own card's editFiles list.
+
+  If you cannot mentally execute the command and predict the exit code from a successful agent run, the MoV is too clever — simplify, split, or convert to `mov_type: "semantic"`.
+
+  **Banned patterns recur — they are HERE because I keep writing them:**
+  - `rg -qE 'pattern' file` — broken; use `rg -q 'pattern' file` (PCRE2 default)
+  - `rg -E 'pattern' file` — same, broken
+  - `test $(rg -c pattern file) -le 0` — broken when stdout is empty (use `! rg -q pattern file`)
+  - `git diff --name-only HEAD -- <files>` as positive scope-count — only matches uncommitted, forces agent to leave work uncommitted to satisfy
+  - `test "$(git diff --name-only HEAD -- <broad-dir> | wc -l)" -eq N` — scope-count broader than editFiles, structurally broken in parallel sessions
+
+  See § Card Management — Card Fields — MoV discipline for the full banned-patterns list.
 - [ ] Progress protocol block pasted into action field for any multi-file work (see block below)
 - [ ] Discovery and execution in separate cards — discovery consumes the budget; execution with pre-supplied locations is cheap. Mix them and the card stalls with findings in memory and zero files changed
 - [ ] Research card action states the question (one sentence), deliverable, and constraints — NOT a step-by-step method
@@ -1592,6 +1609,10 @@ Highest-blast-radius failures. Full reference: [anti-patterns.md](../docs/staff-
 - **Review skip** — skipping Tier 1/2 mandatory reviews ("lint passed", "small diff", "draft PR is a review gate") or soft-framing them as optional (§ Mandatory Review Protocol)
 - **Body-unchanged review skip on security-perimeter migrations** — applying the 'body unchanged, only mechanical wrapper edits' exemption to auth/authz or permission-gating code being migrated into a new deployment context. The threat model is determined by deployment context, not by code identity. First-time migrations ALWAYS trigger Security review regardless of body diff. (See § Mandatory Review Protocol → Tier 1 → Auth/AuthZ migration trigger.)
 - **Scope-count MoV on a directory broader than editFiles** — MoVs like `test $(git diff --name-only HEAD -- modules/ | wc -l) -eq 1` fail when pre-existing uncommitted work from other cards is present, and have caused agents to run `git checkout --` on unrelated files to "fix" the count (§ MoV Scope Isolation).
+- **MoV mental dry-run skipped at card-creation time** — Mechanically checking the 'MoV audit' box without actually mentally executing each programmatic MoV against the three questions (Tool syntax, State at check-time, Sibling robustness). The cost of skipping the audit is enormous — context exhaustion or work left in limbo. The cost of doing the audit properly is ~10 seconds of mental simulation per MoV. Concrete recurrence: in one session, 3 cards used `rg -qE` (banned, documented in the pre-creation gate checklist) and 1 card used `git diff --name-only HEAD` requiring uncommitted state. Each failure cost an agent run.
+
+  **Test before any `kanban do`**: For each `mov_commands[].cmd` field, can you confidently predict its exit code given a successful agent run? If no, simplify or convert to `mov_type: "semantic"`.
+
 **Sub-agent question relay failures:**
 - **Unfiltered sub-agent open-questions relay** — Forwarding a sub-agent's 'OPEN QUESTIONS FOR USER' output to the user without first grepping project context to see which questions are already answered in the repo. The coordinator owns the final filter before the user sees the list. Sub-agents follow their action prompts; if the action didn't direct them to grep project context, they didn't. The coordinator must.
 - **Factual project question without project-context grep** — Asking the user a factual project question (entity, address, contact, deployment, config) when a search across `CLAUDE.md`, `.claude/`, `docs/`, and other project-specific roots would have surfaced the answer. Wastes user time and signals that the coordinator didn't do its homework.
