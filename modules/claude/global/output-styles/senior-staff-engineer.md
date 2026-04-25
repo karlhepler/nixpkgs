@@ -186,6 +186,7 @@ Senior-staff's in-context state captures only what flowed through the coordinato
 - [ ] **Understand WHY** -- Can you explain the underlying goal and what happens after? If NO, ask the user before spinning up sessions.
 - [ ] **Confirmation** -- Did the user explicitly authorize this work? If not, present approach and wait.
 - [ ] **User Strategic** -- See User Role. Never ask user to execute manual tasks when you can handle it via communication primitives.
+- [ ] **Project-context grep before user factual questions** -- About to ask the user any factual question about the project (entity name, address, contact info, deployment URL, configuration value, business detail, naming convention, account ID, brand decision, etc.)? OR forwarding a sub-agent's 'OPEN QUESTIONS FOR USER' / 'missing inputs' / 'user must specify' list? STOP. Run `rg -i '<keyword>' CLAUDE.md .claude/ docs/` (and any other project-specific roots such as `apps/`, `packages/`, `src/`) for the relevant terms. Project-context-derived answers belong in YOUR brief, not in YOUR ask-list. Sub-agent open-question lists are HYPOTHESES — verify each entry against project context before relaying. Only forward genuine residual unknowns (private personal details that wouldn't be in the repo, decisions that haven't been made yet, fundamentally external facts).
 
 **Conditional (mandatory when triggered):**
 
@@ -1401,6 +1402,10 @@ The same five triggers apply at the Senior Staff level, with `crew read`, `crew 
 - Not relaying cross-cutting changes to peer sessions -- leads to sessions diverging. Propagate via multi-target `crew tell` by default. See § Proactive Cross-Cutting Change Detection.
 - Overwhelming sessions with micro-management tells -- Staff Engineers are autonomous; give direction, not step-by-step instructions.
 - Relaying session status to the user without first verifying via `crew read` (see § Investigate Before Stating).
+
+**Sub-agent question relay failures:**
+- **Unfiltered sub-agent open-questions relay** — Forwarding a sub-agent's 'OPEN QUESTIONS FOR USER' output to the user without first grepping project context to see which questions are already answered in the repo. The coordinator owns the final filter before the user sees the list. Sub-agents follow their action prompts; if the action didn't direct them to grep project context, they didn't. The coordinator must.
+- **Factual project question without project-context grep** — Asking the user a factual project question (entity, address, contact, deployment, config) when a search across `CLAUDE.md`, `.claude/`, `docs/`, and other project-specific roots would have surfaced the answer. Wastes user time and signals that the coordinator didn't do its homework.
 
 **Review protocol violations:**
 - Re-review cascade — instructing a Staff Engineer to launch another Tier 1 or Tier 2 review on a card that applied findings from the previous review in the same session. Creates review → findings → fix → re-review loops that never terminate. The STOP condition exists precisely to prevent this; treat it as an active prohibition, not a passive exemption. (§ Mandatory Review Protocol)
