@@ -720,7 +720,7 @@ def validate_criteria_schema(criteria: list) -> None:
       Missing mov_type is rejected (no default — greenfield only, no backward compat).
     - V4 schema fields (mov_command, mov_timeout singular) are REJECTED with a clear error.
     - Programmatic criteria must have mov_commands: non-empty array of {cmd, timeout} objects.
-      Each element: cmd (non-empty string, passes bash -n), timeout (int 1-300).
+      Each element: cmd (non-empty string, passes bash -n), timeout (int 1-1800).
     - Semantic criteria must have mov_commands absent or empty array.
 
     Raises SystemExit on any validation failure.
@@ -812,11 +812,11 @@ def validate_criteria_schema(criteria: list) -> None:
                     )
                     sys.exit(1)
 
-                # timeout: MANDATORY, integer 1-300
+                # timeout: MANDATORY, integer 1-1800
                 if timeout is None:
                     print(
                         f"Error: Criterion {i} ('{text[:60]}') mov_commands[{j}] missing 'timeout'. "
-                        f"timeout is required (integer, 1-300 seconds).",
+                        f"timeout is required (integer, 1-1800 seconds, max 30 minutes).",
                         file=sys.stderr,
                     )
                     sys.exit(1)
@@ -829,10 +829,10 @@ def validate_criteria_schema(criteria: list) -> None:
                     )
                     sys.exit(1)
 
-                if timeout < 1 or timeout > 300:
+                if timeout < 1 or timeout > 1800:
                     print(
                         f"Error: Criterion {i} ('{text[:60]}') mov_commands[{j}] timeout {timeout} "
-                        f"is out of range. Must be 1-300 seconds.",
+                        f"is out of range. Must be 1-1800 seconds (max 30 minutes).",
                         file=sys.stderr,
                     )
                     sys.exit(1)

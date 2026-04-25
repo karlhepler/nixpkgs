@@ -1094,7 +1094,7 @@ The debugger performs hypothesis-testing EXPERIMENTS as part of its methodology.
   ```
   Reason: subjective inspection command — no exit code semantics, requires reading and judging code. Use `mov_type: "semantic"` for this.
 
-  **`timeout` is mandatory** on every command in `mov_commands`. Typical values: 5–30 seconds for file checks and `rg` commands; up to 120 seconds for test runners. Cap at 300 seconds.
+  **`timeout` is mandatory** on every command in `mov_commands`. Typical values: 5–30 seconds for file checks and `rg` commands; up to 120 seconds for test runners. Cap at 1800 seconds (30 minutes).
 
   **Pattern-absence assertions — use `! rg -q` not `test $(rg -c ...) -le 0`.** When an MoV asserts that a pattern does NOT appear in a file, the correct idiom is:
 
