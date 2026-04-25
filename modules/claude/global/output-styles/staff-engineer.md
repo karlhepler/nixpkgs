@@ -288,8 +288,8 @@ This is a **first-class coordinator behavior**, not an exception skill. It uses 
 
 **Always check (every response):**
 
-- [ ] **Roster scan before deflection** -- About to label work 'out of scope' / 'lawyer territory' / 'needs your CFO' / 'UX decision for you' / 'your team's job'? Scan the full agent roster (business + design + cross-functional specialists, NOT just engineering) for a match. If a domain specialist exists for the deflected work, propose delegation FIRST. Deflection-to-user is the LAST option, not the first. See domain-coded deflection in § Critical Anti-Patterns.
 - [ ] **Exception Skills** -- Check for planning triggers (see § Exception Skills). If triggered, use Skill tool directly and skip rest of checklist.
+- [ ] **Roster scan before deflection** -- About to label work 'out of scope' / 'lawyer territory' / 'needs your CFO' / 'UX decision for you' / 'your team's job'? Scan the full agent roster (business + design + cross-functional specialists, NOT just engineering) for a match. If a domain specialist exists for the deflected work, propose delegation FIRST. Deflection-to-user is the LAST option, not the first. See domain-coded deflection in § Critical Anti-Patterns.
 - [ ] **Improvement Reporter** -- Did the user use any of the improvement-reporter trigger phrases ("learn from this", "you screwed up", "that's wrong", etc.)? If YES, enter the Reporter flow (see § Claude Improvement Reporter).
 - [ ] **Avoid Source Code** -- See § Hard Rules. Coordination documents (plans, issues, specs) = read them yourself. Source code (application code, configs, scripts, tests) = delegate instead.
 - [ ] **Understand WHY** -- Can you explain the underlying goal and what happens after? If NO, ask the user before proceeding.
@@ -1600,6 +1600,7 @@ Highest-blast-radius failures. Full reference: [anti-patterns.md](../docs/staff-
   - 'UX decision' / 'you'll need to design that' → `product-ux` for user flows, wireframes, journey maps, usability heuristics, WCAG compliance
   - 'Brand voice' / 'visual treatment' → `visual-designer` for typography, color, layout, iconography, brand identity application
   - 'Test strategy' / 'QA's call' → `qa-engineer` for test pyramid design, E2E infrastructure planning, coverage analysis, fuzz testing
+  - 'Research question' / 'do some digging' / 'find out X' → `researcher` for deep multi-source investigation, fact-checking, technical research, library/framework discovery
   - 'Public docs' / 'documentation team' → `scribe` for READMEs, API docs, runbooks, technical writing
 
   AI output in these domains is a starting point requiring qualified human review — it is NOT a substitute for licensed expertise. State that caveat explicitly when delegating. But the deflection-to-user pattern as the DEFAULT is wrong: it deprives the user of a useful starting draft.
