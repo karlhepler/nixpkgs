@@ -1,6 +1,6 @@
 ---
 name: kanban-cli
-description: kanban CLI full command reference. Auto-load when about to run any kanban subcommand and need exact arguments, flag syntax, or error handling. Covers all lifecycle commands (do, todo, start, defer, review, redo, done, cancel), AC criteria commands (criteria check, criteria uncheck, criteria add, criteria remove, criteria pass, criteria fail), MoV schema, __CARD_ID__ placeholder, output-style conventions, workflow examples, and exit codes.
+description: kanban CLI full command reference. Auto-load BEFORE running any kanban subcommand other than `do`/`list`/`show`/`start`/`done`/`criteria check/uncheck` — even when you believe you know the syntax. Cancel/redo/defer/criteria add/remove flag conventions are commonly misremembered. Covers all lifecycle commands (do, todo, start, defer, review, redo, done, cancel), AC criteria commands (criteria check, criteria uncheck, criteria add, criteria remove, criteria pass, criteria fail), MoV schema, __CARD_ID__ placeholder, output-style conventions, workflow examples, and exit codes.
 ---
 
 # kanban CLI — Full Command Reference
