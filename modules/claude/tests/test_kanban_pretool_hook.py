@@ -882,3 +882,323 @@ class TestDestructiveGitSafeguard:
         )
         result = run_hook_main(hook, payload)
         assert_allowed(result)
+
+
+# ---------------------------------------------------------------------------
+# Helpers for .kanban/ path guard tests
+# ---------------------------------------------------------------------------
+
+def make_edit_payload(file_path: str) -> dict:
+    """Build a minimal PreToolUse Edit payload."""
+    return {
+        "tool_name": "Edit",
+        "tool_input": {
+            "file_path": file_path,
+            "old_string": "foo",
+            "new_string": "bar",
+        },
+    }
+
+
+def make_write_payload(file_path: str) -> dict:
+    """Build a minimal PreToolUse Write payload."""
+    return {
+        "tool_name": "Write",
+        "tool_input": {
+            "file_path": file_path,
+            "content": "{}",
+        },
+    }
+
+
+def make_multiedit_payload(file_path: str) -> dict:
+    """Build a minimal PreToolUse MultiEdit payload."""
+    return {
+        "tool_name": "MultiEdit",
+        "tool_input": {
+            "file_path": file_path,
+            "edits": [],
+        },
+    }
+
+
+def make_notebook_edit_payload(notebook_path: str) -> dict:
+    """Build a minimal PreToolUse NotebookEdit payload."""
+    return {
+        "tool_name": "NotebookEdit",
+        "tool_input": {
+            "notebook_path": notebook_path,
+            "cell_type": "code",
+            "source": "",
+        },
+    }
+
+
+class TestKanbanPathGuard:
+    """Tests for the .kanban/ path guard in _check_kanban_path_guard.
+
+    Verifies that direct file writes to .kanban/ are denied, reads are allowed,
+    and kanban CLI commands are always allowed.
+    """
+
+    # --- Edit ---
+
+    def test_edit_kanban_path_denied(self, hook):
+        """Edit on .kanban/doing/123.json must be denied."""
+        payload = make_edit_payload(".kanban/doing/123.json")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "Direct file modification of .kanban/")
+
+    def test_edit_kanban_nested_denied(self, hook):
+        """Edit on a nested .kanban/ path must be denied."""
+        payload = make_edit_payload(".kanban/done/456.json")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "Direct file modification of .kanban/")
+
+    def test_edit_normal_file_allowed(self, hook):
+        """Edit on src/foo.py (outside .kanban/) must be allowed."""
+        payload = make_edit_payload("src/foo.py")
+        result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+    # --- Write ---
+
+    def test_write_kanban_path_denied(self, hook):
+        """Write on .kanban/.perm-tracking.json must be denied."""
+        payload = make_write_payload(".kanban/.perm-tracking.json")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "Direct file modification of .kanban/")
+
+    def test_write_normal_file_allowed(self, hook):
+        """Write on src/config.py (outside .kanban/) must be allowed."""
+        payload = make_write_payload("src/config.py")
+        result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+    # --- MultiEdit ---
+
+    def test_multiedit_kanban_path_denied(self, hook):
+        """MultiEdit on .kanban/done/456.json must be denied."""
+        payload = make_multiedit_payload(".kanban/done/456.json")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "Direct file modification of .kanban/")
+
+    # --- NotebookEdit ---
+
+    def test_notebook_edit_kanban_path_denied(self, hook):
+        """NotebookEdit on .kanban/whatever.ipynb must be denied."""
+        payload = make_notebook_edit_payload(".kanban/whatever.ipynb")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "Direct file modification of .kanban/")
+
+    # --- Bash: mutation patterns → DENY ---
+
+    def test_bash_python_mutation_denied(self, hook):
+        """Bash with python3 -c '... .kanban/ ...' must be denied."""
+        payload = make_bash_payload("python3 -c 'import json; open(\".kanban/doing/123.json\", \"w\")'")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "Direct file modification of .kanban/")
+
+    def test_bash_sed_inplace_kanban_denied(self, hook):
+        """Bash with sed -i on .kanban/ path must be denied."""
+        payload = make_bash_payload("sed -i 's/foo/bar/' .kanban/doing/123.json")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "Direct file modification of .kanban/")
+
+    def test_bash_redirect_kanban_denied(self, hook):
+        """Bash with shell redirection writing to .kanban/ must be denied."""
+        payload = make_bash_payload("echo {} > .kanban/file.json")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "Direct file modification of .kanban/")
+
+    def test_bash_rm_kanban_denied(self, hook):
+        """Bash with rm .kanban/doing/123.json must be denied."""
+        payload = make_bash_payload("rm .kanban/doing/123.json")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "Direct file modification of .kanban/")
+
+    # --- Bash: reads → ALLOW ---
+
+    def test_bash_cat_kanban_allowed(self, hook):
+        """Bash with cat .kanban/doing/123.json (read) must be allowed."""
+        payload = make_bash_payload("cat .kanban/doing/123.json")
+        result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+    # --- Bash: kanban CLI → ALLOW ---
+
+    def test_bash_kanban_criteria_check_allowed(self, hook):
+        """Bash with 'kanban criteria check 123 1' must be allowed."""
+        payload = make_bash_payload("kanban criteria check 123 1")
+        result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+    def test_bash_kanban_list_allowed(self, hook):
+        """Bash with 'kanban list' must be allowed."""
+        payload = make_bash_payload("kanban list")
+        result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+    def test_bash_kanban_show_allowed(self, hook):
+        """kanban show reads from .kanban/ internally — still allowed via CLI allowlist."""
+        payload = make_bash_payload("kanban show 42 --session test-session")
+        result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+    # --- Denial message content ---
+
+    def test_denial_message_includes_kanban_cli_guidance(self, hook):
+        """Denial message must include kanban CLI guidance and prohibition text."""
+        payload = make_edit_payload(".kanban/doing/123.json")
+        result = run_hook_main(hook, payload)
+        reason = result["hookSpecificOutput"]["permissionDecisionReason"]
+        assert "kanban CLI" in reason or "kanban criteria" in reason
+        assert ".kanban/" in reason
+
+    # --- Unit tests for helper functions ---
+
+    def test_is_under_kanban_dir_relative(self, hook):
+        """_is_under_kanban_dir: relative .kanban/ path → True."""
+        assert hook._is_under_kanban_dir(".kanban/doing/123.json") is True
+
+    def test_is_under_kanban_dir_nested(self, hook):
+        """_is_under_kanban_dir: nested .kanban/ component → True."""
+        assert hook._is_under_kanban_dir(".kanban/done/456.json") is True
+
+    def test_is_under_kanban_dir_normal_path(self, hook):
+        """_is_under_kanban_dir: normal path → False."""
+        assert hook._is_under_kanban_dir("src/foo.py") is False
+
+    def test_is_under_kanban_dir_empty(self, hook):
+        """_is_under_kanban_dir: empty string → False."""
+        assert hook._is_under_kanban_dir("") is False
+
+    def test_is_kanban_cli_command_kanban(self, hook):
+        """_is_kanban_cli_command: 'kanban list' → True."""
+        assert hook._is_kanban_cli_command("kanban list") is True
+
+    def test_is_kanban_cli_command_kanban_show(self, hook):
+        """_is_kanban_cli_command: 'kanban show 42' → True."""
+        assert hook._is_kanban_cli_command("kanban show 42") is True
+
+    def test_is_kanban_cli_command_not_kanban(self, hook):
+        """_is_kanban_cli_command: 'rm .kanban/foo' → False."""
+        assert hook._is_kanban_cli_command("rm .kanban/foo") is False
+
+    def test_is_kanban_cli_command_python_not_kanban(self, hook):
+        """_is_kanban_cli_command: python mutation command → False."""
+        assert hook._is_kanban_cli_command("python3 -c 'open(\".kanban/x\", \"w\")'") is False
+
+    # --- Allowlist anchor: kanban-prefixed binary NOT allowlisted ---
+
+    def test_is_kanban_cli_command_kanban_prefixed_binary_false(self, hook):
+        """_is_kanban_cli_command: 'kanban-foo ...' → False (not the kanban CLI).
+
+        kanban-foo is a different binary. The anchored regex must not match it
+        as a kanban CLI command. (Whether the bash call is denied depends on
+        whether a deny pattern also fires — e.g. if it redirects to .kanban/.)
+        """
+        assert hook._is_kanban_cli_command("kanban-foo write .kanban/file.json") is False
+
+    def test_bash_kanban_prefixed_binary_with_redirect_denied(self, hook):
+        """Bash with 'kanban-foo write > .kanban/file.json' must be DENIED.
+
+        kanban-foo is not the kanban CLI (allowlist doesn't fire), and the
+        shell redirect to .kanban/ matches the deny pattern.
+        """
+        payload = make_bash_payload("kanban-foo write > .kanban/file.json")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "Direct file modification of .kanban/")
+
+    def test_bash_nix_shell_p_kanban_denied(self, hook):
+        """Bash with 'nix-shell -p kanban -c ...' writing to .kanban/ must be DENIED.
+
+        'kanban' here is a flag argument to nix-shell — not an invocation of the
+        kanban CLI. The anchored regex must not allowlist this.
+        The command also writes to .kanban/ so it is caught by the redirect deny pattern.
+        """
+        payload = make_bash_payload("nix-shell -p kanban -c 'echo x > .kanban/foo.json'")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "Direct file modification of .kanban/")
+
+    def test_is_kanban_cli_command_nix_shell_false(self, hook):
+        """_is_kanban_cli_command: 'nix-shell -p kanban -c ...' → False."""
+        assert hook._is_kanban_cli_command("nix-shell -p kanban -c 'kanban list'") is False
+
+    def test_bash_echo_kanban_allowed(self, hook):
+        """Bash with 'echo kanban' must be ALLOWED — no .kanban/ path involved."""
+        payload = make_bash_payload("echo kanban")
+        result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+    # --- Symlink bypass: ln / cp -s → DENY ---
+
+    def test_bash_ln_kanban_denied(self, hook):
+        """Bash with 'ln -s real .kanban/symlink' must be DENIED.
+
+        ln creates a symlink (or hard link) that could allow mutation via the
+        symlink target. This is a symlink-bypass vector — block it.
+        """
+        payload = make_bash_payload("ln -s real .kanban/symlink")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "Direct file modification of .kanban/")
+
+    def test_bash_link_kanban_denied(self, hook):
+        """Bash with 'link src .kanban/dst' must be DENIED."""
+        payload = make_bash_payload("link src .kanban/dst")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "Direct file modification of .kanban/")
+
+    def test_bash_cp_s_kanban_denied(self, hook):
+        """Bash with 'cp -s src .kanban/foo' must be DENIED.
+
+        cp -s creates a symbolic link — this is a symlink bypass vector.
+        """
+        payload = make_bash_payload("cp -s src .kanban/foo")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "Direct file modification of .kanban/")
+
+    def test_bash_cp_symbolic_kanban_denied(self, hook):
+        """Bash with 'cp --symbolic src .kanban/foo' must be DENIED."""
+        payload = make_bash_payload("cp --symbolic src .kanban/foo")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "Direct file modification of .kanban/")
+
+    # --- jq --argfile is a read, not a write → ALLOW ---
+
+    def test_bash_jq_argfile_kanban_allowed(self, hook):
+        """Bash with 'jq --argfile X .kanban/x.json \".\"' must be ALLOWED.
+
+        jq --argfile reads the file as input — it does not mutate it. The
+        false-positive deny pattern for jq --argfile has been removed.
+        """
+        payload = make_bash_payload("jq --argfile X .kanban/x.json '\"$X\"' input.json")
+        result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+    def test_bash_jq_i_kanban_denied(self, hook):
+        """Bash with 'jq -i \".\" .kanban/x.json' must be DENIED.
+
+        jq -i edits the file in place (in-place mutation) — block it.
+        """
+        payload = make_bash_payload("jq -i \".\" .kanban/x.json")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "Direct file modification of .kanban/")
+
+    # --- python3 word boundary: no trailing slash → DENY ---
+
+    def test_bash_python3_no_trailing_slash_denied(self, hook):
+        """Bash with python3 -c '...' referencing .kanban without trailing slash → DENIED.
+
+        The updated pattern uses \\b instead of trailing / so it catches references
+        like open(\".kanban\", \"w\") without a path separator after .kanban.
+        """
+        payload = make_bash_payload("python3 -c 'import os; os.chdir(\".kanban\")'")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "Direct file modification of .kanban/")
+
+    def test_bash_python3_open_no_trailing_slash_denied(self, hook):
+        """Bash with python3 -c 'open(\".kanban/x\",\"w\")' must be DENIED (regression)."""
+        payload = make_bash_payload("python3 -c 'open(\".kanban/x\",\"w\")'")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "Direct file modification of .kanban/")

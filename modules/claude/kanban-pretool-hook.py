@@ -205,6 +205,152 @@ def inject_card_into_prompt(prompt: str, card_xml: str, card_number: str, sessio
 
 
 # ---------------------------------------------------------------------------
+# .kanban/ path guard (Edit, Write, MultiEdit, NotebookEdit, Bash)
+# ---------------------------------------------------------------------------
+
+# The protected directory prefix. Confirmed in modules/kanban/kanban.py line 215:
+# `root = base_dir / ".kanban"`
+_KANBAN_DIR = ".kanban"
+
+# Bash commands that identify the kanban CLI — always allowed even if the
+# argument string mentions .kanban/ paths.
+# Anchored to start-of-command with negative lookahead to prevent false positives:
+#   - `kanban-foo write .kanban/file.json` → NOT matched (kanban-prefixed binary)
+#   - `nix-shell -p kanban -c '...'`       → NOT matched (kanban as flag arg)
+#   - `echo 'kanban'`                       → NOT matched (kanban as shell text)
+# Correctly matches:
+#   - `kanban list`                                     → matched
+#   - `kanban criteria check 1 2 --session free-brook`  → matched
+#   - `/nix/store/abc123-kanban/bin/kanban list`        → matched
+#   - `.kanban-wrapped list`                            → matched
+# The negative lookahead `(?![-\w])` ensures `kanban` is NOT followed by `-` or
+# alphanumeric characters — so `kanban-foo` does not match (hyphen-prefixed binary).
+_KANBAN_CLI_RE = re.compile(
+    r'^\s*(?:kanban(?![-\w])|\.kanban-wrapped\b|/[^\s]*/bin/kanban\b)',
+)
+
+# Regex patterns for Bash mutation operations targeting .kanban/
+# Each pattern is compiled case-insensitively. All use raw string literals.
+# Note: patterns use \b word boundary instead of trailing / to also catch
+# references like `.kanban` without a trailing slash (e.g. os.chdir(".kanban")).
+_KANBAN_BASH_DENY_PATTERNS: list[re.Pattern] = [
+    # shell redirection writing to .kanban/
+    re.compile(r'(>|>>)\s*\.?\.?/?\.?/?\.?kanban/', re.IGNORECASE),
+    # in-place edits via sed
+    re.compile(r'\bsed\s+(-i|--in-place)\b.*\.kanban\b', re.IGNORECASE),
+    # awk to .kanban/
+    re.compile(r'\bawk\b.*>\s*.*\.kanban\b', re.IGNORECASE),
+    # jq in-place mutation (--argfile is a read, not a write — excluded)
+    re.compile(r'\bjq\b.*-i.*\.kanban\b', re.IGNORECASE),
+    # python invocations referencing .kanban (with or without trailing slash)
+    re.compile(r'\bpython3?\s+(-c|-m).*\.kanban\b', re.IGNORECASE),
+    # perl in-place
+    re.compile(r'\bperl\s+(-i|-pe).*\.kanban\b', re.IGNORECASE),
+    # file moves/deletes/links — ln and link create symlinks (symlink bypass)
+    re.compile(r'\b(rm|mv|cp|ln|link)\b.*\.kanban/', re.IGNORECASE),
+    # cp -s / cp --symbolic creates a symlink (separate pattern for flag order)
+    re.compile(r'\bcp\s+(-s|--symbolic)\b.*\.kanban\b', re.IGNORECASE),
+    # tee
+    re.compile(r'\btee\s+.*\.kanban\b', re.IGNORECASE),
+]
+
+_KANBAN_PATH_DENY_MESSAGE = (
+    "Direct file modification of .kanban/ is prohibited. "
+    "Use the kanban CLI: `kanban criteria check`, `kanban criteria uncheck`, etc. "
+    "If the AC is broken, stop and report — do not work around it."
+)
+
+
+def _is_under_kanban_dir(path_str: str) -> bool:
+    """Return True if path_str is under the .kanban/ directory.
+
+    Handles both absolute paths and relative paths. Does not resolve symlinks
+    (intentional: we check the literal path the tool was given, not what it
+    resolves to — an agent providing a .kanban/ path is always suspicious).
+    """
+    if not path_str:
+        return False
+    p = Path(path_str)
+    # Check each component — handles both relative (.kanban/foo) and
+    # absolute paths that contain .kanban/ anywhere in the hierarchy.
+    parts = p.parts
+    return _KANBAN_DIR in parts or (len(parts) > 0 and parts[0] == _KANBAN_DIR)
+
+
+def _is_kanban_cli_command(command: str) -> bool:
+    """Return True if the Bash command invokes the kanban CLI binary.
+
+    The kanban CLI is always allowed — even if its arguments reference .kanban/
+    paths (e.g., `kanban show` reads from .kanban/ internally). Checks for:
+    - `kanban <args>` at the start of the command (anchored — NOT mid-string)
+    - `.kanban-wrapped <args>` (the nix shim)
+    - Any nix-store path ending in `/bin/kanban` at start of command
+
+    Anchored to start-of-command to prevent false positives:
+    - `kanban-foo write .kanban/file.json` → False (different binary)
+    - `nix-shell -p kanban -c '...'` → False (kanban as a flag argument)
+    - `echo 'kanban'` → False (kanban as shell text, no .kanban/ involved)
+    """
+    return bool(_KANBAN_CLI_RE.search(command))
+
+
+def _check_kanban_path_guard(tool_name: str, tool_input: dict) -> "tuple[bool, str]":
+    """Check whether a tool call targets a path under .kanban/.
+
+    Returns (allowed: bool, reason: str).
+    - allowed=True  → tool call is permitted; reason is empty.
+    - allowed=False → tool call must be denied; reason explains why.
+
+    Rules:
+    - Edit/Write/MultiEdit on .kanban/* → DENY
+    - NotebookEdit on .kanban/* → DENY
+    - Bash invoking the kanban CLI → ALLOW unconditionally (checked first)
+    - Bash with mutation patterns targeting .kanban/ → DENY
+    - All reads (cat, rg, ls, etc.) targeting .kanban/ → ALLOW (no path guard)
+    - All other tools → ALLOW
+
+    # Known regex limitations: this guard cannot catch every Bash bypass.
+    # Examples that evade detection (caught instead by the prompt-level
+    # prohibition in modules/claude/global/agents/*.md):
+    #   - `cd .kanban/doing && python3 -c '...'` (cd first, then mutate)
+    #   - `K=.kanban; sed -i 's/x/y/' $K/foo.json` (var substitution)
+    #   - `bash -c 'echo x > .kanban/foo'` (extra shell layer)
+    # The prompt-level rule is the primary defense; this regex is a backstop.
+    """
+    if tool_name in ("Edit", "Write"):
+        file_path = tool_input.get("file_path", "") or ""
+        if _is_under_kanban_dir(file_path):
+            return (False, _KANBAN_PATH_DENY_MESSAGE)
+        return (True, "")
+
+    if tool_name == "MultiEdit":
+        file_path = tool_input.get("file_path", "") or ""
+        if _is_under_kanban_dir(file_path):
+            return (False, _KANBAN_PATH_DENY_MESSAGE)
+        return (True, "")
+
+    if tool_name == "NotebookEdit":
+        notebook_path = tool_input.get("notebook_path", "") or ""
+        if _is_under_kanban_dir(notebook_path):
+            return (False, _KANBAN_PATH_DENY_MESSAGE)
+        return (True, "")
+
+    if tool_name == "Bash":
+        command = tool_input.get("command", "") or ""
+        # Kanban CLI allowlist: always permit kanban commands even if they
+        # reference .kanban/ paths internally.
+        if _is_kanban_cli_command(command):
+            return (True, "")
+        # Check for mutation patterns targeting .kanban/
+        for pattern in _KANBAN_BASH_DENY_PATTERNS:
+            if pattern.search(command):
+                return (False, _KANBAN_PATH_DENY_MESSAGE)
+        return (True, "")
+
+    return (True, "")
+
+
+# ---------------------------------------------------------------------------
 # Destructive git operation validation (Bash tool calls from sub-agents)
 # ---------------------------------------------------------------------------
 
@@ -775,9 +921,23 @@ def main() -> None:
 
     # Verify tool name — handle Bash validation separately from Agent injection.
     tool_name = payload.get("tool_name", "")
+    tool_input = payload.get("tool_input", {}) or {}
+
+    # .kanban/ path guard — runs for Edit, Write, MultiEdit, NotebookEdit, Bash.
+    # Order inside _check_kanban_path_guard:
+    #   1. kanban-CLI allowlist (Bash only) — always passes kanban commands through
+    #   2. path-guard deny patterns
+    # This must run BEFORE the destructive-git check so the kanban CLI allowlist
+    # takes effect for Bash before any other analysis.
+    if tool_name in ("Edit", "Write", "MultiEdit", "NotebookEdit", "Bash"):
+        allowed, reason = _check_kanban_path_guard(tool_name, tool_input)
+        if not allowed:
+            log_info(f"{tool_name} denied — .kanban/ path guard: {reason[:80]}")
+            print(json.dumps(deny_with_reason(reason)))
+            return
 
     # Destructive git operation check for Bash calls from sub-agents.
-    # This fires before the Agent-only injection logic below.
+    # This fires after the .kanban/ path guard (which handles kanban CLI allowlist).
     if tool_name == "Bash":
         denial = _validate_bash_destructive_git(payload)
         if denial is not None:
@@ -791,8 +951,7 @@ def main() -> None:
         print(json.dumps(allow_unchanged()))
         return
 
-    # Extract prompt from tool_input
-    tool_input = payload.get("tool_input", {})
+    # Extract prompt from tool_input (already fetched above, re-verify type for Agent path)
     if not isinstance(tool_input, dict):
         print(json.dumps(allow_unchanged()))
         return
