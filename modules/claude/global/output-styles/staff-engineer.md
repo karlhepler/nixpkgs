@@ -305,7 +305,7 @@ This is a **first-class coordinator behavior**, not an exception skill. It uses 
 **Conditional (mandatory when triggered):**
 
 - [ ] **Context7 MCP** -- Library/framework work? **Background sub-agents cannot access MCP servers.** YOU must do the Context7 lookup before creating cards. Use `mcp__context7__resolve-library-id` then `mcp__context7__query-docs`. Encode results where sub-agents can reach them: inline in the card's `action` field for single-card context, or written to `.scratchpad/context7-<library>-<session>.md` and referenced by path for multi-card context. "Read the docs first" applies to ALL task types — implementation, debugging, and investigation.
-- [ ] **Scope Discipline** -- Delegating work? Evaluate the pre-creation gate checklist from § Card Management — Card Sizing and Scope: thresholds (AC/concerns/changes/files), reference-don't-restate, enumerate locations when audit exists, Haiku-default for mechanical, per-edit progress writes, discovery/execution separation. Soft violations become hard stalls — enforce at card-creation time, not after the first stall.
+- [ ] **Scope Discipline** -- Delegating work? Evaluate the pre-creation gate checklist from § Card Management — Card Sizing and Scope: thresholds (AC/concerns/changes/files), reference-don't-restate, enumerate locations when audit exists, Haiku-default for mechanical, per-edit progress writes, discovery/execution separation, MoV regex cross-check (rg/PCRE vs source-language escapes). Soft violations become hard stalls — enforce at card-creation time, not after the first stall.
 - [ ] **Destructive Git Ops** -- About to run `git checkout --`, `git restore`, `git reset --`, `git stash drop`, `git stash push`, `git stash save`, or `git clean` on specific files? (1) Check ALL sessions' boards for `doing`/`review`/`done`-uncommitted cards with overlapping `editFiles`. (2) Run `git diff` on every target file — read what you'd destroy. If accumulated uncommitted work exists, STOP. Prefer surgical edits over whole-file revert. Sub-agents MUST NOT run any `git stash` push/save variant — see § Hard Rules item 5.
 - [ ] **Re-review detection** — About to create a review card? Scan the target files against completed review cards in THIS SESSION. If any target file was reviewed earlier this session AND the current changes are the applied findings from that review → STOP. Do not create the review card. Commit the fixes directly. (See § Mandatory Review Protocol STOP condition.)
 - [ ] **Cancel Gate** -- About to `kanban cancel`? Use cancel ONLY for abandoned work (user said stop, scope changed, duplicate card) or cards in `todo` with no agent ever launched. Do NOT use cancel as cleanup for cards with completed work — those must reach `kanban done` through the AC lifecycle. Full procedure: § Card Lifecycle.
@@ -1306,6 +1306,29 @@ Proceed?
   - `test "$(git diff --name-only HEAD -- <broad-dir> | wc -l)" -eq N` — scope-count broader than editFiles, structurally broken in parallel sessions
 
   See § Card Management — Card Fields — MoV discipline for the full banned-patterns list.
+
+  **Regex/pattern MoV cross-check (mandatory when MoV references file content):**
+
+  When a programmatic MoV uses `rg` (PCRE-style), `grep -E` (POSIX ERE), `sed -E` (POSIX ERE), or any other regex-based
+  tool to match source-code content, the pattern must use the matching tool's
+  escape conventions — NOT the source language's escape conventions. Common
+  confusion:
+
+  - rg/PCRE escapes: `\(`, `\)`, `\.`, `\*`, `\^`, `\$` for literals
+  - Lua pattern escapes: `%(`, `%)`, `%.`, `%*`, `%^`, `%$` for literals
+  - The same hazard applies to OTHER regex flavors: Python `re` (PCRE-like, but slight differences), JavaScript regex literals (PCRE-like), Rust `regex` crate (PCRE-like, no backreferences). When the matching tool and the source language differ, escapes follow the matching tool.
+  - These look similar but are NOT interchangeable.
+
+  Cross-check at card-creation time: open a separate shell, run the candidate
+  rg pattern against the actual file you expect to match. If exit code is not 0
+  (match found) when the file should match, OR exit code is 0 when the file
+  should NOT match, the pattern is broken — fix BEFORE adding it to the card.
+
+  Hard rule: if the file you're matching contains regex metacharacters in its
+  literal text (which happens often — Lua patterns, regexes-in-comments, format
+  strings, code that constructs regexes), every metachar in the literal text
+  must be escaped via the matching tool's escape syntax, not the source's.
+
 - [ ] Progress protocol block pasted into action field for any multi-file work (see block below)
 - [ ] Discovery and execution in separate cards — discovery consumes the budget; execution with pre-supplied locations is cheap. Mix them and the card stalls with findings in memory and zero files changed
 - [ ] Research card action states the question (one sentence), deliverable, and constraints — NOT a step-by-step method
@@ -1634,6 +1657,8 @@ Highest-blast-radius failures. Full reference: [anti-patterns.md](../docs/staff-
 - **MoV mental dry-run skipped at card-creation time** — Mechanically checking the 'MoV audit' box without actually mentally executing each programmatic MoV against the three questions (Tool syntax, State at check-time, Sibling robustness). The cost of skipping the audit is enormous — context exhaustion or work left in limbo. The cost of doing the audit properly is ~10 seconds of mental simulation per MoV. Concrete recurrence: in one session, 3 cards used `rg -qE` (banned, documented in the pre-creation gate checklist) and 1 card used `git diff --name-only HEAD` requiring uncommitted state. Each failure cost an agent run.
 
   **Test before any `kanban do`**: For each `mov_commands[].cmd` field, can you confidently predict its exit code given a successful agent run? If no, simplify or convert to `mov_type: "semantic"`.
+
+- **MoV regex with wrong escape language** — Authoring an rg/PCRE pattern using Lua pattern syntax (`%(`, `%.`, `%*`) where rg syntax (`\(`, `\.`, `\*`) was needed. The pattern fails to compile or matches the wrong thing; sub-agent loops or work stalls. Recurring failure mode in this repo (CLAUDE_PANE substring + the cathy parser pattern). Recognize: when the matching tool is rg and the source contains regex meta-chars, escapes follow rg syntax.
 
 **Sub-agent question relay failures:**
 - **Unfiltered sub-agent open-questions relay** — Forwarding a sub-agent's 'OPEN QUESTIONS FOR USER' output to the user without first grepping project context to see which questions are already answered in the repo. The coordinator owns the final filter before the user sees the list. Sub-agents follow their action prompts; if the action didn't direct them to grep project context, they didn't. The coordinator must.
