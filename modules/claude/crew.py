@@ -1821,6 +1821,37 @@ def run_post_switch_hook(source_repo: str, worktree_path: str, branch: str) -> O
     return result.returncode, tail_output
 
 
+# ---------------------------------------------------------------------------
+# tmux fire-and-forget helper
+# ---------------------------------------------------------------------------
+
+def _tmux_fire_and_forget(args: list, context: str) -> None:
+    """Run a tmux subprocess where failure is non-fatal but should be visible.
+
+    Used for cosmetic / best-effort tmux operations (e.g. setting window icons,
+    sending initial keystrokes) where blocking on failure would harm UX more than
+    a missing side-effect would. Non-zero returncodes and exceptions raised by
+    subprocess.run itself are surfaced to stderr; nothing is raised back to the
+    caller.
+    """
+    try:
+        result = subprocess.run(args, capture_output=True, check=False)
+    except Exception as exc:  # pragma: no cover — covered by test_helper_does_not_raise_on_subprocess_exception
+        print(
+            f"[crew create] tmux call raised during {context}: {' '.join(args)} "
+            f"({type(exc).__name__}: {exc})",
+            file=sys.stderr,
+        )
+        return
+    if result.returncode != 0:
+        stderr = result.stderr.decode("utf-8", errors="replace").strip()
+        print(
+            f"[crew create] tmux call failed during {context}: {' '.join(args)} "
+            f"(exit {result.returncode}): {stderr}",
+            file=sys.stderr,
+        )
+
+
 def cmd_create(
     name: str,
     repo: Optional[str],
@@ -2132,9 +2163,9 @@ def cmd_create(
     # The window NAME itself is unchanged by `random-emoji` — it only sets window
     # options used by the theme. Bare-name resolution in `get_window_lookup` (which
     # matches on `#{window_name}`) therefore continues to work without modification.
-    subprocess.run(
+    _tmux_fire_and_forget(
         ["tmux", "run-shell", "-t", f"{name}.0", "random-emoji"],
-        capture_output=True, check=False
+        context="random-emoji icon assignment",
     )
 
     # --- 11. Start staff (or --cmd override) in the new window ---
@@ -2158,9 +2189,9 @@ def cmd_create(
         spawn_cmd = f"staff --model sonnet --name {name}"
     else:
         spawn_cmd = f"{cmd_override} --name {name}"
-    subprocess.run(
+    _tmux_fire_and_forget(
         ["tmux", "send-keys", "-t", name, spawn_cmd, "Enter"],
-        capture_output=True, check=False
+        context="staff session startup",
     )
 
     # --- 12. Deliver initial message (--tell) ---

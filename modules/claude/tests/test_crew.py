@@ -36,6 +36,7 @@ from crew import (
     _resolve_targets_with_lookup,
     _sentinel_path,
     _SMITHERS_SPLIT_PERCENT,
+    _tmux_fire_and_forget,
     _wait_for_sentinel,
     build_parser,
     cmd_create,
@@ -3390,3 +3391,82 @@ class TestCmdCreateEmojiIcon:
         # No emoji-prefixed key should appear (window names are bare)
         emoji_keys = [k for k in lookup if not k.isascii() or k != k.strip()]
         assert not emoji_keys, f"No emoji-prefixed keys expected in lookup, got: {emoji_keys}"
+
+
+# ---------------------------------------------------------------------------
+# _tmux_fire_and_forget helper
+# ---------------------------------------------------------------------------
+
+class TestTmuxFireAndForget:
+    """Tests for _tmux_fire_and_forget — the fire-and-forget tmux subprocess helper."""
+
+    def test_helper_does_not_log_on_success(self, capsys):
+        """No output to stderr when subprocess.run returns returncode=0."""
+        completed = MagicMock()
+        completed.returncode = 0
+        completed.stderr = b""
+        with patch("subprocess.run", return_value=completed):
+            _tmux_fire_and_forget(
+                ["tmux", "run-shell", "-t", "test.0", "random-emoji"],
+                context="random-emoji icon assignment",
+            )
+        captured = capsys.readouterr()
+        assert captured.err == "", (
+            f"Expected empty stderr on success, got: {captured.err!r}"
+        )
+
+    def test_helper_logs_on_nonzero_returncode(self, capsys):
+        """Stderr log line must contain context, exit code, and stderr fragment on failure."""
+        completed = MagicMock()
+        completed.returncode = 2
+        completed.stderr = b"tmux: no server running"
+        with patch("subprocess.run", return_value=completed):
+            _tmux_fire_and_forget(
+                ["tmux", "run-shell", "-t", "test.0", "random-emoji"],
+                context="random-emoji icon assignment",
+            )
+        captured = capsys.readouterr()
+        assert "random-emoji icon assignment" in captured.err, (
+            f"Expected context string in stderr, got: {captured.err!r}"
+        )
+        assert "exit 2" in captured.err, (
+            f"Expected 'exit 2' in stderr, got: {captured.err!r}"
+        )
+        assert "tmux: no server running" in captured.err, (
+            f"Expected stderr fragment in output, got: {captured.err!r}"
+        )
+
+    def test_helper_does_not_raise_on_subprocess_exception(self, capsys):
+        """Helper must return None without raising even if subprocess.run raises."""
+        with patch("subprocess.run", side_effect=FileNotFoundError("tmux")):
+            result = _tmux_fire_and_forget(
+                ["tmux", "run-shell", "-t", "test.0", "random-emoji"],
+                context="random-emoji icon assignment",
+            )
+        assert result is None, (
+            f"Expected None return, got: {result!r}"
+        )
+        captured = capsys.readouterr()
+        assert "random-emoji icon assignment" in captured.err, (
+            f"Expected context string in stderr on exception, got: {captured.err!r}"
+        )
+        assert "FileNotFoundError" in captured.err, (
+            f"Expected 'FileNotFoundError' in stderr, got: {captured.err!r}"
+        )
+
+    def test_helper_does_not_return_truthy(self):
+        """Helper must return None (fire-and-forget; no return value)."""
+        completed = MagicMock()
+        completed.returncode = 0
+        completed.stderr = b""
+        with patch("subprocess.run", return_value=completed):
+            result = _tmux_fire_and_forget(
+                ["tmux", "send-keys", "-t", "test", "staff --name test", "Enter"],
+                context="staff session startup",
+            )
+        assert not result, (
+            f"Expected falsy return (None), got: {result!r}"
+        )
+        assert result is None, (
+            f"Expected exactly None, got: {result!r}"
+        )
