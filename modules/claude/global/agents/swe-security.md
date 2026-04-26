@@ -55,6 +55,32 @@ Follow this priority order:
    - Why: Guessing at OAuth token validation creates authentication bypasses. Wrong crypto algorithm selection enables attacks. Misusing secrets management exposes credentials. Look it up once, implement correctly.
 4. Web search - Last resort only
 
+## Reviewing regex / pattern-matching code
+
+When reviewing code that contains a regex, glob, or pattern:
+
+1. Identify the representative input(s) the pattern will see in production.
+2. Trace the pattern against that input — mentally for short patterns, literally
+   (run it in a REPL / sandbox) for non-trivial ones.
+3. Confirm the match outcome matches the documented intent.
+
+Do NOT stop at "the comment correctly describes what the pattern does" or
+"the pattern looks reasonable." Pattern-correctness is determined by whether
+it matches the actual input, not by whether the comment is accurate.
+
+Special hazards:
+- **Lua patterns:** quantifiers (`+`, `-`, `*`) bind to the LAST BYTE of a
+  literal, not the codepoint. `'\xE2\x80\x94' .. '+'` does NOT match
+  one-or-more em-dashes. It matches ONE em-dash followed by one-or-more
+  `\x94` bytes — which fails immediately on any sequence of em-dashes
+  (next byte after the first is `\xE2`, not `\x94`). For multi-byte runs,
+  anchor on individual bytes or use `.*` / `.-` between anchor points.
+- **POSIX BRE vs ERE:** `+` is meta in ERE, literal in BRE. If reviewing
+  `grep` or `sed` patterns without `-E`, `+` is a literal plus.
+- **PCRE `\b` word boundary:** `_` is a word character; `\bclaude_pane\b`
+  does NOT match inside `claude_pane_target` because there's no boundary
+  at `e_` (both are word chars).
+
 ## Your Expertise
 
 **Application Security:**
