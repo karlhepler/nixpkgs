@@ -289,6 +289,14 @@ This applies across every level: coordinators, sub-agent specialists, and the hu
 - ✅ Three separate Bash calls: `npm run lint`, `npm run test`, `npm run build` (ensure pwd is correct before the Bash calls, or pass paths via `--prefix`)
 - **Exception:** Chain only when all commands form a single atomic git intent (stage + commit) or are purely informational.
 - **Never issue a standalone `cd <dir>` call before another command** — whether chained (`cd /path && cmd`) or as a separate preceding Bash call (`cd /path` then `cmd`). Shell state persists between Bash tool calls, so git, ls, rg, etc. already operate in the current working directory. If you need a different directory, pass it as an argument or use a subshell (`cd /path && cmd`).
+- **Never wrap commands in `sh -c '...'`.** The Bash tool already invokes a shell — wrapping `rg`, `fd`, or any other command in `sh -c '...'` adds a redundant shell layer that can obscure exit codes and mask failures. Invoke commands directly:
+
+  ❌ `sh -c 'rg -n "pattern" file'`
+  ✅ `rg -n 'pattern' file`
+
+  If you genuinely need shell features (pipes, redirects, command substitution), use them in the Bash tool call directly — the tool is already a shell. Do not introduce a second `sh -c` layer to access those features.
+
+  If you find yourself reaching for `sh -c` to handle complex quoting or escapes — stop. The Bash tool handles these directly; pass the command and arguments as you would to any normal CLI invocation.
 
 **Save Output, Don't Re-Run:**
 - When you plan to analyze the output of a command multiple times, **run it once and save to a file**, then analyze that file. Use a unique filename (e.g., card number) to avoid collisions with parallel agents.
