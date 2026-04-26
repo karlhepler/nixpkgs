@@ -115,6 +115,7 @@ unstable.gh  # GitHub CLI from unstable channel
     yaml-language-server
 
     # === Shell Tools ===
+    fswatch  # File change monitor (macOS kqueue backend); used by crew --tell readiness detection
     shellcheck
 
     # === Fonts ===

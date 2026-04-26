@@ -10,6 +10,8 @@ Tests for crew.py — focused on the P6.1-P6.6 changes:
 
 import argparse
 import subprocess
+import threading
+import time
 from io import StringIO
 from typing import List, Optional, Tuple
 from unittest.mock import MagicMock, call, patch
@@ -23,18 +25,21 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import crew as crew_module
 from crew import (
-    _detect_modal_state,
+    _clean_stale_sentinel,
+    _cleanup_sentinel,
+    _CREW_SENTINEL_DIR,
     _extract_org_repo_from_remote,
     _list_panes_in_window,
     _looks_like_message_not_target,
     _mangle_path_to_project_key,
-    _MCP_TRUST_KEY,
     _pane_is_running_smithers,
     _resolve_targets_with_lookup,
+    _sentinel_path,
     _SMITHERS_SPLIT_PERCENT,
-    _wait_for_claude_ready,
+    _wait_for_sentinel,
     build_parser,
     cmd_create,
+    cmd_dismiss,
     cmd_find,
     cmd_list,
     cmd_project_path,
@@ -312,9 +317,9 @@ class TestCmdCreate:
         assert "claude --name test-worker" in cmd_str
 
     def test_tell_sends_message_after_spawn(self, capsys, tmp_path):
-        """--tell delivers initial message after Claude Code is ready (P6.2)."""
+        """--tell delivers initial message after sentinel is ready (P6.2)."""
         with patch("subprocess.run") as mock_run:
-            with patch.object(crew_module, "_wait_for_claude_ready", return_value=(True, None)):
+            with patch.object(crew_module, "_wait_for_sentinel", return_value=(True, None)):
                 with patch.object(crew_module, "_deliver_tell", return_value=(True, "verified")) as mock_deliver:
                     self._run_create(
                         mock_run,
@@ -367,7 +372,7 @@ class TestCmdCreate:
     def test_xml_output_includes_told_when_tell_given(self, capsys, tmp_path):
         """XML output includes told='true' when --tell delivery is verified (P6.2)."""
         with patch("subprocess.run") as mock_run:
-            with patch.object(crew_module, "_wait_for_claude_ready", return_value=(True, None)):
+            with patch.object(crew_module, "_wait_for_sentinel", return_value=(True, None)):
                 with patch.object(crew_module, "_deliver_tell", return_value=(True, "verified")):
                     self._run_create(
                         mock_run,
@@ -384,19 +389,13 @@ class TestCmdCreate:
     def test_tell_text_verified_in_pane_after_delivery(self, capsys, tmp_path):
         """told='true' requires brief text to be observed in capture-pane (regression for race bug)."""
         tell_text = "Build the auth service"
-        call_count = {"n": 0}
 
         def side_effect(cmd, **kwargs):
             cmd_list = cmd if isinstance(cmd, list) else [cmd]
             joined = " ".join(str(c) for c in cmd_list)
             if "capture-pane" in joined:
-                call_count["n"] += 1
-                if call_count["n"] == 1:
-                    # First call: Claude-ready signal
-                    return fake_run_result(stdout="╭─ Claude Code ─╮\n│ > │\n")
-                else:
-                    # Subsequent calls: brief text visible in pane
-                    return fake_run_result(stdout=f"╭─ Claude Code ─╮\n{tell_text}\n")
+                # Verification call: brief text visible in pane
+                return fake_run_result(stdout=f"╭─ Claude Code ─╮\n{tell_text}\n")
             if "send-keys" in joined:
                 return fake_run_result()
             if "display-message" in joined and "session_name" in joined:
@@ -425,17 +424,20 @@ class TestCmdCreate:
                 return fake_run_result()
             return fake_run_result()
 
+        # Mock _wait_for_sentinel to return ready — this test is specifically about
+        # _deliver_tell pane verification, not readiness detection.
         with patch("subprocess.run", side_effect=side_effect):
             with patch("os.path.isdir", return_value=True):
                 with patch("os.path.exists", return_value=False):
-                    cmd_create(
-                        name="test-worker",
-                        repo="/some/repo",
-                        branch="test-worker",
-                        base="main",
-                        fmt="xml",
-                        tell=tell_text,
-                    )
+                    with patch.object(crew_module, "_wait_for_sentinel", return_value=(True, None)):
+                        cmd_create(
+                            name="test-worker",
+                            repo="/some/repo",
+                            branch="test-worker",
+                            base="main",
+                            fmt="xml",
+                            tell=tell_text,
+                        )
 
         out = capsys.readouterr().out
         assert 'told="true"' in out
@@ -444,7 +446,7 @@ class TestCmdCreate:
     def test_tell_told_false_when_verification_times_out(self, capsys, tmp_path):
         """told='false' + told_reason when tell text never appears in pane."""
         with patch("subprocess.run") as mock_run:
-            with patch.object(crew_module, "_wait_for_claude_ready", return_value=(True, None)):
+            with patch.object(crew_module, "_wait_for_sentinel", return_value=(True, None)):
                 with patch.object(
                     crew_module,
                     "_deliver_tell",
@@ -464,10 +466,14 @@ class TestCmdCreate:
         assert 'told="false"' in out
         assert "told_reason" in out
 
-    def test_tell_told_false_when_claude_never_ready(self, capsys, tmp_path):
-        """told='false' when _wait_for_claude_ready times out (Claude didn't start)."""
+    def test_tell_told_false_when_sentinel_never_ready(self, capsys, tmp_path):
+        """told='false' when _wait_for_sentinel ceiling elapsed (Claude didn't start)."""
         with patch("subprocess.run") as mock_run:
-            with patch.object(crew_module, "_wait_for_claude_ready", return_value=(False, None)):
+            with patch.object(
+                crew_module,
+                "_wait_for_sentinel",
+                return_value=(False, "session never reported ready — likely crashed during boot, check tmux pane"),
+            ):
                 self._run_create(
                     mock_run,
                     name="test-worker",
@@ -481,6 +487,7 @@ class TestCmdCreate:
         out = capsys.readouterr().out
         assert "told_reason" in out
         assert 'told="false"' in out
+        assert "crashed during boot" in out
 
     def test_fetch_called_when_base_tracks_origin(self, capsys, tmp_path):
         """When base tracks origin, git fetch origin <base> is called before worktree add."""
@@ -1651,7 +1658,7 @@ class TestCreateTellFile:
         with patch("subprocess.run") as mock_run:
             with patch("os.path.isdir", return_value=True):
                 with patch("os.path.exists", return_value=False):
-                    with patch.object(crew_module, "_wait_for_claude_ready", return_value=(True, None)):
+                    with patch.object(crew_module, "_wait_for_sentinel", return_value=(True, None)):
                         with patch.object(crew_module, "_deliver_tell", return_value=(True, "verified")) as mock_deliver:
                             self._setup_create_mocks(mock_run)
                             cmd_create(
@@ -1674,7 +1681,7 @@ class TestCreateTellFile:
         with patch("subprocess.run") as mock_run:
             with patch("os.path.isdir", return_value=True):
                 with patch("os.path.exists", return_value=False):
-                    with patch.object(crew_module, "_wait_for_claude_ready", return_value=(True, None)):
+                    with patch.object(crew_module, "_wait_for_sentinel", return_value=(True, None)):
                         with patch.object(crew_module, "_deliver_tell", return_value=(True, "verified")):
                             self._setup_create_mocks(mock_run)
                             cmd_create(
@@ -1696,7 +1703,7 @@ class TestCreateTellFile:
         with patch("subprocess.run") as mock_run:
             with patch("os.path.isdir", return_value=True):
                 with patch("os.path.exists", return_value=False):
-                    with patch.object(crew_module, "_wait_for_claude_ready", return_value=(True, None)):
+                    with patch.object(crew_module, "_wait_for_sentinel", return_value=(True, None)):
                         with patch.object(
                             crew_module, "_deliver_tell",
                             return_value=(False, "verification timeout: tell text not observed in pane"),
@@ -1756,7 +1763,11 @@ class TestCreateTellFile:
         with patch("subprocess.run") as mock_run:
             with patch("os.path.isdir", return_value=True):
                 with patch("os.path.exists", return_value=False):
-                    with patch.object(crew_module, "_wait_for_claude_ready", return_value=(False, None)):
+                    with patch.object(
+                        crew_module,
+                        "_wait_for_sentinel",
+                        return_value=(False, "session never reported ready — likely crashed during boot, check tmux pane"),
+                    ):
                         self._setup_create_mocks(mock_run)
                         cmd_create(
                             name="test-worker",
@@ -1767,7 +1778,7 @@ class TestCreateTellFile:
                             tell_file=str(brief_file),
                         )
 
-        assert brief_file.exists(), "File must be preserved when Claude Code doesn't start"
+        assert brief_file.exists(), "File must be preserved when sentinel never appears"
 
 
 # ---------------------------------------------------------------------------
@@ -2632,476 +2643,18 @@ class TestCmdStatusMultiPane:
         assert "pure-zsh-win" in out
 
 
-# ---------------------------------------------------------------------------
-# Modal detection — _detect_modal_state unit tests
-# ---------------------------------------------------------------------------
-
-class TestDetectModalState:
-    """Unit tests for _detect_modal_state: pure classification logic."""
-
-    def test_workspace_trust_both_lines_present(self):
-        """Both required lines → 'workspace_trust'."""
-        content = (
-            "Accessing workspace:\n"
-            "/Users/user/worktrees/pricing\n"
-            "Quick safety check: Is this a project you created or one you trust?\n"
-            "❯ 1. Yes, I trust this folder\n"
-            "  2. No, exit\n"
-            "Enter to confirm · Esc to cancel\n"
-        )
-        assert _detect_modal_state(content) == "workspace_trust"
-
-    def test_workspace_trust_missing_second_line_not_detected(self):
-        """Only 'Accessing workspace:' without 'Yes, I trust this folder' is not detected."""
-        content = "Accessing workspace:\n/Users/user/worktrees/pricing\n"
-        assert _detect_modal_state(content) != "workspace_trust"
-
-    def test_mcp_trust_both_lines_present(self):
-        """Both required MCP lines → 'mcp_trust'."""
-        content = (
-            "New MCP server found in .mcp.json: my-mcp\n"
-            "❯ 1. Use this and all future MCP servers in this project\n"
-            "  2. Use this MCP server\n"
-            "  3. Continue without using this MCP server\n"
-            "Enter to confirm · Esc to cancel\n"
-        )
-        assert _detect_modal_state(content) == "mcp_trust"
-
-    def test_mcp_trust_missing_second_line_not_detected(self):
-        """Only 'New MCP server found in .mcp.json' without the choice line is not detected."""
-        content = "New MCP server found in .mcp.json: my-mcp\n"
-        assert _detect_modal_state(content) != "mcp_trust"
-
-    def test_unknown_modal_numbered_choice_with_confirm(self):
-        """Numbered-choice + Enter-to-confirm but no known signature → 'unknown_modal'."""
-        content = (
-            "Something unexpected:\n"
-            "❯ 1. Option A\n"
-            "  2. Option B\n"
-            "Enter to confirm · Esc to cancel\n"
-        )
-        assert _detect_modal_state(content) == "unknown_modal"
-
-    def test_clean_prompt_returns_none(self):
-        """Clean Claude Code prompt (no modal signatures) → None."""
-        content = "╭─ Claude Code ─╮\n│ > │\n"
-        assert _detect_modal_state(content) is None
-
-    def test_bare_shell_prompt_returns_none(self):
-        """Plain shell prompt → None."""
-        content = "user@host:~/worktrees/pricing$ "
-        assert _detect_modal_state(content) is None
-
-    def test_empty_content_returns_none(self):
-        """Empty pane content → None."""
-        assert _detect_modal_state("") is None
-
-    def test_workspace_trust_takes_priority_over_unknown_modal(self):
-        """When workspace-trust is present alongside generic numbered-choice, classify as workspace_trust."""
-        content = (
-            "Accessing workspace:\n"
-            "/Users/user/worktrees/pricing\n"
-            "❯ 1. Yes, I trust this folder\n"
-            "  2. No, exit\n"
-            "Enter to confirm · Esc to cancel\n"
-        )
-        assert _detect_modal_state(content) == "workspace_trust"
-
-
-# ---------------------------------------------------------------------------
-# Modal auto-handling — _wait_for_claude_ready unit tests
-# ---------------------------------------------------------------------------
-
-class TestWaitForClaudeReadyModalHandling:
-    """Tests for modal auto-handling inside _wait_for_claude_ready."""
-
-    # Shared pane content sequences for common scenarios
-
-    WORKSPACE_TRUST_CONTENT = (
-        "Accessing workspace:\n"
-        "/Users/user/worktrees/pricing\n"
-        "❯ 1. Yes, I trust this folder\n"
-        "  2. No, exit\n"
-        "Enter to confirm · Esc to cancel\n"
-    )
-    MCP_TRUST_CONTENT = (
-        "New MCP server found in .mcp.json: context7\n"
-        "❯ 1. Use this and all future MCP servers in this project\n"
-        "  2. Use this MCP server\n"
-        "  3. Continue without using this MCP server\n"
-        "Enter to confirm · Esc to cancel\n"
-    )
-    READY_CONTENT = "╭─ Claude Code ─╮\n│ > │\n"
-
-    def test_workspace_trust_modal_auto_answered(self):
-        """Workspace-trust modal detected → '1 Enter' sent, loop continues."""
-        call_count = {"n": 0}
-        sent_keys = []
-
-        def fake_run(cmd, **kwargs):
-            joined = " ".join(str(c) for c in cmd)
-            if "capture-pane" in joined:
-                call_count["n"] += 1
-                if call_count["n"] == 1:
-                    return fake_run_result(stdout=self.WORKSPACE_TRUST_CONTENT)
-                return fake_run_result(stdout=self.READY_CONTENT)
-            if "send-keys" in joined:
-                sent_keys.append(list(cmd))
-                return fake_run_result()
-            return fake_run_result()
-
-        with patch("subprocess.run", side_effect=fake_run):
-            result, reason = _wait_for_claude_ready("test-win", timeout=5.0, poll_interval=0.0)
-
-        assert result is True
-        assert reason is None
-        # Must have sent '1' then 'Enter' for the workspace trust modal
-        answer_call = next(
-            (c for c in sent_keys if "1" in c and "Enter" in c),
-            None,
-        )
-        assert answer_call is not None, f"Expected '1 Enter' send-keys for workspace trust, sent: {sent_keys}"
-
-    def test_mcp_trust_modal_default_all(self):
-        """MCP trust modal with mcp_trust='all' (default) → '1 Enter' sent."""
-        call_count = {"n": 0}
-        sent_keys = []
-
-        def fake_run(cmd, **kwargs):
-            joined = " ".join(str(c) for c in cmd)
-            if "capture-pane" in joined:
-                call_count["n"] += 1
-                if call_count["n"] == 1:
-                    return fake_run_result(stdout=self.MCP_TRUST_CONTENT)
-                return fake_run_result(stdout=self.READY_CONTENT)
-            if "send-keys" in joined:
-                sent_keys.append(list(cmd))
-                return fake_run_result()
-            return fake_run_result()
-
-        with patch("subprocess.run", side_effect=fake_run):
-            result, reason = _wait_for_claude_ready("test-win", timeout=5.0, poll_interval=0.0, mcp_trust="all")
-
-        assert result is True
-        assert reason is None
-        answer_call = next(
-            (c for c in sent_keys if "1" in c and "Enter" in c),
-            None,
-        )
-        assert answer_call is not None, f"Expected '1 Enter' for mcp_trust=all, sent: {sent_keys}"
-
-    def test_mcp_trust_modal_this(self):
-        """MCP trust modal with mcp_trust='this' → '2 Enter' sent."""
-        call_count = {"n": 0}
-        sent_keys = []
-
-        def fake_run(cmd, **kwargs):
-            joined = " ".join(str(c) for c in cmd)
-            if "capture-pane" in joined:
-                call_count["n"] += 1
-                if call_count["n"] == 1:
-                    return fake_run_result(stdout=self.MCP_TRUST_CONTENT)
-                return fake_run_result(stdout=self.READY_CONTENT)
-            if "send-keys" in joined:
-                sent_keys.append(list(cmd))
-                return fake_run_result()
-            return fake_run_result()
-
-        with patch("subprocess.run", side_effect=fake_run):
-            result, reason = _wait_for_claude_ready("test-win", timeout=5.0, poll_interval=0.0, mcp_trust="this")
-
-        assert result is True
-        assert reason is None
-        answer_call = next(
-            (c for c in sent_keys if "2" in c and "Enter" in c),
-            None,
-        )
-        assert answer_call is not None, f"Expected '2 Enter' for mcp_trust=this, sent: {sent_keys}"
-
-    def test_mcp_trust_modal_none(self):
-        """MCP trust modal with mcp_trust='none' → '3 Enter' sent."""
-        call_count = {"n": 0}
-        sent_keys = []
-
-        def fake_run(cmd, **kwargs):
-            joined = " ".join(str(c) for c in cmd)
-            if "capture-pane" in joined:
-                call_count["n"] += 1
-                if call_count["n"] == 1:
-                    return fake_run_result(stdout=self.MCP_TRUST_CONTENT)
-                return fake_run_result(stdout=self.READY_CONTENT)
-            if "send-keys" in joined:
-                sent_keys.append(list(cmd))
-                return fake_run_result()
-            return fake_run_result()
-
-        with patch("subprocess.run", side_effect=fake_run):
-            result, reason = _wait_for_claude_ready("test-win", timeout=5.0, poll_interval=0.0, mcp_trust="none")
-
-        assert result is True
-        assert reason is None
-        answer_call = next(
-            (c for c in sent_keys if "3" in c and "Enter" in c),
-            None,
-        )
-        assert answer_call is not None, f"Expected '3 Enter' for mcp_trust=none, sent: {sent_keys}"
-
-    def test_chained_modals_workspace_then_mcp(self):
-        """workspace modal → MCP modal → chat ready: both answers sent in order."""
-        call_count = {"n": 0}
-        sent_keys = []
-
-        def fake_run(cmd, **kwargs):
-            joined = " ".join(str(c) for c in cmd)
-            if "capture-pane" in joined:
-                call_count["n"] += 1
-                if call_count["n"] == 1:
-                    return fake_run_result(stdout=self.WORKSPACE_TRUST_CONTENT)
-                if call_count["n"] == 2:
-                    return fake_run_result(stdout=self.MCP_TRUST_CONTENT)
-                return fake_run_result(stdout=self.READY_CONTENT)
-            if "send-keys" in joined:
-                sent_keys.append(list(cmd))
-                return fake_run_result()
-            return fake_run_result()
-
-        with patch("subprocess.run", side_effect=fake_run):
-            result, reason = _wait_for_claude_ready("test-win", timeout=5.0, poll_interval=0.0, mcp_trust="all")
-
-        assert result is True
-        assert reason is None
-        # Both modals answered: workspace trust sends '1 Enter', MCP trust also sends '1 Enter'
-        assert len(sent_keys) == 2, f"Expected 2 send-keys calls (one per modal), got: {len(sent_keys)}"
-        for sk in sent_keys:
-            assert "1" in sk and "Enter" in sk, f"Expected '1 Enter' in {sk}"
-
-    def test_multiple_mcp_modals_sequential(self):
-        """Two MCP modals in sequence: both answered with mcp_trust key."""
-        call_count = {"n": 0}
-        sent_keys = []
-
-        def fake_run(cmd, **kwargs):
-            joined = " ".join(str(c) for c in cmd)
-            if "capture-pane" in joined:
-                call_count["n"] += 1
-                if call_count["n"] <= 2:
-                    return fake_run_result(stdout=self.MCP_TRUST_CONTENT)
-                return fake_run_result(stdout=self.READY_CONTENT)
-            if "send-keys" in joined:
-                sent_keys.append(list(cmd))
-                return fake_run_result()
-            return fake_run_result()
-
-        with patch("subprocess.run", side_effect=fake_run):
-            result, reason = _wait_for_claude_ready("test-win", timeout=5.0, poll_interval=0.0, mcp_trust="all")
-
-        assert result is True
-        assert reason is None
-        assert len(sent_keys) == 2, f"Expected 2 send-keys calls (one per MCP modal), got: {len(sent_keys)}"
-        for sk in sent_keys:
-            assert "1" in sk and "Enter" in sk
-
-    def test_unknown_modal_not_dismissed(self, capsys):
-        """Unknown modal (❯ 1. + Enter to confirm but no known signature) → NOT auto-answered."""
-        unknown_modal_content = (
-            "Something unexpected:\n"
-            "❯ 1. Do something\n"
-            "  2. Do something else\n"
-            "Enter to confirm · Esc to cancel\n"
-        )
-        call_count = {"n": 0}
-        sent_keys = []
-
-        def fake_run(cmd, **kwargs):
-            joined = " ".join(str(c) for c in cmd)
-            if "capture-pane" in joined:
-                call_count["n"] += 1
-                # Always return the unknown modal; timeout will eventually fire
-                return fake_run_result(stdout=unknown_modal_content)
-            if "send-keys" in joined:
-                sent_keys.append(list(cmd))
-                return fake_run_result()
-            return fake_run_result()
-
-        with patch("subprocess.run", side_effect=fake_run):
-            result, reason = _wait_for_claude_ready("test-win", timeout=0.05, poll_interval=0.01)
-
-        # Must time out (not ready)
-        assert result is False
-        assert reason == "timeout: unknown modal blocked chat-ready"
-        # Must NOT have sent any auto-answer keys
-        assert sent_keys == [], f"Unknown modal must NOT be auto-answered, got send-keys: {sent_keys}"
-        # Must emit a warning to stderr
-        err = capsys.readouterr().err
-        assert "unknown modal" in err.lower() or "unknown_modal" in err.lower() or "warning" in err.lower()
-
-    def test_clean_boot_no_modals(self):
-        """Clean pane (Claude ready immediately) → no send-keys calls, returns True."""
-        sent_keys = []
-
-        def fake_run(cmd, **kwargs):
-            joined = " ".join(str(c) for c in cmd)
-            if "capture-pane" in joined:
-                return fake_run_result(stdout=self.READY_CONTENT)
-            if "send-keys" in joined:
-                sent_keys.append(list(cmd))
-                return fake_run_result()
-            return fake_run_result()
-
-        with patch("subprocess.run", side_effect=fake_run):
-            result, reason = _wait_for_claude_ready("test-win", timeout=5.0, poll_interval=0.0)
-
-        assert result is True
-        assert reason is None
-        assert sent_keys == [], f"No modals → no send-keys calls expected, got: {sent_keys}"
-
-    def test_tell_delivered_after_modal_chain(self, capsys):
-        """Integration: workspace modal → MCP modal → chat ready → tell content sent."""
-        call_count = {"n": 0}
-        sent_keys = []
-
-        def fake_run(cmd, **kwargs):
-            cmd_list = list(cmd)
-            joined = " ".join(str(c) for c in cmd_list)
-            if "capture-pane" in joined:
-                call_count["n"] += 1
-                if call_count["n"] == 1:
-                    return fake_run_result(stdout=self.WORKSPACE_TRUST_CONTENT)
-                if call_count["n"] == 2:
-                    return fake_run_result(stdout=self.MCP_TRUST_CONTENT)
-                # 3rd+ capture: Claude is ready
-                return fake_run_result(stdout=self.READY_CONTENT)
-            if "send-keys" in joined:
-                sent_keys.append(cmd_list)
-                return fake_run_result()
-            return fake_run_result()
-
-        with patch("subprocess.run", side_effect=fake_run):
-            result, reason = _wait_for_claude_ready("test-win", timeout=5.0, poll_interval=0.0, mcp_trust="all")
-
-        # Readiness wait cleared both modals
-        assert result is True
-        assert reason is None
-        # Two modal-answer send-keys calls (workspace + MCP)
-        assert len(sent_keys) == 2, f"Expected 2 modal-answer send-keys, got: {sent_keys}"
-
-    # F5 warn-once dedupe tests
-
-    def test_unknown_modal_warning_emitted_only_once_for_same_signature(self, capsys):
-        """F5: same unknown modal signature on repeated polls emits warning exactly once."""
-        unknown_modal_content = (
-            "Something unexpected:\n"
-            "❯ 1. Do something\n"
-            "  2. Do something else\n"
-            "Enter to confirm · Esc to cancel\n"
-        )
-        call_count = {"n": 0}
-
-        def fake_run(cmd, **kwargs):
-            joined = " ".join(str(c) for c in cmd)
-            if "capture-pane" in joined:
-                call_count["n"] += 1
-                # Always the same unknown modal content — never resolves
-                return fake_run_result(stdout=unknown_modal_content)
-            return fake_run_result()
-
-        with patch("subprocess.run", side_effect=fake_run):
-            _wait_for_claude_ready("test-win", timeout=0.05, poll_interval=0.01)
-
-        err = capsys.readouterr().err
-        # The warning message should appear exactly once, not once per poll
-        warning_count = err.lower().count("unknown modal")
-        assert warning_count == 1, (
-            f"Expected warning emitted exactly once for same signature, got {warning_count} occurrences. "
-            f"stderr: {err!r}"
-        )
-
-    def test_unknown_modal_warning_re_emitted_when_signature_changes(self, capsys):
-        """F5: different unknown modal signatures each trigger one warning."""
-        unknown_modal_a = (
-            "Something unexpected A:\n"
-            "❯ 1. Option A\n"
-            "Enter to confirm · Esc to cancel\n"
-        )
-        unknown_modal_b = (
-            "Something unexpected B:\n"
-            "❯ 1. Option B\n"
-            "Enter to confirm · Esc to cancel\n"
-        )
-        call_count = {"n": 0}
-
-        def fake_run(cmd, **kwargs):
-            joined = " ".join(str(c) for c in cmd)
-            if "capture-pane" in joined:
-                call_count["n"] += 1
-                # Alternate between two different unknown modal signatures
-                if call_count["n"] % 2 == 1:
-                    return fake_run_result(stdout=unknown_modal_a)
-                return fake_run_result(stdout=unknown_modal_b)
-            return fake_run_result()
-
-        with patch("subprocess.run", side_effect=fake_run):
-            _wait_for_claude_ready("test-win", timeout=0.06, poll_interval=0.01)
-
-        err = capsys.readouterr().err
-        # Both distinct signatures must trigger a warning (2 total)
-        warning_count = err.lower().count("unknown modal")
-        assert warning_count >= 2, (
-            f"Expected at least 2 warnings for 2 distinct signatures, got {warning_count}. "
-            f"stderr: {err!r}"
-        )
-
-    # F7 specific told_reason tests
-
-    def test_unknown_modal_timeout_returns_specific_reason(self):
-        """F7: when unknown modal causes timeout, reason is 'timeout: unknown modal blocked chat-ready'."""
-        unknown_modal_content = (
-            "Unexpected prompt:\n"
-            "❯ 1. Do something\n"
-            "Enter to confirm · Esc to cancel\n"
-        )
-
-        def fake_run(cmd, **kwargs):
-            joined = " ".join(str(c) for c in cmd)
-            if "capture-pane" in joined:
-                return fake_run_result(stdout=unknown_modal_content)
-            return fake_run_result()
-
-        with patch("subprocess.run", side_effect=fake_run):
-            ready, reason = _wait_for_claude_ready("test-win", timeout=0.05, poll_interval=0.01)
-
-        assert ready is False
-        assert reason == "timeout: unknown modal blocked chat-ready", (
-            f"Expected specific reason for unknown-modal timeout, got: {reason!r}"
-        )
-
-    def test_generic_timeout_returns_none_reason(self):
-        """F7: plain timeout with no modal returns (False, None) — generic fallback used by caller."""
-
-        def fake_run(cmd, **kwargs):
-            joined = " ".join(str(c) for c in cmd)
-            if "capture-pane" in joined:
-                # Empty pane — no modal, no ready signal
-                return fake_run_result(stdout="")
-            return fake_run_result()
-
-        with patch("subprocess.run", side_effect=fake_run):
-            ready, reason = _wait_for_claude_ready("test-win", timeout=0.05, poll_interval=0.01)
-
-        assert ready is False
-        assert reason is None, (
-            f"Expected None reason for plain timeout (no modal), got: {reason!r}"
-        )
-
-    def test_cmd_create_told_reason_is_specific_for_unknown_modal_timeout(self, capsys):
-        """F7 integration: cmd_create told_reason reflects unknown-modal timeout, not generic message."""
+class TestCmdCreateToldReason:
+    """Integration test: cmd_create told_reason reflects sentinel wait outcomes."""
+
+    def test_cmd_create_told_reason_reflects_sentinel_hook_missing(self, capsys):
+        """Integration: cmd_create told_reason reflects hook-missing when sentinel never appears."""
         with patch("subprocess.run") as mock_run:
             with patch("os.path.isdir", return_value=True):
                 with patch("os.path.exists", return_value=False):
                     with patch.object(
                         crew_module,
-                        "_wait_for_claude_ready",
-                        return_value=(False, "timeout: unknown modal blocked chat-ready"),
+                        "_wait_for_sentinel",
+                        return_value=(False, "session never reported ready — SessionStart hook missing in target settings.json"),
                     ):
                         # Provide minimal subprocess mocks for the create path
                         def side_effect(cmd, **kwargs):
@@ -3146,8 +2699,8 @@ class TestWaitForClaudeReadyModalHandling:
 
         out = capsys.readouterr().out
         assert 'told="false"' in out
-        assert "unknown modal blocked" in out, (
-            f"Expected 'unknown modal blocked' in told_reason, got output: {out!r}"
+        assert "hook missing" in out, (
+            f"Expected 'hook missing' in told_reason, got output: {out!r}"
         )
 
 
@@ -3189,22 +2742,14 @@ class TestMcpTrustParserFlag:
             p.parse_args(["create", "my-worker", "--mcp-trust", "maybe"])
         assert exc_info.value.code == 2
 
-    def test_mcp_trust_key_table_has_all_options(self):
-        """_MCP_TRUST_KEY contains mappings for all three flag values."""
-        assert "all" in _MCP_TRUST_KEY
-        assert "this" in _MCP_TRUST_KEY
-        assert "none" in _MCP_TRUST_KEY
-        assert _MCP_TRUST_KEY["all"] == "1"
-        assert _MCP_TRUST_KEY["this"] == "2"
-        assert _MCP_TRUST_KEY["none"] == "3"
-
 
 # ---------------------------------------------------------------------------
-# cmd_create mcp_trust integration — mcp_trust passed through to _wait_for_claude_ready
+# cmd_create mcp_trust integration — mcp_trust is still accepted by cmd_create
+# (passed to the spawned staff command).
 # ---------------------------------------------------------------------------
 
 class TestCmdCreateMcpTrust:
-    """Tests that cmd_create passes mcp_trust to _wait_for_claude_ready."""
+    """Tests that cmd_create still accepts the mcp_trust flag (parser-level)."""
 
     def _setup_create_mocks(self, mock_run):
         """Configure mock_run for a minimal successful create flow."""
@@ -3237,19 +2782,17 @@ class TestCmdCreateMcpTrust:
                 return fake_run_result()
             if "send-keys" in joined:
                 return fake_run_result()
-            if "capture-pane" in joined:
-                return fake_run_result(stdout="╭─ Claude Code ─╮\n│ > │\n")
             return fake_run_result()
         mock_run.side_effect = side_effect
 
-    def test_mcp_trust_this_passed_through_to_wait(self):
-        """cmd_create(mcp_trust='this') passes mcp_trust='this' to _wait_for_claude_ready."""
+    def test_mcp_trust_flag_accepted_with_this(self):
+        """cmd_create(mcp_trust='this') succeeds — mcp_trust flag is still accepted."""
         with patch("subprocess.run") as mock_run:
             with patch("os.path.isdir", return_value=True):
                 with patch("os.path.exists", return_value=False):
                     with patch.object(
-                        crew_module, "_wait_for_claude_ready", return_value=(True, None)
-                    ) as mock_wait:
+                        crew_module, "_wait_for_sentinel", return_value=(True, None)
+                    ):
                         with patch.object(
                             crew_module, "_deliver_tell", return_value=(True, "verified")
                         ):
@@ -3263,21 +2806,16 @@ class TestCmdCreateMcpTrust:
                                 tell="Hello",
                                 mcp_trust="this",
                             )
+        # No assertion needed beyond "did not raise" — mcp_trust is still accepted.
 
-        mock_wait.assert_called_once()
-        _, kwargs = mock_wait.call_args
-        assert kwargs.get("mcp_trust") == "this", (
-            f"Expected mcp_trust='this' passed to _wait_for_claude_ready, got: {mock_wait.call_args}"
-        )
-
-    def test_mcp_trust_defaults_to_all_when_omitted(self):
-        """cmd_create without mcp_trust passes mcp_trust='all' to _wait_for_claude_ready."""
+    def test_cmd_create_calls_wait_for_sentinel_not_claude_ready(self):
+        """cmd_create uses _wait_for_sentinel (sentinel-file) for readiness, not _wait_for_claude_ready."""
         with patch("subprocess.run") as mock_run:
             with patch("os.path.isdir", return_value=True):
                 with patch("os.path.exists", return_value=False):
                     with patch.object(
-                        crew_module, "_wait_for_claude_ready", return_value=(True, None)
-                    ) as mock_wait:
+                        crew_module, "_wait_for_sentinel", return_value=(True, None)
+                    ) as mock_sentinel:
                         with patch.object(
                             crew_module, "_deliver_tell", return_value=(True, "verified")
                         ):
@@ -3291,8 +2829,428 @@ class TestCmdCreateMcpTrust:
                                 tell="Hello",
                             )
 
-        mock_wait.assert_called_once()
-        _, kwargs = mock_wait.call_args
-        assert kwargs.get("mcp_trust") == "all", (
-            f"Expected mcp_trust='all' (default) passed to _wait_for_claude_ready, got: {mock_wait.call_args}"
+        mock_sentinel.assert_called_once_with("test-worker")
+
+
+# ---------------------------------------------------------------------------
+# Sentinel-file readiness system tests
+# ---------------------------------------------------------------------------
+
+class TestSentinelPath:
+    """Tests for _sentinel_path helper."""
+
+    def test_sentinel_path_uses_crew_subdir(self):
+        """_sentinel_path returns a path inside the crew sentinel directory."""
+        path = _sentinel_path("my-worker")
+        assert path.endswith("crew/ready-my-worker")
+
+    def test_sentinel_path_includes_session_name(self):
+        """_sentinel_path encodes the session name in the filename."""
+        path = _sentinel_path("platform-bootstrap")
+        assert "platform-bootstrap" in path
+        assert path.endswith("ready-platform-bootstrap")
+
+    def test_sentinel_dir_constant_is_crew_subdir(self):
+        """_CREW_SENTINEL_DIR is a 'crew' subdirectory of TMPDIR."""
+        assert _CREW_SENTINEL_DIR.endswith("/crew") or _CREW_SENTINEL_DIR.endswith("\\crew")
+
+    def test_sentinel_path_is_inside_sentinel_dir(self):
+        """_sentinel_path returns a path inside _CREW_SENTINEL_DIR."""
+        path = _sentinel_path("abc")
+        assert path.startswith(_CREW_SENTINEL_DIR)
+
+
+class TestCleanStaleSentinel:
+    """Tests for _clean_stale_sentinel."""
+
+    def test_removes_existing_file(self, tmp_path, monkeypatch):
+        """_clean_stale_sentinel removes an existing sentinel file."""
+        sentinel_dir = tmp_path / "crew"
+        sentinel_dir.mkdir()
+        sentinel = sentinel_dir / "ready-myworker"
+        sentinel.touch()
+        monkeypatch.setattr(crew_module, "_CREW_SENTINEL_DIR", str(sentinel_dir))
+
+        _clean_stale_sentinel("myworker")
+
+        assert not sentinel.exists()
+
+    def test_silent_when_file_absent(self, tmp_path, monkeypatch):
+        """_clean_stale_sentinel does not raise when sentinel doesn't exist."""
+        sentinel_dir = tmp_path / "crew"
+        sentinel_dir.mkdir()
+        monkeypatch.setattr(crew_module, "_CREW_SENTINEL_DIR", str(sentinel_dir))
+
+        # Should not raise
+        _clean_stale_sentinel("myworker")
+
+
+class TestCleanupSentinel:
+    """Tests for _cleanup_sentinel (dismiss-side cleanup)."""
+
+    def test_removes_existing_sentinel(self, tmp_path, monkeypatch):
+        """_cleanup_sentinel removes the sentinel file on dismiss."""
+        sentinel_dir = tmp_path / "crew"
+        sentinel_dir.mkdir()
+        sentinel = sentinel_dir / "ready-myworker"
+        sentinel.touch()
+        monkeypatch.setattr(crew_module, "_CREW_SENTINEL_DIR", str(sentinel_dir))
+
+        _cleanup_sentinel("myworker")
+
+        assert not sentinel.exists()
+
+    def test_silent_when_already_absent(self, tmp_path, monkeypatch):
+        """_cleanup_sentinel does not raise when sentinel file is already gone."""
+        sentinel_dir = tmp_path / "crew"
+        sentinel_dir.mkdir()
+        monkeypatch.setattr(crew_module, "_CREW_SENTINEL_DIR", str(sentinel_dir))
+
+        # Should not raise
+        _cleanup_sentinel("myworker")
+
+
+class TestWaitForSentinel:
+    """Tests for _wait_for_sentinel — deterministic event-driven readiness detection via sentinel file."""
+
+    def test_returns_true_immediately_if_sentinel_exists(self, tmp_path, monkeypatch):
+        """If sentinel already exists, returns (True, None) before invoking fswatch."""
+        sentinel_dir = tmp_path / "crew"
+        sentinel_dir.mkdir()
+        (sentinel_dir / "ready-myworker").touch()
+        monkeypatch.setattr(crew_module, "_CREW_SENTINEL_DIR", str(sentinel_dir))
+
+        ready, reason = _wait_for_sentinel("myworker", ceiling=5.0, poll_interval=0.01)
+
+        assert ready is True
+        assert reason is None
+
+    def test_returns_true_via_fswatch_event_driven(self, tmp_path, monkeypatch):
+        """Returns (True, None) when fswatch is available and sentinel is written by background thread.
+
+        This test proves event-driven detection: a background thread writes the sentinel
+        after ~200ms; the main thread calls _wait_for_sentinel with a 5s ceiling and must
+        return True quickly after the write — not by polling at 0.5s intervals.
+        """
+        sentinel_dir = tmp_path / "crew"
+        sentinel_dir.mkdir()
+        monkeypatch.setattr(crew_module, "_CREW_SENTINEL_DIR", str(sentinel_dir))
+
+        sentinel_file = sentinel_dir / "ready-myworker"
+
+        # Background thread: write the sentinel after a brief delay.
+        delay_s = 0.2
+
+        def write_sentinel():
+            time.sleep(delay_s)
+            sentinel_file.touch()
+
+        t = threading.Thread(target=write_sentinel, daemon=True)
+
+        start = time.monotonic()
+        t.start()
+        ready, reason = _wait_for_sentinel("myworker", ceiling=5.0, poll_interval=0.5)
+        elapsed = time.monotonic() - start
+
+        t.join(timeout=2.0)
+
+        assert ready is True, f"Expected ready=True, got reason={reason!r}"
+        assert reason is None
+        # Must have waited at least the delay (not returned from fast-path).
+        assert elapsed >= delay_s * 0.5, (
+            f"Elapsed {elapsed:.3f}s is suspiciously short — may have used fast-path unexpectedly"
+        )
+        # Must have returned well under the outer ceiling — proves event-driven wakeup.
+        assert elapsed < 3.0, (
+            f"Elapsed {elapsed:.3f}s is too close to ceiling — event-driven detection may be broken"
+        )
+
+    def test_returns_false_with_crash_reason_when_hook_present_in_settings(self, tmp_path, monkeypatch):
+        """When ceiling elapses and settings.json shows hook present, reason says 'crashed during boot'."""
+        sentinel_dir = tmp_path / "crew"
+        sentinel_dir.mkdir()  # Dir exists but sentinel file never appears
+        monkeypatch.setattr(crew_module, "_CREW_SENTINEL_DIR", str(sentinel_dir))
+
+        # Mock _hook_present_in_settings to return True (hook is configured).
+        with patch.object(crew_module, "_hook_present_in_settings", return_value=True):
+            ready, reason = _wait_for_sentinel("myworker", ceiling=0.1)
+
+        assert ready is False
+        assert "crashed during boot" in reason, f"Expected 'crashed during boot' in reason, got: {reason!r}"
+
+    def test_returns_false_with_hook_missing_reason_when_hook_absent_from_settings(self, tmp_path, monkeypatch):
+        """When ceiling elapses and settings.json shows hook absent, reason says 'hook missing'."""
+        sentinel_dir = tmp_path / "crew"
+        sentinel_dir.mkdir()
+        monkeypatch.setattr(crew_module, "_CREW_SENTINEL_DIR", str(sentinel_dir))
+
+        # Mock _hook_present_in_settings to return False (hook not configured).
+        with patch.object(crew_module, "_hook_present_in_settings", return_value=False):
+            ready, reason = _wait_for_sentinel("myworker", ceiling=0.1)
+
+        assert ready is False
+        assert "hook missing" in reason, f"Expected 'hook missing' in reason, got: {reason!r}"
+
+    def test_clean_stale_sentinel_before_wait_prevents_false_ready(self, tmp_path, monkeypatch):
+        """_clean_stale_sentinel removes leftover file so fast-path cannot fire on stale data."""
+        sentinel_dir = tmp_path / "crew"
+        sentinel_dir.mkdir()
+        stale = sentinel_dir / "ready-myworker"
+        stale.touch()  # Leftover from prior session
+        monkeypatch.setattr(crew_module, "_CREW_SENTINEL_DIR", str(sentinel_dir))
+
+        _clean_stale_sentinel("myworker")
+
+        # After cleanup, file is gone — fast-path will not fire.
+        assert not stale.exists()
+
+
+class TestHookPresentInSettings:
+    """Tests for _hook_present_in_settings — settings.json parse for hook-missing heuristic."""
+
+    def test_returns_true_when_hook_present_in_session_start(self, tmp_path):
+        """Returns True when crew-lifecycle-hook.py appears in SessionStart hooks."""
+        settings = {
+            "hooks": {
+                "SessionStart": [
+                    {"command": "/nix/store/xxx/crew-lifecycle-hook.py"}
+                ]
+            }
+        }
+        settings_file = tmp_path / "settings.json"
+        settings_file.write_text(__import__("json").dumps(settings))
+
+        with patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(tmp_path)}):
+            result = crew_module._hook_present_in_settings()
+
+        assert result is True
+
+    def test_returns_false_when_hook_absent_from_session_start(self, tmp_path):
+        """Returns False when SessionStart hooks do not include crew-lifecycle-hook.py."""
+        settings = {
+            "hooks": {
+                "SessionStart": [
+                    {"command": "/nix/store/xxx/some-other-hook.py"}
+                ]
+            }
+        }
+        settings_file = tmp_path / "settings.json"
+        settings_file.write_text(__import__("json").dumps(settings))
+
+        with patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(tmp_path)}):
+            result = crew_module._hook_present_in_settings()
+
+        assert result is False
+
+    def test_returns_false_when_no_session_start_hooks(self, tmp_path):
+        """Returns False when settings.json has no SessionStart key."""
+        settings = {"hooks": {}}
+        settings_file = tmp_path / "settings.json"
+        settings_file.write_text(__import__("json").dumps(settings))
+
+        with patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(tmp_path)}):
+            result = crew_module._hook_present_in_settings()
+
+        assert result is False
+
+    def test_returns_true_when_settings_json_missing(self, tmp_path):
+        """Falls back to True (assume hook present) when settings.json is absent."""
+        with patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(tmp_path)}):
+            result = crew_module._hook_present_in_settings()
+
+        assert result is True
+
+    def test_returns_true_when_settings_json_malformed(self, tmp_path):
+        """Falls back to True (assume hook present) when settings.json is malformed JSON."""
+        settings_file = tmp_path / "settings.json"
+        settings_file.write_text("not valid json {{")
+
+        with patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(tmp_path)}):
+            result = crew_module._hook_present_in_settings()
+
+        assert result is True
+
+    def test_handles_string_hook_entries(self, tmp_path):
+        """Handles plain string hook entries (not just dicts with 'command' key)."""
+        settings = {
+            "hooks": {
+                "SessionStart": [
+                    "/nix/store/xxx/crew-lifecycle-hook.py"
+                ]
+            }
+        }
+        settings_file = tmp_path / "settings.json"
+        settings_file.write_text(__import__("json").dumps(settings))
+
+        with patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(tmp_path)}):
+            result = crew_module._hook_present_in_settings()
+
+        assert result is True
+
+
+class TestCmdCreateSentinelCleanup:
+    """Tests that cmd_create cleans stale sentinel before spawn."""
+
+    def _setup_create_mocks(self, mock_run):
+        """Configure mock_run for a minimal successful create flow."""
+        def side_effect(cmd, **kwargs):
+            cmd_list = cmd if isinstance(cmd, list) else [cmd]
+            joined = " ".join(str(c) for c in cmd_list)
+            if "display-message" in joined and "session_name" in joined:
+                return fake_run_result(stdout="tidy-crown\n")
+            if "display-message" in joined and "window_id" in joined:
+                return fake_run_result(stdout="@1\n")
+            if "list-windows" in joined:
+                return fake_run_result(stdout="")
+            if "rev-parse" in joined and "show-toplevel" in joined:
+                return fake_run_result(stdout="/some/repo\n")
+            if "symbolic-ref" in joined:
+                return fake_run_result(stdout="main\n")
+            if "rev-parse" in joined and "upstream" in joined:
+                return fake_run_result(stdout="origin/main\n")
+            if "rev-parse" in joined and "--verify" in joined and "refs/heads" not in joined:
+                return fake_run_result(stdout="abc1234\n")
+            if "fetch" in joined and "origin" in joined:
+                return fake_run_result()
+            if "rev-parse" in joined and "refs/heads" in joined:
+                return fake_run_result(returncode=1)
+            if "branch" in joined and "main" in joined:
+                return fake_run_result()
+            if "worktree" in joined and "add" in joined:
+                return fake_run_result()
+            if "new-window" in joined:
+                return fake_run_result()
+            if "send-keys" in joined:
+                return fake_run_result()
+            return fake_run_result()
+        mock_run.side_effect = side_effect
+
+    def test_stale_sentinel_cleaned_before_spawn(self, tmp_path, monkeypatch):
+        """cmd_create removes stale sentinel before spawning so _wait_for_sentinel waits for fresh signal."""
+        sentinel_dir = tmp_path / "crew"
+        sentinel_dir.mkdir()
+        stale = sentinel_dir / "ready-test-worker"
+        stale.touch()  # Stale file from prior session
+        monkeypatch.setattr(crew_module, "_CREW_SENTINEL_DIR", str(sentinel_dir))
+
+        clean_called = {"called": False, "name": None}
+        original_clean = crew_module._clean_stale_sentinel
+
+        def tracked_clean(name):
+            clean_called["called"] = True
+            clean_called["name"] = name
+            original_clean(name)
+
+        monkeypatch.setattr(crew_module, "_clean_stale_sentinel", tracked_clean)
+
+        with patch("subprocess.run") as mock_run:
+            with patch("os.path.isdir", return_value=True):
+                with patch("os.path.exists", return_value=False):
+                    with patch.object(crew_module, "_wait_for_sentinel", return_value=(True, None)):
+                        with patch.object(crew_module, "_deliver_tell", return_value=(True, "ok")):
+                            self._setup_create_mocks(mock_run)
+                            cmd_create(
+                                name="test-worker",
+                                repo="/some/repo",
+                                branch="test-worker",
+                                base="main",
+                                fmt="xml",
+                                tell="hello",
+                            )
+
+        assert clean_called["called"], "_clean_stale_sentinel must be called before spawn"
+        assert clean_called["name"] == "test-worker"
+
+    def test_stale_sentinel_always_cleaned_even_without_tell(self, tmp_path, monkeypatch):
+        """cmd_create cleans stale sentinel unconditionally, even without --tell.
+
+        Defense-in-depth: future callers adding --tell later would see a stale
+        sentinel if cleanup were conditional. Unconditional cleanup prevents this.
+        """
+        sentinel_dir = tmp_path / "crew"
+        sentinel_dir.mkdir()
+        monkeypatch.setattr(crew_module, "_CREW_SENTINEL_DIR", str(sentinel_dir))
+
+        clean_called = {"called": False, "name": None}
+        monkeypatch.setattr(
+            crew_module, "_clean_stale_sentinel",
+            lambda name: clean_called.update({"called": True, "name": name}),
+        )
+
+        with patch("subprocess.run") as mock_run:
+            with patch("os.path.isdir", return_value=True):
+                with patch("os.path.exists", return_value=False):
+                    self._setup_create_mocks(mock_run)
+                    cmd_create(
+                        name="test-worker",
+                        repo="/some/repo",
+                        branch="test-worker",
+                        base="main",
+                        fmt="xml",
+                        tell=None,  # no --tell — cleanup still fires
+                    )
+
+        assert clean_called["called"], "_clean_stale_sentinel must be called unconditionally"
+        assert clean_called["name"] == "test-worker"
+
+
+class TestCmdDismissSentinelCleanup:
+    """Tests that cmd_dismiss cleans the sentinel for dismissed windows."""
+
+    def _setup_dismiss_mocks(self, mock_run, session="my-session", window_id="@5"):
+        """Configure mock_run for a successful dismiss of 'myworker' window."""
+        def side_effect(cmd, **kwargs):
+            cmd_list = cmd if isinstance(cmd, list) else [cmd]
+            joined = " ".join(str(c) for c in cmd_list)
+            if "display-message" in joined and "session_name" in joined:
+                return fake_run_result(stdout=f"{session}\n")
+            if "display-message" in joined and "window_id" in joined:
+                return fake_run_result(stdout="@99\n")  # invoking window
+            if "list-windows" in joined:
+                # Return the target window (NOT the invoking window)
+                return fake_run_result(
+                    stdout=f"myworker @{window_id[1:]} 0\n"
+                    if "format" not in joined
+                    else f"myworker {window_id} 0\n"
+                )
+            if "kill-window" in joined:
+                return fake_run_result()
+            return fake_run_result()
+        mock_run.side_effect = side_effect
+
+    def test_sentinel_cleaned_on_window_dismiss(self, tmp_path, monkeypatch):
+        """cmd_dismiss calls _cleanup_sentinel with the dismissed window name."""
+        sentinel_dir = tmp_path / "crew"
+        sentinel_dir.mkdir()
+        sentinel = sentinel_dir / "ready-myworker"
+        sentinel.touch()
+        monkeypatch.setattr(crew_module, "_CREW_SENTINEL_DIR", str(sentinel_dir))
+
+        cleanup_calls = []
+        original_cleanup = crew_module._cleanup_sentinel
+        monkeypatch.setattr(
+            crew_module, "_cleanup_sentinel",
+            lambda name: cleanup_calls.append(name),
+        )
+
+        with patch("subprocess.run") as mock_run:
+            # Minimal mocks for dismiss flow.
+            # list-windows output must match the -F format used by get_window_lookup:
+            #   #{session_name}:#{window_index}|#{window_id}|#{window_name}
+            # @99 is the invoking window; @5 is the target window to dismiss.
+            def side_effect(cmd, **kwargs):
+                joined = " ".join(str(c) for c in cmd)
+                if "display-message" in joined and "session_name" in joined:
+                    return fake_run_result(stdout="my-session\n")
+                if "display-message" in joined and "window_id" in joined:
+                    return fake_run_result(stdout="@99\n")
+                if "list-windows" in joined:
+                    return fake_run_result(stdout="my-session:0|@5|myworker\n")
+                return fake_run_result()
+            mock_run.side_effect = side_effect
+
+            cmd_dismiss("myworker", fmt="xml")
+
+        assert "myworker" in cleanup_calls, (
+            f"Expected _cleanup_sentinel('myworker') to be called, got: {cleanup_calls}"
         )

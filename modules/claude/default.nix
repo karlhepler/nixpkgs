@@ -1106,6 +1106,14 @@ $orphan_warning"
                 timeout = 10000;
                 command = "${shellapps.senior-staff-cron-hook}/bin/senior-staff-cron-hook";
               }
+              {
+                # Drops a readiness sentinel file so 'crew create --tell' can wait
+                # deterministically for Claude Code to finish booting. Fires in every
+                # session; derives session name from tmux window name (#W).
+                type = "command";
+                timeout = 5000;
+                command = "${shellapps.crew-lifecycle-hook}/bin/crew-lifecycle-hook";
+              }
             ];
           }];
           PostCompact = [{

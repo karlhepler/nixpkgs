@@ -38,6 +38,180 @@ from typing import Dict, List, Optional, Tuple
 
 
 # ---------------------------------------------------------------------------
+# Session readiness sentinel helpers
+# ---------------------------------------------------------------------------
+# crew create --tell uses a sentinel file dropped by the SessionStart hook
+# (crew-lifecycle-hook.py) to determine when Claude Code has finished booting.
+# This is deterministic: the file's existence is the signal. The old approach
+# (polling pane buffer for TUI box-drawing chars with a 60s timeout) failed
+# in nix-flake repos where startup takes 60s+.
+
+_CREW_SENTINEL_DIR = os.path.join(os.environ.get("TMPDIR", "/tmp"), "crew")
+
+
+def _sentinel_path(name: str) -> str:
+    """Return the readiness sentinel path for the session with the given name."""
+    return os.path.join(_CREW_SENTINEL_DIR, f"ready-{name}")
+
+
+def _clean_stale_sentinel(name: str) -> None:
+    """Remove any stale sentinel for <name> before spawning a new session.
+
+    A leftover sentinel from a crashed or dismissed prior session would cause
+    _wait_for_sentinel to return immediately (false-ready). Cleaning it before
+    spawn ensures the sentinel observed by the wait was written by THIS session.
+    """
+    sentinel = _sentinel_path(name)
+    try:
+        os.unlink(sentinel)
+    except FileNotFoundError:
+        pass  # Already absent — nothing to do.
+    except OSError as exc:
+        print(
+            f"[crew] warning: could not remove stale sentinel '{sentinel}': {exc}",
+            file=sys.stderr,
+        )
+
+
+def _cleanup_sentinel(name: str) -> None:
+    """Remove the readiness sentinel for <name> on session cleanup (dismiss).
+
+    Sentinels must not leak after a session is dismissed.
+    Same as _clean_stale_sentinel but with a dismiss-specific log label.
+    """
+    sentinel = _sentinel_path(name)
+    try:
+        os.unlink(sentinel)
+    except FileNotFoundError:
+        pass  # Already absent — nothing to do.
+    except OSError as exc:
+        print(
+            f"[crew] warning: could not remove sentinel '{sentinel}' on dismiss: {exc}",
+            file=sys.stderr,
+        )
+
+
+# Outer wall-clock ceiling for sentinel-readiness wait. Failure backstop only —
+# sentinel-detection itself is event-driven via fswatch and not bounded by this
+# ceiling under normal operation.
+_SENTINEL_WAIT_CEILING_SECONDS = 5 * 60.0
+
+
+def _hook_present_in_settings() -> bool:
+    """Return True if crew-lifecycle-hook.py is configured as a SessionStart hook.
+
+    Parses the deployed Claude Code settings.json to check whether the SessionStart
+    hook command line includes 'crew-lifecycle-hook.py'. Used to distinguish
+    'hook not installed' from 'session crashed during boot' after ceiling elapsed.
+
+    Falls back to True (assume hook present / crashed) on any parse error so that
+    the safer diagnostic is shown when settings.json is malformed or unreadable.
+    """
+    config_dir = os.environ.get("CLAUDE_CONFIG_DIR", os.path.expanduser("~/.claude"))
+    settings_path = os.path.join(config_dir, "settings.json")
+    try:
+        with open(settings_path) as f:
+            settings = json.load(f)
+        hooks = settings.get("hooks", {})
+        session_start_hooks = hooks.get("SessionStart", [])
+        for hook in session_start_hooks:
+            # Each hook entry may be a dict with a "command" key or a plain string.
+            if isinstance(hook, dict):
+                cmd = hook.get("command", "")
+            elif isinstance(hook, str):
+                cmd = hook
+            else:
+                continue
+            if "crew-lifecycle-hook.py" in cmd:
+                return True
+        return False
+    except Exception:
+        # Malformed settings.json or unreadable — assume hook is present (safer).
+        return True
+
+
+def _wait_for_sentinel(
+    name: str,
+    ceiling: float = _SENTINEL_WAIT_CEILING_SECONDS,
+    poll_interval: float = 0.5,
+) -> tuple:  # Tuple[bool, Optional[str]]
+    """Wait for the readiness sentinel file to appear for the given session name.
+
+    The sentinel is dropped by crew-lifecycle-hook.py's SessionStart handler
+    once Claude Code has fully initialised. Waiting on the file is deterministic:
+    no timing assumptions, no pane-buffer parsing.
+
+    Detection mechanism: fswatch (macOS kqueue backend, guaranteed by
+    modules/packages.nix). Watches the sentinel directory for file-created events,
+    wakes the moment the sentinel appears. Zero-latency detection — no polling
+    interval delay. fswatch is Nix-guaranteed; if it is missing, a clear
+    RuntimeError is raised to surface the contract violation.
+
+    Returns (ready: bool, reason: Optional[str]):
+      (True, None)    — sentinel observed within ceiling.
+      (False, reason) — ceiling elapsed; reason distinguishes:
+          "session never reported ready — SessionStart hook missing in target settings.json"
+          "session never reported ready — likely crashed during boot, check tmux pane"
+    """
+    sentinel = _sentinel_path(name)
+
+    # Fast path: sentinel already present from a very quick boot.
+    if os.path.exists(sentinel):
+        return True, None
+
+    # fswatch is guaranteed by modules/packages.nix. Probe to verify it is on PATH;
+    # if missing, raise a loud error so the operator sees the contract violation
+    # rather than a silent hang or confusing timeout.
+    fswatch_path = "fswatch"
+    probe = subprocess.run(
+        [fswatch_path, "--version"],
+        capture_output=True, check=False,
+    )
+    if probe.returncode != 0:
+        raise RuntimeError(
+            "fswatch probe failed (exit {}) — fswatch is Nix-guaranteed via "
+            "modules/packages.nix; check $PATH".format(probe.returncode)
+        )
+
+    deadline = time.monotonic() + ceiling
+
+    # fswatch loop: each iteration blocks in fswatch until an event fires in
+    # the sentinel directory, then rechecks os.path.exists. If fswatch exits
+    # due to its own timeout (subprocess.TimeoutExpired) we stop and fall
+    # through to the ceiling-elapsed logic below.
+    while time.monotonic() < deadline:
+        if os.path.exists(sentinel):
+            return True, None
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        try:
+            subprocess.run(
+                [fswatch_path, "-1", "--latency", "0.1", _CREW_SENTINEL_DIR],
+                capture_output=True, check=False,
+                timeout=remaining,
+            )
+        except subprocess.TimeoutExpired:
+            break
+    if os.path.exists(sentinel):
+        return True, None
+
+    # Ceiling elapsed — distinguish hook-missing from crash by parsing settings.json.
+    # If the hook is not configured, the sentinel will never appear regardless of
+    # session state. If it is configured, a missing sentinel means the session
+    # likely crashed during boot.
+    if not _hook_present_in_settings():
+        reason = (
+            "session never reported ready — SessionStart hook missing in target settings.json"
+        )
+    else:
+        reason = (
+            "session never reported ready — likely crashed during boot, check tmux pane"
+        )
+    return False, reason
+
+
+# ---------------------------------------------------------------------------
 # tmux helpers
 # ---------------------------------------------------------------------------
 
@@ -1195,9 +1369,13 @@ def cmd_dismiss(targets_str: str, fmt: str) -> None:
             _, pane_index = tmux_target.rsplit(".", 1)
             stable_target = f"{window_id}.{pane_index}"
             subprocess.run(["tmux", "kill-pane", "-t", stable_target], check=False)
+            # Pane dismissals don't remove the whole session, so no sentinel cleanup.
         else:
             # bare window: kill via stable @id — immune to window index renumbering
             subprocess.run(["tmux", "kill-window", "-t", window_id], check=False)
+            # Clean up the readiness sentinel so it doesn't leak after session exit.
+            # The window name is the raw target itself (no pane suffix for bare windows).
+            _cleanup_sentinel(raw)
         if fmt == "xml":
             ET.SubElement(root, "target", crew=label, status="dismissed")
         elif fmt == "json":
@@ -1549,142 +1727,6 @@ def _tmux_window_exists(name: str) -> bool:
     return name in result.stdout.splitlines()
 
 
-def _detect_modal_state(content: str) -> Optional[str]:
-    """Classify pane content as a modal state or None.
-
-    Returns:
-        "workspace_trust"  — workspace-trust modal detected
-        "mcp_trust"        — MCP server trust modal detected
-        "unknown_modal"    — unrecognised modal-like content (❯ 1. ... Enter to confirm)
-        None               — no modal detected
-
-    Detection is conservative: both-line signatures are required for known
-    modals to avoid false positives on incidental UI text.
-    """
-    # Workspace-trust modal: both lines must be present.
-    # Match is case-sensitive by design; future Claude Code localization or text
-    # changes will cause detection to silently fall to unknown_modal (which fails
-    # loud). Preferred over false-positive auto-answers on localized strings.
-    if "Accessing workspace:" in content and "Yes, I trust this folder" in content:
-        return "workspace_trust"
-
-    # MCP server trust modal: both lines must be present.
-    # The 49-char substring assumes crew-created windows inherit a wide terminal
-    # width (typically 220+ cols). If the tmux pane is narrower, the string
-    # wraps and detection fails. Not a practical concern today; documented for
-    # future readers.
-    if "New MCP server found in .mcp.json" in content and "Use this and all future MCP servers in this project" in content:
-        return "mcp_trust"
-
-    # Unknown modal: looks like a modal (numbered choice + confirm prompt) but
-    # doesn't match either known signature — do NOT dismiss; surface it.
-    if "❯ 1." in content and "Enter to confirm" in content:
-        return "unknown_modal"
-
-    return None
-
-
-# MCP trust flag → key to send when the MCP-trust modal fires.
-_MCP_TRUST_KEY: Dict[str, str] = {
-    "all": "1",   # Use this and all future MCP servers in this project
-    "this": "2",  # Use this MCP server
-    "none": "3",  # Continue without using this MCP server
-}
-
-
-def _wait_for_claude_ready(
-    window_name: str,
-    timeout: float = 60.0,
-    poll_interval: float = 0.5,
-    mcp_trust: str = "all",
-) -> Tuple[bool, Optional[str]]:
-    """Poll the target window's pane 0 until Claude Code's TUI is visible.
-
-    Claude Code's interactive prompt renders box-drawing characters (╭, │) that
-    are NOT present in a bare shell prompt. We wait for these to appear, which
-    indicates Claude Code has fully started and is ready for input.
-
-    While waiting, this function also handles startup modals that can appear
-    before Claude Code is ready:
-      - Workspace-trust modal: always auto-answered with '1' (Yes, trust).
-        We just created this worktree — implicit trust is safe.
-      - MCP server trust modal: auto-answered according to the mcp_trust flag
-        ('all' → 1, 'this' → 2, 'none' → 3).
-      - Unknown modals (unrecognised numbered-choice + confirm-prompt): logged
-        to stderr but NOT auto-answered (fail-loud, do not silently dismiss).
-
-    After answering a modal, the loop continues immediately to detect the next
-    modal or the final chat-ready state. Multiple modals chain correctly.
-
-    Returns (ready, reason):
-      - (True, None) when Claude Code's UI is detected.
-      - (False, reason) on timeout; reason is a human-readable string describing
-        why the wait failed (e.g. unknown modal blocking, generic timeout).
-    """
-    # argparse choices=["all","this","none"] enforces validity at the CLI boundary,
-    # so the .get(..., "1") default is defensive-only and won't fire in practice.
-    mcp_key = _MCP_TRUST_KEY.get(mcp_trust, "1")
-    pane_target = f"{window_name}.0"
-    deadline = time.monotonic() + timeout
-    # Tracks the last unknown-modal signature we warned about; used to emit the
-    # warning only once per unique signature (not on every poll iteration).
-    last_warned_modal: Optional[str] = None
-    last_unknown_signature: Optional[str] = None
-    while time.monotonic() < deadline:
-        result = subprocess.run(
-            ["tmux", "capture-pane", "-p", "-t", pane_target, "-S", "-30"],
-            capture_output=True, text=True, check=False,
-        )
-        content = result.stdout
-
-        modal = _detect_modal_state(content)
-
-        if modal == "workspace_trust":
-            # Always trust — we just created this worktree.
-            subprocess.run(
-                ["tmux", "send-keys", "-t", pane_target, "1", "Enter"],
-                capture_output=True, check=False,
-            )
-            time.sleep(poll_interval)
-            continue
-
-        if modal == "mcp_trust":
-            subprocess.run(
-                ["tmux", "send-keys", "-t", pane_target, mcp_key, "Enter"],
-                capture_output=True, check=False,
-            )
-            time.sleep(poll_interval)
-            continue
-
-        if modal == "unknown_modal":
-            # Unknown modal — do NOT auto-answer. Warn once per unique signature
-            # (not on every poll iteration) to avoid flooding stderr with ~120
-            # identical lines over a 60 s timeout at 0.5 s poll interval.
-            current_signature = content[:120]
-            if last_warned_modal != current_signature:
-                last_warned_modal = current_signature
-                print(
-                    f"warning: unknown modal detected in pane '{pane_target}' — not auto-answering. "
-                    "Dismiss manually or the --tell delivery will time out.",
-                    file=sys.stderr,
-                )
-            last_unknown_signature = current_signature
-            time.sleep(poll_interval)
-            continue
-
-        # Claude Code's TUI uses box-drawing characters in the input prompt box.
-        # These chars do NOT appear in a bare zsh/bash prompt, so they are
-        # a reliable signal that Claude Code is running and ready for input.
-        if content and ("╭" in content or "│ " in content):
-            return True, None
-        time.sleep(poll_interval)
-
-    # Timeout: provide a specific reason if an unknown modal was the blocker.
-    if last_unknown_signature is not None:
-        return False, "timeout: unknown modal blocked chat-ready"
-    return False, None
-
-
 def _deliver_tell(
     window_name: str,
     tell: str,
@@ -1807,9 +1849,10 @@ def cmd_create(
     9. Create git worktree.
     9b. Run .git/workout-hooks/post-switch if present (silent no-op if absent).
     10. Create tmux window.
-    11. Start staff (or --cmd override) in the new window (with --name <name> for display).
-    12. If --tell was given: wait for prompt-ready (handling startup modals), then
-        deliver the initial message.
+    11. If --tell: clean stale sentinel for <name>, then start staff in the new window.
+    12. If --tell: wait for readiness sentinel (dropped by SessionStart lifecycle hook),
+        then deliver the initial message. Outer ceiling is 5 minutes; failure reason
+        distinguishes hook-missing from session crash.
     13. Emit structured result.
     14. Auto-delete --tell-file on successful tell delivery.
 
@@ -2080,6 +2123,12 @@ def cmd_create(
     # session display name shown in the prompt box, /resume picker, and terminal
     # title. name is pre-validated by _SAFE_NAME_RE (alphanumeric/hyphens/underscores
     # only) — no shell quoting needed.
+    #
+    # Clean any stale sentinel unconditionally before spawning. A leftover sentinel
+    # from a crashed or dismissed prior session would cause _wait_for_sentinel to
+    # return immediately (false-ready) for any future --tell caller. Defense-in-depth:
+    # even callers not currently using --tell benefit from a clean slate.
+    _clean_stale_sentinel(name)
     base_cmd = cmd_override if cmd_override is not None else "staff"
     if cmd_override is None:
         spawn_cmd = f"staff --model sonnet --name {name}"
@@ -2091,20 +2140,20 @@ def cmd_create(
     )
 
     # --- 12. Deliver initial message (--tell) ---
-    # Wait for Claude Code's TUI (box-drawing chars) before delivering the brief
-    # to avoid the race where send-keys fires before Claude Code's input handler
-    # is active, resulting in the text being consumed by the shell.
+    # Wait for the readiness sentinel dropped by the SessionStart lifecycle hook
+    # (crew-lifecycle-hook.py) before delivering the brief. The sentinel's
+    # existence is a ground-truth signal that Claude Code has fully initialised
+    # and is ready for input — deterministic regardless of how long nix flake
+    # evaluation or direnv bootstrap takes.
     told = False
     told_reason: Optional[str] = None
 
     if tell is not None:
-        ready, wait_reason = _wait_for_claude_ready(name, mcp_trust=mcp_trust)
+        ready, wait_reason = _wait_for_sentinel(name)
         if not ready:
-            # Claude Code didn't reach a ready state within the timeout.
-            # Record told=false; do NOT attempt delivery (would go to shell).
-            # Use the specific reason from _wait_for_claude_ready when available
-            # (e.g. an unknown modal blocked); fall back to the generic message.
-            told_reason = wait_reason if wait_reason else "timeout waiting for Claude Code to start"
+            # Sentinel never appeared within the outer ceiling (5 minutes).
+            # wait_reason already contains the appropriate diagnostic string.
+            told_reason = wait_reason
         else:
             told, told_reason = _deliver_tell(name, tell)
             if not told:
