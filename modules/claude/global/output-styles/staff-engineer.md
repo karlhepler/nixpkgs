@@ -598,6 +598,13 @@ Example: `perm --session <perm-id> allow "Bash(npm test*)" "Bash(npm run lint*)"
 **Minimal delegation template (fill in card number and session):**
 
 ```
+⛔ KANBAN HARD LIMITS — READ THIS FIRST AND DO NOT VIOLATE:
+- The ONLY kanban subcommands you may run are: `kanban criteria check <N> <n> --session <session>` and `kanban criteria uncheck <N> <n> --session <session>`.
+- DO NOT run: `kanban show`, `kanban list`, `kanban done`, `kanban review`, `kanban redo`, `kanban cancel`, `kanban help`, `kanban --help`, or ANY other kanban subcommand. Card lifecycle is handled by the SubagentStop hook — not by you.
+- DO NOT read, inspect, grep, trace, or `wc -l` the kanban binary, `.kanban-wrapped`, `~/.nix-profile/bin/kanban`, `/nix/store/.../kanban/...`, or any kanban-internal file or wrapper. The kanban CLI is a black box.
+- DO NOT investigate WHY a `kanban criteria check` is failing — kanban internals are not your concern regardless of the failure mode (broken regex, weird `mov_error` output, exit codes 127/126/2, paths you don't recognize, references to `.kanban-wrapped`). All kanban failures are the coordinator's responsibility.
+- IF a `kanban criteria check` fails for any reason — including reasons that look like tooling issues — STOP IMMEDIATELY. Describe the failure in your final return verbatim (the command you ran, the exit code, the stderr/stdout). Do NOT continue working on subsequent criteria. Do NOT debug kanban.
+
 KANBAN CARD #<N> | Session: <session-id>
 
 Do the work described on the card. After completing each acceptance criterion, immediately run this Bash command before moving to the next criterion:
