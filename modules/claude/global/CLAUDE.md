@@ -27,6 +27,11 @@
 
 - `kanban clean` / `kanban clean --expunge` / `kanban clean <column>` — **PROHIBITED**. Use `kanban cancel` instead. (Future: `kanban purge` is the intended rename once the external kanban CLI is updated.)
 - `perm purge` — **USER-ONLY.** Claude agents must NEVER call this.
+- **NEVER skip hooks** (`--no-verify`, `--no-gpg-sign`, `git commit -n`, `git push --no-verify`, husky bypass env vars like `HUSKY=0` or `HUSKY_SKIP_HOOKS=1`, or any equivalent). Hooks are part of the contract — they run, every time.
+
+  When a hook fails: **diagnose the underlying cause** (read the failing test output, identify the missing mock, propose a fix), then **fix the underlying issue and retry the operation with hooks intact**. Do NOT propose `--no-verify` (or any equivalent) as an option, even when the failure is a pre-existing flake, even when the change is in unrelated code, even when CI is disabled, even when it's a draft PR. The AI does not have authority to bypass hooks. If the user wants to bypass a hook on their own machine, they will type the flag themselves.
+
+  When using AskUserQuestion: hook-skip flags MUST NOT appear as one of the options. Even framing them as "one of three valid paths" trains the AI to consider them normal. The shape "(Recommended) Push with --no-verify ... | Fix the flake first | Run only relevant tests" is itself the bug — there should be no first option.
 
 ### Ask-First Operations (Require User Approval)
 

@@ -170,7 +170,9 @@ These are coordination, not engineering.
 
 ### 7. Never Bypass Git Hooks
 
-`--no-verify`, `--no-gpg-sign`, and any flag that skips pre-commit, pre-push, or other git hooks are **prohibited** unless the user explicitly requests it. Hooks exist to prevent broken or unsigned code from reaching the remote — bypassing them ships problems the user will pay for later in CI failures, failed deploys, or security audit findings. "The failing check is pre-existing" is not a justification: pre-push hooks enforce repo-wide correctness regardless of who introduced the breakage.
+**No hook-skip flags, ever.** When a pre-commit / pre-push / pre-merge hook fails, the answer is "diagnose and fix the underlying cause" — never `--no-verify`, never `git commit -n`, never any equivalent bypass. Do NOT present `--no-verify` as one of N options to the user — even framing it as an option is the failure mode. Your job is to fix what the hook caught, not to route around it. If the user wants to bypass a hook, they will type the flag themselves on their own machine.
+
+`--no-verify`, `--no-gpg-sign`, `git commit -n`, `git push --no-verify`, husky bypass env vars like `HUSKY=0` or `HUSKY_SKIP_HOOKS=1`, and any equivalent bypass are **absolutely prohibited** under any circumstance — including when the failure is a pre-existing flake, when the change is in unrelated code, when CI is disabled, or when it's a draft PR. Hooks are part of the contract — they run, every time.
 
 **When a hook fails:**
 1. **Read the error.** Understand what check failed and why.
@@ -182,6 +184,8 @@ These are coordination, not engineering.
 - ❌ `git push --no-verify` ("the build error is pre-existing, not my problem")
 - ❌ `git commit --no-verify` ("the linter is complaining about unrelated code")
 - ✅ "Pre-push hook failed with a build error. Spinning up /swe-frontend to fix it before we push."
+
+**AskUserQuestion:** Hook-skip flags MUST NOT appear as one of the options — see global CLAUDE.md § Dangerous Operations for the full prohibition.
 
 ### 8. Scratchpad Hands-Off
 

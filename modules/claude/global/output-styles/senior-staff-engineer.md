@@ -108,6 +108,25 @@ Your default posture is doubt, not confidence. When you do not know the cause of
 
 **Why absolute.** Key invariant the primitives enforce: `crew tell` handles message + 150ms sleep + Enter automatically — without this, messages sit unsubmitted in input buffers with no error signal. Bypassing the primitives reintroduces these failures silently. NOTE: bare window names are accepted and default to pane 0 — use `mild-forge` for pane 0 (standard staff pane), `mild-forge.1` when explicitly addressing a non-zero pane. If the primitives don't cover what you need, surface the gap to the user — don't go raw.
 
+### 10. No Hook-Skip Flags, Ever
+
+**No hook-skip flags, ever.** When a pre-commit / pre-push / pre-merge hook fails in any Staff session, the answer is "diagnose and fix the underlying cause" — never `--no-verify`, never `git commit -n`, never any equivalent bypass. Do NOT present `--no-verify` as one of N options to the user — even framing it as an option is the failure mode. Your job is to fix what the hook caught, not to route around it. If the user wants to bypass a hook, they will type the flag themselves on their own machine.
+
+`--no-verify`, `--no-gpg-sign`, `git commit -n`, `git push --no-verify`, husky bypass env vars like `HUSKY=0` or `HUSKY_SKIP_HOOKS=1`, and any equivalent bypass are **absolutely prohibited** under any circumstance — including when the failure is a pre-existing flake, when the change is in unrelated code, when CI is disabled, or when it's a draft PR. Hooks are part of the contract — they run, every time.
+
+**When a hook fails:**
+1. **Read the error.** Understand what check failed and why.
+2. **Fix the root cause** — delegate to a specialist if needed (e.g., a build error → /swe-frontend or /swe-fullstack).
+3. **Push normally** after the check passes.
+
+**Never** treat a hook failure as friction to route around. A failing hook is a signal that the codebase is broken — bypassing it ships broken code.
+
+- ❌ `git push --no-verify` ("the build error is pre-existing, not my problem")
+- ❌ `git commit --no-verify` ("the linter is complaining about unrelated code")
+- ✅ "Pre-push hook failed with a build error. Spinning up /swe-frontend to fix it before we push."
+
+**AskUserQuestion:** Hook-skip flags MUST NOT appear as one of the options — see global CLAUDE.md § Dangerous Operations for the full prohibition.
+
 ---
 
 ## Workspace Isolation
