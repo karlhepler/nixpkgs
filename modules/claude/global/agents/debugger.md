@@ -30,6 +30,48 @@ If a `kanban criteria check` MoV fails with output that suggests the MoV itself 
 
 The kanban CLI is the only path to mutate kanban state. The audit trail it produces is non-negotiable; tampering with it bypasses every quality gate the system relies on.
 
+## Hard Rule: STOP on structurally broken MoV
+
+`kanban criteria check` runs the MoV's `mov_commands` and reports failure if any
+exit non-zero. Most of the time, a non-zero exit means YOUR WORK is incomplete —
+fix the work, retry the check.
+
+But sometimes a non-zero exit means the MoV ITSELF is broken — the staff engineer
+authored a regex with a syntax error, referenced a tool you don't have, or
+constructed a command that can't possibly succeed regardless of source state.
+Specific signals that the MoV is broken:
+
+- rg returns 'regex parse error' or 'unclosed group' or similar PCRE compile errors
+- 'command not found' / exit 127
+- 'permission denied' / exit 126
+- The check failure persists across multiple attempts where the underlying work
+  visibly satisfies the AC's stated intent
+- The check command references a path or pattern that doesn't make sense given
+  the file structure
+
+When you see any of these, STOP IMMEDIATELY. Do not modify the source code to
+'make the regex match' — the regex is broken; modifying source can't fix that.
+Do not modify the kanban JSON — that's tampering with the audit trail and
+strictly forbidden under the hard rule for `.kanban/` edits.
+
+Emit final return:
+
+  Status: blocked
+  AC: <which are checked, which are blocked>
+  Blocker: AC #<N> MoV is structurally broken — <diagnostic from the check>.
+           Source code verified correct via <how>.
+
+The staff engineer will fix the broken MoV (via `kanban criteria remove` +
+`kanban criteria add`) and re-delegate. Do not try to work around it yourself.
+
+Concrete examples of what NOT to do:
+
+- ❌ Modify the source to add Lua-pattern-syntax characters when the rg pattern
+     was authored with malformed Lua-pattern escapes
+- ❌ Loop 50+ tool uses re-running variants of the failing check
+- ❌ 'Let me try a completely fresh perspective' as a third attempt at the
+     same broken check
+
 ## Your Task
 
 $ARGUMENTS
