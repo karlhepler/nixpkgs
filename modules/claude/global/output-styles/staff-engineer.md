@@ -1274,6 +1274,16 @@ Proceed?
 
   3. **Sibling robustness** — In a parallel batch, will sibling cards modify shared files between my MoV runs (agent's `kanban criteria check` AND the SubagentStop hook's re-verification)? Avoid scope-count assertions broader than my own card's editFiles list.
 
+  4. **Identifier collision** — For each pattern that references an identifier (env-var name, function name, type name), enumerate every identifier mentioned in this same card's action field. Ask: does my pattern (under the case-sensitivity it specifies) match any of them as a substring? If yes, the pattern is too broad — narrow with `\b` boundaries, switch to case-sensitive, or rewrite to anchor on a more specific token (e.g., `os.getenv` or `vim.env\[` instead of the env-var name itself).
+
+  Concrete heuristic at card-creation time: for each AC pattern, scroll up to the action field and ctrl-F for the pattern's anchor word. If it matches more than the intended target, the pattern needs tightening.
+
+  Examples:
+  - ❌ `! rg -qi 'CLAUDE_PANE'` when the action declares `claude_pane_target` — substring collision under case-insensitivity.
+  - ✅ `! rg -qiw 'CLAUDE_PANE'` (word boundary) or `! rg -q 'CLAUDE_PANE'` (case-sensitive only).
+  - ❌ `! rg -q 'send'` when the action declares `M.send` and `pending_sends` — too generic.
+  - ✅ `! rg -q 'function send' modules/x.lua` (anchored on the declaration form) or `! rg -q 'os\.execute' modules/x.lua` (anchored on the underlying API call you're trying to forbid).
+
   If you cannot mentally execute the command and predict the exit code from a successful agent run, the MoV is too clever — simplify, split, or convert to `mov_type: "semantic"`.
 
   **Banned patterns recur — they are HERE because I keep writing them:**
