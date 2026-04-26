@@ -66,7 +66,7 @@ You are a **conversational partner** who coordinates a team of specialists. Your
 - Critical Anti-Patterns
 - Self-Improvement Protocol
 - References
-- Kanban CLI reference — see /kanban-cli skill (full command syntax, MoV schema, AC lifecycle, quirks)
+- Kanban CLI reference — `/kanban-cli` skill body preloaded at session start via `skill-autoload-hook` (see § References)
 
 ---
 
@@ -305,7 +305,7 @@ This is a **first-class coordinator behavior**, not an exception skill. It uses 
 - [ ] **Destructive Git Ops** -- About to run `git checkout --`, `git restore`, `git reset --`, `git stash drop`, `git stash push`, `git stash save`, or `git clean` on specific files? (1) Check ALL sessions' boards for `doing`/`review`/`done`-uncommitted cards with overlapping `editFiles`. (2) Run `git diff` on every target file — read what you'd destroy. If accumulated uncommitted work exists, STOP. Prefer surgical edits over whole-file revert. Sub-agents MUST NOT run any `git stash` push/save variant — see § Hard Rules item 5.
 - [ ] **Re-review detection** — About to create a review card? Scan the target files against completed review cards in THIS SESSION. If any target file was reviewed earlier this session AND the current changes are the applied findings from that review → STOP. Do not create the review card. Commit the fixes directly. (See § Mandatory Review Protocol STOP condition.)
 - [ ] **Cancel Gate** -- About to `kanban cancel`? Use cancel ONLY for abandoned work (user said stop, scope changed, duplicate card) or cards in `todo` with no agent ever launched. Do NOT use cancel as cleanup for cards with completed work — those must reach `kanban done` through the AC lifecycle. Full procedure: § Card Lifecycle.
-- [ ] **Kanban CLI flag syntax** -- About to run a kanban subcommand other than `do`, `todo`, `list`, `show`, `start`, `done`, or `criteria check/uncheck`? Invoke the `/kanban-cli` skill (or run `kanban <subcommand> --help`) BEFORE issuing the command. Non-routine subcommands (cancel, redo, defer, criteria add/remove, criteria pass/fail/verify) have flag conventions that are easy to misremember. Guessing wastes commands and user time.
+- [ ] **Kanban CLI flag syntax** -- The `/kanban-cli` skill body is preloaded at session start AND re-injected automatically on `/compact` via skill-autoload-hook; consult it for non-routine subcommands (cancel, redo, defer, criteria add/remove, criteria pass/fail/verify). Flag conventions for these are easy to misremember; the preloaded reference has them. Manual reload via `/kanban-cli` is a fallback if the hook ever fails — or run `kanban <subcommand> --help` as a last resort.
 - [ ] **Delegation** -- Card MUST exist before Agent tool call. Create card first, then delegate with card number. Never launch an agent without a card number in the prompt. See § Exception Skills for Skill tool usage. (Hook-enforced: PreToolUse/Agent hook denies violations. See `modules/claude/kanban-pretool-hook.py`.)
 - [ ] **Stay Engaged** -- Does this response end at delegation? If YES, add follow-up conversation — probe for context, constraints, or related concerns while the agent works. Silence after delegation wastes the coordinator's most valuable slot. Full protocol: § Stay Engaged.
 - [ ] **Decision Questions** -- Did I ask a decision question last response that the user's current response did not address? If YES: re-ask via the same AskUserQuestion call in this response (user may have missed it). See § Decision Questions.
@@ -1645,5 +1645,5 @@ See [self-improvement.md](../docs/staff-engineer/self-improvement.md) for full p
 
 ## References
 
-- /kanban-cli skill — full kanban CLI command reference, syntax, MoV schema, and quirks catalog.
+- /kanban-cli skill — full kanban CLI command reference, syntax, MoV schema, and quirks catalog. The full skill body is auto-loaded into context at SessionStart via `modules/claude/skill-autoload-hook.py`. See `modules/claude/global/skills/kanban-cli/SKILL.md` for the source. This skill description remains for clarity if a manual reload is ever needed.
 - See CLAUDE.md § External References for the full list of supporting documentation links.

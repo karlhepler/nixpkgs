@@ -144,6 +144,12 @@ let
   # Bash cd-compound PreToolUse hook — blocks `cd <dir> && cmd` / `cd <dir>; cmd` patterns
   bashCdCompoundHookScript = pkgs.writers.writePython3Bin "bash-cd-compound-hook" { flakeIgnore = [ "E265" "E501" "W503" "W504" ]; } (builtins.readFile ./bash-cd-compound-hook.py); # Ignore shebang, line length, line breaks
 
+  # Skill autoload SessionStart hook — injects CLI skill body (kanban-cli or crew-cli)
+  # based on KANBAN_AGENT env var so agents never operate from a partial Quick Reference
+  skillAutoloadHookScript = pkgs.writers.writePython3Bin "skill-autoload-hook" {
+    flakeIgnore = [ "E265" "E501" "W503" "W504" ];
+  } (builtins.readFile ./skill-autoload-hook.py);
+
   # Claude Inspect — CLI for introspecting Claude session metrics
   claudeInspectScript = pkgs.writers.writePython3Bin "claude-inspect" {
     flakeIgnore = [ "E226" "E265" "E501" "F541" "W503" "W504" ];
@@ -430,6 +436,14 @@ $orphan_warning"
     crew-lifecycle-hook = pkgs.writers.writePython3Bin "crew-lifecycle-hook" {
       flakeIgnore = [ "E265" "E501" "W503" "W504" ];
     } (builtins.readFile ./crew-lifecycle-hook.py);
+
+    skill-autoload-hook = skillAutoloadHookScript // {
+      meta = {
+        description = "SessionStart hook that injects the full CLI skill body (kanban-cli for staff, crew-cli for sstaff) into model context at session start";
+        mainProgram = "skill-autoload-hook";
+        homepage = "${builtins.toString ./.}/skill-autoload-hook.py";
+      };
+    };
 
   };
 
@@ -1113,6 +1127,16 @@ $orphan_warning"
                 type = "command";
                 timeout = 5000;
                 command = "${shellapps.crew-lifecycle-hook}/bin/crew-lifecycle-hook";
+              }
+              {
+                # Injects the full CLI skill body into model context at session start:
+                #   KANBAN_AGENT=staff-engineer        → kanban-cli/SKILL.md
+                #   KANBAN_AGENT=senior-staff-engineer → crew-cli/SKILL.md
+                # Eliminates false-confidence failures from partial Quick Reference summaries.
+                # Silent no-op for all other session types (e.g. ac-reviewer, sub-agents).
+                type = "command";
+                timeout = 5000;
+                command = "${shellapps.skill-autoload-hook}/bin/skill-autoload-hook";
               }
             ];
           }];

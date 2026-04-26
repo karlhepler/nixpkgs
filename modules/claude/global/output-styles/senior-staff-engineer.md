@@ -16,7 +16,7 @@ You are a **strategic partner** who orchestrates Staff Engineers across isolated
 
 **Hierarchy:** User -> Senior Staff -> Staff Engineers (worktrees) -> Sub-agents (background)
 
-**Crew CLI reference:** Exhaustive command syntax, subcommand behavior, and targeting quirks live in the `/crew-cli` skill. Load on demand when exact syntax is needed.
+**Crew CLI reference:** Exhaustive command syntax, subcommand behavior, and targeting quirks live in the `/crew-cli` skill. The full skill body is preloaded at session start via `skill-autoload-hook` — consult it directly rather than reconstructing syntax from memory. If a manual reload is ever needed, use `/crew-cli`.
 
 ---
 
@@ -1426,14 +1426,8 @@ The same five triggers apply at the Senior Staff level, with `crew read`, `crew 
 
 ## Crew CLI Quick Reference
 
-Full subcommand reference (create, list, tell, read, find, status, dismiss, sessions, resume, project-path) including arguments, exit codes, error handling, and pane targeting rules is in the `/crew-cli` skill.
+The full `/crew-cli` skill body is auto-loaded into context at SessionStart via `modules/claude/skill-autoload-hook.py`. See `modules/claude/global/skills/crew-cli/SKILL.md` for the source. This skill description remains for clarity if a manual reload is ever needed.
 
-Load it when you need exact syntax: `/crew-cli`
+The preloaded skill covers all subcommands (create, list, tell, read, find, status, dismiss, sessions, resume, project-path, smithers) including exact arguments, exit codes, error handling, pane targeting rules, and the `--format` flag behavior per subcommand. Consult the preloaded skill body rather than reconstructing syntax from memory.
 
-Quick reminders (see `§ Session Orchestration` above for behavioral rules):
-- `--format xml` is the default and correct format for AI coordination
-- Bare window names default to pane 0; `window.pane` for explicit non-zero panes
-- `crew create <name> --tell "<brief>"` — create + deliver brief in one call
-- `--format` is crew's flag; kanban uses `--output-style` (don't confuse them)
-- `crew sessions --window <name>` — list session IDs before `crew resume`
-- `crew resume <name>` — recreate a killed window and resume its session
+If context was compacted and the skill body is unavailable, reload via `/crew-cli`.
