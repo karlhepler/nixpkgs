@@ -2113,6 +2113,30 @@ def cmd_create(
             exit_code=1,
         )
 
+    # --- 10b. Apply emoji icon to the new window ---
+    # Karl's manual flow assigns a random emoji icon to every new tmux window via
+    # an after-new-window hook that calls `random-emoji`. That hook sets the
+    # @theme_plugin_inactive_window_icon and @theme_plugin_active_window_icon window
+    # options used by the Tokyo Night theme to display an emoji before the window
+    # name in the status bar (e.g. "🦊 audit").
+    #
+    # When `tmux new-window -d` creates a detached window, the hook fires but
+    # targets the CALLER's current window (not the new one) because focus never
+    # switches. The icon therefore lands on the wrong window, leaving crew-created
+    # windows without an emoji.
+    #
+    # Fix: explicitly invoke `random-emoji` via `tmux run-shell -t <name>.0` after
+    # the window is created. Running it in the new window's pane context ensures
+    # `tmux set-window-option` inside `random-emoji` targets the correct window.
+    #
+    # The window NAME itself is unchanged by `random-emoji` — it only sets window
+    # options used by the theme. Bare-name resolution in `get_window_lookup` (which
+    # matches on `#{window_name}`) therefore continues to work without modification.
+    subprocess.run(
+        ["tmux", "run-shell", "-t", f"{name}.0", "random-emoji"],
+        capture_output=True, check=False
+    )
+
     # --- 11. Start staff (or --cmd override) in the new window ---
     # Default command is `staff --model sonnet --name <name>` (spawns a staff
     # engineer session pinned to Sonnet — prevents accidental Opus burns on

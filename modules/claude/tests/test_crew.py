@@ -3254,3 +3254,139 @@ class TestCmdDismissSentinelCleanup:
         assert "myworker" in cleanup_calls, (
             f"Expected _cleanup_sentinel('myworker') to be called, got: {cleanup_calls}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Emoji icon assignment (crew create calls random-emoji for new windows)
+# ---------------------------------------------------------------------------
+
+class TestCmdCreateEmojiIcon:
+    """Tests that crew create invokes random-emoji for the new window after creation.
+
+    Karl's manual flow assigns a random emoji icon to every new tmux window via an
+    after-new-window hook. When `tmux new-window -d` creates a detached window, that
+    hook targets the caller's current window (not the new one). crew create therefore
+    explicitly calls `tmux run-shell -t <name>.0 random-emoji` after window creation
+    so that the new window receives the correct icon.
+
+    The emoji is stored as a window OPTION (@theme_plugin_inactive_window_icon and
+    @theme_plugin_active_window_icon), not in the window NAME itself. The window name
+    remains the bare name supplied to crew create. This means bare-name resolution in
+    get_window_lookup (and all subcommands that use it) continues to work unchanged.
+    """
+
+    def _setup_create_mocks(self, mock_run):
+        """Configure mock_run for a standard successful create flow."""
+        def side_effect(cmd, **kwargs):
+            cmd_list = cmd if isinstance(cmd, list) else [cmd]
+            joined = " ".join(str(c) for c in cmd_list)
+            if "display-message" in joined and "session_name" in joined:
+                return fake_run_result(stdout="tidy-crown\n")
+            if "display-message" in joined and "window_id" in joined:
+                return fake_run_result(stdout="@1\n")
+            if "list-windows" in joined:
+                return fake_run_result(stdout="")
+            if "rev-parse" in joined and "show-toplevel" in joined:
+                return fake_run_result(stdout="/some/repo\n")
+            if "symbolic-ref" in joined:
+                return fake_run_result(stdout="main\n")
+            if "rev-parse" in joined and "upstream" in joined:
+                return fake_run_result(stdout="origin/main\n")
+            if "rev-parse" in joined and "--verify" in joined and "refs/heads" not in joined:
+                return fake_run_result(stdout="abc1234\n")
+            if "fetch" in joined and "origin" in joined:
+                return fake_run_result()
+            if "rev-parse" in joined and "refs/heads" in joined:
+                return fake_run_result(returncode=1)
+            if "branch" in joined and "main" in joined:
+                return fake_run_result()
+            if "worktree" in joined and "add" in joined:
+                return fake_run_result()
+            if "new-window" in joined:
+                return fake_run_result()
+            if "run-shell" in joined:
+                return fake_run_result()
+            if "send-keys" in joined:
+                return fake_run_result()
+            return fake_run_result()
+        mock_run.side_effect = side_effect
+
+    def test_random_emoji_called_after_new_window(self, capsys):
+        """crew create must invoke 'tmux run-shell -t <name>.0 random-emoji' after new-window."""
+        with patch("subprocess.run") as mock_run:
+            with patch("os.path.isdir", return_value=True):
+                with patch("os.path.exists", return_value=False):
+                    self._setup_create_mocks(mock_run)
+                    cmd_create(
+                        name="emoji-test",
+                        repo="/some/repo",
+                        branch="emoji-test",
+                        base="main",
+                        fmt="xml",
+                    )
+
+        all_cmds = [c[0][0] for c in mock_run.call_args_list if isinstance(c[0][0], list)]
+        run_shell_calls = [c for c in all_cmds if "run-shell" in c]
+        emoji_calls = [c for c in run_shell_calls if "random-emoji" in c]
+        assert emoji_calls, (
+            "Expected a 'tmux run-shell ... random-emoji' call; "
+            f"run-shell calls found: {run_shell_calls}"
+        )
+        emoji_call = emoji_calls[0]
+        # Must target the newly created window's first pane
+        joined = " ".join(str(x) for x in emoji_call)
+        assert "emoji-test.0" in joined, (
+            f"random-emoji must be targeted at <name>.0, got: {joined!r}"
+        )
+
+    def test_random_emoji_called_after_new_window_not_before(self, capsys):
+        """random-emoji invocation must come AFTER tmux new-window, not before."""
+        with patch("subprocess.run") as mock_run:
+            with patch("os.path.isdir", return_value=True):
+                with patch("os.path.exists", return_value=False):
+                    self._setup_create_mocks(mock_run)
+                    cmd_create(
+                        name="order-test",
+                        repo="/some/repo",
+                        branch="order-test",
+                        base="main",
+                        fmt="xml",
+                    )
+
+        all_cmds = [" ".join(str(x) for x in c[0][0]) for c in mock_run.call_args_list
+                    if isinstance(c[0][0], list)]
+        new_window_idx = next(
+            (i for i, c in enumerate(all_cmds) if "new-window" in c), None
+        )
+        emoji_idx = next(
+            (i for i, c in enumerate(all_cmds) if "run-shell" in c and "random-emoji" in c), None
+        )
+        assert new_window_idx is not None, "Expected tmux new-window call"
+        assert emoji_idx is not None, "Expected random-emoji call"
+        assert emoji_idx > new_window_idx, (
+            f"random-emoji (idx={emoji_idx}) must come after new-window (idx={new_window_idx})"
+        )
+
+    def test_bare_name_resolution_unchanged_by_emoji(self):
+        """get_window_lookup returns bare window names; bare-name resolution is unaffected.
+
+        random-emoji sets window OPTIONS (@theme_plugin_inactive_window_icon), not the
+        window NAME. The actual tmux window name remains the bare name supplied to
+        crew create (e.g. 'audit', not '🦊 audit'). This test documents that contract:
+        get_window_lookup parses #{window_name} which is unchanged, so all crew subcommands
+        (tell/read/dismiss/list) continue to accept the bare name without modification.
+        """
+        raw_output = (
+            "my-session:0|@1|audit\n"
+            "my-session:1|@2|flag-preview\n"
+        )
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = fake_run_result(stdout=raw_output)
+            lookup = get_window_lookup()
+
+        # Bare names must be resolvable directly
+        assert "audit" in lookup, "Bare name 'audit' must be in lookup"
+        assert "flag-preview" in lookup, "Bare name 'flag-preview' must be in lookup"
+        # No emoji-prefixed key should appear (window names are bare)
+        emoji_keys = [k for k in lookup if not k.isascii() or k != k.strip()]
+        assert not emoji_keys, f"No emoji-prefixed keys expected in lookup, got: {emoji_keys}"
