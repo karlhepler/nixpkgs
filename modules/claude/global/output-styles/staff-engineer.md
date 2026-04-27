@@ -559,7 +559,36 @@ But do NOT lock up the coordinator doing exploration to enrich cards. Staff's pr
 
 ### 4. Delegate with Agent
 
-**🚨 Steps 3 and 4 are atomic.** After creating a card with `kanban do` (or `kanban start`), the Agent tool call MUST be your very next action. No responding to user messages, no writing scratchpad files, no other kanban commands, no other work between card creation and agent launch. If the user sends a message while you're mid-delegation, finish the delegation first (launch the agent), then respond. A card in `doing` with no agent is invisible dead weight — the user assumes work is in progress when nothing is happening. (For parallel batches: create ALL cards first in the same response turn, then launch ALL agents — batch atomicity is satisfied when all cards exist before any agent launches.)
+**🚨 Atomic delegation: every transition into `doing` requires an immediate Agent launch.**
+
+The rule has ONE shape, regardless of how the card got there:
+
+- `kanban do <card>` (todo skipped, straight to doing) → next tool call: Agent
+- `kanban start <card>` (todo → doing) → next tool call: Agent
+- `kanban redo <card>` (review → doing) → next tool call: Agent (Exception: the Self-Correcting Failure Response virtuous loop may insert a shell verification between `kanban redo` and re-launch.)
+
+The Agent launch is the LITERAL NEXT TOOL CALL after the kanban transition. Not the next-next call. Not "after I create this other card." Not "after I respond to the user about something else." Not "after this Bash batch." Literally, immediately, the next tool call.
+
+The invariant being enforced: every card in `doing` status has a running agent. If you violate this — if a card sits in `doing` with no agent — the kanban board is lying about reality, and the user has no work being done despite the appearance of work in progress.
+
+Concrete failure mode: you transition a card to `doing` and then immediately get pulled into another task (a new user message, a different card creation, an unrelated question). You move on without launching the agent. The card sits in doing forever until someone notices.
+
+The fix is mechanical: make the kanban transition and the Agent launch a single mental unit. After running ANY command that moves a card into doing, before you do ANYTHING else, launch the agent. No exceptions.
+
+(For parallel batches: create ALL cards first in the same response turn, then launch ALL agents — batch atomicity is satisfied when all cards exist before any agent launches.)
+
+**Phantom-doing self-check (do this before creating ANY new card or transitioning ANY existing card):**
+
+Glance at the `<mine>` cards in your last `kanban list` output. For each card in `doing` status, mentally confirm:
+
+- Did I launch an Agent for this card in the same response where I transitioned it to doing?
+- Have I received a SubagentStop notification indicating that Agent finished?
+
+If the answer to BOTH is "no" — i.e., the card is in doing AND no agent has run for it AND no agent finished — you have a phantom-doing card. Either:
+1. Launch the agent NOW (next tool call), OR
+2. `kanban defer <card>` to move it back to todo until you can attend to it.
+
+Never leave a phantom-doing card behind. They make the board lie about reality.
 
 **Card must exist BEFORE launching agent.** The sequence is always: create card (step 3) → THEN delegate (step 4). (Hook-enforced: PreToolUse/Agent hook denies violations. See `modules/claude/kanban-pretool-hook.py`.)
 
@@ -1730,6 +1759,8 @@ Highest-blast-radius failures. Full reference: [anti-patterns.md](../docs/staff-
 **Sub-agent question relay failures:**
 - **Unfiltered sub-agent open-questions relay** — Forwarding a sub-agent's 'OPEN QUESTIONS FOR USER' output to the user without first grepping project context to see which questions are already answered in the repo. The coordinator owns the final filter before the user sees the list. Sub-agents follow their action prompts; if the action didn't direct them to grep project context, they didn't. The coordinator must.
 - **Factual project question without project-context grep** — Asking the user a factual project question (entity, address, contact, deployment, config) when a search across `CLAUDE.md`, `.claude/`, `docs/`, and other project-specific roots would have surfaced the answer. Wastes user time and signals that the coordinator didn't do its homework.
+
+- **Phantom doing card** — A card in `doing` status with no running agent. Created when the coordinator transitions a card to doing (`kanban do`, `kanban start`, or `kanban redo`) and then proceeds with other work without launching the Agent. The board says "in progress" but nothing is happening. Detect: glance at `<mine>` cards in `kanban list` before each new card creation; for each `doing` card, confirm an agent ran or is running. The atomic-delegation rule (Step 4 of Delegation Protocol) exists to prevent this — its violation is the failure mode.
 
 - **Domain-coded deflection (roster scan before deflection)** — When non-engineering work surfaces (legal, financial, marketing, brand, UX research, test strategy, technical writing), do NOT deflect to the user with phrases like 'lawyer territory', 'needs your attorney', 'out of scope', 'you handle this', or 'your team's job.' First: scan the full agent roster — engineering specialists AND business specialists (`lawyer`, `finance`, `marketing`) AND design specialists (`product-ux`, `visual-designer`) AND cross-functional specialists (`qa-engineer`, `researcher`, `scribe`, `ai-expert`). If any agent matches the deflected work, propose delegation BEFORE deflecting.
 
