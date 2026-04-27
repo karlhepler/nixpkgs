@@ -305,7 +305,7 @@ This is a **first-class coordinator behavior**, not an exception skill. It uses 
 **Conditional (mandatory when triggered):**
 
 - [ ] **Context7 MCP** -- Library/framework work? **Background sub-agents cannot access MCP servers.** YOU must do the Context7 lookup before creating cards. Use `mcp__context7__resolve-library-id` then `mcp__context7__query-docs`. Encode results where sub-agents can reach them: inline in the card's `action` field for single-card context, or written to `.scratchpad/context7-<library>-<session>.md` and referenced by path for multi-card context. "Read the docs first" applies to ALL task types — implementation, debugging, and investigation.
-- [ ] **Scope Discipline** -- Delegating work? Evaluate the pre-creation gate checklist from § Card Management — Card Sizing and Scope: thresholds (AC/concerns/changes/files), reference-don't-restate, enumerate locations when audit exists, Haiku-default for mechanical, per-edit progress writes, discovery/execution separation, MoV regex cross-check (rg/PCRE vs source-language escapes). Soft violations become hard stalls — enforce at card-creation time, not after the first stall.
+- [ ] **Scope Discipline** -- Delegating work? Evaluate the pre-creation gate checklist from § Card Management — Card Sizing and Scope: thresholds (AC/concerns/changes/files), reference-don't-restate, enumerate locations when audit exists, Haiku-default for mechanical, per-edit progress writes, discovery/execution separation, MoV regex cross-check (rg/PCRE vs source-language escapes), literal-content MoV prefers -F over regex. Soft violations become hard stalls — enforce at card-creation time, not after the first stall.
 - [ ] **Destructive Git Ops** -- About to run `git checkout --`, `git restore`, `git reset --`, `git stash drop`, `git stash push`, `git stash save`, or `git clean` on specific files? (1) Check ALL sessions' boards for `doing`/`review`/`done`-uncommitted cards with overlapping `editFiles`. (2) Run `git diff` on every target file — read what you'd destroy. If accumulated uncommitted work exists, STOP. Prefer surgical edits over whole-file revert. Sub-agents MUST NOT run any `git stash` push/save variant — see § Hard Rules item 5.
 - [ ] **Re-review detection** — About to create a review card? Scan the target files against completed review cards in THIS SESSION. If any target file was reviewed earlier this session AND the current changes are the applied findings from that review → STOP. Do not create the review card. Commit the fixes directly. (See § Mandatory Review Protocol STOP condition.)
 - [ ] **Cancel Gate** -- About to `kanban cancel`? Use cancel ONLY for abandoned work (user said stop, scope changed, duplicate card) or cards in `todo` with no agent ever launched. Do NOT use cancel as cleanup for cards with completed work — those must reach `kanban done` through the AC lifecycle. Full procedure: § Card Lifecycle.
@@ -1329,6 +1329,17 @@ Proceed?
   strings, code that constructs regexes), every metachar in the literal text
   must be escaped via the matching tool's escape syntax, not the source's.
 
+  **Default to fixed-strings matching for literal content checks:**
+
+  When a programmatic MoV checks for the presence/absence of a literal string in a file, prefer rg's `-F` (or `--fixed-strings`) flag over regex matching. This eliminates the JSON-encode → shell-quote → regex-escape backslash-counting hazard.
+
+  - ❌ `rg -q '\\\\u001b\\[13;5u' file` — three layers of escaping required; one wrong count produces an 'unclosed character class' or 'no match' error
+  - ✅ `rg -qF '\u001b[13;5u' file` — JSON `\\` → `\` after decode → rg sees literal `\u001b[13;5u` and finds the bytes verbatim
+
+  Use regex matching only when actually needed (alternation `a|b`, anchors `^$`, classes `[a-z]`, repetition `*+?{n,m}`). For 'is this exact string in the file' checks, regex is overkill and the JSON-encoding hazard is real.
+
+  Recurring rule: if your MoV pattern contains 4+ backslashes in its JSON form, you're probably writing regex when fixed-strings would suffice. Stop and switch to `-F`.
+
 - [ ] Progress protocol block pasted into action field for any multi-file work (see block below)
 - [ ] Discovery and execution in separate cards — discovery consumes the budget; execution with pre-supplied locations is cheap. Mix them and the card stalls with findings in memory and zero files changed
 - [ ] Research card action states the question (one sentence), deliverable, and constraints — NOT a step-by-step method
@@ -1659,6 +1670,8 @@ Highest-blast-radius failures. Full reference: [anti-patterns.md](../docs/staff-
   **Test before any `kanban do`**: For each `mov_commands[].cmd` field, can you confidently predict its exit code given a successful agent run? If no, simplify or convert to `mov_type: "semantic"`.
 
 - **MoV regex with wrong escape language** — Authoring an rg/PCRE pattern using Lua pattern syntax (`%(`, `%.`, `%*`) where rg syntax (`\(`, `\.`, `\*`) was needed. The pattern fails to compile or matches the wrong thing; sub-agent loops or work stalls. Recurring failure mode in this repo (CLAUDE_PANE substring + the cathy parser pattern). Recognize: when the matching tool is rg and the source contains regex meta-chars, escapes follow rg syntax.
+
+- **JSON-encoded rg pattern over-escaping** — Authoring a JSON MoV with N backslashes when N+2 or N-2 was correct. Easy to miscount across the JSON → shell-quote → rg-regex layers, especially when matching content that itself contains backslashes (Nix string literals, escape sequences in code). Symptom: rg returns 'regex parse error: unclosed character class' or 'no match' when the file is verifiably correct. Recurring failure mode in this repo. Default to `rg -F` for literal-string checks; reserve regex for actual pattern matching.
 
 **Sub-agent question relay failures:**
 - **Unfiltered sub-agent open-questions relay** — Forwarding a sub-agent's 'OPEN QUESTIONS FOR USER' output to the user without first grepping project context to see which questions are already answered in the repo. The coordinator owns the final filter before the user sees the list. Sub-agents follow their action prompts; if the action didn't direct them to grep project context, they didn't. The coordinator must.
