@@ -13,7 +13,7 @@ crew [-h] [--format {xml,json,human}] {list,tell,read,dismiss,find,create,status
 ```
 
 **Global flag:**
-- `--format` / `-f` — Output format: `xml` (default), `json`, or `human`. Applies to subcommands that produce structured output. Always use `xml` (machine-parseable); never `human`.
+- `--format` / `-f` — Output format: `xml` (default), `json`, or `human`. Applies to subcommands that produce structured output. Default is `xml` (machine-parseable) — omit the flag in the common case. Only override with `--format json` when parsing requires JSON. Never use `--format human` for AI coordination — it breaks parseability.
 
 ---
 
@@ -116,7 +116,7 @@ Claude Code installs as a versioned binary (`~/.local/share/claude/versions/2.x.
 ```bash
 crew list                    # Survey all Claude panes in current session
 crew list --all              # Full fleet including shells, smithers, etc.
-crew list --format xml       # Explicit XML (same as default)
+crew list --format json      # Override default; useful when piping to a JSON parser
 ```
 
 ---
@@ -498,7 +498,7 @@ crew smithers pricing --format json  # JSON output
 
 ## Format and Exit Codes
 
-**Output format:** Applies to subcommands that produce structured output: `crew list`, `crew read`, `crew find`, `crew status`, `crew sessions`, `crew resume`, `crew project-path`. These accept `--format xml` (default), `--format json`, or `--format human`. Always use `xml` for AI coordination — machine-parseable and unambiguous.
+**Output format:** Applies to subcommands that produce structured output: `crew list`, `crew read`, `crew find`, `crew status`, `crew sessions`, `crew resume`, `crew project-path`. These accept `--format xml` (default), `--format json`, or `--format human`. Since `xml` is the default, omit the `--format` flag in the common case — only pass `--format json` when downstream parsing requires JSON. Never use `--format human` for AI coordination — it breaks parseability.
 
 **Exit codes:**
 - `0` — Success

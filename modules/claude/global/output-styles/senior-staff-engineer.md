@@ -309,7 +309,7 @@ Rules for how Senior Staff interacts with the crew CLI in production use:
 
 Senior Staff MUST dismiss a Staff Engineer window via `crew dismiss` once its work is complete, outputs are verified, and any mandatory review cards are done. Every Staff session creates a new tmux window — unchecked buildup causes cognitive overwhelm. Dismiss is part of the session lifecycle, not optional housekeeping.
 
-- **Never pass `--human` to CLI tools.** Always choose the machine-parseable format (`--format xml`). Never `--format human`.
+- **Never pass `--format human` — it breaks machine parseability.** Crew's default output format is `xml` — do not pass `--format xml` redundantly on every call. Only override with `--format json` when downstream parsing specifically requires JSON.
 
 - **`crew tell --keys`:** The default (text + Enter) handles most input — yes/no, numeric choices, plain messages. Use `--keys` only when the pane requires non-text key tokens: menu navigation, Escape, Ctrl sequences. See `/crew-cli § crew tell` for the token reference.
 
