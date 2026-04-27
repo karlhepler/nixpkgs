@@ -124,6 +124,15 @@ local function strip_trailing_blank(lines)
   return lines
 end
 
+-- Strip leading blank / whitespace-only lines from a table of lines.
+-- Modifies the table in-place and returns it.
+local function strip_leading_blank(lines)
+  while #lines > 0 and lines[1]:match('^%s*$') do
+    table.remove(lines, 1)
+  end
+  return lines
+end
+
 -- Check if a tmux target pane is in copy-mode (synchronous).
 -- Returns '1' if in copy-mode, '0' otherwise. Returns nil on error.
 -- Used on the immediate-send path (fires once per send, not in the poll loop).
@@ -172,6 +181,9 @@ local function drain_and_paste(buf, target, opts)
 
   -- Strip trailing blank lines
   active = strip_trailing_blank(active)
+
+  -- Strip leading blank lines
+  active = strip_leading_blank(active)
 
   -- Empty → return silently
   if #active == 0 then
