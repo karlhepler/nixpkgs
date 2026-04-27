@@ -1232,6 +1232,14 @@ The debugger performs hypothesis-testing EXPERIMENTS as part of its methodology.
   }
   ```
   Reason: subjective inspection command — no exit code semantics, requires reading and judging code. Use `mov_type: "semantic"` for this.
+  ```json
+  {
+    "text": "All keywords present in spec file",
+    "mov_type": "programmatic",
+    "mov_commands": [{"cmd": "rg -qi 'a\\|b\\|c' file", "timeout": 10}]
+  }
+  ```
+  Reason: in ripgrep's default Rust regex engine, `\|` is a LITERAL pipe character, not alternation. Bare `|` IS alternation. The pattern above matches only files containing literal `|` characters between `a`, `b`, `c`. Use bare `|` for alternation, OR — better — split into separate `mov_commands` entries (one per keyword) so failures identify WHICH keyword is missing.
 
   **`timeout` is mandatory** on every command in `mov_commands`. Typical values: 5–30 seconds for file checks and `rg` commands; up to 120 seconds for test runners. Cap at 1800 seconds (30 minutes).
 
@@ -1254,7 +1262,7 @@ The debugger performs hypothesis-testing EXPERIMENTS as part of its methodology.
   ✅ `pytest modules/foo/tests/` — direct Nix binary, bypasses mise shims
   ❌ `python3 -m pytest` — `python3` hits mise shim without pytest; silent failure
 
-  _(This augments the `rg -E` footnote in global CLAUDE.md § Use `rg` and `fd`.)_
+  _(This augments the `rg -E` footnote in global CLAUDE.md § Use `rg` and `fd`.)_ See also: § Critical Anti-Patterns `rg \|` alternation trap for another rg-specific gotcha (literal pipe vs alternation in the default Rust regex engine).
 
   **Banned MoV patterns (pre-creation audit):**
   - ❌ `rg -E ...` / `rg -qE ...` — `-E` is `--encoding` in ripgrep, not extended regex (PCRE2 is default). Use `rg -q` or `rg -qi` (case-insensitive).
@@ -1467,6 +1475,12 @@ Proceed?
   Use regex matching only when actually needed (alternation `a|b`, anchors `^$`, classes `[a-z]`, repetition `*+?{n,m}`). For 'is this exact string in the file' checks, regex is overkill and the JSON-encoding hazard is real.
 
   Recurring rule: if your MoV pattern contains 4+ backslashes in its JSON form, you're probably writing regex when fixed-strings would suffice. Stop and switch to `-F`.
+
+  **Multi-term checks: prefer separate `mov_commands` entries over single-pattern alternation.**
+
+  When a MoV needs to verify multiple keywords or files exist, prefer N separate `mov_commands` entries (one per term) over a single alternation regex. Separate entries identify WHICH term failed; alternation in a single pattern only tells you 'something failed' without saying which. The cost is N rg invocations instead of 1 — negligible compared to the diagnostic value when an AC fails.
+
+  Exception: when alternation is genuinely needed (e.g., 'either X or Y is present, doesn't matter which'), use bare `|` in ripgrep's default engine — NEVER `\|`, which is a LITERAL pipe character.
 
 - [ ] Progress protocol block pasted into action field for any multi-file work (see block below)
 - [ ] Discovery and execution in separate cards — discovery consumes the budget; execution with pre-supplied locations is cheap. Mix them and the card stalls with findings in memory and zero files changed
@@ -1800,6 +1814,8 @@ Highest-blast-radius failures. Full reference: [anti-patterns.md](../docs/staff-
 - **MoV regex with wrong escape language** — Authoring an rg/PCRE pattern using Lua pattern syntax (`%(`, `%.`, `%*`) where rg syntax (`\(`, `\.`, `\*`) was needed. The pattern fails to compile or matches the wrong thing; sub-agent loops or work stalls. Recurring failure mode in this repo (CLAUDE_PANE substring + the cathy parser pattern). Recognize: when the matching tool is rg and the source contains regex meta-chars, escapes follow rg syntax.
 
 - **JSON-encoded rg pattern over-escaping** — Authoring a JSON MoV with N backslashes when N+2 or N-2 was correct. Easy to miscount across the JSON → shell-quote → rg-regex layers, especially when matching content that itself contains backslashes (Nix string literals, escape sequences in code). Symptom: rg returns 'regex parse error: unclosed character class' or 'no match' when the file is verifiably correct. Recurring failure mode in this repo. Default to `rg -F` for literal-string checks; reserve regex for actual pattern matching.
+
+- **rg `\|` alternation trap** — Authoring `rg 'a\|b\|c'` expecting alternation. In ripgrep's default Rust regex engine, `\|` is a LITERAL pipe character; bare `|` is alternation. The pattern matches only files containing literal pipe characters, not files where any of `a`, `b`, `c` appear. Symptom: programmatic MoV passes only when the file contains pipe characters, fails on otherwise-correct work. Recurring failure mode in this repo. Fix: bare `|` for alternation, OR split into separate `mov_commands` entries.
 
 **Sub-agent question relay failures:**
 - **Unfiltered sub-agent open-questions relay** — Forwarding a sub-agent's 'OPEN QUESTIONS FOR USER' output to the user without first grepping project context to see which questions are already answered in the repo. The coordinator owns the final filter before the user sees the list. Sub-agents follow their action prompts; if the action didn't direct them to grep project context, they didn't. The coordinator must.
