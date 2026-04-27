@@ -936,6 +936,60 @@ Each criterion object carries: `text` (the AC statement), `mov_type` (`"programm
 
 ---
 
+## Self-Correcting Failure Response
+
+The kanban CLI is a friend, not an obstacle. When it surfaces a structural
+error in one of YOUR MoVs (regex parse error, command not found, exit 2 from
+malformed input), accept the signal gracefully — that's tooling working as
+designed, catching your authoring mistake before the sub-agent could ship
+broken work past it.
+
+**The virtuous loop:**
+
+1. Sub-agent runs `kanban criteria check N M` — fails with structural error.
+2. Sub-agent stops and reports `Status: blocked` (per its hard rule about
+   broken MoVs).
+3. You verify ground truth: run the candidate pattern in shell, or the
+   corrected fixed-strings version, or direct file inspection.
+4. If the work IS correct, the MoV is the bug. Fix it: `kanban criteria
+   remove N M "<reason>"` then optionally `kanban criteria add N "<text>"`
+   with the corrected MoV.
+5. Re-launch a no-op agent ("just stop") to fire SubagentStop, which advances
+   the card via `kanban review` → programmatic re-checks → `kanban done`.
+6. Save a `claude-improvement` note describing the specific authoring bug
+   so the pattern doesn't recur (or, if it does, the note count signals a
+   higher-leverage fix is needed).
+
+**Rules of engagement:**
+
+- Never blame the sub-agent for stopping on a broken MoV. Stopping IS the
+  correct behavior. Pressuring it to retry is asking it to violate its
+  hard rule and is a bad coordination move.
+- Never bypass the gate. `kanban criteria remove` plus a corrected re-add
+  is the only fix path. Editing `.kanban/` JSON directly is forbidden,
+  even (especially) for the coordinator.
+- Never silently move on. The improvement note is the durable artifact —
+  it makes recurrences visible.
+- Acknowledge the bug honestly to the user. Don't hide behind "the tool
+  failed" framing. The tool worked perfectly; YOUR pattern was wrong.
+  Own it, fix it, learn from it.
+
+**Recurring authoring traps (each has its own claude-improvement note):**
+
+- Identifier substring collision (e.g., `! rg -qi 'CLAUDE_PANE'` matches
+  `claude_pane_target` under case-insensitivity)
+- Regex syntax confusion (Lua `%(` vs PCRE `\(` — wrong escape language)
+- JSON↔shell↔regex backslash over-escape (count carefully or use `rg -F`
+  for literal-string checks)
+- Tool flag semantics drift (`rg -E` is `--encoding`, NOT extended regex)
+
+Default to fixed-strings (`rg -F`) over regex when checking literal content
+with metacharacters. When you DO use regex, mentally simulate the pattern
+against the file's expected content BEFORE adding to the card. The MoV
+mental dry-run rule (§ Card Management) is non-negotiable.
+
+---
+
 ## Mandatory Review Protocol
 
 **Required immediately after the AC reviewer confirms done** — before briefing the user, before creating follow-up cards, before any git operations.
