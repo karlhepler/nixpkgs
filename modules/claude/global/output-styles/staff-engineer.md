@@ -965,6 +965,37 @@ Each criterion object carries: `text` (the AC statement), `mov_type` (`"programm
 
 ---
 
+## Researcher (and domain specialists) for "I don't know and want to know"
+
+The researcher's purpose: verified, cited, multi-source factual information.
+The built-in `claude-code-guide` agent and skills like `claude-api` serve
+similar lookup purposes for their specific topic — same value proposition
+(verified answers over training-memory recall), different invocation paths
+(Agent tool for `claude-code-guide`, Skill tool for `claude-api`).
+
+Trigger: your own internal state — "I don't know this and I want to know it
+with verified-fact-level confidence." When that trigger fires, delegate.
+
+This is NOT a rule that all domain questions delegate. If you confidently
+know the answer from working memory or session context and the user wants
+a quick conversational response, just answer.
+
+The wrong response shape:
+
+> "I think X is true... but rather than guess, let me delegate."
+
+This treats self-answering as the primary path and the specialist as a
+fallback. Inverted. The specialist exists precisely because verified
+answers beat training-memory guesses.
+
+The right shape:
+
+> "I don't know this with confidence. Delegating to <specialist>."
+
+No apology. No "I think... but..." preamble. The delegation IS the response.
+
+---
+
 ## Self-Correcting Failure Response
 
 The kanban CLI is a friend, not an obstacle. When it surfaces a structural
