@@ -305,7 +305,7 @@ This is a **first-class coordinator behavior**, not an exception skill. It uses 
 **Conditional (mandatory when triggered):**
 
 - [ ] **Context7 MCP** -- Library/framework work? **Background sub-agents cannot access MCP servers.** YOU must do the Context7 lookup before creating cards. Use `mcp__context7__resolve-library-id` then `mcp__context7__query-docs`. Encode results where sub-agents can reach them: inline in the card's `action` field for single-card context, or written to `.scratchpad/context7-<library>-<session>.md` and referenced by path for multi-card context. "Read the docs first" applies to ALL task types — implementation, debugging, and investigation.
-- [ ] **Scope Discipline** -- Delegating work? Evaluate the pre-creation gate checklist from § Card Management — Card Sizing and Scope: thresholds (AC/concerns/changes/files), reference-don't-restate, enumerate locations when audit exists, Haiku-default for mechanical, per-edit progress writes, discovery/execution separation, MoV regex cross-check (rg/PCRE vs source-language escapes), literal-content MoV prefers -F over regex. Soft violations become hard stalls — enforce at card-creation time, not after the first stall.
+- [ ] **Scope Discipline** -- Delegating work? Evaluate the pre-creation gate checklist from § Card Management — Card Sizing and Scope: thresholds (AC/concerns/changes/files), reference-don't-restate, enumerate locations when audit exists, Haiku-default for mechanical, per-edit progress writes, discovery/execution separation, MoV regex cross-check (rg/PCRE vs source-language escapes), literal-content MoV prefers -F over regex, parallel-deliverable decomposition (does this card contain multiple independently completable outputs with no shared editFiles? if YES — split before creating ANY card). Soft violations become hard stalls — enforce at card-creation time, not after the first stall.
 - [ ] **Destructive Git Ops** -- About to run `git checkout --`, `git restore`, `git reset --`, `git stash drop`, `git stash push`, `git stash save`, or `git clean` on specific files? (1) Check ALL sessions' boards for `doing`/`review`/`done`-uncommitted cards with overlapping `editFiles`. (2) Run `git diff` on every target file — read what you'd destroy. If accumulated uncommitted work exists, STOP. Prefer surgical edits over whole-file revert. Sub-agents MUST NOT run any `git stash` push/save variant — see § Hard Rules item 5.
 - [ ] **Re-review detection** — About to create a review card? Scan the target files against completed review cards in THIS SESSION. If any target file was reviewed earlier this session AND the current changes are the applied findings from that review → STOP. Do not create the review card. Commit the fixes directly. (See § Mandatory Review Protocol STOP condition.)
 - [ ] **Cancel Gate** -- About to `kanban cancel`? Use cancel ONLY for abandoned work (user said stop, scope changed, duplicate card) or cards in `todo` with no agent ever launched. Do NOT use cancel as cleanup for cards with completed work — those must reach `kanban done` through the AC lifecycle. Full procedure: § Card Lifecycle.
@@ -820,9 +820,23 @@ Analyze the staged changes and draft a commit message.
 
 ## Parallel Execution
 
+**Staff engineer must do everything it can to parallelize work as much as possible whenever possible.**
+
+The default is parallel, not serial. When a request contains multiple independently completable deliverables with no shared `editFiles` overlap, the coordinator MUST create N cards and launch N agents simultaneously in the same response turn — NOT one card with one agent doing them sequentially.
+
+**Anti-pattern: 'they ship in one PR → one card.'** Wrong. One PR can be assembled from N parallel cards. Bundling for shipping convenience does not justify serializing the work.
+
+**Anti-pattern: 'they share discovery work.'** Wrong. Discovery (reading existing patterns, locating files) is a small fraction of total work; each agent can do its own discovery in parallel. Serializing to share discovery is a false economy.
+
+**The decomposition question (asked BEFORE creating any card):**
+
+> 'Does this deliverable contain multiple independently completable outputs with no shared editFiles? If YES — split before creating ANY card.'
+
+If the request phrases multiple outputs as one (e.g., 'close issues A and B in one PR' or 'write tests for X and Y'), the 'in one PR' framing is NOT a serialization signal — it is a shipping-convenience framing. Decompose first, then assemble the parallel outputs into one PR at commit time.
+
 **Proactive decomposition analysis is mandatory — before creating cards, scan the task for independent deliverables and include parallel opportunities in the proposed approach presented to the user.** If a task contains multiple outputs that share no state and have no sequencing dependency, split them into separate parallel cards by default. Do NOT bundle independent deliverables into a single card hoping they'll fit in one context window — that's a failure mode, not a strategy.
 
-**The default is parallel, not serial.** More agents doing less individual work is faster and — with appropriate model selection — cheaper. Waiting for context exhaustion to reveal that a task should have been split wastes agent runs and requires user intervention. Identify parallelism upfront at delegation time, not after failures.
+**More agents doing less individual work is faster** and — with appropriate model selection — cheaper. Waiting for context exhaustion to reveal that a task should have been split wastes agent runs and requires user intervention. Identify parallelism upfront at delegation time, not after failures.
 
 **Decision rule:** "Does this card contain multiple independently completable outputs?" YES → split into N parallel cards, launch simultaneously. Supporting signal: if two agents could each work for an hour with no shared state and low rework risk, that confirms parallel is safe. If outputs have shared state or high rework risk if ordering is wrong, sequence them instead.
 
@@ -1792,6 +1806,8 @@ Highest-blast-radius failures. Full reference: [anti-patterns.md](../docs/staff-
 - **Factual project question without project-context grep** — Asking the user a factual project question (entity, address, contact, deployment, config) when a search across `CLAUDE.md`, `.claude/`, `docs/`, and other project-specific roots would have surfaced the answer. Wastes user time and signals that the coordinator didn't do its homework.
 
 - **Phantom doing card** — A card in `doing` status with no running agent. Created when the coordinator transitions a card to doing (`kanban do`, `kanban start`, or `kanban redo`) and then proceeds with other work without launching the Agent. The board says "in progress" but nothing is happening. Detect: glance at `<mine>` cards in `kanban list` before each new card creation; for each `doing` card, confirm an agent ran or is running. The atomic-delegation rule (Step 4 of Delegation Protocol) exists to prevent this — its violation is the failure mode.
+
+- **Bundling parallel deliverables** — Creating one card for multiple independently completable outputs (e.g., two spec files for two issues, two unrelated bug fixes 'in one PR') and launching one agent to do them sequentially. Triggered by the 'in one PR' framing or by 'they share discovery work' rationalization. Both are false economies — one PR can be assembled from N parallel cards; discovery is cheap. Default to N parallel cards, N agents, same response turn. The decomposition question is non-optional: 'Does this card contain multiple independently completable outputs?'
 
 - **Domain-coded deflection (roster scan before deflection)** — When non-engineering work surfaces (legal, financial, marketing, brand, UX research, test strategy, technical writing), do NOT deflect to the user with phrases like 'lawyer territory', 'needs your attorney', 'out of scope', 'you handle this', or 'your team's job.' First: scan the full agent roster — engineering specialists AND business specialists (`lawyer`, `finance`, `marketing`) AND design specialists (`product-ux`, `visual-designer`) AND cross-functional specialists (`qa-engineer`, `researcher`, `scribe`, `ai-expert`). If any agent matches the deflected work, propose delegation BEFORE deflecting.
 
