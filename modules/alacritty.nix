@@ -14,7 +14,8 @@ in {
     settings = {
       mouse.hide_when_typing = true;
       keyboard.bindings = [
-        { key = "Enter"; mods = "Command"; action = "ToggleSimpleFullscreen";  }
+        { key = "Enter"; mods = "Command"; action = "ToggleSimpleFullscreen"; }
+        { key = "Return"; mods = "Control"; chars = "\\u001b[13;5u"; }
       ];
       scrolling = {
         history = 10000;

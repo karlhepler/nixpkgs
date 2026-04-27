@@ -58,8 +58,11 @@
         tree-sitter-gdscript
         tree-sitter-go
         tree-sitter-helm
+        tree-sitter-javascript
+        tree-sitter-json
         tree-sitter-lua
         tree-sitter-markdown
+        tree-sitter-markdown_inline
         tree-sitter-nix
         tree-sitter-python
         tree-sitter-rust
@@ -218,6 +221,18 @@
           debug = false,
           claude_code_cmd = "claude"
         })
+      '';
+    }
+
+    {
+      plugin = pkgs.vimUtils.buildVimPlugin {
+        pname = "cathy";
+        version = "0.1.0-local";
+        src = ./cathy-local;
+      };
+      type = "lua";
+      config = ''
+        require('cathy').setup({})
       '';
     }
 

@@ -189,6 +189,15 @@ in {
       # Smooth scrolling optimizations
       set -ga terminal-overrides ',*256color*:smcup@:rmcup@'
       set -ga terminal-overrides ',alacritty:Tc'
+      # Kitty keyboard protocol passthrough (required for <C-CR> and other distinguishable
+      # modifier+key combinations in nvim). Without these, tmux absorbs nvim's kkp probe
+      # and never forwards it to the outer terminal (Alacritty), so nvim falls back to
+      # legacy keyboard handling. The xterm* glob matches the TERM value that Alacritty
+      # sets (xterm-256color, see modules/alacritty.nix). Kkp is negotiated per-app, so
+      # only nvim opts in; Claude Code and other panes are unaffected.
+      set -s extended-keys on
+      set -as terminal-features 'xterm*:extkeys'
+      set -as terminal-features 'tmux*:extkeys'
       set -g status-interval 1
       set -g renumber-windows on
 
