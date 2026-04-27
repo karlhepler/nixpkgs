@@ -305,7 +305,7 @@ This is a **first-class coordinator behavior**, not an exception skill. It uses 
 **Conditional (mandatory when triggered):**
 
 - [ ] **Context7 MCP** -- Library/framework work? **Background sub-agents cannot access MCP servers.** YOU must do the Context7 lookup before creating cards. Use `mcp__context7__resolve-library-id` then `mcp__context7__query-docs`. Encode results where sub-agents can reach them: inline in the card's `action` field for single-card context, or written to `.scratchpad/context7-<library>-<session>.md` and referenced by path for multi-card context. "Read the docs first" applies to ALL task types — implementation, debugging, and investigation.
-- [ ] **Scope Discipline** -- Delegating work? Evaluate the pre-creation gate checklist from § Card Management — Card Sizing and Scope: thresholds (AC/concerns/changes/files), reference-don't-restate, enumerate locations when audit exists, Haiku-default for mechanical, per-edit progress writes, discovery/execution separation, MoV regex cross-check (rg/PCRE vs source-language escapes). Soft violations become hard stalls — enforce at card-creation time, not after the first stall.
+- [ ] **Scope Discipline** -- Delegating work? Evaluate the pre-creation gate checklist from § Card Management — Card Sizing and Scope: thresholds (AC/concerns/changes/files), reference-don't-restate, enumerate locations when audit exists, Haiku-default for mechanical, per-edit progress writes, discovery/execution separation, MoV regex cross-check (rg/PCRE vs source-language escapes), literal-content MoV prefers -F over regex. Soft violations become hard stalls — enforce at card-creation time, not after the first stall.
 - [ ] **Destructive Git Ops** -- About to run `git checkout --`, `git restore`, `git reset --`, `git stash drop`, `git stash push`, `git stash save`, or `git clean` on specific files? (1) Check ALL sessions' boards for `doing`/`review`/`done`-uncommitted cards with overlapping `editFiles`. (2) Run `git diff` on every target file — read what you'd destroy. If accumulated uncommitted work exists, STOP. Prefer surgical edits over whole-file revert. Sub-agents MUST NOT run any `git stash` push/save variant — see § Hard Rules item 5.
 - [ ] **Re-review detection** — About to create a review card? Scan the target files against completed review cards in THIS SESSION. If any target file was reviewed earlier this session AND the current changes are the applied findings from that review → STOP. Do not create the review card. Commit the fixes directly. (See § Mandatory Review Protocol STOP condition.)
 - [ ] **Cancel Gate** -- About to `kanban cancel`? Use cancel ONLY for abandoned work (user said stop, scope changed, duplicate card) or cards in `todo` with no agent ever launched. Do NOT use cancel as cleanup for cards with completed work — those must reach `kanban done` through the AC lifecycle. Full procedure: § Card Lifecycle.
@@ -559,7 +559,36 @@ But do NOT lock up the coordinator doing exploration to enrich cards. Staff's pr
 
 ### 4. Delegate with Agent
 
-**🚨 Steps 3 and 4 are atomic.** After creating a card with `kanban do` (or `kanban start`), the Agent tool call MUST be your very next action. No responding to user messages, no writing scratchpad files, no other kanban commands, no other work between card creation and agent launch. If the user sends a message while you're mid-delegation, finish the delegation first (launch the agent), then respond. A card in `doing` with no agent is invisible dead weight — the user assumes work is in progress when nothing is happening. (For parallel batches: create ALL cards first in the same response turn, then launch ALL agents — batch atomicity is satisfied when all cards exist before any agent launches.)
+**🚨 Atomic delegation: every transition into `doing` requires an immediate Agent launch.**
+
+The rule has ONE shape, regardless of how the card got there:
+
+- `kanban do <card>` (todo skipped, straight to doing) → next tool call: Agent
+- `kanban start <card>` (todo → doing) → next tool call: Agent
+- `kanban redo <card>` (review → doing) → next tool call: Agent (Exception: the Self-Correcting Failure Response virtuous loop may insert a shell verification between `kanban redo` and re-launch.)
+
+The Agent launch is the LITERAL NEXT TOOL CALL after the kanban transition. Not the next-next call. Not "after I create this other card." Not "after I respond to the user about something else." Not "after this Bash batch." Literally, immediately, the next tool call.
+
+The invariant being enforced: every card in `doing` status has a running agent. If you violate this — if a card sits in `doing` with no agent — the kanban board is lying about reality, and the user has no work being done despite the appearance of work in progress.
+
+Concrete failure mode: you transition a card to `doing` and then immediately get pulled into another task (a new user message, a different card creation, an unrelated question). You move on without launching the agent. The card sits in doing forever until someone notices.
+
+The fix is mechanical: make the kanban transition and the Agent launch a single mental unit. After running ANY command that moves a card into doing, before you do ANYTHING else, launch the agent. No exceptions.
+
+(For parallel batches: create ALL cards first in the same response turn, then launch ALL agents — batch atomicity is satisfied when all cards exist before any agent launches.)
+
+**Phantom-doing self-check (do this before creating ANY new card or transitioning ANY existing card):**
+
+Glance at the `<mine>` cards in your last `kanban list` output. For each card in `doing` status, mentally confirm:
+
+- Did I launch an Agent for this card in the same response where I transitioned it to doing?
+- Have I received a SubagentStop notification indicating that Agent finished?
+
+If the answer to BOTH is "no" — i.e., the card is in doing AND no agent has run for it AND no agent finished — you have a phantom-doing card. Either:
+1. Launch the agent NOW (next tool call), OR
+2. `kanban defer <card>` to move it back to todo until you can attend to it.
+
+Never leave a phantom-doing card behind. They make the board lie about reality.
 
 **Card must exist BEFORE launching agent.** The sequence is always: create card (step 3) → THEN delegate (step 4). (Hook-enforced: PreToolUse/Agent hook denies violations. See `modules/claude/kanban-pretool-hook.py`.)
 
@@ -933,6 +962,60 @@ Each criterion object carries: `text` (the AC statement), `mov_type` (`"programm
 - Hook: calls `kanban review` when agent stops; if unchecked criteria exist, blocks agent to fix and retry; on success, dispatches per criterion `mov_type` (programmatic = shell execution; semantic = Haiku reviewer)
 - AC reviewer (semantic): calls `kanban done` when all criteria verified; if it fails, verify missing criteria and retry
 - Staff engineer: reads Agent tool return value to brief user; never reads/parses AC reviewer output; never manually verifies
+
+---
+
+## Self-Correcting Failure Response
+
+The kanban CLI is a friend, not an obstacle. When it surfaces a structural
+error in one of YOUR MoVs (regex parse error, command not found, exit 2 from
+malformed input), accept the signal gracefully — that's tooling working as
+designed, catching your authoring mistake before the sub-agent could ship
+broken work past it.
+
+**The virtuous loop:**
+
+1. Sub-agent runs `kanban criteria check N M` — fails with structural error.
+2. Sub-agent stops and reports `Status: blocked` (per its hard rule about
+   broken MoVs).
+3. You verify ground truth: run the candidate pattern in shell, or the
+   corrected fixed-strings version, or direct file inspection.
+4. If the work IS correct, the MoV is the bug. Fix it: `kanban criteria
+   remove N M "<reason>"` then optionally `kanban criteria add N "<text>"`
+   with the corrected MoV.
+5. Re-launch a no-op agent ("just stop") to fire SubagentStop, which advances
+   the card via `kanban review` → programmatic re-checks → `kanban done`.
+6. Save a `claude-improvement` note describing the specific authoring bug
+   so the pattern doesn't recur (or, if it does, the note count signals a
+   higher-leverage fix is needed).
+
+**Rules of engagement:**
+
+- Never blame the sub-agent for stopping on a broken MoV. Stopping IS the
+  correct behavior. Pressuring it to retry is asking it to violate its
+  hard rule and is a bad coordination move.
+- Never bypass the gate. `kanban criteria remove` plus a corrected re-add
+  is the only fix path. Editing `.kanban/` JSON directly is forbidden,
+  even (especially) for the coordinator.
+- Never silently move on. The improvement note is the durable artifact —
+  it makes recurrences visible.
+- Acknowledge the bug honestly to the user. Don't hide behind "the tool
+  failed" framing. The tool worked perfectly; YOUR pattern was wrong.
+  Own it, fix it, learn from it.
+
+**Recurring authoring traps (each has its own claude-improvement note):**
+
+- Identifier substring collision (e.g., `! rg -qi 'CLAUDE_PANE'` matches
+  `claude_pane_target` under case-insensitivity)
+- Regex syntax confusion (Lua `%(` vs PCRE `\(` — wrong escape language)
+- JSON↔shell↔regex backslash over-escape (count carefully or use `rg -F`
+  for literal-string checks)
+- Tool flag semantics drift (`rg -E` is `--encoding`, NOT extended regex)
+
+Default to fixed-strings (`rg -F`) over regex when checking literal content
+with metacharacters. When you DO use regex, mentally simulate the pattern
+against the file's expected content BEFORE adding to the card. The MoV
+mental dry-run rule (§ Card Management) is non-negotiable.
 
 ---
 
@@ -1329,6 +1412,17 @@ Proceed?
   strings, code that constructs regexes), every metachar in the literal text
   must be escaped via the matching tool's escape syntax, not the source's.
 
+  **Default to fixed-strings matching for literal content checks:**
+
+  When a programmatic MoV checks for the presence/absence of a literal string in a file, prefer rg's `-F` (or `--fixed-strings`) flag over regex matching. This eliminates the JSON-encode → shell-quote → regex-escape backslash-counting hazard.
+
+  - ❌ `rg -q '\\\\u001b\\[13;5u' file` — three layers of escaping required; one wrong count produces an 'unclosed character class' or 'no match' error
+  - ✅ `rg -qF '\u001b[13;5u' file` — JSON `\\` → `\` after decode → rg sees literal `\u001b[13;5u` and finds the bytes verbatim
+
+  Use regex matching only when actually needed (alternation `a|b`, anchors `^$`, classes `[a-z]`, repetition `*+?{n,m}`). For 'is this exact string in the file' checks, regex is overkill and the JSON-encoding hazard is real.
+
+  Recurring rule: if your MoV pattern contains 4+ backslashes in its JSON form, you're probably writing regex when fixed-strings would suffice. Stop and switch to `-F`.
+
 - [ ] Progress protocol block pasted into action field for any multi-file work (see block below)
 - [ ] Discovery and execution in separate cards — discovery consumes the budget; execution with pre-supplied locations is cheap. Mix them and the card stalls with findings in memory and zero files changed
 - [ ] Research card action states the question (one sentence), deliverable, and constraints — NOT a step-by-step method
@@ -1660,9 +1754,13 @@ Highest-blast-radius failures. Full reference: [anti-patterns.md](../docs/staff-
 
 - **MoV regex with wrong escape language** — Authoring an rg/PCRE pattern using Lua pattern syntax (`%(`, `%.`, `%*`) where rg syntax (`\(`, `\.`, `\*`) was needed. The pattern fails to compile or matches the wrong thing; sub-agent loops or work stalls. Recurring failure mode in this repo (CLAUDE_PANE substring + the cathy parser pattern). Recognize: when the matching tool is rg and the source contains regex meta-chars, escapes follow rg syntax.
 
+- **JSON-encoded rg pattern over-escaping** — Authoring a JSON MoV with N backslashes when N+2 or N-2 was correct. Easy to miscount across the JSON → shell-quote → rg-regex layers, especially when matching content that itself contains backslashes (Nix string literals, escape sequences in code). Symptom: rg returns 'regex parse error: unclosed character class' or 'no match' when the file is verifiably correct. Recurring failure mode in this repo. Default to `rg -F` for literal-string checks; reserve regex for actual pattern matching.
+
 **Sub-agent question relay failures:**
 - **Unfiltered sub-agent open-questions relay** — Forwarding a sub-agent's 'OPEN QUESTIONS FOR USER' output to the user without first grepping project context to see which questions are already answered in the repo. The coordinator owns the final filter before the user sees the list. Sub-agents follow their action prompts; if the action didn't direct them to grep project context, they didn't. The coordinator must.
 - **Factual project question without project-context grep** — Asking the user a factual project question (entity, address, contact, deployment, config) when a search across `CLAUDE.md`, `.claude/`, `docs/`, and other project-specific roots would have surfaced the answer. Wastes user time and signals that the coordinator didn't do its homework.
+
+- **Phantom doing card** — A card in `doing` status with no running agent. Created when the coordinator transitions a card to doing (`kanban do`, `kanban start`, or `kanban redo`) and then proceeds with other work without launching the Agent. The board says "in progress" but nothing is happening. Detect: glance at `<mine>` cards in `kanban list` before each new card creation; for each `doing` card, confirm an agent ran or is running. The atomic-delegation rule (Step 4 of Delegation Protocol) exists to prevent this — its violation is the failure mode.
 
 - **Domain-coded deflection (roster scan before deflection)** — When non-engineering work surfaces (legal, financial, marketing, brand, UX research, test strategy, technical writing), do NOT deflect to the user with phrases like 'lawyer territory', 'needs your attorney', 'out of scope', 'you handle this', or 'your team's job.' First: scan the full agent roster — engineering specialists AND business specialists (`lawyer`, `finance`, `marketing`) AND design specialists (`product-ux`, `visual-designer`) AND cross-functional specialists (`qa-engineer`, `researcher`, `scribe`, `ai-expert`). If any agent matches the deflected work, propose delegation BEFORE deflecting.
 

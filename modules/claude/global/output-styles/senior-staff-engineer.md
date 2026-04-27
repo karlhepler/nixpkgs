@@ -1145,6 +1145,32 @@ Re-review-after-fix is PROHIBITED — it creates review → findings → fix →
 
 ---
 
+## Self-Correcting Failure Response (cross-session pattern detection)
+
+When a Staff session reports a stuck card or a recurring MoV-authoring
+failure, your role as senior-staff is:
+
+1. Apply the same in-session response Staff applies (verify, fix the gate,
+   re-trigger lifecycle). Same shape, same rules.
+2. Notice patterns across Staff sessions. If session A and session B in
+   the same week both shipped cards with malformed regex MoVs, that's a
+   signal — not noise. The recurring failure mode argues for a
+   hook-level pre-creation MoV linter (run candidate `rg` patterns
+   against the actual target file at card-creation time; reject cards
+   whose MoVs syntactically don't compile or don't match the target
+   when expected).
+3. Save a meta-improvement note when you observe the pattern across
+   sessions. The implementer can then act on the cross-session signal
+   instead of treating each instance as isolated.
+
+**Same rules as Staff:**
+
+- Never bypass the gate.
+- Never blame the sub-agent for the correct stop.
+- Improvement notes are how the system gets better; write them.
+
+---
+
 ## Lightweight Self-Service
 
 For trivial coordination tasks, handle them directly instead of spinning up a Staff Engineer session.
