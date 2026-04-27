@@ -543,7 +543,7 @@ Use the `/workout-staff` skill to create Staff Engineer sessions in git worktree
 ]
 ```
 
-**Prompt content:** Keep prompts focused on WHAT the session should work on, not HOW. The Staff Engineer will figure out implementation details. Include enough context so the session can start without needing to ask questions.
+**Prompt content:** WHAT, not HOW, AND short. If you're inlining log excerpts, hypothesis lists, or detailed instructions, you're doing too much. Move the detail to a `.scratchpad/<descriptive-name>.md` file and cite the path. (See the brief sizing rule below.) The Staff Engineer will figure out implementation details. Include enough context so the session can start without needing to ask questions.
 
 **Delegation prompt discipline:** Workout prompts MUST be minimal for fresh sessions — do NOT duplicate context the Staff Engineer can discover. For targeted re-directs via `crew tell`, state only what changed or what remains — do not re-brief the entire workstream.
 
@@ -555,6 +555,48 @@ Use the `/workout-staff` skill to create Staff Engineer sessions in git worktree
 ❌ Anti-pattern re-direct (re-briefs what the session already knows): `"You're working on the pricing API. The goal is sub-200ms response. You need to fix N+1 queries. Here's the original task description again: [repeats everything]. Now please focus on AC 3."`
 
 **Cross-repo sessions:** When the target work lives in a different repository, include `"repo": "/path/to/repo"` in each JSON entry. Without it, the worktree lands in the current repo.
+
+#### Keep `crew tell` briefs short — cap at 30-50 lines
+
+Keep `crew tell` briefs short. Aim for 30-50 lines maximum. Long briefs (100+ lines) consume staff context budget and trigger repeated compacts, which degrade session quality. Cite artifacts (URLs, file:line, scratchpad paths) rather than inlining their content.
+
+When you have detailed context to convey (long failure logs, multi-URL evidence, complex hypothesis lists): write it to `.scratchpad/<descriptive-name>.md` and reference the file in the brief. The staff reads it on-demand if needed. This keeps the staff's context window free for the actual work.
+
+Resist the urge to over-specify. Staff engineers are peers in coordination capability — they can do their own discovery, generate their own hypotheses, and run their own diagnostic flow. Trust them. Over-specification (defensive enumeration of edge cases, four hypotheses for them to consider, complete AC lists you derived without them) steals their context and treats them like execution-only sub-agents.
+
+**Before sending any `crew tell` longer than one paragraph, count the lines.** The sizing rule below is a real gate, not a post-hoc check — fire it during drafting, not after the fact.
+
+**Brief sizing rule:** ≤30 lines = good. 30-50 lines = acceptable. 50-80 lines = warning sign — re-evaluate whether content can move to scratchpad. >80 lines = STOP, the brief is over-specified — move the detail out before sending.
+
+**Good brief (concise intent + artifact citation):**
+```
+"E2E onboarding tests are flaky on CI run 25004899973 — about 30% failure rate over the last 5 days. Root cause unknown. Goal: stabilize the suite to <5% flake rate. Constraint: don't introduce sleep-based waits. See .scratchpad/e2e-flake-context.md for failure logs and recent commits to those tests." (4 lines)
+```
+
+**Good brief (intent + scope only):**
+```
+"Add a new admin-facing dashboard widget showing weekly active developer counts. Pull from existing /api/admin/metrics endpoint. UI matches the style of the existing widgets. Goal: ship to staging this session." (4 lines)
+```
+
+**ANTI-PATTERN example (over-specification — DO NOT WRITE BRIEFS LIKE THIS):**
+```
+'E2E onboarding tests are flaky on CI run 25004899973. About 30% failure rate over the last 5 days. Likely root causes I want you to investigate:
+1. Race condition in the test fixture cleanup — the `before_each` hook may not be awaiting the cleanup promise. See `packages/e2e/fixtures/onboarding.ts:42`.
+2. CI runner instability — recent `ci.yaml` change increased parallelism to 8. See `.github/workflows/ci.yaml:34`.
+3. Flaky network calls — the test mocks `fetch` but the polyfill may leak through. See `packages/e2e/utils/mock-fetch.ts:11`.
+4. D1 binding race — the test creates and drops databases in `before_all` and `after_all`; if a prior run did not clean up, state leaks.
+
+AC:
+- Failure rate <5% over 50 consecutive CI runs
+- No `before_each` cleanup race
+- All four hypotheses investigated (rule out at least three)
+- Don't introduce sleep-based waits
+- Document any flaky test that survives the fix as `test.fixme` with a tracking issue
+
+Watch out: don't leave a worker pool running after the run. Don't mark a test fixme without an issue. Don't change the parallelism unless you've isolated CI as the cause. The watchdog will kill you if you sleep more than 30s ...
+
+[... +70 more lines]'
+```
 
 ### /workout-staff Operational Safety Rules
 
