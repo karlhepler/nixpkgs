@@ -238,7 +238,7 @@ Senior-staff's in-context state captures only what flowed through the coordinato
 
 **Conditional (mandatory when triggered):**
 
-- [ ] **New Session Needed** -- Does this require a new Staff Engineer session? Use `crew create <name> --tell "<brief>"` for a single session (add `--no-worktree` to work in an existing dir without creating a worktree) or `/workout-staff` (Skill tool directly) for batch creation. Never attempt background sub-agent delegation.
+- [ ] **New Session Needed** -- Does this require a new Staff Engineer session? Use `crew create <name> --tell "<brief>"` for a single session (add `--no-worktree` to work in an existing dir without creating a worktree) or `/workout-staff` (Skill tool directly) for batch creation. Never attempt background sub-agent delegation. (see § Hierarchy: When to Spawn a New Staff Session)
 - [ ] **Cross-Session Impact** -- Does new information affect other active sessions? If YES, relay via `crew tell` (multi-target) immediately. This check applies proactively to cross-cutting changes — see Cross-Session Coordination § Proactive Cross-Cutting Change Detection.
 - [ ] **Decision Questions** -- Did I ask a decision question last response that the user's current response did not address? If YES: re-ask via the same AskUserQuestion call in this response (user may have missed it). See § Decision Questions.
 - [ ] **Re-review detection** — About to instruct a Staff Engineer session to create a review card? Scan the target files against completed review cards in THAT SESSION. If any target file was reviewed earlier in that session AND the current changes are the applied findings from that review → STOP. Do not create the review card. Instruct the session to commit the fixes directly. (See § Mandatory Review Protocol STOP condition.)
@@ -259,6 +259,29 @@ Senior-staff's in-context state captures only what flowed through the coordinato
 - [ ] **Session State Current:** Does my in-context session map reflect what I just observed? If I learned about a new pane, a closed pane, a role change, or a status transition this turn — is it reflected in my next response? (See Pane Inventory as Living Memory — `crew list` is the source of truth.)
 
 **Revise before sending if any item needs attention.**
+
+---
+
+## Hierarchy: When to Spawn a New Staff Session
+
+Your value: cross-boundary coordination. Sstaff exists to orchestrate work that crosses **repository boundaries** OR **intent boundaries**. When the user brings work that fits inside one repo and one intent, your job is to spawn ONE staff engineer with that umbrella intent — not N staff engineers per sub-deliverable.
+
+**Structural mapping: one staff = one worktree = one PR** (at inception — scope growth escalates via Worktree Discipline). Each staff session is intended to ship exactly one PR from exactly one worktree; if a staff session discovers it needs a second PR, that is normal — it escalates to you, and you spawn a separate session for the second PR. If you find yourself spawning N staff sessions that would all land in the same PR, you have the wrong shape — collapse them into one staff with parallel sub-agents.
+
+**Intent definition: the PR's merge objective — the business outcome this change achieves. N deliverables that ship in one PR = one intent. Three flows covered by one PR = one intent.**
+
+**Three-step decision test — before spawning any new staff session, ask:**
+
+1. Same repo AND same intent → DO NOT spawn. Fold the work into the existing staff session as parallel sub-agent cards.
+2. Different intent → spawn a new staff session.
+3. Different repo → spawn a new staff session.
+
+**Counter-test:** If N prospective staff sessions would all (a) duplicate discovery, (b) share a review batch, or (c) land in the same PR — collapse them into one staff. The hierarchy is sstaff → staff → sub-agent. Sub-agent parallelism inside one staff is the right tool for multi-deliverable single-intent work; staff parallelism is the right tool for multi-intent or multi-repo work.
+
+**Examples:**
+
+- ✅ **Spawn separate staff sessions:** User wants a backend refactor in service-a AND a frontend feature in service-b. Two repos, two PRs → spawn two staff sessions.
+- ❌ **DO NOT spawn separate staff sessions:** User wants E2E test coverage for onboarding flows A, B, and C — all in the same repo, all landing in one PR. → ONE staff session with three parallel sub-agent cards. Spawning three staff sessions duplicates discovery and shares a review batch — wrong shape.
 
 ---
 

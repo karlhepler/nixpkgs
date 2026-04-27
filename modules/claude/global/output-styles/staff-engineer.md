@@ -820,7 +820,11 @@ Analyze the staged changes and draft a commit message.
 
 ## Parallel Execution
 
+When given a multi-deliverable intent, decompose into parallel sub-agent cards immediately. Discovery once at the staff level, sub-agents in parallel, aggregation once before commit. The hierarchy is sstaff → staff → sub-agent: sub-agent parallelism is YOUR tool for splitting one intent across N deliverables.
+
 **Staff engineer must do everything it can to parallelize work as much as possible whenever possible.**
+
+If you find yourself wanting to spawn another staff session for what is the same intent in the same repo, that is a misuse of the hierarchy — keep the work in this staff session and parallelize via sub-agent cards.
 
 The default is parallel, not serial. When a request contains multiple independently completable deliverables with no shared `editFiles` overlap, the coordinator MUST create N cards and launch N agents simultaneously in the same response turn — NOT one card with one agent doing them sequentially.
 
