@@ -2992,6 +2992,61 @@ class TestWaitForSentinel:
         assert ready is False
         assert "hook missing" in reason, f"Expected 'hook missing' in reason, got: {reason!r}"
 
+    def test_returns_true_when_sentinel_dir_absent_at_wait_start(self, tmp_path, monkeypatch):
+        """Returns (True, None) even when the sentinel directory doesn't exist when _wait_for_sentinel is called.
+
+        This is the primary regression test for the sentinel-never-detected bug.
+
+        Root cause: on macOS (kqueue backend), fswatch does NOT fire events for files
+        created inside a directory that was itself created AFTER fswatch started watching
+        the path. If _wait_for_sentinel starts before the SessionStart hook fires
+        (which is always true — crew create calls _wait_for_sentinel immediately after
+        spawning the staff session), and the hook creates the directory on first run,
+        fswatch would never see the sentinel write.
+
+        Fix: _wait_for_sentinel now calls os.makedirs(_CREW_SENTINEL_DIR, exist_ok=True)
+        BEFORE starting the fswatch loop so that fswatch always watches a pre-existing
+        directory. The hook still creates the directory idempotently (exist_ok=True), but
+        the directory is guaranteed to exist before fswatch subscribes to events on it.
+        """
+        # Point at a subdirectory that does NOT exist yet — simulates a cold system
+        # where no crew session has ever been created.
+        sentinel_dir = tmp_path / "crew-absent"
+        # Deliberately do NOT create sentinel_dir here.
+        assert not sentinel_dir.exists(), "Pre-condition: dir must not exist at test start"
+        monkeypatch.setattr(crew_module, "_CREW_SENTINEL_DIR", str(sentinel_dir))
+
+        sentinel_file = sentinel_dir / "ready-myworker"
+
+        # Background thread: write the sentinel after a brief delay (simulating
+        # the SessionStart hook creating the directory and writing the file).
+        delay_s = 0.3
+
+        def write_sentinel():
+            time.sleep(delay_s)
+            sentinel_file.parent.mkdir(parents=True, exist_ok=True)
+            sentinel_file.touch()
+
+        t = threading.Thread(target=write_sentinel, daemon=True)
+
+        start = time.monotonic()
+        t.start()
+        ready, reason = _wait_for_sentinel("myworker", ceiling=5.0, poll_interval=0.5)
+        elapsed = time.monotonic() - start
+
+        t.join(timeout=2.0)
+
+        assert ready is True, (
+            f"Expected ready=True but got ready=False, reason={reason!r}. "
+            "This means fswatch did not detect the sentinel written into a "
+            "directory created after fswatch started — the makedirs pre-creation "
+            "fix is missing or not working."
+        )
+        assert reason is None
+        assert elapsed < 3.0, (
+            f"Elapsed {elapsed:.3f}s is too close to ceiling — event-driven detection may be broken"
+        )
+
     def test_clean_stale_sentinel_before_wait_prevents_false_ready(self, tmp_path, monkeypatch):
         """_clean_stale_sentinel removes leftover file so fast-path cannot fire on stale data."""
         sentinel_dir = tmp_path / "crew"
@@ -3010,11 +3065,34 @@ class TestHookPresentInSettings:
     """Tests for _hook_present_in_settings — settings.json parse for hook-missing heuristic."""
 
     def test_returns_true_when_hook_present_in_session_start(self, tmp_path):
-        """Returns True when crew-lifecycle-hook.py appears in SessionStart hooks."""
+        """Returns True when crew-lifecycle-hook appears in SessionStart hooks (Nix binary path)."""
         settings = {
             "hooks": {
                 "SessionStart": [
-                    {"command": "/nix/store/xxx/crew-lifecycle-hook.py"}
+                    {"command": "/nix/store/93h3d25i13vmdq3claflp803g7qwf1df-crew-lifecycle-hook/bin/crew-lifecycle-hook"}
+                ]
+            }
+        }
+        settings_file = tmp_path / "settings.json"
+        settings_file.write_text(__import__("json").dumps(settings))
+
+        with patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(tmp_path)}):
+            result = crew_module._hook_present_in_settings()
+
+        assert result is True
+
+    def test_returns_true_when_hook_present_as_nested_hooks_list(self, tmp_path):
+        """Returns True for nested hooks list format (as deployed by default.nix)."""
+        # default.nix deploys SessionStart as a list of hook-group dicts with
+        # a 'hooks' key each containing a list of command objects.
+        settings = {
+            "hooks": {
+                "SessionStart": [
+                    {
+                        "hooks": [
+                            {"type": "command", "timeout": 5000, "command": "/nix/store/abc123-crew-lifecycle-hook/bin/crew-lifecycle-hook"}
+                        ]
+                    }
                 ]
             }
         }
@@ -3027,11 +3105,11 @@ class TestHookPresentInSettings:
         assert result is True
 
     def test_returns_false_when_hook_absent_from_session_start(self, tmp_path):
-        """Returns False when SessionStart hooks do not include crew-lifecycle-hook.py."""
+        """Returns False when SessionStart hooks do not include crew-lifecycle-hook."""
         settings = {
             "hooks": {
                 "SessionStart": [
-                    {"command": "/nix/store/xxx/some-other-hook.py"}
+                    {"command": "/nix/store/xxx/some-other-hook"}
                 ]
             }
         }
@@ -3076,7 +3154,7 @@ class TestHookPresentInSettings:
         settings = {
             "hooks": {
                 "SessionStart": [
-                    "/nix/store/xxx/crew-lifecycle-hook.py"
+                    "/nix/store/xxx/crew-lifecycle-hook"
                 ]
             }
         }

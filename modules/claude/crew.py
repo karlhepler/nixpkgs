@@ -98,11 +98,16 @@ _SENTINEL_WAIT_CEILING_SECONDS = 5 * 60.0
 
 
 def _hook_present_in_settings() -> bool:
-    """Return True if crew-lifecycle-hook.py is configured as a SessionStart hook.
+    """Return True if crew-lifecycle-hook is configured as a SessionStart hook.
 
     Parses the deployed Claude Code settings.json to check whether the SessionStart
-    hook command line includes 'crew-lifecycle-hook.py'. Used to distinguish
+    hook command line includes 'crew-lifecycle-hook'. Used to distinguish
     'hook not installed' from 'session crashed during boot' after ceiling elapsed.
+
+    Handles two SessionStart formats produced by default.nix:
+      - Hook-group format (deployed format): each top-level item is a dict with a
+        'hooks' key containing a list of individual hook objects (each with 'command').
+      - Flat format: each top-level item is directly a hook dict or plain string.
 
     Falls back to True (assume hook present / crashed) on any parse error so that
     the safer diagnostic is shown when settings.json is malformed or unreadable.
@@ -114,16 +119,28 @@ def _hook_present_in_settings() -> bool:
             settings = json.load(f)
         hooks = settings.get("hooks", {})
         session_start_hooks = hooks.get("SessionStart", [])
-        for hook in session_start_hooks:
-            # Each hook entry may be a dict with a "command" key or a plain string.
-            if isinstance(hook, dict):
-                cmd = hook.get("command", "")
-            elif isinstance(hook, str):
-                cmd = hook
-            else:
-                continue
-            if "crew-lifecycle-hook.py" in cmd:
-                return True
+        for entry in session_start_hooks:
+            if isinstance(entry, str):
+                # Flat format: plain string hook command.
+                if "crew-lifecycle-hook" in entry:
+                    return True
+            elif isinstance(entry, dict):
+                # Hook-group format: {"hooks": [{...}, ...]} — deployed by default.nix.
+                if "hooks" in entry:
+                    for hook in entry.get("hooks", []):
+                        if isinstance(hook, dict):
+                            cmd = hook.get("command", "")
+                        elif isinstance(hook, str):
+                            cmd = hook
+                        else:
+                            continue
+                        if "crew-lifecycle-hook" in cmd:
+                            return True
+                else:
+                    # Flat format: {"command": "..."} dict.
+                    cmd = entry.get("command", "")
+                    if "crew-lifecycle-hook" in cmd:
+                        return True
         return False
     except Exception:
         # Malformed settings.json or unreadable — assume hook is present (safer).
@@ -158,6 +175,19 @@ def _wait_for_sentinel(
     # Fast path: sentinel already present from a very quick boot.
     if os.path.exists(sentinel):
         return True, None
+
+    # Ensure the sentinel directory exists before starting fswatch.
+    # On macOS (kqueue backend) fswatch does NOT detect files created inside a
+    # directory that was created AFTER fswatch started watching the path. If the
+    # directory doesn't exist yet when the staff session boots, the SessionStart
+    # hook creates it and writes the sentinel — but a pre-existing fswatch
+    # process will never see that event. Creating the directory here (before the
+    # fswatch loop) ensures that fswatch always watches an existing path.
+    # mode=0o700: consistent with crew-lifecycle-hook.py's makedirs call.
+    try:
+        os.makedirs(_CREW_SENTINEL_DIR, mode=0o700, exist_ok=True)
+    except OSError:
+        pass  # Directory already exists or cannot be created — fail open.
 
     # fswatch is guaranteed by modules/packages.nix. Probe to verify it is on PATH;
     # if missing, raise a loud error so the operator sees the contract violation
