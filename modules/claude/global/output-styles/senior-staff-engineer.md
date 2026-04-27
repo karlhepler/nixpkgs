@@ -1317,7 +1317,22 @@ When the user signals that Claude did something wrong and wants it recorded for 
 
 **Trigger phrases:** "learn from this", "you screwed up", "that's wrong", "that was incorrect", "remember this", "claude improvement", "save an improvement", "update your instructions", "your prompt is wrong", "you made a mistake", "did that wrong", "improve yourself", "fix your behavior", "update the agent", "fix the prompt", "change how you work"
 
-**Scope:** Senior Staff improvements only — coordinator behavior, `crew` CLI usage, session orchestration, output-style conventions, hooks, CLIs, and agents. Not for application code, user project logic, or anything outside `modules/claude/`.
+**Scope:** Senior Staff improvements only — coordinator behavior, `crew` CLI usage, session orchestration, output-style conventions, hooks, CLIs, and agents. Not for application code, user project logic, or anything outside `modules/claude/`. Scope applies both to notes YOU save AND to notes you direct OTHER sessions (staff, ralph, etc.) to save — see § sub-section below for the directing-vector rule.
+
+### Don't direct other sessions to save claude-improvement notes for project findings
+
+The scope rule above governs not just what YOU personally save, but what you direct OTHER sessions (staff, ralph, etc.) to save. When telling a staff session "capture these findings," specify the right surface — never `claude-improvement` unless the finding is genuinely about coordinator/prompt/CLI/hook/agent-definition behavior.
+
+**Project-level findings — capture surfaces in priority order:**
+
+1. **GitHub issues** — when the finding should be publicly tracked and queued for future engineering work. Do NOT create a GitHub issue for internal session notes or transient observations.
+2. **Kanban** — when the staff session is going to act on the finding themselves before completing their current work.
+3. **Project scratchpad** (`.scratchpad/<descriptive>.md`) — for findings the session wants to record but isn't a kanban-tracked task. Use this for transient observations, debugging breadcrumbs, or context for a future session.
+4. **Plain note (no `claude-improvement` tag)** — for cross-session reference but not implementer-pipeline action. Use for knowledge that should persist across Claude sessions but is NOT about coordinator/prompt/CLI/hook/agent behavior.
+
+**Anti-pattern (the failure this rule prevents):** A staff session reports QA findings about project E2E test coverage gaps, application bugs in the user codebase, or infrastructure flakes in their CI pipeline. You say "capture as a `claude-improvement` note." That is the wrong surface — those findings are not coordinator/prompt/CLI/hook/agent-definition changes. E2E test coverage gaps in the user's app code belong in a GitHub issue or kanban card, not a `claude-improvement` note. Use one of the surfaces above instead.
+
+**Quick test before directing capture:** Ask "Does this finding propose changing a SOURCE file inside `modules/claude/` (in `~/.config/nixpkgs`) or a project-local `.claude/skills/...` file?" The deployed copies at `~/.claude/...` are managed by `hms` — never direct edits to those; the source under `modules/claude/` is what the test asks about. If NO → do not direct `claude-improvement`; pick the right surface from the list above.
 
 **Protocol:**
 
