@@ -1145,7 +1145,7 @@ class TestCmdResume:
         with patch("subprocess.run", side_effect=fake_run):
             cmd_resume("existing-window", None, "xml", send)
 
-        assert len(send.resumed_calls) == 0
+        assert send.resumed_calls == []
         assert len(send.failure_calls) == 1
         error_code, message = send.failure_calls[0]
         assert error_code == "WINDOW_EXISTS"
@@ -1171,7 +1171,7 @@ class TestCmdResume:
         with patch("subprocess.run", side_effect=fake_run):
             cmd_resume("empty-worktree", None, "xml", send)
 
-        assert len(send.resumed_calls) == 0
+        assert send.resumed_calls == []
         assert len(send.failure_calls) == 1
         error_code, message = send.failure_calls[0]
         assert error_code == "NO_SESSION"
@@ -1226,7 +1226,7 @@ class TestCmdResume:
         with patch("subprocess.run", side_effect=fake_run):
             cmd_resume("missing-worktree", None, "xml", send)
 
-        assert len(send.resumed_calls) == 0
+        assert send.resumed_calls == []
         assert len(send.failure_calls) == 1
         error_code, message = send.failure_calls[0]
         assert error_code == "WORKTREE_NOT_FOUND"
@@ -1254,7 +1254,7 @@ class TestCmdResume:
         with patch("subprocess.run", side_effect=fake_run):
             cmd_resume("valid-worktree", None, "xml", send)
 
-        assert len(send.resumed_calls) == 0
+        assert send.resumed_calls == []
         assert len(send.failure_calls) == 1
         error_code, message = send.failure_calls[0]
         assert error_code == "TMUX_WINDOW_FAILED"
@@ -3469,4 +3469,171 @@ class TestTmuxFireAndForget:
         )
         assert result is None, (
             f"Expected exactly None, got: {result!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# crew resume --worktree flag
+# ---------------------------------------------------------------------------
+
+class TestCmdResumeWorktreeFlag:
+    """Tests for the --worktree flag on crew resume."""
+
+    def _make_session_dir(self, tmp_path, worktree_path: str, session_ids: List[str]):
+        """Create a fake ~/.claude/projects/<key>/ with the given .jsonl files."""
+        project_key = _mangle_path_to_project_key(worktree_path)
+        sessions_dir = tmp_path / ".claude" / "projects" / project_key
+        sessions_dir.mkdir(parents=True)
+        import time as _time
+        base_mtime = _time.time()
+        for i, sid in enumerate(session_ids):
+            f = sessions_dir / f"{sid}.jsonl"
+            f.write_text("{}")
+            os.utime(f, (base_mtime + i, base_mtime + i))
+        return sessions_dir
+
+    def test_resume_with_explicit_worktree(self, tmp_path, monkeypatch):
+        """--worktree PATH is used verbatim and skips both default lookups."""
+        explicit_worktree = str(tmp_path / "explicit-repo")
+        os.makedirs(explicit_worktree)
+        self._make_session_dir(tmp_path, explicit_worktree, ["session-abc"])
+
+        monkeypatch.setattr("crew.Path.home", lambda: tmp_path)
+
+        # Track whether _resolve_worktree_for_name was called.
+        resolve_called = []
+        original_resolve = crew_module._resolve_worktree_for_name
+
+        def spy_resolve(name):
+            resolve_called.append(name)
+            return original_resolve(name)
+
+        monkeypatch.setattr("crew._resolve_worktree_for_name", spy_resolve)
+
+        new_window_calls = []
+
+        def fake_run(cmd, **kwargs):
+            joined = " ".join(str(c) for c in cmd)
+            if "list-windows" in joined:
+                return fake_run_result(stdout="")
+            if "new-window" in joined:
+                new_window_calls.append(cmd)
+                return fake_run_result()
+            if "send-keys" in joined:
+                return fake_run_result()
+            return fake_run_result()
+
+        send = _ResumeSpySend()
+        with patch("subprocess.run", side_effect=fake_run):
+            cmd_resume("audit", None, "xml", send, worktree=explicit_worktree)
+
+        # Must succeed with no failures.
+        assert len(send.failure_calls) == 0, (
+            f"Expected no failures, got: {send.failure_calls}"
+        )
+        assert len(send.resumed_calls) == 1, (
+            f"Expected one resumed call, got: {send.resumed_calls}"
+        )
+
+        # The resolved worktree in the success event must be the explicit path.
+        window, session_id, worktree, command = send.resumed_calls[0]
+        assert worktree == explicit_worktree, (
+            f"Expected explicit worktree path '{explicit_worktree}', got: '{worktree}'"
+        )
+        assert session_id == "session-abc", (
+            f"Expected session 'session-abc', got: '{session_id}'"
+        )
+
+        # The tmux new-window must use the explicit path as -c argument.
+        assert len(new_window_calls) == 1
+        new_window_cmd = new_window_calls[0]
+        assert explicit_worktree in new_window_cmd, (
+            f"Expected explicit worktree in new-window call, got: {new_window_cmd}"
+        )
+
+        # The two-step lookup (_resolve_worktree_for_name) must NOT have been called.
+        assert resolve_called == [], (
+            f"_resolve_worktree_for_name must not be called when --worktree is provided, "
+            f"but it was called with: {resolve_called}"
+        )
+
+    def test_resume_with_invalid_worktree_path(self, tmp_path, monkeypatch):
+        """--worktree pointing to a non-existent path emits WORKTREE_NOT_FOUND."""
+        monkeypatch.setattr("crew.Path.home", lambda: tmp_path)
+
+        bad_path = str(tmp_path / "does" / "not" / "exist")
+
+        def fake_run(cmd, **kwargs):
+            joined = " ".join(str(c) for c in cmd)
+            if "list-windows" in joined:
+                return fake_run_result(stdout="")
+            return fake_run_result()
+
+        send = _ResumeSpySend()
+        with patch("subprocess.run", side_effect=fake_run):
+            cmd_resume("audit", None, "xml", send, worktree=bad_path)
+
+        assert send.resumed_calls == [], (
+            f"Expected no resumed calls, got: {send.resumed_calls}"
+        )
+        assert len(send.failure_calls) == 1, (
+            f"Expected exactly one failure, got: {send.failure_calls}"
+        )
+        error_code, message = send.failure_calls[0]
+        assert error_code == "WORKTREE_NOT_FOUND", (
+            f"Expected WORKTREE_NOT_FOUND error code, got: '{error_code}'"
+        )
+        assert bad_path in message, (
+            f"Expected bad path in failure message, got: '{message}'"
+        )
+
+    def test_resume_without_worktree_flag_unchanged(self, tmp_path, monkeypatch):
+        """Without --worktree, the existing two-step lookup runs as before."""
+        worktree_path = str(tmp_path / "standard-worktree")
+        os.makedirs(worktree_path)
+        self._make_session_dir(tmp_path, worktree_path, ["std-session"])
+
+        monkeypatch.setattr("crew.Path.home", lambda: tmp_path)
+
+        # Patch _resolve_worktree_for_name to return the test path and record the call.
+        resolve_called = []
+
+        def spy_resolve(name):
+            resolve_called.append(name)
+            return worktree_path
+
+        monkeypatch.setattr("crew._resolve_worktree_for_name", spy_resolve)
+
+        def fake_run(cmd, **kwargs):
+            joined = " ".join(str(c) for c in cmd)
+            if "list-windows" in joined:
+                return fake_run_result(stdout="")
+            if "new-window" in joined:
+                return fake_run_result()
+            if "send-keys" in joined:
+                return fake_run_result()
+            return fake_run_result()
+
+        send = _ResumeSpySend()
+        with patch("subprocess.run", side_effect=fake_run):
+            # No worktree kwarg — exercises the original code path.
+            cmd_resume("standard-worktree", None, "xml", send)
+
+        assert len(send.failure_calls) == 0, (
+            f"Expected no failures, got: {send.failure_calls}"
+        )
+        assert len(send.resumed_calls) == 1, (
+            f"Expected one resumed call, got: {send.resumed_calls}"
+        )
+
+        # The two-step lookup must have been invoked for the name.
+        assert resolve_called == ["standard-worktree"], (
+            f"Expected _resolve_worktree_for_name called with 'standard-worktree', "
+            f"got: {resolve_called}"
+        )
+
+        # The worktree returned must match what the resolver provided.
+        _, _, worktree, _ = send.resumed_calls[0]
+        assert worktree == worktree_path, (
+            f"Expected worktree '{worktree_path}', got: '{worktree}'"
         )

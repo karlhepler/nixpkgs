@@ -884,13 +884,15 @@ def cmd_resume(
     session_id: Optional[str],
     fmt: str,
     send: object,
+    worktree: Optional[str] = None,
 ) -> None:
     """Recreate a tmux window and resume a Claude session inside it.
 
     Steps:
     1. Validate window name via _SAFE_NAME_RE.
     2. Abort if window <name> already exists.
-    3. Resolve worktree path from active tmux windows or ~/worktrees/<org>/<repo>/<name>
+    3. Resolve worktree path: if --worktree is provided, validate and use it directly;
+       otherwise fall back to active tmux windows or ~/worktrees/<org>/<repo>/<name>
        (nested layout, e.g., ~/worktrees/orgA/repoB/<name>).
     4. Scan ~/.claude/projects/<key>/ for .jsonl session files.
     5. If --session not given, pick the most recent .jsonl by mtime.
@@ -926,16 +928,28 @@ def cmd_resume(
         return
 
     # --- 3. Resolve worktree path ---
-    worktree_path = _resolve_worktree_for_name(name)
-    if worktree_path is None:
-        send.failure(
-            "WORKTREE_NOT_FOUND",
-            f"could not find a worktree for '{name}'. "
-            f"No active tmux window with that name and no worktree directory "
-            f"matching '{name}' under ~/worktrees/. "
-            "Use `crew create` to start a new session instead.",
-        )
-        return
+    if worktree is not None:
+        # Explicit path provided: validate it and bypass both default lookups.
+        if not os.path.isdir(worktree):
+            send.failure(
+                "WORKTREE_NOT_FOUND",
+                f"explicit worktree path does not exist or is not a directory: '{worktree}'. "
+                "Provide a valid directory path.",
+            )
+            return
+        worktree_path = worktree
+    else:
+        worktree_path = _resolve_worktree_for_name(name)
+        if worktree_path is None:
+            send.failure(
+                "WORKTREE_NOT_FOUND",
+                f"could not find a worktree for '{name}'. "
+                f"No active tmux window with that name and no worktree directory "
+                f"matching '{name}' under ~/worktrees/. "
+                "Use `crew create` to start a new session instead, or pass "
+                "--worktree <path> to specify the directory explicitly.",
+            )
+            return
 
     # --- 4. Scan for session files ---
     if session_id is not None:
@@ -2810,16 +2824,22 @@ def build_parser() -> argparse.ArgumentParser:
             "Resume a previously created crew session by recreating the tmux window\n"
             "and launching `staff --name <name> --resume <session_id>`.\n\n"
             "The worktree path is resolved from active tmux windows or ~/worktrees/<org>/<repo>/<name>.\n"
+            "For sessions created with --no-worktree (whose worktree is the main repo root),\n"
+            "use --worktree <path> to supply the path directly and bypass the default lookups.\n"
             "If --session is omitted, the most recent session file (by mtime) is used.\n\n"
             "Examples:\n"
-            "  crew resume mirrordx                    # infer most recent session\n"
-            "  crew resume mirrordx --session <uuid>   # use explicit session ID\n"
+            "  crew resume mirrordx                         # infer most recent session\n"
+            "  crew resume mirrordx --session <uuid>        # use explicit session ID\n"
+            "  crew resume audit --worktree ~/code/myrepo   # --no-worktree session recovery\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p_resume.add_argument(
         "name",
-        help="Window name (must match a worktree under ~/worktrees/ or an active tmux window)",
+        help=(
+            "Window name (must match a worktree under ~/worktrees/ or an active tmux window; "
+            "use --worktree PATH to bypass this lookup for --no-worktree sessions)"
+        ),
     )
     p_resume.add_argument(
         "--session",
@@ -2828,6 +2848,17 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Session UUID to resume (default: most recent .jsonl by mtime). "
             "Use `crew sessions --window <name>` to list available session IDs."
+        ),
+    )
+    p_resume.add_argument(
+        "--worktree",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Explicit worktree path; bypasses the tmux-window and ~/worktrees/<name> lookups. "
+            "Required when the session was created with --no-worktree (the main repo root) "
+            "or when the original worktree directory no longer exists at its default location. "
+            "(must be an existing directory)"
         ),
     )
 
@@ -2946,7 +2977,7 @@ def main() -> None:
             cmd_project_path(args.worktree, fmt, send)
         elif args.command == "resume":
             send = _ResumeSend(fmt)
-            cmd_resume(args.name, args.session, fmt, send)
+            cmd_resume(args.name, args.session, fmt, send, worktree=args.worktree)
         elif args.command == "sessions":
             send = _SessionsSend(fmt)
             cmd_sessions(fmt, send, window_filter=args.window, worktree_filter=args.worktree)
