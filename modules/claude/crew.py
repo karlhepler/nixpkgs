@@ -30,6 +30,8 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
+import threading
 import time
 import xml.etree.ElementTree as ET
 from datetime import datetime
@@ -60,6 +62,9 @@ def _clean_stale_sentinel(name: str) -> None:
     A leftover sentinel from a crashed or dismissed prior session would cause
     _wait_for_sentinel to return immediately (false-ready). Cleaning it before
     spawn ensures the sentinel observed by the wait was written by THIS session.
+    See also: _pane_shows_prompt_ready uses banner-text patterns that should be
+    unique to Claude Code's UI to avoid matching shell prompts or stale
+    scrollback content.
     """
     sentinel = _sentinel_path(name)
     try:
@@ -147,33 +152,189 @@ def _hook_present_in_settings() -> bool:
         return True
 
 
+# Sentinel hook entry written into a worktree's settings.json when auto-provisioning.
+# Uses "crew-lifecycle-hook" (bare binary name — Nix guarantees it is on PATH) rather
+# than a nix store path. The worktree may not have been built by this user's Nix profile,
+# but crew-lifecycle-hook is system-wide via modules/packages.nix.
+_SENTINEL_HOOK_ENTRY = {
+    "type": "command",
+    "timeout": 5000,
+    "command": "crew-lifecycle-hook",
+}
+
+
+def _ensure_hook_in_settings(settings_path: str) -> Tuple[bool, Optional[str]]:
+    """Ensure the crew-lifecycle-hook SessionStart hook is present in settings_path.
+
+    Checks whether the SessionStart sentinel hook is present in the given
+    settings.json file. If present, returns (True, None) immediately (idempotent).
+    If absent, appends the hook entry to the SessionStart hooks list and writes
+    the file back atomically (write to temp, rename). Returns (True, None) on
+    success.
+
+    If settings.json does not exist, creates a minimal one containing only the
+    SessionStart hook. Returns (True, None) on success.
+
+    If settings.json is malformed JSON (and not empty/absent), logs a warning to
+    stderr and returns (False, reason) — does not crash the spawn.
+
+    If the file cannot be written (permissions, unwritable filesystem), logs a
+    warning to stderr and returns (False, reason).
+
+    Args:
+        settings_path: Absolute path to the target settings.json file.
+
+    Returns:
+        (True, None) if the hook is present or was successfully installed.
+        (False, reason_str) if provisioning failed for any reason.
+    """
+    # --- Fast path: check if already present ---
+    if os.path.exists(settings_path):
+        try:
+            with open(settings_path) as fh:
+                settings = json.load(fh)
+        except json.JSONDecodeError as exc:
+            msg = f"settings.json at '{settings_path}' is malformed JSON: {exc}"
+            print(f"[crew] warning: {msg}", file=sys.stderr)
+            return False, msg
+        except OSError as exc:
+            msg = f"could not read '{settings_path}': {exc}"
+            print(f"[crew] warning: {msg}", file=sys.stderr)
+            return False, msg
+
+        # Walk SessionStart hooks using the same logic as _hook_present_in_settings,
+        # but scoped to the provided path rather than the global settings.json.
+        hooks = settings.get("hooks", {})
+        session_start_hooks = hooks.get("SessionStart", [])
+        for entry in session_start_hooks:
+            if isinstance(entry, str) and "crew-lifecycle-hook" in entry:
+                return True, None
+            if isinstance(entry, dict):
+                if "hooks" in entry:
+                    for hook in entry.get("hooks", []):
+                        cmd = hook.get("command", "") if isinstance(hook, dict) else (hook or "")
+                        if "crew-lifecycle-hook" in cmd:
+                            return True, None
+                else:
+                    if "crew-lifecycle-hook" in entry.get("command", ""):
+                        return True, None
+
+        # Hook is absent — append it to the SessionStart hooks list.
+        if "hooks" not in settings:
+            settings["hooks"] = {}
+        if "SessionStart" not in settings["hooks"]:
+            settings["hooks"]["SessionStart"] = []
+        settings["hooks"]["SessionStart"].append({"hooks": [_SENTINEL_HOOK_ENTRY]})
+
+    else:
+        # File does not exist — create a minimal settings.json with just the hook.
+        try:
+            os.makedirs(os.path.dirname(settings_path), mode=0o755, exist_ok=True)
+        except OSError as exc:
+            msg = f"could not create directory '{os.path.dirname(settings_path)}': {exc}"
+            print(f"[crew] warning: {msg}", file=sys.stderr)
+            return False, msg
+        settings = {"hooks": {"SessionStart": [{"hooks": [_SENTINEL_HOOK_ENTRY]}]}}
+
+    # --- Atomic write: write to temp file in same dir, then rename ---
+    settings_dir = os.path.dirname(settings_path)
+    try:
+        fd, tmp_path = tempfile.mkstemp(dir=settings_dir, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w") as fh:
+                json.dump(settings, fh, indent=2)
+        except OSError as exc:
+            # os.fdopen owns the fd — no os.close needed here.
+            os.unlink(tmp_path)
+            msg = f"could not write temp file '{tmp_path}': {exc}"
+            print(f"[crew] warning: {msg}", file=sys.stderr)
+            return False, msg
+        os.replace(tmp_path, settings_path)
+    except OSError as exc:
+        msg = f"could not provision hook into '{settings_path}': {exc}"
+        print(f"[crew] warning: {msg}", file=sys.stderr)
+        return False, msg
+
+    print(
+        f"[crew] provisioned crew-lifecycle-hook into SessionStart hooks at '{settings_path}'",
+        file=sys.stderr,
+    )
+    return True, None
+
+
+# Prompt-box readiness tokens — patterns that indicate Claude Code's input box is
+# rendered and awaiting user input. Checked against tmux capture-pane output.
+#
+# Only patterns that are UNIQUE to Claude Code's UI are included here. The ❯ glyph
+# (U+276F) was removed because it also appears in popular shell prompts (Starship,
+# Oh My Zsh), which would cause _pane_shows_prompt_ready to fire before Claude Code
+# starts — re-creating the original dropped-tell bug through a different path.
+#
+# "claude.ai/code" appears in Claude Code's startup banner and does not appear in
+# plain shell prompts, making it a reliable false-positive-free readiness signal.
+_PROMPT_READY_PATTERNS = [
+    "claude.ai/code",  # Startup banner substring — unique to Claude Code's UI
+]
+
+
+def _pane_shows_prompt_ready(tmux_target: str) -> bool:
+    """Return True if the pane at tmux_target shows a Claude Code prompt-ready signal.
+
+    Runs tmux capture-pane and checks the output against _PROMPT_READY_PATTERNS.
+    Returns False on any subprocess error (fail open — polling loop will retry).
+    """
+    result = subprocess.run(
+        ["tmux", "capture-pane", "-p", "-t", tmux_target, "-S", "-50"],
+        capture_output=True, text=True, check=False,
+    )
+    if result.returncode != 0:
+        return False
+    content = result.stdout
+    return any(pat in content for pat in _PROMPT_READY_PATTERNS)
+
+
 def _wait_for_sentinel(
     name: str,
     ceiling: float = _SENTINEL_WAIT_CEILING_SECONDS,
     poll_interval: float = 0.5,
+    prompt_poll_interval: float = 0.2,
 ) -> tuple:  # Tuple[bool, Optional[str]]
-    """Wait for the readiness sentinel file to appear for the given session name.
+    """Wait for Claude Code to signal readiness for the session named <name>.
 
-    The sentinel is dropped by crew-lifecycle-hook.py's SessionStart handler
-    once Claude Code has fully initialised. Waiting on the file is deterministic:
-    no timing assumptions, no pane-buffer parsing.
+    Two parallel signals are monitored concurrently; whichever fires first wins:
 
-    Detection mechanism: fswatch (macOS kqueue backend, guaranteed by
-    modules/packages.nix). Watches the sentinel directory for file-created events,
-    wakes the moment the sentinel appears. Zero-latency detection — no polling
-    interval delay. fswatch is Nix-guaranteed; if it is missing, a clear
-    RuntimeError is raised to surface the contract violation.
+    Primary — sentinel file (fswatch):
+        The crew-lifecycle-hook.py SessionStart handler drops a sentinel file at
+        _sentinel_path(name) once Claude Code has fully initialised. fswatch
+        (macOS kqueue backend, Nix-guaranteed) watches the sentinel directory and
+        wakes the moment the file appears. Zero-latency detection.
+
+    Fallback — pane prompt-box polling:
+        Every <prompt_poll_interval> seconds, capture-pane output for
+        '<name>.0' is checked for _PROMPT_READY_PATTERNS (the 'claude.ai/code'
+        banner text — unique to Claude Code's UI). This fires even when the
+        target worktree's settings.json lacks the SessionStart hook, because it
+        observes the TUI directly rather than relying on the hook.
+
+    Both signals are checked in a shared ready_event (threading.Event). The
+    fswatch thread sets the event when the sentinel appears; the poll thread sets
+    it when the pane shows a prompt-ready token. The main thread waits on the
+    event up to <ceiling> seconds.
 
     Returns (ready: bool, reason: Optional[str]):
-      (True, None)    — sentinel observed within ceiling.
-      (False, reason) — ceiling elapsed; reason distinguishes:
-          "session never reported ready — SessionStart hook missing in target settings.json"
-          "session never reported ready — likely crashed during boot, check tmux pane"
+      (True, None)    — either signal observed within ceiling.
+      (False, reason) — both signals timed out; reason includes which signals
+                        were checked.
     """
     sentinel = _sentinel_path(name)
+    tmux_target = f"{name}.0"
 
     # Fast path: sentinel already present from a very quick boot.
     if os.path.exists(sentinel):
+        return True, None
+
+    # Also fast path: pane already shows prompt-ready (rare but possible on re-use).
+    if _pane_shows_prompt_ready(tmux_target):
         return True, None
 
     # Ensure the sentinel directory exists before starting fswatch.
@@ -203,41 +364,63 @@ def _wait_for_sentinel(
             "modules/packages.nix; check $PATH".format(probe.returncode)
         )
 
+    # Shared event: set by whichever thread detects readiness first.
+    ready_event = threading.Event()
     deadline = time.monotonic() + ceiling
 
-    # fswatch loop: each iteration blocks in fswatch until an event fires in
-    # the sentinel directory, then rechecks os.path.exists. If fswatch exits
-    # due to its own timeout (subprocess.TimeoutExpired) we stop and fall
-    # through to the ceiling-elapsed logic below.
-    while time.monotonic() < deadline:
+    # --- fswatch thread (primary signal) ---
+    def _fswatch_thread() -> None:
+        """Watch sentinel directory; set ready_event when sentinel appears."""
+        while not ready_event.is_set() and time.monotonic() < deadline:
+            if os.path.exists(sentinel):
+                ready_event.set()
+                return
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            try:
+                subprocess.run(
+                    [fswatch_path, "-1", "--latency", "0.1", _CREW_SENTINEL_DIR],
+                    capture_output=True, check=False,
+                    timeout=min(remaining, 5.0),
+                )
+            except subprocess.TimeoutExpired:
+                pass  # Loop will recheck deadline on next iteration.
         if os.path.exists(sentinel):
-            return True, None
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            break
-        try:
-            subprocess.run(
-                [fswatch_path, "-1", "--latency", "0.1", _CREW_SENTINEL_DIR],
-                capture_output=True, check=False,
-                timeout=remaining,
-            )
-        except subprocess.TimeoutExpired:
-            break
-    if os.path.exists(sentinel):
+            ready_event.set()
+
+    # --- poll thread (fallback signal: capture-pane prompt-box detection) ---
+    def _poll_thread() -> None:
+        """Poll capture-pane every prompt_poll_interval seconds; set ready_event when prompt visible."""
+        while not ready_event.is_set() and time.monotonic() < deadline:
+            if _pane_shows_prompt_ready(tmux_target):
+                ready_event.set()
+                return
+            time.sleep(prompt_poll_interval)
+
+    fswatch_t = threading.Thread(target=_fswatch_thread, daemon=True)
+    poll_t = threading.Thread(target=_poll_thread, daemon=True)
+    fswatch_t.start()
+    poll_t.start()
+
+    remaining_at_start = deadline - time.monotonic()
+    ready_event.wait(timeout=max(0.0, remaining_at_start))
+
+    # Both threads are daemons — no need to join; they will exit naturally.
+
+    # Check final state: either signal counts as success.
+    if os.path.exists(sentinel) or _pane_shows_prompt_ready(tmux_target):
+        return True, None
+    if ready_event.is_set():
+        # Event was set but post-check missed it (race) — trust the event.
         return True, None
 
-    # Ceiling elapsed — distinguish hook-missing from crash by parsing settings.json.
-    # If the hook is not configured, the sentinel will never appear regardless of
-    # session state. If it is configured, a missing sentinel means the session
-    # likely crashed during boot.
-    if not _hook_present_in_settings():
-        reason = (
-            "session never reported ready — SessionStart hook missing in target settings.json"
-        )
-    else:
-        reason = (
-            "session never reported ready — likely crashed during boot, check tmux pane"
-        )
+    # Both signals timed out.
+    reason = (
+        "session never reported ready — "
+        "sentinel file not written (SessionStart hook may be missing) "
+        "and prompt-box token not observed in pane"
+    )
     return False, reason
 
 
@@ -2222,7 +2405,27 @@ def cmd_create(
     # session display name shown in the prompt box, /resume picker, and terminal
     # title. name is pre-validated by _SAFE_NAME_RE (alphanumeric/hyphens/underscores
     # only) — no shell quoting needed.
+
+    # --- 11a. Ensure crew-lifecycle-hook is in the worktree's settings.json ---
+    # This guarantees the SessionStart hook that drops the sentinel file is present
+    # in the target worktree even if the worktree was created from a repo that has no
+    # crew-lifecycle-hook in its .claude/settings.json. Without this, the sentinel is
+    # never written and _wait_for_sentinel falls back to the prompt-box polling path
+    # (still works, but slower). With this, both primary and fallback signals are
+    # active.
     #
+    # The provisioning is idempotent — if the hook is already registered, it is a no-op.
+    # If provisioning fails (unwritable path, malformed JSON), we log a warning and
+    # proceed: the prompt-box polling fallback in _wait_for_sentinel covers this case.
+    worktree_settings_path = os.path.join(worktree_path, ".claude", "settings.json")
+    provision_ok, provision_reason = _ensure_hook_in_settings(worktree_settings_path)
+    if not provision_ok:
+        print(
+            f"[crew] warning: could not provision sentinel hook — "
+            f"falling back to prompt-box polling: {provision_reason}",
+            file=sys.stderr,
+        )
+
     # Clean any stale sentinel unconditionally before spawning. A leftover sentinel
     # from a crashed or dismissed prior session would cause _wait_for_sentinel to
     # return immediately (false-ready) for any future --tell caller. Defense-in-depth:

@@ -9,6 +9,7 @@ Tests for crew.py — focused on the P6.1-P6.6 changes:
 """
 
 import argparse
+import json
 import subprocess
 import threading
 import time
@@ -28,11 +29,13 @@ from crew import (
     _clean_stale_sentinel,
     _cleanup_sentinel,
     _CREW_SENTINEL_DIR,
+    _ensure_hook_in_settings,
     _extract_org_repo_from_remote,
     _list_panes_in_window,
     _looks_like_message_not_target,
     _mangle_path_to_project_key,
     _pane_is_running_smithers,
+    _pane_shows_prompt_ready,
     _resolve_targets_with_lookup,
     _sentinel_path,
     _SMITHERS_SPLIT_PERCENT,
@@ -473,7 +476,7 @@ class TestCmdCreate:
             with patch.object(
                 crew_module,
                 "_wait_for_sentinel",
-                return_value=(False, "session never reported ready — likely crashed during boot, check tmux pane"),
+                return_value=(False, "session never reported ready — sentinel file not written (SessionStart hook may be missing) and prompt-box token not observed in pane"),
             ):
                 self._run_create(
                     mock_run,
@@ -488,7 +491,7 @@ class TestCmdCreate:
         out = capsys.readouterr().out
         assert "told_reason" in out
         assert 'told="false"' in out
-        assert "crashed during boot" in out
+        assert "sentinel file not written" in out
 
     def test_fetch_called_when_base_tracks_origin(self, capsys, tmp_path):
         """When base tracks origin, git fetch origin <base> is called before worktree add."""
@@ -1389,15 +1392,16 @@ class TestCmdCreateNoWorktree:
         """--no-worktree with valid git repo: tmux window created at repo path."""
         with patch("subprocess.run") as mock_run:
             with patch("os.path.isdir", return_value=True):
-                self._setup_no_worktree_mocks(mock_run, dirty=False)
-                cmd_create(
-                    name="test-nw",
-                    repo="/some/repo",
-                    branch=None,
-                    base=None,
-                    fmt="xml",
-                    no_worktree=True,
-                )
+                with patch.object(crew_module, "_ensure_hook_in_settings", return_value=(True, None)):
+                    self._setup_no_worktree_mocks(mock_run, dirty=False)
+                    cmd_create(
+                        name="test-nw",
+                        repo="/some/repo",
+                        branch=None,
+                        base=None,
+                        fmt="xml",
+                        no_worktree=True,
+                    )
 
         all_calls = mock_run.call_args_list
         # git worktree add must NOT be called
@@ -1767,7 +1771,7 @@ class TestCreateTellFile:
                     with patch.object(
                         crew_module,
                         "_wait_for_sentinel",
-                        return_value=(False, "session never reported ready — likely crashed during boot, check tmux pane"),
+                        return_value=(False, "session never reported ready — sentinel file not written (SessionStart hook may be missing) and prompt-box token not observed in pane"),
                     ):
                         self._setup_create_mocks(mock_run)
                         cmd_create(
@@ -2654,54 +2658,59 @@ class TestCmdCreateToldReason:
                 with patch("os.path.exists", return_value=False):
                     with patch.object(
                         crew_module,
-                        "_wait_for_sentinel",
-                        return_value=(False, "session never reported ready — SessionStart hook missing in target settings.json"),
+                        "_ensure_hook_in_settings",
+                        return_value=(True, None),
                     ):
-                        # Provide minimal subprocess mocks for the create path
-                        def side_effect(cmd, **kwargs):
-                            joined = " ".join(str(c) for c in cmd)
-                            if "display-message" in joined and "session_name" in joined:
-                                return fake_run_result(stdout="tidy-crown\n")
-                            if "display-message" in joined and "window_id" in joined:
-                                return fake_run_result(stdout="@1\n")
-                            if "list-windows" in joined:
-                                return fake_run_result(stdout="")
-                            if "rev-parse" in joined and "show-toplevel" in joined:
-                                return fake_run_result(stdout="/some/repo\n")
-                            if "symbolic-ref" in joined:
-                                return fake_run_result(stdout="main\n")
-                            if "rev-parse" in joined and "upstream" in joined:
-                                return fake_run_result(stdout="origin/main\n")
-                            if "fetch" in joined and "origin" in joined:
+                        with patch.object(
+                            crew_module,
+                            "_wait_for_sentinel",
+                            return_value=(False, "session never reported ready — sentinel file not written (SessionStart hook may be missing) and prompt-box token not observed in pane"),
+                        ):
+                            # Provide minimal subprocess mocks for the create path
+                            def side_effect(cmd, **kwargs):
+                                joined = " ".join(str(c) for c in cmd)
+                                if "display-message" in joined and "session_name" in joined:
+                                    return fake_run_result(stdout="tidy-crown\n")
+                                if "display-message" in joined and "window_id" in joined:
+                                    return fake_run_result(stdout="@1\n")
+                                if "list-windows" in joined:
+                                    return fake_run_result(stdout="")
+                                if "rev-parse" in joined and "show-toplevel" in joined:
+                                    return fake_run_result(stdout="/some/repo\n")
+                                if "symbolic-ref" in joined:
+                                    return fake_run_result(stdout="main\n")
+                                if "rev-parse" in joined and "upstream" in joined:
+                                    return fake_run_result(stdout="origin/main\n")
+                                if "fetch" in joined and "origin" in joined:
+                                    return fake_run_result()
+                                if "rev-parse" in joined and "--verify" in joined and "refs/heads" not in joined:
+                                    return fake_run_result(stdout="abc1234\n")
+                                if "rev-parse" in joined and "refs/heads" in joined:
+                                    return fake_run_result(returncode=1)
+                                if "branch" in joined and "main" in joined:
+                                    return fake_run_result()
+                                if "worktree" in joined and "add" in joined:
+                                    return fake_run_result()
+                                if "new-window" in joined:
+                                    return fake_run_result()
+                                if "send-keys" in joined:
+                                    return fake_run_result()
                                 return fake_run_result()
-                            if "rev-parse" in joined and "--verify" in joined and "refs/heads" not in joined:
-                                return fake_run_result(stdout="abc1234\n")
-                            if "rev-parse" in joined and "refs/heads" in joined:
-                                return fake_run_result(returncode=1)
-                            if "branch" in joined and "main" in joined:
-                                return fake_run_result()
-                            if "worktree" in joined and "add" in joined:
-                                return fake_run_result()
-                            if "new-window" in joined:
-                                return fake_run_result()
-                            if "send-keys" in joined:
-                                return fake_run_result()
-                            return fake_run_result()
 
-                        mock_run.side_effect = side_effect
-                        cmd_create(
-                            name="test-worker",
-                            repo="/some/repo",
-                            branch="test-worker",
-                            base="main",
-                            fmt="xml",
-                            tell="Hello",
-                        )
+                            mock_run.side_effect = side_effect
+                            cmd_create(
+                                name="test-worker",
+                                repo="/some/repo",
+                                branch="test-worker",
+                                base="main",
+                                fmt="xml",
+                                tell="Hello",
+                            )
 
         out = capsys.readouterr().out
         assert 'told="false"' in out
-        assert "hook missing" in out, (
-            f"Expected 'hook missing' in told_reason, got output: {out!r}"
+        assert "sentinel file not written" in out, (
+            f"Expected 'sentinel file not written' in told_reason, got output: {out!r}"
         )
 
 
@@ -2966,31 +2975,35 @@ class TestWaitForSentinel:
             f"Elapsed {elapsed:.3f}s is too close to ceiling — event-driven detection may be broken"
         )
 
-    def test_returns_false_with_crash_reason_when_hook_present_in_settings(self, tmp_path, monkeypatch):
-        """When ceiling elapses and settings.json shows hook present, reason says 'crashed during boot'."""
+    def test_returns_false_when_both_signals_timeout(self, tmp_path, monkeypatch):
+        """When ceiling elapses with neither sentinel nor prompt-box signal, returns (False, reason)."""
         sentinel_dir = tmp_path / "crew"
         sentinel_dir.mkdir()  # Dir exists but sentinel file never appears
         monkeypatch.setattr(crew_module, "_CREW_SENTINEL_DIR", str(sentinel_dir))
 
-        # Mock _hook_present_in_settings to return True (hook is configured).
-        with patch.object(crew_module, "_hook_present_in_settings", return_value=True):
+        # Ensure prompt-box polling also returns no signal.
+        with patch.object(crew_module, "_pane_shows_prompt_ready", return_value=False):
             ready, reason = _wait_for_sentinel("myworker", ceiling=0.1)
 
         assert ready is False
-        assert "crashed during boot" in reason, f"Expected 'crashed during boot' in reason, got: {reason!r}"
+        assert reason is not None
+        assert "session never reported ready" in reason, (
+            f"Expected 'session never reported ready' in reason, got: {reason!r}"
+        )
 
-    def test_returns_false_with_hook_missing_reason_when_hook_absent_from_settings(self, tmp_path, monkeypatch):
-        """When ceiling elapses and settings.json shows hook absent, reason says 'hook missing'."""
+    def test_returns_false_combined_reason_when_hook_absent(self, tmp_path, monkeypatch):
+        """When ceiling elapses and hook was not configured, reason mentions both signals checked."""
         sentinel_dir = tmp_path / "crew"
         sentinel_dir.mkdir()
         monkeypatch.setattr(crew_module, "_CREW_SENTINEL_DIR", str(sentinel_dir))
 
-        # Mock _hook_present_in_settings to return False (hook not configured).
-        with patch.object(crew_module, "_hook_present_in_settings", return_value=False):
+        with patch.object(crew_module, "_pane_shows_prompt_ready", return_value=False):
             ready, reason = _wait_for_sentinel("myworker", ceiling=0.1)
 
         assert ready is False
-        assert "hook missing" in reason, f"Expected 'hook missing' in reason, got: {reason!r}"
+        assert "prompt-box" in reason or "sentinel" in reason, (
+            f"Expected reason to mention signal names, got: {reason!r}"
+        )
 
     def test_returns_true_when_sentinel_dir_absent_at_wait_start(self, tmp_path, monkeypatch):
         """Returns (True, None) even when the sentinel directory doesn't exist when _wait_for_sentinel is called.
@@ -3715,3 +3728,339 @@ class TestCmdResumeWorktreeFlag:
         assert worktree == worktree_path, (
             f"Expected worktree '{worktree_path}', got: '{worktree}'"
         )
+
+
+# ---------------------------------------------------------------------------
+# _ensure_hook_in_settings — hook auto-installation idempotency
+# ---------------------------------------------------------------------------
+
+class TestEnsureHookInSettings:
+    """Tests for _ensure_hook_in_settings: idempotency, absent-hook installation, error handling."""
+
+    def test_no_op_when_hook_already_present_hook_group_format(self, tmp_path):
+        """Returns (True, None) without writing when crew-lifecycle-hook is already in SessionStart."""
+        settings = {
+            "hooks": {
+                "SessionStart": [
+                    {
+                        "hooks": [
+                            {"type": "command", "command": "crew-lifecycle-hook"}
+                        ]
+                    }
+                ]
+            }
+        }
+        settings_file = tmp_path / "settings.json"
+        settings_file.write_text(json.dumps(settings))
+        mtime_before = settings_file.stat().st_mtime
+
+        ok, reason = _ensure_hook_in_settings(str(settings_file))
+
+        assert ok is True
+        assert reason is None
+        # File must NOT have been rewritten (idempotent).
+        assert settings_file.stat().st_mtime == mtime_before, (
+            "settings.json was rewritten even though hook was already present"
+        )
+
+    def test_no_op_when_hook_present_as_flat_command(self, tmp_path):
+        """Returns (True, None) when crew-lifecycle-hook appears as a flat command string."""
+        settings = {
+            "hooks": {
+                "SessionStart": [
+                    {"command": "crew-lifecycle-hook", "type": "command"}
+                ]
+            }
+        }
+        settings_file = tmp_path / "settings.json"
+        settings_file.write_text(json.dumps(settings))
+        mtime_before = settings_file.stat().st_mtime
+
+        ok, reason = _ensure_hook_in_settings(str(settings_file))
+
+        assert ok is True
+        assert reason is None
+        assert settings_file.stat().st_mtime == mtime_before
+
+    def test_installs_hook_when_session_start_is_empty(self, tmp_path):
+        """Appends crew-lifecycle-hook to empty SessionStart list and writes the file."""
+        settings = {"hooks": {"SessionStart": []}}
+        settings_file = tmp_path / "settings.json"
+        settings_file.write_text(json.dumps(settings))
+
+        ok, reason = _ensure_hook_in_settings(str(settings_file))
+
+        assert ok is True
+        assert reason is None
+
+        # Re-read and verify hook is present.
+        written = json.loads(settings_file.read_text())
+        session_start = written.get("hooks", {}).get("SessionStart", [])
+        assert len(session_start) >= 1
+        found = False
+        for entry in session_start:
+            if isinstance(entry, dict):
+                for hook in entry.get("hooks", []):
+                    if isinstance(hook, dict) and "crew-lifecycle-hook" in hook.get("command", ""):
+                        found = True
+        assert found, f"crew-lifecycle-hook not found in written settings: {session_start}"
+
+    def test_installs_hook_when_session_start_missing_entirely(self, tmp_path):
+        """Creates SessionStart key and appends hook when SessionStart is absent from hooks."""
+        settings = {"enabledMcpjsonServers": ["context7"]}
+        settings_file = tmp_path / "settings.json"
+        settings_file.write_text(json.dumps(settings))
+
+        ok, reason = _ensure_hook_in_settings(str(settings_file))
+
+        assert ok is True
+        written = json.loads(settings_file.read_text())
+        session_start = written.get("hooks", {}).get("SessionStart", [])
+        found = any(
+            "crew-lifecycle-hook" in hook.get("command", "")
+            for entry in session_start if isinstance(entry, dict)
+            for hook in entry.get("hooks", []) if isinstance(hook, dict)
+        )
+        assert found, f"crew-lifecycle-hook not found after install: {session_start}"
+
+    def test_creates_settings_json_when_file_missing(self, tmp_path):
+        """Creates a minimal settings.json with SessionStart hook when the file doesn't exist."""
+        settings_file = tmp_path / ".claude" / "settings.json"
+        # Do NOT create the file — _ensure_hook_in_settings must create it.
+        assert not settings_file.exists()
+
+        ok, reason = _ensure_hook_in_settings(str(settings_file))
+
+        assert ok is True
+        assert settings_file.exists(), "settings.json was not created"
+
+        written = json.loads(settings_file.read_text())
+        session_start = written.get("hooks", {}).get("SessionStart", [])
+        found = any(
+            "crew-lifecycle-hook" in hook.get("command", "")
+            for entry in session_start if isinstance(entry, dict)
+            for hook in entry.get("hooks", []) if isinstance(hook, dict)
+        )
+        assert found, f"crew-lifecycle-hook not found in created settings.json: {session_start}"
+
+    def test_preserves_existing_hooks_when_adding(self, tmp_path):
+        """Existing SessionStart hooks are preserved when appending the lifecycle hook."""
+        settings = {
+            "hooks": {
+                "SessionStart": [
+                    {"hooks": [{"type": "command", "command": "other-hook"}]}
+                ]
+            }
+        }
+        settings_file = tmp_path / "settings.json"
+        settings_file.write_text(json.dumps(settings))
+
+        ok, _ = _ensure_hook_in_settings(str(settings_file))
+
+        assert ok is True
+        written = json.loads(settings_file.read_text())
+        session_start = written.get("hooks", {}).get("SessionStart", [])
+        # Both original hook and new lifecycle hook must be present.
+        all_commands = []
+        for entry in session_start:
+            if isinstance(entry, dict):
+                for hook in entry.get("hooks", []):
+                    if isinstance(hook, dict):
+                        all_commands.append(hook.get("command", ""))
+        assert "other-hook" in all_commands, f"Existing hook lost. Commands: {all_commands}"
+        assert any("crew-lifecycle-hook" in cmd for cmd in all_commands), (
+            f"crew-lifecycle-hook not added. Commands: {all_commands}"
+        )
+
+    def test_returns_false_on_malformed_json(self, tmp_path):
+        """Returns (False, reason) without raising when settings.json is malformed JSON."""
+        settings_file = tmp_path / "settings.json"
+        settings_file.write_text("{this is not valid json")
+
+        ok, reason = _ensure_hook_in_settings(str(settings_file))
+
+        assert ok is False
+        assert reason is not None
+        assert "malformed" in reason.lower() or "json" in reason.lower(), (
+            f"Expected malformed/json in reason, got: {reason!r}"
+        )
+
+    def test_idempotent_second_call_does_not_duplicate_hook(self, tmp_path):
+        """Calling _ensure_hook_in_settings twice does not duplicate the hook entry."""
+        settings = {"hooks": {"SessionStart": []}}
+        settings_file = tmp_path / "settings.json"
+        settings_file.write_text(json.dumps(settings))
+
+        _ensure_hook_in_settings(str(settings_file))
+        _ensure_hook_in_settings(str(settings_file))  # Second call must be a no-op.
+
+        written = json.loads(settings_file.read_text())
+        session_start = written.get("hooks", {}).get("SessionStart", [])
+        lifecycle_count = sum(
+            1
+            for entry in session_start if isinstance(entry, dict)
+            for hook in entry.get("hooks", []) if isinstance(hook, dict)
+            if "crew-lifecycle-hook" in hook.get("command", "")
+        )
+        assert lifecycle_count == 1, (
+            f"Expected exactly 1 lifecycle hook entry, got {lifecycle_count}: {session_start}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# _pane_shows_prompt_ready — prompt-box polling detection
+# ---------------------------------------------------------------------------
+
+class TestPaneShowsPromptReady:
+    """Tests for _pane_shows_prompt_ready: capture-pane polling fallback signal."""
+
+    def test_returns_true_when_startup_banner_and_prompt_glyph_present(self):
+        """Returns True when 'claude.ai/code' banner is present alongside ❯ prompt glyph."""
+        pane_content = "╭─ Claude Code ─────────────────────────────────────────────────╮\nclaude.ai/code\n> ❯\n╰────────────────────────────────────────────────────────────────╯\n"
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout=pane_content)
+            result = _pane_shows_prompt_ready("test-worker.0")
+        assert result is True
+
+    def test_returns_true_when_startup_banner_present(self):
+        """Returns True when 'claude.ai/code' appears in capture-pane output."""
+        pane_content = "Welcome to Claude Code\nclaude.ai/code\nType your message...\n"
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout=pane_content)
+            result = _pane_shows_prompt_ready("test-worker.0")
+        assert result is True
+
+    def test_returns_false_when_no_prompt_tokens(self):
+        """Returns False when pane output contains no Claude Code prompt tokens."""
+        pane_content = "bash-3.2$ \n"
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout=pane_content)
+            result = _pane_shows_prompt_ready("test-worker.0")
+        assert result is False
+
+    def test_returns_false_when_capture_pane_fails(self):
+        """Returns False (fail open) when tmux capture-pane returns non-zero exit code."""
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=1, stdout="")
+            result = _pane_shows_prompt_ready("test-worker.0")
+        assert result is False
+
+    def test_uses_capture_pane_command(self):
+        """Invokes tmux capture-pane -p -t <target> when called."""
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="")
+            _pane_shows_prompt_ready("my-window.0")
+        called_cmd = mock_run.call_args[0][0]
+        assert "capture-pane" in " ".join(str(x) for x in called_cmd)
+        assert "my-window.0" in called_cmd
+
+    def test_returns_false_for_shell_prompt_without_claude_banner(self):
+        """Returns False for a shell prompt containing ❯ but NOT 'claude.ai/code'.
+
+        Protects against H1 regression: the ❯ glyph appears in popular shell
+        prompts (Starship, Oh My Zsh) and must NOT trigger a false-positive
+        ready signal before Claude Code has started.
+        """
+        # Simulates a Starship/Oh My Zsh shell prompt visible in the pane
+        # before Claude Code has taken over — contains ❯ but no Claude banner.
+        shell_prompt_content = (
+            "~/projects/myrepo on  main via  v20.11.0\n"
+            "❯ staff --model sonnet\n"
+        )
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout=shell_prompt_content)
+            result = _pane_shows_prompt_ready("test-worker.0")
+        assert result is False, (
+            "Shell prompt with ❯ but no 'claude.ai/code' must return False "
+            "to avoid false-positive ready signal before Claude Code starts"
+        )
+
+
+# ---------------------------------------------------------------------------
+# _wait_for_sentinel — polling fallback fires when sentinel is absent
+# ---------------------------------------------------------------------------
+
+class TestWaitForSentinelPollingFallback:
+    """Tests that _wait_for_sentinel returns success when the polling fallback fires
+    even when the sentinel file is never written."""
+
+    def test_returns_true_via_prompt_box_polling_without_sentinel(self, tmp_path, monkeypatch):
+        """Returns (True, None) when the prompt-box polling signal fires before the sentinel."""
+        sentinel_dir = tmp_path / "crew"
+        sentinel_dir.mkdir()
+        monkeypatch.setattr(crew_module, "_CREW_SENTINEL_DIR", str(sentinel_dir))
+
+        # Sentinel file is NEVER written — only the poll signal fires.
+        # _pane_shows_prompt_ready starts returning True after ~200ms.
+        poll_fire_delay = 0.2
+        call_count = {"n": 0}
+
+        def fake_prompt_ready(target):
+            call_count["n"] += 1
+            # First few calls return False (Claude still booting),
+            # then return True once the threshold is reached.
+            if call_count["n"] >= 3:
+                return True
+            return False
+
+        monkeypatch.setattr(crew_module, "_pane_shows_prompt_ready", fake_prompt_ready)
+
+        start = time.monotonic()
+        ready, reason = _wait_for_sentinel(
+            "myworker",
+            ceiling=5.0,
+            prompt_poll_interval=poll_fire_delay / 3,
+        )
+        elapsed = time.monotonic() - start
+
+        assert ready is True, f"Expected ready=True via polling fallback, got reason={reason!r}"
+        assert reason is None
+        # Must have returned well under the 5s ceiling.
+        assert elapsed < 3.0, (
+            f"Elapsed {elapsed:.3f}s is too close to ceiling — polling fallback may be broken"
+        )
+
+    def test_returns_true_via_sentinel_when_prompt_poll_never_fires(self, tmp_path, monkeypatch):
+        """Returns (True, None) via sentinel even when prompt-box polling always returns False."""
+        sentinel_dir = tmp_path / "crew"
+        sentinel_dir.mkdir()
+        sentinel_file = sentinel_dir / "ready-myworker"
+        monkeypatch.setattr(crew_module, "_CREW_SENTINEL_DIR", str(sentinel_dir))
+
+        # Polling fallback never fires — only the sentinel fires.
+        monkeypatch.setattr(crew_module, "_pane_shows_prompt_ready", lambda target: False)
+
+        delay_s = 0.2
+
+        def write_sentinel():
+            time.sleep(delay_s)
+            sentinel_file.touch()
+
+        t = threading.Thread(target=write_sentinel, daemon=True)
+
+        start = time.monotonic()
+        t.start()
+        ready, reason = _wait_for_sentinel("myworker", ceiling=5.0)
+        elapsed = time.monotonic() - start
+
+        t.join(timeout=2.0)
+
+        assert ready is True, f"Expected ready=True via sentinel, got reason={reason!r}"
+        assert reason is None
+        assert elapsed < 3.0, (
+            f"Elapsed {elapsed:.3f}s is too close to ceiling — sentinel detection broken"
+        )
+
+    def test_returns_false_when_both_signals_timeout(self, tmp_path, monkeypatch):
+        """Returns (False, reason) when neither sentinel nor prompt-box fires within ceiling."""
+        sentinel_dir = tmp_path / "crew"
+        sentinel_dir.mkdir()
+        monkeypatch.setattr(crew_module, "_CREW_SENTINEL_DIR", str(sentinel_dir))
+
+        monkeypatch.setattr(crew_module, "_pane_shows_prompt_ready", lambda target: False)
+
+        ready, reason = _wait_for_sentinel("myworker", ceiling=0.1)
+
+        assert ready is False
+        assert reason is not None
+        assert "session never reported ready" in reason
