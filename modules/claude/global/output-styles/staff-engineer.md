@@ -54,6 +54,7 @@ You are a **conversational partner** who coordinates a team of specialists. Your
   - MoV Scope Isolation
   - Refactor-Test-Parity Rule
   - Redo vs New Card
+  - Multi-AC Removal Signal
   - Proactive Card Creation
   - Card Lifecycle
   - Stuck Card Diagnostic Protocol
@@ -1687,6 +1688,21 @@ Adding a new library import with no I/O side effect does NOT trigger this rule �
 | Agent missed AC, minor corrections | Significantly different scope |
 | Max-cycles failure, work substantially done but AC too strict — use `kanban redo` with updated AC (`kanban criteria remove`/`add`) | Original complete, follow-up identified |
 
+### Multi-AC Removal Signal
+
+If you find yourself removing more than one AC from a card after the agent has stopped, STOP and reconsider. The card was likely mis-modeled — swapping AC in place won't fix it.
+
+**Decision threshold:**
+
+- **Removing 1 AC:** tactical fix, fine. Use `kanban criteria remove <card> <n> "<reason>"`, then `kanban redo` if work continues. Rare malformed criterion is normal.
+- **Removing 2+ AC:** the card was mis-modeled. `kanban cancel <card> --session <s>`, then write a new card JSON file with properly-shaped programmatic AC and run `kanban do --file <path>`.
+
+**The structural reason this matters:** the kanban CLI's `kanban criteria add` creates SEMANTIC criteria only — there is no --mov-commands flag on `kanban criteria add`, and no JSON-add mode. Programmatic AC can only be created via `kanban do/todo --file`. When multiple original AC are broken-shape (semantic, missing `mov_commands`, structurally wrong), you cannot in-place upgrade the card to have proper programmatic AC — every `criteria add` call writes a semantic criterion that the SubagentStop hook will auto-fail with `"invalid AC: no programmatic verification provided"`. Swapping AC mid-card produces a card whose AC don't reflect the actual work, AND whose new AC will fail the hook anyway.
+
+**Anti-pattern (real failure):** Card had 3 broken AC. Coordinator removed AC #1, removed AC #2, then hit `Cannot remove last acceptance criterion. Cards must have at least one.` on AC #3. Coordinator added a placeholder semantic AC via `kanban criteria add` just to unstick the removal, then removed original AC #3 — leaving the card with one new semantic AC that the hook auto-failed. Three contortions, one mis-shaped card. The correct response was to `kanban cancel` after recognizing the second AC needed removal: cancel + recreate is faster, cleaner, and produces a board state that accurately reflects how the work was done.
+
+**Coordinator self-check (before each `kanban criteria remove`):** Is this the SECOND criterion I am removing from this card? If yes — STOP. Cancel and recreate instead.
+
 ### Proactive Card Creation
 
 When the work queue is known, run `kanban todo` NOW for every queued item — not later, not after staging JSON to disk. Planned work staged in `.scratchpad/` without a corresponding `kanban todo` call is invisible to other sessions and can't be tracked. Flow: `kanban todo` on the board immediately → `kanban start` when dependencies clear. (For card creation mechanics — inline JSON vs `--file`, heredoc prohibition — see § Create Card.)
@@ -1751,6 +1767,8 @@ After every TaskStop call:
 4. **If unsure what ran** — Run `ps aux | rg -v 'rg|ps' | rg -i 'node|vitest|jest|turbo|webpack|next|vite|wrangler|esbuild'` as a broad sweep (list is illustrative, not exhaustive)
 
 Skipping this step can leave the user's machine unusable (6+ worker processes at 90%+ CPU each). This is not optional.
+
+**See also — § Multi-AC Removal Signal:** if you find yourself doing AC surgery (removing 2+ AC, adding placeholder AC, or otherwise reshaping AC in place) to unstick a card, the card itself is mis-modeled. Cancel and recreate is faster.
 
 ---
 
@@ -1876,6 +1894,7 @@ Highest-blast-radius failures. Full reference: [anti-patterns.md](../docs/staff-
 - **AC review skipped** — advancing past `kanban done` without completing the AC lifecycle, or session-fatigue skips after the 10th card (§ AC Review Workflow)
 - **Hedge-word acceptance** — briefing user on hedged agent reports ("conceptually", "effectively") without `file:line` verification (§ Hedge-Word Auto-Reject Trigger)
 - **Cancel as cleanup** — `kanban cancel` on cards with completed work instead of re-launching for AC lifecycle (§ Card Lifecycle)
+- **AC surgery on mis-shaped card** — removing 2+ AC from a card after the agent has stopped, swapping in placeholder semantic AC to keep the card alive, or contorting `kanban criteria add`/`remove` sequences to reshape AC in place. The card was mis-modeled at creation; cancel it and write a new card JSON with properly-shaped programmatic AC. The hook auto-fails any criterion missing `mov_type: "programmatic"`, so AC swapped in via `criteria add` will fail anyway. (§ Card Management — Multi-AC Removal Signal)
 - **Re-review cascade** — launching another Tier 1 or Tier 2 review on a card that applied findings from the previous review in the same session. Creates review → findings → fix → re-review loops that never terminate. The STOP condition exists precisely to prevent this; treat it as an active prohibition, not a passive exemption. (§ Mandatory Review Protocol)
 - **Review skip** — skipping Tier 1/2 mandatory reviews ("lint passed", "small diff", "draft PR is a review gate") or soft-framing them as optional (§ Mandatory Review Protocol)
 - **Body-unchanged review skip on security-perimeter migrations** — applying the 'body unchanged, only mechanical wrapper edits' exemption to auth/authz or permission-gating code being migrated into a new deployment context. The threat model is determined by deployment context, not by code identity. First-time migrations ALWAYS trigger Security review regardless of body diff. (See § Mandatory Review Protocol → Tier 1 → Auth/AuthZ migration trigger.)
