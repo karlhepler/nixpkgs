@@ -190,7 +190,108 @@ class TestAllProgrammaticCriteria:
 # ---------------------------------------------------------------------------
 
 class TestInvalidACAutoFail:
-    """Criteria with non-programmatic mov_type or missing mov_commands → auto-fail."""
+    """Criteria with missing/empty mov_commands → auto-fail. mov_type field is ignored."""
+
+    def test_hook_accepts_ac_without_mov_type(self, hook, tmp_transcript):
+        """A criterion with only text and non-empty mov_commands (no mov_type field) is
+        accepted and run normally. The hook ignores the mov_type field entirely."""
+        entries = [make_card_header_entry("28", "sess-no-mov-type")]
+        transcript = tmp_transcript(entries)
+        payload = make_stop_payload(transcript_path=transcript)
+
+        # Build XML manually: AC has no mov-type attribute at all
+        criteria_xml = (
+            '<card num="28" session="sess-no-mov-type" status="doing" review-cycles="0">\n'
+            '  <intent>Test no mov_type</intent>\n'
+            '  <acceptance-criteria>\n'
+            '    <ac agent-met="false" reviewer-met="unchecked">'
+            'Criterion with commands but no mov-type'
+            '<movCommands><command cmd="true" timeout="5"/></movCommands>'
+            '</ac>\n'
+            '  </acceptance-criteria>\n'
+            '</card>'
+        )
+
+        criteria_pass_calls = []
+
+        def fake_subprocess_run(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd[0] == "kanban":
+                sub = cmd[1] if len(cmd) > 1 else ""
+                if sub == "show":
+                    return KanbanMockResponses.success(stdout=criteria_xml)
+                if sub == "status":
+                    return KanbanMockResponses.success(stdout="doing")
+                if sub == "review":
+                    return KanbanMockResponses.success()
+                if sub == "done":
+                    return KanbanMockResponses.success()
+                if sub == "criteria" and len(cmd) > 2 and cmd[2] == "pass":
+                    criteria_pass_calls.append(cmd)
+                    return KanbanMockResponses.success()
+                if sub == "criteria":
+                    return KanbanMockResponses.success()
+                return KanbanMockResponses.success()
+            if isinstance(cmd, str) and cmd.strip() == "true":
+                return KanbanMockResponses.success()
+            return KanbanMockResponses.success()
+
+        with patch("subprocess.run", side_effect=fake_subprocess_run):
+            result = run_process_stop(hook, payload)
+
+        assert_allow(result)
+        assert len(criteria_pass_calls) >= 1, (
+            "Expected kanban criteria pass to be called for AC without mov_type field"
+        )
+
+    def test_hook_rejects_empty_mov_commands(self, hook, tmp_transcript):
+        """A criterion with empty mov_commands is auto-failed with the standard
+        'invalid AC: no programmatic verification provided' message, regardless of
+        any mov_type value."""
+        entries = [make_card_header_entry("29", "sess-empty-cmds")]
+        transcript = tmp_transcript(entries)
+        payload = make_stop_payload(transcript_path=transcript)
+
+        criteria_xml = KanbanMockResponses.card_xml(
+            card_number="29",
+            session="sess-empty-cmds",
+            status="doing",
+            criteria=[
+                {"text": "Empty commands criterion", "mov_type": "programmatic", "mov_commands": []},
+            ],
+        )
+
+        criteria_fail_calls = []
+
+        def fake_subprocess_run(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd[0] == "kanban":
+                sub = cmd[1] if len(cmd) > 1 else ""
+                if sub == "show":
+                    return KanbanMockResponses.success(stdout=criteria_xml)
+                if sub == "status":
+                    return KanbanMockResponses.success(stdout="doing")
+                if sub == "review":
+                    return KanbanMockResponses.success()
+                if sub == "criteria" and len(cmd) > 2 and cmd[2] == "fail":
+                    criteria_fail_calls.append(cmd)
+                    return KanbanMockResponses.success()
+                if sub == "criteria":
+                    return KanbanMockResponses.success()
+                if sub == "redo":
+                    return KanbanMockResponses.success()
+                return KanbanMockResponses.success()
+            return KanbanMockResponses.success()
+
+        with patch.object(hook, "send_transition_notification"):
+            with patch("subprocess.run", side_effect=fake_subprocess_run):
+                run_process_stop(hook, payload)
+
+        assert len(criteria_fail_calls) >= 1, (
+            "Expected kanban criteria fail to be called for criterion with empty mov_commands"
+        )
+        fail_args = " ".join(str(a) for a in criteria_fail_calls[0])
+        assert "invalid ac" in fail_args.lower(), (
+            f"Expected 'invalid AC' in fail reason. Got: {fail_args!r}"
+        )
 
     def test_missing_mov_commands_auto_fails_with_error_message(self, hook, tmp_transcript):
         """A criterion with mov_type programmatic but empty mov_commands is auto-failed
@@ -243,8 +344,9 @@ class TestInvalidACAutoFail:
         )
 
     def test_semantic_mov_type_auto_fails_with_error_message(self, hook, tmp_transcript):
-        """A criterion with mov_type 'semantic' (instead of 'programmatic') is auto-failed
-        with 'invalid AC: no programmatic verification provided'."""
+        """A criterion with mov_type 'semantic' and no mov_commands is auto-failed
+        with 'invalid AC: no programmatic verification provided' (because mov_commands
+        is empty/missing — mov_type is ignored)."""
         entries = [make_card_header_entry("26", "sess-semantic")]
         transcript = tmp_transcript(entries)
         payload = make_stop_payload(transcript_path=transcript)
@@ -292,7 +394,7 @@ class TestInvalidACAutoFail:
         )
 
     def test_no_claude_launched_for_invalid_ac(self, hook, tmp_transcript):
-        """Invalid AC (semantic mov_type) must NOT launch claude -p — auto-fail only."""
+        """Invalid AC (no mov_commands) must NOT launch claude -p — auto-fail only."""
         entries = [make_card_header_entry("27", "sess-no-claude")]
         transcript = tmp_transcript(entries)
         payload = make_stop_payload(transcript_path=transcript)

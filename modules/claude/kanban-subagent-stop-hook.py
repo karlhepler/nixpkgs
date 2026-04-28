@@ -9,9 +9,10 @@ review_cycles < 3, the agent is blocked with failure details so it can fix and
 retry (outer loop). After 3 cycles, the agent is allowed to stop with a failure
 summary for staff.
 
-All AC must be programmatic (mov_type: "programmatic" with non-empty mov_commands).
-Any criterion that is not programmatic is treated as invalid and auto-failed with
-the message "invalid AC: no programmatic verification provided".
+All AC must have non-empty mov_commands to be valid programmatic criteria.
+Any criterion with empty or missing mov_commands is treated as invalid and auto-failed
+with the message "invalid AC: no programmatic verification provided".
+The mov_type field, if present, is silently ignored.
 
 Output format (SubagentStop hook):
     {"decision": "allow"}  — let the agent stop
@@ -1174,15 +1175,16 @@ def run_programmatic_criteria(
 ) -> list[str]:
     """Execute all programmatic criteria for a card and return any mov_error diagnostics.
 
-    Only processes criteria where mov_type == "programmatic" and mov_commands is non-empty.
+    Only processes criteria where mov_commands is non-empty.
     Skips criteria already reviewed (reviewer_met is not None).
-    Non-programmatic criteria are auto-failed by `run_inner_loop` before this function is called.
+    Criteria with empty/missing mov_commands are auto-failed by `run_inner_loop`
+    before this function is called.
 
     Returns a list of mov_error diagnostic strings (may be empty).
     """
     programmatic = [
         c for c in criteria
-        if c.get("mov_type") == "programmatic" and c.get("mov_commands")
+        if c.get("mov_commands")
     ]
     log_info(
         f"run_programmatic_criteria: card #{card_number} has "
@@ -1228,13 +1230,12 @@ def run_inner_loop(
     Run the AC review loop — programmatic criteria only.
 
     Dispatch flow:
-    1. Load card criteria. Any criterion that is not programmatic (mov_type !=
-       "programmatic" or missing mov_commands) is treated as invalid AC and
-       auto-failed with the message "invalid AC: no programmatic verification
-       provided".
-    2. For each valid programmatic criterion: run each command in mov_commands via
-       subprocess, classify exit code, call kanban criteria pass/fail (or emit
-       mov_error diagnostic).
+    1. Load card criteria. Any criterion with empty or missing mov_commands is
+       treated as invalid AC and auto-failed with the message "invalid AC: no
+       programmatic verification provided". The mov_type field is ignored.
+    2. For each valid criterion (non-empty mov_commands): run each command in
+       mov_commands via subprocess, classify exit code, call kanban criteria
+       pass/fail (or emit mov_error diagnostic).
     3. Attempt kanban done directly (programmatic-only path — no Haiku LLM).
 
     Returns (card_done: bool, mov_error_diagnostics: list[str]).
@@ -1246,20 +1247,19 @@ def run_inner_loop(
     git_root = get_git_root()
     log_info(f"run_inner_loop: git root for MoV execution: {git_root!r}")
 
-    # --- Step 1: Load criteria and flag invalid (non-programmatic) AC ---
+    # --- Step 1: Load criteria and flag invalid AC (empty/missing mov_commands) ---
     criteria = get_card_criteria(card_number, session)
     valid_criteria = []
     invalid_count = 0
     for c in criteria:
-        if c.get("mov_type") == "programmatic" and c.get("mov_commands"):
+        if c.get("mov_commands"):
             valid_criteria.append(c)
         else:
             # Auto-fail: no programmatic verification provided
             idx = c["index"]
             log_info(
                 f"run_inner_loop: card #{card_number} criterion {idx} "
-                f"is invalid AC (mov_type={c.get('mov_type')!r}, "
-                f"mov_commands={c.get('mov_commands')!r}) — auto-failing"
+                f"is invalid AC (mov_commands={c.get('mov_commands')!r}) — auto-failing"
             )
             run_kanban([
                 "criteria", "fail", card_number, str(idx),
