@@ -83,6 +83,21 @@ let
     flakeIgnore = [ "E265" "E501" "W503" "W504" ];
   } (builtins.readFile ./claudit-hook.py);
 
+  # Claudit annotate (records named change-marker annotations)
+  clauditAnnotateScript = pkgs.writers.writePython3Bin "claudit-annotate" {
+    flakeIgnore = [ "E265" "E501" "W503" "W504" ];
+  } (builtins.readFile ./claudit-annotate.py);
+
+  # Wrapper that sets CLAUDIT_ROLE=claude-code as a default so the top-level
+  # Claude Code Stop event gets a meaningful agent label instead of falling back
+  # to the literal string 'claude'. If CLAUDIT_ROLE is already set (e.g. by a
+  # future per-output-style launcher), the existing value is preserved.
+  # SubagentStop is unaffected — that path reads payload.agent_type, not CLAUDIT_ROLE.
+  clauditHookWrapper = pkgs.writeShellScriptBin "claudit-hook" ''
+    export CLAUDIT_ROLE="''${CLAUDIT_ROLE:-claude-code}"
+    exec ${clauditHookScript}/bin/claudit-hook "$@"
+  '';
+
 in {
   # ============================================================================
   # Claudit - Claude Code metrics dashboard + metrics collection hook
@@ -223,11 +238,19 @@ SQL_EOF
       sourceFile = "default.nix";
     };
 
-    claudit-hook = clauditHookScript // {
+    claudit-hook = clauditHookWrapper // {
       meta = {
         description = "Hook for tracking agent metrics on stop events";
         mainProgram = "claudit-hook";
         homepage = "${builtins.toString ./.}/claudit-hook.py";
+      };
+    };
+
+    claudit-annotate = clauditAnnotateScript // {
+      meta = {
+        description = "Record a named change-marker annotation into the claudit metrics database";
+        mainProgram = "claudit-annotate";
+        homepage = "${builtins.toString ./.}/claudit-annotate.py";
       };
     };
   };

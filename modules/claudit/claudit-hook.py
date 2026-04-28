@@ -35,8 +35,12 @@ ERROR_LOG_PATH = Path.home() / ".claude" / "metrics" / "claudit-errors.log"
 
 # ---------------------------------------------------------------------------
 # Pricing table — per 1M tokens, keyed by normalized model name
-# Prices last verified: 2026-03-13
-# Source: https://www.anthropic.com/pricing
+# Prices last verified: 2026-04-28
+# Source: https://platform.claude.com/docs/en/about-claude/pricing
+#
+# NOTE: "opus" covers Claude Opus 3/4/4.1 ($15/$75 tier).
+#       "opus-4" covers Claude Opus 4.5/4.6/4.7 ($5/$25 tier — ~3x cheaper).
+#       cache_write uses the 5-minute cache write rate (dominant use case).
 # ---------------------------------------------------------------------------
 PRICING = {
     "sonnet": {
@@ -45,6 +49,14 @@ PRICING = {
         "cache_read": 0.30,
         "cache_write": 3.75,
     },
+    # Claude Opus 4.5 / 4.6 / 4.7 — released 2025-2026, significantly cheaper
+    "opus-4": {
+        "input": 5.00,
+        "output": 25.00,
+        "cache_read": 0.50,
+        "cache_write": 6.25,
+    },
+    # Claude Opus 3 / Claude Opus 4 / Claude Opus 4.1 — legacy $15/$75 tier
     "opus": {
         "input": 15.00,
         "output": 75.00,
@@ -114,7 +126,8 @@ CREATE TABLE IF NOT EXISTS permission_denials (
 # kanban_card_events is written by the kanban CLI; created here idempotently
 # so Grafana can query it before any events have been recorded.
 # NOTE: This DDL is intentionally duplicated in modules/kanban/kanban.py.
-# Both files must stay in sync.
+# Both files must stay in sync — changes to kanban.py schema require matching
+# changes here.
 CREATE_KANBAN_CARD_EVENTS_SQL = """
 CREATE TABLE IF NOT EXISTS kanban_card_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -124,12 +137,45 @@ CREATE TABLE IF NOT EXISTS kanban_card_events (
     agent TEXT NOT NULL DEFAULT '',
     model TEXT NOT NULL DEFAULT '',
     recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
-    rejection_reasons TEXT
+    rejection_reasons TEXT,
+    card_created_at TEXT,
+    card_completed_at TEXT,
+    card_type TEXT,
+    ac_count INTEGER DEFAULT 0,
+    git_project TEXT,
+    from_column TEXT,
+    to_column TEXT,
+    persona TEXT
 )
 """
 
-MIGRATE_KANBAN_CARD_EVENTS_SQL = """
-ALTER TABLE kanban_card_events ADD COLUMN rejection_reasons TEXT
+# Idempotent migrations for databases created before V6/V8 columns were added.
+# Each ALTER TABLE raises OperationalError "duplicate column name" on already-
+# upgraded DBs — caught and ignored in open_db(). Safe to run repeatedly.
+MIGRATE_KANBAN_CARD_EVENTS_SQL = [
+    "ALTER TABLE kanban_card_events ADD COLUMN rejection_reasons TEXT",
+    "ALTER TABLE kanban_card_events ADD COLUMN card_created_at TEXT",
+    "ALTER TABLE kanban_card_events ADD COLUMN card_completed_at TEXT",
+    "ALTER TABLE kanban_card_events ADD COLUMN card_type TEXT",
+    "ALTER TABLE kanban_card_events ADD COLUMN ac_count INTEGER DEFAULT 0",
+    "ALTER TABLE kanban_card_events ADD COLUMN git_project TEXT",
+    "ALTER TABLE kanban_card_events ADD COLUMN from_column TEXT",
+    "ALTER TABLE kanban_card_events ADD COLUMN to_column TEXT",
+    "ALTER TABLE kanban_card_events ADD COLUMN persona TEXT",
+]
+
+CREATE_CLAUDIT_ANNOTATIONS_SQL = """
+CREATE TABLE IF NOT EXISTS claudit_annotations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    message TEXT NOT NULL,
+    tags TEXT
+);
+"""
+
+CREATE_CLAUDIT_ANNOTATIONS_INDEX_SQL = """
+CREATE INDEX IF NOT EXISTS idx_claudit_annotations_recorded_at
+ON claudit_annotations(recorded_at);
 """
 
 CREATE_INDEXES_SQL = [
@@ -178,15 +224,24 @@ def normalize_model(model: str) -> str:
     Collapse full model strings to short form.
 
     Rules (substring match, case-insensitive):
-      contains 'sonnet' -> 'sonnet'
-      contains 'opus'   -> 'opus'
-      contains 'haiku'  -> 'haiku'
-      else              -> first 20 chars of original
+      contains 'sonnet'                -> 'sonnet'
+      contains 'opus' AND ('4.5'|'4.6'|'4.7'|'4-5'|'4-6'|'4-7') -> 'opus-4'
+      contains 'opus'                  -> 'opus'  (Opus 3 / 4 / 4.1 legacy tier)
+      contains 'haiku'                 -> 'haiku'
+      else                             -> first 20 chars of original
+
+    The 'opus-4' bucket covers Claude Opus 4.5/4.6/4.7 which are priced at
+    $5/$25 per MTok — roughly 3x cheaper than the legacy 'opus' tier ($15/$75).
+    Distinguishing them prevents silent ~3x under-reporting of opus-tier costs.
     """
     lower = model.lower()
     if "sonnet" in lower:
         return "sonnet"
     if "opus" in lower:
+        # Opus 4.5 / 4.6 / 4.7 use a different (cheaper) pricing tier than Opus 3/4/4.1.
+        # Match both dot-notation (4.5) and hyphen-notation (4-5) as seen in API model IDs.
+        if any(v in lower for v in ("4.5", "4.6", "4.7", "4-5", "4-6", "4-7")):
+            return "opus-4"
         return "opus"
     if "haiku" in lower:
         return "haiku"
@@ -225,10 +280,23 @@ def normalize_bash_tool(command: str) -> tuple[str, str | None]:
 def calculate_cost(model_normalized: str, tokens: dict) -> float:
     """
     Calculate USD cost given normalized model name and token counts.
-    Falls back to sonnet rates for unknown models.
+
+    Returns 0.0 and logs a warning to stderr when model_normalized is not in
+    PRICING. This is intentional: a missing data point (cost = 0) is detectable
+    and prompts investigation; a silently mis-attributed cost (e.g. opus-tier
+    usage priced at sonnet rates) corrupts dashboard data invisibly.
+
     All prices are per 1M tokens.
     """
-    prices = PRICING.get(model_normalized, PRICING["sonnet"])
+    prices = PRICING.get(model_normalized)
+    if prices is None:
+        print(
+            f"claudit WARNING: unknown model '{model_normalized}' — no pricing entry found; "
+            "recording cost_usd=0.0 to avoid silent mis-attribution. "
+            "Add the model to PRICING in claudit-hook.py.",
+            file=sys.stderr,
+        )
+        return 0.0
     per_million = 1_000_000.0
     return (
         tokens.get("input", 0) * prices["input"] / per_million
@@ -553,15 +621,18 @@ def open_db() -> sqlite3.Connection:
         conn.execute(CREATE_AGENT_TOOL_USAGE_SQL)
         conn.execute(CREATE_PERMISSION_DENIALS_SQL)
         conn.execute(CREATE_KANBAN_CARD_EVENTS_SQL)
+        conn.execute(CREATE_CLAUDIT_ANNOTATIONS_SQL)
+        conn.execute(CREATE_CLAUDIT_ANNOTATIONS_INDEX_SQL)
 
-        # Idempotent migration: add rejection_reasons if not present.
-        # SQLite raises OperationalError "duplicate column name" when the column
-        # already exists — catch and ignore that specific case.
-        try:
-            conn.execute(MIGRATE_KANBAN_CARD_EVENTS_SQL)
-        except Exception as migration_exc:
-            if "duplicate column name" not in str(migration_exc).lower():
-                raise
+        # Idempotent migrations: add V6/V8 columns if not already present.
+        # SQLite raises OperationalError "duplicate column name" when a column
+        # already exists — catch and ignore that specific case for each statement.
+        for migration_sql in MIGRATE_KANBAN_CARD_EVENTS_SQL:
+            try:
+                conn.execute(migration_sql)
+            except Exception as migration_exc:
+                if "duplicate column name" not in str(migration_exc).lower():
+                    raise
 
         for idx_sql in CREATE_INDEXES_SQL:
             conn.execute(idx_sql)

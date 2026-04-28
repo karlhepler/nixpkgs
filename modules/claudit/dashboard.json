@@ -11,8 +11,29 @@
     "to": "now"
   },
   "timepicker": {
-    "refresh_intervals": ["5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"],
-    "time_options": ["5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d"]
+    "refresh_intervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m",
+      "30m",
+      "1h",
+      "2h",
+      "1d"
+    ],
+    "time_options": [
+      "5m",
+      "15m",
+      "1h",
+      "6h",
+      "12h",
+      "24h",
+      "2d",
+      "7d",
+      "30d"
+    ]
   },
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
@@ -22,7 +43,12 @@
       "type": "row",
       "title": "Overview",
       "collapsed": false,
-      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 1 },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
       "datasource": null,
       "panels": []
     },
@@ -31,8 +57,16 @@
       "type": "stat",
       "title": "Total Cost (Today)",
       "description": "Total spend across all Claude Code sessions that started today. If this is climbing unexpectedly fast, check the Cost by Agent Type panel — a single Opus delegation or a runaway sidechain is usually the culprit.",
-      "gridPos": { "x": 0, "y": 1, "w": 4, "h": 4 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claudit-sqlite"
+      },
       "targets": [
         {
           "refId": "A",
@@ -43,7 +77,11 @@
         }
       ],
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
         "orientation": "auto",
         "colorMode": "value",
         "graphMode": "none",
@@ -54,13 +92,24 @@
         "defaults": {
           "unit": "currencyUSD",
           "decimals": 2,
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 1 },
-              { "color": "red", "value": 5 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
             ]
           }
         },
@@ -72,8 +121,16 @@
       "type": "stat",
       "title": "Total Cost (All Time)",
       "description": "Cumulative spend since metrics collection began. Use this as a baseline when estimating project budgets — compare against the Cost by Project panel to see which codebases consume the most.",
-      "gridPos": { "x": 4, "y": 1, "w": 4, "h": 4 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
+      "gridPos": {
+        "x": 4,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claudit-sqlite"
+      },
       "targets": [
         {
           "refId": "A",
@@ -84,7 +141,11 @@
         }
       ],
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
         "orientation": "auto",
         "colorMode": "value",
         "graphMode": "none",
@@ -95,925 +156,197 @@
         "defaults": {
           "unit": "currencyUSD",
           "decimals": 2,
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 50 },
-              { "color": "red", "value": 200 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "red",
+                "value": 200
+              }
             ]
           }
         },
         "overrides": []
       }
-    },
-    {
-      "id": 4,
-      "type": "stat",
-      "title": "Total Tokens (Today)",
-      "description": "Combined input and output tokens consumed today across all agents. A high token count relative to low cost suggests good cache utilization — check Cache Efficiency to confirm context is being reused rather than re-billed.",
-      "gridPos": { "x": 8, "y": 1, "w": 4, "h": 4 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "SELECT COALESCE(SUM(input_tokens + output_tokens), 0) AS tokens FROM agent_metrics WHERE date(COALESCE(last_seen_at, recorded_at), 'localtime') = date('now', 'localtime')",
-          "queryText": "SELECT COALESCE(SUM(input_tokens + output_tokens), 0) AS tokens FROM agent_metrics WHERE date(COALESCE(last_seen_at, recorded_at), 'localtime') = date('now', 'localtime')",
-          "queryType": "table",
-          "timeColumns": []
-        }
-      ],
-      "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
-        "orientation": "auto",
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "textMode": "auto"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "decimals": 0,
-          "color": { "mode": "thresholds" },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "green", "value": null }
-            ]
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 5,
-      "type": "stat",
-      "title": "Total Tokens (All Time)",
-      "description": "Cumulative token volume since tracking began. Divide by Total Cost (All Time) to get an approximate effective cost-per-token — a rising cost-per-token over time suggests cache hit rates are degrading.",
-      "gridPos": { "x": 12, "y": 1, "w": 4, "h": 4 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "SELECT COALESCE(SUM(input_tokens + output_tokens), 0) AS tokens FROM agent_metrics",
-          "queryText": "SELECT COALESCE(SUM(input_tokens + output_tokens), 0) AS tokens FROM agent_metrics",
-          "queryType": "table",
-          "timeColumns": []
-        }
-      ],
-      "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
-        "orientation": "auto",
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "textMode": "auto"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "decimals": 0,
-          "color": { "mode": "thresholds" },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "green", "value": null }
-            ]
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 6,
-      "type": "stat",
-      "title": "Sessions Today",
-      "description": "Number of distinct Claude Code sessions started today. More sessions than expected may indicate frequent restarts due to errors or context overflows — check Error Rate by Agent Type if this number seems high.",
-      "gridPos": { "x": 16, "y": 1, "w": 4, "h": 4 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "SELECT COUNT(DISTINCT session_id) AS sessions FROM agent_metrics WHERE date(recorded_at, 'localtime') = date('now', 'localtime')",
-          "queryText": "SELECT COUNT(DISTINCT session_id) AS sessions FROM agent_metrics WHERE date(recorded_at, 'localtime') = date('now', 'localtime')",
-          "queryType": "table",
-          "timeColumns": []
-        }
-      ],
-      "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
-        "orientation": "auto",
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "textMode": "auto"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "decimals": 0,
-          "color": { "mode": "thresholds" },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "green", "value": null }
-            ]
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 7,
-      "type": "stat",
-      "title": "Active Kanban Sessions",
-      "description": "Number of distinct kanban sessions with activity today. Each session represents a named work context — more than expected may indicate stale sessions accumulating rather than proper session hygiene.",
-      "gridPos": { "x": 20, "y": 1, "w": 4, "h": 4 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "SELECT COUNT(DISTINCT kanban_session) AS active FROM agent_metrics WHERE kanban_session != 'unknown' AND date(recorded_at, 'localtime') = date('now', 'localtime')",
-          "queryText": "SELECT COUNT(DISTINCT kanban_session) AS active FROM agent_metrics WHERE kanban_session != 'unknown' AND date(recorded_at, 'localtime') = date('now', 'localtime')",
-          "queryType": "table",
-          "timeColumns": []
-        }
-      ],
-      "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
-        "orientation": "auto",
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "textMode": "auto"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "decimals": 0,
-          "color": { "mode": "thresholds" },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "green", "value": null }
-            ]
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 10,
-      "type": "row",
-      "title": "Cost Analysis",
-      "collapsed": false,
-      "gridPos": { "x": 0, "y": 5, "w": 24, "h": 1 },
-      "datasource": null,
-      "panels": []
     },
     {
       "id": 11,
       "type": "timeseries",
       "title": "Cost Over Time",
       "description": "Daily spend trend across all Claude Code sessions. Spikes usually indicate large Opus delegations or sessions with many turns — check the Cost by Agent Type panel to identify the driver.",
-      "gridPos": { "x": 0, "y": 6, "w": 12, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claudit-sqlite"
+      },
       "targets": [
         {
           "refId": "A",
-          "rawQueryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(recorded_at)) AS time, SUM(cost_usd) AS cost FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', recorded_at, 'localtime') ORDER BY time ASC",
-          "queryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(recorded_at)) AS time, SUM(cost_usd) AS cost FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', recorded_at, 'localtime') ORDER BY time ASC",
+          "rawQueryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(COALESCE(last_seen_at, recorded_at), 'localtime')) AS time, SUM(cost_usd) AS cost FROM agent_metrics WHERE COALESCE(last_seen_at, recorded_at) >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND COALESCE(last_seen_at, recorded_at) <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', COALESCE(last_seen_at, recorded_at), 'localtime') ORDER BY time ASC",
+          "queryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(COALESCE(last_seen_at, recorded_at), 'localtime')) AS time, SUM(cost_usd) AS cost FROM agent_metrics WHERE COALESCE(last_seen_at, recorded_at) >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND COALESCE(last_seen_at, recorded_at) <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', COALESCE(last_seen_at, recorded_at), 'localtime') ORDER BY time ASC",
           "queryType": "time series",
-          "timeColumns": ["time"]
+          "timeColumns": [
+            "time"
+          ]
         }
       ],
       "options": {
-        "tooltip": { "mode": "single", "sort": "none" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "fieldConfig": {
         "defaults": {
           "unit": "currencyUSD",
           "decimals": 2,
-          "color": { "mode": "palette-classic" }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 12,
-      "type": "barchart",
-      "title": "Cost by Model",
-      "description": "Total spend broken down by model family (haiku, sonnet, opus). If sonnet or haiku are unexpectedly high, routine tasks may be over-powered — use Agent x Model Usage to see which roles are driving each model's cost.",
-      "gridPos": { "x": 12, "y": 6, "w": 12, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "SELECT model, SUM(cost_usd) AS cost FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY model ORDER BY cost DESC",
-          "queryText": "SELECT model, SUM(cost_usd) AS cost FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY model ORDER BY cost DESC",
-          "queryType": "table",
-          "timeColumns": []
-        }
-      ],
-      "options": {
-        "xField": "model",
-        "orientation": "horizontal",
-        "barWidth": 0.6,
-        "groupWidth": 0.7,
-        "fillOpacity": 80,
-        "legend": { "displayMode": "list", "placement": "bottom" }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "currencyUSD",
-          "decimals": 2,
-          "color": { "mode": "palette-classic" }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 13,
-      "type": "barchart",
-      "title": "Cost by Agent",
-      "description": "Total accumulated cost per agent role (e.g., swe-backend, scribe, staff-engineer). A role that costs far more than others is your primary cost driver — cross-reference with Turns by Agent Type to determine whether the cost is from many turns or expensive model choices.",
-      "gridPos": { "x": 0, "y": 14, "w": 12, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "SELECT agent, SUM(cost_usd) AS cost FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY agent ORDER BY cost DESC LIMIT 20",
-          "queryText": "SELECT agent, SUM(cost_usd) AS cost FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY agent ORDER BY cost DESC LIMIT 20",
-          "queryType": "table",
-          "timeColumns": []
-        }
-      ],
-      "options": {
-        "xField": "agent",
-        "orientation": "horizontal",
-        "barWidth": 0.6,
-        "groupWidth": 0.7,
-        "fillOpacity": 80,
-        "legend": { "displayMode": "list", "placement": "bottom" }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "currencyUSD",
-          "decimals": 2,
-          "color": { "mode": "palette-classic" }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 14,
-      "type": "barchart",
-      "title": "Cost by Repo",
-      "description": "Total spend per git repository. A project that suddenly jumps in cost without a corresponding increase in throughput is worth investigating for inefficient delegation patterns.",
-      "gridPos": { "x": 12, "y": 14, "w": 12, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "SELECT git_repo, SUM(cost_usd) AS cost FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY git_repo ORDER BY cost DESC LIMIT 20",
-          "queryText": "SELECT git_repo, SUM(cost_usd) AS cost FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY git_repo ORDER BY cost DESC LIMIT 20",
-          "queryType": "table",
-          "timeColumns": []
-        }
-      ],
-      "options": {
-        "xField": "git_repo",
-        "orientation": "horizontal",
-        "barWidth": 0.6,
-        "groupWidth": 0.7,
-        "fillOpacity": 80,
-        "legend": { "displayMode": "list", "placement": "bottom" }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "currencyUSD",
-          "decimals": 2,
-          "color": { "mode": "palette-classic" }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 15,
-      "type": "timeseries",
-      "title": "Daily Cost Trend",
-      "description": "Daily spend trend over the selected time range. Use alongside Cost Over Time to spot patterns — weekday vs. weekend differences reveal whether Claude usage is concentrated in active work periods.",
-      "gridPos": { "x": 0, "y": 22, "w": 12, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(recorded_at)) AS time, model, SUM(cost_usd) AS cost FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', recorded_at, 'localtime'), model ORDER BY time ASC",
-          "queryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(recorded_at)) AS time, model, SUM(cost_usd) AS cost FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', recorded_at, 'localtime'), model ORDER BY time ASC",
-          "queryType": "time series",
-          "timeColumns": ["time"]
-        }
-      ],
-      "options": {
-        "tooltip": { "mode": "multi", "sort": "desc" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "currencyUSD",
-          "decimals": 2,
-          "color": { "mode": "palette-classic" }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 16,
-      "type": "table",
-      "title": "Cost by Kanban Session",
-      "description": "Cumulative spend per kanban session name (e.g., swift-falcon). If one session dwarfs the rest, inspect which agents drove the cost.",
-      "gridPos": { "x": 12, "y": 22, "w": 12, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "SELECT kanban_session, SUM(cost_usd) AS total_cost, COUNT(DISTINCT session_id) AS sessions, SUM(total_turns) AS total_turns FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY kanban_session ORDER BY total_cost DESC LIMIT 20",
-          "queryText": "SELECT kanban_session, SUM(cost_usd) AS total_cost, COUNT(DISTINCT session_id) AS sessions, SUM(total_turns) AS total_turns FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY kanban_session ORDER BY total_cost DESC LIMIT 20",
-          "queryType": "table",
-          "timeColumns": []
-        }
-      ],
-      "options": {
-        "sortBy": [{ "displayName": "total_cost", "desc": true }]
-      },
-      "fieldConfig": {
-        "defaults": { "custom": { "filterable": true } },
-        "overrides": [
-          {
-            "matcher": { "id": "byName", "options": "total_cost" },
-            "properties": [{ "id": "unit", "value": "currencyUSD" }, { "id": "decimals", "value": 2 }]
+          "color": {
+            "mode": "palette-classic"
           }
-        ]
+        },
+        "overrides": []
       }
     },
     {
-      "id": 20,
-      "type": "row",
-      "title": "Token & Efficiency",
-      "collapsed": false,
-      "gridPos": { "x": 0, "y": 30, "w": 24, "h": 1 },
-      "datasource": null,
-      "panels": []
-    },
-    {
-      "id": 21,
-      "type": "barchart",
-      "title": "Token Usage Breakdown",
-      "description": "Input, output, and cache-read token volumes stacked by model family. A small cache-read segment relative to input means context is being invalidated — check if CLAUDE.md or skill files changed recently.",
-      "gridPos": { "x": 0, "y": 31, "w": 12, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
+      "id": 73,
+      "type": "timeseries",
+      "title": "Done vs Redo Events Over Time",
+      "description": "Daily count of 'done' events vs 'redo' events. A declining redo line alongside a stable or rising done line means quality is improving — fewer cards are being sent back for rework.",
+      "gridPos": {
+        "x": 12,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claudit-sqlite"
+      },
       "targets": [
         {
           "refId": "A",
-          "rawQueryText": "SELECT model, SUM(input_tokens) AS input_tokens, SUM(output_tokens) AS output_tokens, SUM(cache_read_tokens) AS cache_read_tokens, SUM(cache_write_tokens) AS cache_write_tokens FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY model ORDER BY input_tokens DESC",
-          "queryText": "SELECT model, SUM(input_tokens) AS input_tokens, SUM(output_tokens) AS output_tokens, SUM(cache_read_tokens) AS cache_read_tokens, SUM(cache_write_tokens) AS cache_write_tokens FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY model ORDER BY input_tokens DESC",
-          "queryType": "table",
-          "timeColumns": []
+          "rawQueryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(recorded_at)) AS time, SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END) AS done_count, SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS redo_count FROM kanban_card_events WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', recorded_at, 'localtime') ORDER BY time ASC",
+          "queryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(recorded_at)) AS time, SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END) AS done_count, SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS redo_count FROM kanban_card_events WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', recorded_at, 'localtime') ORDER BY time ASC",
+          "queryType": "time series",
+          "timeColumns": [
+            "time"
+          ]
         }
       ],
       "options": {
-        "xField": "model",
-        "stacking": { "mode": "value", "group": "A" },
-        "orientation": "auto",
-        "barWidth": 0.6,
-        "groupWidth": 0.7,
-        "fillOpacity": 80,
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "color": { "mode": "palette-classic" }
+          "color": {
+            "mode": "palette-classic"
+          }
         },
         "overrides": []
       }
     },
     {
-      "id": 22,
+      "id": 80,
+      "type": "row",
+      "title": "Quality",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 24,
+        "h": 1
+      },
+      "datasource": null,
+      "panels": []
+    },
+    {
+      "id": 102,
       "type": "timeseries",
-      "title": "Cache Hit Ratio Over Time",
-      "description": "Percentage of input tokens served from cache vs. fresh input, per day. Below 70% means context is being invalidated frequently — check if CLAUDE.md or skill files changed recently.",
-      "gridPos": { "x": 12, "y": 31, "w": 12, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
+      "title": "Rolling Redo Rate Over Time (7-day)",
+      "description": "7-day rolling redo rate (redo_count / done_count * 100). Smooths daily noise. Trending down means quality is improving.",
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claudit-sqlite"
+      },
       "targets": [
         {
           "refId": "A",
-          "rawQueryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(recorded_at)) AS time, CAST(SUM(cache_read_tokens) AS REAL) / NULLIF(SUM(input_tokens) + SUM(cache_read_tokens), 0) * 100 AS cache_pct FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', recorded_at, 'localtime') ORDER BY time ASC",
-          "queryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(recorded_at)) AS time, CAST(SUM(cache_read_tokens) AS REAL) / NULLIF(SUM(input_tokens) + SUM(cache_read_tokens), 0) * 100 AS cache_pct FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', recorded_at, 'localtime') ORDER BY time ASC",
+          "rawQueryText": "WITH daily AS (SELECT date(recorded_at, 'localtime') AS day, SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS redos, SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END) AS dones FROM kanban_card_events WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY day) SELECT strftime('%Y-%m-%dT00:00:00Z', day) AS time, CAST(SUM(redos) OVER (ORDER BY day ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS REAL) / NULLIF(SUM(dones) OVER (ORDER BY day ROWS BETWEEN 6 PRECEDING AND CURRENT ROW), 0) * 100 AS rolling_redo_pct FROM daily ORDER BY day ASC",
+          "queryText": "WITH daily AS (SELECT date(recorded_at, 'localtime') AS day, SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS redos, SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END) AS dones FROM kanban_card_events WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY day) SELECT strftime('%Y-%m-%dT00:00:00Z', day) AS time, CAST(SUM(redos) OVER (ORDER BY day ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS REAL) / NULLIF(SUM(dones) OVER (ORDER BY day ROWS BETWEEN 6 PRECEDING AND CURRENT ROW), 0) * 100 AS rolling_redo_pct FROM daily ORDER BY day ASC",
           "queryType": "time series",
-          "timeColumns": ["time"]
+          "timeColumns": [
+            "time"
+          ]
         }
       ],
       "options": {
-        "tooltip": { "mode": "single", "sort": "none" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "fieldConfig": {
         "defaults": {
           "unit": "percent",
           "min": 0,
-          "max": 100,
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 50 },
-              { "color": "green", "value": 70 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 10
+              },
+              {
+                "color": "red",
+                "value": 25
+              }
             ]
           }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 30,
-      "type": "row",
-      "title": "Usage & Behavior",
-      "collapsed": false,
-      "gridPos": { "x": 0, "y": 39, "w": 24, "h": 1 },
-      "datasource": null,
-      "panels": []
-    },
-    {
-      "id": 31,
-      "type": "table",
-      "title": "Tool Usage Heatmap",
-      "description": "Call frequency per tool, broken down by bash command. High call counts for any single tool indicate heavy usage patterns — cross-reference with Most Denied Tools to see if those same tools are also being blocked.",
-      "gridPos": { "x": 0, "y": 40, "w": 12, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "SELECT tool_name, bash_command, SUM(call_count) AS total_calls FROM agent_tool_usage GROUP BY tool_name, bash_command ORDER BY total_calls DESC LIMIT 50",
-          "queryText": "SELECT tool_name, bash_command, SUM(call_count) AS total_calls FROM agent_tool_usage GROUP BY tool_name, bash_command ORDER BY total_calls DESC LIMIT 50",
-          "queryType": "table",
-          "timeColumns": []
-        }
-      ],
-      "options": {
-        "sortBy": [{ "displayName": "total_calls", "desc": true }]
-      },
-      "fieldConfig": {
-        "defaults": { "custom": { "filterable": true } },
-        "overrides": []
-      }
-    },
-    {
-      "id": 32,
-      "type": "table",
-      "title": "Top Bash Commands",
-      "description": "Most-used bash commands by total call count across all agents. If a particular command dominates, it may indicate a bottleneck pattern or an opportunity to cache or batch that operation.",
-      "gridPos": { "x": 12, "y": 40, "w": 12, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "SELECT bash_command || CASE WHEN bash_subcommand != '' THEN ' ' || bash_subcommand ELSE '' END AS command, SUM(call_count) AS total_calls FROM agent_tool_usage WHERE tool_name = 'Bash' AND bash_command != '' GROUP BY bash_command, bash_subcommand ORDER BY total_calls DESC LIMIT 20",
-          "queryText": "SELECT bash_command || CASE WHEN bash_subcommand != '' THEN ' ' || bash_subcommand ELSE '' END AS command, SUM(call_count) AS total_calls FROM agent_tool_usage WHERE tool_name = 'Bash' AND bash_command != '' GROUP BY bash_command, bash_subcommand ORDER BY total_calls DESC LIMIT 20",
-          "queryType": "table",
-          "timeColumns": []
-        }
-      ],
-      "options": {
-        "sortBy": [{ "displayName": "total_calls", "desc": true }]
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": { "mode": "palette-classic" }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 33,
-      "type": "timeseries",
-      "title": "Agent Activity Over Time",
-      "description": "Daily count of agent runs per agent type. A declining trend for a particular agent type may signal that delegation to that specialist is being reduced, intentionally or not.",
-      "gridPos": { "x": 0, "y": 48, "w": 12, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(recorded_at)) AS time, COUNT(*) AS agent_runs FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', recorded_at, 'localtime') ORDER BY time ASC",
-          "queryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(recorded_at)) AS time, COUNT(*) AS agent_runs FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', recorded_at, 'localtime') ORDER BY time ASC",
-          "queryType": "time series",
-          "timeColumns": ["time"]
-        }
-      ],
-      "options": {
-        "tooltip": { "mode": "single", "sort": "none" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": { "mode": "palette-classic" }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 34,
-      "type": "timeseries",
-      "title": "Sessions Per Day",
-      "description": "Number of distinct Claude Code sessions each day. Consistent gaps indicate downtime; sudden spikes may reflect large parallel workloads.",
-      "gridPos": { "x": 12, "y": 48, "w": 12, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(recorded_at)) AS time, COUNT(DISTINCT session_id) AS sessions FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', recorded_at, 'localtime') ORDER BY time ASC",
-          "queryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(recorded_at)) AS time, COUNT(DISTINCT session_id) AS sessions FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', recorded_at, 'localtime') ORDER BY time ASC",
-          "queryType": "time series",
-          "timeColumns": ["time"]
-        }
-      ],
-      "options": {
-        "tooltip": { "mode": "single", "sort": "none" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": { "mode": "palette-classic" }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 35,
-      "type": "barchart",
-      "title": "Turns Per Agent",
-      "description": "Total API round-trips accumulated per agent role. A role with high turns AND high cost is worth examining in the Model Optimization section to see if model selection could be optimized.",
-      "gridPos": { "x": 0, "y": 56, "w": 12, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "SELECT agent, SUM(total_turns) AS total_turns FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY agent ORDER BY total_turns DESC LIMIT 20",
-          "queryText": "SELECT agent, SUM(total_turns) AS total_turns FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY agent ORDER BY total_turns DESC LIMIT 20",
-          "queryType": "table",
-          "timeColumns": []
-        }
-      ],
-      "options": {
-        "xField": "agent",
-        "orientation": "horizontal",
-        "barWidth": 0.6,
-        "groupWidth": 0.7,
-        "fillOpacity": 80,
-        "legend": { "displayMode": "list", "placement": "bottom" }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": { "mode": "palette-classic" }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 40,
-      "type": "row",
-      "title": "Quality & Performance",
-      "collapsed": false,
-      "gridPos": { "x": 0, "y": 64, "w": 24, "h": 1 },
-      "datasource": null,
-      "panels": []
-    },
-    {
-      "id": 41,
-      "type": "timeseries",
-      "title": "Permission Denials Over Time",
-      "description": "Daily count of permission denials. Rising denials indicate agents attempting actions outside their allowed scope — check the Permission Denials by Tool panel to identify which tools are being blocked.",
-      "gridPos": { "x": 0, "y": 65, "w": 12, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(denied_at)) AS time, COUNT(*) AS denials FROM permission_denials WHERE denied_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND denied_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', denied_at, 'localtime') ORDER BY time ASC",
-          "queryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(denied_at)) AS time, COUNT(*) AS denials FROM permission_denials WHERE denied_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND denied_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', denied_at, 'localtime') ORDER BY time ASC",
-          "queryType": "time series",
-          "timeColumns": ["time"]
-        }
-      ],
-      "options": {
-        "tooltip": { "mode": "single", "sort": "none" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": { "mode": "palette-classic" }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 42,
-      "type": "barchart",
-      "title": "Permission Denials by Tool",
-      "description": "Tools that were blocked by the permission system, ranked by denial count. Repeated denials for the same tool indicate an agent is attempting actions it is not authorized for — either the task prompt needs adjustment or the permission configuration needs updating.",
-      "gridPos": { "x": 12, "y": 65, "w": 12, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "SELECT tool_name, COUNT(*) AS denial_count FROM permission_denials GROUP BY tool_name ORDER BY denial_count DESC LIMIT 20",
-          "queryText": "SELECT tool_name, COUNT(*) AS denial_count FROM permission_denials GROUP BY tool_name ORDER BY denial_count DESC LIMIT 20",
-          "queryType": "table",
-          "timeColumns": []
-        }
-      ],
-      "options": {
-        "xField": "tool_name",
-        "orientation": "horizontal",
-        "barWidth": 0.6,
-        "groupWidth": 0.7,
-        "fillOpacity": 80,
-        "legend": { "displayMode": "list", "placement": "bottom" }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": { "mode": "palette-classic" }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 43,
-      "type": "barchart",
-      "title": "Avg Turn Latency by Agent",
-      "description": "Average turn-to-response latency in seconds per agent role. If haiku shows similar latency to sonnet, the speed advantage of the cheaper model is being lost — check token counts per turn.",
-      "gridPos": { "x": 0, "y": 73, "w": 12, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "SELECT agent, SUM(avg_turn_latency_seconds * total_turns) / NULLIF(SUM(total_turns), 0) AS avg_latency FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY agent ORDER BY avg_latency DESC LIMIT 20",
-          "queryText": "SELECT agent, SUM(avg_turn_latency_seconds * total_turns) / NULLIF(SUM(total_turns), 0) AS avg_latency FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY agent ORDER BY avg_latency DESC LIMIT 20",
-          "queryType": "table",
-          "timeColumns": []
-        }
-      ],
-      "options": {
-        "xField": "agent",
-        "orientation": "horizontal",
-        "barWidth": 0.6,
-        "groupWidth": 0.7,
-        "fillOpacity": 80,
-        "legend": { "displayMode": "list", "placement": "bottom" }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s",
-          "color": { "mode": "palette-classic" }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 44,
-      "type": "table",
-      "title": "p95 Turn Count by Role",
-      "description": "Turn count statistics per agent role, including p95 approximation using NTILE(20). If p95 is much higher than the average, a small number of sessions are running very long — investigate the top expensive sessions.",
-      "gridPos": { "x": 12, "y": 73, "w": 12, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "WITH ranked AS (SELECT agent, total_turns, NTILE(20) OVER (PARTITION BY agent ORDER BY total_turns) AS ntile FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch'))) SELECT agent, MIN(total_turns) AS min_turns, MAX(total_turns) AS max_turns, ROUND(AVG(total_turns), 1) AS avg_turns, MAX(CASE WHEN ntile = 19 THEN total_turns END) AS p95_turns, COUNT(*) AS sample_size FROM ranked GROUP BY agent ORDER BY avg_turns DESC",
-          "queryText": "WITH ranked AS (SELECT agent, total_turns, NTILE(20) OVER (PARTITION BY agent ORDER BY total_turns) AS ntile FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch'))) SELECT agent, MIN(total_turns) AS min_turns, MAX(total_turns) AS max_turns, ROUND(AVG(total_turns), 1) AS avg_turns, MAX(CASE WHEN ntile = 19 THEN total_turns END) AS p95_turns, COUNT(*) AS sample_size FROM ranked GROUP BY agent ORDER BY avg_turns DESC",
-          "queryType": "table",
-          "timeColumns": []
-        }
-      ],
-      "options": {
-        "sortBy": [{ "displayName": "avg_turns", "desc": true }]
-      },
-      "fieldConfig": {
-        "defaults": { "custom": { "filterable": true } },
-        "overrides": []
-      }
-    },
-    {
-      "id": 45,
-      "type": "barchart",
-      "title": "Cost per Turn by Model",
-      "description": "Average dollar cost per API turn, broken down by model family. High cost per turn for haiku suggests those sessions are using unexpectedly large context windows.",
-      "gridPos": { "x": 0, "y": 81, "w": 12, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "SELECT model, SUM(cost_usd) / NULLIF(SUM(total_turns), 0) AS cost_per_turn FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY model ORDER BY cost_per_turn DESC",
-          "queryText": "SELECT model, SUM(cost_usd) / NULLIF(SUM(total_turns), 0) AS cost_per_turn FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY model ORDER BY cost_per_turn DESC",
-          "queryType": "table",
-          "timeColumns": []
-        }
-      ],
-      "options": {
-        "xField": "model",
-        "orientation": "auto",
-        "barWidth": 0.6,
-        "groupWidth": 0.7,
-        "fillOpacity": 80,
-        "legend": { "displayMode": "list", "placement": "bottom" }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "currencyUSD",
-          "decimals": 2,
-          "color": { "mode": "palette-classic" }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 46,
-      "type": "barchart",
-      "title": "Agent Run Duration",
-      "description": "Distribution of agent run durations in minutes (last_seen_at minus first_seen_at). The bulk of the distribution shows typical agent duration; outliers on the right indicate agents working on large or complex tasks.",
-      "gridPos": { "x": 12, "y": 81, "w": 12, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "SELECT CASE WHEN duration_minutes < 5 THEN '<5m' WHEN duration_minutes < 15 THEN '5-15m' WHEN duration_minutes < 30 THEN '15-30m' WHEN duration_minutes < 60 THEN '30-60m' WHEN duration_minutes < 120 THEN '1-2h' ELSE '>2h' END AS bucket, COUNT(*) AS count FROM (SELECT (julianday(last_seen_at) - julianday(first_seen_at)) * 1440 AS duration_minutes FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) AND last_seen_at IS NOT NULL AND first_seen_at IS NOT NULL AND last_seen_at > first_seen_at) GROUP BY bucket ORDER BY MIN(duration_minutes)",
-          "queryText": "SELECT CASE WHEN duration_minutes < 5 THEN '<5m' WHEN duration_minutes < 15 THEN '5-15m' WHEN duration_minutes < 30 THEN '15-30m' WHEN duration_minutes < 60 THEN '30-60m' WHEN duration_minutes < 120 THEN '1-2h' ELSE '>2h' END AS bucket, COUNT(*) AS count FROM (SELECT (julianday(last_seen_at) - julianday(first_seen_at)) * 1440 AS duration_minutes FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) AND last_seen_at IS NOT NULL AND first_seen_at IS NOT NULL AND last_seen_at > first_seen_at) GROUP BY bucket ORDER BY MIN(duration_minutes)",
-          "queryType": "table",
-          "timeColumns": []
-        }
-      ],
-      "options": {
-        "xField": "bucket",
-        "orientation": "auto",
-        "barWidth": 0.6,
-        "groupWidth": 0.7,
-        "fillOpacity": 80,
-        "legend": { "displayMode": "list", "placement": "bottom" }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": { "mode": "palette-classic" }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 50,
-      "type": "row",
-      "title": "Model Optimization",
-      "collapsed": false,
-      "gridPos": { "x": 0, "y": 89, "w": 24, "h": 1 },
-      "datasource": null,
-      "panels": []
-    },
-    {
-      "id": 51,
-      "type": "table",
-      "title": "Model Distribution by Agent",
-      "description": "Cross-reference of agent types with model families. Shows call frequency and cost patterns to identify expensive or over-engineered model selections.",
-      "gridPos": { "x": 0, "y": 90, "w": 12, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "SELECT agent, model, COUNT(*) AS sessions, SUM(total_turns) AS total_turns, SUM(cost_usd) AS total_cost FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY agent, model ORDER BY total_cost DESC",
-          "queryText": "SELECT agent, model, COUNT(*) AS sessions, SUM(total_turns) AS total_turns, SUM(cost_usd) AS total_cost FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY agent, model ORDER BY total_cost DESC",
-          "queryType": "table",
-          "timeColumns": []
-        }
-      ],
-      "options": {
-        "sortBy": [{ "displayName": "total_cost", "desc": true }]
-      },
-      "fieldConfig": {
-        "defaults": { "custom": { "filterable": true } },
-        "overrides": [
-          {
-            "matcher": { "id": "byName", "options": "total_cost" },
-            "properties": [{ "id": "unit", "value": "currencyUSD" }, { "id": "decimals", "value": 2 }]
-          }
-        ]
-      }
-    },
-    {
-      "id": 52,
-      "type": "barchart",
-      "title": "Haiku vs Sonnet vs Opus Ratio",
-      "description": "Proportion of sessions using each model family. A high haiku ratio on high-complexity agent types suggests under-powered model selection; a high opus ratio on routine tasks is cost-inefficient.",
-      "gridPos": { "x": 12, "y": 90, "w": 12, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "SELECT model, COUNT(*) AS session_count FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY model ORDER BY session_count DESC",
-          "queryText": "SELECT model, COUNT(*) AS session_count FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY model ORDER BY session_count DESC",
-          "queryType": "table",
-          "timeColumns": []
-        }
-      ],
-      "options": {
-        "xField": "model",
-        "orientation": "auto",
-        "barWidth": 0.6,
-        "groupWidth": 0.7,
-        "fillOpacity": 80,
-        "legend": { "displayMode": "list", "placement": "bottom" }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": { "mode": "palette-classic" }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 53,
-      "type": "barchart",
-      "title": "Cost Efficiency by Model",
-      "description": "Cost per turn broken down by model (cost_usd / total_turns). A model with disproportionately high cost-per-turn may be handling tasks with unusually large context windows.",
-      "gridPos": { "x": 0, "y": 98, "w": 12, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "SELECT model, SUM(cost_usd) / NULLIF(SUM(total_turns), 0) AS cost_per_turn, SUM(cost_usd) AS total_cost FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY model ORDER BY cost_per_turn DESC",
-          "queryText": "SELECT model, SUM(cost_usd) / NULLIF(SUM(total_turns), 0) AS cost_per_turn, SUM(cost_usd) AS total_cost FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY model ORDER BY cost_per_turn DESC",
-          "queryType": "table",
-          "timeColumns": []
-        }
-      ],
-      "options": {
-        "xField": "model",
-        "orientation": "auto",
-        "barWidth": 0.6,
-        "groupWidth": 0.7,
-        "fillOpacity": 80,
-        "stacking": "normal",
-        "legend": { "displayMode": "list", "placement": "bottom" }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "currencyUSD",
-          "decimals": 2,
-          "color": { "mode": "palette-classic" }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 60,
-      "type": "row",
-      "title": "Kanban Throughput & Quality",
-      "collapsed": false,
-      "gridPos": { "x": 0, "y": 106, "w": 24, "h": 1 },
-      "datasource": null,
-      "panels": []
-    },
-    {
-      "id": 61,
-      "type": "timeseries",
-      "title": "Cards Completed Per Day",
-      "description": "Daily card completion velocity. A rising trend means more work is flowing through to done; gaps indicate days with no completions.",
-      "gridPos": { "x": 0, "y": 107, "w": 12, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(recorded_at)) AS time, COUNT(*) AS cards_done FROM kanban_card_events WHERE event_type = 'done' AND recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', recorded_at, 'localtime') ORDER BY time ASC",
-          "queryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(recorded_at)) AS time, COUNT(*) AS cards_done FROM kanban_card_events WHERE event_type = 'done' AND recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', recorded_at, 'localtime') ORDER BY time ASC",
-          "queryType": "time series",
-          "timeColumns": ["time"]
-        }
-      ],
-      "options": {
-        "tooltip": { "mode": "single", "sort": "none" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": { "mode": "palette-classic" }
         },
         "overrides": []
       }
@@ -1023,8 +356,16 @@
       "type": "stat",
       "title": "Redo Rate",
       "description": "Ratio of redo events to done events across all time. A high redo rate signals quality issues — cards are frequently sent back for rework before acceptance.",
-      "gridPos": { "x": 12, "y": 107, "w": 6, "h": 4 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
+      "gridPos": {
+        "x": 12,
+        "y": 14,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claudit-sqlite"
+      },
       "targets": [
         {
           "refId": "A",
@@ -1035,7 +376,11 @@
         }
       ],
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
         "orientation": "auto",
         "colorMode": "value",
         "graphMode": "none",
@@ -1046,13 +391,24 @@
         "defaults": {
           "unit": "percent",
           "decimals": 1,
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 20 },
-              { "color": "red", "value": 40 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 20
+              },
+              {
+                "color": "red",
+                "value": 40
+              }
             ]
           }
         },
@@ -1060,205 +416,20 @@
       }
     },
     {
-      "id": 63,
-      "type": "table",
-      "title": "Card Cycle Time",
-      "description": "Time from first 'doing' event to 'done' event per card. Cards with very long cycle times may indicate tasks that are too large or agents that got stuck.",
-      "gridPos": { "x": 18, "y": 107, "w": 6, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "SELECT kce_done.card_number, kce_done.kanban_session, ROUND((julianday(kce_done.recorded_at) - julianday(kce_start.recorded_at)) * 1440, 1) AS cycle_minutes, kce_done.agent, kce_done.recorded_at AS completed_at FROM kanban_card_events kce_done INNER JOIN (SELECT card_number, MIN(recorded_at) AS recorded_at FROM kanban_card_events WHERE event_type = 'doing' GROUP BY card_number) kce_start ON kce_done.card_number = kce_start.card_number WHERE kce_done.event_type = 'done' ORDER BY cycle_minutes DESC LIMIT 50",
-          "queryText": "SELECT kce_done.card_number, kce_done.kanban_session, ROUND((julianday(kce_done.recorded_at) - julianday(kce_start.recorded_at)) * 1440, 1) AS cycle_minutes, kce_done.agent, kce_done.recorded_at AS completed_at FROM kanban_card_events kce_done INNER JOIN (SELECT card_number, MIN(recorded_at) AS recorded_at FROM kanban_card_events WHERE event_type = 'doing' GROUP BY card_number) kce_start ON kce_done.card_number = kce_start.card_number WHERE kce_done.event_type = 'done' ORDER BY cycle_minutes DESC LIMIT 50",
-          "queryType": "table",
-          "timeColumns": []
-        }
-      ],
-      "options": {
-        "sortBy": [{ "displayName": "cycle_minutes", "desc": true }]
-      },
-      "fieldConfig": {
-        "defaults": { "custom": { "filterable": true } },
-        "overrides": [
-          {
-            "matcher": { "id": "byName", "options": "cycle_minutes" },
-            "properties": [{ "id": "unit", "value": "m" }]
-          }
-        ]
-      }
-    },
-    {
-      "id": 64,
-      "type": "barchart",
-      "title": "Cards by Agent",
-      "description": "Total card completions broken down by agent persona. Shows workload distribution — which agents are carrying the most throughput.",
-      "gridPos": { "x": 12, "y": 111, "w": 6, "h": 4 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "SELECT agent, COUNT(*) AS cards_done FROM kanban_card_events WHERE event_type = 'done' AND recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY agent ORDER BY cards_done DESC",
-          "queryText": "SELECT agent, COUNT(*) AS cards_done FROM kanban_card_events WHERE event_type = 'done' AND recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY agent ORDER BY cards_done DESC",
-          "queryType": "table",
-          "timeColumns": []
-        }
-      ],
-      "options": {
-        "xField": "agent",
-        "orientation": "horizontal",
-        "barWidth": 0.6,
-        "groupWidth": 0.7,
-        "fillOpacity": 80,
-        "legend": { "displayMode": "list", "placement": "bottom" }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": { "mode": "palette-classic" }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 70,
-      "type": "row",
-      "title": "Kanban Lead Time & Flow",
-      "collapsed": false,
-      "gridPos": { "x": 0, "y": 115, "w": 24, "h": 1 },
-      "datasource": null,
-      "panels": []
-    },
-    {
-      "id": 71,
-      "type": "histogram",
-      "title": "Lead Time Distribution",
-      "description": "Distribution of how many hours cards take from first 'doing' to 'done'. The bulk of the distribution shows the typical card duration; outliers on the right indicate cards that got stuck or were exceptionally complex.",
-      "gridPos": { "x": 0, "y": 116, "w": 12, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "SELECT ROUND((julianday(kce_done.recorded_at) - julianday(kce_start.recorded_at)) * 24, 2) AS lead_time_hours FROM kanban_card_events kce_done INNER JOIN (SELECT card_number, MIN(recorded_at) AS recorded_at FROM kanban_card_events WHERE event_type = 'doing' GROUP BY card_number) kce_start ON kce_done.card_number = kce_start.card_number WHERE kce_done.event_type = 'done' AND kce_start.recorded_at IS NOT NULL",
-          "queryText": "SELECT ROUND((julianday(kce_done.recorded_at) - julianday(kce_start.recorded_at)) * 24, 2) AS lead_time_hours FROM kanban_card_events kce_done INNER JOIN (SELECT card_number, MIN(recorded_at) AS recorded_at FROM kanban_card_events WHERE event_type = 'doing' GROUP BY card_number) kce_start ON kce_done.card_number = kce_start.card_number WHERE kce_done.event_type = 'done' AND kce_start.recorded_at IS NOT NULL",
-          "queryType": "table",
-          "timeColumns": []
-        }
-      ],
-      "options": {
-        "bucketSize": "auto",
-        "bucketOffset": 0,
-        "fillOpacity": 80,
-        "legend": { "displayMode": "list", "placement": "bottom" }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "h",
-          "color": { "mode": "palette-classic" }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 72,
-      "type": "barchart",
-      "title": "Average Lead Time by Agent",
-      "description": "Average card completion time (in minutes) per agent persona. Longer bars indicate agents working on higher-complexity cards or models that require more elapsed time.",
-      "gridPos": { "x": 12, "y": 116, "w": 12, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "SELECT kce_done.agent, ROUND(AVG((julianday(kce_done.recorded_at) - julianday(kce_start.recorded_at)) * 1440), 1) AS avg_lead_minutes FROM kanban_card_events kce_done INNER JOIN (SELECT card_number, MIN(recorded_at) AS recorded_at FROM kanban_card_events WHERE event_type = 'doing' GROUP BY card_number) kce_start ON kce_done.card_number = kce_start.card_number WHERE kce_done.event_type = 'done' GROUP BY kce_done.agent ORDER BY avg_lead_minutes DESC",
-          "queryText": "SELECT kce_done.agent, ROUND(AVG((julianday(kce_done.recorded_at) - julianday(kce_start.recorded_at)) * 1440), 1) AS avg_lead_minutes FROM kanban_card_events kce_done INNER JOIN (SELECT card_number, MIN(recorded_at) AS recorded_at FROM kanban_card_events WHERE event_type = 'doing' GROUP BY card_number) kce_start ON kce_done.card_number = kce_start.card_number WHERE kce_done.event_type = 'done' GROUP BY kce_done.agent ORDER BY avg_lead_minutes DESC",
-          "queryType": "table",
-          "timeColumns": []
-        }
-      ],
-      "options": {
-        "xField": "agent",
-        "orientation": "horizontal",
-        "barWidth": 0.6,
-        "groupWidth": 0.7,
-        "fillOpacity": 80,
-        "legend": { "displayMode": "list", "placement": "bottom" }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "m",
-          "color": { "mode": "palette-classic" }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 73,
-      "type": "timeseries",
-      "title": "Done vs Redo Events Over Time",
-      "description": "Daily count of 'done' events vs 'redo' events. A declining redo line alongside a stable or rising done line means quality is improving — fewer cards are being sent back for rework.",
-      "gridPos": { "x": 0, "y": 124, "w": 12, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(recorded_at)) AS time, SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END) AS done_count, SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS redo_count FROM kanban_card_events WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', recorded_at, 'localtime') ORDER BY time ASC",
-          "queryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(recorded_at)) AS time, SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END) AS done_count, SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS redo_count FROM kanban_card_events WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', recorded_at, 'localtime') ORDER BY time ASC",
-          "queryType": "time series",
-          "timeColumns": ["time"]
-        }
-      ],
-      "options": {
-        "tooltip": { "mode": "multi", "sort": "none" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": { "mode": "palette-classic" }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 74,
-      "type": "table",
-      "title": "Card Flow",
-      "description": "Recent cards with their events, showing the flow from creation through to completion. Cards with many redo events before done indicate quality issues or under-specified task definitions.",
-      "gridPos": { "x": 12, "y": 124, "w": 12, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "SELECT card_number, kanban_session, event_type, agent, model, recorded_at FROM kanban_card_events WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) ORDER BY recorded_at DESC LIMIT 100",
-          "queryText": "SELECT card_number, kanban_session, event_type, agent, model, recorded_at FROM kanban_card_events WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) ORDER BY recorded_at DESC LIMIT 100",
-          "queryType": "table",
-          "timeColumns": []
-        }
-      ],
-      "options": {
-        "sortBy": [{ "displayName": "recorded_at", "desc": true }]
-      },
-      "fieldConfig": {
-        "defaults": { "custom": { "filterable": true } },
-        "overrides": []
-      }
-    },
-    {
-      "id": 80,
-      "type": "row",
-      "title": "AC Reviewer Effectiveness",
-      "collapsed": false,
-      "gridPos": { "x": 0, "y": 132, "w": 24, "h": 1 },
-      "datasource": null,
-      "panels": []
-    },
-    {
       "id": 81,
       "type": "barchart",
-      "title": "Redo Rate by Card Type",
+      "title": "Redo Rate by Card Type (%)",
       "description": "Percentage of cards sent back for rework, broken down by card type (work, review, research). A high redo rate for a specific card type points to systematic quality gaps — either the AC criteria are poorly specified for that type or agents struggle with that category of task.",
-      "gridPos": { "x": 0, "y": 133, "w": 12, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claudit-sqlite"
+      },
       "targets": [
         {
           "refId": "A",
@@ -1274,19 +445,33 @@
         "barWidth": 0.6,
         "groupWidth": 0.7,
         "fillOpacity": 80,
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "fieldConfig": {
         "defaults": {
           "unit": "percent",
           "decimals": 1,
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 20 },
-              { "color": "red", "value": 40 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 20
+              },
+              {
+                "color": "red",
+                "value": 40
+              }
             ]
           }
         },
@@ -1298,8 +483,16 @@
       "type": "table",
       "title": "Redo Rate by Agent/Specialist",
       "description": "Redo rate per agent persona, sorted by redo rate descending. Agents with consistently high redo rates are candidates for prompt improvements, better AC specification, or model upgrades. Compare redo_count against done_count to avoid being misled by low-volume agents.",
-      "gridPos": { "x": 12, "y": 133, "w": 12, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
+      "gridPos": {
+        "x": 12,
+        "y": 22,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claudit-sqlite"
+      },
       "targets": [
         {
           "refId": "A",
@@ -1310,45 +503,1622 @@
         }
       ],
       "options": {
-        "sortBy": [{ "displayName": "redo_rate", "desc": true }]
+        "sortBy": [
+          {
+            "displayName": "redo_rate",
+            "desc": true
+          }
+        ]
       },
       "fieldConfig": {
-        "defaults": { "custom": { "filterable": true } },
+        "defaults": {
+          "custom": {
+            "filterable": true
+          }
+        },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "redo_rate" },
-            "properties": [{ "id": "unit", "value": "percent" }, { "id": "decimals", "value": 1 }]
+            "matcher": {
+              "id": "byName",
+              "options": "redo_rate"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
           }
         ]
       }
     },
     {
-      "id": 83,
+      "id": 104,
       "type": "timeseries",
-      "title": "Redo Events Over Time",
-      "description": "Daily count of redo events over the selected time range. A declining trend indicates AC reviewer quality is improving and agents are delivering work that passes acceptance criteria on the first attempt. Spikes often follow prompt or instruction changes.",
-      "gridPos": { "x": 0, "y": 141, "w": 24, "h": 8 },
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "claudit-sqlite" },
+      "title": "Redo Rate by Agent Over Time (weekly)",
+      "description": "Per-agent weekly redo rate. Top 4-5 agents by redo count shown as separate lines.",
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claudit-sqlite"
+      },
       "targets": [
         {
           "refId": "A",
-          "rawQueryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(recorded_at)) AS time, COUNT(*) AS redo_count FROM kanban_card_events WHERE event_type = 'redo' AND recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', recorded_at, 'localtime') ORDER BY time ASC",
-          "queryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(recorded_at)) AS time, COUNT(*) AS redo_count FROM kanban_card_events WHERE event_type = 'redo' AND recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', recorded_at, 'localtime') ORDER BY time ASC",
+          "rawQueryText": "WITH top_agents AS (SELECT agent FROM kanban_card_events WHERE event_type = 'redo' AND recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY agent ORDER BY COUNT(*) DESC LIMIT 5), weekly AS (SELECT strftime('%Y-W%W', recorded_at, 'localtime') AS week, CASE WHEN agent IN (SELECT agent FROM top_agents) THEN agent ELSE 'other' END AS agent, SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS redos, SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END) AS dones, MIN(recorded_at) AS week_start FROM kanban_card_events WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY week, CASE WHEN agent IN (SELECT agent FROM top_agents) THEN agent ELSE 'other' END) SELECT strftime('%Y-%m-%dT00:00:00Z', date(week_start, 'localtime', 'weekday 0', '-6 days')) AS time, agent, CAST(redos AS REAL) / NULLIF(dones, 0) * 100 AS redo_pct FROM weekly ORDER BY time ASC",
+          "queryText": "WITH top_agents AS (SELECT agent FROM kanban_card_events WHERE event_type = 'redo' AND recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY agent ORDER BY COUNT(*) DESC LIMIT 5), weekly AS (SELECT strftime('%Y-W%W', recorded_at, 'localtime') AS week, CASE WHEN agent IN (SELECT agent FROM top_agents) THEN agent ELSE 'other' END AS agent, SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS redos, SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END) AS dones, MIN(recorded_at) AS week_start FROM kanban_card_events WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY week, CASE WHEN agent IN (SELECT agent FROM top_agents) THEN agent ELSE 'other' END) SELECT strftime('%Y-%m-%dT00:00:00Z', date(week_start, 'localtime', 'weekday 0', '-6 days')) AS time, agent, CAST(redos AS REAL) / NULLIF(dones, 0) * 100 AS redo_pct FROM weekly ORDER BY time ASC",
           "queryType": "time series",
-          "timeColumns": ["time"]
+          "timeColumns": [
+            "time"
+          ]
         }
       ],
       "options": {
-        "tooltip": { "mode": "single", "sort": "none" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 106,
+      "type": "table",
+      "title": "Agent Quality Table (cost + redo, 7d vs prior-7d)",
+      "description": "Per-agent cost and redo rate side by side. Look for double-penalty cases: high cost + high redo rate.",
+      "gridPos": {
+        "x": 0,
+        "y": 38,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claudit-sqlite"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawQueryText": "WITH cost_7d AS (SELECT agent, SUM(cost_usd) AS cost FROM agent_metrics WHERE recorded_at >= datetime('now', '-7 days') AND git_project LIKE '$repo' GROUP BY agent), cost_prior_7d AS (SELECT agent, SUM(cost_usd) AS cost FROM agent_metrics WHERE recorded_at >= datetime('now', '-14 days') AND recorded_at < datetime('now', '-7 days') AND git_project LIKE '$repo' GROUP BY agent), redo_7d AS (SELECT agent, CAST(SUM(CASE WHEN event_type='redo' THEN 1 ELSE 0 END) AS REAL) / NULLIF(SUM(CASE WHEN event_type='done' THEN 1 ELSE 0 END), 0) * 100 AS redo_pct FROM kanban_card_events WHERE recorded_at >= datetime('now', '-7 days') GROUP BY agent), redo_prior_7d AS (SELECT agent, CAST(SUM(CASE WHEN event_type='redo' THEN 1 ELSE 0 END) AS REAL) / NULLIF(SUM(CASE WHEN event_type='done' THEN 1 ELSE 0 END), 0) * 100 AS redo_pct FROM kanban_card_events WHERE recorded_at >= datetime('now', '-14 days') AND recorded_at < datetime('now', '-7 days') GROUP BY agent) SELECT c.agent, c.cost AS cost_7d, COALESCE(cp.cost, 0) AS cost_prior_7d, ((c.cost - COALESCE(cp.cost, 0)) / NULLIF(cp.cost, 0)) * 100 AS cost_delta_pct, COALESCE(r.redo_pct, 0) AS redo_pct_7d, COALESCE(rp.redo_pct, 0) AS redo_prior_pct, (COALESCE(r.redo_pct, 0) - COALESCE(rp.redo_pct, 0)) AS redo_delta_pp FROM cost_7d c LEFT JOIN cost_prior_7d cp ON c.agent = cp.agent LEFT JOIN redo_7d r ON c.agent = r.agent LEFT JOIN redo_prior_7d rp ON c.agent = rp.agent ORDER BY (c.cost * COALESCE(r.redo_pct, 0)) DESC",
+          "queryText": "WITH cost_7d AS (SELECT agent, SUM(cost_usd) AS cost FROM agent_metrics WHERE recorded_at >= datetime('now', '-7 days') AND git_project LIKE '$repo' GROUP BY agent), cost_prior_7d AS (SELECT agent, SUM(cost_usd) AS cost FROM agent_metrics WHERE recorded_at >= datetime('now', '-14 days') AND recorded_at < datetime('now', '-7 days') AND git_project LIKE '$repo' GROUP BY agent), redo_7d AS (SELECT agent, CAST(SUM(CASE WHEN event_type='redo' THEN 1 ELSE 0 END) AS REAL) / NULLIF(SUM(CASE WHEN event_type='done' THEN 1 ELSE 0 END), 0) * 100 AS redo_pct FROM kanban_card_events WHERE recorded_at >= datetime('now', '-7 days') GROUP BY agent), redo_prior_7d AS (SELECT agent, CAST(SUM(CASE WHEN event_type='redo' THEN 1 ELSE 0 END) AS REAL) / NULLIF(SUM(CASE WHEN event_type='done' THEN 1 ELSE 0 END), 0) * 100 AS redo_pct FROM kanban_card_events WHERE recorded_at >= datetime('now', '-14 days') AND recorded_at < datetime('now', '-7 days') GROUP BY agent) SELECT c.agent, c.cost AS cost_7d, COALESCE(cp.cost, 0) AS cost_prior_7d, ((c.cost - COALESCE(cp.cost, 0)) / NULLIF(cp.cost, 0)) * 100 AS cost_delta_pct, COALESCE(r.redo_pct, 0) AS redo_pct_7d, COALESCE(rp.redo_pct, 0) AS redo_prior_pct, (COALESCE(r.redo_pct, 0) - COALESCE(rp.redo_pct, 0)) AS redo_delta_pp FROM cost_7d c LEFT JOIN cost_prior_7d cp ON c.agent = cp.agent LEFT JOIN redo_7d r ON c.agent = r.agent LEFT JOIN redo_prior_7d rp ON c.agent = rp.agent ORDER BY (c.cost * COALESCE(r.redo_pct, 0)) DESC",
+          "queryType": "table",
+          "timeColumns": []
+        }
+      ],
+      "options": {
+        "sortBy": [
+          {
+            "displayName": "cost_7d",
+            "desc": true
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cost_7d"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 4
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cost_prior_7d"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 4
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cost_delta_pct"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.displayMode",
+                "value": "color-text"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": -999999
+                    },
+                    {
+                      "color": "red",
+                      "value": 0
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "redo_pct_7d"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "redo_prior_pct"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "redo_delta_pp"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.displayMode",
+                "value": "color-text"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": -999999
+                    },
+                    {
+                      "color": "red",
+                      "value": 0
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 10,
+      "type": "row",
+      "title": "Cost",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 46,
+        "w": 24,
+        "h": 1
+      },
+      "datasource": null,
+      "panels": []
+    },
+    {
+      "id": 103,
+      "type": "timeseries",
+      "title": "Cost per Card Completed (7-day rolling)",
+      "description": "Total cost / done cards, 7-day rolling window. Falling = changes are working; rising = quality or efficiency degrading.",
+      "gridPos": {
+        "x": 0,
+        "y": 47,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claudit-sqlite"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawQueryText": "WITH daily_cost AS (SELECT date(COALESCE(last_seen_at, recorded_at), 'localtime') AS day, SUM(cost_usd) AS cost FROM agent_metrics WHERE COALESCE(last_seen_at, recorded_at) >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND COALESCE(last_seen_at, recorded_at) <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY day), daily_done AS (SELECT date(recorded_at, 'localtime') AS day, COUNT(*) AS dones FROM kanban_card_events WHERE event_type = 'done' AND recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY day) SELECT strftime('%Y-%m-%dT00:00:00Z', d.day) AS time, SUM(c.cost) OVER (ORDER BY d.day ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) / NULLIF(SUM(d.dones) OVER (ORDER BY d.day ROWS BETWEEN 6 PRECEDING AND CURRENT ROW), 0) AS cost_per_card FROM daily_done d LEFT JOIN daily_cost c ON c.day = d.day ORDER BY d.day ASC",
+          "queryText": "WITH daily_cost AS (SELECT date(COALESCE(last_seen_at, recorded_at), 'localtime') AS day, SUM(cost_usd) AS cost FROM agent_metrics WHERE COALESCE(last_seen_at, recorded_at) >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND COALESCE(last_seen_at, recorded_at) <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY day), daily_done AS (SELECT date(recorded_at, 'localtime') AS day, COUNT(*) AS dones FROM kanban_card_events WHERE event_type = 'done' AND recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY day) SELECT strftime('%Y-%m-%dT00:00:00Z', d.day) AS time, SUM(c.cost) OVER (ORDER BY d.day ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) / NULLIF(SUM(d.dones) OVER (ORDER BY d.day ROWS BETWEEN 6 PRECEDING AND CURRENT ROW), 0) AS cost_per_card FROM daily_done d LEFT JOIN daily_cost c ON c.day = d.day ORDER BY d.day ASC",
+          "queryType": "time series",
+          "timeColumns": [
+            "time"
+          ]
+        }
+      ],
+      "options": {
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4,
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 101,
+      "type": "timeseries",
+      "title": "Cost Over Time by Agent",
+      "description": "Daily cost broken out by top-5 agents by total cost in the visible period; remaining agents aggregated as \"other\".",
+      "gridPos": {
+        "x": 12,
+        "y": 47,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claudit-sqlite"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawQueryText": "WITH top5 AS (SELECT agent FROM agent_metrics WHERE COALESCE(last_seen_at, recorded_at) >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND COALESCE(last_seen_at, recorded_at) <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY agent ORDER BY SUM(cost_usd) DESC LIMIT 5) SELECT strftime('%Y-%m-%dT00:00:00Z', date(COALESCE(last_seen_at, recorded_at), 'localtime')) AS time, CASE WHEN am.agent IN (SELECT agent FROM top5) THEN am.agent ELSE 'other' END AS agent, SUM(cost_usd) AS cost FROM agent_metrics am WHERE COALESCE(last_seen_at, recorded_at) >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND COALESCE(last_seen_at, recorded_at) <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) AND git_project LIKE '$repo' GROUP BY strftime('%Y-%m-%d', COALESCE(last_seen_at, recorded_at), 'localtime'), CASE WHEN am.agent IN (SELECT agent FROM top5) THEN am.agent ELSE 'other' END ORDER BY time ASC",
+          "queryText": "WITH top5 AS (SELECT agent FROM agent_metrics WHERE COALESCE(last_seen_at, recorded_at) >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND COALESCE(last_seen_at, recorded_at) <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY agent ORDER BY SUM(cost_usd) DESC LIMIT 5) SELECT strftime('%Y-%m-%dT00:00:00Z', date(COALESCE(last_seen_at, recorded_at), 'localtime')) AS time, CASE WHEN am.agent IN (SELECT agent FROM top5) THEN am.agent ELSE 'other' END AS agent, SUM(cost_usd) AS cost FROM agent_metrics am WHERE COALESCE(last_seen_at, recorded_at) >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND COALESCE(last_seen_at, recorded_at) <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) AND git_project LIKE '$repo' GROUP BY strftime('%Y-%m-%d', COALESCE(last_seen_at, recorded_at), 'localtime'), CASE WHEN am.agent IN (SELECT agent FROM top5) THEN am.agent ELSE 'other' END ORDER BY time ASC",
+          "queryType": "time series",
+          "timeColumns": [
+            "time"
+          ]
+        }
+      ],
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4,
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 13,
+      "type": "table",
+      "title": "Cost by Agent",
+      "description": "Week-over-week cost delta per agent role. cost_7d vs cost_prior_7d shows whether an agent is trending up or down in spend. Filter by repo using the Repo variable above.",
+      "gridPos": {
+        "x": 0,
+        "y": 55,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claudit-sqlite"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawQueryText": "WITH last_7d AS (SELECT agent, SUM(cost_usd) AS cost_7d FROM agent_metrics WHERE recorded_at >= datetime('now', '-7 days') AND git_project LIKE '$repo' GROUP BY agent), prior_7d AS (SELECT agent, SUM(cost_usd) AS cost_prior_7d FROM agent_metrics WHERE recorded_at >= datetime('now', '-14 days') AND recorded_at < datetime('now', '-7 days') AND git_project LIKE '$repo' GROUP BY agent) SELECT l.agent, l.cost_7d, COALESCE(p.cost_prior_7d, 0) AS cost_prior_7d, CASE WHEN p.cost_prior_7d IS NULL OR p.cost_prior_7d = 0 THEN NULL ELSE ((l.cost_7d - p.cost_prior_7d) / p.cost_prior_7d) * 100 END AS delta_pct FROM last_7d l LEFT JOIN prior_7d p ON l.agent = p.agent UNION ALL SELECT p.agent, 0 AS cost_7d, p.cost_prior_7d, NULL AS delta_pct FROM prior_7d p LEFT JOIN last_7d l ON p.agent = l.agent WHERE l.agent IS NULL ORDER BY cost_7d DESC",
+          "queryText": "WITH last_7d AS (SELECT agent, SUM(cost_usd) AS cost_7d FROM agent_metrics WHERE recorded_at >= datetime('now', '-7 days') AND git_project LIKE '$repo' GROUP BY agent), prior_7d AS (SELECT agent, SUM(cost_usd) AS cost_prior_7d FROM agent_metrics WHERE recorded_at >= datetime('now', '-14 days') AND recorded_at < datetime('now', '-7 days') AND git_project LIKE '$repo' GROUP BY agent) SELECT l.agent, l.cost_7d, COALESCE(p.cost_prior_7d, 0) AS cost_prior_7d, CASE WHEN p.cost_prior_7d IS NULL OR p.cost_prior_7d = 0 THEN NULL ELSE ((l.cost_7d - p.cost_prior_7d) / p.cost_prior_7d) * 100 END AS delta_pct FROM last_7d l LEFT JOIN prior_7d p ON l.agent = p.agent UNION ALL SELECT p.agent, 0 AS cost_7d, p.cost_prior_7d, NULL AS delta_pct FROM prior_7d p LEFT JOIN last_7d l ON p.agent = l.agent WHERE l.agent IS NULL ORDER BY cost_7d DESC",
+          "queryType": "table",
+          "timeColumns": []
+        }
+      ],
+      "options": {
+        "sortBy": [
+          {
+            "displayName": "cost_7d",
+            "desc": true
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cost_7d"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 4
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cost_prior_7d"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 4
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "delta_pct"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.displayMode",
+                "value": "color-text"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": -999999
+                    },
+                    {
+                      "color": "red",
+                      "value": 0
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 16,
+      "type": "table",
+      "title": "Cost by Kanban Session",
+      "description": "Cumulative spend per kanban session name (e.g., swift-falcon). If one session dwarfs the rest, inspect which agents drove the cost.",
+      "gridPos": {
+        "x": 12,
+        "y": 55,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claudit-sqlite"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawQueryText": "SELECT kanban_session, SUM(cost_usd) AS total_cost, COUNT(DISTINCT session_id) AS sessions, SUM(total_turns) AS total_turns FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY kanban_session ORDER BY total_cost DESC LIMIT 20",
+          "queryText": "SELECT kanban_session, SUM(cost_usd) AS total_cost, COUNT(DISTINCT session_id) AS sessions, SUM(total_turns) AS total_turns FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY kanban_session ORDER BY total_cost DESC LIMIT 20",
+          "queryType": "table",
+          "timeColumns": []
+        }
+      ],
+      "options": {
+        "sortBy": [
+          {
+            "displayName": "total_cost",
+            "desc": true
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "total_cost"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 105,
+      "type": "timeseries",
+      "title": "Cost Efficiency Trend (cost per 1K tokens, with cache ratio)",
+      "description": "Effective cost per 1K tokens (cost_usd / total_tokens * 1000) and cache hit ratio overlaid. Cache improving means effective cost drops.",
+      "gridPos": {
+        "x": 0,
+        "y": 63,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claudit-sqlite"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawQueryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(COALESCE(last_seen_at, recorded_at), 'localtime')) AS time, SUM(cost_usd) * 1000.0 / NULLIF(SUM(input_tokens + output_tokens + cache_read_tokens + cache_write_tokens), 0) AS cost_per_1k_tokens, CAST(SUM(cache_read_tokens) AS REAL) / NULLIF(SUM(input_tokens + cache_read_tokens), 0) * 100 AS cache_pct FROM agent_metrics WHERE COALESCE(last_seen_at, recorded_at) >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND COALESCE(last_seen_at, recorded_at) <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', COALESCE(last_seen_at, recorded_at), 'localtime') ORDER BY time ASC",
+          "queryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(COALESCE(last_seen_at, recorded_at), 'localtime')) AS time, SUM(cost_usd) * 1000.0 / NULLIF(SUM(input_tokens + output_tokens + cache_read_tokens + cache_write_tokens), 0) AS cost_per_1k_tokens, CAST(SUM(cache_read_tokens) AS REAL) / NULLIF(SUM(input_tokens + cache_read_tokens), 0) * 100 AS cache_pct FROM agent_metrics WHERE COALESCE(last_seen_at, recorded_at) >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND COALESCE(last_seen_at, recorded_at) <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', COALESCE(last_seen_at, recorded_at), 'localtime') ORDER BY time ASC",
+          "queryType": "time series",
+          "timeColumns": [
+            "time"
+          ]
+        }
+      ],
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cost_per_1k_tokens"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 6
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "left"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cache_pct"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "max",
+                "value": 100
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 60,
+      "type": "row",
+      "title": "Throughput",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 71,
+        "w": 24,
+        "h": 1
+      },
+      "datasource": null,
+      "panels": []
+    },
+    {
+      "id": 61,
+      "type": "timeseries",
+      "title": "Cards Completed Per Day",
+      "description": "Daily card completion velocity. A rising trend means more work is flowing through to done; gaps indicate days with no completions.",
+      "gridPos": {
+        "x": 0,
+        "y": 72,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claudit-sqlite"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawQueryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(recorded_at)) AS time, COUNT(*) AS cards_done FROM kanban_card_events WHERE event_type = 'done' AND recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', recorded_at, 'localtime') ORDER BY time ASC",
+          "queryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(recorded_at)) AS time, COUNT(*) AS cards_done FROM kanban_card_events WHERE event_type = 'done' AND recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', recorded_at, 'localtime') ORDER BY time ASC",
+          "queryType": "time series",
+          "timeColumns": [
+            "time"
+          ]
+        }
+      ],
+      "options": {
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "color": { "mode": "palette-classic" }
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 63,
+      "type": "table",
+      "title": "Card Cycle Time",
+      "description": "Time from first 'doing' event to 'done' event per card. Cards with very long cycle times may indicate tasks that are too large or agents that got stuck.",
+      "gridPos": {
+        "x": 18,
+        "y": 72,
+        "w": 6,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claudit-sqlite"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawQueryText": "SELECT kce_done.card_number, kce_done.kanban_session, ROUND((julianday(kce_done.recorded_at) - julianday(kce_start.recorded_at)) * 1440, 1) AS cycle_minutes, kce_done.agent, kce_done.recorded_at AS completed_at FROM kanban_card_events kce_done INNER JOIN (SELECT card_number, MIN(recorded_at) AS recorded_at FROM kanban_card_events WHERE event_type = 'start' GROUP BY card_number) kce_start ON kce_done.card_number = kce_start.card_number WHERE kce_done.event_type = 'done' ORDER BY cycle_minutes DESC LIMIT 50",
+          "queryText": "SELECT kce_done.card_number, kce_done.kanban_session, ROUND((julianday(kce_done.recorded_at) - julianday(kce_start.recorded_at)) * 1440, 1) AS cycle_minutes, kce_done.agent, kce_done.recorded_at AS completed_at FROM kanban_card_events kce_done INNER JOIN (SELECT card_number, MIN(recorded_at) AS recorded_at FROM kanban_card_events WHERE event_type = 'start' GROUP BY card_number) kce_start ON kce_done.card_number = kce_start.card_number WHERE kce_done.event_type = 'done' ORDER BY cycle_minutes DESC LIMIT 50",
+          "queryType": "table",
+          "timeColumns": []
+        }
+      ],
+      "options": {
+        "sortBy": [
+          {
+            "displayName": "cycle_minutes",
+            "desc": true
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cycle_minutes"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "m"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 71,
+      "type": "histogram",
+      "title": "Lead Time Distribution",
+      "description": "Distribution of how many hours cards take from first 'doing' to 'done'. The bulk of the distribution shows the typical card duration; outliers on the right indicate cards that got stuck or were exceptionally complex.",
+      "gridPos": {
+        "x": 0,
+        "y": 80,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claudit-sqlite"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawQueryText": "SELECT ROUND((julianday(kce_done.recorded_at) - julianday(kce_start.recorded_at)) * 24, 2) AS lead_time_hours FROM kanban_card_events kce_done INNER JOIN (SELECT card_number, MIN(recorded_at) AS recorded_at FROM kanban_card_events WHERE event_type = 'start' GROUP BY card_number) kce_start ON kce_done.card_number = kce_start.card_number WHERE kce_done.event_type = 'done' AND kce_start.recorded_at IS NOT NULL",
+          "queryText": "SELECT ROUND((julianday(kce_done.recorded_at) - julianday(kce_start.recorded_at)) * 24, 2) AS lead_time_hours FROM kanban_card_events kce_done INNER JOIN (SELECT card_number, MIN(recorded_at) AS recorded_at FROM kanban_card_events WHERE event_type = 'start' GROUP BY card_number) kce_start ON kce_done.card_number = kce_start.card_number WHERE kce_done.event_type = 'done' AND kce_start.recorded_at IS NOT NULL",
+          "queryType": "table",
+          "timeColumns": []
+        }
+      ],
+      "options": {
+        "bucketSize": "auto",
+        "bucketOffset": 0,
+        "fillOpacity": 80,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "h",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 72,
+      "type": "table",
+      "title": "Average Lead Time by Agent",
+      "description": "Week-over-week average lead time delta per agent (minutes from card start to done). Green delta_pct means faster. Uses event_type = 'start' as the anchor (the correct kanban CLI event).",
+      "gridPos": {
+        "x": 12,
+        "y": 80,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claudit-sqlite"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawQueryText": "WITH last_7d AS (SELECT kce_done.agent, ROUND(AVG((julianday(kce_done.recorded_at) - julianday(kce_start.recorded_at)) * 1440), 1) AS avg_lead_minutes_7d FROM kanban_card_events kce_done INNER JOIN (SELECT card_number, MIN(recorded_at) AS recorded_at FROM kanban_card_events WHERE event_type = 'start' GROUP BY card_number) kce_start ON kce_done.card_number = kce_start.card_number WHERE kce_done.event_type = 'done' AND kce_done.recorded_at >= datetime('now', '-7 days') GROUP BY kce_done.agent), prior_7d AS (SELECT kce_done.agent, ROUND(AVG((julianday(kce_done.recorded_at) - julianday(kce_start.recorded_at)) * 1440), 1) AS avg_lead_minutes_prior_7d FROM kanban_card_events kce_done INNER JOIN (SELECT card_number, MIN(recorded_at) AS recorded_at FROM kanban_card_events WHERE event_type = 'start' GROUP BY card_number) kce_start ON kce_done.card_number = kce_start.card_number WHERE kce_done.event_type = 'done' AND kce_done.recorded_at >= datetime('now', '-14 days') AND kce_done.recorded_at < datetime('now', '-7 days') GROUP BY kce_done.agent) SELECT l.agent, l.avg_lead_minutes_7d, COALESCE(p.avg_lead_minutes_prior_7d, 0) AS avg_lead_minutes_prior_7d, CASE WHEN p.avg_lead_minutes_prior_7d IS NULL OR p.avg_lead_minutes_prior_7d = 0 THEN NULL ELSE ((l.avg_lead_minutes_7d - p.avg_lead_minutes_prior_7d) / p.avg_lead_minutes_prior_7d) * 100 END AS delta_pct FROM last_7d l LEFT JOIN prior_7d p ON l.agent = p.agent UNION ALL SELECT p.agent, 0 AS avg_lead_minutes_7d, p.avg_lead_minutes_prior_7d, NULL AS delta_pct FROM prior_7d p LEFT JOIN last_7d l ON p.agent = l.agent WHERE l.agent IS NULL ORDER BY avg_lead_minutes_7d DESC",
+          "queryText": "WITH last_7d AS (SELECT kce_done.agent, ROUND(AVG((julianday(kce_done.recorded_at) - julianday(kce_start.recorded_at)) * 1440), 1) AS avg_lead_minutes_7d FROM kanban_card_events kce_done INNER JOIN (SELECT card_number, MIN(recorded_at) AS recorded_at FROM kanban_card_events WHERE event_type = 'start' GROUP BY card_number) kce_start ON kce_done.card_number = kce_start.card_number WHERE kce_done.event_type = 'done' AND kce_done.recorded_at >= datetime('now', '-7 days') GROUP BY kce_done.agent), prior_7d AS (SELECT kce_done.agent, ROUND(AVG((julianday(kce_done.recorded_at) - julianday(kce_start.recorded_at)) * 1440), 1) AS avg_lead_minutes_prior_7d FROM kanban_card_events kce_done INNER JOIN (SELECT card_number, MIN(recorded_at) AS recorded_at FROM kanban_card_events WHERE event_type = 'start' GROUP BY card_number) kce_start ON kce_done.card_number = kce_start.card_number WHERE kce_done.event_type = 'done' AND kce_done.recorded_at >= datetime('now', '-14 days') AND kce_done.recorded_at < datetime('now', '-7 days') GROUP BY kce_done.agent) SELECT l.agent, l.avg_lead_minutes_7d, COALESCE(p.avg_lead_minutes_prior_7d, 0) AS avg_lead_minutes_prior_7d, CASE WHEN p.avg_lead_minutes_prior_7d IS NULL OR p.avg_lead_minutes_prior_7d = 0 THEN NULL ELSE ((l.avg_lead_minutes_7d - p.avg_lead_minutes_prior_7d) / p.avg_lead_minutes_prior_7d) * 100 END AS delta_pct FROM last_7d l LEFT JOIN prior_7d p ON l.agent = p.agent UNION ALL SELECT p.agent, 0 AS avg_lead_minutes_7d, p.avg_lead_minutes_prior_7d, NULL AS delta_pct FROM prior_7d p LEFT JOIN last_7d l ON p.agent = l.agent WHERE l.agent IS NULL ORDER BY avg_lead_minutes_7d DESC",
+          "queryType": "table",
+          "timeColumns": []
+        }
+      ],
+      "options": {
+        "sortBy": [
+          {
+            "displayName": "avg_lead_minutes_7d",
+            "desc": true
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "avg_lead_minutes_7d"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "m"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "avg_lead_minutes_prior_7d"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "m"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "delta_pct"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.displayMode",
+                "value": "color-text"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": -999999
+                    },
+                    {
+                      "color": "red",
+                      "value": 0
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 107,
+      "type": "timeseries",
+      "title": "Weekly Lead Time Trend (median minutes)",
+      "description": "Average lead time per week, in minutes (SQLite has no native MEDIAN; AVG is used as an approximation). Tells you whether throughput is improving or degrading.",
+      "gridPos": {
+        "x": 0,
+        "y": 88,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claudit-sqlite"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawQueryText": "WITH lead_times AS (SELECT kce_done.card_number, strftime('%Y-W%W', kce_done.recorded_at, 'localtime') AS week, MIN(kce_done.recorded_at) AS week_done_at, ((julianday(kce_done.recorded_at) - julianday(kce_start.recorded_at)) * 1440.0) AS lead_minutes FROM kanban_card_events kce_done INNER JOIN (SELECT card_number, MIN(recorded_at) AS recorded_at FROM kanban_card_events WHERE event_type = 'start' GROUP BY card_number) kce_start ON kce_done.card_number = kce_start.card_number WHERE kce_done.event_type = 'done' AND kce_done.recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND kce_done.recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY kce_done.card_number, week) SELECT strftime('%Y-%m-%dT00:00:00Z', date(week_done_at, 'localtime', 'weekday 0', '-6 days')) AS time, AVG(lead_minutes) AS avg_lead_minutes FROM lead_times GROUP BY week ORDER BY time ASC",
+          "queryText": "WITH lead_times AS (SELECT kce_done.card_number, strftime('%Y-W%W', kce_done.recorded_at, 'localtime') AS week, MIN(kce_done.recorded_at) AS week_done_at, ((julianday(kce_done.recorded_at) - julianday(kce_start.recorded_at)) * 1440.0) AS lead_minutes FROM kanban_card_events kce_done INNER JOIN (SELECT card_number, MIN(recorded_at) AS recorded_at FROM kanban_card_events WHERE event_type = 'start' GROUP BY card_number) kce_start ON kce_done.card_number = kce_start.card_number WHERE kce_done.event_type = 'done' AND kce_done.recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND kce_done.recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY kce_done.card_number, week) SELECT strftime('%Y-%m-%dT00:00:00Z', date(week_done_at, 'localtime', 'weekday 0', '-6 days')) AS time, AVG(lead_minutes) AS avg_lead_minutes FROM lead_times GROUP BY week ORDER BY time ASC",
+          "queryType": "time series",
+          "timeColumns": [
+            "time"
+          ]
+        }
+      ],
+      "options": {
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "m",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 74,
+      "type": "table",
+      "title": "Card Flow",
+      "description": "Recent cards with their events, showing the flow from creation through to completion. Cards with many redo events before done indicate quality issues or under-specified task definitions.",
+      "gridPos": {
+        "x": 12,
+        "y": 88,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claudit-sqlite"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawQueryText": "SELECT card_number, kanban_session, event_type, agent, model, recorded_at FROM kanban_card_events WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) ORDER BY recorded_at DESC LIMIT 100",
+          "queryText": "SELECT card_number, kanban_session, event_type, agent, model, recorded_at FROM kanban_card_events WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) ORDER BY recorded_at DESC LIMIT 100",
+          "queryType": "table",
+          "timeColumns": []
+        }
+      ],
+      "options": {
+        "sortBy": [
+          {
+            "displayName": "recorded_at",
+            "desc": true
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "filterable": true
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 20,
+      "type": "row",
+      "title": "Cache & Tokens",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 96,
+        "w": 24,
+        "h": 1
+      },
+      "datasource": null,
+      "panels": []
+    },
+    {
+      "id": 21,
+      "type": "barchart",
+      "title": "Token Usage Breakdown",
+      "description": "Input, output, and cache-read token volumes stacked by model family. A small cache-read segment relative to input means context is being invalidated — check if CLAUDE.md or skill files changed recently.",
+      "gridPos": {
+        "x": 0,
+        "y": 97,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claudit-sqlite"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawQueryText": "SELECT model, SUM(input_tokens) AS input_tokens, SUM(output_tokens) AS output_tokens, SUM(cache_read_tokens) AS cache_read_tokens, SUM(cache_write_tokens) AS cache_write_tokens FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY model ORDER BY input_tokens DESC",
+          "queryText": "SELECT model, SUM(input_tokens) AS input_tokens, SUM(output_tokens) AS output_tokens, SUM(cache_read_tokens) AS cache_read_tokens, SUM(cache_write_tokens) AS cache_write_tokens FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY model ORDER BY input_tokens DESC",
+          "queryType": "table",
+          "timeColumns": []
+        }
+      ],
+      "options": {
+        "xField": "model",
+        "stacking": {
+          "mode": "value",
+          "group": "A"
+        },
+        "orientation": "auto",
+        "barWidth": 0.6,
+        "groupWidth": 0.7,
+        "fillOpacity": 80,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 22,
+      "type": "timeseries",
+      "title": "Cache Hit Ratio Over Time",
+      "description": "Percentage of input tokens served from cache vs. fresh input, per day. Below 70% means context is being invalidated frequently — check if CLAUDE.md or skill files changed recently.",
+      "gridPos": {
+        "x": 12,
+        "y": 97,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claudit-sqlite"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawQueryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(recorded_at)) AS time, CAST(SUM(cache_read_tokens) AS REAL) / NULLIF(SUM(input_tokens) + SUM(cache_read_tokens), 0) * 100 AS cache_pct FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', recorded_at, 'localtime') ORDER BY time ASC",
+          "queryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(recorded_at)) AS time, CAST(SUM(cache_read_tokens) AS REAL) / NULLIF(SUM(input_tokens) + SUM(cache_read_tokens), 0) * 100 AS cache_pct FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', recorded_at, 'localtime') ORDER BY time ASC",
+          "queryType": "time series",
+          "timeColumns": [
+            "time"
+          ]
+        }
+      ],
+      "options": {
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "green",
+                "value": 70
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 40,
+      "type": "row",
+      "title": "Permissions & Tooling",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 105,
+        "w": 24,
+        "h": 1
+      },
+      "datasource": null,
+      "panels": []
+    },
+    {
+      "id": 41,
+      "type": "timeseries",
+      "title": "Permission Denials Over Time",
+      "description": "Daily count of permission denials. Rising denials indicate agents attempting actions outside their allowed scope — check the Permission Denials by Tool panel to identify which tools are being blocked.",
+      "gridPos": {
+        "x": 0,
+        "y": 106,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claudit-sqlite"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawQueryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(denied_at)) AS time, COUNT(*) AS denials FROM permission_denials WHERE denied_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND denied_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', denied_at, 'localtime') ORDER BY time ASC",
+          "queryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(denied_at)) AS time, COUNT(*) AS denials FROM permission_denials WHERE denied_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND denied_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', denied_at, 'localtime') ORDER BY time ASC",
+          "queryType": "time series",
+          "timeColumns": [
+            "time"
+          ]
+        }
+      ],
+      "options": {
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 42,
+      "type": "barchart",
+      "title": "Permission Denials by Tool",
+      "description": "Tools that were blocked by the permission system, ranked by denial count. Repeated denials for the same tool indicate an agent is attempting actions it is not authorized for — either the task prompt needs adjustment or the permission configuration needs updating.",
+      "gridPos": {
+        "x": 12,
+        "y": 106,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claudit-sqlite"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawQueryText": "SELECT tool_name, COUNT(*) AS denial_count FROM permission_denials GROUP BY tool_name ORDER BY denial_count DESC LIMIT 20",
+          "queryText": "SELECT tool_name, COUNT(*) AS denial_count FROM permission_denials GROUP BY tool_name ORDER BY denial_count DESC LIMIT 20",
+          "queryType": "table",
+          "timeColumns": []
+        }
+      ],
+      "options": {
+        "xField": "tool_name",
+        "orientation": "horizontal",
+        "barWidth": 0.6,
+        "groupWidth": 0.7,
+        "fillOpacity": 80,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 31,
+      "type": "table",
+      "title": "Tool Usage Heatmap",
+      "description": "Call frequency per tool, broken down by bash command. High call counts for any single tool indicate heavy usage patterns — cross-reference with Most Denied Tools to see if those same tools are also being blocked.",
+      "gridPos": {
+        "x": 0,
+        "y": 114,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claudit-sqlite"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawQueryText": "SELECT tool_name, bash_command, SUM(call_count) AS total_calls FROM agent_tool_usage GROUP BY tool_name, bash_command ORDER BY total_calls DESC LIMIT 50",
+          "queryText": "SELECT tool_name, bash_command, SUM(call_count) AS total_calls FROM agent_tool_usage GROUP BY tool_name, bash_command ORDER BY total_calls DESC LIMIT 50",
+          "queryType": "table",
+          "timeColumns": []
+        }
+      ],
+      "options": {
+        "sortBy": [
+          {
+            "displayName": "total_calls",
+            "desc": true
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "filterable": true
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 46,
+      "type": "barchart",
+      "title": "Agent Run Duration",
+      "description": "Distribution of agent run durations in minutes (last_seen_at minus first_seen_at). The bulk of the distribution shows typical agent duration; outliers on the right indicate agents working on large or complex tasks.",
+      "gridPos": {
+        "x": 12,
+        "y": 114,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claudit-sqlite"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawQueryText": "SELECT CASE WHEN duration_minutes < 5 THEN '<5m' WHEN duration_minutes < 15 THEN '5-15m' WHEN duration_minutes < 30 THEN '15-30m' WHEN duration_minutes < 60 THEN '30-60m' WHEN duration_minutes < 120 THEN '1-2h' ELSE '>2h' END AS bucket, COUNT(*) AS count FROM (SELECT (julianday(last_seen_at) - julianday(first_seen_at)) * 1440 AS duration_minutes FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) AND last_seen_at IS NOT NULL AND first_seen_at IS NOT NULL AND last_seen_at > first_seen_at) GROUP BY bucket ORDER BY MIN(duration_minutes)",
+          "queryText": "SELECT CASE WHEN duration_minutes < 5 THEN '<5m' WHEN duration_minutes < 15 THEN '5-15m' WHEN duration_minutes < 30 THEN '15-30m' WHEN duration_minutes < 60 THEN '30-60m' WHEN duration_minutes < 120 THEN '1-2h' ELSE '>2h' END AS bucket, COUNT(*) AS count FROM (SELECT (julianday(last_seen_at) - julianday(first_seen_at)) * 1440 AS duration_minutes FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) AND last_seen_at IS NOT NULL AND first_seen_at IS NOT NULL AND last_seen_at > first_seen_at) GROUP BY bucket ORDER BY MIN(duration_minutes)",
+          "queryType": "table",
+          "timeColumns": []
+        }
+      ],
+      "options": {
+        "xField": "bucket",
+        "orientation": "auto",
+        "barWidth": 0.6,
+        "groupWidth": 0.7,
+        "fillOpacity": 80,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 50,
+      "type": "row",
+      "title": "Model & Usage",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 122,
+        "w": 24,
+        "h": 1
+      },
+      "datasource": null,
+      "panels": []
+    },
+    {
+      "id": 51,
+      "type": "table",
+      "title": "Model Distribution by Agent",
+      "description": "Cross-reference of agent types with model families. Shows call frequency and cost patterns to identify expensive or over-engineered model selections.",
+      "gridPos": {
+        "x": 0,
+        "y": 123,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claudit-sqlite"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawQueryText": "SELECT agent, model, COUNT(*) AS sessions, SUM(total_turns) AS total_turns, SUM(cost_usd) AS total_cost FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY agent, model ORDER BY total_cost DESC",
+          "queryText": "SELECT agent, model, COUNT(*) AS sessions, SUM(total_turns) AS total_turns, SUM(cost_usd) AS total_cost FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY agent, model ORDER BY total_cost DESC",
+          "queryType": "table",
+          "timeColumns": []
+        }
+      ],
+      "options": {
+        "sortBy": [
+          {
+            "displayName": "total_cost",
+            "desc": true
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "total_cost"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 35,
+      "type": "table",
+      "title": "Turns Per Agent",
+      "description": "Week-over-week turn count delta per agent role. turns_7d vs turns_prior_7d shows whether an agent is consuming more or fewer API round-trips. Filter by repo using the Repo variable above.",
+      "gridPos": {
+        "x": 0,
+        "y": 131,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claudit-sqlite"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawQueryText": "WITH last_7d AS (SELECT agent, SUM(total_turns) AS turns_7d FROM agent_metrics WHERE recorded_at >= datetime('now', '-7 days') AND git_project LIKE '$repo' GROUP BY agent), prior_7d AS (SELECT agent, SUM(total_turns) AS turns_prior_7d FROM agent_metrics WHERE recorded_at >= datetime('now', '-14 days') AND recorded_at < datetime('now', '-7 days') AND git_project LIKE '$repo' GROUP BY agent) SELECT l.agent, l.turns_7d, COALESCE(p.turns_prior_7d, 0) AS turns_prior_7d, CASE WHEN p.turns_prior_7d IS NULL OR p.turns_prior_7d = 0 THEN NULL ELSE ((CAST(l.turns_7d AS REAL) - p.turns_prior_7d) / p.turns_prior_7d) * 100 END AS delta_pct FROM last_7d l LEFT JOIN prior_7d p ON l.agent = p.agent UNION ALL SELECT p.agent, 0 AS turns_7d, p.turns_prior_7d, NULL AS delta_pct FROM prior_7d p LEFT JOIN last_7d l ON p.agent = l.agent WHERE l.agent IS NULL ORDER BY turns_7d DESC",
+          "queryText": "WITH last_7d AS (SELECT agent, SUM(total_turns) AS turns_7d FROM agent_metrics WHERE recorded_at >= datetime('now', '-7 days') AND git_project LIKE '$repo' GROUP BY agent), prior_7d AS (SELECT agent, SUM(total_turns) AS turns_prior_7d FROM agent_metrics WHERE recorded_at >= datetime('now', '-14 days') AND recorded_at < datetime('now', '-7 days') AND git_project LIKE '$repo' GROUP BY agent) SELECT l.agent, l.turns_7d, COALESCE(p.turns_prior_7d, 0) AS turns_prior_7d, CASE WHEN p.turns_prior_7d IS NULL OR p.turns_prior_7d = 0 THEN NULL ELSE ((CAST(l.turns_7d AS REAL) - p.turns_prior_7d) / p.turns_prior_7d) * 100 END AS delta_pct FROM last_7d l LEFT JOIN prior_7d p ON l.agent = p.agent UNION ALL SELECT p.agent, 0 AS turns_7d, p.turns_prior_7d, NULL AS delta_pct FROM prior_7d p LEFT JOIN last_7d l ON p.agent = l.agent WHERE l.agent IS NULL ORDER BY turns_7d DESC",
+          "queryType": "table",
+          "timeColumns": []
+        }
+      ],
+      "options": {
+        "sortBy": [
+          {
+            "displayName": "turns_7d",
+            "desc": true
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "turns_7d"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "turns_prior_7d"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "delta_pct"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.displayMode",
+                "value": "color-text"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": -999999
+                    },
+                    {
+                      "color": "red",
+                      "value": 0
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 33,
+      "type": "timeseries",
+      "title": "Agent Activity Over Time",
+      "description": "Daily count of agent runs per agent type. A declining trend for a particular agent type may signal that delegation to that specialist is being reduced, intentionally or not.",
+      "gridPos": {
+        "x": 0,
+        "y": 139,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claudit-sqlite"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawQueryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(recorded_at)) AS time, COUNT(*) AS agent_runs FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', recorded_at, 'localtime') ORDER BY time ASC",
+          "queryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(recorded_at)) AS time, COUNT(*) AS agent_runs FROM agent_metrics WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', recorded_at, 'localtime') ORDER BY time ASC",
+          "queryType": "time series",
+          "timeColumns": [
+            "time"
+          ]
+        }
+      ],
+      "options": {
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          }
         },
         "overrides": []
       }
     }
-  ]
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "repo",
+        "label": "Repo",
+        "type": "query",
+        "datasource": {
+          "type": "frser-sqlite-datasource",
+          "uid": "claudit-sqlite"
+        },
+        "query": "SELECT DISTINCT git_project FROM agent_metrics WHERE git_project IS NOT NULL ORDER BY git_project",
+        "refresh": 1,
+        "includeAll": true,
+        "allValue": "%",
+        "multi": false,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "hide": 0
+      }
+    ]
+  },
+  "annotations": {
+    "list": [
+      {
+        "name": "Changes",
+        "datasource": {
+          "type": "frser-sqlite-datasource",
+          "uid": "claudit-sqlite"
+        },
+        "enable": true,
+        "iconColor": "yellow",
+        "rawQuery": "SELECT strftime('%s', recorded_at) * 1000 AS time, message AS text, COALESCE(tags, '') AS tags FROM claudit_annotations WHERE recorded_at >= datetime($__from/1000, 'unixepoch') AND recorded_at <= datetime($__to/1000, 'unixepoch') ORDER BY recorded_at",
+        "queryType": "table"
+      }
+    ]
+  }
 }
