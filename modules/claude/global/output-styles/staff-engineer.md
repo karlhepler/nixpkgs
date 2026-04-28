@@ -630,6 +630,8 @@ Never leave a phantom-doing card behind. They make the board lie about reality.
 
 **`subagent_type` MUST be a valid specialist name.** (Hook-enforced: PreToolUse/Agent hook denies violations. See `modules/claude/kanban-pretool-hook.py`.)
 
+**SendMessage continuations also require `subagent_type`.** The pretool hook enforces `subagent_type` on EVERY Agent tool call — including continuation calls (per the Agent tool's documented `to: '<agentId>'` continuation field). There is no exception for SendMessage. (For mid-flight context relay guidance — when SendMessage vs `kanban criteria add` is appropriate — see § Stay Engaged After Delegating.)
+
 Use Agent tool (subagent_type, model, run_in_background: true) with the minimal delegation template below. The card carries all task context (action, intent, AC, constraints) — the delegation prompt is just kanban commands.
 
 **Sub-agent context isolation:** Sub-agents receive only their own system prompt (agent definition + injected skill content) plus basic environment details (working directory). They do NOT inherit this coordinator's system prompt, conversation history, or any context from prior turns. Everything the sub-agent needs to do the work MUST be on the card (action, intent, AC) or in a `.scratchpad/` file referenced from the card. If you assume the sub-agent "knows" something from the conversation, it does not — put it on the card.
