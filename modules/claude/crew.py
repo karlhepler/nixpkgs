@@ -30,7 +30,6 @@ import os
 import re
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 import xml.etree.ElementTree as ET
@@ -100,166 +99,6 @@ def _cleanup_sentinel(name: str) -> None:
 # sentinel-detection itself is event-driven via fswatch and not bounded by this
 # ceiling under normal operation.
 _SENTINEL_WAIT_CEILING_SECONDS = 5 * 60.0
-
-
-def _hook_present_in_settings() -> bool:
-    """Return True if crew-lifecycle-hook is configured as a SessionStart hook.
-
-    Parses the deployed Claude Code settings.json to check whether the SessionStart
-    hook command line includes 'crew-lifecycle-hook'. Used to distinguish
-    'hook not installed' from 'session crashed during boot' after ceiling elapsed.
-
-    Handles two SessionStart formats produced by default.nix:
-      - Hook-group format (deployed format): each top-level item is a dict with a
-        'hooks' key containing a list of individual hook objects (each with 'command').
-      - Flat format: each top-level item is directly a hook dict or plain string.
-
-    Falls back to True (assume hook present / crashed) on any parse error so that
-    the safer diagnostic is shown when settings.json is malformed or unreadable.
-    """
-    config_dir = os.environ.get("CLAUDE_CONFIG_DIR", os.path.expanduser("~/.claude"))
-    settings_path = os.path.join(config_dir, "settings.json")
-    try:
-        with open(settings_path) as f:
-            settings = json.load(f)
-        hooks = settings.get("hooks", {})
-        session_start_hooks = hooks.get("SessionStart", [])
-        for entry in session_start_hooks:
-            if isinstance(entry, str):
-                # Flat format: plain string hook command.
-                if "crew-lifecycle-hook" in entry:
-                    return True
-            elif isinstance(entry, dict):
-                # Hook-group format: {"hooks": [{...}, ...]} — deployed by default.nix.
-                if "hooks" in entry:
-                    for hook in entry.get("hooks", []):
-                        if isinstance(hook, dict):
-                            cmd = hook.get("command", "")
-                        elif isinstance(hook, str):
-                            cmd = hook
-                        else:
-                            continue
-                        if "crew-lifecycle-hook" in cmd:
-                            return True
-                else:
-                    # Flat format: {"command": "..."} dict.
-                    cmd = entry.get("command", "")
-                    if "crew-lifecycle-hook" in cmd:
-                        return True
-        return False
-    except Exception:
-        # Malformed settings.json or unreadable — assume hook is present (safer).
-        return True
-
-
-# Sentinel hook entry written into a worktree's settings.json when auto-provisioning.
-# Uses "crew-lifecycle-hook" (bare binary name — Nix guarantees it is on PATH) rather
-# than a nix store path. The worktree may not have been built by this user's Nix profile,
-# but crew-lifecycle-hook is system-wide via modules/packages.nix.
-_SENTINEL_HOOK_ENTRY = {
-    "type": "command",
-    "timeout": 5000,
-    "command": "crew-lifecycle-hook",
-}
-
-
-def _ensure_hook_in_settings(settings_path: str) -> Tuple[bool, Optional[str]]:
-    """Ensure the crew-lifecycle-hook SessionStart hook is present in settings_path.
-
-    Checks whether the SessionStart sentinel hook is present in the given
-    settings.json file. If present, returns (True, None) immediately (idempotent).
-    If absent, appends the hook entry to the SessionStart hooks list and writes
-    the file back atomically (write to temp, rename). Returns (True, None) on
-    success.
-
-    If settings.json does not exist, creates a minimal one containing only the
-    SessionStart hook. Returns (True, None) on success.
-
-    If settings.json is malformed JSON (and not empty/absent), logs a warning to
-    stderr and returns (False, reason) — does not crash the spawn.
-
-    If the file cannot be written (permissions, unwritable filesystem), logs a
-    warning to stderr and returns (False, reason).
-
-    Args:
-        settings_path: Absolute path to the target settings.json file.
-
-    Returns:
-        (True, None) if the hook is present or was successfully installed.
-        (False, reason_str) if provisioning failed for any reason.
-    """
-    # --- Fast path: check if already present ---
-    if os.path.exists(settings_path):
-        try:
-            with open(settings_path) as fh:
-                settings = json.load(fh)
-        except json.JSONDecodeError as exc:
-            msg = f"settings.json at '{settings_path}' is malformed JSON: {exc}"
-            print(f"[crew] warning: {msg}", file=sys.stderr)
-            return False, msg
-        except OSError as exc:
-            msg = f"could not read '{settings_path}': {exc}"
-            print(f"[crew] warning: {msg}", file=sys.stderr)
-            return False, msg
-
-        # Walk SessionStart hooks using the same logic as _hook_present_in_settings,
-        # but scoped to the provided path rather than the global settings.json.
-        hooks = settings.get("hooks", {})
-        session_start_hooks = hooks.get("SessionStart", [])
-        for entry in session_start_hooks:
-            if isinstance(entry, str) and "crew-lifecycle-hook" in entry:
-                return True, None
-            if isinstance(entry, dict):
-                if "hooks" in entry:
-                    for hook in entry.get("hooks", []):
-                        cmd = hook.get("command", "") if isinstance(hook, dict) else (hook or "")
-                        if "crew-lifecycle-hook" in cmd:
-                            return True, None
-                else:
-                    if "crew-lifecycle-hook" in entry.get("command", ""):
-                        return True, None
-
-        # Hook is absent — append it to the SessionStart hooks list.
-        if "hooks" not in settings:
-            settings["hooks"] = {}
-        if "SessionStart" not in settings["hooks"]:
-            settings["hooks"]["SessionStart"] = []
-        settings["hooks"]["SessionStart"].append({"hooks": [_SENTINEL_HOOK_ENTRY]})
-
-    else:
-        # File does not exist — create a minimal settings.json with just the hook.
-        try:
-            os.makedirs(os.path.dirname(settings_path), mode=0o755, exist_ok=True)
-        except OSError as exc:
-            msg = f"could not create directory '{os.path.dirname(settings_path)}': {exc}"
-            print(f"[crew] warning: {msg}", file=sys.stderr)
-            return False, msg
-        settings = {"hooks": {"SessionStart": [{"hooks": [_SENTINEL_HOOK_ENTRY]}]}}
-
-    # --- Atomic write: write to temp file in same dir, then rename ---
-    settings_dir = os.path.dirname(settings_path)
-    try:
-        fd, tmp_path = tempfile.mkstemp(dir=settings_dir, suffix=".tmp")
-        try:
-            with os.fdopen(fd, "w") as fh:
-                json.dump(settings, fh, indent=2)
-        except OSError as exc:
-            # os.fdopen owns the fd — no os.close needed here.
-            os.unlink(tmp_path)
-            msg = f"could not write temp file '{tmp_path}': {exc}"
-            print(f"[crew] warning: {msg}", file=sys.stderr)
-            return False, msg
-        os.replace(tmp_path, settings_path)
-    except OSError as exc:
-        msg = f"could not provision hook into '{settings_path}': {exc}"
-        print(f"[crew] warning: {msg}", file=sys.stderr)
-        return False, msg
-
-    print(
-        f"[crew] provisioned crew-lifecycle-hook into SessionStart hooks at '{settings_path}'",
-        file=sys.stderr,
-    )
-    return True, None
 
 
 # Prompt-box readiness tokens — patterns that indicate Claude Code's input box is
@@ -2416,26 +2255,6 @@ def cmd_create(
     # session display name shown in the prompt box, /resume picker, and terminal
     # title. name is pre-validated by _SAFE_NAME_RE (alphanumeric/hyphens/underscores
     # only) — no shell quoting needed.
-
-    # --- 11a. Ensure crew-lifecycle-hook is in the worktree's settings.json ---
-    # This guarantees the SessionStart hook that drops the sentinel file is present
-    # in the target worktree even if the worktree was created from a repo that has no
-    # crew-lifecycle-hook in its .claude/settings.json. Without this, the sentinel is
-    # never written and _wait_for_sentinel falls back to the prompt-box polling path
-    # (still works, but slower). With this, both primary and fallback signals are
-    # active.
-    #
-    # The provisioning is idempotent — if the hook is already registered, it is a no-op.
-    # If provisioning fails (unwritable path, malformed JSON), we log a warning and
-    # proceed: the prompt-box polling fallback in _wait_for_sentinel covers this case.
-    worktree_settings_path = os.path.join(worktree_path, ".claude", "settings.json")
-    provision_ok, provision_reason = _ensure_hook_in_settings(worktree_settings_path)
-    if not provision_ok:
-        print(
-            f"[crew] warning: could not provision sentinel hook — "
-            f"falling back to prompt-box polling: {provision_reason}",
-            file=sys.stderr,
-        )
 
     # Clean any stale sentinel unconditionally before spawning. A leftover sentinel
     # from a crashed or dismissed prior session would cause _wait_for_sentinel to

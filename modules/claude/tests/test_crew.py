@@ -29,7 +29,6 @@ from crew import (
     _clean_stale_sentinel,
     _cleanup_sentinel,
     _CREW_SENTINEL_DIR,
-    _ensure_hook_in_settings,
     _extract_org_repo_from_remote,
     _list_panes_in_window,
     _looks_like_message_not_target,
@@ -1392,16 +1391,15 @@ class TestCmdCreateNoWorktree:
         """--no-worktree with valid git repo: tmux window created at repo path."""
         with patch("subprocess.run") as mock_run:
             with patch("os.path.isdir", return_value=True):
-                with patch.object(crew_module, "_ensure_hook_in_settings", return_value=(True, None)):
-                    self._setup_no_worktree_mocks(mock_run, dirty=False)
-                    cmd_create(
-                        name="test-nw",
-                        repo="/some/repo",
-                        branch=None,
-                        base=None,
-                        fmt="xml",
-                        no_worktree=True,
-                    )
+                self._setup_no_worktree_mocks(mock_run, dirty=False)
+                cmd_create(
+                    name="test-nw",
+                    repo="/some/repo",
+                    branch=None,
+                    base=None,
+                    fmt="xml",
+                    no_worktree=True,
+                )
 
         all_calls = mock_run.call_args_list
         # git worktree add must NOT be called
@@ -2658,54 +2656,49 @@ class TestCmdCreateToldReason:
                 with patch("os.path.exists", return_value=False):
                     with patch.object(
                         crew_module,
-                        "_ensure_hook_in_settings",
-                        return_value=(True, None),
+                        "_wait_for_sentinel",
+                        return_value=(False, 'session never reported ready — sentinel file never appeared at \'/tmp/crew/ready-test-session\' and pane \'test-session.0\' never showed any of [\'auto mode on\']'),
                     ):
-                        with patch.object(
-                            crew_module,
-                            "_wait_for_sentinel",
-                            return_value=(False, 'session never reported ready — sentinel file never appeared at \'/tmp/crew/ready-test-session\' and pane \'test-session.0\' never showed any of [\'auto mode on\']'),
-                        ):
-                            # Provide minimal subprocess mocks for the create path
-                            def side_effect(cmd, **kwargs):
-                                joined = " ".join(str(c) for c in cmd)
-                                if "display-message" in joined and "session_name" in joined:
-                                    return fake_run_result(stdout="tidy-crown\n")
-                                if "display-message" in joined and "window_id" in joined:
-                                    return fake_run_result(stdout="@1\n")
-                                if "list-windows" in joined:
-                                    return fake_run_result(stdout="")
-                                if "rev-parse" in joined and "show-toplevel" in joined:
-                                    return fake_run_result(stdout="/some/repo\n")
-                                if "symbolic-ref" in joined:
-                                    return fake_run_result(stdout="main\n")
-                                if "rev-parse" in joined and "upstream" in joined:
-                                    return fake_run_result(stdout="origin/main\n")
-                                if "fetch" in joined and "origin" in joined:
-                                    return fake_run_result()
-                                if "rev-parse" in joined and "--verify" in joined and "refs/heads" not in joined:
-                                    return fake_run_result(stdout="abc1234\n")
-                                if "rev-parse" in joined and "refs/heads" in joined:
-                                    return fake_run_result(returncode=1)
-                                if "branch" in joined and "main" in joined:
-                                    return fake_run_result()
-                                if "worktree" in joined and "add" in joined:
-                                    return fake_run_result()
-                                if "new-window" in joined:
-                                    return fake_run_result()
-                                if "send-keys" in joined:
-                                    return fake_run_result()
+                        # Provide minimal subprocess mocks for the create path
+                        def side_effect(cmd, **kwargs):
+                            joined = " ".join(str(c) for c in cmd)
+                            if "display-message" in joined and "session_name" in joined:
+                                return fake_run_result(stdout="tidy-crown\n")
+                            if "display-message" in joined and "window_id" in joined:
+                                return fake_run_result(stdout="@1\n")
+                            if "list-windows" in joined:
+                                return fake_run_result(stdout="")
+                            if "rev-parse" in joined and "show-toplevel" in joined:
+                                return fake_run_result(stdout="/some/repo\n")
+                            if "symbolic-ref" in joined:
+                                return fake_run_result(stdout="main\n")
+                            if "rev-parse" in joined and "upstream" in joined:
+                                return fake_run_result(stdout="origin/main\n")
+                            if "fetch" in joined and "origin" in joined:
                                 return fake_run_result()
+                            if "rev-parse" in joined and "--verify" in joined and "refs/heads" not in joined:
+                                return fake_run_result(stdout="abc1234\n")
+                            if "rev-parse" in joined and "refs/heads" in joined:
+                                return fake_run_result(returncode=1)
+                            if "branch" in joined and "main" in joined:
+                                return fake_run_result()
+                            if "worktree" in joined and "add" in joined:
+                                return fake_run_result()
+                            if "new-window" in joined:
+                                return fake_run_result()
+                            if "send-keys" in joined:
+                                return fake_run_result()
+                            return fake_run_result()
 
-                            mock_run.side_effect = side_effect
-                            cmd_create(
-                                name="test-worker",
-                                repo="/some/repo",
-                                branch="test-worker",
-                                base="main",
-                                fmt="xml",
-                                tell="Hello",
-                            )
+                        mock_run.side_effect = side_effect
+                        cmd_create(
+                            name="test-worker",
+                            repo="/some/repo",
+                            branch="test-worker",
+                            base="main",
+                            fmt="xml",
+                            tell="Hello",
+                        )
 
         out = capsys.readouterr().out
         assert 'told="false"' in out
@@ -3128,112 +3121,6 @@ class TestWaitForSentinelDiagnosticMessage:
         assert "myworker.0" in reason, (
             f"Expected pane target 'myworker.0' in reason, got: {reason!r}"
         )
-
-
-class TestHookPresentInSettings:
-    """Tests for _hook_present_in_settings — settings.json parse for hook-missing heuristic."""
-
-    def test_returns_true_when_hook_present_in_session_start(self, tmp_path):
-        """Returns True when crew-lifecycle-hook appears in SessionStart hooks (Nix binary path)."""
-        settings = {
-            "hooks": {
-                "SessionStart": [
-                    {"command": "/nix/store/93h3d25i13vmdq3claflp803g7qwf1df-crew-lifecycle-hook/bin/crew-lifecycle-hook"}
-                ]
-            }
-        }
-        settings_file = tmp_path / "settings.json"
-        settings_file.write_text(__import__("json").dumps(settings))
-
-        with patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(tmp_path)}):
-            result = crew_module._hook_present_in_settings()
-
-        assert result is True
-
-    def test_returns_true_when_hook_present_as_nested_hooks_list(self, tmp_path):
-        """Returns True for nested hooks list format (as deployed by default.nix)."""
-        # default.nix deploys SessionStart as a list of hook-group dicts with
-        # a 'hooks' key each containing a list of command objects.
-        settings = {
-            "hooks": {
-                "SessionStart": [
-                    {
-                        "hooks": [
-                            {"type": "command", "timeout": 5000, "command": "/nix/store/abc123-crew-lifecycle-hook/bin/crew-lifecycle-hook"}
-                        ]
-                    }
-                ]
-            }
-        }
-        settings_file = tmp_path / "settings.json"
-        settings_file.write_text(__import__("json").dumps(settings))
-
-        with patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(tmp_path)}):
-            result = crew_module._hook_present_in_settings()
-
-        assert result is True
-
-    def test_returns_false_when_hook_absent_from_session_start(self, tmp_path):
-        """Returns False when SessionStart hooks do not include crew-lifecycle-hook."""
-        settings = {
-            "hooks": {
-                "SessionStart": [
-                    {"command": "/nix/store/xxx/some-other-hook"}
-                ]
-            }
-        }
-        settings_file = tmp_path / "settings.json"
-        settings_file.write_text(__import__("json").dumps(settings))
-
-        with patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(tmp_path)}):
-            result = crew_module._hook_present_in_settings()
-
-        assert result is False
-
-    def test_returns_false_when_no_session_start_hooks(self, tmp_path):
-        """Returns False when settings.json has no SessionStart key."""
-        settings = {"hooks": {}}
-        settings_file = tmp_path / "settings.json"
-        settings_file.write_text(__import__("json").dumps(settings))
-
-        with patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(tmp_path)}):
-            result = crew_module._hook_present_in_settings()
-
-        assert result is False
-
-    def test_returns_true_when_settings_json_missing(self, tmp_path):
-        """Falls back to True (assume hook present) when settings.json is absent."""
-        with patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(tmp_path)}):
-            result = crew_module._hook_present_in_settings()
-
-        assert result is True
-
-    def test_returns_true_when_settings_json_malformed(self, tmp_path):
-        """Falls back to True (assume hook present) when settings.json is malformed JSON."""
-        settings_file = tmp_path / "settings.json"
-        settings_file.write_text("not valid json {{")
-
-        with patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(tmp_path)}):
-            result = crew_module._hook_present_in_settings()
-
-        assert result is True
-
-    def test_handles_string_hook_entries(self, tmp_path):
-        """Handles plain string hook entries (not just dicts with 'command' key)."""
-        settings = {
-            "hooks": {
-                "SessionStart": [
-                    "/nix/store/xxx/crew-lifecycle-hook"
-                ]
-            }
-        }
-        settings_file = tmp_path / "settings.json"
-        settings_file.write_text(__import__("json").dumps(settings))
-
-        with patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(tmp_path)}):
-            result = crew_module._hook_present_in_settings()
-
-        assert result is True
 
 
 class TestCmdCreateSentinelCleanup:
@@ -3787,179 +3674,125 @@ class TestCmdResumeWorktreeFlag:
 
 
 # ---------------------------------------------------------------------------
-# _ensure_hook_in_settings — hook auto-installation idempotency
+# crew create — project-local settings.json unchanged (no provisioning)
 # ---------------------------------------------------------------------------
 
-class TestEnsureHookInSettings:
-    """Tests for _ensure_hook_in_settings: idempotency, absent-hook installation, error handling."""
+class TestCmdCreateNoLocalSettingsModification:
+    """Tests that crew create does NOT modify the project-local .claude/settings.json.
 
-    def test_no_op_when_hook_already_present_hook_group_format(self, tmp_path):
-        """Returns (True, None) without writing when crew-lifecycle-hook is already in SessionStart."""
-        settings = {
-            "hooks": {
-                "SessionStart": [
-                    {
-                        "hooks": [
-                            {"type": "command", "command": "crew-lifecycle-hook"}
-                        ]
-                    }
-                ]
-            }
-        }
-        settings_file = tmp_path / "settings.json"
-        settings_file.write_text(json.dumps(settings))
+    The crew-lifecycle-hook belongs in user-global ~/.claude/settings.json (where it
+    already lives). Project-local provisioning was removed to stop crew create from
+    dirtying git-tracked worktree files before any work has been done.
+    """
+
+    def _make_side_effect(self, worktree_path: str, branch: str = "test-worker"):
+        """Return a subprocess.run side_effect for a minimal crew create flow."""
+        def side_effect(cmd, **kwargs):
+            joined = " ".join(str(c) for c in cmd)
+            if "display-message" in joined and "session_name" in joined:
+                return fake_run_result(stdout="tidy-crown\n")
+            if "display-message" in joined and "window_id" in joined:
+                return fake_run_result(stdout="@1\n")
+            if "list-windows" in joined:
+                return fake_run_result(stdout="")
+            if "rev-parse" in joined and "show-toplevel" in joined:
+                return fake_run_result(stdout="/some/repo\n")
+            if "symbolic-ref" in joined:
+                return fake_run_result(stdout="main\n")
+            if "rev-parse" in joined and "upstream" in joined:
+                return fake_run_result(stdout="origin/main\n")
+            if "fetch" in joined and "origin" in joined:
+                return fake_run_result()
+            if "rev-parse" in joined and "--verify" in joined and "refs/heads" not in joined:
+                return fake_run_result(stdout="abc1234\n")
+            if "rev-parse" in joined and "refs/heads" in joined:
+                return fake_run_result(returncode=1)
+            if "branch" in joined and branch in joined:
+                return fake_run_result()
+            if "worktree" in joined and "add" in joined:
+                return fake_run_result()
+            if "new-window" in joined:
+                return fake_run_result()
+            if "send-keys" in joined:
+                return fake_run_result()
+            return fake_run_result()
+        return side_effect
+
+    def test_project_local_settings_json_not_created_by_crew_create(self, tmp_path):
+        """crew create does not create .claude/settings.json in the worktree — clean tree invariant."""
+        # Place the fake worktree inside tmp_path so os.path.exists returns False for it.
+        fake_worktree = str(tmp_path / "worktrees" / "some-org" / "some-repo" / "test-worker")
+        worktree_dot_claude = tmp_path / "worktrees" / "some-org" / "some-repo" / "test-worker" / ".claude"
+        settings_file = worktree_dot_claude / "settings.json"
+        assert not settings_file.exists(), "precondition: settings.json must not exist before create"
+
+        with patch("subprocess.run") as mock_run:
+            with patch("os.path.isdir", return_value=True):
+                with patch.object(crew_module, "resolve_worktree_path", return_value=(fake_worktree, False)):
+                    mock_run.side_effect = self._make_side_effect(fake_worktree)
+                    cmd_create(
+                        name="test-worker",
+                        repo="/some/repo",
+                        branch="test-worker",
+                        base="main",
+                        fmt="xml",
+                        tell=None,
+                    )
+
+        assert not settings_file.exists(), (
+            "crew create must not create project-local .claude/settings.json — "
+            "crew-lifecycle-hook belongs in user-global ~/.claude/settings.json only"
+        )
+
+    def test_project_local_settings_json_not_modified_when_preexisting(self, tmp_path):
+        """crew create does not modify a pre-existing .claude/settings.json — unchanged from pre-create state."""
+        # Place the fake worktree inside tmp_path so that the worktree-relative
+        # .claude/settings.json path is a real, monitorable path.
+        fake_worktree = str(tmp_path / "worktrees" / "test-worker-nonexistent")
+        worktree_dot_claude = tmp_path / "worktrees" / "test-worker-nonexistent" / ".claude"
+        worktree_dot_claude.mkdir(parents=True)
+        settings_file = worktree_dot_claude / "settings.json"
+        original_content = json.dumps({"someKey": "someValue"})
+        settings_file.write_text(original_content)
         mtime_before = settings_file.stat().st_mtime
 
-        ok, reason = _ensure_hook_in_settings(str(settings_file))
+        # Patch os.path.exists: return False for the worktree root itself
+        # (to avoid WORKTREE_EXISTS), but allow real lookups for everything else
+        # (including the .claude/settings.json we just created).
+        real_exists = os.path.exists
 
-        assert ok is True
-        assert reason is None
-        # File must NOT have been rewritten (idempotent).
+        def selective_exists(p):
+            if str(p) == fake_worktree:
+                return False
+            return real_exists(p)
+
+        with patch("subprocess.run") as mock_run:
+            with patch("os.path.isdir", return_value=True):
+                with patch.object(crew_module, "resolve_worktree_path", return_value=(fake_worktree, False)):
+                    # Patching os.path.exists so the worktree root appears non-existent
+                    # (prevents WORKTREE_EXISTS early-return) while the pre-existing
+                    # .claude/settings.json at the worktree-relative path is real.
+                    # If cmd_create were to write to that path the assertions below
+                    # would catch the regression.
+                    with patch("os.path.exists", side_effect=selective_exists):
+                        mock_run.side_effect = self._make_side_effect(fake_worktree)
+                        cmd_create(
+                            name="test-worker",
+                            repo="/some/repo",
+                            branch="test-worker",
+                            base="main",
+                            fmt="xml",
+                            tell=None,
+                        )
+
+        # File content and mtime must be unchanged — no modification allowed.
+        assert settings_file.read_text() == original_content, (
+            "crew create must not modify project-local .claude/settings.json — "
+            "file content changed, indicating unwanted provisioning"
+        )
         assert settings_file.stat().st_mtime == mtime_before, (
-            "settings.json was rewritten even though hook was already present"
-        )
-
-    def test_no_op_when_hook_present_as_flat_command(self, tmp_path):
-        """Returns (True, None) when crew-lifecycle-hook appears as a flat command string."""
-        settings = {
-            "hooks": {
-                "SessionStart": [
-                    {"command": "crew-lifecycle-hook", "type": "command"}
-                ]
-            }
-        }
-        settings_file = tmp_path / "settings.json"
-        settings_file.write_text(json.dumps(settings))
-        mtime_before = settings_file.stat().st_mtime
-
-        ok, reason = _ensure_hook_in_settings(str(settings_file))
-
-        assert ok is True
-        assert reason is None
-        assert settings_file.stat().st_mtime == mtime_before
-
-    def test_installs_hook_when_session_start_is_empty(self, tmp_path):
-        """Appends crew-lifecycle-hook to empty SessionStart list and writes the file."""
-        settings = {"hooks": {"SessionStart": []}}
-        settings_file = tmp_path / "settings.json"
-        settings_file.write_text(json.dumps(settings))
-
-        ok, reason = _ensure_hook_in_settings(str(settings_file))
-
-        assert ok is True
-        assert reason is None
-
-        # Re-read and verify hook is present.
-        written = json.loads(settings_file.read_text())
-        session_start = written.get("hooks", {}).get("SessionStart", [])
-        assert len(session_start) >= 1
-        found = False
-        for entry in session_start:
-            if isinstance(entry, dict):
-                for hook in entry.get("hooks", []):
-                    if isinstance(hook, dict) and "crew-lifecycle-hook" in hook.get("command", ""):
-                        found = True
-        assert found, f"crew-lifecycle-hook not found in written settings: {session_start}"
-
-    def test_installs_hook_when_session_start_missing_entirely(self, tmp_path):
-        """Creates SessionStart key and appends hook when SessionStart is absent from hooks."""
-        settings = {"enabledMcpjsonServers": ["context7"]}
-        settings_file = tmp_path / "settings.json"
-        settings_file.write_text(json.dumps(settings))
-
-        ok, reason = _ensure_hook_in_settings(str(settings_file))
-
-        assert ok is True
-        written = json.loads(settings_file.read_text())
-        session_start = written.get("hooks", {}).get("SessionStart", [])
-        found = any(
-            "crew-lifecycle-hook" in hook.get("command", "")
-            for entry in session_start if isinstance(entry, dict)
-            for hook in entry.get("hooks", []) if isinstance(hook, dict)
-        )
-        assert found, f"crew-lifecycle-hook not found after install: {session_start}"
-
-    def test_creates_settings_json_when_file_missing(self, tmp_path):
-        """Creates a minimal settings.json with SessionStart hook when the file doesn't exist."""
-        settings_file = tmp_path / ".claude" / "settings.json"
-        # Do NOT create the file — _ensure_hook_in_settings must create it.
-        assert not settings_file.exists()
-
-        ok, reason = _ensure_hook_in_settings(str(settings_file))
-
-        assert ok is True
-        assert settings_file.exists(), "settings.json was not created"
-
-        written = json.loads(settings_file.read_text())
-        session_start = written.get("hooks", {}).get("SessionStart", [])
-        found = any(
-            "crew-lifecycle-hook" in hook.get("command", "")
-            for entry in session_start if isinstance(entry, dict)
-            for hook in entry.get("hooks", []) if isinstance(hook, dict)
-        )
-        assert found, f"crew-lifecycle-hook not found in created settings.json: {session_start}"
-
-    def test_preserves_existing_hooks_when_adding(self, tmp_path):
-        """Existing SessionStart hooks are preserved when appending the lifecycle hook."""
-        settings = {
-            "hooks": {
-                "SessionStart": [
-                    {"hooks": [{"type": "command", "command": "other-hook"}]}
-                ]
-            }
-        }
-        settings_file = tmp_path / "settings.json"
-        settings_file.write_text(json.dumps(settings))
-
-        ok, _ = _ensure_hook_in_settings(str(settings_file))
-
-        assert ok is True
-        written = json.loads(settings_file.read_text())
-        session_start = written.get("hooks", {}).get("SessionStart", [])
-        # Both original hook and new lifecycle hook must be present.
-        all_commands = []
-        for entry in session_start:
-            if isinstance(entry, dict):
-                for hook in entry.get("hooks", []):
-                    if isinstance(hook, dict):
-                        all_commands.append(hook.get("command", ""))
-        assert "other-hook" in all_commands, f"Existing hook lost. Commands: {all_commands}"
-        assert any("crew-lifecycle-hook" in cmd for cmd in all_commands), (
-            f"crew-lifecycle-hook not added. Commands: {all_commands}"
-        )
-
-    def test_returns_false_on_malformed_json(self, tmp_path):
-        """Returns (False, reason) without raising when settings.json is malformed JSON."""
-        settings_file = tmp_path / "settings.json"
-        settings_file.write_text("{this is not valid json")
-
-        ok, reason = _ensure_hook_in_settings(str(settings_file))
-
-        assert ok is False
-        assert reason is not None
-        assert "malformed" in reason.lower() or "json" in reason.lower(), (
-            f"Expected malformed/json in reason, got: {reason!r}"
-        )
-
-    def test_idempotent_second_call_does_not_duplicate_hook(self, tmp_path):
-        """Calling _ensure_hook_in_settings twice does not duplicate the hook entry."""
-        settings = {"hooks": {"SessionStart": []}}
-        settings_file = tmp_path / "settings.json"
-        settings_file.write_text(json.dumps(settings))
-
-        _ensure_hook_in_settings(str(settings_file))
-        _ensure_hook_in_settings(str(settings_file))  # Second call must be a no-op.
-
-        written = json.loads(settings_file.read_text())
-        session_start = written.get("hooks", {}).get("SessionStart", [])
-        lifecycle_count = sum(
-            1
-            for entry in session_start if isinstance(entry, dict)
-            for hook in entry.get("hooks", []) if isinstance(hook, dict)
-            if "crew-lifecycle-hook" in hook.get("command", "")
-        )
-        assert lifecycle_count == 1, (
-            f"Expected exactly 1 lifecycle hook entry, got {lifecycle_count}: {session_start}"
+            "crew create must not modify project-local .claude/settings.json — "
+            "mtime changed, indicating a rewrite occurred"
         )
 
 
