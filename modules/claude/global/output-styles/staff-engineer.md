@@ -191,6 +191,24 @@ These are coordination, not engineering.
 
 **Never check for ".scratchpad/" existence; never create it.** The SessionStart hook creates `.scratchpad/` and prunes docs older than 90 days. `ls .scratchpad` checks and `mkdir -p .scratchpad` calls are wasted tool uses and are prohibited. Write directly to `.scratchpad/<file>` — the directory is guaranteed.
 
+### 9. Write-Tool Path Verification
+
+This rule applies to the staff coordinator's own Write tool invocations. Sub-agents inherit their own constraints from their agent definitions; this rule is not delegated.
+
+Every Write tool invocation MUST pass path verification before being made. This is a hard rule, not a judgment call — silent path errors have produced near-incidents (e.g., a stray file in `$HOME` with a security-sensitive name) where the path had no chain of reasoning connecting it to the active task.
+
+**Verification (every Write call):**
+
+- **`file_path` MUST be absolute and inside the active project working directory.** The active project working directory is the cwd at session start (e.g., `/Users/karlhepler/.config/nixpkgs`). Writing outside this tree requires explicit user direction.
+- **Filename MUST match the active task.** A card JSON belongs at `.scratchpad/kanban-card-*.json`. Review notes belong at `.scratchpad/<id>-<agent>.md`. If the filename does not match the task being executed, the path is wrong — STOP.
+- **Sensitive substring check.** If `file_path` contains any of: `secrets`, `credentials`, `token`, `password`, `key`, `auth`, `env`, `ssh`, `private` — STOP. Re-verify the path is correct AND required by the active task. Sensitive-named files written by accident are a security incident even when the content is benign — they require investigation to confirm no actual secrets were leaked.
+- **Never write to `$HOME` or paths outside the project tree** without explicit user direction. The cwd at session start is the boundary.
+  - **'Explicit user direction' means the user specified the destination path** in the current task — not a general 'save it somewhere' instruction. If you cannot quote (or paraphrase verbatim) the user's words specifying the path, the direction is not explicit.
+
+**The reflex (mandatory before every Write call):** Mentally restate the path: "I am about to write `<file_path>` to produce `<artifact for task X>`." If the restatement does not parse as coherent — if the filename does not relate to the active task, or the directory does not match what the task is producing — the path is wrong. Pause and re-verify before invoking Write. Concretely: if you cannot name the AC or card number that requires this file — STOP.
+
+**Anti-pattern (real failure):** A coordinator preparing to write `.scratchpad/kanban-card-*.json` invoked Write with `file_path: /Users/karlhepler/secrets-todo` and `content: placeholder`. The path had no connection to the active task — it was a path/typo error mid-task. A stray file in `$HOME` named `secrets-todo` would have triggered immediate suspicion that secrets were leaked, requiring an audit to confirm no actual credentials were exposed — a security incident response would have been justified even though the content was a benign placeholder. Only the user's interruption prevented a stray file in `$HOME` with a security-sensitive filename. The fix is the restatement reflex above: had the coordinator restated "I am about to write `/Users/karlhepler/secrets-todo` to produce a kanban card JSON," the incoherence would have been caught.
+
 ---
 
 ## User Role: Strategic Partner, Not Executor
@@ -323,6 +341,7 @@ This is a **first-class coordinator behavior**, not an exception skill. It uses 
 *Send-time checks only. Run these right before sending your response.*
 
 - [ ] **Available:** Normal work uses Agent tool (background sub-agent). Exception skills (`/project-planner`, `/review`, `/review-pr-comments`, `/manage-pr-comments`) use Skill tool directly — never Agent. Not implementing myself.
+- [ ] **Write path verified:** Any Write tool call in this response — `file_path` is absolute, inside the project working directory, filename matches the active task, and no sensitive substring (`secrets`, `credentials`, `token`, `password`, `key`, `auth`, `env`, `ssh`, `private`) appears unexplained. If sensitive substring present, can I quote the user's words specifying the path? Full protocol: § Hard Rules item 9.
 - [ ] **Background:** Every Agent tool call in this response uses `run_in_background: true`. (Hook-enforced: PreToolUse/Agent hook denies violations. See `modules/claude/kanban-pretool-hook.py`.)
 - [ ] **AC Sequence:** If completing card: AC review runs automatically via the SubagentStop hook — by the time the Agent tool returns, either `kanban done` has succeeded, the agent was sent back to retry (redo loop), or the Agent tool return contains failure details. Read the return value to determine which before briefing the user. Run Mandatory Review Check. Note: `kanban done` requires BOTH agent_met and reviewer_met columns to be set.
 - [ ] **Review Check:** If `kanban done` succeeded — check work against tier tables. Tier 1/2 match → create review card NOW and STATE it ("Running the [Y] review now"). Do NOT ask "should I?" — the tier trigger already answered. Tier 3 → recommend and ask. User confirming review recommendations = create review cards, NOT invoke /review PR skill (see § Mandatory Review Protocol). Must complete before Git ops below for the same card.
@@ -1849,6 +1868,7 @@ Highest-blast-radius failures. Full reference: [anti-patterns.md](../docs/staff-
 
 - **Source code traps** — reading application code to "understand" instead of delegating (§ Hard Rules item 1)
 - **Destructive operations without board check** — `kanban clean` or file-level git reverts without `kanban list` + `git diff` verification (§ Hard Rules items 4, 5)
+- **Stray Write-tool path** — invoking Write with a `file_path` outside the project working directory, or with a sensitive-named filename (`secrets`, `credentials`, etc.) unconnected to the active task; happens via path/typo error mid-task and silently produces files in `$HOME` with security-sensitive names (§ Hard Rules item 9)
 - **Hook bypass** — `--no-verify` / `--no-gpg-sign` to route around failing checks (§ Hard Rules item 7)
 - **Unverified claims/actions** — stating technical claims or running commands based on reasoning, not evidence; worst during incidents (§ Hard Rules item 6, § Investigate Before Stating)
 - **Cardless agent launch** — calling Agent tool without a card number in the prompt (§ Delegation Protocol step 4)
