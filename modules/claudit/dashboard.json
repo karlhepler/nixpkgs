@@ -61,7 +61,7 @@
         "x": 0,
         "y": 1,
         "w": 6,
-        "h": 4
+        "h": 6
       },
       "datasource": {
         "type": "frser-sqlite-datasource",
@@ -125,7 +125,7 @@
         "x": 6,
         "y": 1,
         "w": 6,
-        "h": 4
+        "h": 6
       },
       "datasource": {
         "type": "frser-sqlite-datasource",
@@ -187,8 +187,8 @@
       "description": "Daily spend trend across all Claude Code sessions. Spikes usually indicate large Opus delegations or sessions with many turns \u2014 check the Cost by Agent Type panel to identify the driver.",
       "gridPos": {
         "x": 0,
-        "y": 5,
-        "w": 24,
+        "y": 7,
+        "w": 12,
         "h": 8
       },
       "datasource": {
@@ -234,7 +234,7 @@
       "description": "Daily count of 'done' events vs 'redo' events. A declining redo line alongside a stable or rising done line means quality is improving \u2014 fewer cards are being sent back for rework.",
       "gridPos": {
         "x": 12,
-        "y": 22,
+        "y": 7,
         "w": 12,
         "h": 8
       },
@@ -280,7 +280,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 13,
+        "y": 14,
         "w": 24,
         "h": 1
       },
@@ -294,7 +294,7 @@
       "description": "7-day rolling redo rate (redo_count / done_count * 100). Smooths daily noise. Trending down means quality is improving.",
       "gridPos": {
         "x": 0,
-        "y": 14,
+        "y": 15,
         "w": 12,
         "h": 8
       },
@@ -354,13 +354,13 @@
     {
       "id": 62,
       "type": "stat",
-      "title": "Redo Rate",
+      "title": "Redo Rate (7d)",
       "description": "Ratio of redo events to done events across all time. A high redo rate signals quality issues \u2014 cards are frequently sent back for rework before acceptance.",
       "gridPos": {
-        "x": 0,
-        "y": 22,
+        "x": 12,
+        "y": 1,
         "w": 6,
-        "h": 4
+        "h": 6
       },
       "datasource": {
         "type": "frser-sqlite-datasource",
@@ -369,8 +369,8 @@
       "targets": [
         {
           "refId": "A",
-          "rawQueryText": "SELECT CAST(SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS REAL) / NULLIF(SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END), 0) * 100 AS redo_rate FROM kanban_card_events",
-          "queryText": "SELECT CAST(SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS REAL) / NULLIF(SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END), 0) * 100 AS redo_rate FROM kanban_card_events",
+          "rawQueryText": "SELECT CAST(SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS REAL) / NULLIF(SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END), 0) * 100 AS redo_rate FROM kanban_card_events WHERE recorded_at >= datetime('now', '-7 days')",
+          "queryText": "SELECT CAST(SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS REAL) / NULLIF(SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END), 0) * 100 AS redo_rate FROM kanban_card_events WHERE recorded_at >= datetime('now', '-7 days')",
           "queryType": "table",
           "timeColumns": []
         }
@@ -422,7 +422,7 @@
       "description": "Percentage of cards sent back for rework, broken down by card type (work, review, research). A high redo rate for a specific card type points to systematic quality gaps \u2014 either the AC criteria are poorly specified for that type or agents struggle with that category of task.",
       "gridPos": {
         "x": 0,
-        "y": 26,
+        "y": 23,
         "w": 12,
         "h": 8
       },
@@ -485,7 +485,7 @@
       "description": "Redo rate per agent persona, sorted by redo rate descending. Agents with consistently high redo rates are candidates for prompt improvements, better AC specification, or model upgrades. Compare redo_count against done_count to avoid being misled by low-volume agents.",
       "gridPos": {
         "x": 12,
-        "y": 30,
+        "y": 23,
         "w": 12,
         "h": 8
       },
@@ -543,8 +543,8 @@
       "description": "Per-agent weekly redo rate. Top 4-5 agents by redo count shown as separate lines.",
       "gridPos": {
         "x": 0,
-        "y": 34,
-        "w": 12,
+        "y": 31,
+        "w": 24,
         "h": 8
       },
       "datasource": {
@@ -590,7 +590,7 @@
       "description": "Per-agent cost and redo rate side by side. Look for double-penalty cases: high cost + high redo rate.",
       "gridPos": {
         "x": 12,
-        "y": 14,
+        "y": 15,
         "w": 12,
         "h": 8
       },
@@ -1005,6 +1005,42 @@
                 }
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cost_7d"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Last 7d"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cost_prior_7d"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Prior 7d"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "delta_pct"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Change %"
+              }
+            ]
           }
         ]
       }
@@ -1075,7 +1111,7 @@
       "gridPos": {
         "x": 0,
         "y": 63,
-        "w": 12,
+        "w": 24,
         "h": 8
       },
       "datasource": {
@@ -1322,7 +1358,7 @@
       "id": 72,
       "type": "table",
       "title": "Average Lead Time by Agent",
-      "description": "Week-over-week average lead time delta per agent (minutes from card start to done). Green delta_pct means faster. Uses event_type = 'start' as the anchor (the correct kanban CLI event).",
+      "description": "Week-over-week average lead time delta per agent (milliseconds from card start to done). Green delta_pct means faster. Uses event_type = 'start' as the anchor (the correct kanban CLI event).",
       "gridPos": {
         "x": 12,
         "y": 80,
@@ -1336,8 +1372,8 @@
       "targets": [
         {
           "refId": "A",
-          "rawQueryText": "WITH last_7d AS (SELECT kce_done.agent, ROUND(AVG((julianday(kce_done.recorded_at) - julianday(kce_start.recorded_at)) * 1440), 1) AS avg_lead_minutes_7d FROM kanban_card_events kce_done INNER JOIN (SELECT card_number, MIN(recorded_at) AS recorded_at FROM kanban_card_events WHERE event_type = 'start' GROUP BY card_number) kce_start ON kce_done.card_number = kce_start.card_number WHERE kce_done.event_type = 'done' AND kce_done.recorded_at >= datetime('now', '-7 days') GROUP BY kce_done.agent), prior_7d AS (SELECT kce_done.agent, ROUND(AVG((julianday(kce_done.recorded_at) - julianday(kce_start.recorded_at)) * 1440), 1) AS avg_lead_minutes_prior_7d FROM kanban_card_events kce_done INNER JOIN (SELECT card_number, MIN(recorded_at) AS recorded_at FROM kanban_card_events WHERE event_type = 'start' GROUP BY card_number) kce_start ON kce_done.card_number = kce_start.card_number WHERE kce_done.event_type = 'done' AND kce_done.recorded_at >= datetime('now', '-14 days') AND kce_done.recorded_at < datetime('now', '-7 days') GROUP BY kce_done.agent) SELECT l.agent, l.avg_lead_minutes_7d, COALESCE(p.avg_lead_minutes_prior_7d, 0) AS avg_lead_minutes_prior_7d, CASE WHEN p.avg_lead_minutes_prior_7d IS NULL OR p.avg_lead_minutes_prior_7d = 0 THEN NULL ELSE ((l.avg_lead_minutes_7d - p.avg_lead_minutes_prior_7d) / p.avg_lead_minutes_prior_7d) * 100 END AS delta_pct FROM last_7d l LEFT JOIN prior_7d p ON l.agent = p.agent UNION ALL SELECT p.agent, 0 AS avg_lead_minutes_7d, p.avg_lead_minutes_prior_7d, NULL AS delta_pct FROM prior_7d p LEFT JOIN last_7d l ON p.agent = l.agent WHERE l.agent IS NULL ORDER BY avg_lead_minutes_7d DESC",
-          "queryText": "WITH last_7d AS (SELECT kce_done.agent, ROUND(AVG((julianday(kce_done.recorded_at) - julianday(kce_start.recorded_at)) * 1440), 1) AS avg_lead_minutes_7d FROM kanban_card_events kce_done INNER JOIN (SELECT card_number, MIN(recorded_at) AS recorded_at FROM kanban_card_events WHERE event_type = 'start' GROUP BY card_number) kce_start ON kce_done.card_number = kce_start.card_number WHERE kce_done.event_type = 'done' AND kce_done.recorded_at >= datetime('now', '-7 days') GROUP BY kce_done.agent), prior_7d AS (SELECT kce_done.agent, ROUND(AVG((julianday(kce_done.recorded_at) - julianday(kce_start.recorded_at)) * 1440), 1) AS avg_lead_minutes_prior_7d FROM kanban_card_events kce_done INNER JOIN (SELECT card_number, MIN(recorded_at) AS recorded_at FROM kanban_card_events WHERE event_type = 'start' GROUP BY card_number) kce_start ON kce_done.card_number = kce_start.card_number WHERE kce_done.event_type = 'done' AND kce_done.recorded_at >= datetime('now', '-14 days') AND kce_done.recorded_at < datetime('now', '-7 days') GROUP BY kce_done.agent) SELECT l.agent, l.avg_lead_minutes_7d, COALESCE(p.avg_lead_minutes_prior_7d, 0) AS avg_lead_minutes_prior_7d, CASE WHEN p.avg_lead_minutes_prior_7d IS NULL OR p.avg_lead_minutes_prior_7d = 0 THEN NULL ELSE ((l.avg_lead_minutes_7d - p.avg_lead_minutes_prior_7d) / p.avg_lead_minutes_prior_7d) * 100 END AS delta_pct FROM last_7d l LEFT JOIN prior_7d p ON l.agent = p.agent UNION ALL SELECT p.agent, 0 AS avg_lead_minutes_7d, p.avg_lead_minutes_prior_7d, NULL AS delta_pct FROM prior_7d p LEFT JOIN last_7d l ON p.agent = l.agent WHERE l.agent IS NULL ORDER BY avg_lead_minutes_7d DESC",
+          "rawQueryText": "WITH last_7d AS (SELECT kce_done.agent, ROUND(AVG((julianday(kce_done.recorded_at) - julianday(kce_start.recorded_at)) * 86400000.0), 0) AS avg_lead_ms_7d FROM kanban_card_events kce_done INNER JOIN (SELECT card_number, MIN(recorded_at) AS recorded_at FROM kanban_card_events WHERE event_type = 'start' GROUP BY card_number) kce_start ON kce_done.card_number = kce_start.card_number WHERE kce_done.event_type = 'done' AND kce_done.recorded_at >= datetime('now', '-7 days') GROUP BY kce_done.agent), prior_7d AS (SELECT kce_done.agent, ROUND(AVG((julianday(kce_done.recorded_at) - julianday(kce_start.recorded_at)) * 86400000.0), 0) AS avg_lead_ms_prior_7d FROM kanban_card_events kce_done INNER JOIN (SELECT card_number, MIN(recorded_at) AS recorded_at FROM kanban_card_events WHERE event_type = 'start' GROUP BY card_number) kce_start ON kce_done.card_number = kce_start.card_number WHERE kce_done.event_type = 'done' AND kce_done.recorded_at >= datetime('now', '-14 days') AND kce_done.recorded_at < datetime('now', '-7 days') GROUP BY kce_done.agent) SELECT l.agent, l.avg_lead_ms_7d, COALESCE(p.avg_lead_ms_prior_7d, 0) AS avg_lead_ms_prior_7d, CASE WHEN p.avg_lead_ms_prior_7d IS NULL OR p.avg_lead_ms_prior_7d = 0 THEN NULL ELSE ((l.avg_lead_ms_7d - p.avg_lead_ms_prior_7d) / p.avg_lead_ms_prior_7d) * 100 END AS delta_pct FROM last_7d l LEFT JOIN prior_7d p ON l.agent = p.agent UNION ALL SELECT p.agent, 0 AS avg_lead_ms_7d, p.avg_lead_ms_prior_7d, NULL AS delta_pct FROM prior_7d p LEFT JOIN last_7d l ON p.agent = l.agent WHERE l.agent IS NULL ORDER BY avg_lead_ms_7d DESC",
+          "queryText": "WITH last_7d AS (SELECT kce_done.agent, ROUND(AVG((julianday(kce_done.recorded_at) - julianday(kce_start.recorded_at)) * 86400000.0), 0) AS avg_lead_ms_7d FROM kanban_card_events kce_done INNER JOIN (SELECT card_number, MIN(recorded_at) AS recorded_at FROM kanban_card_events WHERE event_type = 'start' GROUP BY card_number) kce_start ON kce_done.card_number = kce_start.card_number WHERE kce_done.event_type = 'done' AND kce_done.recorded_at >= datetime('now', '-7 days') GROUP BY kce_done.agent), prior_7d AS (SELECT kce_done.agent, ROUND(AVG((julianday(kce_done.recorded_at) - julianday(kce_start.recorded_at)) * 86400000.0), 0) AS avg_lead_ms_prior_7d FROM kanban_card_events kce_done INNER JOIN (SELECT card_number, MIN(recorded_at) AS recorded_at FROM kanban_card_events WHERE event_type = 'start' GROUP BY card_number) kce_start ON kce_done.card_number = kce_start.card_number WHERE kce_done.event_type = 'done' AND kce_done.recorded_at >= datetime('now', '-14 days') AND kce_done.recorded_at < datetime('now', '-7 days') GROUP BY kce_done.agent) SELECT l.agent, l.avg_lead_ms_7d, COALESCE(p.avg_lead_ms_prior_7d, 0) AS avg_lead_ms_prior_7d, CASE WHEN p.avg_lead_ms_prior_7d IS NULL OR p.avg_lead_ms_prior_7d = 0 THEN NULL ELSE ((l.avg_lead_ms_7d - p.avg_lead_ms_prior_7d) / p.avg_lead_ms_prior_7d) * 100 END AS delta_pct FROM last_7d l LEFT JOIN prior_7d p ON l.agent = p.agent UNION ALL SELECT p.agent, 0 AS avg_lead_ms_7d, p.avg_lead_ms_prior_7d, NULL AS delta_pct FROM prior_7d p LEFT JOIN last_7d l ON p.agent = l.agent WHERE l.agent IS NULL ORDER BY avg_lead_ms_7d DESC",
           "queryType": "table",
           "timeColumns": []
         }
@@ -1345,7 +1381,7 @@
       "options": {
         "sortBy": [
           {
-            "displayName": "avg_lead_minutes_7d",
+            "displayName": "avg_lead_ms_7d",
             "desc": true
           }
         ]
@@ -1360,32 +1396,24 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "avg_lead_minutes_7d"
+              "options": "avg_lead_ms_7d"
             },
             "properties": [
               {
                 "id": "unit",
-                "value": "m"
-              },
-              {
-                "id": "decimals",
-                "value": 1
+                "value": "dtdurationms"
               }
             ]
           },
           {
             "matcher": {
               "id": "byName",
-              "options": "avg_lead_minutes_prior_7d"
+              "options": "avg_lead_ms_prior_7d"
             },
             "properties": [
               {
                 "id": "unit",
-                "value": "m"
-              },
-              {
-                "id": "decimals",
-                "value": 1
+                "value": "dtdurationms"
               }
             ]
           },
@@ -1434,6 +1462,42 @@
                 }
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "avg_lead_ms_7d"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Last 7d"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "avg_lead_ms_prior_7d"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Prior 7d"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "delta_pct"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Change %"
+              }
+            ]
           }
         ]
       }
@@ -1441,12 +1505,12 @@
     {
       "id": 107,
       "type": "timeseries",
-      "title": "Weekly Lead Time Trend (median minutes)",
-      "description": "Average lead time per week, in minutes (SQLite has no native MEDIAN; AVG is used as an approximation). Tells you whether throughput is improving or degrading.",
+      "title": "Weekly Lead Time Trend (median duration)",
+      "description": "Average lead time per week, in milliseconds displayed as human-readable duration (SQLite has no native MEDIAN; AVG is used as an approximation). Tells you whether throughput is improving or degrading.",
       "gridPos": {
         "x": 0,
         "y": 88,
-        "w": 12,
+        "w": 24,
         "h": 8
       },
       "datasource": {
@@ -1456,8 +1520,8 @@
       "targets": [
         {
           "refId": "A",
-          "rawQueryText": "WITH lead_times AS (SELECT kce_done.card_number, strftime('%Y-W%W', kce_done.recorded_at, 'localtime') AS week, MIN(kce_done.recorded_at) AS week_done_at, ((julianday(kce_done.recorded_at) - julianday(kce_start.recorded_at)) * 1440.0) AS lead_minutes FROM kanban_card_events kce_done INNER JOIN (SELECT card_number, MIN(recorded_at) AS recorded_at FROM kanban_card_events WHERE event_type = 'start' GROUP BY card_number) kce_start ON kce_done.card_number = kce_start.card_number WHERE kce_done.event_type = 'done' AND kce_done.recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND kce_done.recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY kce_done.card_number, week) SELECT strftime('%Y-%m-%dT00:00:00Z', date(week_done_at, 'localtime', 'weekday 0', '-6 days')) AS time, AVG(lead_minutes) AS avg_lead_minutes FROM lead_times GROUP BY week ORDER BY time ASC",
-          "queryText": "WITH lead_times AS (SELECT kce_done.card_number, strftime('%Y-W%W', kce_done.recorded_at, 'localtime') AS week, MIN(kce_done.recorded_at) AS week_done_at, ((julianday(kce_done.recorded_at) - julianday(kce_start.recorded_at)) * 1440.0) AS lead_minutes FROM kanban_card_events kce_done INNER JOIN (SELECT card_number, MIN(recorded_at) AS recorded_at FROM kanban_card_events WHERE event_type = 'start' GROUP BY card_number) kce_start ON kce_done.card_number = kce_start.card_number WHERE kce_done.event_type = 'done' AND kce_done.recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND kce_done.recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY kce_done.card_number, week) SELECT strftime('%Y-%m-%dT00:00:00Z', date(week_done_at, 'localtime', 'weekday 0', '-6 days')) AS time, AVG(lead_minutes) AS avg_lead_minutes FROM lead_times GROUP BY week ORDER BY time ASC",
+          "rawQueryText": "WITH lead_times AS (SELECT kce_done.card_number, strftime('%Y-W%W', kce_done.recorded_at, 'localtime') AS week, MIN(kce_done.recorded_at) AS week_done_at, ((julianday(kce_done.recorded_at) - julianday(kce_start.recorded_at)) * 86400000.0) AS lead_ms FROM kanban_card_events kce_done INNER JOIN (SELECT card_number, MIN(recorded_at) AS recorded_at FROM kanban_card_events WHERE event_type = 'start' GROUP BY card_number) kce_start ON kce_done.card_number = kce_start.card_number WHERE kce_done.event_type = 'done' AND kce_done.recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND kce_done.recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY kce_done.card_number, week) SELECT strftime('%Y-%m-%dT00:00:00Z', date(week_done_at, 'localtime', 'weekday 0', '-6 days')) AS time, AVG(lead_ms) AS avg_lead_ms FROM lead_times GROUP BY week ORDER BY time ASC",
+          "queryText": "WITH lead_times AS (SELECT kce_done.card_number, strftime('%Y-W%W', kce_done.recorded_at, 'localtime') AS week, MIN(kce_done.recorded_at) AS week_done_at, ((julianday(kce_done.recorded_at) - julianday(kce_start.recorded_at)) * 86400000.0) AS lead_ms FROM kanban_card_events kce_done INNER JOIN (SELECT card_number, MIN(recorded_at) AS recorded_at FROM kanban_card_events WHERE event_type = 'start' GROUP BY card_number) kce_start ON kce_done.card_number = kce_start.card_number WHERE kce_done.event_type = 'done' AND kce_done.recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND kce_done.recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY kce_done.card_number, week) SELECT strftime('%Y-%m-%dT00:00:00Z', date(week_done_at, 'localtime', 'weekday 0', '-6 days')) AS time, AVG(lead_ms) AS avg_lead_ms FROM lead_times GROUP BY week ORDER BY time ASC",
           "queryType": "time series",
           "timeColumns": [
             "time"
@@ -1476,50 +1540,9 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "m",
+          "unit": "dtdurationms",
           "color": {
             "mode": "palette-classic"
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 74,
-      "type": "table",
-      "title": "Card Flow",
-      "description": "Recent cards with their events, showing the flow from creation through to completion. Cards with many redo events before done indicate quality issues or under-specified task definitions.",
-      "gridPos": {
-        "x": 0,
-        "y": 140,
-        "w": 24,
-        "h": 8
-      },
-      "datasource": {
-        "type": "frser-sqlite-datasource",
-        "uid": "claudit-sqlite"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "SELECT card_number, kanban_session, event_type, agent, model, recorded_at FROM kanban_card_events WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) ORDER BY recorded_at DESC LIMIT 100",
-          "queryText": "SELECT card_number, kanban_session, event_type, agent, model, recorded_at FROM kanban_card_events WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) ORDER BY recorded_at DESC LIMIT 100",
-          "queryType": "table",
-          "timeColumns": []
-        }
-      ],
-      "options": {
-        "sortBy": [
-          {
-            "displayName": "recorded_at",
-            "desc": true
-          }
-        ]
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "filterable": true
           }
         },
         "overrides": []
@@ -1648,7 +1671,8 @@
                 "value": 70
               }
             ]
-          }
+          },
+          "noValue": "No cache data"
         },
         "overrides": []
       }
@@ -1922,8 +1946,8 @@
       "title": "Turns Per Agent",
       "description": "Week-over-week turn count delta per agent role. turns_7d vs turns_prior_7d shows whether an agent is consuming more or fewer API round-trips. Filter by repo using the Repo variable above.",
       "gridPos": {
-        "x": 0,
-        "y": 131,
+        "x": 12,
+        "y": 123,
         "w": 12,
         "h": 8
       },
@@ -2032,6 +2056,42 @@
                 }
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "turns_7d"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Last 7d"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "turns_prior_7d"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Prior 7d"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "delta_pct"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Change %"
+              }
+            ]
           }
         ]
       }
@@ -2042,9 +2102,9 @@
       "title": "Agent Activity Over Time",
       "description": "Daily count of agent runs per agent type. A declining trend for a particular agent type may signal that delegation to that specialist is being reduced, intentionally or not.",
       "gridPos": {
-        "x": 12,
-        "y": 123,
-        "w": 12,
+        "x": 0,
+        "y": 131,
+        "w": 24,
         "h": 8
       },
       "datasource": {
@@ -2094,7 +2154,97 @@
         "h": 1
       },
       "datasource": null,
-      "panels": []
+      "panels": [
+        {
+          "id": 74,
+          "type": "table",
+          "title": "Card Flow",
+          "description": "Recent cards with their events, showing the flow from creation through to completion. Cards with many redo events before done indicate quality issues or under-specified task definitions.",
+          "gridPos": {
+            "x": 0,
+            "y": 140,
+            "w": 24,
+            "h": 8
+          },
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claudit-sqlite"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "rawQueryText": "SELECT card_number, kanban_session, event_type, agent, model, recorded_at FROM kanban_card_events WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) ORDER BY recorded_at DESC LIMIT 100",
+              "queryText": "SELECT card_number, kanban_session, event_type, agent, model, recorded_at FROM kanban_card_events WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) ORDER BY recorded_at DESC LIMIT 100",
+              "queryType": "table",
+              "timeColumns": []
+            }
+          ],
+          "options": {
+            "sortBy": [
+              {
+                "displayName": "recorded_at",
+                "desc": true
+              }
+            ]
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "filterable": true
+              }
+            },
+            "overrides": []
+          }
+        }
+      ]
+    },
+    {
+      "id": 300,
+      "type": "stat",
+      "title": "Cards Done (7d)",
+      "description": "Total cards completed (done events) in the last 7 days. Measures throughput velocity.",
+      "gridPos": {
+        "x": 18,
+        "y": 1,
+        "w": 6,
+        "h": 6
+      },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "claudit-sqlite"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawQueryText": "SELECT COUNT(*) AS done_count FROM kanban_card_events WHERE event_type = 'done' AND recorded_at >= datetime('now', '-7 days')",
+          "queryText": "SELECT COUNT(*) AS done_count FROM kanban_card_events WHERE event_type = 'done' AND recorded_at >= datetime('now', '-7 days')",
+          "queryType": "table",
+          "timeColumns": []
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "orientation": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      }
     }
   ],
   "templating": {
