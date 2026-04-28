@@ -348,7 +348,7 @@ Capturing a finding is a distinct act from executing on it.
 - [ ] **Destructive Git Ops** — About to run `git checkout --`, `git restore`, `git reset --`, `git stash drop/push/save`, or `git clean`? Check ALL sessions' boards for overlapping editFiles; run `git diff` on targets; if uncommitted work exists STOP; see § Hard Rules item 5.
 - [ ] **Re-review detection** — About to create a review card? Target file reviewed earlier this session AND changes are applied findings? STOP — commit directly; see § Mandatory Review Protocol.
 - [ ] **Cancel Gate** — About to `kanban cancel`? Use only for abandoned work or `todo` cards with no agent launched; completed work must reach `kanban done`; see § Card Lifecycle.
-- [ ] **Kanban CLI Syntax** — About to run a non-routine kanban subcommand (`criteria add/remove/pass/fail/verify`, `cancel`, `redo`, `defer`, `rejections`, `agent`, `rename`, `report`)? Run `/kanban-cli` first to refresh syntax; fall back to `kanban <subcommand> --help` if unavailable.
+- [ ] **Kanban CLI Syntax** — About to run a non-routine kanban subcommand? (`criteria add`, `criteria remove`, `criteria pass`, `criteria fail`, `criteria verify`, `cancel`, `redo`, `defer`, `rejections`, `agent`, `rename`, `report`). The /kanban-cli skill body is auto-loaded at SessionStart and remains in context. **Consult that skill body FIRST — never reach for `--help` when the skill is available.** `--help` is a fallback only when the skill genuinely cannot be consulted. The flag conventions differ between similar commands and the skill captures every gotcha (e.g., `criteria remove` reason is positional; `criteria fail` reason is a flag; `criteria add` text is plain text NOT JSON). Routine subcommands exempt from this rule: `do`, `todo`, `list`, `show`, `start`, `done`, `criteria check/uncheck`.
 - [ ] **Delegation** — About to use Agent tool? Card must exist first; create card then delegate with card number; see § Exception Skills for Skill tool usage. (Hook-enforced.)
 - [ ] **Stay Engaged** — Response ends at delegation? Add follow-up conversation; see § Stay Engaged.
 - [ ] **Decision Questions** — Asked a decision question last response that user didn't address? Re-ask via same AskUserQuestion call; see § Decision Questions.
@@ -675,6 +675,8 @@ If a tool use is denied or you receive a permission error, STOP IMMEDIATELY. Rep
 If a `kanban criteria check` command returns unexpected output or fails in a way that looks like a tooling issue rather than a code problem (e.g., weird regex behavior, binary paths you don't recognize, or messages about `.kanban-wrapped`), STOP and describe what happened in your final return. Do NOT investigate the kanban CLI, read `.kanban-wrapped`, trace kanban internals, or try `which kanban`. kanban is not your concern; the work is.
 
 After completing all AC, end your final response with the Final Return Format (see § Delegation Protocol → Step 4 → Final Return Format).
+
+**Git operations are the coordinator's responsibility — DO NOT commit.** Do NOT run `git commit`, `git push`, `git add`, `git rebase`, or any state-mutating git command. The coordinator stages and commits your changes after the SubagentStop hook fires. If you have changes you want committed, leave them in the working tree (modified, unstaged). Read-only git commands (`git status`, `git diff`, `git log`, `git show`) are fine.
 ```
 
 The staff engineer fills in actual card number and session name — the sub-agent runs these commands verbatim without template substitution. The PreToolUse hook automatically injects the card's full content (action, intent, AC) into the sub-agent's context at startup — no `kanban show` step needed.
@@ -855,6 +857,8 @@ The default is parallel, not serial. When a request contains multiple independen
 **Anti-pattern: 'they ship in one PR → one card.'** Wrong. One PR can be assembled from N parallel cards. Bundling for shipping convenience does not justify serializing the work.
 
 **Anti-pattern: 'they share discovery work.'** Wrong. Discovery (reading existing patterns, locating files) is a small fraction of total work; each agent can do its own discovery in parallel. Serializing to share discovery is a false economy.
+
+**Anti-pattern: 'multi-file audit / review = one card by default.'** The default for auditing/reviewing N files is N parallel cards (one per file). Per-file findings are typically independent; cross-file synthesis is coordinator-level work after the parallel reports return. Bundle into one card only with explicit justification (shared in-flight state, mandatory sequencing across files, or single-agent continuity benefit that genuinely outweighs parallel speedup). Lean parallel; bundle is the exception, not the rule.
 
 **The decomposition question (asked BEFORE creating any card):**
 
@@ -1248,7 +1252,9 @@ The debugger performs hypothesis-testing EXPERIMENTS as part of its methodology.
     "mov_commands": [{"cmd": "rg X && rg Y && git diff --stat", "timeout": 30}]
   }
   ```
-  Reason: compound AND-chain — any failure masks which part failed. Prefer splitting compound checks into separate AC criteria, or into separate entries in the `mov_commands` array — failures are individually actionable. Compound AND-chained shell expressions inside a single `cmd` are discouraged (any failure masks which part failed) but not forbidden where commands are genuinely coupled.
+  Reason: compound AND-chain — any failure masks which part failed. Prefer splitting compound checks into separate AC criteria, or into separate entries in the `mov_commands` array — failures are individually actionable.
+
+  **HARD-PROHIBITED.** `&&` (AND-chain) is rejected by the kanban CLI validator on `kanban do/todo --file`. Split into separate `mov_commands` array entries — one command per entry. The validator error message includes the exact rewrite pattern. Pipes (`|`), redirects (`>`, `2>&1`), and other shell features inside a single `cmd` remain permitted; only `&&` is structurally rejected.
   ```json
   {
     "text": "Dispatch matches expected patterns",
@@ -1296,7 +1302,8 @@ The debugger performs hypothesis-testing EXPERIMENTS as part of its methodology.
     - `\d` → `[0-9]`
     - `\s` → `[[:space:]]`
     - `\w` → `[a-zA-Z0-9_]`
-  - ❌ Dash-leading patterns without `--` or `-e` separator — e.g., `rg -qF '- foo' file`. `rg` parses `-` as a flag and returns exit 2 ("unrecognized flag"). Use `rg -qF -- '- foo' file` (end-of-flags marker) or `rg -qF -e '- foo' file` (explicit pattern flag) instead. Prefer `rg -qF -- 'pattern'` (fixed-strings) when checking for an exact literal match; use `rg -qi -e 'pattern'` when the pattern is a regex that happens to begin with `-`. Both forms are correct; the choice depends on whether you need regex matching.
+  - ❌ Dash-leading patterns without `--` or `-e` separator — e.g., `rg -qF '- foo' file`. `rg` parses `-` as a flag and returns exit 2 ("unrecognized flag"). Use `rg -qF -- '- foo' file` (end-of-flags marker) or `rg -qF -e '- foo' file` (explicit pattern flag) instead. Prefer `rg -qF -- 'pattern'` (fixed-strings) when checking for an exact literal match; use `rg -qi -e 'pattern'` when the pattern is a regex that happens to begin with `-`. Both forms are correct; the choice depends on whether you need regex matching. This trap is especially insidious when matching documentation that contains literal CLI flag examples — e.g., `rg -qF '--watch'`, `rg -qF '--output-style'`. The pattern reads as a flag reference but is parsed as an actual flag by `rg`.
+  - ❌ Apostrophe-substitution-by-period in `-F` mode — e.g., `rg -qiF 'Read, don.t assume' file`. `-F` makes `.` literal; the MoV matches `Read, don.t assume` (period), NOT `Read, don't assume` (apostrophe). The agent will write the literal period into the file to satisfy the MoV — producing a typo. Drop `-F` (use `rg -qi` so `.` is a regex wildcard) OR use double-quoted shell strings with proper JSON escaping for literal-apostrophe matches.
 
 #### Programmatic AC Required
 
@@ -1518,7 +1525,7 @@ Proceed?
 - [ ] **AC MoV feasibility checked** — Can a shell command be written for this AC today? If not, apply Path A/B/C (see § Pre-Card MoV Check). Path A is the default.
 - [ ] **MoV mental dry-run (mandatory — not just a box-check)** — For EACH programmatic MoV `cmd` field in the card, run a 3-question mental simulation:
 
-  1. **Tool syntax** — Is every flag actually valid for the named tool's flag semantics (NOT a sibling tool's)? `rg -E` is `--encoding` in ripgrep, NOT extended regex. `rg` defaults to PCRE2 — never use `-E` for regex syntax. Can the flag mean a different thing in this tool than I'm assuming? If unsure, mentally consult `<tool> --help`. Does the pattern start with `-`? If yes, use `rg -qF -- 'pattern'` or `rg -qF -e 'pattern'` — without the `--` or `-e` separator, `rg` parses the dash as a flag and returns exit 2 ("unrecognized flag"), failing the MoV check structurally.
+  1. **Tool syntax** — Is every flag actually valid for the named tool's flag semantics (NOT a sibling tool's)? `rg -E` is `--encoding` in ripgrep, NOT extended regex. `rg` defaults to PCRE2 — never use `-E` for regex syntax. Can the flag mean a different thing in this tool than I'm assuming? If unsure, mentally consult `<tool> --help`. Does the pattern start with `-`? If yes, use `rg -qF -- 'pattern'` or `rg -qF -e 'pattern'` — without the `--` or `-e` separator, `rg` parses the dash as a flag and returns exit 2 ("unrecognized flag"), failing the MoV check structurally. Does the pattern contain an apostrophe `'`? If yes, do NOT use `-F` with `.` as a substitute — drop `-F` so `.` is a regex wildcard, OR use double-quoted shell strings.
 
   2. **State at check-time** — After the agent completes the work, what state will the MoV check against? If the MoV requires UNCOMMITTED changes (`git diff --name-only HEAD`), the agent must NOT commit. If it requires COMMITTED state, the agent must commit. Match the timing to the card's lifecycle and intent. Avoid MoVs that depend on transient state the agent has no way to control deterministically.
 
@@ -1953,6 +1960,8 @@ Highest-blast-radius failures. Full reference: [anti-patterns.md](../docs/staff-
 - **Phantom doing card** — A card in `doing` status with no running agent. Created when the coordinator transitions a card to doing (`kanban do`, `kanban start`, or `kanban redo`) and then proceeds with other work without launching the Agent. The board says "in progress" but nothing is happening. Detect: glance at `<mine>` cards in `kanban list` before each new card creation; for each `doing` card, confirm an agent ran or is running. The atomic-delegation rule (Step 4 of Delegation Protocol) exists to prevent this — its violation is the failure mode.
 
 - **Bundling parallel deliverables** — Creating one card for multiple independently completable outputs (e.g., two spec files for two issues, two unrelated bug fixes 'in one PR') and launching one agent to do them sequentially. Triggered by the 'in one PR' framing or by 'they share discovery work' rationalization. Both are false economies — one PR can be assembled from N parallel cards; discovery is cheap. Default to N parallel cards, N agents, same response turn. The decomposition question is non-optional: 'Does this card contain multiple independently completable outputs?'
+
+- **Sub-agent commits** — a delegated agent running `git commit` or `git push` instead of leaving changes in the working tree for the coordinator to commit. Symptoms: agent's final return contains a `Commits: <SHA>` field; `git log` shows a commit with a non-standard message format. Prevention: explicit prohibition in the delegation template (§ Delegation Protocol step 4).
 
 - **Domain-coded deflection (roster scan before deflection)** — When non-engineering work surfaces (legal, financial, marketing, brand, UX research, test strategy, technical writing), do NOT deflect to the user with phrases like 'lawyer territory', 'needs your attorney', 'out of scope', 'you handle this', or 'your team's job.' First: scan the full agent roster — engineering specialists AND business specialists (`lawyer`, `finance`, `marketing`) AND design specialists (`product-ux`, `visual-designer`) AND cross-functional specialists (`qa-engineer`, `researcher`, `scribe`, `ai-expert`). If any agent matches the deflected work, propose delegation BEFORE deflecting.
 

@@ -1,6 +1,6 @@
 ---
 name: kanban-cli
-description: kanban CLI full command reference. Auto-load BEFORE running any kanban subcommand other than `do`/`todo`/`list`/`show`/`start`/`done`/`criteria check/uncheck` — even when you believe you know the syntax. Cancel/redo/defer/criteria add/remove flag conventions are commonly misremembered. Covers all lifecycle commands (do, todo, start, defer, review, redo, done, cancel), AC criteria commands (criteria check, criteria uncheck, criteria add, criteria remove, criteria pass, criteria fail), MoV schema, __CARD_ID__ placeholder, output-style conventions, workflow examples, and exit codes.
+description: kanban CLI full command reference. Auto-load BEFORE running any kanban subcommand other than `do`/`todo`/`list`/`show`/`start`/`done`/`criteria check/uncheck` — even when you believe you know the syntax. Cancel/redo/defer/criteria add/remove flag conventions are commonly misremembered. Covers all lifecycle commands (do, todo, start, defer, review, redo, done, cancel), AC criteria commands (criteria check, criteria uncheck, criteria add, criteria remove, criteria pass, criteria fail), MoV schema, __CARD_ID__ placeholder, output-style conventions, workflow examples, and exit codes. This skill is the canonical source for all kanban CLI syntax — `--help` should never be needed when this skill is loaded.
 ---
 
 # kanban CLI — Full Command Reference
@@ -48,6 +48,22 @@ Create one or more cards in `doing` state immediately.
 - **`--file PATH`** — Read card JSON from a file instead of inline. **Auto-deletes the input file after reading.** Never add `rm` after this command — the file is gone.
 - **JSON input convention:** `kanban do` accepts a JSON object (single card) or a JSON array (batch). Do NOT pass a JSON blob as the `text` argument to `kanban criteria add` — that command takes plain text only (see criteria add below).
 - **Criterion object schema (v5):**
+
+  > **🚨 `&&` is hard-prohibited in `mov_commands[].cmd`.** The kanban CLI's `kanban do/todo --file` validator rejects any criterion whose `cmd` contains `&&`. Split into separate array entries — one command per entry. Example:
+  >
+  > ```json
+  > // ❌ rejected by validator
+  > "mov_commands": [{"cmd": "rg -q X file && rg -q Y file", "timeout": 10}]
+  >
+  > // ✅ accepted
+  > "mov_commands": [
+  >   {"cmd": "rg -q X file", "timeout": 10},
+  >   {"cmd": "rg -q Y file", "timeout": 10}
+  > ]
+  > ```
+  >
+  > Pipes, redirects, command substitution, and other shell features within a single `cmd` are still permitted — only `&&` is rejected.
+
   ```json
   {
     "text": "AC statement (plain text only — no MoV annotation)",

@@ -667,6 +667,8 @@ Reason: subjective — no exit code semantics. Rewrite to expose a programmatic 
 
 The coordinator reads sub-agent final-return values programmatically. Narrative prose is invisible overhead. Include this directive VERBATIM in every delegation prompt (append to the minimal delegation template):
 
+> **Git operations are the coordinator's responsibility — DO NOT commit.** Do NOT run `git commit`, `git push`, `git add`, `git rebase`, or any state-mutating git command. The coordinator stages and commits your changes after the SubagentStop hook fires. If you have changes you want committed, leave them in the working tree (modified, unstaged). Read-only git commands (`git status`, `git diff`, `git log`, `git show`) are fine.
+>
 > Final return format: end your final response with EXACTLY this structure (7 labeled fields), no extra prose before or after.
 >
 > ```
@@ -1589,6 +1591,9 @@ The same five triggers apply at the Senior Staff level, with `crew read`, `crew 
 
 **Review protocol violations:**
 - Re-review cascade — instructing a Staff Engineer to launch another Tier 1 or Tier 2 review on a card that applied findings from the previous review in the same session. Creates review → findings → fix → re-review loops that never terminate. The STOP condition exists precisely to prevent this; treat it as an active prohibition, not a passive exemption. (§ Mandatory Review Protocol)
+
+**Git discipline violations:**
+- **Sub-agent commits** — a delegated agent running `git commit` or `git push` instead of leaving changes in the working tree for the coordinator to commit. Symptoms: agent's final return contains a `Commits: <SHA>` field; `git log` shows a commit with a non-standard message format. Prevention: explicit prohibition in the delegation template.
 
 **Over-orchestration:**
 - Spinning up multiple sessions for single-focused work -- adds overhead without value.
