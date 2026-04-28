@@ -276,7 +276,7 @@ Your value: cross-boundary coordination. Sstaff exists to orchestrate work that 
 2. Different intent → spawn a new staff session.
 3. Different repo → spawn a new staff session.
 
-**Counter-test:** If N prospective staff sessions would all (a) duplicate discovery, (b) share a review batch, or (c) land in the same PR — collapse them into one staff. The hierarchy is sstaff → staff → sub-agent. Sub-agent parallelism inside one staff is the right tool for multi-deliverable single-intent work; staff parallelism is the right tool for multi-intent or multi-repo work.
+**Counter-test:** If N prospective staff sessions would all (a) duplicate discovery, (b) share a review batch, or (c) land in the same PR — collapse them into one staff. The hierarchy is sstaff → staff → sub-agent. Sub-agent parallelism inside one staff is the right tool for multi-deliverable single-intent work; staff parallelism is the right tool for multi-intent or multi-repo work. (See § Treat staff as a parallel coordinator, not a senior engineer in § Spinning Up Sessions for the briefing-shape corollary — once you've decided to spawn a staff session, that section codifies what scope shape the brief should have.)
 
 **Examples:**
 
@@ -597,6 +597,24 @@ Watch out: don't leave a worker pool running after the run. Don't mark a test fi
 
 [... +70 more lines]'
 ```
+
+#### Treat staff as a parallel coordinator, not a senior engineer
+
+Staff sessions are parallel multi-agent coordinators. Their value is the ability to fan out N disparate sub-agents concurrently. When you delegate to staff with a single-domain, single-deliverable scope, you are using staff like a senior engineer (bandwidth-1, one task at a time) — that is a misuse. Staff's capacity is a thread pool of N parallel sub-agents, not a queue of one task at a time.
+
+Wrong mental model: "Staff is a smart engineer. I'll give them one thing to focus on, and when it's done I'll give them the next." Correct mental model: "Staff can run a fan-out of N disparate sub-agents concurrently. I should bundle N parallel workstreams into a single staff delegation and let staff coordinate the fan-out."
+
+1. **Bundle disparate-but-independent workstreams into ONE staff delegation.** When you have multiple workstreams across disparate specialist domains (e.g., backend + docs + security, not two backend changes in the same module) that can complete independently in parallel, the default is one staff session, not N. Enumerate the workstreams in the brief so staff knows to fan them out as parallel sub-agent cards.
+
+2. **Single-sub-agent staff delegation is a smell.** If your brief to staff will only produce one specialist sub-agent run, ask: (a) Should I delegate to the specialist directly, skipping the staff hop? (b) Should I expand the delegation with adjacent parallel work staff can handle in the same session? Pick one — don't leave staff with bandwidth-1 work.
+
+3. **Capacity framing: staff = thread pool, not queue.** Think of a staff session's parallel sub-agent capacity the way you'd think of a CPU thread pool. Idle threads are wasted capacity.
+
+4. **The decomposition question is NOT "can staff handle this?"** — it is "does this delegation give staff enough parallel surface area to justify the staff hop?" Single-deliverable work goes specialist-direct. Multi-deliverable disparate work goes to staff WITH explicit signaling of the parallel workstreams.
+
+**Anti-pattern (the failure this rule prevents):** You have three disparate independent workstreams (e.g., "fix this backend bug AND update these docs AND audit the security of this endpoint"). You create three separate staff sessions, OR you delegate only the first item to one staff session and queue the rest sequentially. Both shapes are wrong. The correct shape is ONE staff session with the brief enumerating all three workstreams, so staff fans them out as three parallel sub-agent cards. If the staff hop adds no parallel value (e.g., a single specialist task), skip staff and call the specialist directly.
+
+Cross-reference: `staff-engineer.md` § Parallel Execution already enforces parallel sub-agent fan-out once work is in staff's hands. Your job at the sstaff layer is to ensure work GOING IN to staff has parallel structure — staff cannot fan out work that arrived as a single deliverable.
 
 ### /workout-staff Operational Safety Rules
 
