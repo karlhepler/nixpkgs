@@ -1345,6 +1345,7 @@ PLATFORM STATUS CALIBRATION:
 - [ ] Block A (Resilience Directives) present in `action`, with `<card-id>`, `<agent>`, and `<finding-cap>` substituted to concrete values
 - [ ] Block B (Platform Status Calibration) present in `action`, with doc paths verified for this project (default paths acceptable if none found)
 - [ ] Standard AC included in `criteria` (see below)
+- [ ] Findings-quality AC programmatic, not semantic — see § Findings-quality AC must be programmatic, not semantic
 
 If any are missing, add them before creating the card.
 
@@ -1368,6 +1369,60 @@ If any are missing, add them before creating the card.
    }
    ```
    Enforces Block B's read-first directive.
+
+#### Findings-quality AC must be programmatic, not semantic
+
+AC that assert the QUALITY of scratchpad findings (citation density, prioritization, completeness) MUST be `mov_type: "programmatic"` with shell commands that read the scratchpad file directly. See § Programmatic-Only Mandate — this subsection is the applied guidance for review/research card AC.
+
+**Why:** Semantic AC on review/research cards fail two ways — (a) the legacy Haiku reviewer (now removed) read agent final-return text, not scratchpad content, so substantive scratchpad work was invisible to the verdict; (b) the current hook auto-fails any non-programmatic AC with `"invalid AC: no programmatic verification provided"`. Both paths kill the card. The work is in the scratchpad; the verification must read the scratchpad.
+
+**Canonical programmatic patterns for findings quality:**
+
+1. File:line citation density present:
+   ```json
+   {
+     "text": "Findings include file:line citations",
+     "mov_type": "programmatic",
+     "mov_commands": [{"cmd": "test $(rg -c ':[0-9]+' .scratchpad/<card>-<agent>.md || echo 0) -ge 3", "timeout": 10}]
+   }
+   ```
+2. Blocking-priority label present (when applicable to the review type):
+   ```json
+   {
+     "text": "At least one finding categorized blocking",
+     "mov_type": "programmatic",
+     "mov_commands": [{"cmd": "rg -qi 'blocking' .scratchpad/<card>-<agent>.md", "timeout": 10}]
+   }
+   ```
+3. All four priority labels present in the prioritization summary:
+   ```json
+   {
+     "text": "Prioritization summary covers blocking/high/medium/low",
+     "mov_type": "programmatic",
+     "mov_commands": [
+       {"cmd": "rg -qi 'blocking' .scratchpad/<card>-<agent>.md", "timeout": 10},
+       {"cmd": "rg -qi 'high' .scratchpad/<card>-<agent>.md", "timeout": 10},
+       {"cmd": "rg -qi 'medium' .scratchpad/<card>-<agent>.md", "timeout": 10},
+       {"cmd": "rg -qi 'low' .scratchpad/<card>-<agent>.md", "timeout": 10}
+     ]
+   }
+   ```
+   (Split into separate `mov_commands` entries — not AND-chained — so failure attribution is per-label.)
+4. Minimum finding count (when `<finding-cap>` allows a minimum to be asserted; e.g., expecting at least 5 findings):
+   ```json
+   {
+     "text": "Scratchpad contains at least 5 findings",
+     "mov_type": "programmatic",
+     "mov_commands": [{"cmd": "test $(rg -c '^### ' .scratchpad/<card>-<agent>.md || echo 0) -ge 5", "timeout": 10}]
+   }
+   ```
+   (Adjust the heading regex to match the agent's actual heading convention if Block A is amended to specify one.)
+
+**Anti-pattern:**
+- ❌ Semantic: `"Sufficient/necessary analysis applied with file:line citations and prioritized findings (blocking/high/medium/low)"` — auto-fails with `"invalid AC: no programmatic verification provided"`
+- ✅ Programmatic split: the four AC above (citations, blocking present, full priority set, minimum count)
+
+**No semantic AC is viable — the hook auto-fails them all.** First reflex when an AC feels semantic: ask 'what specifically should the scratchpad contain to satisfy this?' — then encode that as `rg`-against-scratchpad. There is no exception path; the hook auto-fails any criterion missing `mov_type: "programmatic"` or `mov_commands` with `"invalid AC: no programmatic verification provided"`.
 
 Without these AC, compliance with Blocks A and B depends entirely on coordinator diligence at review time — the same failure mode that produced the brisk-eagle anecdote below.
 
