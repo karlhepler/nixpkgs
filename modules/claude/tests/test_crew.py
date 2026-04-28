@@ -476,7 +476,7 @@ class TestCmdCreate:
             with patch.object(
                 crew_module,
                 "_wait_for_sentinel",
-                return_value=(False, "session never reported ready — sentinel file not written (SessionStart hook may be missing) and prompt-box token not observed in pane"),
+                return_value=(False, 'session never reported ready — sentinel file never appeared at \'/tmp/crew/ready-test-session\' and pane \'test-session.0\' never showed any of [\'auto mode on\']'),
             ):
                 self._run_create(
                     mock_run,
@@ -491,7 +491,7 @@ class TestCmdCreate:
         out = capsys.readouterr().out
         assert "told_reason" in out
         assert 'told="false"' in out
-        assert "sentinel file not written" in out
+        assert "never appeared at" in out
 
     def test_fetch_called_when_base_tracks_origin(self, capsys, tmp_path):
         """When base tracks origin, git fetch origin <base> is called before worktree add."""
@@ -1771,7 +1771,7 @@ class TestCreateTellFile:
                     with patch.object(
                         crew_module,
                         "_wait_for_sentinel",
-                        return_value=(False, "session never reported ready — sentinel file not written (SessionStart hook may be missing) and prompt-box token not observed in pane"),
+                        return_value=(False, 'session never reported ready — sentinel file never appeared at \'/tmp/crew/ready-test-session\' and pane \'test-session.0\' never showed any of [\'auto mode on\']'),
                     ):
                         self._setup_create_mocks(mock_run)
                         cmd_create(
@@ -2651,8 +2651,8 @@ class TestCmdStatusMultiPane:
 class TestCmdCreateToldReason:
     """Integration test: cmd_create told_reason reflects sentinel wait outcomes."""
 
-    def test_cmd_create_told_reason_reflects_sentinel_hook_missing(self, capsys):
-        """Integration: cmd_create told_reason reflects hook-missing when sentinel never appears."""
+    def test_cmd_create_told_reason_includes_sentinel_path_and_pattern(self, capsys):
+        """When sentinel times out, told_reason names the actual sentinel path and the prompt patterns checked."""
         with patch("subprocess.run") as mock_run:
             with patch("os.path.isdir", return_value=True):
                 with patch("os.path.exists", return_value=False):
@@ -2664,7 +2664,7 @@ class TestCmdCreateToldReason:
                         with patch.object(
                             crew_module,
                             "_wait_for_sentinel",
-                            return_value=(False, "session never reported ready — sentinel file not written (SessionStart hook may be missing) and prompt-box token not observed in pane"),
+                            return_value=(False, 'session never reported ready — sentinel file never appeared at \'/tmp/crew/ready-test-session\' and pane \'test-session.0\' never showed any of [\'auto mode on\']'),
                         ):
                             # Provide minimal subprocess mocks for the create path
                             def side_effect(cmd, **kwargs):
@@ -2709,8 +2709,11 @@ class TestCmdCreateToldReason:
 
         out = capsys.readouterr().out
         assert 'told="false"' in out
-        assert "sentinel file not written" in out, (
-            f"Expected 'sentinel file not written' in told_reason, got output: {out!r}"
+        assert "never appeared at" in out, (
+            f"Expected 'never appeared at' in told_reason, got output: {out!r}"
+        )
+        assert "auto mode on" in out, (
+            f"Expected 'auto mode on' in told_reason, got output: {out!r}"
         )
 
 
@@ -3072,6 +3075,59 @@ class TestWaitForSentinel:
 
         # After cleanup, file is gone — fast-path will not fire.
         assert not stale.exists()
+
+
+class TestWaitForSentinelDiagnosticMessage:
+    """Tests that _wait_for_sentinel produces definitive diagnostic messages on timeout."""
+
+    def test_timeout_reason_includes_sentinel_path(self, tmp_path, monkeypatch):
+        """Timeout reason names the exact sentinel path that was checked — no 'may be' hedging."""
+        sentinel_dir = tmp_path / "crew"
+        sentinel_dir.mkdir()
+        monkeypatch.setattr(crew_module, "_CREW_SENTINEL_DIR", str(sentinel_dir))
+
+        with patch.object(crew_module, "_pane_shows_prompt_ready", return_value=False):
+            ready, reason = _wait_for_sentinel("myworker", ceiling=0.1)
+
+        assert ready is False
+        expected_sentinel_path = str(sentinel_dir / "ready-myworker")
+        assert expected_sentinel_path in reason, (
+            f"Expected sentinel path {expected_sentinel_path!r} in reason, got: {reason!r}"
+        )
+        assert "may be" not in reason, (
+            f"Diagnostic must not contain vague 'may be' hedging, got: {reason!r}"
+        )
+
+    def test_timeout_reason_includes_prompt_patterns(self, tmp_path, monkeypatch):
+        """Timeout reason names the exact patterns that were checked in the pane."""
+        sentinel_dir = tmp_path / "crew"
+        sentinel_dir.mkdir()
+        monkeypatch.setattr(crew_module, "_CREW_SENTINEL_DIR", str(sentinel_dir))
+
+        with patch.object(crew_module, "_pane_shows_prompt_ready", return_value=False):
+            ready, reason = _wait_for_sentinel("myworker", ceiling=0.1)
+
+        assert ready is False
+        assert "auto mode on" in reason, (
+            f"Expected 'auto mode on' pattern listed in reason, got: {reason!r}. "
+            "This is a regression test: _PROMPT_READY_PATTERNS must contain 'auto mode on' "
+            "(the Claude Code bottom status bar text) rather than 'claude.ai/code' "
+            "(which only appears when Remote Control is active)."
+        )
+
+    def test_timeout_reason_includes_pane_target(self, tmp_path, monkeypatch):
+        """Timeout reason names the tmux pane target that was polled."""
+        sentinel_dir = tmp_path / "crew"
+        sentinel_dir.mkdir()
+        monkeypatch.setattr(crew_module, "_CREW_SENTINEL_DIR", str(sentinel_dir))
+
+        with patch.object(crew_module, "_pane_shows_prompt_ready", return_value=False):
+            ready, reason = _wait_for_sentinel("myworker", ceiling=0.1)
+
+        assert ready is False
+        assert "myworker.0" in reason, (
+            f"Expected pane target 'myworker.0' in reason, got: {reason!r}"
+        )
 
 
 class TestHookPresentInSettings:
@@ -3914,17 +3970,25 @@ class TestEnsureHookInSettings:
 class TestPaneShowsPromptReady:
     """Tests for _pane_shows_prompt_ready: capture-pane polling fallback signal."""
 
-    def test_returns_true_when_startup_banner_and_prompt_glyph_present(self):
-        """Returns True when 'claude.ai/code' banner is present alongside ❯ prompt glyph."""
-        pane_content = "╭─ Claude Code ─────────────────────────────────────────────────╮\nclaude.ai/code\n> ❯\n╰────────────────────────────────────────────────────────────────╯\n"
+    def test_returns_true_when_auto_mode_status_bar_present(self):
+        """Returns True when 'auto mode on' bottom status bar is present alongside prompt glyph."""
+        # Simulates the bottom status bar of a Claude Code session ready for input.
+        # "auto mode on" appears in the status bar of all sessions started with
+        # --permission-mode auto (i.e., all staff-spawned sessions).
+        pane_content = (
+            "── my-session ──\n"
+            "❯ \n"
+            "───────────────────────────────────────────────────────────────────────────────\n"
+            "  ⏵⏵ auto mode on (shift+tab to cycle)                                         \n"
+        )
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout=pane_content)
             result = _pane_shows_prompt_ready("test-worker.0")
         assert result is True
 
-    def test_returns_true_when_startup_banner_present(self):
-        """Returns True when 'claude.ai/code' appears in capture-pane output."""
-        pane_content = "Welcome to Claude Code\nclaude.ai/code\nType your message...\n"
+    def test_returns_true_when_auto_mode_in_status_bar(self):
+        """Returns True when 'auto mode on' appears in capture-pane output."""
+        pane_content = "  ⏵⏵ auto mode on · 1 local agent · esc to interrupt\n"
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout=pane_content)
             result = _pane_shows_prompt_ready("test-worker.0")
@@ -3937,6 +4001,32 @@ class TestPaneShowsPromptReady:
             mock_run.return_value = MagicMock(returncode=0, stdout=pane_content)
             result = _pane_shows_prompt_ready("test-worker.0")
         assert result is False
+
+    def test_returns_false_for_remote_control_only_session(self):
+        """Returns False when 'claude.ai/code' appears via Remote Control but 'auto mode on' is absent.
+
+        Regression test: the old pattern 'claude.ai/code' appeared only in the
+        '/remote-control is active' message — not in the startup banner of regular
+        staff sessions. This caused pane polling to succeed only when Remote Control
+        was active, and fail the other 99% of the time.
+
+        The new pattern 'auto mode on' is in the bottom status bar, present for all
+        sessions started with --permission-mode auto (i.e., all staff-spawned sessions).
+        Sessions with Remote Control also show 'auto mode on', so no regression there.
+        """
+        # Simulates a pane where /remote-control shows the URL but Claude is NOT yet
+        # in auto mode (e.g., still initializing before the status bar renders).
+        remote_control_only_content = (
+            "  /remote-control is active · Code in CLI or at "
+            "https://claude.ai/code/session_01ABC123\n"
+        )
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout=remote_control_only_content)
+            result = _pane_shows_prompt_ready("test-worker.0")
+        assert result is False, (
+            "A pane showing 'claude.ai/code' via Remote Control URL but not 'auto mode on' "
+            "must return False — the session is not yet ready for input."
+        )
 
     def test_returns_false_when_capture_pane_fails(self):
         """Returns False (fail open) when tmux capture-pane returns non-zero exit code."""
@@ -3955,14 +4045,14 @@ class TestPaneShowsPromptReady:
         assert "my-window.0" in called_cmd
 
     def test_returns_false_for_shell_prompt_without_claude_banner(self):
-        """Returns False for a shell prompt containing ❯ but NOT 'claude.ai/code'.
+        """Returns False for a shell prompt containing ❯ but NOT 'auto mode on'.
 
         Protects against H1 regression: the ❯ glyph appears in popular shell
         prompts (Starship, Oh My Zsh) and must NOT trigger a false-positive
         ready signal before Claude Code has started.
         """
         # Simulates a Starship/Oh My Zsh shell prompt visible in the pane
-        # before Claude Code has taken over — contains ❯ but no Claude banner.
+        # before Claude Code has taken over — contains ❯ but no Claude status bar.
         shell_prompt_content = (
             "~/projects/myrepo on  main via  v20.11.0\n"
             "❯ staff --model sonnet\n"
@@ -3971,7 +4061,7 @@ class TestPaneShowsPromptReady:
             mock_run.return_value = MagicMock(returncode=0, stdout=shell_prompt_content)
             result = _pane_shows_prompt_ready("test-worker.0")
         assert result is False, (
-            "Shell prompt with ❯ but no 'claude.ai/code' must return False "
+            "Shell prompt with ❯ but no 'auto mode on' must return False "
             "to avoid false-positive ready signal before Claude Code starts"
         )
 

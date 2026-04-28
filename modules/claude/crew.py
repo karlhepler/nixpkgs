@@ -270,10 +270,19 @@ def _ensure_hook_in_settings(settings_path: str) -> Tuple[bool, Optional[str]]:
 # Oh My Zsh), which would cause _pane_shows_prompt_ready to fire before Claude Code
 # starts — re-creating the original dropped-tell bug through a different path.
 #
-# "claude.ai/code" appears in Claude Code's startup banner and does not appear in
-# plain shell prompts, making it a reliable false-positive-free readiness signal.
+# "claude.ai/code" was removed because it appears ONLY in the Remote Control
+# "/remote-control is active · Code in CLI or at https://claude.ai/code/..." message
+# — not in the startup banner of regular sessions. Staff sessions spawned without
+# /remote-control active never showed this string, causing the fallback to always
+# time out.
+#
+# "auto mode on" appears in Claude Code's bottom status bar immediately when the
+# session is ready and awaiting input. It is present in every session started with
+# --permission-mode auto (which is what the 'staff' wrapper always uses), does not
+# appear in any shell prompt, and is always within the last 50 lines captured by
+# tmux capture-pane -S -50 because it lives in the persistent bottom status bar.
 _PROMPT_READY_PATTERNS = [
-    "claude.ai/code",  # Startup banner substring — unique to Claude Code's UI
+    "auto mode on",  # Bottom status bar — present in all auto-mode Claude Code sessions
 ]
 
 
@@ -311,10 +320,12 @@ def _wait_for_sentinel(
 
     Fallback — pane prompt-box polling:
         Every <prompt_poll_interval> seconds, capture-pane output for
-        '<name>.0' is checked for _PROMPT_READY_PATTERNS (the 'claude.ai/code'
-        banner text — unique to Claude Code's UI). This fires even when the
-        target worktree's settings.json lacks the SessionStart hook, because it
-        observes the TUI directly rather than relying on the hook.
+        '<name>.0' is checked for _PROMPT_READY_PATTERNS (the 'auto mode on'
+        status bar text — present in all sessions started with
+        `--permission-mode auto`, which is how `staff` and `sstaff` invoke
+        claude). This fires even when the target worktree's settings.json lacks
+        the SessionStart hook, because it observes the TUI directly rather than
+        relying on the hook.
 
     Both signals are checked in a shared ready_event (threading.Event). The
     fswatch thread sets the event when the sentinel appears; the poll thread sets
@@ -417,9 +428,9 @@ def _wait_for_sentinel(
 
     # Both signals timed out.
     reason = (
-        "session never reported ready — "
-        "sentinel file not written (SessionStart hook may be missing) "
-        "and prompt-box token not observed in pane"
+        f"session never reported ready — "
+        f"sentinel file never appeared at {sentinel!r} "
+        f"and pane {tmux_target!r} never showed any of {_PROMPT_READY_PATTERNS!r}"
     )
     return False, reason
 
