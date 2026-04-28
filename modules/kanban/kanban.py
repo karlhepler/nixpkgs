@@ -716,12 +716,13 @@ def validate_criteria_schema(criteria: list) -> None:
     """Validate criteria against the V5 structured schema.
 
     Rules:
-    - Every criterion must have mov_type: 'programmatic' or 'semantic'.
-      Missing mov_type is rejected (no default — greenfield only, no backward compat).
+    - mov_type is optional. If present, it is tolerated for backward compatibility
+      but not required and not enforced. Programmatic mode is implicit: a criterion
+      with a non-empty mov_commands array is programmatic; otherwise it is semantic.
     - V4 schema fields (mov_command, mov_timeout singular) are REJECTED with a clear error.
-    - Programmatic criteria must have mov_commands: non-empty array of {cmd, timeout} objects.
-      Each element: cmd (non-empty string, passes bash -n), timeout (int 1-1800).
-    - Semantic criteria must have mov_commands absent or empty array.
+    - Criteria with non-empty mov_commands must have each entry: cmd (non-empty string,
+      passes bash -n), timeout (int 1-1800).
+    - Criteria with empty or absent mov_commands have no mov_commands requirements.
 
     Raises SystemExit on any validation failure.
     """
@@ -746,47 +747,23 @@ def validate_criteria_schema(criteria: list) -> None:
             )
             sys.exit(1)
 
-        mov_type = criterion.get("mov_type")
-        if mov_type is None:
-            print(
-                f"Error: Criterion {i} ('{text[:60]}') missing required 'mov_type' field. "
-                f"Must be 'programmatic' or 'semantic'.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-
-        if mov_type not in ("programmatic", "semantic"):
-            print(
-                f"Error: Criterion {i} has invalid mov_type '{mov_type}'. "
-                f"Must be 'programmatic' or 'semantic'.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-
         mov_commands = criterion.get("mov_commands")
 
-        if mov_type == "programmatic":
-            # mov_commands: required, non-empty array
-            if mov_commands is None:
-                print(
-                    f"Error: Criterion {i} ('{text[:60]}') is programmatic but has no 'mov_commands'. "
-                    f"Provide 'mov_commands': [{{\"cmd\": \"...\", \"timeout\": N}}].",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
+        # Reject an explicit empty array — ambiguous intent. Either provide commands or omit the field.
+        if mov_commands is not None and isinstance(mov_commands, list) and len(mov_commands) == 0:
+            print(
+                f"Error: Criterion {i} ('{text[:60]}') 'mov_commands' is empty. "
+                f"Provide at least one command or remove the field entirely.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
+        # Programmatic mode is implicit: non-empty mov_commands => programmatic validation applies.
+        if mov_commands is not None and mov_commands != []:
             if not isinstance(mov_commands, list):
                 print(
                     f"Error: Criterion {i} ('{text[:60]}') 'mov_commands' must be an array, "
                     f"got {type(mov_commands).__name__}.",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-
-            if len(mov_commands) == 0:
-                print(
-                    f"Error: Criterion {i} ('{text[:60]}') is programmatic but 'mov_commands' is empty. "
-                    f"Provide at least one command.",
                     file=sys.stderr,
                 )
                 sys.exit(1)
@@ -862,30 +839,21 @@ def validate_criteria_schema(criteria: list) -> None:
                     )
                     sys.exit(1)
 
-        else:
-            # Semantic: mov_commands must be absent or empty array
-            if mov_commands is not None and mov_commands != []:
-                print(
-                    f"Error: Criterion {i} ('{text[:60]}') is semantic but has mov_commands set. "
-                    f"Set mov_commands to null or [] for semantic criteria.",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-
 
 def _collect_ampersand_errors(criteria: list) -> list:
     """Return list of (criterion_num, cmd) tuples where cmd contains '&&'.
 
-    Only checks programmatic criteria (mov_type == 'programmatic') with a
-    mov_commands array. Semantic criteria are not checked.
+    Only checks criteria with a non-empty mov_commands array. Criteria without
+    mov_commands are not checked (no commands to validate).
     """
     violations = []
     for i, criterion in enumerate(criteria, start=1):
         if not isinstance(criterion, dict):
             continue
-        if criterion.get("mov_type") != "programmatic":
+        mov_commands = criterion.get("mov_commands") or []
+        if not mov_commands:
             continue
-        for entry in (criterion.get("mov_commands") or []):
+        for entry in mov_commands:
             if not isinstance(entry, dict):
                 continue
             cmd = entry.get("cmd", "")
@@ -981,7 +949,7 @@ def validate_and_build_card(data: dict, session: str | None) -> dict:
         print("Error: At least one acceptance criterion required. Add \"criteria\": [\"...\"] to JSON.", file=sys.stderr)
         sys.exit(1)
 
-    # Validate new structured criteria schema (V5): mov_type, mov_commands array
+    # Validate structured criteria schema (V5): mov_commands array (mov_type is optional/tolerated)
     # Only validate object criteria (string criteria are legacy/simple; they pass through unchanged)
     object_criteria = [c for c in criteria_check if isinstance(c, dict)]
     if object_criteria:
@@ -1631,10 +1599,10 @@ def cmd_agent(args) -> None:
 def cmd_criteria_add(args) -> None:
     """Add acceptance criterion to card.
 
-    Always creates a semantic criterion (mov_type='semantic'). The CLI cannot
-    accept mov_commands via a plain text argument, so programmatic is not a
-    valid option here. To create a programmatic criterion, cancel and recreate
-    the card using the JSON file input (kanban do --file card.json).
+    Creates a criterion without mov_commands (no programmatic check). The CLI
+    cannot accept mov_commands via a plain text argument. To create a criterion
+    with programmatic MoV commands, cancel and recreate the card using the JSON
+    file input (kanban do --file card.json).
     """
     root = get_root(args.root)
     card_path = find_card(root, args.card)
@@ -1647,7 +1615,6 @@ def cmd_criteria_add(args) -> None:
 
     new_criterion: dict = {
         "text": args.text,
-        "mov_type": "semantic",
         "agent_met": False,
         "reviewer_met": None,
     }
@@ -1724,8 +1691,8 @@ def _find_criterion_idx(criteria: list, criterion_arg: str) -> int | None:
 def cmd_criteria_check(args) -> None:
     """Mark acceptance criterion(s) as met (sets agent_met).
 
-    For programmatic criteria (mov_type == 'programmatic'), iterates mov_commands
-    array in order and short-circuits on the first non-zero exit code.
+    For criteria with a non-empty mov_commands array, iterates the commands
+    in order and short-circuits on the first non-zero exit code.
     Sets agent_met only when all commands in the array exit 0.
 
     Exit code classification (applied per command in the array):
@@ -1756,12 +1723,11 @@ def cmd_criteria_check(args) -> None:
             sys.exit(1)
 
         criterion = criteria[criterion_idx]
-        mov_type = criterion.get("mov_type")
         mov_commands = criterion.get("mov_commands") or []
         text = criterion.get("text", "")
         display_n = criterion_arg if str(criterion_arg).isdigit() else (criterion_idx + 1)
 
-        if mov_type == "programmatic" and mov_commands:
+        if mov_commands:
             # Iterate mov_commands array in order; short-circuit on first non-zero exit
             for cmd_idx, cmd_entry in enumerate(mov_commands):
                 cmd = cmd_entry.get("cmd", "")
@@ -2012,10 +1978,7 @@ def format_card_xml(card: dict, num: str, col: str, include_details: bool = Fals
                 fail_reason = criterion.get("reviewer_fail_reason", "")
                 if fail_reason:
                     ac_attrs += f' reviewer-fail-reason="{esc(fail_reason)}"'
-                mov_type = criterion.get("mov_type")
                 mov_commands = criterion.get("mov_commands") or []
-                if mov_type:
-                    ac_attrs += f' mov-type="{esc(str(mov_type))}"'
                 if mov_commands:
                     # Emit movCommands as child elements
                     ac_open = f"    <ac {ac_attrs}>{text}"
@@ -2235,11 +2198,9 @@ def format_criteria_table(criteria: list, indent: str = "  ", terminal_width: in
         for continuation in wrapped_lines[1:]:
             lines.append(f"{continuation_prefix}{continuation}")
 
-        # MoV metadata lines: show mov_type + mov_commands array if present
-        mov_type = criterion.get("mov_type")
+        # MoV metadata lines: show mov_commands array if present
         mov_commands = criterion.get("mov_commands") or []
-        if mov_type is not None:
-            lines.append(f"{continuation_prefix}mov_type: {mov_type}")
+        if mov_commands:
             for cmd_idx, cmd_entry in enumerate(mov_commands):
                 cmd_val = cmd_entry.get("cmd", "")
                 timeout_val = cmd_entry.get("timeout", "")

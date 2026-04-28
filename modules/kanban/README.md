@@ -114,6 +114,28 @@ kanban criteria unverify <card> <n>               # Clear reviewer_met
 
 `kanban done` requires BOTH `agent_met` AND `reviewer_met` on all criteria.
 
+#### Criterion Schema (V5)
+
+Each criterion is a JSON object with `text` and optional `mov_commands`:
+
+```json
+{
+  "text": "Description of what must be true",
+  "mov_commands": [{"cmd": "rg -q 'pattern' src/", "timeout": 10}],
+  "agent_met": false,
+  "reviewer_met": null
+}
+```
+
+**`mov_type` field (deprecated, tolerated for backward compatibility):**
+The `mov_type` field (`"programmatic"` / `"semantic"`) is no longer required on
+card creation and is no longer emitted in `kanban show` / `kanban list` XML output.
+Programmatic mode is now implicit: a criterion with a non-empty `mov_commands` array
+runs commands when `kanban criteria check` is called; a criterion without
+`mov_commands` (or with `null`) defers verification to the AC reviewer. Existing
+cards on disk that have `mov_type` set will continue to load and behave correctly —
+the field is silently tolerated at runtime but ignored.
+
 ### Board View
 
 **Breaking change:** As of this version, `kanban list` and `kanban show` default to `--output-style=xml`. The previous default was `simple`. External scripts that relied on the `simple` format implicitly must now pass `--output-style=simple` explicitly.
@@ -215,7 +237,12 @@ Cards older than 30 days in `done/` are auto-archived to `archive/YYYY-MM/`. Con
   "created": "2026-02-28T14:00:00Z",
   "updated": "2026-02-28T15:30:00Z",
   "criteria": [
-    {"text": "Auth endpoint returns 200 for valid credentials", "agent_met": true, "reviewer_met": true},
+    {
+      "text": "Auth endpoint returns 200 for valid credentials",
+      "mov_commands": [{"cmd": "rg -q 'status.*200' src/auth/", "timeout": 10}],
+      "agent_met": true,
+      "reviewer_met": true
+    },
     {"text": "Existing test suite passes", "agent_met": true, "reviewer_met": false}
   ],
   "comments": [
