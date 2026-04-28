@@ -56,11 +56,11 @@
       "id": 2,
       "type": "stat",
       "title": "Total Cost (Today)",
-      "description": "Total spend across all Claude Code sessions that started today. If this is climbing unexpectedly fast, check the Cost by Agent Type panel — a single Opus delegation or a runaway sidechain is usually the culprit.",
+      "description": "Total spend across all Claude Code sessions that started today. If this is climbing unexpectedly fast, check the Cost by Agent Type panel \u2014 a single Opus delegation or a runaway sidechain is usually the culprit.",
       "gridPos": {
         "x": 0,
         "y": 1,
-        "w": 4,
+        "w": 6,
         "h": 4
       },
       "datasource": {
@@ -120,11 +120,11 @@
       "id": 3,
       "type": "stat",
       "title": "Total Cost (All Time)",
-      "description": "Cumulative spend since metrics collection began. Use this as a baseline when estimating project budgets — compare against the Cost by Project panel to see which codebases consume the most.",
+      "description": "Cumulative spend since metrics collection began. Use this as a baseline when estimating project budgets \u2014 compare against the Cost by Project panel to see which codebases consume the most.",
       "gridPos": {
-        "x": 4,
+        "x": 6,
         "y": 1,
-        "w": 4,
+        "w": 6,
         "h": 4
       },
       "datasource": {
@@ -184,11 +184,11 @@
       "id": 11,
       "type": "timeseries",
       "title": "Cost Over Time",
-      "description": "Daily spend trend across all Claude Code sessions. Spikes usually indicate large Opus delegations or sessions with many turns — check the Cost by Agent Type panel to identify the driver.",
+      "description": "Daily spend trend across all Claude Code sessions. Spikes usually indicate large Opus delegations or sessions with many turns \u2014 check the Cost by Agent Type panel to identify the driver.",
       "gridPos": {
         "x": 0,
         "y": 5,
-        "w": 12,
+        "w": 24,
         "h": 8
       },
       "datasource": {
@@ -231,10 +231,10 @@
       "id": 73,
       "type": "timeseries",
       "title": "Done vs Redo Events Over Time",
-      "description": "Daily count of 'done' events vs 'redo' events. A declining redo line alongside a stable or rising done line means quality is improving — fewer cards are being sent back for rework.",
+      "description": "Daily count of 'done' events vs 'redo' events. A declining redo line alongside a stable or rising done line means quality is improving \u2014 fewer cards are being sent back for rework.",
       "gridPos": {
         "x": 12,
-        "y": 5,
+        "y": 22,
         "w": 12,
         "h": 8
       },
@@ -355,10 +355,10 @@
       "id": 62,
       "type": "stat",
       "title": "Redo Rate",
-      "description": "Ratio of redo events to done events across all time. A high redo rate signals quality issues — cards are frequently sent back for rework before acceptance.",
+      "description": "Ratio of redo events to done events across all time. A high redo rate signals quality issues \u2014 cards are frequently sent back for rework before acceptance.",
       "gridPos": {
-        "x": 12,
-        "y": 14,
+        "x": 0,
+        "y": 22,
         "w": 6,
         "h": 4
       },
@@ -419,10 +419,10 @@
       "id": 81,
       "type": "barchart",
       "title": "Redo Rate by Card Type (%)",
-      "description": "Percentage of cards sent back for rework, broken down by card type (work, review, research). A high redo rate for a specific card type points to systematic quality gaps — either the AC criteria are poorly specified for that type or agents struggle with that category of task.",
+      "description": "Percentage of cards sent back for rework, broken down by card type (work, review, research). A high redo rate for a specific card type points to systematic quality gaps \u2014 either the AC criteria are poorly specified for that type or agents struggle with that category of task.",
       "gridPos": {
         "x": 0,
-        "y": 22,
+        "y": 26,
         "w": 12,
         "h": 8
       },
@@ -447,7 +447,7 @@
         "fillOpacity": 80,
         "legend": {
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "right"
         }
       },
       "fieldConfig": {
@@ -485,7 +485,7 @@
       "description": "Redo rate per agent persona, sorted by redo rate descending. Agents with consistently high redo rates are candidates for prompt improvements, better AC specification, or model upgrades. Compare redo_count against done_count to avoid being misled by low-volume agents.",
       "gridPos": {
         "x": 12,
-        "y": 22,
+        "y": 30,
         "w": 12,
         "h": 8
       },
@@ -543,7 +543,7 @@
       "description": "Per-agent weekly redo rate. Top 4-5 agents by redo count shown as separate lines.",
       "gridPos": {
         "x": 0,
-        "y": 30,
+        "y": 34,
         "w": 12,
         "h": 8
       },
@@ -589,9 +589,9 @@
       "title": "Agent Quality Table (cost + redo, 7d vs prior-7d)",
       "description": "Per-agent cost and redo rate side by side. Look for double-penalty cases: high cost + high redo rate.",
       "gridPos": {
-        "x": 0,
-        "y": 38,
-        "w": 24,
+        "x": 12,
+        "y": 14,
+        "w": 12,
         "h": 8
       },
       "datasource": {
@@ -1075,7 +1075,7 @@
       "gridPos": {
         "x": 0,
         "y": 63,
-        "w": 24,
+        "w": 12,
         "h": 8
       },
       "datasource": {
@@ -1227,9 +1227,9 @@
       "title": "Card Cycle Time",
       "description": "Time from first 'doing' event to 'done' event per card. Cards with very long cycle times may indicate tasks that are too large or agents that got stuck.",
       "gridPos": {
-        "x": 18,
+        "x": 12,
         "y": 72,
-        "w": 6,
+        "w": 12,
         "h": 8
       },
       "datasource": {
@@ -1490,9 +1490,9 @@
       "title": "Card Flow",
       "description": "Recent cards with their events, showing the flow from creation through to completion. Cards with many redo events before done indicate quality issues or under-specified task definitions.",
       "gridPos": {
-        "x": 12,
-        "y": 88,
-        "w": 12,
+        "x": 0,
+        "y": 140,
+        "w": 24,
         "h": 8
       },
       "datasource": {
@@ -1543,7 +1543,7 @@
       "id": 21,
       "type": "barchart",
       "title": "Token Usage Breakdown",
-      "description": "Input, output, and cache-read token volumes stacked by model family. A small cache-read segment relative to input means context is being invalidated — check if CLAUDE.md or skill files changed recently.",
+      "description": "Input, output, and cache-read token volumes stacked by model family. A small cache-read segment relative to input means context is being invalidated \u2014 check if CLAUDE.md or skill files changed recently.",
       "gridPos": {
         "x": 0,
         "y": 97,
@@ -1592,7 +1592,7 @@
       "id": 22,
       "type": "timeseries",
       "title": "Cache Hit Ratio Over Time",
-      "description": "Percentage of input tokens served from cache vs. fresh input, per day. Below 70% means context is being invalidated frequently — check if CLAUDE.md or skill files changed recently.",
+      "description": "Percentage of input tokens served from cache vs. fresh input, per day. Below 70% means context is being invalidated frequently \u2014 check if CLAUDE.md or skill files changed recently.",
       "gridPos": {
         "x": 12,
         "y": 97,
@@ -1671,7 +1671,7 @@
       "id": 41,
       "type": "timeseries",
       "title": "Permission Denials Over Time",
-      "description": "Daily count of permission denials. Rising denials indicate agents attempting actions outside their allowed scope — check the Permission Denials by Tool panel to identify which tools are being blocked.",
+      "description": "Daily count of permission denials. Rising denials indicate agents attempting actions outside their allowed scope \u2014 check the Permission Denials by Tool panel to identify which tools are being blocked.",
       "gridPos": {
         "x": 0,
         "y": 106,
@@ -1717,7 +1717,7 @@
       "id": 42,
       "type": "barchart",
       "title": "Permission Denials by Tool",
-      "description": "Tools that were blocked by the permission system, ranked by denial count. Repeated denials for the same tool indicate an agent is attempting actions it is not authorized for — either the task prompt needs adjustment or the permission configuration needs updating.",
+      "description": "Tools that were blocked by the permission system, ranked by denial count. Repeated denials for the same tool indicate an agent is attempting actions it is not authorized for \u2014 either the task prompt needs adjustment or the permission configuration needs updating.",
       "gridPos": {
         "x": 12,
         "y": 106,
@@ -1762,7 +1762,7 @@
       "id": 31,
       "type": "table",
       "title": "Tool Usage Heatmap",
-      "description": "Call frequency per tool, broken down by bash command. High call counts for any single tool indicate heavy usage patterns — cross-reference with Most Denied Tools to see if those same tools are also being blocked.",
+      "description": "Call frequency per tool, broken down by bash command. High call counts for any single tool indicate heavy usage patterns \u2014 cross-reference with Most Denied Tools to see if those same tools are also being blocked.",
       "gridPos": {
         "x": 0,
         "y": 114,
@@ -2042,8 +2042,8 @@
       "title": "Agent Activity Over Time",
       "description": "Daily count of agent runs per agent type. A declining trend for a particular agent type may signal that delegation to that specialist is being reduced, intentionally or not.",
       "gridPos": {
-        "x": 0,
-        "y": 139,
+        "x": 12,
+        "y": 123,
         "w": 12,
         "h": 8
       },
@@ -2081,6 +2081,20 @@
         },
         "overrides": []
       }
+    },
+    {
+      "id": 200,
+      "type": "row",
+      "title": "Event Log",
+      "collapsed": true,
+      "gridPos": {
+        "x": 0,
+        "y": 139,
+        "w": 24,
+        "h": 1
+      },
+      "datasource": null,
+      "panels": []
     }
   ],
   "templating": {
