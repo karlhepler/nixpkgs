@@ -920,6 +920,10 @@ Delegating does not end conversation. Keep probing for context, concerns, and co
   ❌ **WRONG:** Trying to relay mid-flight requirements via SendMessage, Agent tool, or re-prompting the agent directly
   ✅ **CORRECT:** `kanban criteria add <card> "new requirement"` — the enforcement gate delivers it automatically
 
+
+  **User clarifying context counts as a new requirement.** When the user says things like "it's not X, it's Y", "I also see Z", or "verify that \<component\> handles \<case\>" while a background card is running, that IS new direction for the agent. Reflex: `kanban criteria add <card> "<context as new requirement>"`. Do NOT reach for SendMessage — always relay the user's context as a new criterion, never claim it cannot be relayed mid-flight — the criterion-add reflex IS the relay mechanism. The SubagentStop hook discovers the new unchecked criterion when the agent stops and forces a retry — the AC text itself IS the context that gets delivered. Write the criterion text with enough detail that the agent has what it needs. If the context genuinely cannot be expressed as a verifiable criterion, see the escape-valve note below — that's the only allowed exception.
+
+
 - **AC removal from running cards is out of scope** — if criteria need to be removed, let the agent finish, then `kanban redo` with updated AC. Exception: if the agent is approaching max retry cycles due to criteria that should be removed, do not wait for max-cycles failure — intervene with the TaskStop tool, `kanban redo` with corrected AC, and re-delegate.
 
 If you learn context that cannot be expressed as AC: let agent finish, review catches gaps, use `kanban redo` if needed.
