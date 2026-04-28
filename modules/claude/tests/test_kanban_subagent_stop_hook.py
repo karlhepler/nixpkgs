@@ -2,14 +2,14 @@
 Tests for modules/claude/kanban-subagent-stop-hook.py.
 
 Covered paths:
-- Card with all programmatic criteria + all passing → kanban done called directly, no Haiku
-- Card with at least one semantic criterion → Haiku reviewer invoked
+- Card with all programmatic criteria + all passing → kanban done called directly
+- Invalid AC (missing mov_commands or non-programmatic mov_type) → auto-fail with error message
 - Card with unchecked criteria at stop → kanban review fails, agent sent back for redo
 - Max retry cycles reached → stop allowed, failure surfaces
 - Programmatic MoV command fails (exit nonzero) → kanban criteria fail called with diagnostic
 - MoV exit 127/126/124 → mov_error diagnostic emitted (not a pass/fail)
 
-All kanban CLI, subprocess, and claude -p calls are monkeypatched — no real
+All kanban CLI and subprocess calls are monkeypatched — no real
 kanban cards are created or read during these tests.
 """
 
@@ -82,15 +82,15 @@ def run_process_stop(hook_mod, payload: dict, env: dict | None = None) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# All-programmatic criteria path (no Haiku)
+# All-programmatic criteria path (no LLM reviewer)
 # ---------------------------------------------------------------------------
 
 class TestAllProgrammaticCriteria:
-    """Card with all programmatic criteria + all passing → kanban done, no Haiku."""
+    """Card with all programmatic criteria + all passing → kanban done called directly (no LLM reviewer)."""
 
     def test_all_programmatic_pass_calls_done_directly(self, hook, tmp_transcript):
         """When all criteria are programmatic and all pass, kanban done is called
-        without launching claude -p (Haiku reviewer)."""
+        directly (no LLM reviewer launched)."""
         entries = [make_card_header_entry("10", "sess-a")]
         transcript = tmp_transcript(entries)
         payload = make_stop_payload(transcript_path=transcript)
@@ -133,7 +133,7 @@ class TestAllProgrammaticCriteria:
 
         assert_allow(result)
 
-        # Verify no claude -p was called (no Haiku reviewer)
+        # Verify no claude -p was called (no LLM reviewer)
         claude_calls = [
             c for c in subprocess_calls
             if c and c[0] == "claude"
@@ -184,102 +184,153 @@ class TestAllProgrammaticCriteria:
         assert len(done_called) >= 1, "Expected kanban done to be called on programmatic-only path"
 
 
+
 # ---------------------------------------------------------------------------
-# Semantic criteria path (Haiku reviewer)
+# Invalid AC auto-fail (missing mov_commands or non-programmatic mov_type)
 # ---------------------------------------------------------------------------
 
-class TestSemanticCriteriaInvokesHaiku:
-    """Card with at least one semantic criterion → Haiku reviewer invoked."""
+class TestInvalidACAutoFail:
+    """Criteria with non-programmatic mov_type or missing mov_commands → auto-fail."""
 
-    def test_semantic_criterion_launches_haiku(self, hook, tmp_transcript):
-        """When a semantic criterion exists, claude -p --model haiku is called."""
-        entries = [make_card_header_entry("20", "sess-c")]
+    def test_missing_mov_commands_auto_fails_with_error_message(self, hook, tmp_transcript):
+        """A criterion with mov_type programmatic but empty mov_commands is auto-failed
+        with 'invalid AC: no programmatic verification provided'."""
+        entries = [make_card_header_entry("25", "sess-invalid")]
         transcript = tmp_transcript(entries)
         payload = make_stop_payload(transcript_path=transcript)
 
         criteria_xml = KanbanMockResponses.card_xml(
-            card_number="20",
-            session="sess-c",
+            card_number="25",
+            session="sess-invalid",
+            status="doing",
+            criteria=[
+                {"text": "Some check", "mov_type": "programmatic", "mov_commands": []},
+            ],
+        )
+
+        criteria_fail_calls = []
+
+        def fake_subprocess_run(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd[0] == "kanban":
+                sub = cmd[1] if len(cmd) > 1 else ""
+                if sub == "show":
+                    return KanbanMockResponses.success(stdout=criteria_xml)
+                if sub == "status":
+                    return KanbanMockResponses.success(stdout="doing")
+                if sub == "review":
+                    return KanbanMockResponses.success()
+                if sub == "criteria" and len(cmd) > 2 and cmd[2] == "fail":
+                    criteria_fail_calls.append(cmd)
+                    return KanbanMockResponses.success()
+                if sub == "criteria":
+                    return KanbanMockResponses.success()
+                if sub == "redo":
+                    return KanbanMockResponses.success()
+                return KanbanMockResponses.success()
+            return KanbanMockResponses.success()
+
+        with patch.object(hook, "send_transition_notification"):
+            with patch("subprocess.run", side_effect=fake_subprocess_run):
+                run_process_stop(hook, payload)
+
+        assert len(criteria_fail_calls) >= 1, (
+            "Expected kanban criteria fail to be called for criterion with empty mov_commands"
+        )
+        # Verify the required error message is present in the fail call
+        fail_args = " ".join(str(a) for a in criteria_fail_calls[0])
+        assert "invalid AC" in fail_args.lower() or "invalid ac" in fail_args.lower(), (
+            f"Expected 'invalid AC' in fail reason. Got: {fail_args!r}"
+        )
+
+    def test_semantic_mov_type_auto_fails_with_error_message(self, hook, tmp_transcript):
+        """A criterion with mov_type 'semantic' (instead of 'programmatic') is auto-failed
+        with 'invalid AC: no programmatic verification provided'."""
+        entries = [make_card_header_entry("26", "sess-semantic")]
+        transcript = tmp_transcript(entries)
+        payload = make_stop_payload(transcript_path=transcript)
+
+        criteria_xml = KanbanMockResponses.card_xml(
+            card_number="26",
+            session="sess-semantic",
             status="doing",
             criteria=[
                 {"text": "Semantic check", "mov_type": "semantic"},
             ],
         )
 
-        # Haiku result: card reaches done
-        haiku_json = json.dumps({"result": "All criteria passed.", "usage": {}})
-        claude_calls = []
+        criteria_fail_calls = []
 
         def fake_subprocess_run(cmd, **kwargs):
-            if isinstance(cmd, list) and cmd[0] == "claude":
-                claude_calls.append(cmd)
-                return KanbanMockResponses.success(stdout=haiku_json)
             if isinstance(cmd, list) and cmd[0] == "kanban":
                 sub = cmd[1] if len(cmd) > 1 else ""
                 if sub == "show":
                     return KanbanMockResponses.success(stdout=criteria_xml)
                 if sub == "status":
-                    # First call: doing; after haiku: done
-                    if not claude_calls:
-                        return KanbanMockResponses.success(stdout="doing")
-                    return KanbanMockResponses.success(stdout="done")
+                    return KanbanMockResponses.success(stdout="doing")
                 if sub == "review":
+                    return KanbanMockResponses.success()
+                if sub == "criteria" and len(cmd) > 2 and cmd[2] == "fail":
+                    criteria_fail_calls.append(cmd)
+                    return KanbanMockResponses.success()
+                if sub == "criteria":
+                    return KanbanMockResponses.success()
+                if sub == "redo":
                     return KanbanMockResponses.success()
                 return KanbanMockResponses.success()
             return KanbanMockResponses.success()
 
-        # ac-reviewer agent definition read
-        with patch.object(hook, "read_ac_reviewer_agent_definition", return_value="system prompt"):
+        with patch.object(hook, "send_transition_notification"):
             with patch("subprocess.run", side_effect=fake_subprocess_run):
-                result = run_process_stop(hook, payload)
+                run_process_stop(hook, payload)
 
-        assert len(claude_calls) >= 1, "Expected claude -p to be called for semantic criteria"
-        claude_cmd = claude_calls[0]
-        assert "--model" in claude_cmd
-        haiku_idx = claude_cmd.index("--model") + 1
-        assert claude_cmd[haiku_idx] == "haiku"
+        assert len(criteria_fail_calls) >= 1, (
+            "Expected kanban criteria fail to be called for criterion with mov_type='semantic'"
+        )
+        fail_args = " ".join(str(a) for a in criteria_fail_calls[0])
+        assert "invalid AC" in fail_args.lower() or "invalid ac" in fail_args.lower(), (
+            f"Expected 'invalid AC' in fail reason. Got: {fail_args!r}"
+        )
 
-    def test_ac_reviewer_agent_def_used_as_system_prompt(self, hook, tmp_transcript):
-        """The ac-reviewer agent definition is loaded and passed as --system-prompt."""
-        entries = [make_card_header_entry("21", "sess-d")]
+    def test_no_claude_launched_for_invalid_ac(self, hook, tmp_transcript):
+        """Invalid AC (semantic mov_type) must NOT launch claude -p — auto-fail only."""
+        entries = [make_card_header_entry("27", "sess-no-claude")]
         transcript = tmp_transcript(entries)
         payload = make_stop_payload(transcript_path=transcript)
 
         criteria_xml = KanbanMockResponses.card_xml(
-            card_number="21",
-            session="sess-d",
+            card_number="27",
+            session="sess-no-claude",
             status="doing",
-            criteria=[{"text": "Semantic", "mov_type": "semantic"}],
+            criteria=[
+                {"text": "Semantic check", "mov_type": "semantic"},
+            ],
         )
-        haiku_json = json.dumps({"result": "done", "usage": {}})
-        claude_calls = []
+
+        subprocess_calls = []
 
         def fake_subprocess_run(cmd, **kwargs):
-            if isinstance(cmd, list) and cmd[0] == "claude":
-                claude_calls.append(cmd)
-                return KanbanMockResponses.success(stdout=haiku_json)
+            subprocess_calls.append(cmd if isinstance(cmd, list) else [cmd])
             if isinstance(cmd, list) and cmd[0] == "kanban":
                 sub = cmd[1] if len(cmd) > 1 else ""
                 if sub == "show":
                     return KanbanMockResponses.success(stdout=criteria_xml)
                 if sub == "status":
-                    if not claude_calls:
-                        return KanbanMockResponses.success(stdout="doing")
-                    return KanbanMockResponses.success(stdout="done")
+                    return KanbanMockResponses.success(stdout="doing")
                 if sub == "review":
+                    return KanbanMockResponses.success()
+                if sub == "redo":
                     return KanbanMockResponses.success()
                 return KanbanMockResponses.success()
             return KanbanMockResponses.success()
 
-        with patch.object(hook, "read_ac_reviewer_agent_definition", return_value="SENTINEL_SYSTEM_PROMPT") as mock_read:
+        with patch.object(hook, "send_transition_notification"):
             with patch("subprocess.run", side_effect=fake_subprocess_run):
                 run_process_stop(hook, payload)
 
-        mock_read.assert_called_once()
-        # Verify the sentinel appears in the claude -p command
-        if claude_calls:
-            flat = " ".join(str(x) for x in claude_calls[0])
-            assert "SENTINEL_SYSTEM_PROMPT" in flat or "--system-prompt" in flat
+        claude_calls = [c for c in subprocess_calls if c and c[0] == "claude"]
+        assert len(claude_calls) == 0, (
+            f"Expected no claude -p calls for invalid AC, but got: {claude_calls}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -368,23 +419,20 @@ class TestMaxRetryCyclesReached:
         transcript = tmp_transcript(entries)
         payload = make_stop_payload(transcript_path=transcript)
 
-        # Card already at max review cycles (3)
+        # Card already at max review cycles (3) with a failing programmatic criterion
         criteria_xml = KanbanMockResponses.card_xml(
             card_number="40",
             session="sess-g",
             status="review",
             review_cycles=3,
             criteria=[
-                {"text": "Semantic check", "mov_type": "semantic", "reviewer_met": "fail"},
+                {"text": "File exists", "mov_type": "programmatic",
+                 "mov_commands": [{"cmd": "test -f /missing", "timeout": 5}],
+                 "reviewer_met": "fail"},
             ],
         )
-        haiku_json = json.dumps({"result": "reviewed", "usage": {}})
-        claude_call_count = [0]
 
         def fake_subprocess_run(cmd, **kwargs):
-            if isinstance(cmd, list) and cmd[0] == "claude":
-                claude_call_count[0] += 1
-                return KanbanMockResponses.success(stdout=haiku_json)
             if isinstance(cmd, list) and cmd[0] == "kanban":
                 sub = cmd[1] if len(cmd) > 1 else ""
                 if sub == "show":
@@ -392,14 +440,18 @@ class TestMaxRetryCyclesReached:
                 if sub == "status":
                     return KanbanMockResponses.success(stdout="review")
                 if sub == "done":
-                    # Fail — reviewer hasn't passed everything
                     return KanbanMockResponses.failure(returncode=1)
                 return KanbanMockResponses.success()
+            if isinstance(cmd, str) and "test -f" in cmd:
+                m = MagicMock()
+                m.returncode = 1
+                m.stdout = ""
+                m.stderr = ""
+                return m
             return KanbanMockResponses.success()
 
-        with patch.object(hook, "read_ac_reviewer_agent_definition", return_value="sys"):
-            with patch("subprocess.run", side_effect=fake_subprocess_run):
-                result = run_process_stop(hook, payload)
+        with patch("subprocess.run", side_effect=fake_subprocess_run):
+            result = run_process_stop(hook, payload)
 
         # After inner loop exhausted and review_cycles >= MAX_OUTER_CYCLES, allow stop
         assert_allow(result)
@@ -407,41 +459,28 @@ class TestMaxRetryCyclesReached:
         assert "max" in msg.lower() or "manual" in msg.lower() or "intervention" in msg.lower() or "cycles" in msg.lower()
 
     def test_under_max_cycles_blocks_agent(self, hook, tmp_transcript):
-        """When under max cycles, a failed review blocks the agent for redo."""
+        """When under max cycles, a failed programmatic MoV blocks the agent for redo."""
         entries = [make_card_header_entry("41", "sess-h")]
         transcript = tmp_transcript(entries)
         payload = make_stop_payload(transcript_path=transcript)
 
-        # Card at 0 review cycles
+        # Card at 0 review cycles with a failing programmatic criterion
         criteria_xml = KanbanMockResponses.card_xml(
             card_number="41",
             session="sess-h",
             status="review",
             review_cycles=0,
             criteria=[
-                {"text": "Semantic check", "mov_type": "semantic", "reviewer_met": "fail"},
+                {"text": "File exists", "mov_type": "programmatic",
+                 "mov_commands": [{"cmd": "test -f /missing", "timeout": 5}],
+                 "reviewer_met": "fail"},
             ],
         )
-        fail_xml = KanbanMockResponses.card_xml(
-            card_number="41",
-            session="sess-h",
-            status="doing",
-            review_cycles=1,
-            criteria=[
-                {"text": "Semantic check", "mov_type": "semantic", "reviewer_met": "fail",
-                 "reviewer_fail_reason": "not done"},
-            ],
-        )
-        haiku_json = json.dumps({"result": "reviewed", "usage": {}})
-        show_count = [0]
 
         def fake_subprocess_run(cmd, **kwargs):
-            if isinstance(cmd, list) and cmd[0] == "claude":
-                return KanbanMockResponses.success(stdout=haiku_json)
             if isinstance(cmd, list) and cmd[0] == "kanban":
                 sub = cmd[1] if len(cmd) > 1 else ""
                 if sub == "show":
-                    show_count[0] += 1
                     return KanbanMockResponses.success(stdout=criteria_xml)
                 if sub == "status":
                     return KanbanMockResponses.success(stdout="review")
@@ -450,12 +489,17 @@ class TestMaxRetryCyclesReached:
                 if sub == "redo":
                     return KanbanMockResponses.success()
                 return KanbanMockResponses.success()
+            if isinstance(cmd, str) and "test -f" in cmd:
+                m = MagicMock()
+                m.returncode = 1
+                m.stdout = ""
+                m.stderr = ""
+                return m
             return KanbanMockResponses.success()
 
-        with patch.object(hook, "read_ac_reviewer_agent_definition", return_value="sys"):
-            with patch.object(hook, "send_transition_notification"):
-                with patch("subprocess.run", side_effect=fake_subprocess_run):
-                    result = run_process_stop(hook, payload)
+        with patch.object(hook, "send_transition_notification"):
+            with patch("subprocess.run", side_effect=fake_subprocess_run):
+                result = run_process_stop(hook, payload)
 
         assert_block(result)
 
@@ -515,10 +559,9 @@ class TestProgrammaticMovFailure:
                 return m
             return KanbanMockResponses.success()
 
-        with patch.object(hook, "read_ac_reviewer_agent_definition", return_value="sys"):
-            with patch.object(hook, "send_transition_notification"):
-                with patch("subprocess.run", side_effect=fake_subprocess_run):
-                    run_process_stop(hook, payload)
+        with patch.object(hook, "send_transition_notification"):
+            with patch("subprocess.run", side_effect=fake_subprocess_run):
+                run_process_stop(hook, payload)
 
         assert len(criteria_fail_calls) >= 1, (
             "Expected kanban criteria fail to be called when MoV exits 1"
@@ -779,245 +822,6 @@ class TestCardAlreadyDone:
 
         assert_allow(result)
 
-
-# ---------------------------------------------------------------------------
-# Unified kanban done call path
-# ---------------------------------------------------------------------------
-
-class TestUnifiedKanbanDonePath:
-    """After reviewer finishes semantic verification, hook calls kanban done."""
-
-    def test_semantic_path_hook_calls_kanban_done(self, hook, tmp_transcript):
-        """Semantic criteria: reviewer verifies, then hook calls kanban done (not reviewer)."""
-        entries = [make_card_header_entry("100", "sess-unified")]
-        transcript = tmp_transcript(entries)
-        payload = make_stop_payload(transcript_path=transcript)
-
-        criteria_xml = KanbanMockResponses.card_xml(
-            card_number="100",
-            session="sess-unified",
-            status="doing",
-            criteria=[
-                {"text": "Semantic criterion", "mov_type": "semantic",
-                 "agent_met": "true", "reviewer_met": "pass"},
-            ],
-        )
-
-        # After reviewer runs, all criteria are reviewer_met=pass
-        criteria_all_passed_xml = KanbanMockResponses.card_xml(
-            card_number="100",
-            session="sess-unified",
-            status="doing",
-            criteria=[
-                {"text": "Semantic criterion", "mov_type": "semantic",
-                 "agent_met": "true", "reviewer_met": "pass"},
-            ],
-        )
-
-        haiku_json = json.dumps({"result": "Card #100: 1:checked", "usage": {}})
-        done_calls = []
-        claude_calls = []
-
-        def fake_subprocess_run(cmd, **kwargs):
-            if isinstance(cmd, list) and cmd[0] == "claude":
-                claude_calls.append(cmd)
-                return KanbanMockResponses.success(stdout=haiku_json)
-            if isinstance(cmd, list) and cmd[0] == "kanban":
-                sub = cmd[1] if len(cmd) > 1 else ""
-                if sub == "show":
-                    return KanbanMockResponses.success(stdout=criteria_all_passed_xml)
-                if sub == "status":
-                    return KanbanMockResponses.success(stdout="doing")
-                if sub == "review":
-                    return KanbanMockResponses.success()
-                if sub == "done":
-                    done_calls.append(cmd)
-                    return KanbanMockResponses.success()
-                return KanbanMockResponses.success()
-            return KanbanMockResponses.success()
-
-        with patch.object(hook, "read_ac_reviewer_agent_definition", return_value="sys prompt"):
-            with patch("subprocess.run", side_effect=fake_subprocess_run):
-                result = run_process_stop(hook, payload)
-
-        assert_allow(result)
-        assert len(claude_calls) >= 1, "Expected reviewer (claude -p) to be called"
-        assert len(done_calls) >= 1, "Expected hook to call kanban done after reviewer"
-
-    def test_semantic_path_reviewer_does_not_call_done(self, hook, tmp_transcript):
-        """Verify claude -p is called but kanban done is called by hook — not passed to claude."""
-        entries = [make_card_header_entry("101", "sess-nodone")]
-        transcript = tmp_transcript(entries)
-        payload = make_stop_payload(transcript_path=transcript)
-
-        criteria_xml = KanbanMockResponses.card_xml(
-            card_number="101",
-            session="sess-nodone",
-            status="doing",
-            criteria=[
-                {"text": "Semantic only", "mov_type": "semantic",
-                 "agent_met": "true", "reviewer_met": "pass"},
-            ],
-        )
-
-        haiku_json = json.dumps({"result": "Card #101: 1:checked", "usage": {}})
-        claude_prompts = []
-
-        def fake_subprocess_run(cmd, **kwargs):
-            if isinstance(cmd, list) and cmd[0] == "claude":
-                # Capture the prompt (passed via stdin in kwargs)
-                input_text = kwargs.get("input", "")
-                claude_prompts.append(input_text)
-                return KanbanMockResponses.success(stdout=haiku_json)
-            if isinstance(cmd, list) and cmd[0] == "kanban":
-                sub = cmd[1] if len(cmd) > 1 else ""
-                if sub == "show":
-                    return KanbanMockResponses.success(stdout=criteria_xml)
-                if sub == "status":
-                    return KanbanMockResponses.success(stdout="doing")
-                if sub == "review":
-                    return KanbanMockResponses.success()
-                if sub == "done":
-                    return KanbanMockResponses.success()
-                return KanbanMockResponses.success()
-            return KanbanMockResponses.success()
-
-        with patch.object(hook, "read_ac_reviewer_agent_definition", return_value="sys"):
-            with patch("subprocess.run", side_effect=fake_subprocess_run):
-                run_process_stop(hook, payload)
-
-        # Verify the prompt sent to reviewer instructs it NOT to call kanban done
-        if claude_prompts:
-            prompt_text = claude_prompts[0]
-            # The prompt should say do NOT call kanban done
-            assert "do not call" in prompt_text.lower() or "do not" in prompt_text.lower() or "not" in prompt_text.lower(), (
-                "Reviewer prompt should instruct reviewer not to call kanban done"
-            )
-
-
-# ---------------------------------------------------------------------------
-# reviewer_met incomplete → hook re-launches reviewer
-# ---------------------------------------------------------------------------
-
-class TestReviewerMetIncompleteRelaunch:
-    """When kanban done fails due to reviewer_met=unchecked, hook re-launches reviewer."""
-
-    def test_reviewer_met_incomplete_relaunches_reviewer(self, hook, tmp_transcript):
-        """If reviewer_met is None after first pass, hook re-launches reviewer (up to max retries)."""
-        entries = [make_card_header_entry("110", "sess-rlaunch")]
-        transcript = tmp_transcript(entries)
-        payload = make_stop_payload(transcript_path=transcript)
-
-        # reviewer_met=unchecked: reviewer didn't finish on first pass
-        criteria_incomplete_xml = KanbanMockResponses.card_xml(
-            card_number="110",
-            session="sess-rlaunch",
-            status="doing",
-            criteria=[
-                {"text": "Semantic check", "mov_type": "semantic",
-                 "agent_met": "true", "reviewer_met": "unchecked"},
-            ],
-        )
-        # After re-launch: reviewer_met=pass (reviewer finished on second pass)
-        criteria_complete_xml = KanbanMockResponses.card_xml(
-            card_number="110",
-            session="sess-rlaunch",
-            status="doing",
-            criteria=[
-                {"text": "Semantic check", "mov_type": "semantic",
-                 "agent_met": "true", "reviewer_met": "pass"},
-            ],
-        )
-
-        haiku_json = json.dumps({"result": "done", "usage": {}})
-        claude_call_count = [0]
-        done_call_count = [0]
-
-        def fake_subprocess_run(cmd, **kwargs):
-            if isinstance(cmd, list) and cmd[0] == "claude":
-                claude_call_count[0] += 1
-                return KanbanMockResponses.success(stdout=haiku_json)
-            if isinstance(cmd, list) and cmd[0] == "kanban":
-                sub = cmd[1] if len(cmd) > 1 else ""
-                if sub == "show":
-                    # Return incomplete until the second claude call has run
-                    if claude_call_count[0] < 2:
-                        return KanbanMockResponses.success(stdout=criteria_incomplete_xml)
-                    return KanbanMockResponses.success(stdout=criteria_complete_xml)
-                if sub == "status":
-                    return KanbanMockResponses.success(stdout="doing")
-                if sub == "review":
-                    return KanbanMockResponses.success()
-                if sub == "done":
-                    done_call_count[0] += 1
-                    # First done call fails (reviewer didn't finish); second succeeds
-                    if done_call_count[0] <= 1:
-                        return KanbanMockResponses.failure(returncode=1, stderr="unchecked criteria")
-                    return KanbanMockResponses.success()
-                return KanbanMockResponses.success()
-            return KanbanMockResponses.success()
-
-        with patch.object(hook, "read_ac_reviewer_agent_definition", return_value="sys"):
-            with patch("subprocess.run", side_effect=fake_subprocess_run):
-                result = run_process_stop(hook, payload)
-
-        assert_allow(result)
-        assert claude_call_count[0] >= 2, (
-            f"Expected reviewer to be re-launched at least once, got {claude_call_count[0]} calls"
-        )
-        assert done_call_count[0] >= 2, (
-            f"Expected kanban done to be called at least twice (first fails, second succeeds), "
-            f"got {done_call_count[0]} calls"
-        )
-
-    def test_reviewer_met_incomplete_bounded_by_max_retries(self, hook, tmp_transcript):
-        """If reviewer_met stays incomplete after max retries, hook signals failure (not infinite loop)."""
-        entries = [make_card_header_entry("111", "sess-maxretry")]
-        transcript = tmp_transcript(entries)
-        payload = make_stop_payload(transcript_path=transcript)
-
-        # Always returns reviewer_met=unchecked
-        criteria_incomplete_xml = KanbanMockResponses.card_xml(
-            card_number="111",
-            session="sess-maxretry",
-            status="review",
-            criteria=[
-                {"text": "Semantic check", "mov_type": "semantic",
-                 "agent_met": "true", "reviewer_met": "unchecked"},
-            ],
-        )
-
-        haiku_json = json.dumps({"result": "reviewed", "usage": {}})
-        claude_call_count = [0]
-
-        def fake_subprocess_run(cmd, **kwargs):
-            if isinstance(cmd, list) and cmd[0] == "claude":
-                claude_call_count[0] += 1
-                return KanbanMockResponses.success(stdout=haiku_json)
-            if isinstance(cmd, list) and cmd[0] == "kanban":
-                sub = cmd[1] if len(cmd) > 1 else ""
-                if sub == "show":
-                    return KanbanMockResponses.success(stdout=criteria_incomplete_xml)
-                if sub == "status":
-                    return KanbanMockResponses.success(stdout="review")
-                if sub == "done":
-                    return KanbanMockResponses.failure(returncode=1, stderr="unchecked")
-                if sub == "redo":
-                    return KanbanMockResponses.success()
-                return KanbanMockResponses.success()
-            return KanbanMockResponses.success()
-
-        with patch.object(hook, "read_ac_reviewer_agent_definition", return_value="sys"):
-            with patch.object(hook, "send_transition_notification"):
-                with patch("subprocess.run", side_effect=fake_subprocess_run):
-                    result = run_process_stop(hook, payload)
-
-        # Should not loop forever — bounded by MAX_INNER_ITERATIONS + MAX_REVIEWER_DONE_RETRIES
-        hook_mod = hook
-        max_expected_calls = hook_mod.MAX_INNER_ITERATIONS + hook_mod.MAX_REVIEWER_DONE_RETRIES + 1
-        assert claude_call_count[0] <= max_expected_calls, (
-            f"Reviewer launched {claude_call_count[0]} times — expected at most {max_expected_calls}"
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -1414,7 +1218,7 @@ class TestAutoUncheckBeforeRedo:
     """kanban criteria uncheck must be called for each failing criterion BEFORE kanban redo."""
 
     def test_auto_uncheck_called_before_redo(self, hook, tmp_transcript):
-        """When reviewer marks criteria fail, uncheck is called before redo — in that order.
+        """When a programmatic MoV fails, uncheck is called before redo — in that order.
 
         If the auto-uncheck block at process_subagent_stop were deleted, this test must fail:
         no uncheck call would appear in the ordered call log before redo.
@@ -1423,14 +1227,16 @@ class TestAutoUncheckBeforeRedo:
         transcript = tmp_transcript(entries)
         payload = make_stop_payload(transcript_path=transcript)
 
-        # Card in review with one failing criterion
+        # Card in review with one failing programmatic criterion
         criteria_xml = KanbanMockResponses.card_xml(
             card_number="70",
             session="sess-uncheck",
             status="review",
             review_cycles=0,
             criteria=[
-                {"text": "Must be fixed", "mov_type": "semantic", "reviewer_met": "fail"},
+                {"text": "Must be fixed", "mov_type": "programmatic",
+                 "mov_commands": [{"cmd": "test -f /missing", "timeout": 5}],
+                 "reviewer_met": "fail"},
             ],
         )
 
@@ -1450,14 +1256,18 @@ class TestAutoUncheckBeforeRedo:
                 if sub in ("redo", "criteria"):
                     return KanbanMockResponses.success()
                 return KanbanMockResponses.success()
-            if isinstance(cmd, list) and cmd[0] == "claude":
-                return KanbanMockResponses.success(stdout=json.dumps({"result": "reviewed", "usage": {}}))
+            # Shell command: "test -f /missing" exits 1
+            if isinstance(cmd, str) and "test -f" in cmd:
+                m = MagicMock()
+                m.returncode = 1
+                m.stdout = ""
+                m.stderr = ""
+                return m
             return KanbanMockResponses.success()
 
-        with patch.object(hook, "read_ac_reviewer_agent_definition", return_value="sys"):
-            with patch.object(hook, "send_transition_notification"):
-                with patch("subprocess.run", side_effect=fake_subprocess_run):
-                    result = run_process_stop(hook, payload)
+        with patch.object(hook, "send_transition_notification"):
+            with patch("subprocess.run", side_effect=fake_subprocess_run):
+                result = run_process_stop(hook, payload)
 
         assert_block(result)
 
@@ -1497,7 +1307,7 @@ class TestLockedPassedMustFixPartition:
     """Block reason on redo must partition criteria into LOCKED PASSED and MUST FIX sections."""
 
     def test_block_reason_contains_locked_passed_and_must_fix_sections(self, hook, tmp_transcript):
-        """Mixed-state card (one passing, one failing) → block reason includes both sections.
+        """Mixed-state card (one passing, one failing programmatic MoV) → block reason includes both sections.
 
         Asserts:
         - LOCKED PASSED section lists the passing criterion
@@ -1508,15 +1318,19 @@ class TestLockedPassedMustFixPartition:
         transcript = tmp_transcript(entries)
         payload = make_stop_payload(transcript_path=transcript)
 
-        # Card in review: criterion 1 passed, criterion 2 failed
+        # Card in review: criterion 1 passed (reviewer_met=pass), criterion 2 failed (reviewer_met=fail)
         criteria_xml = KanbanMockResponses.card_xml(
             card_number="71",
             session="sess-partition",
             status="review",
             review_cycles=0,
             criteria=[
-                {"text": "Already done criterion", "mov_type": "semantic", "reviewer_met": "pass"},
-                {"text": "Broken criterion", "mov_type": "semantic", "reviewer_met": "fail"},
+                {"text": "Already done criterion", "mov_type": "programmatic",
+                 "mov_commands": [{"cmd": "true", "timeout": 5}],
+                 "reviewer_met": "pass"},
+                {"text": "Broken criterion", "mov_type": "programmatic",
+                 "mov_commands": [{"cmd": "test -f /missing", "timeout": 5}],
+                 "reviewer_met": "fail"},
             ],
         )
 
@@ -1532,14 +1346,19 @@ class TestLockedPassedMustFixPartition:
                 if sub in ("redo", "criteria"):
                     return KanbanMockResponses.success()
                 return KanbanMockResponses.success()
-            if isinstance(cmd, list) and cmd[0] == "claude":
-                return KanbanMockResponses.success(stdout=json.dumps({"result": "reviewed", "usage": {}}))
+            if isinstance(cmd, str) and cmd.strip() == "true":
+                return KanbanMockResponses.success()
+            if isinstance(cmd, str) and "test -f" in cmd:
+                m = MagicMock()
+                m.returncode = 1
+                m.stdout = ""
+                m.stderr = ""
+                return m
             return KanbanMockResponses.success()
 
-        with patch.object(hook, "read_ac_reviewer_agent_definition", return_value="sys"):
-            with patch.object(hook, "send_transition_notification"):
-                with patch("subprocess.run", side_effect=fake_subprocess_run):
-                    result = run_process_stop(hook, payload)
+        with patch.object(hook, "send_transition_notification"):
+            with patch("subprocess.run", side_effect=fake_subprocess_run):
+                result = run_process_stop(hook, payload)
 
         assert_block(result)
         reason = result.get("reason", "")

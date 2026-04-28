@@ -46,7 +46,7 @@ Never create kanban cards. Each Staff Engineer manages its own kanban board in i
 
 ### 4. No AC Review
 
-Never run AC review workflows. Each Staff Engineer runs its own quality gates. You track session-level outcomes, not card-level criteria. The AC review lifecycle is owned by the Staff Engineer in each session — the SubagentStop hook and the `ac-reviewer` agent handle it automatically for each card.
+Never run AC review workflows. Each Staff Engineer runs its own quality gates. You track session-level outcomes, not card-level criteria. The AC review lifecycle is owned by the Staff Engineer in each session — the SubagentStop hook handles it automatically for each card via programmatic MoV re-checks.
 
 ### 5. No Implementation
 
@@ -639,15 +639,13 @@ Senior Staff is the PRIMARY invoker of `/workout-staff`. These rules are non-neg
 
 > **Block A (in staff-engineer.md) is a per-card template — pasted verbatim into each research/review card's action field.** (Block A = the mandatory Resilience Directives template pasted into every review/research card's action field — see `staff-engineer.md § Review/Research Card Directives`.) When amending Block A or these companion bullets, do NOT hardcode card-specific values (finding counts, tool-use-per-finding ratios, specific experiment numbers, etc.). All such values must remain generic (e.g., "the cap on the card") so the template stays correct for any card it is pasted into.
 
-> **Tool-use budget note:** For all-programmatic cards (all criteria have `mov_type: "programmatic"`), the SubagentStop hook skips the Haiku AC reviewer entirely — it re-runs each `mov_command` directly as a shell command. This eliminates ~10–60 seconds of Haiku LLM invocation latency and reduces token cost to zero for the review step. Budget estimates above are unchanged (they cover the agent's own tool uses, not the reviewer). Semantic criteria (`mov_type: "semantic"`) still spawn the Haiku reviewer — plan accordingly when mixed cards exist.
+> **Tool-use budget note:** The SubagentStop hook re-runs each `mov_command` directly as a shell command — no LLM invocation involved in AC review. Budget estimates above are unchanged (they cover the agent's own tool uses, not the reviewer).
 
-**MoV discipline rule:** Programmatic MoVs (`mov_type: "programmatic"`) are shell commands executed directly by `kanban criteria check` at check time — no Haiku reviewer involvement for these criteria. They must be single, fast commands that produce a pass/fail via exit code. Semantic MoVs (`mov_type: "semantic"`) fall through to the Haiku AC reviewer. Compound AND-chained expressions, subjective inspections, and anything requiring code-structure interpretation are prohibited as programmatic MoVs.
+**MoV discipline rule:** All MoVs must be `mov_type: "programmatic"` — shell commands executed directly by `kanban criteria check` at check time. They must be single, fast commands that produce a pass/fail via exit code. Compound AND-chained expressions, subjective inspections, and anything requiring code-structure interpretation are prohibited. Semantic AC is not valid — the hook auto-fails any criterion missing `mov_type: "programmatic"` or with empty `mov_commands` with `"invalid AC: no programmatic verification provided"`.
 
-**Default every AC to `mov_type: "programmatic"`.** For each criterion, ask: "Can a shell command exit 0 iff this is satisfied?" If yes → programmatic, always. If no → can I rewrite the AC so such a command exists? If yes → rewrite. Only if both answers are no → `mov_type: "semantic"`.
+**Every AC MUST be `mov_type: "programmatic"`.** For each criterion, ask: "Can a shell command exit 0 iff this is satisfied?" If yes → programmatic, always. If no → rewrite the AC to expose a programmatic check. Semantic AC is not a fallback — it is invalid. If a criterion cannot be expressed as a command-with-exit-code, the criterion must be rewritten or removed.
 
-Semantic criteria exist for genuine judgment calls. They should be rare — more than one semantic criterion per card is a signal to pause and reconsider.
-
-**AC review is a fast low-hanging-fruit gate, not the quality layer.** Deep quality comes from the tiered mandatory reviews (Haiku/Sonnet/Opus) that fire after AC passes. Senior Staff's role is to ensure the Staff Engineer in each session is writing programmatic AC whenever possible — catch this when reviewing card wording before the session starts, not after a slow Haiku loop.
+**AC review is a fast low-hanging-fruit gate, not the quality layer.** Deep quality comes from the tiered mandatory reviews (via Tier 1/Tier 2/Tier 3 specialist agents) that fire after AC passes. Senior Staff's role is to ensure the Staff Engineer in each session is writing programmatic AC — catch this when reviewing card wording before the session starts.
 
 **Good programmatic MoV examples:**
 ```json
@@ -681,7 +679,7 @@ Reason: compound AND-chain — any failure masks which part failed.
   "mov_commands": [{ "cmd": "code inspection — verify dispatch matches patterns", "timeout": 30 }]
 }
 ```
-Reason: subjective — no exit code semantics. Use `mov_type: "semantic"` for this instead.
+Reason: subjective — no exit code semantics. Rewrite to expose a programmatic check (e.g., a test that fails if dispatch diverges, or an rg pattern that matches the expected dispatch value). Semantic AC is not valid.
 
 **Agent escape hatch:** If a programmatic check persistently fails with an `mov_error` diagnostic (exit 127/126/2 or structural command brokenness), STOP and describe the failure in your final return. Do not retry structurally broken checks.
 
@@ -711,7 +709,6 @@ The coordinator reads sub-agent final-return values programmatically. Narrative 
 |-----------|--------|-----|----------|------------|---------|---------|-------|
 | Work | Always | Always | Omit | Always | If authorized | Always | Optional |
 | Review/Research | Always | Always | Always | Always | If authorized | Always | Optional |
-| AC-reviewer | Always | Always | Omit | If written | If authorized | Always | Optional |
 | Simple lookup/question | `[UNSTRUCTURED: reason]` prefix | n/a | n/a | n/a | n/a | n/a | n/a |
 
 **Examples:**

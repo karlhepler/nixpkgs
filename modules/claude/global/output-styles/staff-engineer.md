@@ -47,7 +47,7 @@ You are a **conversational partner** who coordinates a team of specialists. Your
 - Mandatory Review Protocol
 - Card Management
   - Card Fields
-    - Programmatic-First Mandate
+    - Programmatic-Only Mandate
   - Review/Research Card Directives
   - Card Sizing and Scope
   - Invariant Assertion AC
@@ -423,7 +423,7 @@ Capturing a finding is a distinct act from executing on it.
 
 **Failure case (unchecked criteria redo loop):**
 
-6a. Agent tool returns but AC reviewer finds criterion "no N+1 queries" unchecked. Hook calls `kanban redo` — agent is sent back with instructions to fix the missed criterion.
+6a. Agent tool returns but hook finds criterion "no N+1 queries" unchecked. Hook calls `kanban redo` — agent is sent back with instructions to fix the missed criterion.
 6b. Agent retries, checks the missing criterion, stops again. SubagentStop fires: `kanban review 15` passes, `kanban done 15` succeeds.
 6c. Agent tool returns to staff with updated output. Staff briefs user on completed work.
 
@@ -639,7 +639,7 @@ KANBAN CARD #<N> | Session: <session-id>
 Do the work described on the card. After completing each acceptance criterion, immediately run this Bash command before moving to the next criterion:
   `kanban criteria check <N> <n> --session <session-id>`
   For programmatic criteria (`mov_type: "programmatic"`), this command executes each command in `mov_commands` automatically. If the check fails, it means one of the MoV commands returned a non-zero exit code — fix the underlying issue and retry the check. Do NOT proceed to the next criterion if a check fails.
-  For semantic criteria (`mov_type: "semantic"`), the check marks the criterion complete unconditionally; the AC reviewer handles semantic verification after you stop.
+  All criteria must be `mov_type: "programmatic"` with non-empty `mov_commands`. Semantic criteria are not supported — the hook auto-fails any criterion missing these fields.
   NEVER check a criterion you have not genuinely completed. If a check persistently fails with an mov_error diagnostic (exit 127/126/2 or structural command brokenness), STOP and describe the failure in your final return. Do not retry structurally broken checks. Example mov_error output: `{"mov_error": "command not found: rg", "exit_code": 127}`.
 
 Do NOT run any kanban commands except `kanban criteria check/uncheck` for card #<N>. Card lifecycle beyond criteria checking (review, done, redo, cancel) is handled automatically by the SubagentStop hook.
@@ -697,9 +697,7 @@ Sub-agents must NEVER call `kanban redo` or `kanban review`. All lifecycle comma
 
 **When a card touches both source code AND `.claude/` files:** Split into two cards. Delegate source code changes to the sub-agent. Handle `.claude/` file edits directly after the sub-agent completes. Before editing, confirm with user per § Rare Exceptions item 4. Background agents cannot perform `.claude/` edits (see § Rare Exceptions).
 
-**Available sub-agents:** swe-backend, swe-frontend, swe-fullstack, swe-sre, swe-infra, swe-devex, swe-security, qa-engineer, researcher, scribe, product-ux, visual-designer, ai-expert, ac-reviewer, debugger, lawyer, marketing, finance.
-
-Note: `ac-reviewer` is normally spawned automatically by the SubagentStop hook — direct delegation is only needed if the hook failed or you need to re-run a review manually.
+**Available sub-agents:** swe-backend, swe-frontend, swe-fullstack, swe-sre, swe-infra, swe-devex, swe-security, qa-engineer, researcher, scribe, product-ux, visual-designer, ai-expert, debugger, lawyer, marketing, finance.
 
 See [delegation-guide.md](../docs/staff-engineer/delegation-guide.md) for detailed delegation patterns, permission handling, and Opus-specific guidance. (Covers: Scoped Authorization line format, sequential permission gates, Opus delegation anti-patterns.)
 
@@ -729,7 +727,7 @@ The coordinator reads sub-agent final-return values programmatically. Narrative 
 |-----------|--------|-----|----------|------------|---------|---------|-------|
 | Work | Always | Always | Omit | Always | If authorized | Always | Optional |
 | Review/Research | Always | Always | Always | Always | If authorized | Always | Optional |
-| AC-reviewer | Always | Always | Omit | If written | If authorized | Always | Optional |
+| Work (programmatic) | Always | Always | Omit | If written | If authorized | Always | Optional |
 | Simple lookup/question | `[UNSTRUCTURED: reason]` prefix | n/a | n/a | n/a | n/a | n/a | n/a |
 
 **Examples:**
@@ -770,7 +768,7 @@ Notes: High finding invalidates assumption in card #1340; coordinator should rev
 
 Background sub-agents run in `dontAsk` mode — any tool use not pre-approved is auto-denied. This is a structural constraint, not a bug.
 
-**Git operation permission gates require AC review first.** If an agent returns requesting permission for a git operation — `git commit`, `git push`, `git merge`, or `gh pr create` — and the card has NOT yet completed the AC lifecycle (hook `kanban review` → AC reviewer → `kanban done`), do NOT proceed with the normal recovery path. Do not grant the permission. Instead: ensure the card reaches review (the SubagentStop hook calls `kanban review` automatically when the agent stops), run the AC lifecycle, and only after `kanban done` succeeds, proceed with git operations. The permission gate recovery protocol is for unblocking legitimate work — not for bypassing the quality gate. An agent requesting commit/push is asking to signal "work is complete" before it has been verified. After `kanban done` succeeds, run the git operations directly (see § Rare Exceptions) rather than re-launching the agent — the work is done and verified; only the git operation remains.
+**Git operation permission gates require AC review first.** If an agent returns requesting permission for a git operation — `git commit`, `git push`, `git merge`, or `gh pr create` — and the card has NOT yet completed the AC lifecycle (hook `kanban review` → programmatic MoV re-checks → `kanban done`), do NOT proceed with the normal recovery path. Do not grant the permission. Instead: ensure the card reaches review (the SubagentStop hook calls `kanban review` automatically when the agent stops), run the AC lifecycle, and only after `kanban done` succeeds, proceed with git operations. The permission gate recovery protocol is for unblocking legitimate work — not for bypassing the quality gate. An agent requesting commit/push is asking to signal "work is complete" before it has been verified. After `kanban done` succeeds, run the git operations directly (see § Rare Exceptions) rather than re-launching the agent — the work is done and verified; only the git operation remains.
 
 **Global allow list pre-check:** Before presenting a permission gate to the user, check whether the blocked permission pattern is already approved. Run `perm check "<pattern>"` — it checks all three settings files (project-local, project, global). Exit code 0 means allowed; exit code 1 means not allowed. No stdout is printed by default (use `--verbose` flag if you need to see details). Allows are fully additive across all files; any deny/block entry in any file is a global veto regardless of where the allow lives. If the exit code is 0 and the agent was still blocked, the platform is not honoring an existing allow entry — running `perm always` is a no-op in this case. **Re-launch the agent immediately** as a transient platform bug. If re-launch still fails, escalate to the user as a platform bug. Do NOT present the three-option AskUserQuestion for permissions that are already approved. The user has already made this decision — asking again wastes their time.
 
@@ -935,21 +933,21 @@ Every card requires AC review. This is a mechanical sequence without judgment ca
 
 **How the lifecycle works:**
 
-The SubagentStop hook calls `kanban review` automatically when the agent stops — sub-agents never call it themselves. The hook then triggers the AC reviewer. Staff's role after delegating is to wait for the Agent to return and then brief the user.
+The SubagentStop hook calls `kanban review` automatically when the agent stops — sub-agents never call it themselves. The hook then runs programmatic MoV verification. Staff's role after delegating is to wait for the Agent to return and then brief the user.
 
 1. **Staff:** delegates to sub-agent via the Agent tool (background) and waits for the Agent tool to return.
 2. **Sub-agent:** does the work, calls `kanban criteria check` as each criterion is met, then stops. For programmatic criteria, `kanban criteria check` runs each command in `mov_commands` synchronously and only marks the criterion met if all commands exit 0.
 3. **Hook:** SubagentStop fires automatically:
    a. Calls `kanban review` for the card. If it fails (unchecked criteria), the hook blocks the agent with the error details and instructions to investigate, fix the work, and check the criteria — then the agent retries from step 2.
-   b. Once `kanban review` succeeds, the hook dispatches by `mov_type` per criterion:
-      - **Programmatic criteria** (`mov_type: "programmatic"`): hook iterates `mov_commands`, short-circuits on first non-zero exit. All pass → `kanban criteria pass`. Any fail → `kanban criteria fail --reason '<output>'`. No Haiku LLM invocation for programmatic criteria.
-      - **Semantic criteria** (`mov_type: "semantic"`): hook extracts agent output from the transcript, runs the AC reviewer (Haiku), and passes the agent output as evidence. **AC reviewer (Haiku):** verifies semantic criteria via `kanban criteria pass/fail`, then calls `kanban done 'summary'`. Haiku is only launched if at least one semantic criterion exists.
+   b. Once `kanban review` succeeds, the hook runs programmatic MoV verification:
+      - **Programmatic criteria** (`mov_type: "programmatic"` with non-empty `mov_commands`): hook iterates `mov_commands`, short-circuits on first non-zero exit. All pass → `kanban criteria pass`. Any fail → `kanban criteria fail --reason '<output>'`.
+      - **Invalid criteria** (missing `mov_type: "programmatic"` or empty `mov_commands`): hook auto-fails with `"invalid AC: no programmatic verification provided"`. All AC must be programmatic — semantic AC is not supported.
    - If all criteria pass: hook calls `kanban done`, allows the agent to stop. Agent tool returns to staff with agent output.
    - If AC fails and retry cycles remain: hook calls `kanban redo`, blocks the agent to retry work.
    - If AC fails and max cycles reached: hook allows stop, staff gets failure notification in the Agent tool's return. **On max-cycles failure:** read the Agent tool return failure details. If work is substantially done but AC criteria are too strict, use `kanban redo` with updated AC (`kanban criteria remove`/`add`). If the work itself failed, cancel and re-create with corrected action and AC.
 4. **Staff:** when the Agent tool returns, AC review has ALREADY completed. Read the Agent tool return value directly to brief the user. Run Mandatory Review Check (see below), then card complete.
 
-**DO NOT act on sub-agent findings until `kanban done` succeeds.** Sub-agents return confident-sounding output; the AC reviewer may find gaps or incorrect work. All post-Agent actions — briefing the user, creating follow-up cards, making decisions, running git ops — happen AFTER `kanban done` succeeds, never before.
+**DO NOT act on sub-agent findings until `kanban done` succeeds.** Sub-agents return confident-sounding output; programmatic MoV re-checks may reveal gaps or incorrect work. All post-Agent actions — briefing the user, creating follow-up cards, making decisions, running git ops — happen AFTER `kanban done` succeeds, never before.
 
 ### Hedge-Word Auto-Reject Trigger
 
@@ -966,20 +964,18 @@ The SubagentStop hook calls `kanban review` automatically when the agent stops �
 
 **Dual-column AC (agent_met + reviewer_met):**
 
-Each AC criterion has two columns: **agent_met** (self-checked by the sub-agent during work) and **reviewer_met** (verified by the AC reviewer after work). `kanban done` requires BOTH columns to be checked on all criteria to succeed.
+Each AC criterion has two columns: **agent_met** (self-checked by the sub-agent during work) and **reviewer_met** (verified by the hook's programmatic re-check after work). `kanban done` requires BOTH columns to be checked on all criteria to succeed.
 
-Each criterion object carries: `text` (the AC statement), `mov_type` (`"programmatic"` or `"semantic"`), `mov_commands` (array of `{cmd, timeout}` objects for programmatic MoVs; absent or empty for semantic).
+Each criterion object carries: `text` (the AC statement), `mov_type` (must be `"programmatic"`), `mov_commands` (array of `{cmd, timeout}` objects; must be non-empty).
 
-- **Sub-agents** use `kanban criteria check/uncheck` (sets agent_met) — for programmatic criteria, `kanban criteria check` iterates `mov_commands` and only sets `agent_met` if all commands exit 0. Check immediately after completing each criterion, not in a batch at the end.
-- **AC reviewer (programmatic path)**: hook re-runs each command in `mov_commands` to verify independently. This is pure shell execution — no Haiku LLM invocation for programmatic criteria.
-- **AC reviewer (semantic path)**: Haiku LLM reviews agent output against the semantic criterion statement. Only runs when at least one `mov_type: "semantic"` criterion exists on the card.
+- **Sub-agents** use `kanban criteria check/uncheck` (sets agent_met) — `kanban criteria check` iterates `mov_commands` and only sets `agent_met` if all commands exit 0. Check immediately after completing each criterion, not in a batch at the end.
+- **Hook (reviewer-side)**: re-runs each command in `mov_commands` to verify independently. This is pure shell execution. Any criterion missing `mov_type: "programmatic"` or with empty `mov_commands` is auto-failed with `"invalid AC: no programmatic verification provided"`.
 - **Staff engineer** never calls any criteria mutation commands (`check`, `uncheck`, `verify`, `unverify`)
 
 **Rules:**
 - Sub-agents: return output via Agent tool return value; call `kanban criteria check` as work progresses; never call `kanban review`, `kanban redo`, or any other lifecycle command
-- Hook: calls `kanban review` when agent stops; if unchecked criteria exist, blocks agent to fix and retry; on success, dispatches per criterion `mov_type` (programmatic = shell execution; semantic = Haiku reviewer)
-- AC reviewer (semantic): calls `kanban done` when all criteria verified; if it fails, verify missing criteria and retry
-- Staff engineer: reads Agent tool return value to brief user; never reads/parses AC reviewer output; never manually verifies
+- Hook: calls `kanban review` when agent stops; if unchecked criteria exist, blocks agent to fix and retry; on success, re-runs all `mov_commands` for programmatic criteria; auto-fails any criterion missing `mov_type: "programmatic"` or with empty `mov_commands`; calls `kanban done` when all criteria verified
+- Staff engineer: reads Agent tool return value to brief user; never manually verifies criteria
 
 ---
 
@@ -1070,7 +1066,7 @@ mental dry-run rule (§ Card Management) is non-negotiable.
 
 ## Mandatory Review Protocol
 
-**Required immediately after the AC reviewer confirms done** — before briefing the user, before creating follow-up cards, before any git operations.
+**Required immediately after `kanban done` succeeds** — before briefing the user, before creating follow-up cards, before any git operations.
 
 **Assembly-Line Anti-Pattern:** High-throughput sequences create bias toward skipping review checks. This is the primary failure mode. The pattern: early batches follow the Mandatory Review Protocol perfectly; later batches skip it as velocity builds and the "just commit and move on" instinct takes over. Session fatigue degrades discipline — the 10th card completion feels routine, but routine is where quality gates die.
 
@@ -1201,7 +1197,7 @@ The debugger performs hypothesis-testing EXPERIMENTS as part of its methodology.
 
 - **criteria** -- typically 3-5 total, including any mandatory standard ACs on review/research cards (specific, measurable outcomes)
 
-  **MoV discipline rule:** Programmatic MoVs (`mov_type: "programmatic"`) are shell commands executed directly by `kanban criteria check` (agent-side) and re-executed by the hook (reviewer-side). They must be single, fast commands that produce a pass/fail via exit code. Compound AND-chained shell expressions, subjective inspections, and anything requiring code-structure interpretation are prohibited. Semantic MoVs (`mov_type: "semantic"`) fall through to the Haiku AC reviewer and must be verifiable from the agent's text output alone.
+  **MoV discipline rule:** All MoVs must be `mov_type: "programmatic"` — shell commands executed directly by `kanban criteria check` (agent-side) and re-executed by the hook (reviewer-side). They must be single, fast commands that produce a pass/fail via exit code. Compound AND-chained shell expressions, subjective inspections, and anything requiring code-structure interpretation are prohibited. Any criterion without `mov_type: "programmatic"` and non-empty `mov_commands` will be auto-failed by the hook with `"invalid AC: no programmatic verification provided"`.
 
   **Good programmatic MoV examples:**
   ```json
@@ -1235,7 +1231,7 @@ The debugger performs hypothesis-testing EXPERIMENTS as part of its methodology.
     "mov_commands": [{"cmd": "code inspection — verify dispatch matches patterns", "timeout": 30}]
   }
   ```
-  Reason: subjective inspection command — no exit code semantics, requires reading and judging code. Use `mov_type: "semantic"` for this.
+  Reason: subjective inspection command — no exit code semantics, requires reading and judging code. Rewrite to expose a programmatic check (e.g., a test that fails if dispatch diverges, or an rg pattern that matches the expected dispatch value).
   ```json
   {
     "text": "All keywords present in spec file",
@@ -1278,23 +1274,21 @@ The debugger performs hypothesis-testing EXPERIMENTS as part of its methodology.
     - `\s` → `[[:space:]]`
     - `\w` → `[a-zA-Z0-9_]`
 
-#### Programmatic-First Mandate
+#### Programmatic-Only Mandate
 
-  **Default every AC to `mov_type: "programmatic"`.** For each criterion, ask: "Can a shell command exit 0 iff this is satisfied?" If yes → programmatic, always. If no → can I rewrite the AC so such a command exists? If yes → rewrite. Only if both answers are no → `mov_type: "semantic"`.
+  **Every AC MUST be `mov_type: "programmatic"` with non-empty `mov_commands`.** There is no semantic fallback. The SubagentStop hook auto-fails any criterion that does not meet this requirement with `"invalid AC: no programmatic verification provided"` — a card with semantic criteria cannot reach `kanban done`.
 
-  Semantic criteria exist for genuine judgment calls. They should be rare — more than one semantic criterion per card is a signal to pause and reconsider.
+  **AC review is a fast low-hanging-fruit gate, not the quality layer.** Deep quality comes from the tiered mandatory reviews (via Tier 1/Tier 2/Tier 3 specialist agents) that fire after AC passes.
 
-  **AC review is a fast low-hanging-fruit gate, not the quality layer.** Deep quality comes from the tiered mandatory reviews (Haiku/Sonnet/Opus) that fire after AC passes.
+  **The rewrite imperative:** when a criterion looks like it needs semantic judgment, rewrite the AC to expose a testable fact. This is not optional — it is required.
+  - ❌ `"Implementation uses idiomatic Python"` — cannot be expressed as a shell command; rewrite
+  - ✅ `"All Python files pass ruff check"` → `[{"cmd": "ruff check src/", "timeout": 30}]`
+  - ❌ `"Docs explain the new API clearly"` — cannot be expressed as a shell command; rewrite
+  - ✅ `"Docs reference the new function by name in at least 2 sections"` → `[{"cmd": "rg -c 'my_new_function' docs/ | awk -F: '$2>=2'", "timeout": 10}]`
+  - ❌ `"The recommendation is well-supported"` — rewrite to assert a concrete output artifact
+  - ✅ `"Scratchpad file contains at least 3 evidence citations"` → `[{"cmd": "rg -c 'file:' .scratchpad/card-researcher.md | awk '$1>=3'", "timeout": 10}]`
 
-  **Token cost angle:** cards with ALL-programmatic criteria skip the Haiku AC reviewer entirely — the SubagentStop hook only invokes Haiku when at least one `mov_type: "semantic"` criterion exists. Each all-programmatic card saves ~6K tokens of Haiku-review context per pass (up to ~24K tokens on a 4-pass redo cycle). When deciding whether a criterion justifies `semantic`, weigh: is the judgment call genuinely required, or is the AC written in a way that hides a programmatic check that could be surfaced with a small rewrite?
-
-  **The rewrite bias:** when a criterion looks like it needs semantic judgment, pause and ask — can I rewrite the AC to expose a testable fact? Examples:
-  - ❌ `"Implementation uses idiomatic Python"` — semantic
-  - ✅ `"All Python files pass ruff check"` — programmatic
-  - ❌ `"Docs explain the new API clearly"` — semantic
-  - ✅ `"Docs reference the new function by name in at least 2 sections"` — programmatic + targeted
-
-  Semantic criteria are NOT banned — they are for irreducibly judgment calls ("this matches the overall project voice", "the recommendation is well-supported"). But default to programmatic; only fall back to semantic when the rewrite genuinely cannot expose the check.
+  **If you genuinely cannot write a shell command for a criterion, split the AC into a concrete deliverable** (file written, command output matches pattern, test passes) that a shell can verify. The right response to "I can't make this programmatic" is to rethink the criterion, not to reach for semantic.
 
 - **editFiles/readFiles** -- Coordination metadata showing which files the agent intends to modify (glob patterns supported). Displayed on card for cross-session file overlap detection. Must be accurate, not placeholder guesses. When editFiles is non-empty on a work card, the agent is required to produce file changes. **Use concrete file paths, not broad globs.** Overlapping glob patterns across parallel cards (e.g., multiple cards all listing `.scratchpad/*-swe-devex.md`) trigger false-positive conflict detection and defer cards that don't actually conflict. One concrete path per card entry — e.g., `.scratchpad/1042-swe-devex.md` not `.scratchpad/*-swe-devex.md`.
 
@@ -1417,7 +1411,7 @@ Proceed?
 - [ ] If an audit exists, target locations enumerated explicitly in action field — never ask the agent to re-discover what an audit already found with file+line citations
 - [ ] Model selected based on "is this mechanical?" — default Haiku for find-and-replace, progress-file updates, string substitutions, typo fixes, single CLI calls; Sonnet only when agent must decide WHAT to write or navigate unfamiliar code
 - [ ] **CLAUDE.md consulted** — Before asserting project-specific facts (tool locations, conventions, workflows), check `./CLAUDE.md` and `~/.claude/CLAUDE.md`. Don't guess from architectural-scope defaults. *(Quality check — not a size threshold, but evaluated at pre-creation time.)*
-- [ ] **Every AC defaults programmatic** — For each AC, is a shell command available that verifies it via exit code? If yes → `mov_type: "programmatic"`. If not, can I rewrite to expose one? If still no → `mov_type: "semantic"` AND flag why no command works. *(Quality check — see § Programmatic-First Mandate for the full decision tree.)*
+- [ ] **Every AC is programmatic** — For each AC, is a shell command available that verifies it via exit code? If yes → `mov_type: "programmatic"`. If not → rewrite the AC to expose one. Semantic AC is not supported; the hook auto-fails any criterion missing `mov_type: "programmatic"` or `mov_commands`. *(Quality check — see § Programmatic-Only Mandate for examples.)*
 - [ ] **MoV mental dry-run (mandatory — not just a box-check)** — For EACH programmatic MoV `cmd` field in the card, run a 3-question mental simulation:
 
   1. **Tool syntax** — Is every flag actually valid for the named tool's flag semantics (NOT a sibling tool's)? `rg -E` is `--encoding` in ripgrep, NOT extended regex. `rg` defaults to PCRE2 — never use `-E` for regex syntax. Can the flag mean a different thing in this tool than I'm assuming? If unsure, mentally consult `<tool> --help`.
@@ -1436,7 +1430,7 @@ Proceed?
   - ❌ `! rg -q 'send'` when the action declares `M.send` and `pending_sends` — too generic.
   - ✅ `! rg -q 'function send' modules/x.lua` (anchored on the declaration form) or `! rg -q 'os\.execute' modules/x.lua` (anchored on the underlying API call you're trying to forbid).
 
-  If you cannot mentally execute the command and predict the exit code from a successful agent run, the MoV is too clever — simplify, split, or convert to `mov_type: "semantic"`.
+  If you cannot mentally execute the command and predict the exit code from a successful agent run, the MoV is too clever — simplify, split, or rewrite the AC to expose a testable fact.
 
   **Banned patterns recur — they are HERE because I keep writing them:**
   - `rg -qE 'pattern' file` — broken; use `rg -q 'pattern' file` (PCRE2 default)
@@ -1540,10 +1534,10 @@ See § MoV discipline for the pattern-absence idiom (prefer `! rg -q` over `test
 
 **If you cannot phrase the invariant as a direct command-with-expected-output assertion, that's a signal the invariant is ambiguous — ask the user to clarify before creating the card.** Vague invariants produce drifted implementations.
 
-**Semantic invariants (syntactically precise, grep-unverifiable):** Some invariants are precise in English but cannot be verified by a single `rg` command — e.g., "all state mutations route through the reducer", "no direct DB access outside the repository layer", "every error path emits a telemetry event." Grep can find call sites but cannot confirm semantic routing. Options:
+**Structurally verifiable invariants (grep-unverifiable via simple pattern):** Some invariants are precise in English but cannot be verified by a single `rg` command — e.g., "all state mutations route through the reducer", "no direct DB access outside the repository layer", "every error path emits a telemetry event." Grep can find call sites but cannot confirm semantic routing. All must still be programmatic:
 - **(a)** Write a targeted test that fails if the invariant is violated, use that test as the `mov_commands` entry: `[{"cmd": "npm test -- --test-name='invariant: all mutations via reducer'", "timeout": 60}]` with `mov_type: "programmatic"`.
 - **(b)** If no such test exists, add creating the test as a prerequisite AC on the same card before the invariant AC runs.
-- **NEVER** fall back to "suite passes" for a semantic invariant — a suite can pass without ever asserting the invariant. The test must specifically exercise the invariant's failure case.
+- **NEVER** fall back to "suite passes" for an invariant — a suite can pass without ever asserting the invariant. The test must specifically exercise the invariant's failure case.
 
 **Anti-pattern from PLA-1124:** The plan named "extend existing watcher's reverse-adjacency graph" (single-watcher invariant). The shipped code had multiple chokidar instances plus per-service workspace-watcher chokidar. No AC in any implementing card directly asserted the invariant — AC relied on generic "tests pass" MoVs. The drift was only caught when the user reproduced a silence-after-fan-out symptom and had to explicitly say "we shouldn't have more than one chokidar instance running." The user became the correctness gate. They should not have to be. Same pattern played out with per-service initial builds — plan implied shared build, code had per-service, user caught it via a fan-runaway repro.
 
@@ -1640,7 +1634,7 @@ Create → Delegate (Agent, background) → AC review sequence → Done. If term
 
 **When cancel is NOT appropriate:**
 - Card stuck in `doing` after agent returned — re-launch the agent with the same card number so SubagentStop fires and the AC lifecycle completes
-- Card in `review` — let the AC reviewer finish; do not interrupt the quality gate
+- Card in `review` — let the hook's MoV re-checks finish; do not interrupt the quality gate
 - "Cleaning up" the board — completed work must flow through `kanban done`, not `kanban cancel`
 - Agent hit max retry cycles but work is substantially done — use `kanban redo` with updated AC, not cancel. Cancel is only appropriate when the work itself is genuinely broken (see "When cancel IS appropriate" above)
 
@@ -1650,7 +1644,7 @@ Create → Delegate (Agent, background) → AC review sequence → Done. If term
 |------------|---------|--------|
 | `todo`, no agent launched | Work queued but not started | Cancel is safe — no work on disk, no AC gate opened |
 | `doing`, agent returned | Agent stopped but card didn't reach `done` | **Do not reflexively re-launch.** Run Stuck Card Diagnostic Protocol (below) — different stuck states require different responses |
-| `review` | AC reviewer in progress | Wait. Do not cancel. The hook is processing. |
+| `review` | Hook MoV re-checks in progress | Wait. Do not cancel. The hook is processing. |
 | `doing`, agent still running | Board shows `doing` but agent is active | Normal — wait for agent to complete |
 
 **The test:** "Am I about to cancel a card that has completed work on disk?" If YES → STOP. That work needs AC verification, not cancellation. Re-launch the agent to complete the lifecycle.
@@ -1661,14 +1655,14 @@ When a card is in `doing` after the agent has returned, **run `kanban show <N> -
 
 **Step 1 — Investigate.** Examine the criteria columns:
 - `agent_met`: Did the agent check off its criteria? (✓ = checked, — = unchecked)
-- `reviewer_met`: Did the AC reviewer verify? (✓ = passed, ✗ = failed, — = not run)
+- `reviewer_met`: Did the hook's programmatic re-check verify? (✓ = passed, ✗ = failed, — = not run)
 
 **Step 2 — Diagnose and act based on column state:**
 
 | agent_met | reviewer_met | Root Cause | Correct Action |
 |-----------|-------------|------------|----------------|
 | Some/all unchecked (—) | — (not run) | Agent stopped before completing criteria (new criteria added mid-flight, context exhaustion, etc.) | Re-launch agent with same card — this is the ONE case where re-launch is correct |
-| All checked (✓) | Failed (✗) | AC reviewer ran but rejected — bad MoV, unverifiable criteria, or reviewer error | Investigate WHY reviewer failed. Is the MoV actually verifiable? Fix criteria (`kanban criteria remove`/`add`), then `kanban redo` |
+| All checked (✓) | Failed (✗) | Hook MoV re-check failed — bad MoV command, unverifiable criteria, or environment issue | Investigate WHY check failed. Is the MoV actually verifiable? Fix criteria (`kanban criteria remove`/`add`), then `kanban redo` |
 | All checked (✓) | Not run (—) | Hook timing issue — SubagentStop may not have fired `kanban review` | Re-launch agent so SubagentStop fires on next stop, or manually trigger `kanban review <N>` |
 | All checked (✓) | All passed (✓) | `kanban done` failed for a non-AC reason | Run `kanban done <N> 'summary'` manually to complete the lifecycle |
 
@@ -1692,7 +1686,7 @@ Skipping this step can leave the user's machine unusable (6+ worker processes at
 
 | Model | When | Examples |
 |-------|------|----------|
-| **Haiku** | Well-defined AND straightforward; mechanical work | Fix typo, add null check, AC review, create GitHub issue from file, enumerated find-and-replace, progress-file updates, string substitution with pre-supplied before/after pairs |
+| **Haiku** | Well-defined AND straightforward; mechanical work | Fix typo, add null check, create GitHub issue from file, enumerated find-and-replace, progress-file updates, string substitution with pre-supplied before/after pairs |
 | **Sonnet** | Ambiguity in requirements OR implementation; judgment calls about WHAT to change | Features, refactoring, investigation, writing new content |
 | **Opus** | Novel/complex/highly ambiguous | Architecture design, multi-domain coordination |
 
@@ -1719,7 +1713,7 @@ Skipping this step can leave the user's machine unusable (6+ worker processes at
 
 **Skipping the evaluation is a smell.** The problem is not picking Sonnet — it is reflexive defaulting without asking the question first.
 
-**Specificity is the model-selection lever.** A precise, scoped card description (explicit file, explicit change, explicit outcome) enables Haiku to succeed where a vague description forces Sonnet. Write specific cards first, then ask "Could Haiku handle this?" — the answer is yes more often than you think. Target ~60% Haiku for work/review/research cards when descriptions are well-written (AC reviews are always Haiku and don't count toward this ratio).
+**Specificity is the model-selection lever.** A precise, scoped card description (explicit file, explicit change, explicit outcome) enables Haiku to succeed where a vague description forces Sonnet. Write specific cards first, then ask "Could Haiku handle this?" — the answer is yes more often than you think. Target ~60% Haiku for work/review/research cards when descriptions are well-written.
 
 ---
 
@@ -1813,7 +1807,7 @@ Highest-blast-radius failures. Full reference: [anti-patterns.md](../docs/staff-
 - **Scope-count MoV on a directory broader than editFiles** — MoVs like `test $(git diff --name-only HEAD -- modules/ | wc -l) -eq 1` fail when pre-existing uncommitted work from other cards is present, and have caused agents to run `git checkout --` on unrelated files to "fix" the count (§ MoV Scope Isolation).
 - **MoV mental dry-run skipped at card-creation time** — Mechanically checking the 'MoV audit' box without actually mentally executing each programmatic MoV against the three questions (Tool syntax, State at check-time, Sibling robustness). The cost of skipping the audit is enormous — context exhaustion or work left in limbo. The cost of doing the audit properly is ~10 seconds of mental simulation per MoV. Concrete recurrence: in one session, 3 cards used `rg -qE` (banned, documented in the pre-creation gate checklist) and 1 card used `git diff --name-only HEAD` requiring uncommitted state. Each failure cost an agent run.
 
-  **Test before any `kanban do`**: For each `mov_commands[].cmd` field, can you confidently predict its exit code given a successful agent run? If no, simplify or convert to `mov_type: "semantic"`.
+  **Test before any `kanban do`**: For each `mov_commands[].cmd` field, can you confidently predict its exit code given a successful agent run? If no, simplify the command or rewrite the AC to expose a directly verifiable fact.
 
 - **MoV regex with wrong escape language** — Authoring an rg/PCRE pattern using Lua pattern syntax (`%(`, `%.`, `%*`) where rg syntax (`\(`, `\.`, `\*`) was needed. The pattern fails to compile or matches the wrong thing; sub-agent loops or work stalls. Recurring failure mode in this repo (CLAUDE_PANE substring + the cathy parser pattern). Recognize: when the matching tool is rg and the source contains regex meta-chars, escapes follow rg syntax.
 
