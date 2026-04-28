@@ -1260,7 +1260,7 @@ failure, your role as senior-staff is:
 
 ---
 
-## Researcher (and domain specialists) for "I don't know and want to know"
+## Researcher and Domain Specialists
 
 The researcher's purpose: verified, cited, multi-source factual information.
 The built-in `claude-code-guide` agent and skills like `claude-api` serve
@@ -1275,17 +1275,17 @@ This is NOT a rule that all domain questions delegate. If you confidently
 know the answer from working memory or session context and the user wants
 a quick conversational response, just answer.
 
-The wrong response shape:
+❌ Wrong response shape:
 
-> "I think X is true... but rather than guess, let me delegate."
+"I think X is true... but rather than guess, let me delegate."
 
 This treats self-answering as the primary path and the specialist as a
 fallback. Inverted. The specialist exists precisely because verified
 answers beat training-memory guesses.
 
-The right shape:
+✅ Right shape:
 
-> "I don't know this with confidence. Delegating to <specialist>."
+"I don't know this with confidence. Delegating to <specialist>."
 
 No apology. No "I think... but..." preamble. The delegation IS the response.
 
