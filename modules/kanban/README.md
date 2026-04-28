@@ -24,11 +24,11 @@ kanban todo '{"type":"research","action":"Investigate performance regression","i
 # Move todo card to doing
 kanban start 2 --session wise-cedar
 
-# View board
-kanban list --output-style=xml --session wise-cedar
+# View board (XML is the default — no flag needed)
+kanban list --session wise-cedar
 
-# View card details
-kanban show 1 --output-style=xml --session wise-cedar
+# View card details (XML is the default — no flag needed)
+kanban show 1 --session wise-cedar
 ```
 
 ## Card Lifecycle
@@ -84,8 +84,9 @@ kanban cancel <card> --reason "why"
 ### Card Details
 
 ```bash
-kanban show <card>                          # Terminal output
-kanban show <card> --output-style=xml       # XML output (for agents)
+kanban show <card>                          # XML output (default — for AI coordinators)
+kanban show <card> --output-style=simple    # Human-readable terminal output
+kanban show <card> --output-style=xml       # XML (explicit, same as default)
 ```
 
 ### Comments
@@ -115,9 +116,12 @@ kanban criteria unverify <card> <n>               # Clear reviewer_met
 
 ### Board View
 
+**Breaking change:** As of this version, `kanban list` and `kanban show` default to `--output-style=xml`. The previous default was `simple`. External scripts that relied on the `simple` format implicitly must now pass `--output-style=simple` explicitly.
+
 ```bash
-kanban list                                 # Simple terminal view
-kanban list --output-style=xml              # XML (for staff engineer)
+kanban list                                 # XML output (default — for AI coordinators)
+kanban list --output-style=simple           # Human-readable terminal view
+kanban list --output-style=xml              # XML (explicit, same as default)
 kanban list --output-style=detail           # Verbose terminal view
 kanban list --show-done                     # Include done column
 kanban list --show-canceled                 # Include canceled column
@@ -134,8 +138,10 @@ XML output is terse by design (contains only card number, status, session, and i
 Any command supports `--watch` for live auto-refresh on file changes:
 
 ```bash
-kanban list --watch                         # Live board view
+kanban list --watch                         # Live board view (always simple format)
 ```
+
+**`--watch` always forces `simple` output style**, regardless of `--output-style` value or the default. XML output streamed live is unreadable for interactive monitoring. This override is unconditional: `kanban list --watch --output-style=xml` still produces simple output.
 
 Interactive keys in watch mode: `?` toggle detail, `/` filter session, `#` filter card, `q` quit.
 

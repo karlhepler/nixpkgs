@@ -2458,7 +2458,7 @@ def cmd_list(args) -> None:
         session_filter = watch_state.session_filter
         card_filter = watch_state.card_filter
     else:
-        output_style = getattr(args, "output_style", "simple")
+        output_style = getattr(args, "output_style", "xml")
         session_filter = ""
         card_filter = ""
 
@@ -3293,11 +3293,18 @@ def _render_watch(args, command_func, state: WatchState, is_interactive: bool) -
 
 
 def watch_and_run(args, command_func) -> None:
-    """Watch .kanban/ directory and re-run command on changes."""
+    """Watch .kanban/ directory and re-run command on changes.
+
+    --watch always forces simple output style regardless of --output-style value
+    or the default. XML streamed live is unreadable noise for interactive monitoring;
+    simple is the only sensible format for watch mode.
+    """
     root = get_root(args.root)
     refresh_event = Event()
     stop_event = Event()
-    state = WatchState()
+    # Watch mode always starts in simple style — XML is not useful for live
+    # interactive monitoring. This overrides any --output-style flag or default.
+    state = WatchState(output_style="simple")
     is_interactive = sys.stdin.isatty()
 
     class DebounceHandler(FileSystemEventHandler):
@@ -3404,7 +3411,7 @@ def main() -> None:
     # --- show ---
     p_show = subparsers.add_parser("show", parents=[parent_parser], help="Display card contents")
     p_show.add_argument("card", help="Card number")
-    p_show.add_argument("--output-style", choices=["simple", "xml", "detail"], help="Output style: xml (structured XML for machine parsing)")
+    p_show.add_argument("--output-style", choices=["simple", "xml", "detail"], default="xml", help="Output style: xml (structured XML, default), simple (human-readable terminal), detail (verbose terminal)")
     add_session_flags(p_show)
 
     # --- status ---
@@ -3504,7 +3511,7 @@ def main() -> None:
         p_list.add_argument("--show-done", action="store_true", help="Include done")
         p_list.add_argument("--show-canceled", action="store_true", help="Include canceled")
         p_list.add_argument("--show-all", action="store_true", help="Include done + canceled")
-        p_list.add_argument("--output-style", choices=["simple", "xml", "detail"], default="simple", help="Output style: simple (title only), xml (structured XML), detail (everything)")
+        p_list.add_argument("--output-style", choices=["simple", "xml", "detail"], default="xml", help="Output style: xml (structured XML, default), simple (title only), detail (everything). Note: --watch always forces simple regardless of this flag.")
         add_session_flags(p_list)
         add_date_flags(p_list)
 
