@@ -34,7 +34,7 @@ Exhaustive reference built from `kanban --help` and `kanban <sub> --help`. Use t
 - `--watch` — Auto-refresh on `.kanban/` changes. Useful for monitoring in a separate pane.
 - `--only-mine` / `--show-mine` / `--hide-mine` — Filter visibility to current session's cards.
 
-**Output-style convention:** `kanban list --output-style=xml` (equals sign, not space). `kanban show <N> --output-style=xml`. Machine-readable output is always preferred for AI parsing.
+**Output-style convention:** `kanban list` and `kanban show <N>` produce XML by default. Use `--output-style=simple` when you want human-readable format. Machine-readable XML is the canonical AI-parsing target. Note: when specifying the flag explicitly, use the equals form: `--output-style=xml` (not `--output-style xml`).
 
 ---
 
@@ -51,13 +51,12 @@ Create one or more cards in `doing` state immediately.
   ```json
   {
     "text": "AC statement (plain text only — no MoV annotation)",
-    "mov_type": "programmatic",
     "mov_commands": [
       {"cmd": "rg -q 'pattern' file.md", "timeout": 10}
     ]
   }
   ```
-  For `mov_type: "semantic"`: omit `mov_commands` or pass empty array `[]`.
+  Every criterion is implicitly programmatic; presence of non-empty `mov_commands` is the canonical signal. The `mov_type` field has been removed from the schema.
 - **No `&&` in `cmd`.** HARD RULE — split compound checks into separate array items. See Quirks Catalog item 12 (CLI-enforced).
 - **`__CARD_ID__` placeholder:** Use the literal token `__CARD_ID__` in `mov_commands[].cmd` or criterion `text` fields when you need to reference the card's own number (e.g., `"cmd": "rg -q 'pattern' .scratchpad/__CARD_ID__-findings.md"`). The CLI substitutes the actual assigned card number at card-create time. Scope: only `mov_commands[].cmd` and criterion `text` — not `action`, `intent`, or other fields.
 - **Returns:** Card number on stdout (e.g., `42`). The assigned number is what you use in all subsequent commands.
@@ -104,7 +103,7 @@ Move a card to `canceled`. See § Card Lifecycle for when cancel is appropriate 
 
 ### `kanban show <card> [--output-style {simple,xml,detail}] [--session SESSION]`
 
-Display full card contents. Use `--output-style=xml` for machine-readable output when reading criteria state programmatically. Includes `agent_met` and `reviewer_met` columns per criterion.
+Display full card contents. XML is the default output style — machine-readable for programmatic use. Use `--output-style=simple` for human-readable output. Includes `agent_met` and `reviewer_met` columns per criterion.
 
 ### `kanban status <card> [--session SESSION]`
 
@@ -114,7 +113,7 @@ Print only the column name of a card (e.g., `doing`, `review`, `todo`, `done`, `
 
 Show board overview. Primary board-check command.
 
-- **`--output-style=xml`** — Structured XML output for AI parsing. Always use this form for board checks in coordination code.
+- **`--output-style`** — XML is the default; omit for standard AI-parseable output. Pass `--output-style=simple` for human-readable output. Pass `--output-style=detail` for full card text.
 - **`--session SESSION`** — Filter to a specific session. Omit to see ALL sessions (required for destructive git op board checks — must scan all sessions for file-ownership conflicts).
 - **`--column COLUMN`** — Filter to a specific column (`todo`, `doing`, `review`, `done`, `canceled`).
 - **`--show-done` / `--show-canceled` / `--show-all`** — Include completed/canceled cards (excluded by default).
@@ -143,7 +142,7 @@ Remove criterion number `n` (1-indexed) from a card. **`reason` is a required po
 
 ### `kanban criteria check <card> <n> [--session SESSION]`
 
-Mark criterion `n` as agent-met (`agent_met = true`). For `mov_type: "programmatic"` criteria, this runs each command in `mov_commands` synchronously. All commands must exit 0 for the check to succeed. If any command fails, the check is rejected with an error showing the failed command and exit code — fix the underlying issue and retry.
+Mark criterion `n` as agent-met (`agent_met = true`). When `mov_commands` is non-empty, this runs each command synchronously. All commands must exit 0 for the check to succeed. If any command fails, the check is rejected with an error showing the failed command and exit code — fix the underlying issue and retry.
 
 - **`n`** — 1-indexed criterion number. Accepts multiple numbers: `kanban criteria check 42 1 2 3`.
 - **Called by sub-agents only** (not staff engineer). Staff engineer MUST NEVER call criteria check.
@@ -206,7 +205,7 @@ Create kanban board structure in the current directory. Run once per project.
 
 7. **`kanban list` excludes done and canceled by default.** Pass `--show-done`, `--show-canceled`, or `--show-all` to include them.
 
-8. **`kanban done` requires both `agent_met` AND `reviewer_met` set on all criteria.** If it fails, use `kanban show <N> --output-style=xml` to inspect which criteria are not fully verified.
+8. **`kanban done` requires both `agent_met` AND `reviewer_met` set on all criteria.** If it fails, use `kanban show <N>` to inspect which criteria are not fully verified (XML output is the default).
 
 9. **`criteria check` accepts text prefixes.** In addition to 1-indexed numbers, `n` can be a text prefix that uniquely matches a criterion. Prefer numeric indices for scripted use; text prefixes are for interactive convenience.
 
@@ -262,14 +261,14 @@ For `kanban criteria check` MoV execution:
 
 ## Common Workflow Examples
 
-**Board check (all sessions, xml):**
+**Board check (all sessions, xml — default):**
 ```bash
-kanban list --output-style=xml
+kanban list
 ```
 
 **Board check (current session only):**
 ```bash
-kanban list --output-style=xml --session tidy-crown
+kanban list --session tidy-crown
 ```
 
 **Create a card with criteria (via Write tool + --file):**
@@ -293,7 +292,7 @@ kanban criteria remove 42 3 "MoV scope leaked into parallel card" --session tidy
 
 **Inspect a stuck card:**
 ```bash
-kanban show 42 --output-style=xml --session tidy-crown
+kanban show 42 --session tidy-crown
 ```
 
 **Complete a card manually (hook failed):**

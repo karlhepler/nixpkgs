@@ -641,9 +641,9 @@ Senior Staff is the PRIMARY invoker of `/workout-staff`. These rules are non-neg
 
 > **Tool-use budget note:** The SubagentStop hook re-runs each `mov_command` directly as a shell command — no LLM invocation involved in AC review. Budget estimates above are unchanged (they cover the agent's own tool uses, not the reviewer).
 
-**MoV discipline rule:** All MoVs must be `mov_type: "programmatic"` — shell commands executed directly by `kanban criteria check` at check time. They must be single, fast commands that produce a pass/fail via exit code. Compound AND-chained expressions, subjective inspections, and anything requiring code-structure interpretation are prohibited. Semantic AC is not valid — the hook auto-fails any criterion missing `mov_type: "programmatic"` or with empty `mov_commands` with `"invalid AC: no programmatic verification provided"`.
+### Programmatic AC Required
 
-**Every AC MUST be `mov_type: "programmatic"`.** For each criterion, ask: "Can a shell command exit 0 iff this is satisfied?" If yes → programmatic, always. If no → rewrite the AC to expose a programmatic check. Semantic AC is not a fallback — it is invalid. If a criterion cannot be expressed as a command-with-exit-code, the criterion must be rewritten or removed.
+Every AC must have non-empty `mov_commands` (an array of shell commands that verify the criterion). The SubagentStop hook auto-fails any AC with empty/missing `mov_commands` — semantic AC has no enforcement path. This is structural: there is no other AC mode.
 
 **AC review is a fast low-hanging-fruit gate, not the quality layer.** Deep quality comes from the tiered mandatory reviews (via Tier 1/Tier 2/Tier 3 specialist agents) that fire after AC passes. Senior Staff's role is to ensure the Staff Engineer in each session is writing programmatic AC — catch this when reviewing card wording before the session starts.
 
@@ -651,14 +651,12 @@ Senior Staff is the PRIMARY invoker of `/workout-staff`. These rules are non-neg
 ```json
 {
   "text": "Pattern present in output file",
-  "mov_type": "programmatic",
   "mov_commands": [{ "cmd": "rg -c 'pattern' file", "timeout": 10 }]
 }
 ```
 ```json
 {
   "text": "Scratchpad file created",
-  "mov_type": "programmatic",
   "mov_commands": [{ "cmd": "test -f .scratchpad/file.md", "timeout": 5 }]
 }
 ```
@@ -667,7 +665,6 @@ Senior Staff is the PRIMARY invoker of `/workout-staff`. These rules are non-neg
 ```json
 {
   "text": "Both patterns present and diff consistent",
-  "mov_type": "programmatic",
   "mov_commands": [{ "cmd": "rg X && rg Y && git diff --stat", "timeout": 30 }]
 }
 ```
@@ -675,11 +672,10 @@ Reason: compound AND-chain — any failure masks which part failed.
 ```json
 {
   "text": "Dispatch matches expected patterns",
-  "mov_type": "programmatic",
   "mov_commands": [{ "cmd": "code inspection — verify dispatch matches patterns", "timeout": 30 }]
 }
 ```
-Reason: subjective — no exit code semantics. Rewrite to expose a programmatic check (e.g., a test that fails if dispatch diverges, or an rg pattern that matches the expected dispatch value). Semantic AC is not valid.
+Reason: subjective — no exit code semantics. Rewrite to expose a programmatic check (e.g., a test that fails if dispatch diverges, or an rg pattern that matches the expected dispatch value).
 
 **Agent escape hatch:** If a programmatic check persistently fails with an `mov_error` diagnostic (exit 127/126/2 or structural command brokenness), STOP and describe the failure in your final return. Do not retry structurally broken checks.
 
