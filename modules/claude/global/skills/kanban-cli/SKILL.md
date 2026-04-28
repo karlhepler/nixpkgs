@@ -16,6 +16,16 @@ Exhaustive reference built from `kanban --help` and `kanban <sub> --help`. Use t
 **Criteria:** `kanban criteria add` · `kanban criteria remove` · `kanban criteria check` · `kanban criteria uncheck` · `kanban criteria pass` · `kanban criteria fail`
 **Other:** `kanban agent` · `kanban rename` · `kanban report` · `kanban session-hook` · `kanban init`
 
+### Card-Creation Quick Reference
+
+| Verb | When to use | Result |
+|------|-------------|--------------|
+| `kanban do --file <path>` | Start work now (active card) | doing |
+| `kanban todo --file <path>` | Queue for later (no agent yet) | todo |
+| `kanban start <N>` | Move queued card to active | todo → doing |
+
+**Both `kanban do` and `kanban todo` accept the same arguments**: inline JSON object/array, OR `--file <path>` to read from a JSON file. The `--file` flag deletes the input file after creating the card. Schema, JSON validation, and output behavior are identical between `do` and `todo` — the ONLY difference is the column the card lands in.
+
 ---
 
 **Global flag available on every subcommand:**
@@ -53,6 +63,8 @@ Create one or more cards in `doing` state immediately.
 - **Returns:** Card number on stdout (e.g., `42`). The assigned number is what you use in all subsequent commands.
 
 ### `kanban todo [json_data] [--file PATH] [--session SESSION]`
+
+**Symmetric to `kanban do`** — accepts the same JSON schema and `--file <path>` flag; the only difference is the resulting status (`todo` vs `doing`). See the Card-Creation Quick Reference in the Card-Creation Quick Reference subsection near the top of this skill.
 
 Create one or more cards in `todo` (queued) state. Same JSON schema as `kanban do`. Use when the card has a file-conflict dependency on an in-flight card — schedule it now, `kanban start` when the blocking card reaches `done`.
 
