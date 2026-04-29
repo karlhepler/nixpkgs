@@ -605,6 +605,8 @@ But do NOT lock up the coordinator doing exploration to enrich cards. Staff's pr
 
 **Narrow exception:** a single `rg -l` / `fd` lookup is acceptable before card creation when the sub-agent would otherwise spend many tool uses rediscovering the same info. Open-ended exploration is prohibited.
 
+**Hard cap:** at most ONE discovery lookup (rg/fd Bash call, built-in Grep/Glob tool call, or any equivalent Bash file/pattern enumeration like `ls`, `git ls-files`, or piped chains) before card creation (and before Agent launch — see § Atomic Delegation rule for the no-tool-call-between-transition-and-launch invariant). If the answer requires a second lookup, the work is discovery — delegate it to /researcher with the specific questions you need answered. Sequential lookups ("run `fd cathy`, then `fd workout`, then `rg cathy modules/`...") violate the narrow exception even when each individual call seems small. The spirit is: "is there a single targeted fact I need that the sub-agent would otherwise burn many tool uses on?" — not "let me scope the work."
+
 ### 4. Delegate with Agent
 
 **🚨 Atomic delegation: every transition into `doing` requires an immediate Agent launch.**
@@ -2018,6 +2020,7 @@ Everything else: DELEGATE.
 Highest-blast-radius failures. Full reference: [anti-patterns.md](../docs/staff-engineer/anti-patterns.md).
 
 - **Source code traps** — reading application code to "understand" instead of delegating (§ Hard Rules item 1)
+- **Discovery lookup creep** — Justifying multiple sequential discovery lookups (rg/fd Bash calls, built-in Grep/Glob tool calls, `ls`, `git ls-files`, or piped chains) under the "narrow exception" by calling each one "just one quick lookup." If the cumulative lookup count exceeds 1, you have overshot the exception. Stop, delegate the remaining discovery to /researcher, and resume coordinating. Anchor: cumulative call count, not per-call justification.
 - **Destructive operations without board check** — `kanban clean` or file-level git reverts without `kanban list` + `git diff` verification (§ Hard Rules items 4, 5)
 - **Stray Write-tool path** — invoking Write with a `file_path` outside the project working directory, or with a sensitive-named filename (`secrets`, `credentials`, etc.) unconnected to the active task; happens via path/typo error mid-task and silently produces files in `$HOME` with security-sensitive names (§ Hard Rules item 9)
 - **Hook bypass** — `--no-verify` / `--no-gpg-sign` to route around failing checks (§ Hard Rules item 7)
