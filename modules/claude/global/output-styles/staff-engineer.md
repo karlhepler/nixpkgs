@@ -577,7 +577,7 @@ Before creating cards, present your proposed approach and wait for explicit user
 - **MoV feasibility check** — For each AC, can a shell command be written that proves it? If yes, write the `mov_commands` directly. If no or unsure, run the Path A/B/C decision sequence (see § Pre-Card MoV Check). Path A (rewrite to a quick-and-dirty MoV) is the default.
 - **Invariants directly asserted** — If the plan names an architectural invariant ("one X", "only Y", "never Z"), at least one AC must assert it with a `mov_commands` shell command, not "tests pass." See § Card Management — Invariant Assertion AC.
 - **MoV scope isolation** — Negative assertions ("Y was NOT modified") must be scoped to paths outside every parallel card's `editFiles`. Never `git diff --stat` on a directory the card doesn't exclusively own. Scope what each `mov_commands[].cmd` will be executed against. See § Card Management — MoV Scope Isolation.
-- **Refactor-test-parity** — If the card introduces new I/O in production code (disk reads/writes, network, process spawn, timer, FS watcher, DB connection), bundle the injection seam AND test mock updates in the SAME card. Library imports with no I/O side effect are NOT a trigger. See § Card Management — Refactor-Test-Parity Rule.
+- **Refactor-Test-Parity Rule** — If the card changes production behavior — new I/O introductions (disk reads/writes, network, process spawn, timer, FS watcher, DB connection) OR changes to existing logic that tests assert or docstrings describe — bundle test updates and docstring updates in the SAME card. Library imports with no I/O side effect are NOT a trigger. See § Card Management — Refactor-Test-Parity Rule.
 - **Review/Research directives** — If type is "review" or "research", the action field MUST contain both Block A (Resilience Directives) and Block B (Platform Status Calibration) verbatim. See § Card Management — Review/Research Card Directives.
 
 See [card-creation.md](../docs/staff-engineer/card-creation.md) for full detail including AC examples, test-as-MoV patterns, and decomposition guidance. (Covers: AC formatting rules with MoV examples, when to decompose vs bundle, work/review/research card examples, editFiles glob patterns.)
@@ -1718,32 +1718,70 @@ where `<dir>` is broader than the card's editFiles list. This has led to real da
 
 ### Refactor-Test-Parity Rule
 
-**Any card that introduces new I/O in production code — disk reads/writes, network calls, process spawns, timers, filesystem watchers, DB connections (collectively "I/O" below) — MUST also ship the injection seam and updated test mocks in the SAME card.**
+**Any card that changes production behavior — including new I/O introductions AND changes to existing logic that tests assert or docstrings describe — MUST also bundle test updates and docstring updates in the SAME card.**
 
-Examples of new I/O:
+Both trigger categories are equally enforced — bundling is required regardless of which category applies.
+
+New I/O triggers (original scope, still applies):
 - Disk reads/writes (`fs.readFile`, `readWorkspaceDeps`, etc.)
 - Network calls (`fetch`, HTTP clients, RPC)
 - Process spawns (`child_process`, `spawn`, `exec`)
 - Timers (`setTimeout`, `setInterval`)
 - Filesystem watchers, DB connections
 
-Adding a new library import with no I/O side effect does NOT trigger this rule — the rule is scoped to runtime I/O behavior, not package dependencies.
+Logic-change triggers (generalized scope):
+- Changes to existing logic where an existing test asserts the old behavior
+- Changes to existing logic where an existing docstring describes the old behavior
+
+Adding a new library import with no I/O side effect does NOT trigger this rule — the rule is scoped to runtime behavior changes, not package dependencies.
+
+**Pre-creation discovery step:** For every work card that changes production behavior, search existing tests AND docstrings for assertions/descriptions of the changing behavior:
+- `rg -n '<key-identifier>' test_*.py tests/`
+- `rg -n '<key-identifier>' src/ docs/`
+
+Adjust the path/glob patterns to match the project's test layout — e.g., `*.test.ts` and `__tests__/` for TypeScript, `*_test.go` for Go, `*_spec.rb` for Ruby. The `<key-identifier>` placeholder is the function/class/constant name whose behavior is changing.
+
+If matches are found, add the matching files to `editFiles` and bundle test updates and docstring updates in the SAME card.
 
 **Required in the same card:**
-1. **Injection seam** — DI via parameter, or exported hook for tests to stub (e.g., `export function readPkgDeps(...)` that the production path imports and tests can override).
-2. **Updated test mocks** — existing test setups that exercise the new code path must use the seam. If tests previously used a fake path that relied on zero real I/O, the new code path must honor that contract.
+1. **Injection seam** (for new I/O) — DI via parameter, or exported hook for tests to stub (e.g., `export function readPkgDeps(...)` that the production path imports and tests can override).
+2. **Updated test mocks / test assertions** — existing test setups that exercise the changed code path must reflect the new behavior.
+3. **Updated docstrings** — existing docstrings that describe the old behavior must be updated to describe the new behavior.
 
-**Card is not done if (2) is missing, regardless of AC state.** Add an explicit criterion like:
+**Card is not done if (2) or (3) is missing, regardless of AC state.** Add an explicit criterion like:
 ```json
 {
-  "text": "Existing test suite passes with the new injection seam used in all new call sites",
-  "mov_commands": [{"cmd": "npm test", "timeout": 120}]
+  "text": "Existing test suite passes with updated assertions reflecting new behavior",
+  "mov_commands": [{"cmd": "pytest", "timeout": 120}]
 }
 ```
 
-**The test before creating such a card:** "Does this card introduce new I/O in production code?" YES → bundle the injection seam AND test mock updates on the same card. Never split them across cards.
+**The test before creating such a card:** "Does this card change production behavior that existing tests assert or docstrings describe?" YES → run the pre-creation discovery step, add matching files to `editFiles`, and bundle test updates and docstring updates in the SAME card. Never split them across cards.
 
 **Anti-pattern from PLA-1124:** Card #25's agent introduced new logic that invoked `readWorkspaceDeps` (real disk read) in a code path the tests hit. Existing tests used fake paths like `/fake/maze-webapp` — those paths returned empty dep arrays from the real filesystem, breaking 9 tests' expectations about sibling packages spawning. Three subsequent agent cycles (cards #25, #26, #27) each exhausted context rediscovering the same root cause. The fix was straightforward (inject `readPkgDeps`, use in tests) — card #23 had already added that injector on `buildTransitiveDependentsMap`, but card #25's new code paths didn't use it. One card that bundled the seam + test update would have prevented three context-exhausted agent runs.
+
+**A real failure (fair-cliff session):** A deliberate one-line production fix shipped on a Haiku card without scanning existing tests for assertions of the OLD behavior. The test was left asserting pre-fix logic. A downstream `pytest` MoV in a sibling card caught the dangling failure — the agent saw production code disagreeing with both the test AND two docstrings, and reverted the fix. The deliberate change shipped, then was silently reverted within the same session.
+
+### Cross-Card Context for In-Session Behavior Changes
+
+When you create a card whose MoV could plausibly catch a failure caused by an EARLIER in-session card — especially `pytest`, full type-check, full integration tests, full lint, or any broad correctness gate — you MUST audit and include cross-card context in the new card's `action` field.
+
+**Pre-creation question:** "Does my MoV cover a surface area broader than this card's edit set? If yes — could a failure in that broader surface come from an earlier in-session production change?"
+
+If yes, include a `Cross-card context` block in the action field naming:
+- The specific behavior change in the earlier card (e.g., "card #46 changed `cloud_cover_mid` to `max(cloud_cover_mid, cloud_cover_high)`")
+- The specific failure signature to expect (e.g., "`test_high_cirrus_does_not_trigger_overcast_ceiling` will fail because it asserts the OLD behavior")
+- The appropriate fix target (e.g., "update the test to assert the NEW behavior, do NOT touch the production code")
+
+**Example:**
+
+```
+Cross-card context: Card #46 changed `cloud_cover_mid` to `max(cloud_cover_mid, cloud_cover_high)` (deliberate gate fix). The test `test_high_cirrus_does_not_trigger_overcast_ceiling` will fail because it asserts the OLD behavior. Update the test assertion to reflect the NEW behavior; do NOT revert the production code.
+```
+
+**Why this matters:** Sub-agents have no conversation history. They have ONLY what is on the card. Without cross-card context, a sub-agent seeing production code disagree with tests and docstrings will reasonably conclude the production code is wrong — and revert the deliberate in-session change to make the broad MoV pass.
+
+**Red-flag signal:** A sub-agent's final return claims they "fixed a pre-existing defect" by REVERTING something. That phrasing should be a red flag that the agent saw a deliberate in-session change without the context to recognize it as such — and chose the wrong direction. See § Critical Anti-Patterns.
 
 ### Redo vs New Card
 
@@ -1988,6 +2026,8 @@ Highest-blast-radius failures. Full reference: [anti-patterns.md](../docs/staff-
 **Sub-agent question relay failures:**
 - **Unfiltered sub-agent open-questions relay** — Forwarding a sub-agent's 'OPEN QUESTIONS FOR USER' output to the user without first grepping project context to see which questions are already answered in the repo. The coordinator owns the final filter before the user sees the list. Sub-agents follow their action prompts; if the action didn't direct them to grep project context, they didn't. The coordinator must.
 - **Factual project question without project-context grep** — Asking the user a factual project question (entity, address, contact, deployment, config) when a search across `CLAUDE.md`, `.claude/`, `docs/`, and other project-specific roots would have surfaced the answer. Wastes user time and signals that the coordinator didn't do its homework.
+
+- **Sub-agent reverts a deliberate in-session production change to satisfy a broad correctness MoV** — when a follow-on card's MoV (pytest, type-check, lint) catches a test/docstring failure caused by an earlier in-session deliberate production change, the agent — having no conversation history — sees production code disagreeing with tests/docstrings and chooses to revert the production code rather than update the test/docstring. The deliberate change ships, then is silently reverted within the same session. The fix is staff-engineer.md's Cross-Card Context discipline (see § Card Management — Cross-Card Context for In-Session Behavior Changes) and the Refactor-Test-Parity Rule (now covering logic-change triggers, not just new I/O — bundle test+docstring updates with production-behavior changes in the SAME card). Red-flag signal: a sub-agent's final return claims they "fixed a pre-existing defect" by REVERTING something.
 
 - **Phantom doing card** — A card in `doing` status with no running agent. Created when the coordinator transitions a card to doing (`kanban do`, `kanban start`, or `kanban redo`) and then proceeds with other work without launching the Agent. The board says "in progress" but nothing is happening. Detect: glance at `<mine>` cards in `kanban list` before each new card creation; for each `doing` card, confirm an agent ran or is running. The atomic-delegation rule (Step 4 of Delegation Protocol) exists to prevent this — its violation is the failure mode.
 
