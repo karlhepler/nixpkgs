@@ -382,6 +382,7 @@ Capturing a finding is a distinct act from executing on it.
 
 - [ ] **Available:** Normal work uses Agent tool (background sub-agent). Exception skills (`/project-planner`, `/review`, `/review-pr-comments`, `/manage-pr-comments`) use Skill tool directly — never Agent. Not implementing myself.
 - [ ] **Write path verified** *(coordinator's own Write calls only — not delegated to sub-agents)*: Any Write tool call in this response — `file_path` is absolute, inside the project working directory, filename matches the active task, and no sensitive substring (`secrets`, `credentials`, `token`, `password`, `key`, `auth`, `env`, `ssh`, `private`) appears unexplained. If sensitive substring present, can I quote the user's words specifying the path? Full protocol: § Hard Rules item 9.
+- [ ] **Card-launch pairing:** Every card transitioned to `doing` in this response (via `kanban do`, `kanban start`, or `kanban redo`) has a paired Agent tool call in the SAME response. If `kanban do --file <array>` returned N IDs, count N Agent launches in this response. Mismatch = phantom-doing card. (See § Delegation Protocol → Atomic delegation.)
 - [ ] **Background:** Every Agent tool call in this response uses `run_in_background: true`. (Hook-enforced: PreToolUse/Agent hook denies violations. See `modules/claude/kanban-pretool-hook.py`.)
 - [ ] **No orphan card drafts:** Any `.scratchpad/kanban-card-*.json` created in this response has been consumed by `kanban do --file` or `kanban todo --file` (the `--file` flag auto-deletes the input). If a draft sits in scratchpad without a corresponding kanban CLI call, that's the scratchpad-as-queue anti-pattern — fix before sending. Full protocol: § Card Management — Proactive Card Creation.
 - [ ] **AC Sequence:** If completing card: AC review runs automatically via the SubagentStop hook — by the time the Agent tool returns, either `kanban done` has succeeded, the agent was sent back to retry (redo loop), or the Agent tool return contains failure details. Read the return value to determine which before briefing the user. Run Mandatory Review Check. Note: `kanban done` requires BOTH agent_met and reviewer_met columns to be set.
@@ -621,6 +622,8 @@ Concrete failure mode: you transition a card to `doing` and then immediately get
 The fix is mechanical: make the kanban transition and the Agent launch a single mental unit. After running ANY command that moves a card into doing, before you do ANYTHING else, launch the agent. No exceptions.
 
 (For parallel batches: create ALL cards first in the same response turn, then launch ALL agents — batch atomicity is satisfied when all cards exist before any agent launches.)
+
+**Multi-card-array shape (highest-risk).** When `kanban do --file <array.json>` or `kanban todo --file <array.json>` returns N card IDs (e.g., `8\n9\n10`), the atomic-delegation rule applies to EACH card individually. (The `--file` call satisfies the "create all cards first" condition from the parallel-batches note above — the N IDs returned represent already-created cards.) The literal next N tool calls in this response MUST be Agent launches — one per card. Do NOT pivot to synthesis, additional research, or any other work after launching only some. The single CLI call that creates multiple cards is mentally tempting to treat as one delegation; it is N delegations and requires N Agent launches before any other tool call.
 
 **Phantom-doing self-check (do this before creating ANY new card or transitioning ANY existing card):**
 
@@ -942,6 +945,8 @@ Delegating does not end conversation. Keep probing for context, concerns, and co
 - **AC removal from running cards is out of scope** — if criteria need to be removed, let the agent finish, then `kanban redo` with updated AC. Exception: if the agent is approaching max retry cycles due to criteria that should be removed, do not wait for max-cycles failure — intervene with the TaskStop tool, `kanban redo` with corrected AC, and re-delegate.
 
 If you learn context that cannot be expressed as AC: let agent finish, review catches gaps, use `kanban redo` if needed.
+
+**Verify before claiming agent activity.** When telling the user N agents are running, the claim must be backed by either (a) Agent launches in the CURRENT response turn (no other tool calls between launch and claim), or (b) file-evidence: `ls .scratchpad/<card-id>-*.md` shows scratchpad files with recent mtime. Memory alone is insufficient — phantom-doing cards make confident-but-false claims feel correct. The `ls` check is cheap and catches the failure mode.
 
 ---
 
