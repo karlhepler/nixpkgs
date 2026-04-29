@@ -356,15 +356,6 @@ $orphan_warning"
       sourceFile = "sstaff.bash";
     };
 
-    cathy = shellApp {
-      name = "cathy";
-      runtimeInputs = [ ];
-      text = builtins.readFile ./cathy.bash;
-      # Keep this string in sync with the `# brief` line in cathy.bash (sibling-shellapp convention).
-      description = "Open a Cathy composer in nvim, targeting a tmux pane. Args: [<N> | <window> | <window>.<N>]. Default pane 0 of current window.";
-      sourceFile = "cathy.bash";
-    };
-
     burns = burnsScript // {
       meta = {
         description = "Run Ralph Orchestrator with Ralph Coordinator output style (accepts prompt string or file path)";
