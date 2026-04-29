@@ -4,18 +4,6 @@ let
   # Import shared shellApp helper
   shellApp = import ../lib/shellApp.nix { inherit pkgs lib; moduleDir = ./.; };
 
-  # workout-claude Python CLI (unified batch worktree creation with Claude command instances)
-  workoutClaudeScript = pkgs.writers.writePython3Bin "workout-claude" {
-    flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
-  } (builtins.readFile ./workout-claude.py);
-
-  # workout-smithers Python CLI (launch smithers across multiple PRs in parallel TMUX windows)
-  # Bare Python binary - runtime deps (gh, tmux, git, workout) injected via wrapProgram
-  # in the gitShellapps rec block where the workout shellapp is in scope.
-  workoutSmithersScript = pkgs.writers.writePython3Bin "workout-smithers" {
-    flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
-  } (builtins.readFile ./workout-smithers.py);
-
   # pre-commit hook for the nixpkgs repo — blocks commits of sensitive files
   nixpkgsPreCommitHook = pkgs.writeShellApplication {
     name = "nixpkgs-pre-commit";
@@ -132,32 +120,6 @@ in {
       text = builtins.readFile ./workout-delete.bash;
       description = "Delete a git worktree";
       sourceFile = "workout-delete.bash";
-    };
-    workout-claude = workoutClaudeScript // {
-      meta = {
-        description = "Batch worktree creation with JSON input and per-worktree Claude command prompt injection";
-        mainProgram = "workout-claude";
-        homepage = "${builtins.toString ./.}/workout-claude.py";
-      };
-    };
-    workout-smithers = pkgs.symlinkJoin {
-      name = "workout-smithers";
-      paths = [ workoutSmithersScript ];
-      buildInputs = [ pkgs.makeWrapper ];
-      postBuild = ''
-        wrapProgram $out/bin/workout-smithers \
-          --prefix PATH : ${pkgs.lib.makeBinPath [
-            pkgs.gh
-            pkgs.tmux
-            pkgs.git
-            workout
-          ]}
-      '';
-      meta = {
-        description = "Launch smithers across multiple PRs in parallel TMUX windows, each with a dedicated git worktree";
-        mainProgram = "workout-smithers";
-        homepage = "${builtins.toString ./.}/workout-smithers.py";
-      };
     };
   };
 
