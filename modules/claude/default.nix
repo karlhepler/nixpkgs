@@ -144,6 +144,11 @@ let
   # Bash cd-compound PreToolUse hook — blocks `cd <dir> && cmd` / `cd <dir>; cmd` patterns
   bashCdCompoundHookScript = pkgs.writers.writePython3Bin "bash-cd-compound-hook" { flakeIgnore = [ "E265" "E501" "W503" "W504" ]; } (builtins.readFile ./bash-cd-compound-hook.py); # Ignore shebang, line length, line breaks
 
+  # Kanban MoV lint PreToolUse hook — rejects banned MoV patterns in kanban do/todo --file
+  kanbanMovLintHookScript = pkgs.writers.writePython3Bin "kanban-mov-lint-hook" {
+    flakeIgnore = [ "E265" "E501" "W503" "W504" ];
+  } (builtins.readFile ./kanban-mov-lint-hook.py);
+
   # Skill autoload SessionStart hook — injects CLI skill body (kanban-cli or crew-cli)
   # based on KANBAN_AGENT env var so agents never operate from a partial Quick Reference
   skillAutoloadHookScript = pkgs.writers.writePython3Bin "skill-autoload-hook" {
@@ -427,6 +432,14 @@ $orphan_warning"
         description = "PreToolUse(Bash) hook that blocks cd-compound anti-pattern (cd <dir> && cmd / cd <dir>; cmd)";
         mainProgram = "bash-cd-compound-hook";
         homepage = "${builtins.toString ./.}/bash-cd-compound-hook.py";
+      };
+    };
+
+    kanban-mov-lint-hook = kanbanMovLintHookScript // {
+      meta = {
+        description = "PreToolUse(Bash) hook that rejects banned MoV patterns (rg -E, hook-skip flags) in kanban do/todo --file card JSON";
+        mainProgram = "kanban-mov-lint-hook";
+        homepage = "${builtins.toString ./.}/kanban-mov-lint-hook.py";
       };
     };
 
@@ -1088,6 +1101,10 @@ $orphan_warning"
                 {
                   type = "command";
                   command = "${shellapps.git-no-verify-hook}/bin/git-no-verify-hook";
+                }
+                {
+                  type = "command";
+                  command = "${shellapps.kanban-mov-lint-hook}/bin/kanban-mov-lint-hook";
                 }
               ];
             }
