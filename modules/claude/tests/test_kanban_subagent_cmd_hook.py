@@ -579,3 +579,59 @@ class TestShellWrapperDenial:
         payload = make_bash_payload("python -c 'import subprocess; subprocess.run([\"kanban\",\"done\",\"5\"])'")
         result = run_hook_main(hook, payload)
         assert_blocked(result)
+
+
+# ---------------------------------------------------------------------------
+# TestBareEnvPrefixBypasses — VAR=value cmd bypass vectors
+# ---------------------------------------------------------------------------
+
+class TestBareEnvPrefixBypasses:
+    """Bare shell env-var prefixes (VAR=value cmd) must be detected and denied."""
+
+    def test_single_env_prefix_kanban_list_denied(self, hook):
+        """Test 1: KANBAN_SESSION=x kanban list from sub-agent → DENY."""
+        payload = make_bash_payload("KANBAN_SESSION=x kanban list")
+        result = run_hook_main(hook, payload)
+        assert_blocked(result)
+
+    def test_multi_env_prefix_kanban_list_denied(self, hook):
+        """Test 2: FOO=1 BAR=2 kanban list from sub-agent → DENY (multi-prefix)."""
+        payload = make_bash_payload("FOO=1 BAR=2 kanban list")
+        result = run_hook_main(hook, payload)
+        assert_blocked(result)
+
+    def test_env_prefix_with_punct_kanban_done_denied(self, hook):
+        """Test 3: FOO=val_with_punct/.path kanban done 5 from sub-agent → DENY."""
+        payload = make_bash_payload("FOO=val_with_punct/.path kanban done 5")
+        result = run_hook_main(hook, payload)
+        assert_blocked(result)
+
+    def test_env_prefix_kanban_criteria_check_allowed(self, hook):
+        """Test 4: KANBAN_SESSION=x kanban criteria check 5 1 from sub-agent → ALLOW."""
+        payload = make_bash_payload("KANBAN_SESSION=x kanban criteria check 5 1")
+        result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+    def test_env_prefix_kanban_criteria_uncheck_allowed(self, hook):
+        """Test 5: KANBAN_SESSION=x kanban criteria uncheck 5 1 from sub-agent → ALLOW."""
+        payload = make_bash_payload("KANBAN_SESSION=x kanban criteria uncheck 5 1")
+        result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+    def test_coordinator_env_prefix_kanban_done_allowed(self, hook):
+        """Test 6: Coordinator (no agent_id) calling KANBAN_SESSION=x kanban done 5 → ALLOW."""
+        payload = make_bash_payload("KANBAN_SESSION=x kanban done 5", agent_id=None)
+        result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+    def test_env_prefix_on_non_kanban_command_allowed(self, hook):
+        """Test 7: KANBAN=val ls (env-prefix on non-kanban command) from sub-agent → ALLOW."""
+        payload = make_bash_payload("KANBAN=val ls")
+        result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+    def test_empty_value_env_prefix_kanban_list_denied(self, hook):
+        """Test 8: KANBAN_SESSION= kanban list (empty value) from sub-agent → DENY."""
+        payload = make_bash_payload("KANBAN_SESSION= kanban list")
+        result = run_hook_main(hook, payload)
+        assert_blocked(result)

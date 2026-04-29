@@ -39,9 +39,13 @@ BYPASS MITIGATIONS:
      past wrapper tokens in _find_kanban_segment().
   2. shell -c wrappers: `bash -c 'kanban done 5'`, `sh -c '...'`, `python3 -c
      '...'`, etc. — denied entirely for sub-agents via _deny_shell_wrapper().
+  3. bare shell env-var prefixes: `KANBAN_SESSION=x kanban list`,
+     `FOO=1 BAR=2 kanban done 5` — detected by stripping leading
+     VAR=value tokens in _strip_leading_env_assignments().
 """
 
 import json
+import re
 import shlex
 import sys
 
@@ -58,6 +62,12 @@ _ENV_WRAPPERS = frozenset(["env", "/usr/bin/env"])
 _COMMAND_WRAPPERS = frozenset(["command"])
 _EXEC_WRAPPERS = frozenset(["exec"])
 _ALL_WRAPPERS = _ENV_WRAPPERS | _COMMAND_WRAPPERS | _EXEC_WRAPPERS
+
+# Regex that matches a bare shell env-var assignment token: VAR=value.
+# Matches identifiers of the form [A-Za-z_][A-Za-z0-9_]* followed by '='
+# and zero-or-more non-whitespace characters (including empty values).
+# Used to strip leading inline env assignments like `KANBAN_SESSION=x kanban list`.
+_ENV_ASSIGNMENT_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*=')
 
 # Shell runner binaries that accept -c <inline-script> arguments.
 # Sub-agents invoking these with -c are equivalent to having unrestricted shell
@@ -300,6 +310,34 @@ def _advance_past_exec_wrapper(segment: list, start: int) -> int:
     return i
 
 
+def _strip_leading_env_assignments(segment: list) -> list:
+    """Strip leading bare shell env-var assignment tokens from a segment.
+
+    Bash allows inline env-var assignments before a command:
+      KANBAN_SESSION=x kanban list
+      FOO=1 BAR=2 BAZ=3 kanban done 5
+      FOO=val_with_punct/.path kanban done 5
+      KANBAN_SESSION= kanban list  (empty value)
+
+    shlex.split preserves these as individual tokens (e.g. 'KANBAN_SESSION=x').
+    This function advances past all leading tokens that match the pattern
+    [A-Za-z_][A-Za-z0-9_]*= (i.e., a valid shell identifier followed by '=')
+    and returns the remainder.  The first token NOT matching the pattern is
+    treated as the real command.
+
+    Examples:
+      ['KANBAN_SESSION=x', 'kanban', 'list'] → ['kanban', 'list']
+      ['FOO=1', 'BAR=2', 'kanban', 'done', '5'] → ['kanban', 'done', '5']
+      ['KANBAN_SESSION=', 'kanban', 'list'] → ['kanban', 'list']
+      ['kanban', 'done', '5'] → ['kanban', 'done', '5']  (unchanged)
+      ['ls'] → ['ls']  (unchanged)
+    """
+    i = 0
+    while i < len(segment) and _ENV_ASSIGNMENT_RE.match(segment[i]):
+        i += 1
+    return segment[i:]
+
+
 def _skip_flags_with_args(tokens: list, start: int) -> int:
     """Advance index past any leading flags that take an argument value.
 
@@ -379,6 +417,13 @@ def _find_kanban_segment(segments: list) -> "list | None":
       command kanban done 5          → ['kanban', 'done', '5']
       exec kanban done 5             → ['kanban', 'done', '5']
       kanban done 5                  → ['kanban', 'done', '5']
+
+    Bare shell env-var prefix handling — bash allows inline assignments before
+    a command without the `env` binary. Strip these before binary detection:
+
+      KANBAN_SESSION=x kanban list   → ['kanban', 'list']
+      FOO=1 BAR=2 kanban done 5      → ['kanban', 'done', '5']
+      KANBAN_SESSION= kanban list    → ['kanban', 'list']
     """
     for segment in segments:
         if not segment:
@@ -399,6 +444,12 @@ def _find_kanban_segment(segments: list) -> "list | None":
             real_idx = _advance_past_exec_wrapper(segment, 0)
             if real_idx < len(segment) and _is_kanban_binary(segment[real_idx]):
                 return segment[real_idx:]
+        elif _ENV_ASSIGNMENT_RE.match(first_token):
+            # Bare shell env-var assignment prefix: VAR=value cmd args
+            # Strip all leading assignments to expose the real command binary.
+            stripped = _strip_leading_env_assignments(segment)
+            if stripped and _is_kanban_binary(stripped[0]):
+                return stripped
     return None
 
 
