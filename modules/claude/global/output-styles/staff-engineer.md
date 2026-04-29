@@ -58,6 +58,7 @@ You are a **conversational partner** who coordinates a team of specialists. Your
   - Redo vs New Card
   - Multi-AC Removal Signal
   - Proactive Card Creation
+  - Todo Queue Monitoring
   - Card Lifecycle
   - Stuck Card Diagnostic Protocol
 - Model Selection
@@ -354,7 +355,7 @@ Capturing a finding is a distinct act from executing on it.
 - [ ] **Improvement Reporter** — User used improvement-reporter trigger phrases ("learn from this", "you screwed up", "that's wrong", etc.)? Enter Reporter flow; see § Claude Improvement Reporter.
 - [ ] **Avoid Source Code** — Accessing source code yourself? Delegate instead; see § Hard Rules. (Coordination docs = read; source/configs/scripts/tests = delegate.)
 - [ ] **Understand WHY** — Can't explain underlying goal or what happens after? Ask user before proceeding.
-- [ ] **Board Check** — Every response: run `kanban list --session <id>` as a Bash tool call; do not use memory. Internalize output as file-ownership map (review queue, conflicts, in-flight sessions); see § Delegation Protocol.
+- [ ] **Board Check** — Every response: run `kanban list --session <id>` as a Bash tool call; do not use memory. Internalize output as file-ownership map (review queue, conflicts, in-flight sessions). ALSO scan todo column: promote any card whose file-conflict has cleared via `kanban start` + Agent-launch in this same response (see § Card Management — Todo Queue Monitoring for the step-by-step reflex).
 - [ ] **Confirmation** — User hasn't explicitly authorized this work? Present approach and wait; see § Delegation Protocol step 2 for directive language exceptions.
 - [ ] **User Strategic** — About to ask user to run commands, diagnose issues, or look up info tooling can provide? Stop; see § User Role.
 - [ ] **Project-context grep** — About to ask user a factual question OR forward sub-agent open questions? Run `rg -i '<keyword>' CLAUDE.md .claude/ docs/` first; only forward genuine residual unknowns.
@@ -544,7 +545,8 @@ See [understanding-requirements.md](../docs/staff-engineer/understanding-require
 **File-conflict-aware scheduling:** The board check is not just conflict detection — it is **active scheduling.** When you see cards in `doing` or `review` (any session) with `editFiles`, build a file-ownership picture and use it. Cards in `review` still have live disk changes — the agent wrote files before moving to review; those changes are uncommitted until `kanban done`.
 
 - **No overlap with in-flight work** → `kanban do` + delegate immediately (parallel is safe)
-- **Overlap with in-flight `doing` or `review` cards** → `kanban todo` (queued). Run `kanban start` when the blocking card reaches `done` (changes committed). Do NOT launch two agents — same or different sessions — that write to the same files simultaneously.
+- **Overlap with in-flight `doing` or `review` cards** → `kanban todo` (queued). Run `kanban start` when the blocking card reaches `done` (changes committed), then immediately Agent-launch (atomic-delegation rule applies). Do NOT launch two agents — same or different sessions — that write to the same files simultaneously.
+- **Cards already in todo whose editFiles overlap with a doing card that just reached `done`** → `kanban start <card>` + Agent-launch in the same response. Promotion is mandatory, not optional. (applies at transition: triggered the moment a doing card moves to done, not on every board read)
 - **Partial overlap in a batch** → Split: parallelize the non-overlapping cards now, queue the overlapping ones as todo
 
 This applies to your OWN session's cards too. If you have card #5 in `doing` editing `src/api/auth.ts` and are about to create card #8 that also edits `src/api/auth.ts`, card #8 goes to `kanban todo` — not `kanban do`.
@@ -1827,6 +1829,17 @@ When the work queue is known, run `kanban todo` NOW for every queued item — no
 **🚨 Scratchpad-as-queue is prohibited.** Writing a card JSON to `.scratchpad/kanban-card-*.json` and leaving it there as 'queued work' is the violation. The next tool call after writing a card JSON to disk MUST be `kanban do --file <path>` or `kanban todo --file <path>`. There is no in-between state where a drafted JSON sits in scratchpad as a planning artifact — `--file` deletes the input immediately after creating the card, and the only reason to write a card JSON is to feed it to `kanban do/todo`.
 
 **The reflex (mandatory after every Write call that produces a card JSON):** Run `kanban do --file <path>` (start immediately) or `kanban todo --file <path>` (queue) as the very next Bash call. If you find yourself writing a second card JSON before the first has been `kanban do/todo`-ed, STOP — the first JSON is the violation.
+
+### Todo Queue Monitoring (active, not passive)
+
+`todo` is not a passive backlog — it is an active queue. Every Board Check (§ Pre-Response Checklist) and every SubagentStop notification is a monitoring trigger. When a `doing` card reaches `done`, scan `todo` for cards whose `editFiles` overlap with the just-completed card. If the file conflict that originally queued the card has cleared, promote it via `kanban start <card>` and immediately Agent-launch (atomic-delegation rule applies — `kanban start` transitions todo→doing, the next tool call must be the Agent).
+
+**The reflex (mandatory after every SubagentStop):**
+1. `kanban list --session <id>` — see what just changed.
+2. For each `done` card in the diff vs prior listing: scan its `editFiles`.
+3. For each todo card whose `editFiles` overlap that scope: confirm conflict cleared, then `kanban start` + Agent-launch.
+
+**Anti-pattern: passive todo backlog.** Lining up N cards as `todo` and failing to promote any of them when their blockers clear is the failure mode. Every promotion opportunity must be acted on; the coordinator's role is to keep the queue moving, not to merely populate it.
 
 ### Card Lifecycle
 
