@@ -20,6 +20,10 @@ precaution) — see LIMITATIONS section below.
 BANNED PATTERNS:
   rg -E variants: rg -qiE, rg -qEi, rg -E, rg -iE, etc.
     (-E means --encoding in ripgrep, not extended regex. PCRE2 is the default.)
+  backslash-pipe in regex tools: rg/grep/sed/awk cmd containing \\| (one backslash + pipe).
+    In ripgrep's default Rust regex engine, \\| is a LITERAL pipe, not alternation.
+    Fix: use bare-pipe alternation (foo|bar) or split into separate mov_commands entries.
+    Double-escape (\\\\|) is NOT flagged — it can be legitimate in some tools.
   Hook-skip flags: --no-verify, --no-gpg-sign, git commit -n, HUSKY=0,
     HUSKY_SKIP_HOOKS=1 (should never appear in MoVs).
 
@@ -86,6 +90,31 @@ BANNED_PATTERNS: list[tuple[re.Pattern, str, str, bool]] = [
             "(lowercase `-e`)."
         ),
         False,  # rg -E lint: fail open on parse error
+    ),
+    (
+        # Detect backslash-pipe alternation trap in regex-context tools (rg, grep, sed, awk).
+        # In ripgrep's default Rust regex engine (and grep/sed/awk BRE mode), a backslash
+        # followed by a pipe (\|) is a LITERAL pipe character — NOT an alternation operator.
+        # Alternation in ripgrep/PCRE2 is a bare pipe: foo|bar
+        #
+        # Matching logic:
+        #   - Only fires when cmd also contains a regex-context tool (rg, grep, sed, awk).
+        #     The scoped check is applied in _is_backslash_pipe_in_regex_tool() below;
+        #     this regex is intentionally never reached via the standard BANNED_PATTERNS loop
+        #     (the pattern is a never-match sentinel, same technique as git commit -n).
+        #     Detection is performed entirely via _is_backslash_pipe_in_regex_tool().
+        re.compile(r'(?!x)x'),  # Never matches — _is_backslash_pipe_in_regex_tool handles this
+        "backslash-pipe (literal pipe, not alternation)",
+        (
+            r"In ripgrep's default Rust regex engine, `\|` is a LITERAL pipe character — "
+            r"not alternation. "
+            r"(GNU grep treats `\|` as alternation in BRE as an extension; "
+            r"sed/awk BRE behavior is implementation-defined.) "
+            r"For ripgrep — the primary tool in this codebase — "
+            r"fix: use bare-pipe alternation (`foo|bar`) OR split into separate "
+            r"mov_commands entries, one per search term."
+        ),
+        False,  # backslash-pipe lint: fail open on parse error
     ),
     (
         re.compile(r'--no-verify\b'),
@@ -209,6 +238,50 @@ def _is_git_commit_n(cmd: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Backslash-pipe detection (regex-context tools only)
+# ---------------------------------------------------------------------------
+
+# Matches a single backslash followed by a pipe that is NOT preceded by
+# another backslash. This catches \| (literal-pipe trap) but not \\|
+# (two backslashes followed by pipe — can be a legitimate double-escape
+# when matching a literal backslash character in some tools).
+_BACKSLASH_PIPE_RE = re.compile(r'(?<!\\)\\[|]')
+
+# Regex-context tools for which \| is meaningfully wrong.
+# An escaped pipe inside a literal-string echo or plain variable assignment
+# is not a regex and is not flagged.
+_REGEX_TOOL_RE = re.compile(r'\b(?:rg|grep|sed|awk)\b')
+
+
+# Matches grep invocations in PCRE mode, where \| IS valid alternation.
+# In grep -P / --perl-regexp, backslash-pipe is a legitimate alternation operator.
+_GREP_PCRE_RE = re.compile(r'(?<!\w)-P\b|--perl-regexp\b')
+
+
+def _is_backslash_pipe_in_regex_tool(cmd: str) -> bool:
+    """
+    Return True if cmd invokes a regex-context tool (rg, grep, sed, awk)
+    AND contains a single backslash immediately followed by a pipe character.
+
+    A single \\| (one backslash + pipe) in a ripgrep pattern matches a
+    LITERAL pipe, not alternation. This is a recurring card-authoring error.
+
+    Does NOT fire on \\\\| (two backslashes + pipe) — that is a legitimate
+    escape sequence when the intent is to match a literal backslash.
+
+    Does NOT fire on grep -P / --perl-regexp invocations: in PCRE mode, \\|
+    is a valid alternation operator.
+    """
+    if not _REGEX_TOOL_RE.search(cmd):
+        return False
+    # Exempt grep invocations using PCRE mode (-P / --perl-regexp):
+    # in PCRE, \| is legitimate alternation, not a literal pipe trap.
+    if re.search(r'\bgrep\b', cmd) and _GREP_PCRE_RE.search(cmd):
+        return False
+    return bool(_BACKSLASH_PIPE_RE.search(cmd))
+
+
+# ---------------------------------------------------------------------------
 # Command detection
 # ---------------------------------------------------------------------------
 
@@ -288,10 +361,19 @@ def _scan_card_for_banned(card: dict, card_index: int) -> "tuple[int, int, str, 
                     if name == "git commit -n (hook-skip short flag)":
                         return (crit_idx, mov_idx, cmd, name, fix)
 
+            # Check backslash-pipe alternation trap in regex-context tools
+            if _is_backslash_pipe_in_regex_tool(cmd):
+                for pattern, name, fix, _ in BANNED_PATTERNS:
+                    if name == "backslash-pipe (literal pipe, not alternation)":
+                        return (crit_idx, mov_idx, cmd, name, fix)
+
             # Check remaining patterns via regex
             for pattern, name, fix, _ in BANNED_PATTERNS:
                 if name == "git commit -n (hook-skip short flag)":
                     # Already handled by shlex above — skip regex path
+                    continue
+                if name == "backslash-pipe (literal pipe, not alternation)":
+                    # Already handled by _is_backslash_pipe_in_regex_tool above — skip regex path
                     continue
                 if pattern.search(cmd):
                     return (crit_idx, mov_idx, cmd, name, fix)

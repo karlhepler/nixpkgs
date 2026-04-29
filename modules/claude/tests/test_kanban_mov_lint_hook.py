@@ -27,6 +27,7 @@ Covered paths:
 - Path outside cwd → allow (fail open, path containment)
 - git commit -m 'message with -n word' → allow (shlex false-positive guard)
 - mov_commands array index in denial message (mov_idx)
+- Backslash-pipe detection: rg/grep/sed/awk with \\| (should block); echo, bare pipe, double-escape, grep -P (should allow)
 """
 
 import importlib.util
@@ -471,6 +472,84 @@ class TestBannedHookSkipFlags:
         card = make_card_json("git commit -m 'processed -n items total'")
         result = run_with_temp_file(hook, card)
         assert_allowed(result)
+
+
+# ---------------------------------------------------------------------------
+# TestBackslashPipeDetection — backslash-pipe alternation trap detection
+# ---------------------------------------------------------------------------
+
+class TestBackslashPipeDetection:
+    """Backslash-pipe in regex-context tools must be denied; safe patterns must be allowed."""
+
+    def test_rg_backslash_pipe_denied(self, hook):
+        """rg '\\|' file — primary positive case: backslash-pipe in rg must be blocked."""
+        card = make_card_json(r"rg '\|' file")
+        result = run_with_temp_file(hook, card)
+        assert_blocked(result)
+
+    def test_rg_double_escape_pipe_allowed(self, hook):
+        """rg '\\\\|' file — double-escape (two backslashes + pipe) must NOT be blocked.
+
+        Two backslashes before pipe is a legitimate escape: the intent is to match
+        a literal backslash character. The detection must not fire here.
+        """
+        card = make_card_json(r"rg '\\|' file")
+        result = run_with_temp_file(hook, card)
+        assert_allowed(result)
+
+    def test_echo_backslash_pipe_allowed(self, hook):
+        """echo 'foo\\|bar' — no regex tool present, must NOT be blocked."""
+        card = make_card_json(r"echo 'foo\|bar'")
+        result = run_with_temp_file(hook, card)
+        assert_allowed(result)
+
+    def test_grep_backslash_pipe_denied(self, hook):
+        """grep '\\|' file — grep positive case: must be blocked."""
+        card = make_card_json(r"grep '\|' file")
+        result = run_with_temp_file(hook, card)
+        assert_blocked(result)
+
+    def test_sed_backslash_pipe_denied(self, hook):
+        """sed 's/foo\\|bar/baz/' — sed positive case: must be blocked."""
+        card = make_card_json(r"sed 's/foo\|bar/baz/'")
+        result = run_with_temp_file(hook, card)
+        assert_blocked(result)
+
+    def test_awk_backslash_pipe_denied(self, hook):
+        """awk '/foo\\|bar/' — awk positive case: must be blocked."""
+        card = make_card_json(r"awk '/foo\|bar/'")
+        result = run_with_temp_file(hook, card)
+        assert_blocked(result)
+
+    def test_rg_bare_pipe_alternation_allowed(self, hook):
+        """rg 'foo|bar' file — bare-pipe alternation with NO backslash: must NOT be blocked."""
+        card = make_card_json("rg 'foo|bar' file")
+        result = run_with_temp_file(hook, card)
+        assert_allowed(result)
+
+    def test_grep_pcre_short_flag_allowed(self, hook):
+        """grep -P '\\|' file — PCRE mode makes \\| valid alternation: must NOT be blocked."""
+        card = make_card_json(r"grep -P '\|' file")
+        result = run_with_temp_file(hook, card)
+        assert_allowed(result)
+
+    def test_grep_perl_regexp_long_flag_allowed(self, hook):
+        """grep --perl-regexp '\\|' file — long-form PCRE flag: must NOT be blocked."""
+        card = make_card_json(r"grep --perl-regexp '\|' file")
+        result = run_with_temp_file(hook, card)
+        assert_allowed(result)
+
+    def test_grep_pcre_combined_flags_allowed(self, hook):
+        """grep -i -P '\\|' file — PCRE flag combined with other flags: must NOT be blocked."""
+        card = make_card_json(r"grep -i -P '\|' file")
+        result = run_with_temp_file(hook, card)
+        assert_allowed(result)
+
+    def test_grep_no_pcre_backslash_pipe_denied(self, hook):
+        """grep '\\|' file without -P — BRE mode: must be blocked."""
+        card = make_card_json(r"grep '\|' file")
+        result = run_with_temp_file(hook, card)
+        assert_blocked(result)
 
 
 # ---------------------------------------------------------------------------
