@@ -1819,7 +1819,7 @@ def _deliver_tell(
     Note: newlines in the tell payload will fragment the message because
     tmux send-keys converts literal newlines to Enter keystrokes. Callers
     needing multi-line briefs should pre-process the payload or use the
-    tempfile injection pattern (see modules/git/workout-claude.py).
+    tempfile injection pattern.
     """
     # Guard: empty or whitespace-only tell cannot be verified — return failure
     # immediately rather than letting "" in result.stdout produce a false

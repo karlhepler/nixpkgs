@@ -16,7 +16,7 @@ allowed-tools:
   - Bash(prr *)
   - Bash(git branch *)
   - Bash(git rev-parse *)
-  - Bash(workout-claude *)
+  - Bash(crew *)
   - Bash(workout *)
 ---
 
@@ -55,13 +55,13 @@ Due to a known Claude Code bug ([GitHub #5140](https://github.com/anthropics/cla
 - `Bash(prr *)`
 - `Bash(git branch *)`
 - `Bash(git rev-parse *)`
-- `Bash(workout-claude *)`
+- `Bash(crew *)`
 - `Bash(workout *)`
 
-This skill fetches PR diffs, posts unified GitHub reviews via `prr`, runs kanban operations for specialist cards, verifies inline comments via `prc`, and creates git worktrees via `workout-claude` to give specialists full repository access. Without these permissions, operations silently fail in `dontAsk` mode.
+This skill fetches PR diffs, posts unified GitHub reviews via `prr`, runs kanban operations for specialist cards, verifies inline comments via `prc`, and creates git worktrees via `crew` to give specialists full repository access. Without these permissions, operations silently fail in `dontAsk` mode.
 
 **If any are missing:** Stop immediately. Do not start work. Surface to the user:
-> "Blocked: One or more required permissions are missing from `permissions.allow`. Add `Bash(gh pr *)`, `Bash(gh api *)`, `Bash(kanban *)`, `Bash(prc *)`, `Bash(prr *)`, `Bash(git branch *)`, `Bash(git rev-parse *)`, `Bash(workout-claude *)`, and `Bash(workout *)` before running /review."
+> "Blocked: One or more required permissions are missing from `permissions.allow`. Add `Bash(gh pr *)`, `Bash(gh api *)`, `Bash(kanban *)`, `Bash(prc *)`, `Bash(prr *)`, `Bash(git branch *)`, `Bash(git rev-parse *)`, `Bash(crew *)`, and `Bash(workout *)` before running /review."
 
 ## Phase 1 — Worktree Setup + One-Way Handoff
 
@@ -123,7 +123,7 @@ gh pr view <number> --json isCrossRepository --jq .isCrossRepository
 
   - **If current branch != PR's `headRefName`:** Create the worktree + TMUX window and hand off:
     ```bash
-    echo '[{"worktree": "<headRefName>", "prompt": "Review PR #<number>"}]' | workout-claude staff
+    crew create "<headRefName>" --tell "Review PR #<number>"
     ```
     Tell the user: "Opened a new TMUX window to review PR #<number> — switch to it to watch the review run."
 

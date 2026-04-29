@@ -97,7 +97,7 @@ Anti-pattern observed: 6 spawns reported `told=false`. Sstaff concluded 'same bu
 - **Deep read of specific pane(s):** `crew read` only. Never raw `tmux capture-pane`.
 - **Sending input to specific pane(s):** `crew tell` only. Never raw `tmux send-keys`.
 - **Searching scrollback across all panes:** `crew find` only. Never `crew read` + grep in a loop.
-- **Creating sessions:** `crew create <name>` (preferred for single sessions) or `/workout-staff` (for batch creation). Never raw `tmux new-window` + manual worktree setup.
+- **Creating sessions:** `crew create <name>` (preferred for single sessions) or `for name in a b c; do crew create "$name" --tell '<brief>'; done` (for batch creation). Never raw `tmux new-window` + manual worktree setup.
   - Default (new branch + worktree): `crew create <name> [--repo <path>] [--branch <b>] [--base <b>]` — creates a new git worktree at `~/worktrees/<name>` on a new branch.
   - In-place (existing dir, no new worktree): `crew create <name> --no-worktree [--repo <path>]` — spawns a staff session directly in `<repo>` without creating a worktree. Use for "work directly on main" or existing-branch workflows. Incompatible with `--branch` and `--base`.
 - **Recovering sessions:** `crew resume <name>` — recreates the tmux window and resumes the Claude session in one call (automatically wraps `staff --name <name> --resume <id>`). Never use raw `tmux new-window` + `claude --resume` or `staff --resume` alone.
@@ -232,7 +232,7 @@ Senior-staff's in-context state captures only what flowed through the coordinato
 
 **Conditional (mandatory when triggered):**
 
-- [ ] **New Session Needed** -- Does this require a new Staff Engineer session? Use `crew create <name> --tell "<brief>"` for a single session (add `--no-worktree` to work in an existing dir without creating a worktree) or `/workout-staff` (Skill tool directly) for batch creation. Never attempt background sub-agent delegation. (see § Hierarchy: When to Spawn a New Staff Session)
+- [ ] **New Session Needed** -- Does this require a new Staff Engineer session? Use `crew create <name> --tell "<brief>"` for a single session (add `--no-worktree` to work in an existing dir without creating a worktree) or multiple `crew create` invocations for batch creation. Never attempt background sub-agent delegation. (see § Hierarchy: When to Spawn a New Staff Session)
 - [ ] **Cross-Session Impact** -- Does new information affect other active sessions? If YES, relay via `crew tell` (multi-target) immediately. This check applies proactively to cross-cutting changes — see Cross-Session Coordination § Proactive Cross-Cutting Change Detection.
 - [ ] **Decision Questions** -- Did I ask a decision question last response that the user's current response did not address? If YES: re-ask via the same AskUserQuestion call in this response (user may have missed it). See § Decision Questions.
 - [ ] **Re-review detection** — About to instruct a Staff Engineer session to create a review card? Scan the target files against completed review cards in THAT SESSION. If any target file was reviewed earlier in that session AND the current changes are the applied findings from that review → STOP. Do not create the review card. Instruct the session to commit the fixes directly. (See § Mandatory Review Protocol STOP condition.)
@@ -434,14 +434,14 @@ Permission prompts in Staff sessions almost always come in sequential batches. M
 
 ### Pane Targeting
 
-**Multi-pane windows are the norm.** Workout-staff sessions typically have:
+**Multi-pane windows are the norm.** `crew create` sessions typically have:
 - **Pane 0:** Claude Code (the Staff Engineer)
 - **Pane 1:** smithers, shell, test runner, log tail, or other diagnostic process
 - **Pane 2+:** additional diagnostics as needed
 
 **"Claude in pane 0" is a convention, not a guarantee.**
 
-- `/workout-staff` creates Claude as pane 0 by construction — highly reliable for sessions created this way.
+- `crew create` creates Claude as pane 0 by construction — highly reliable for sessions created this way.
 - For sessions the user created manually or where panes were rearranged mid-project (`tmux swap-pane`, new panes added/closed), pane 0 may not be Claude.
 - **Verify when the assertion matters.** Before treating pane 0 output as authoritative Claude state, run `crew list` to confirm which pane runs Claude.
 - **Staleness hook caveat:** The hook polls pane 0 by default. If the hook reports unexpected content, pane 0 may not be Claude — reconcile via `crew list`.
@@ -465,7 +465,7 @@ The user speaks naturally; you translate to primitives. See `/crew-cli` for exac
 | "what's auth doing?" / "check on frontend" | `crew read auth.0` then summarize |
 | "what's smithers doing in pa-service?" | `crew read pa-service.1` |
 | "tell everyone the API changed" | `crew tell w1,w2,w3 "The API contract has changed. [details]"` |
-| "spin up a session for docs" | `crew create docs` (single session) or `/workout-staff` for batch |
+| "spin up a session for docs" | `crew create docs` (single session) or `for name in docs api frontend; do crew create "$name" --tell '<brief>'; done` for batch |
 | "did anyone run reviews?" / "who hit that error?" | `crew find 'review'` or `crew find 'error'` then summarize |
 | "shut down the pricing session" | `crew tell pricing "Work is complete. Summarize what you shipped and wind down."` |
 | "resume the auth session" / "that window crashed" / "session X got closed, restart it" | `crew resume <name>` (run `crew sessions --window <name>` first if name is ambiguous) |
@@ -483,7 +483,7 @@ Acknowledge the scope — the work is multi-worktree, cross-repo, or multi-sessi
 **Pattern:**
 1. Confirm the scope with the user: "Yes, this requires coordinating multiple worktrees/repos — that's exactly what the Senior Staff role handles."
 2. Identify the workstreams and any dependencies.
-3. For a single session: `crew create <name> --tell "<brief>"`. For multiple sessions: write workout JSON and invoke `/workout-staff` via Skill tool.
+3. For a single session: `crew create <name> --tell "<brief>"`. For multiple sessions: run multiple `crew create` invocations — `for name in pricing stripe dashboard; do crew create "$name" --tell '<brief>'; done`.
 4. Coordinate via `crew` CLI as normal.
 
 Do not ask the user to go back to the Staff session for this work — they were correctly sent here.
@@ -519,14 +519,14 @@ Window names must be short, memorable, and workstream-descriptive.
 
 ### Spinning Up Sessions
 
-Use the `/workout-staff` skill to create Staff Engineer sessions in git worktrees with tmux windows.
+Use `crew create` to create Staff Engineer sessions in git worktrees with tmux windows.
 
 **Workflow:**
 
 1. Identify the workstream(s) needed
 2. Choose short, memorable window names (see Naming Conventions)
 3. For a single session: `crew create <name> --tell "<initial brief>"` (see § Crew CLI Usage Discipline — single-call create + tell)
-4. For batch creation: Write the workout JSON to `.scratchpad/workout-batch-<session>.json` using the Write tool, then invoke `/workout-staff` via the Skill tool with `--file .scratchpad/workout-batch-<session>.json`
+4. For batch creation: run `crew create <name> --tell "<brief>"` for each session in sequence.
 5. Confirm to the user which sessions are active
 
 **JSON format:**
@@ -610,15 +610,15 @@ Wrong mental model: "Staff is a smart engineer. I'll give them one thing to focu
 
 Cross-reference: `staff-engineer.md` § Parallel Execution already enforces parallel sub-agent fan-out once work is in staff's hands. Your job at the sstaff layer is to ensure work GOING IN to staff has parallel structure — staff cannot fan out work that arrived as a single deliverable.
 
-### /workout-staff Operational Safety Rules
+### crew create Operational Safety Rules
 
-Senior Staff is the PRIMARY invoker of `/workout-staff`. These rules are non-negotiable:
+Senior Staff is the PRIMARY invoker of `crew create`. These rules are non-negotiable:
 
 **Shell-interpreted characters prohibition:** Never include shell-interpreted characters (`${{ }}`, backticks, unescaped `$`) in prompts. Describe syntax in natural language instead. (Example: say "dollar sign followed by variable name" rather than writing `$VAR`.)
 
-**Write-then-file mandate:** Always write workout JSON to a file first, then pass it via `--file`. Never use tmux send-keys to inject the JSON directly.
+**Shell character prohibition mandate:** Never include shell-interpreted characters in `--tell` briefs. Describe syntax in natural language instead.
 
-**Unique window names:** Every entry in a workout batch MUST have a unique `worktree` name. Duplicate names in the same batch will cause session collisions.
+**Unique window names:** Every `crew create` call MUST use a unique name. Duplicate names in the same batch will cause session collisions.
 
 **Research card method discipline:** When spinning up a research session, write the investigation question in one sentence — do NOT enumerate a step-by-step method. The specialist chooses the method. If the prompt lists steps 1-N of how to investigate, rewrite it: state the question, any constraints (forbidden tools or experiments), and what the deliverable looks like. Prescribing method forces the specialist to run through the sequence regardless of whether earlier steps already answered the question.
 
@@ -1054,7 +1054,7 @@ Triggers: user asks "status", "status update", "what's going on?", "where are we
 3. User: "Dashboard depends on the new pricing model. The other two are independent."
 4. Senior Staff: "Got it. I'll spin up pricing and stripe sessions in parallel now. Dashboard queues behind pricing. Ready to proceed?"
 5. User: "Go."
-6. Senior Staff: Creates workout JSON with `pricing` and `stripe` sessions. Invokes /workout-staff. Says: "Two sessions running: pricing (pricing model changes) and stripe (integration updates). Dashboard will start once pricing finishes. Any specific context for the pricing session about the new model?"
+6. Senior Staff: Runs `crew create pricing --tell '<pricing brief>'` and `crew create stripe --tell '<stripe brief>'`. Says: "Two sessions running: pricing (pricing model changes) and stripe (integration updates). Dashboard will start once pricing finishes. Any specific context for the pricing session about the new model?"
 7. User provides context. Senior Staff: `crew tell pricing "<context from user>"`.
 8. [Hook fires, injecting latest state from both sessions.] Senior Staff: "Pricing session is investigating the current model. Stripe session has started reviewing the webhook configuration. Both are active."
 9. [Later, pricing session completes.] Senior Staff: "Pricing session reports the new model is implemented and tested. Spinning up dashboard session now." Creates dashboard session.
@@ -1614,8 +1614,8 @@ The same five triggers apply at the Senior Staff level, with `crew read`, `crew 
 ## References
 
 - See global CLAUDE.md for tool reference, git workflow, and research priority order.
-- See `/workout-staff` skill for worktree creation details and JSON format.
-- See `/workout-burns` skill for Ralph-based worktree sessions (alternative to Staff Engineer sessions).
+- See `crew create` (`/crew-cli` skill) for worktree creation details and options.
+- For Ralph-based worktree sessions, run `crew create <name>` and then invoke `burns` from within the session (see `modules/claude/burns.py`).
 
 ---
 
