@@ -35,49 +35,35 @@ underway (card #16)."
 
 ## Partially Complete Work
 
-**Note:** The SubagentStop hook automates `kanban review` in normal flow. This example models the exceptional case where manual intervention is needed (e.g., agent returned without stopping cleanly, or criteria need to be added mid-flight).
+**Note:** This scenario describes manual coordinator intervention when the SubagentStop hook's automatic flow needs adjustment. In normal flow, the hook handles `kanban done` automatically. This section covers cases where the coordinator needs to step in before re-launching an agent.
 
 **Scenario:** Agent returns without finishing everything.
 
 **What to do:**
-- **Move card to review** - `kanban review <card#>` FIRST (always required)
-- **Launch AC reviewer** - AC reviewer fetches card details (`kanban show`) and evaluates which criteria are satisfied
-- **AC reviewer passes/fails criteria** - Only the AC reviewer calls `kanban criteria pass/fail` (sets `reviewer_met` column); sub-agents use `kanban criteria check/uncheck` (sets `agent_met` column); staff engineer never calls per-criterion mutation commands
+- **Evaluate which criteria are still unmet** - The agent's unchecked criteria tell you what's left
 - **For remaining items** - Two paths:
-  - **Resume work**: `kanban redo <card#>`, new agent picks up remaining unverified AC
+  - **Resume work**: Staff adjusts AC if needed (`kanban criteria add`/`remove`), then re-launches the agent — card stays in `doing`, no state transition
   - **Follow-up card**: If scope changed, create new card with remaining work
-- **Never mark done with unverified AC** - The CLI enforces this
+- **Never mark done with unchecked AC** - The CLI enforces this
 
 **Example:**
 ```
-Agent returns: "Completed API endpoint and tests. Hit permission gate for deployment."
+Agent returns: "Completed API endpoint and tests. Hit permission gate for deployment.
+kanban criteria check 20 1  # "API endpoint implemented" - checked
+kanban criteria check 20 2  # "Tests passing" - checked
+AC #3 'Deployed to staging' still unchecked - deployment blocked"
 
 You:
-1. kanban review 20          # Move to review (staff engineer's only kanban call here)
-2. [Launch AC reviewer for card #20]
+1. Execute deployment (handle permission gate)
+2. [Resume agent with deployment context]
 
-AC Reviewer:
-1. kanban show 20              # Fetch card details and AC list
-2. kanban criteria pass 20 1 # "API endpoint implemented" - satisfied
-3. kanban criteria pass 20 2 # "Tests passing" - satisfied
-4. Returns: "AC #3 'Deployed to staging' still unverified - deployment blocked"
-
-You:
-5. Execute deployment (handle permission gate)
-6. [Launch AC reviewer again after deployment]
-
-AC Reviewer:
-7. kanban criteria pass 20 3 # Now satisfied
-8. Returns: "All AC verified"
-
-You:
-9. kanban done 20 'JWT auth implemented, tested, deployed'
+Agent:
+3. kanban criteria check 20 3  # Now checked
+(SubagentStop hook calls kanban done automatically)
 ```
 
 **Anti-pattern:**
-- Moving directly from doing to done (skipping review)
-- Staff engineer calling `kanban show` or `kanban criteria check/uncheck/pass/fail` directly
-- AC reviewer using `kanban criteria check/uncheck` (those are for sub-agents only)
+- Staff engineer calling `kanban criteria check/uncheck` directly (that's the agent's job)
 - Creating new card instead of resuming when AC are clear
 
 ---
@@ -90,7 +76,7 @@ You:
 - **Reviewer documents concerns** in their review card summary
 - **Staff engineer evaluates** - Is the concern valid?
 - **If valid** - Send original work back with specific feedback
-  - `kanban redo <original-card#>`
+  - Re-launch the agent with reviewer's feedback in the prompt (card stays in `doing`)
   - Include reviewer's feedback in new agent prompt
 - **If debatable** - Escalate to user for decision
   - Present both perspectives
@@ -170,7 +156,7 @@ User (mid-review): "Also add a dark mode toggle to that settings page"
 
 You: [Settings page work already in review as card #25]
 kanban criteria add 25 "Dark mode toggle added to Settings"
-kanban redo 25  # Send back with new AC
+[Re-launch agent with updated AC — card stays in doing]
 ```
 
 **Example - New AC doesn't fit:**
@@ -209,16 +195,15 @@ card #26 for payment bug."
 Agent: "Need production API key to test Stripe integration. Blocked."
 
 You:
-1. kanban review 50  # Move to review
-2. "@user, agent needs production Stripe API key to complete testing. Can you provide
+1. "@user, agent needs production Stripe API key to complete testing. Can you provide
    that or should we use test mode for now?"
+2. [If long wait] kanban defer 50  # Move to todo until unblocked
 3. User provides key
 4. kanban start 50  # Pick up from todo
 5. Resume agent with key in prompt
 ```
 
 **Anti-pattern:**
-- Leaving card in doing while blocked (moves to review, then defer if long wait)
 - Not communicating blockage to user
 - Agent trying to work around blockage instead of surfacing it
 
@@ -316,13 +301,12 @@ You: Resume agent: "Don't use --force. Create new commit instead."
 
 ### Surfacing Workflow
 
-When a sub-agent discovers an alternative that requires approval, it follows these 5 steps:
+When a sub-agent discovers an alternative that requires approval, it follows these 4 steps:
 
 1. **Stop work** — Do not proceed with the alternative or the originally specified approach
 2. **Document discovery** — Prepare a clear summary of what was found, why it differs from the card's specification, and what the two options are (include relevant context: what the card specifies, what was discovered, why they conflict)
 3. **State choice clearly** — In the return message, explicitly state: "Discovered alternative: [X]. Card specifies: [Y]. Waiting for approval to proceed with [X] or confirmation to proceed with [Y]."
-4. **Move to review** — Run `kanban review <card#>` so the staff engineer sees the card is blocked
-5. **Return to staff engineer** — Return with the full discovery summary in the Task return value. Do not attempt partial work or workarounds; the staff engineer decides and re-delegates with updated direction
+4. **Return to staff engineer** — Return with the full discovery summary in the Task return value. Do not attempt partial work or workarounds; the staff engineer decides and re-delegates with updated direction
 
 ### Examples
 
@@ -333,8 +317,7 @@ Agent discovers: The codebase already has NextAuth.js configured with active ses
 
 Agent:
 1. Stop work
-2. kanban review 55
-3. Returns: "Blocked — auth library conflict found. Discovered NextAuth.js already
+2. Returns: "Blocked — auth library conflict found. Discovered NextAuth.js already
    configured in the codebase (see src/auth/config.ts). Card specifies Passport.js.
    Adding Passport.js alongside NextAuth.js would create a second auth system.
    Waiting for approval to proceed with NextAuth.js JWT integration or confirmation
@@ -369,7 +352,7 @@ When the AC reviewer evaluates completed work, they should flag silent approach 
 - Work is complete but the specified approach is nowhere in the diff
 
 **What to do when detected:**
-- Mark the relevant AC as failed (`kanban criteria fail <card#> <n>`)
+- Agent stops and reports issue to coordinator if MoV cannot be satisfied.
 - Add a comment: "Silent approach swap detected — card specified [X] but implementation uses [Y]. Approval was not obtained. This AC cannot be verified until the approach is approved or corrected."
 - Return findings to staff engineer; do not approve work with undisclosed substitutions
 

@@ -52,7 +52,7 @@ def kanban():
 
 def _setup_board(tmp_path):
     """Create minimal kanban board directory structure."""
-    for col in ("todo", "doing", "review", "done", "canceled"):
+    for col in ("todo", "doing", "done", "canceled"):
         (tmp_path / col).mkdir(parents=True, exist_ok=True)
     return tmp_path
 

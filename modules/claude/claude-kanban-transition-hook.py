@@ -3,7 +3,7 @@
 claude-kanban-transition-hook: PostToolUse(Bash) hook for kanban state transitions.
 
 Sends macOS notifications when a kanban card changes state via staff engineer
-or agent Bash commands (kanban start, defer, cancel, done, review).
+or agent Bash commands (kanban start, defer, cancel, done).
 
 Trigger: PostToolUse(Bash) — fires after every Bash tool call.
 Input:   JSON from stdin (Claude Code hook format with tool_input.command).
@@ -37,15 +37,14 @@ PURPOSE:
 TRIGGER:
   PostToolUse(Bash) — fires after every Bash tool call.
   Only sends notification when the command is a kanban state-changing
-  command: start, defer, cancel, done, or review.
+  command: start, defer, cancel, or done.
   Does NOT fire on: kanban criteria check/uncheck.
 
 STATE MAPPING:
   kanban start  N → 🚂 Work Started  (todo→doing)
   kanban defer  N → ⏸️ Deferred      (doing→todo)
   kanban cancel N → ❌ Canceled      (any→canceled)
-  kanban done   N → ✅ Done          (review→done)
-  kanban review N → 🔍 In Review     (doing→review)
+  kanban done   N → ✅ Done          (doing→done)
 
 NOTIFICATION FORMAT:
   Title: <emoji> <State Name>
@@ -76,10 +75,10 @@ def _log_error(message: str) -> None:
 
 
 # Pattern: kanban <subcommand> <card_number> [options]
-# Matches: start, defer, cancel, done, review
+# Matches: start, defer, cancel, done
 # Does NOT match: criteria (which covers check/uncheck)
 _TRANSITION_PATTERN = re.compile(
-    r"^\s*kanban\s+(start|defer|cancel|done|review)\s+(\d+)",
+    r"^\s*kanban\s+(start|defer|cancel|done)\s+(\d+)",
     re.IGNORECASE | re.MULTILINE,
 )
 
@@ -89,7 +88,6 @@ _COMMAND_STATES = {
     "defer": ("⏸️", "Deferred", "todo", "Pop"),
     "cancel": ("❌", "Canceled", "canceled", "Bottle"),
     "done": ("✅", "Done", "done", "Hero"),
-    "review": ("🔍", "In Review", "review", "Blow"),
 }
 
 

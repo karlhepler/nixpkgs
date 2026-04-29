@@ -22,7 +22,7 @@ allowed-tools:
 
 # Review Pull Request
 
-**Purpose:** Orchestrate a parallel specialist team review of a GitHub PR — auto-detecting which domain experts to involve, delegating to background agents, running AC review, and posting a single unified GitHub review with inline comments.
+**Purpose:** Orchestrate a parallel specialist team review of a GitHub PR — auto-detecting which domain experts to involve, delegating to background agents, and posting a single unified GitHub review with inline comments.
 
 ## Invocation
 
@@ -291,25 +291,37 @@ If no findings in your domain, return `✅ LGTM` with a one-line summary. No fin
 
 **Kanban:**
 Your card number is #{card-number}. Session is {current-session}.
-When done: `kanban review #{card-number} --session {current-session}`
+After completing each AC, run: `kanban criteria check #{card-number} <n> --session {current-session}`
+When all AC are checked, stop. The SubagentStop hook calls `kanban done` automatically.
 ```
 
 ### Domain-Specific Focus Instructions
 
 For domain-specific focus text to include under **Your Domain Focus ({domain}):** in each specialist's prompt, see [review-domains.md](review-domains.md).
 
-## Phase 5 — AC Review and Aggregate
+## Phase 5 — Wait for Specialists and Aggregate
 
-Phase 4 ends when all specialist Task agents have been launched. Phase 5 runs **concurrently with ongoing specialist work** — do not wait for all specialists to finish before beginning this pipeline. As each specialist completes independently, process it immediately.
+Phase 4 ends when all specialist Task agents have been launched. Phase 5 monitors their completion and aggregates findings.
 
-**Pipeline (per specialist — fires as soon as that specialist's card enters the review column):**
+**Simplified lifecycle — specialists complete cards directly via criteria checks; the SubagentStop hook finalizes each card:**
 
-1. Monitor the kanban board continuously. The moment ANY specialist calls `kanban review <card>` (that card appears in the review column), IMMEDIATELY launch that specialist's AC reviewer — independent of how many other specialists are still running.
-2. Launch the AC reviewer as a background subagent (model: haiku, skill: ac-reviewer) with the specialist's `.scratchpad/review-<number>-<domain>.md` content as context.
-3. After the AC reviewer completes: `kanban done <card> '<one-line summary>' --session <id>`
-4. **If `kanban done` fails** (unchecked AC): `kanban redo <card> --session <id>`, re-launch that specialist once with the same prompt. If it fails after one retry (two total attempts), proceed without that specialist's findings and note the gap in the aggregated review body.
+- Each specialist calls `kanban criteria check` after each AC. The kanban CLI runs MoVs synchronously.
+- When a specialist finishes and stops, the SubagentStop hook automatically calls `kanban done`.
+- If `kanban done` fails (unchecked AC), the hook blocks the specialist with feedback; the specialist re-runs in `doing`. The kanban CLI enforces a max of 3 cycles.
+- The orchestrator monitors completion by polling `kanban list --session <id>` and checking for cards in the `done` status.
 
-**Do NOT proceed to aggregation until ALL specialist cards have reached `kanban done` or have been retried and excluded.**
+**Monitor specialist completion:**
+
+```bash
+# Poll until all specialist card numbers appear in done status
+kanban list --session <current-session>
+```
+
+Check whether each specialist card number has reached `done`. Repeat periodically until all specialist cards are `done` or until max retries have been exhausted (kanban CLI enforces this — the card will show as `canceled` after 3 failed cycles).
+
+**Do NOT proceed to aggregation until ALL specialist cards have reached `done` or `canceled`.**
+
+If a card ends up `canceled` (exhausted retries), proceed without that specialist's findings and note the gap in the aggregated review body.
 
 ### Read All Specialist Findings
 
@@ -408,8 +420,8 @@ Report back:
 - Do NOT wait for the new session to complete
 
 **Never post before all specialists complete:**
-- Do NOT submit the GitHub review until every specialist card has reached `kanban done` or been retried and excluded per Phase 5
-- Do NOT skip the AC lifecycle to save time
+- Do NOT submit the GitHub review until every specialist card has reached `done` or `canceled` per Phase 5
+- Do NOT skip specialist completion monitoring to save time
 
 **Single unified review:**
 - All findings go into ONE GitHub review submission
@@ -439,5 +451,5 @@ Report back:
 **Detection is a starting point, not gospel:**
 - If the diff has an unusual structure, use judgment to add specialists the heuristics missed — the goal is coverage, not mechanical matching
 
-**AC review is not optional:**
-- The lifecycle exists to verify specialist output quality. Do not shortcut it even when specialists look thorough
+**Specialist completion monitoring is not optional:**
+- Wait for every specialist card to reach `done` or `canceled` before aggregating. The kanban lifecycle verifies specialist output quality automatically via MoV checks in the SubagentStop hook.

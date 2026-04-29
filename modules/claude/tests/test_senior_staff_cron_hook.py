@@ -2,11 +2,11 @@
 Tests for modules/claude/senior-staff-cron-hook.py.
 
 Covered paths:
-- KANBAN_AGENT=senior-staff-engineer → emits {"result": "..."} with CronCreate directive
+- KANBAN_AGENT=senior-staff-engineer → silent (cron lifecycle managed by crew-lifecycle-hook)
 - KANBAN_AGENT=anything-else → silent (no stdout)
 - KANBAN_AGENT unset → silent (no stdout)
 - Malformed JSON stdin → fail open (hook exits 0, no crash)
-- Response structure: "result" key present with CronCreate prompt content
+- Hook is always silent — no stdout output in any code path
 """
 
 import importlib.util
@@ -83,73 +83,27 @@ def make_session_start_payload() -> str:
 
 
 # ---------------------------------------------------------------------------
-# Fires: KANBAN_AGENT=senior-staff-engineer → emits CronCreate prompt
+# Silent: hook is always silent — cron lifecycle managed by crew-lifecycle-hook
 # ---------------------------------------------------------------------------
 
-class TestEmitsCronPromptForSeniorStaff:
-    """Hook emits CronCreate directive when KANBAN_AGENT=senior-staff-engineer."""
+class TestAlwaysSilent:
+    """Hook emits no stdout in any scenario.
 
-    def test_emits_cron_prompt_for_senior_staff_session(self, hook):
-        """KANBAN_AGENT=senior-staff-engineer → hook emits {"result": "..."} JSON."""
+    Cron lifecycle is now managed by crew-lifecycle-hook (PostToolUse on
+    'crew create' / 'crew dismiss'). This hook is retained for backward
+    compatibility only and produces no output.
+    """
+
+    def test_silent_for_senior_staff_session(self, hook):
+        """KANBAN_AGENT=senior-staff-engineer → no stdout output."""
         result = run_hook_main(
             hook,
             make_session_start_payload(),
             {"KANBAN_AGENT": "senior-staff-engineer"},
         )
-        assert result is not None, "Expected JSON output for senior-staff-engineer session"
-        assert "result" in result, f"Expected 'result' key in output, got: {result}"
-
-    def test_result_contains_croncreate_directive(self, hook):
-        """result field mentions CronCreate."""
-        result = run_hook_main(
-            hook,
-            make_session_start_payload(),
-            {"KANBAN_AGENT": "senior-staff-engineer"},
+        assert result is None, (
+            f"Expected no output for senior-staff-engineer (cron lifecycle delegated), got: {result}"
         )
-        assert result is not None
-        prompt = result.get("result", "")
-        assert "CronCreate" in prompt, f"Expected 'CronCreate' in result, got: {prompt[:200]}"
-
-    def test_result_contains_crew_status_command(self, hook):
-        """result field contains the 'crew status' command to schedule."""
-        result = run_hook_main(
-            hook,
-            make_session_start_payload(),
-            {"KANBAN_AGENT": "senior-staff-engineer"},
-        )
-        assert result is not None
-        prompt = result.get("result", "")
-        assert "crew status" in prompt, f"Expected 'crew status' in result, got: {prompt[:200]}"
-
-    def test_result_contains_schedule_expression(self, hook):
-        """result field contains the cron schedule expression."""
-        result = run_hook_main(
-            hook,
-            make_session_start_payload(),
-            {"KANBAN_AGENT": "senior-staff-engineer"},
-        )
-        assert result is not None
-        prompt = result.get("result", "")
-        assert "*/10 * * * *" in prompt, f"Expected cron schedule in result, got: {prompt[:200]}"
-
-    def test_result_contains_senior_staff_harness_header(self, hook):
-        """result field contains the [Senior Staff Harness] header."""
-        result = run_hook_main(
-            hook,
-            make_session_start_payload(),
-            {"KANBAN_AGENT": "senior-staff-engineer"},
-        )
-        assert result is not None
-        prompt = result.get("result", "")
-        assert "Senior Staff Harness" in prompt
-
-
-# ---------------------------------------------------------------------------
-# Silent: non-Senior-Staff sessions produce no stdout
-# ---------------------------------------------------------------------------
-
-class TestSilentForNonSeniorStaff:
-    """Hook is silent when KANBAN_AGENT is not 'senior-staff-engineer'."""
 
     def test_silent_for_non_senior_staff_session(self, hook):
         """KANBAN_AGENT=staff-engineer → no stdout output."""
@@ -196,29 +150,23 @@ class TestFailOpen:
     """Hook fails open on error conditions — exits 0, no exception propagation."""
 
     def test_fail_open_on_malformed_json(self, hook):
-        """Malformed JSON stdin → hook still exits gracefully (no exception)."""
+        """Malformed JSON stdin → hook exits gracefully, no output."""
         result = run_hook_main(
             hook,
             "{bad json here :::}",
             {"KANBAN_AGENT": "senior-staff-engineer"},
         )
-        # Even with malformed JSON, senior-staff sessions still emit the prompt
-        # because the hook fails open on JSON parse and uses empty payload.
-        # The important thing: no exception is raised.
-        # The hook behavior with bad JSON + senior-staff env = emit prompt (payload is empty dict).
-        assert result is not None, "Expected prompt even with malformed stdin (fail open)"
-        assert "result" in result
+        # Hook is always silent regardless of stdin content.
+        assert result is None, f"Expected silence with malformed stdin, got: {result}"
 
     def test_fail_open_on_empty_stdin(self, hook):
-        """Empty stdin → hook exits gracefully without crashing."""
+        """Empty stdin → hook exits gracefully without crashing, no output."""
         result = run_hook_main(
             hook,
             "",
             {"KANBAN_AGENT": "senior-staff-engineer"},
         )
-        # Empty stdin is treated as empty payload — senior-staff sessions still emit prompt
-        assert result is not None, "Expected prompt with empty stdin (fail open)"
-        assert "result" in result
+        assert result is None, f"Expected silence with empty stdin, got: {result}"
 
     def test_fail_open_on_empty_stdin_non_senior_staff(self, hook):
         """Empty stdin + non-senior-staff env → silent (no exception)."""
@@ -231,38 +179,24 @@ class TestFailOpen:
 
 
 # ---------------------------------------------------------------------------
-# Always-fire: hook emits CronCreate on every SessionStart, no deduplication
+# Always-silent: hook emits no CronCreate on any invocation
 # ---------------------------------------------------------------------------
 
-class TestAlwaysFireOnRestart:
-    """Hook emits CronCreate prompt on every SessionStart invocation, even when called
-    multiple times in the same process (e.g., sstaff resumed mid-session).
+class TestAlwaysSilentOnRestart:
+    """Hook emits no output on repeated SessionStart invocations.
 
-    This test locks in the intentional always-fire contract. The plan at
-    .scratchpad/crew-cli-improvements-plan.md documents the known double-fire
-    tradeoff when sstaff is resumed mid-session ("Two identical cron entries produce
-    two crew status calls every 10 minutes — wasteful but not harmful. YAGNI tradeoff:
-    accept"). The hook deliberately never checks for prior registration state. This test
-    guards against a future de-duplication change that would silently break that design.
+    Cron lifecycle is managed by crew-lifecycle-hook (PostToolUse). This hook
+    is a registered no-op retained for backward compatibility only.
     """
 
-    def test_cron_prompt_emitted_on_every_session_start_even_if_previously_registered(self, hook):
-        """Hook always emits CronCreate — no deduplication on repeated invocations.
-
-        Simulates 3 consecutive SessionStart fires (e.g., sstaff resumed twice after
-        original start). All three must emit the CronCreate prompt. The hook must not
-        suppress or gate on any .scratchpad/-style state file or global flag.
-        """
+    def test_silent_on_every_session_start(self, hook):
+        """Hook is always silent across multiple invocations."""
         payload = make_session_start_payload()
         env = {"KANBAN_AGENT": "senior-staff-engineer"}
 
         for invocation in range(1, 4):
             result = run_hook_main(hook, payload, env)
-            assert result is not None, (
-                f"Expected CronCreate prompt on invocation {invocation}, got None. "
-                "The hook must always fire — no deduplication."
-            )
-            assert "CronCreate" in result.get("result", ""), (
-                f"Expected 'CronCreate' in result on invocation {invocation}, "
-                f"got: {result.get('result', '')[:200]}"
+            assert result is None, (
+                f"Expected silence on invocation {invocation}, got: {result}. "
+                "Cron lifecycle is delegated to crew-lifecycle-hook."
             )

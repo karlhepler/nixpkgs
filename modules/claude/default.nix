@@ -149,6 +149,12 @@ let
     flakeIgnore = [ "E265" "E501" "W503" "W504" ];
   } (builtins.readFile ./kanban-mov-lint-hook.py);
 
+  # Kanban sub-agent command restriction PreToolUse(Bash) hook — denies kanban CLI
+  # commands from sub-agents except `kanban criteria check` and `kanban criteria uncheck`
+  kanbanSubagentCmdHookScript = pkgs.writers.writePython3Bin "kanban-subagent-cmd-hook" {
+    flakeIgnore = [ "E265" "E501" "W503" "W504" ];
+  } (builtins.readFile ./kanban-subagent-cmd-hook.py);
+
   # Skill autoload SessionStart hook — injects CLI skill body (kanban-cli or crew-cli)
   # based on KANBAN_AGENT env var so agents never operate from a partial Quick Reference
   skillAutoloadHookScript = pkgs.writers.writePython3Bin "skill-autoload-hook" {
@@ -208,7 +214,7 @@ in {
             group_session = board_session if group.tag == "mine" else None
             for card in group.iter("c"):
                 status = card.get("s", "")
-                if status not in ("doing", "review"):
+                if status != "doing":
                     continue
                 num = card.get("n", "?")
                 session = card.get("ses", group_session) if group_session is None else group_session
@@ -220,7 +226,7 @@ in {
             print("Warning: Orphaned cards detected:")
             for num, status, session, action in orphans:
                 print(f"  - #{num} ({status}, session: {session}) -- {action}")
-            print("Use kanban cancel or kanban redo to resolve.")
+            print("Use kanban cancel or re-launch the agent to resolve.")
       '';
       toResultJson = pkgs.writeText "to-result-json.py" ''
         import json, sys
@@ -440,6 +446,14 @@ $orphan_warning"
         description = "PreToolUse(Bash) hook that rejects banned MoV patterns (rg -E, hook-skip flags) in kanban do/todo --file card JSON";
         mainProgram = "kanban-mov-lint-hook";
         homepage = "${builtins.toString ./.}/kanban-mov-lint-hook.py";
+      };
+    };
+
+    kanban-subagent-cmd-hook = kanbanSubagentCmdHookScript // {
+      meta = {
+        description = "PreToolUse(Bash) hook that restricts sub-agents to only kanban criteria check/uncheck (all other kanban subcommands denied)";
+        mainProgram = "kanban-subagent-cmd-hook";
+        homepage = "${builtins.toString ./.}/kanban-subagent-cmd-hook.py";
       };
     };
 
@@ -1105,6 +1119,10 @@ $orphan_warning"
                 {
                   type = "command";
                   command = "${shellapps.kanban-mov-lint-hook}/bin/kanban-mov-lint-hook";
+                }
+                {
+                  type = "command";
+                  command = "${shellapps.kanban-subagent-cmd-hook}/bin/kanban-subagent-cmd-hook";
                 }
               ];
             }

@@ -226,8 +226,7 @@ class KanbanMockResponses:
         for i, c in enumerate(criteria, 1):
             mov_type = c.get("mov_type", "semantic")
             mov_commands = c.get("mov_commands") or []
-            agent_met = c.get("agent_met", "false")
-            reviewer_met = c.get("reviewer_met", "unchecked")
+            met = c.get("met", "false")
             text = c.get("text", f"criterion {i}")
 
             # Build v5 <movCommands> subtree
@@ -242,14 +241,14 @@ class KanbanMockResponses:
                 ac_content = text
 
             ac_elements.append(
-                f'    <ac agent-met="{agent_met}" reviewer-met="{reviewer_met}" '
+                f'    <ac met="{met}" '
                 f'mov-type="{mov_type}">{ac_content}</ac>'
             )
 
         ac_block = "\n".join(ac_elements)
         return (
             f'<card num="{card_number}" session="{session}" status="{status}" '
-            f'review-cycles="{review_cycles}">\n'
+            f'cycles="{review_cycles}">\n'
             f'  <intent>Test card intent</intent>\n'
             f'  <acceptance-criteria>\n{ac_block}\n  </acceptance-criteria>\n'
             f'</card>'

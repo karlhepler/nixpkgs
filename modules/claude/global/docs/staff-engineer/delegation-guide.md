@@ -12,7 +12,7 @@ Background sub-agents run in `dontAsk` mode. When an agent hits an interactive p
 
 **Perm session identity:** Use the perm session UUID printed at session start (`🔑 Your perm session is: <uuid>`) for all `perm --session` commands. This is distinct from the kanban session name. Stale temporary permissions from crashed/forgotten sessions are automatically cleaned up at session start.
 
-**Git operation permission gates require AC review first.** If an agent returns requesting permission for a git operation — `git commit`, `git push`, `git merge`, or `gh pr create` — and the card has NOT yet completed the AC lifecycle (`kanban review` → AC reviewer → `kanban done`), do NOT proceed with the normal recovery path. Do not grant the permission. Instead: move the card to review, run the AC lifecycle, and only after `kanban done` succeeds, proceed with git operations. The permission gate recovery protocol is for unblocking legitimate work — not for bypassing the quality gate. An agent requesting commit/push is asking to signal "work is complete" before it has been verified. After `kanban done` succeeds, run the git operations directly (see § Rare Exceptions in the output style) rather than re-launching the agent — the work is done and verified; only the git operation remains.
+**Git operation permission gates require AC review first.** If an agent returns requesting permission for a git operation — `git commit`, `git push`, `git merge`, or `gh pr create` — and the card has NOT yet completed the AC lifecycle (hook calls `kanban done`), do NOT proceed with the normal recovery path. Do not grant the permission. Instead: move the card to review, run the AC lifecycle, and only after `kanban done` succeeds, proceed with git operations. The permission gate recovery protocol is for unblocking legitimate work — not for bypassing the quality gate. An agent requesting commit/push is asking to signal "work is complete" before it has been verified. After `kanban done` succeeds, run the git operations directly (see § Rare Exceptions in the output style) rather than re-launching the agent — the work is done and verified; only the git operation remains.
 
 ### Detection, Three-Option Choice, and Execution
 
@@ -24,7 +24,7 @@ Background sub-agents run in `dontAsk` mode. When an agent hits an interactive p
    - **"Always Allow → Run in Background"** — Run `perm always "<pattern>"` to add the permission permanently, then re-launch the agent in background. No cleanup after the agent completes.
    - **"Run in Foreground"** — Before re-launching, run `perm --session <your-session-id> cleanup` to remove all temporary permissions for your session. Then re-launch using the Task tool with `run_in_background: false`. Same prompt, same card, same agent type. Claude Code surfaces the permission prompt to the user natively.
 3. **Execute the chosen path** — No other options exist. If the user wants none of these, that conversation is separate from this protocol.
-4. **Resume** — After the chosen path completes, continue normal AC review lifecycle for remaining work.
+4. **Resume** — After the chosen path completes, continue normal AC lifecycle for remaining work.
 
 **Tracking:** `perm` handles session-aware tracking. Run `perm list` to see current state with session IDs if you need to inspect what's active.
 
@@ -34,7 +34,7 @@ If the re-launched agent hits a permission gate — whether a **different** gate
 
 **Same gate fires again (pattern mismatch):** When the agent fails on the same permission after a pattern was already added, the pattern likely doesn't match the actual command the agent tried to run. Include diagnostic context in the AskUserQuestion: what pattern was added, that it didn't resolve the gate, and a hypothesis about why (e.g., "Pattern `Bash(auth0 *)` was added but the agent ran `bash -c 'auth0 ...'` — the pattern may need to be broader or differently structured"). This gives the user the information to decide: try a different pattern, escalate to Always Allow with a broader pattern, or switch to foreground where they can see the exact command.
 
-Temporary permissions stay in place while the loop continues — cleanup happens once the agent returns (success or failure). On success, proceed to AC review. On implementation failure, run `perm --session <your-session-id> cleanup`, then `kanban redo` and re-delegate. After a few Allow or Always Allow selections, the agent typically has everything it needs and completes successfully. If the user selects "Run in Foreground" at any point mid-loop, run `perm --session <your-session-id> cleanup` before re-launching in foreground.
+Temporary permissions stay in place while the loop continues — cleanup happens once the agent returns (success or failure). On success, the SubagentStop hook calls `kanban done` automatically. On implementation failure, run `perm --session <your-session-id> cleanup`, then `kanban redo` and re-delegate. After a few Allow or Always Allow selections, the agent typically has everything it needs and completes successfully. If the user selects "Run in Foreground" at any point mid-loop, run `perm --session <your-session-id> cleanup` before re-launching in foreground.
 
 ### Example: Three-Option AskUserQuestion
 
@@ -103,7 +103,7 @@ Run `perm --session <your-session-id> cleanup`. This removes only your session's
 - Permission gate failure → Present three-option choice (Allow → Run in Background, Always Allow → Run in Background, or Run in Foreground), execute chosen path
 - Implementation error → `kanban redo` and re-delegate background
 
-Do not move the card to done or cancel it. The card stays in `doing` while the chosen path executes. Resume normal AC review lifecycle after the agent succeeds.
+Do not move the card to done or cancel it. The card stays in `doing` while the chosen path executes. Resume normal AC lifecycle after the agent succeeds.
 
 ### Permission Pre-Approval Patterns (Quick Reference)
 

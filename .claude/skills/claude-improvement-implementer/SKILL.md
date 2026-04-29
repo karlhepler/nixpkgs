@@ -76,7 +76,7 @@ Call `kanban list --output-style=xml` with no session filter to get ALL sessions
 
 If `kanban list` returns an error (non-zero exit, connection failure, or malformed output), print the error and **STOP the cycle entirely** — same pattern as MCP disconnect. Do not proceed with an incomplete board picture. The self-scheduled cron will retry in 15 min.
 
-Build a mental picture of which files are being edited by other sessions (look at cards in `doing` or `review` status). If any improvement this cycle would touch the same files, **defer those improvements** to the next cycle — do not create file conflicts.
+Build a mental picture of which files are being edited by other sessions (look at cards in `doing` status). If any improvement this cycle would touch the same files, **defer those improvements** to the next cycle — do not create file conflicts.
 
 Log deferrals to stdout only (not as notes):
 ```
@@ -177,7 +177,7 @@ As a staff engineer, follow the card-first workflow:
    - `ai-expert` — for prompt file changes (output-styles, agents, CLAUDE.md, skill bodies)
    - `swe-devex` — for nix configs, shellapps, CLI tooling
    - `swe-security` — for hook scripts (add as co-reviewer with ai-expert)
-3. Run the AC lifecycle normally (delegate → review → done). See staff-engineer.md § Delegation for the full protocol.
+3. Run the AC lifecycle normally (delegate → done). See staff-engineer.md § Delegation for the full protocol.
 
 Model selection for delegation: use `model: sonnet` by default. Use `model: opus` only for architectural complexity (multi-file restructures, cross-cutting behavior changes). Use `model: haiku` only for strictly mechanical edits with zero ambiguity. See staff-engineer.md § Model Selection for the full decision tree.
 

@@ -53,10 +53,7 @@ Task tool:
 
     [Full review instructions...]
 
-# Step 3: Move original card to REVIEW
-kanban review 50
-
-# Step 4: Wait for BOTH to approve, THEN move to done
+# Step 3: Wait for BOTH to approve, THEN move to done
 ```
 
 **Why Parallel:** Reviews are independent - Security doesn't need to wait for Infra peer.

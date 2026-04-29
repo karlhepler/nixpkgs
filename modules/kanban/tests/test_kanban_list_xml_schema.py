@@ -84,7 +84,7 @@ INTENT_MAX = 200  # must match _INTENT_MAX in kanban.py
 
 def _setup_board(tmp_path):
     """Create minimal kanban board directory structure."""
-    for col in ("todo", "doing", "review", "done", "canceled"):
+    for col in ("todo", "doing", "done", "canceled"):
         (tmp_path / col).mkdir(parents=True, exist_ok=True)
     return tmp_path
 
@@ -194,7 +194,7 @@ class TestListXmlActionExcluded:
             intent="My card intent",
             session="my-session",
         ))
-        _write_card(board, "review", "2", _make_card(
+        _write_card(board, "todo", "2", _make_card(
             action="Other action text here",
             intent="Other card intent",
             session="other-session",

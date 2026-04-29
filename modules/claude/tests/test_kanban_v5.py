@@ -254,8 +254,8 @@ class TestCriteriaCheckArrayIteration:
         args.n = n
         return args
 
-    def test_all_commands_pass_sets_agent_met(self, kanban, tmp_path):
-        """When all commands in mov_commands exit 0, agent_met is set to True."""
+    def test_all_commands_pass_sets_met(self, kanban, tmp_path):
+        """When all commands in mov_commands exit 0, met is set to True."""
         criteria = [make_v5_criterion(cmds=[
             {"cmd": "true", "timeout": 5},
             {"cmd": "true", "timeout": 5},
@@ -274,10 +274,10 @@ class TestCriteriaCheckArrayIteration:
         with patch("subprocess.run", side_effect=fake_run):
             kanban.cmd_criteria_check(args)
 
-        # Re-read card and verify agent_met
+        # Re-read card and verify met
         import json as _json
         updated = _json.loads(card_path.read_text())
-        assert updated["criteria"][0]["agent_met"] is True
+        assert updated["criteria"][0]["met"] is True
 
     def test_first_command_fails_short_circuits(self, kanban, tmp_path, capsys):
         """When first command fails, second command is NOT executed."""
@@ -394,9 +394,9 @@ class TestCriteriaCheckArrayIteration:
 
         assert exc_info.value.code == 11
 
-    def test_semantic_criterion_sets_agent_met_unconditionally(self, kanban, tmp_path):
-        """Semantic criterion: agent_met set without running any commands."""
-        criteria = [{"text": "Semantic check", "mov_type": "semantic", "agent_met": False, "reviewer_met": None}]
+    def test_semantic_criterion_sets_met_unconditionally(self, kanban, tmp_path):
+        """Semantic criterion: met set without running any commands."""
+        criteria = [{"text": "Semantic check", "mov_type": "semantic", "met": False}]
         card_path = self._build_card_file(tmp_path, criteria)
         args = self._make_args(str(tmp_path), "42", ["1"])
 
@@ -416,7 +416,7 @@ class TestCriteriaCheckArrayIteration:
 
         import json as _json
         updated = _json.loads(card_path.read_text())
-        assert updated["criteria"][0]["agent_met"] is True
+        assert updated["criteria"][0]["met"] is True
         assert run_count[0] == 0, "Expected no subprocess calls for semantic criterion"
 
 
@@ -432,8 +432,7 @@ class TestCardIdSubstitution:
         card = make_minimal_card(criteria=[{
             "text": "Check card __CARD_ID__ exists",
             "mov_type": "semantic",
-            "agent_met": False,
-            "reviewer_met": None,
+            "met": False,
         }])
         kanban.substitute_card_id_placeholders(card, 42)
         assert card["criteria"][0]["text"] == "Check card 42 exists"
@@ -446,8 +445,7 @@ class TestCardIdSubstitution:
             "mov_commands": [
                 {"cmd": "kanban criteria check __CARD_ID__ 1 --session s", "timeout": 10},
             ],
-            "agent_met": False,
-            "reviewer_met": None,
+            "met": False,
         }])
         kanban.substitute_card_id_placeholders(card, 99)
         assert card["criteria"][0]["mov_commands"][0]["cmd"] == "kanban criteria check 99 1 --session s"
@@ -460,8 +458,7 @@ class TestCardIdSubstitution:
             "mov_commands": [
                 {"cmd": "echo __CARD_ID__ && kanban show __CARD_ID__", "timeout": 5},
             ],
-            "agent_met": False,
-            "reviewer_met": None,
+            "met": False,
         }])
         kanban.substitute_card_id_placeholders(card, 7)
         assert card["criteria"][0]["mov_commands"][0]["cmd"] == "echo 7 && kanban show 7"
@@ -473,14 +470,12 @@ class TestCardIdSubstitution:
                 "text": "Check __CARD_ID__ alpha",
                 "mov_type": "programmatic",
                 "mov_commands": [{"cmd": "rg __CARD_ID__ file.txt", "timeout": 5}],
-                "agent_met": False,
-                "reviewer_met": None,
+                "met": False,
             },
             {
                 "text": "Check __CARD_ID__ beta",
                 "mov_type": "semantic",
-                "agent_met": False,
-                "reviewer_met": None,
+                "met": False,
             },
         ])
         kanban.substitute_card_id_placeholders(card, 123)
@@ -508,8 +503,7 @@ class TestCardIdSubstitution:
             "text": "Plain criterion",
             "mov_type": "programmatic",
             "mov_commands": [{"cmd": "true", "timeout": 5}],
-            "agent_met": False,
-            "reviewer_met": None,
+            "met": False,
         }])
         original_text = card["criteria"][0]["text"]
         original_cmd = card["criteria"][0]["mov_commands"][0]["cmd"]
@@ -525,8 +519,7 @@ class TestCardIdSubstitution:
             "mov_commands": [
                 {"cmd": "kanban show __CARD_ID__", "timeout": 10},
             ],
-            "agent_met": False,
-            "reviewer_met": None,
+            "met": False,
         }])
 
         # Ensure the column directory exists
@@ -561,7 +554,7 @@ class TestCriteriaAddDefaultsSemantic:
         doing_dir = tmp_path / "doing"
         doing_dir.mkdir(parents=True, exist_ok=True)
         if criteria is None:
-            criteria = [{"text": "Existing AC", "mov_type": "semantic", "agent_met": False, "reviewer_met": None}]
+            criteria = [{"text": "Existing AC", "mov_type": "semantic", "met": False}]
         card = {
             "action": "Test action",
             "intent": "Test intent",
@@ -645,7 +638,7 @@ class TestProgrammaticRequiresMoveCommands:
 
 
 class TestCriteriaMutationValidation:
-    """Every criteria-mutating command (check, uncheck, pass, fail, remove) calls
+    """Every criteria-mutating command (check, uncheck, remove) calls
     validate_criteria_schema before writing the card.
 
     We inject a broken-state card (programmatic criterion missing mov_commands) and
@@ -668,8 +661,7 @@ class TestCriteriaMutationValidation:
                     "text": "Broken programmatic criterion",
                     "mov_type": "programmatic",
                     # Intentionally omits mov_commands — invalid v5 state
-                    "agent_met": False,
-                    "reviewer_met": None,
+                    "met": False,
                 }
             ],
             "editFiles": [],
@@ -695,14 +687,12 @@ class TestCriteriaMutationValidation:
                 {
                     "text": "Valid semantic criterion",
                     "mov_type": "semantic",
-                    "agent_met": False,
-                    "reviewer_met": None,
+                    "met": False,
                 },
                 {
                     "text": "Second valid semantic criterion",
                     "mov_type": "semantic",
-                    "agent_met": False,
-                    "reviewer_met": None,
+                    "met": False,
                 },
             ],
             "editFiles": [],
@@ -746,26 +736,6 @@ class TestCriteriaMutationValidation:
 
         assert exc_info.value.code == 1
 
-    def test_pass_rejects_broken_state(self, kanban, tmp_path):
-        """cmd_criteria_pass rejects a broken-state card on a review-column card."""
-        self._build_broken_card_file(tmp_path, column="review")
-        args = self._make_args(str(tmp_path), n=["1"])
-
-        with pytest.raises(SystemExit) as exc_info:
-            kanban.cmd_criteria_pass(args)
-
-        assert exc_info.value.code == 1
-
-    def test_fail_rejects_broken_state(self, kanban, tmp_path):
-        """cmd_criteria_fail rejects a broken-state card."""
-        self._build_broken_card_file(tmp_path, column="doing")
-        args = self._make_args(str(tmp_path), n=["1"], reason="test reason")
-
-        with pytest.raises(SystemExit) as exc_info:
-            kanban.cmd_criteria_fail(args)
-
-        assert exc_info.value.code == 1
-
     def test_remove_rejects_broken_state(self, kanban, tmp_path):
         """cmd_criteria_remove rejects a broken-state card (programmatic without mov_commands)."""
         # Build a card with TWO criteria so remove doesn't fail on "last criterion" guard.
@@ -782,14 +752,12 @@ class TestCriteriaMutationValidation:
                     "text": "Broken programmatic criterion",
                     "mov_type": "programmatic",
                     # Intentionally omits mov_commands
-                    "agent_met": False,
-                    "reviewer_met": None,
+                    "met": False,
                 },
                 {
                     "text": "Second criterion",
                     "mov_type": "semantic",
-                    "agent_met": False,
-                    "reviewer_met": None,
+                    "met": False,
                 },
             ],
             "editFiles": [],
@@ -841,7 +809,7 @@ class TestCancelWithReason:
             "type": "work",
             "agent": "swe-backend",
             "session": "test-session",
-            "criteria": [{"text": "AC", "mov_type": "semantic", "agent_met": False, "reviewer_met": None}],
+            "criteria": [{"text": "AC", "mov_type": "semantic", "met": False}],
             "editFiles": [],
             "readFiles": [],
             "created": "2026-01-01T00:00:00Z",

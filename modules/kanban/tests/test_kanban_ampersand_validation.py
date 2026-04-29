@@ -55,8 +55,7 @@ def make_programmatic_criterion(text="Check something", cmd="rg -q X", timeout=1
         "text": text,
         "mov_type": "programmatic",
         "mov_commands": [{"cmd": cmd, "timeout": timeout}],
-        "agent_met": False,
-        "reviewer_met": None,
+        "met": False,
     }
 
 
@@ -65,8 +64,7 @@ def make_semantic_criterion(text="Semantic check"):
     return {
         "text": text,
         "mov_type": "semantic",
-        "agent_met": False,
-        "reviewer_met": None,
+        "met": False,
     }
 
 
@@ -154,8 +152,7 @@ class TestCollectAmpersandErrors:
                 "text": "Run rg -q X && rg -q Y",  # && in text, not in cmd
                 "mov_type": "programmatic",
                 "mov_commands": [{"cmd": "rg -q X", "timeout": 10}],
-                "agent_met": False,
-                "reviewer_met": None,
+                "met": False,
             }
         ]
         result = kanban._collect_ampersand_errors(criteria)
@@ -246,8 +243,7 @@ class TestValidateAndBuildCardAmpersand:
                 "text": "Run rg -q X && rg -q Y to check",  # && in text only
                 "mov_type": "programmatic",
                 "mov_commands": [{"cmd": "rg -q X", "timeout": 10}],
-                "agent_met": False,
-                "reviewer_met": None,
+                "met": False,
             }
         ])
         try:
@@ -266,7 +262,7 @@ class TestCmdDoBatchAmpersandValidation:
 
     def _setup_kanban_root(self, tmp_path):
         """Create minimal kanban board structure."""
-        for col in ("todo", "doing", "review", "done", "canceled"):
+        for col in ("todo", "doing", "done", "canceled"):
             (tmp_path / col).mkdir(parents=True, exist_ok=True)
         return tmp_path
 
@@ -357,7 +353,7 @@ class TestCmdTodoBatchAmpersandValidation:
 
     def _setup_kanban_root(self, tmp_path):
         """Create minimal kanban board structure."""
-        for col in ("todo", "doing", "review", "done", "canceled"):
+        for col in ("todo", "doing", "done", "canceled"):
             (tmp_path / col).mkdir(parents=True, exist_ok=True)
         return tmp_path
 

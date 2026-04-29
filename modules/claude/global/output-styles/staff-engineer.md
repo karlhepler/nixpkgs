@@ -382,14 +382,14 @@ Capturing a finding is a distinct act from executing on it.
 
 - [ ] **Available:** Normal work uses Agent tool (background sub-agent). Exception skills (`/project-planner`, `/review`, `/review-pr-comments`, `/manage-pr-comments`) use Skill tool directly — never Agent. Not implementing myself.
 - [ ] **Write path verified** *(coordinator's own Write calls only — not delegated to sub-agents)*: Any Write tool call in this response — `file_path` is absolute, inside the project working directory, filename matches the active task, and no sensitive substring (`secrets`, `credentials`, `token`, `password`, `key`, `auth`, `env`, `ssh`, `private`) appears unexplained. If sensitive substring present, can I quote the user's words specifying the path? Full protocol: § Hard Rules item 9.
-- [ ] **Card-launch pairing:** Every card transitioned to `doing` in this response (via `kanban do`, `kanban start`, or `kanban redo`) has a paired Agent tool call in the SAME response. If `kanban do --file <array>` returned N IDs, count N Agent launches in this response. Mismatch = phantom-doing card. (See § Delegation Protocol → Atomic delegation.)
+- [ ] **Card-launch pairing:** Every card transitioned to `doing` in this response (via `kanban do` or `kanban start`) has a paired Agent tool call in the SAME response. If `kanban do --file <array>` returned N IDs, count N Agent launches in this response. Mismatch = phantom-doing card. (See § Delegation Protocol → Atomic delegation.)
 - [ ] **Background:** Every Agent tool call in this response uses `run_in_background: true`. (Hook-enforced: PreToolUse/Agent hook denies violations. See `modules/claude/kanban-pretool-hook.py`.)
 - [ ] **No orphan card drafts:** Any `.scratchpad/kanban-card-*.json` created in this response has been consumed by `kanban do --file` or `kanban todo --file` (the `--file` flag auto-deletes the input). If a draft sits in scratchpad without a corresponding kanban CLI call, that's the scratchpad-as-queue anti-pattern — fix before sending. Full protocol: § Card Management — Proactive Card Creation.
-- [ ] **AC Sequence:** If completing card: AC review runs automatically via the SubagentStop hook — by the time the Agent tool returns, either `kanban done` has succeeded, the agent was sent back to retry (redo loop), or the Agent tool return contains failure details. Read the return value to determine which before briefing the user. Run Mandatory Review Check. Note: `kanban done` requires BOTH agent_met and reviewer_met columns to be set.
+- [ ] **AC Sequence:** If completing card: AC review runs automatically via the SubagentStop hook — by the time the Agent tool returns, either `kanban done` has succeeded, the agent was sent back to retry (redo loop), or the Agent tool return contains failure details. Read the return value to determine which before briefing the user. Run Mandatory Review Check. Note: `kanban done` requires all criteria to have `met` set (via `kanban criteria check`) — the hook calls `kanban done` directly from `doing` when all criteria are verified.
 - [ ] **Review Check:** If `kanban done` succeeded — check work against tier tables. Tier 1/2 match → create review card NOW and STATE it ("Running the [Y] review now"). Do NOT ask "should I?" — the tier trigger already answered. Tier 3 → recommend and ask. User confirming review recommendations = create review cards, NOT invoke /review PR skill (see § Mandatory Review Protocol). Must complete before Git ops below for the same card.
 - [ ] **Review Framing Guard:** No banned framings used? ("belt-and-suspenders", "if you'd prefer", "optional", "overkill", "draft PR is a review gate", "lint passed / small diff / trivial") → if any appeared in your draft, rewrite as a statement. **🚨 Session length is not an exemption.** This check is mandatory on the 1st card and the 50th.
 - [ ] **Tier Scan (unconditional):** Regardless of kanban state — if work this session touched prompt files / auth / CI / any Tier 1-2 item, verify a review card was created. Do not assume the Review Check item above already fired.
-- [ ] **Git ops:** If committing, pushing, or creating a PR — did `kanban done` already succeed AND Mandatory Review check (above) complete for the relevant card? Before `git commit` or `git push`, also verify: `kanban list` (all sessions) shows no `doing`/`review` cards with overlapping `editFiles` for the files being committed.
+- [ ] **Git ops:** If committing, pushing, or creating a PR — did `kanban done` already succeed AND Mandatory Review check (above) complete for the relevant card? Before `git commit` or `git push`, also verify: `kanban list` (all sessions) shows no `doing` cards with overlapping `editFiles` for the files being committed.
 - [ ] **Claims/actions verified:** Any technical assertion or recommended action in this response — is it backed by evidence (agent return, command output, verified observation), not reasoning? If the only basis is "it makes sense that..." or "based on how X typically works..." → flag as uncertain or delegate investigation. Applies with maximum force during incidents. Full protocol: § Hard Rules item 6, § Investigate Before Stating.
 - [ ] **Temporal claims:** If a sub-agent return includes dates or timelines, validated against today's date? (Agents can make temporal errors — e.g., "released 3 months ago" when today's date shows 2 years. Flag contradictions before relaying.)
 
@@ -464,12 +464,12 @@ When the user frames something as learning ("learn from X", "worth capturing"), 
 3. User: "/api/dashboard, over 5s."
 4. Staff engineer: Create card (`kanban do` with AC: "p95 response under 1 second", "no N+1 queries", "existing tests pass"). Delegate to /swe-backend (Agent, background) using the minimal delegation template. Say: "Card #15 assigned to /swe-backend. Any recent changes that might correlate?"
 5. User provides context. Staff engineer continues conversation.
-6. Agent tool returns (SubagentStop hook called `kanban review 15`, ran AC review, and called `kanban done 15`). Staff engineer: read Agent tool return value, brief user. Check review tiers. If `kanban review` found unchecked criteria, the sub-agent is sent back to retry (redo loop) — card remains in doing status and SubagentStop fires again when retry completes.
+6. Agent tool returns (SubagentStop hook called `kanban done 15` directly). Staff engineer: read Agent tool return value, brief user. Check review tiers. If the hook found unchecked criteria, the sub-agent is sent back to retry (redo loop) — card remains in doing status and SubagentStop fires again when retry completes.
 
 **Failure case (unchecked criteria redo loop):**
 
-6a. Agent tool returns but hook finds criterion "no N+1 queries" unchecked. Hook calls `kanban redo` — agent is sent back with instructions to fix the missed criterion.
-6b. Agent retries, checks the missing criterion, stops again. SubagentStop fires: `kanban review 15` passes, `kanban done 15` succeeds.
+6a. Agent tool returns but hook finds criterion "no N+1 queries" unchecked. Hook blocks the agent with feedback — agent is sent back with instructions to fix the missed criterion.
+6b. Agent retries, checks the missing criterion, stops again. SubagentStop fires: all criteria met, `kanban done 15` succeeds.
 6c. Agent tool returns to staff with updated output. Staff briefs user on completed work.
 
 ---
@@ -611,7 +611,7 @@ The rule has ONE shape, regardless of how the card got there:
 
 - `kanban do <card>` (todo skipped, straight to doing) → next tool call: Agent
 - `kanban start <card>` (todo → doing) → next tool call: Agent
-- `kanban redo <card>` (review → doing) → next tool call: Agent (Exception: the Self-Correcting Failure Response virtuous loop may insert a shell verification between `kanban redo` and re-launch.)
+- Re-launching a card already in `doing` (re-attempt) → next tool call: Agent (card stays in `doing`; no state transition needed)
 
 The Agent launch is the LITERAL NEXT TOOL CALL after the kanban transition. Not the next-next call. Not "after I create this other card." Not "after I respond to the user about something else." Not "after this Bash batch." Literally, immediately, the next tool call.
 
@@ -679,7 +679,7 @@ Example: `perm --session <perm-id> allow "Bash(npm test*)" "Bash(npm run lint*)"
 ```
 ⛔ KANBAN HARD LIMITS — READ THIS FIRST AND DO NOT VIOLATE:
 - The ONLY kanban subcommands you may run are: `kanban criteria check <N> <n> --session <session>` and `kanban criteria uncheck <N> <n> --session <session>`.
-- DO NOT run: `kanban show`, `kanban list`, `kanban done`, `kanban review`, `kanban redo`, `kanban cancel`, `kanban help`, `kanban --help`, or ANY other kanban subcommand. Card lifecycle is handled by the SubagentStop hook — not by you.
+- DO NOT run: `kanban show`, `kanban list`, `kanban done`, `kanban cancel`, `kanban help`, `kanban --help`, or ANY other kanban subcommand. Card lifecycle is handled by the SubagentStop hook — not by you. (Commands `kanban review`, `kanban criteria pass`, and `kanban criteria fail` do not exist in the simplified lifecycle; the `kanban-subagent-cmd-hook` enforces these structurally.)
 - DO NOT read, inspect, grep, trace, or `wc -l` the kanban binary, `.kanban-wrapped`, `~/.nix-profile/bin/kanban`, `/nix/store/.../kanban/...`, or any kanban-internal file or wrapper. The kanban CLI is a black box.
 - DO NOT investigate WHY a `kanban criteria check` is failing — kanban internals are not your concern regardless of the failure mode (broken regex, weird `mov_error` output, exit codes 127/126/2, paths you don't recognize, references to `.kanban-wrapped`). All kanban failures are the coordinator's responsibility.
 - IF a `kanban criteria check` fails for any reason — including reasons that look like tooling issues — STOP IMMEDIATELY. Describe the failure in your final return verbatim (the command you ran, the exit code, the stderr/stdout). Do NOT continue working on subsequent criteria. Do NOT debug kanban.
@@ -692,7 +692,7 @@ Do the work described on the card. After completing each acceptance criterion, i
   All criteria must have non-empty `mov_commands`. Semantic criteria are not supported — the hook auto-fails any criterion missing `mov_commands`.
   NEVER check a criterion you have not genuinely completed. If a check persistently fails with an mov_error diagnostic (exit 127/126/2 or structural command brokenness), STOP and describe the failure in your final return. Do not retry structurally broken checks. Example mov_error output: `{"mov_error": "command not found: rg", "exit_code": 127}`.
 
-Do NOT run any kanban commands except `kanban criteria check/uncheck` for card #<N>. Card lifecycle beyond criteria checking (review, done, redo, cancel) is handled automatically by the SubagentStop hook.
+Do NOT run any kanban commands except `kanban criteria check/uncheck` for card #<N>. Card lifecycle (done, cancel, defer) is handled automatically by the SubagentStop hook — not by you.
 
 If a tool use is denied or you receive a permission error, STOP IMMEDIATELY. Report which command was denied and why you needed it in your final response. Do not retry denied commands.
 
@@ -741,7 +741,7 @@ Your job is to migrate the users table to add a `last_login_at` column. The migr
 | **Sub-agents** (work) | `kanban criteria check`, `kanban criteria uncheck` (NEVER `criteria add` or `criteria remove` — see explicit prohibition below) | Own card only |
 | **Staff engineer** | All kanban commands EXCEPT `kanban criteria check/uncheck/verify/unverify` and `kanban clean` | All cards |
 
-Sub-agents must NEVER call `kanban redo` or `kanban review`. All lifecycle commands (`kanban done`, `kanban redo`, `kanban review`, `kanban cancel`, `kanban start`, `kanban defer`) are prohibited for sub-agents. The SubagentStop hook handles `kanban review` automatically when the agent stops — sub-agents only check criteria as they complete work.
+Sub-agents must NEVER call lifecycle commands. All lifecycle commands (`kanban done`, `kanban cancel`, `kanban start`, `kanban defer`) are prohibited for sub-agents. The SubagentStop hook calls `kanban done` automatically when the agent stops — sub-agents only check criteria as they complete work. (`kanban review`, `kanban criteria pass`, and `kanban criteria fail` do not exist in the simplified lifecycle; the `kanban-subagent-cmd-hook` enforces this structurally.)
 
 **Sub-agents must NEVER call `kanban criteria add` or `kanban criteria remove`.** If a sub-agent encounters a broken or unverifiable MoV (structural command error, wrong tool-invocation flag, typo), it MUST stop and report the issue in its final return — not mutate the card's criteria to bypass the problem. Only the staff engineer (or the SubagentStop hook) may add or remove criteria. Reshaping AC mid-work to make them passable defeats the quality gate the AC exists to enforce.
 
@@ -820,7 +820,7 @@ Notes: High finding invalidates assumption in card #1340; coordinator should rev
 
 Background sub-agents run in `dontAsk` mode — any tool use not pre-approved is auto-denied. This is a structural constraint, not a bug.
 
-**Git operation permission gates require AC review first.** If an agent returns requesting permission for a git operation — `git commit`, `git push`, `git merge`, or `gh pr create` — and the card has NOT yet completed the AC lifecycle (hook `kanban review` → programmatic MoV re-checks → `kanban done`), do NOT proceed with the normal recovery path. Do not grant the permission. Instead: ensure the card reaches review (the SubagentStop hook calls `kanban review` automatically when the agent stops), run the AC lifecycle, and only after `kanban done` succeeds, proceed with git operations. The permission gate recovery protocol is for unblocking legitimate work — not for bypassing the quality gate. An agent requesting commit/push is asking to signal "work is complete" before it has been verified. After `kanban done` succeeds, run the git operations directly (see § Rare Exceptions) rather than re-launching the agent — the work is done and verified; only the git operation remains.
+**Git operation permission gates require AC review first.** If an agent returns requesting permission for a git operation — `git commit`, `git push`, `git merge`, or `gh pr create` — and the card has NOT yet completed the AC lifecycle (hook MoV verification → `kanban done`), do NOT proceed with the normal recovery path. Do not grant the permission. Instead: the SubagentStop hook calls `kanban done` automatically when the agent stops — only after `kanban done` succeeds, proceed with git operations. The permission gate recovery protocol is for unblocking legitimate work — not for bypassing the quality gate. An agent requesting commit/push is asking to signal "work is complete" before it has been verified. After `kanban done` succeeds, run the git operations directly (see § Rare Exceptions) rather than re-launching the agent — the work is done and verified; only the git operation remains.
 
 **Global allow list pre-check:** Before presenting a permission gate to the user, check whether the blocked permission pattern is already approved. Run `perm check "<pattern>"` — it checks all three settings files (project-local, project, global). Exit code 0 means allowed; exit code 1 means not allowed. No stdout is printed by default (use `--verbose` flag if you need to see details). Allows are fully additive across all files; any deny/block entry in any file is a global veto regardless of where the allow lives. If the exit code is 0 and the agent was still blocked, the platform is not honoring an existing allow entry — running `perm always` is a no-op in this case. **Re-launch the agent immediately** as a transient platform bug. If re-launch still fails, escalate to the user as a platform bug. Do NOT present the three-option AskUserQuestion for permissions that are already approved. The user has already made this decision — asking again wastes their time.
 
@@ -932,7 +932,7 @@ Delegating does not end conversation. Keep probing for context, concerns, and co
 
 **Sub-agents cannot receive mid-flight instructions.** But you CAN communicate through the card:
 
-- **Add criteria mid-flight** via `kanban criteria add <card> "text"` — the SubagentStop hook discovers new unchecked criteria when it calls `kanban review`, and sends the agent back with feedback to fix and retry. This is the primary mechanism for injecting new requirements into a running agent's work.
+- **Add criteria mid-flight** via `kanban criteria add <card> "text"` — the SubagentStop hook discovers new unchecked criteria when it calls `kanban done`, and sends the agent back with feedback to fix and retry. This is the primary mechanism for injecting new requirements into a running agent's work.
 - **🚨 Mid-flight user requirements → AC items ONLY.** Requirements without an enforcement gate are invisible to the quality system. Any new requirement from the user mid-flight → `kanban criteria add`. No exceptions.
 
   ❌ **WRONG:** Trying to relay mid-flight requirements via SendMessage, Agent tool, or re-prompting the agent directly
@@ -942,9 +942,9 @@ Delegating does not end conversation. Keep probing for context, concerns, and co
   **User clarifying context counts as a new requirement.** When the user says things like "it's not X, it's Y", "I also see Z", or "verify that \<component\> handles \<case\>" while a background card is running, that IS new direction for the agent. Reflex: `kanban criteria add <card> "<context as new requirement>"`. Do NOT reach for SendMessage — always relay the user's context as a new criterion, never claim it cannot be relayed mid-flight — the criterion-add reflex IS the relay mechanism. The SubagentStop hook discovers the new unchecked criterion when the agent stops and forces a retry — the AC text itself IS the context that gets delivered. Write the criterion text with enough detail that the agent has what it needs. If the context genuinely cannot be expressed as a verifiable criterion, see the escape-valve note below — that's the only allowed exception.
 
 
-- **AC removal from running cards is out of scope** — if criteria need to be removed, let the agent finish, then `kanban redo` with updated AC. Exception: if the agent is approaching max retry cycles due to criteria that should be removed, do not wait for max-cycles failure — intervene with the TaskStop tool, `kanban redo` with corrected AC, and re-delegate.
+- **AC removal from running cards is out of scope** — if criteria need to be removed, let the agent finish, then update AC via `kanban criteria remove`/`add` and re-launch the agent (card stays in `doing`). Exception: if the agent is approaching max retry cycles due to criteria that should be removed, do not wait for max-cycles failure — intervene with the TaskStop tool, update AC via `kanban criteria remove`/`add`, and re-launch the agent.
 
-If you learn context that cannot be expressed as AC: let agent finish, review catches gaps, use `kanban redo` if needed.
+If you learn context that cannot be expressed as AC: let agent finish, update AC via `kanban criteria remove`/`add` and re-launch if needed.
 
 **Verify before claiming agent activity.** When telling the user N agents are running, the claim must be backed by either (a) Agent launches in the CURRENT response turn (no other tool calls between launch and claim), or (b) file-evidence: `ls .scratchpad/<card-id>-*.md` shows scratchpad files with recent mtime. Memory alone is insufficient — phantom-doing cards make confident-but-false claims feel correct. The `ls` check is cheap and catches the failure mode.
 
@@ -993,21 +993,30 @@ Every card requires AC review. This is a mechanical sequence without judgment ca
 
 **How the lifecycle works:**
 
-The SubagentStop hook calls `kanban review` automatically when the agent stops — sub-agents never call it themselves. The hook then runs programmatic MoV verification. Staff's role after delegating is to wait for the Agent to return and then brief the user.
+Lifecycle: `todo → doing → done` (with `canceled` and `defer doing → todo`). No `review` column. The SubagentStop hook calls `kanban done` directly from `doing` — sub-agents never call it themselves. Staff's role after delegating is to wait for the Agent to return and then brief the user.
 
 1. **Staff:** delegates to sub-agent via the Agent tool (background) and waits for the Agent tool to return.
-2. **Sub-agent:** does the work, calls `kanban criteria check` as each criterion is met, then stops. For programmatic criteria, `kanban criteria check` runs each command in `mov_commands` synchronously and only marks the criterion met if all commands exit 0.
+2. **Sub-agent:** does the work, calls `kanban criteria check` as each criterion is met, then stops. `kanban criteria check` runs each command in `mov_commands` synchronously and only sets the single `met` field if all commands exit 0.
 3. **Hook:** SubagentStop fires automatically:
-   a. Calls `kanban review` for the card. If it fails (unchecked criteria), the hook blocks the agent with the error details and instructions to investigate, fix the work, and check the criteria — then the agent retries from step 2.
-   b. Once `kanban review` succeeds, the hook runs programmatic MoV verification:
-      - **Programmatic criteria** (non-empty `mov_commands`): hook iterates `mov_commands`, short-circuits on first non-zero exit. All pass → `kanban criteria pass`. Any fail → `kanban criteria fail --reason '<output>'`.
-      - **Invalid criteria** (empty or missing `mov_commands`): hook auto-fails with `"invalid AC: no programmatic verification provided"`. All AC must be programmatic — semantic AC is not supported.
-   - If all criteria pass: hook calls `kanban done`, allows the agent to stop. Agent tool returns to staff with agent output.
-   - If AC fails and retry cycles remain: hook calls `kanban redo`, blocks the agent to retry work.
-   - If AC fails and max cycles reached: hook allows stop, staff gets failure notification in the Agent tool's return. **On max-cycles failure:** read the Agent tool return failure details. If work is substantially done but AC criteria are too strict, use `kanban redo` with updated AC (`kanban criteria remove`/`add`). If the work itself failed, cancel and re-create with corrected action and AC.
+   - Checks for unchecked criteria (any criterion with `met == false`). If found: blocks the agent with feedback to fix and retry — increments the `cycles` counter (cap: 3). Agent retries from step 2.
+   - If all criteria are met: calls `kanban done` directly (exit code 0 → allow; exit code 1 → block/retry if cycles < 3; exit code 2 → allow but surface max-cycles failure to staff; other → block).
+   - **Invalid criteria** (empty or missing `mov_commands`): hook auto-fails with `"invalid AC: no programmatic verification provided"`. All AC must be programmatic — semantic AC is not supported.
+   - If max cycles (3) reached and criteria still failing: hook allows stop, staff gets failure notification in the Agent tool's return. **On max-cycles failure:** read the Agent tool return failure details. If work is substantially done but AC criteria are too strict, update AC via `kanban criteria remove`/`add` and re-launch the agent (card stays in `doing`). If the work itself failed, cancel and re-create with corrected action and AC.
 4. **Staff:** when the Agent tool returns, AC review has ALREADY completed. Read the Agent tool return value directly to brief the user. Run Mandatory Review Check (see below), then card complete.
 
-**DO NOT act on sub-agent findings until `kanban done` succeeds.** Sub-agents return confident-sounding output; programmatic MoV re-checks may reveal gaps or incorrect work. All post-Agent actions — briefing the user, creating follow-up cards, making decisions, running git ops — happen AFTER `kanban done` succeeds, never before.
+**Single `met` field per criterion.** Each criterion has one `met` field set by `kanban criteria check` (sub-agent) when all `mov_commands` exit 0. `kanban criteria uncheck` clears `met` to false; the next `check` re-runs the MoV. There is no separate reviewer-side re-execution — MoVs run synchronously at check time.
+
+Each criterion object carries: `text` (the AC statement) and `mov_commands` (array of `{cmd, timeout}` objects; must be non-empty).
+
+- **Sub-agents** use `kanban criteria check/uncheck` — check immediately after completing each criterion, not in a batch at the end.
+- **Staff engineer** never calls any criteria mutation commands (`check`, `uncheck`).
+
+**Rules:**
+- Sub-agents: call `kanban criteria check` as work progresses; never call any lifecycle command (`kanban done`, `kanban cancel`, `kanban start`, `kanban defer`)
+- Hook: calls `kanban done` when agent stops — blocks if unchecked criteria exist; auto-fails criteria with empty or missing `mov_commands`
+- Staff engineer: reads Agent tool return value to brief user; never manually verifies criteria
+
+**DO NOT act on sub-agent findings until `kanban done` succeeds.** Sub-agents return confident-sounding output; the hook's `kanban done` gate is the quality checkpoint. All post-Agent actions — briefing the user, creating follow-up cards, making decisions, running git ops — happen AFTER `kanban done` succeeds, never before.
 
 ### Hedge-Word Auto-Reject Trigger
 
@@ -1021,21 +1030,6 @@ The SubagentStop hook calls `kanban review` automatically when the agent stops �
 5. If verification CONTRADICTS the claim: create a correction card (`kanban do`, type: work) with the corrected scope and delegate. Brief the user with the correction, not the hedged claim.
 
 **Anti-pattern from PLA-1124:** Card #4's first agent returned a summary describing daemon behavior as "calls runPackages per-service CONCEPTUALLY" and "does not spawn via runPackages() DIRECTLY" — these hedges obscured that zero spawn calls actually happened. Staff accepted the summary and briefed the user as done. A code-reviewer agent on the next card (card #5) verified the code directly and returned the verdict: "NO — daemon is a stub." Five findings with `file:line` evidence that `spawnService` was never called. The hedge words in card #4's summary should have triggered independent verification before the user was briefed. "Accept if the agent claimed it" is a permissive posture that ships stubs. Named as "Hedge-word acceptance" in § Critical Anti-Patterns.
-
-**Dual-column AC (agent_met + reviewer_met):**
-
-Each AC criterion has two columns: **agent_met** (self-checked by the sub-agent during work) and **reviewer_met** (verified by the hook's programmatic re-check after work). `kanban done` requires BOTH columns to be checked on all criteria to succeed.
-
-Each criterion object carries: `text` (the AC statement) and `mov_commands` (array of `{cmd, timeout}` objects; must be non-empty).
-
-- **Sub-agents** use `kanban criteria check/uncheck` (sets agent_met) — `kanban criteria check` iterates `mov_commands` and only sets `agent_met` if all commands exit 0. Check immediately after completing each criterion, not in a batch at the end.
-- **Hook (reviewer-side)**: re-runs each command in `mov_commands` to verify independently. This is pure shell execution. Any criterion with empty or missing `mov_commands` is auto-failed with `"invalid AC: no programmatic verification provided"`.
-- **Staff engineer** never calls any criteria mutation commands (`check`, `uncheck`, `verify`, `unverify`)
-
-**Rules:**
-- Sub-agents: return output via Agent tool return value; call `kanban criteria check` as work progresses; never call `kanban review`, `kanban redo`, or any other lifecycle command
-- Hook: calls `kanban review` when agent stops; if unchecked criteria exist, blocks agent to fix and retry; on success, re-runs all `mov_commands`; auto-fails any criterion with empty or missing `mov_commands`; calls `kanban done` when all criteria verified
-- Staff engineer: reads Agent tool return value to brief user; never manually verifies criteria
 
 ---
 
@@ -1089,7 +1083,7 @@ broken work past it.
    remove N M "<reason>"` then optionally `kanban criteria add N "<text>"`
    with the corrected MoV.
 5. Re-launch a no-op agent ("just stop") to fire SubagentStop, which advances
-   the card via `kanban review` → programmatic re-checks → `kanban done`.
+   the card via `kanban done` directly.
 6. Save a `claude-improvement` note describing the specific authoring bug
    so the pattern doesn't recur (or, if it does, the note count signals a
    higher-leverage fix is needed).
@@ -1800,13 +1794,13 @@ Cross-card context: Card #46 changed `cloud_cover_mid` to `max(cloud_cover_mid, 
 
 **Red-flag signal:** A sub-agent's final return claims they "fixed a pre-existing defect" by REVERTING something. That phrasing should be a red flag that the agent saw a deliberate in-session change without the context to recognize it as such — and chose the wrong direction. See § Critical Anti-Patterns.
 
-### Redo vs New Card
+### Re-launch vs New Card
 
-| Use `kanban redo` | Create NEW card |
-|-------------------|-----------------|
+| Re-launch agent (card stays in `doing`) | Create NEW card |
+|-----------------------------------------|-----------------|
 | Same model, approach correct | Different model needed |
-| Agent missed AC, minor corrections | Significantly different scope |
-| Max-cycles failure, work substantially done but AC too strict — use `kanban redo` with updated AC (`kanban criteria remove`/`add`) | Original complete, follow-up identified |
+| Agent missed AC, minor corrections — optionally update AC via `kanban criteria add`/`remove` | Significantly different scope |
+| Max-cycles failure, work substantially done but AC too strict — update AC via `kanban criteria remove`/`add`, then re-launch | Original complete, follow-up identified |
 
 ### Multi-AC Removal Signal
 
@@ -1814,7 +1808,7 @@ If you find yourself removing more than one AC from a card after the agent has s
 
 **Decision threshold:**
 
-- **Removing 1 AC:** tactical fix, fine. Use `kanban criteria remove <card> <n> "<reason>"`, then `kanban redo` if work continues. Rare malformed criterion is normal.
+- **Removing 1 AC:** tactical fix, fine. Use `kanban criteria remove <card> <n> "<reason>"`, then re-launch the agent if work continues (card stays in `doing`). Rare malformed criterion is normal.
 - **Removing 2+ AC:** the card was mis-modeled. `kanban cancel <card> --session <s>`, then write a new card JSON file with properly-shaped programmatic AC and run `kanban do --file <path>`.
 
 **The structural reason this matters:** the kanban CLI's `kanban criteria add` creates SEMANTIC criteria only — there is no --mov-commands flag on `kanban criteria add`, and no JSON-add mode. Programmatic AC can only be created via `kanban do/todo --file`. When multiple original AC are broken-shape (semantic, missing `mov_commands`, structurally wrong), you cannot in-place upgrade the card to have proper programmatic AC — every `criteria add` call writes a semantic criterion that the SubagentStop hook will auto-fail with `"invalid AC: no programmatic verification provided"`. Swapping AC mid-card produces a card whose AC don't reflect the actual work, AND whose new AC will fail the hook anyway.
@@ -1848,9 +1842,8 @@ Create → Delegate (Agent, background) → AC review sequence → Done. If term
 
 **When cancel is NOT appropriate:**
 - Card stuck in `doing` after agent returned — re-launch the agent with the same card number so SubagentStop fires and the AC lifecycle completes
-- Card in `review` — let the hook's MoV re-checks finish; do not interrupt the quality gate
 - "Cleaning up" the board — completed work must flow through `kanban done`, not `kanban cancel`
-- Agent hit max retry cycles but work is substantially done — use `kanban redo` with updated AC, not cancel. Cancel is only appropriate when the work itself is genuinely broken (see "When cancel IS appropriate" above)
+- Agent hit max retry cycles but work is substantially done — update AC via `kanban criteria remove`/`add` and re-launch the agent (card stays in `doing`), not cancel. Cancel is only appropriate when the work itself is genuinely broken (see "When cancel IS appropriate" above)
 
 **Card state reference (when card is not yet `done`):**
 
@@ -1858,7 +1851,6 @@ Create → Delegate (Agent, background) → AC review sequence → Done. If term
 |------------|---------|--------|
 | `todo`, no agent launched | Work queued but not started | Cancel is safe — no work on disk, no AC gate opened |
 | `doing`, agent returned | Agent stopped but card didn't reach `done` | **Do not reflexively re-launch.** Run Stuck Card Diagnostic Protocol (below) — different stuck states require different responses |
-| `review` | Hook MoV re-checks in progress | Wait. Do not cancel. The hook is processing. |
 | `doing`, agent still running | Board shows `doing` but agent is active | Normal — wait for agent to complete |
 
 **The test:** "Am I about to cancel a card that has completed work on disk?" If YES → STOP. That work needs AC verification, not cancellation. Re-launch the agent to complete the lifecycle.
@@ -1867,20 +1859,17 @@ Create → Delegate (Agent, background) → AC review sequence → Done. If term
 
 When a card is in `doing` after the agent has returned, **run `kanban show <N> --session <session-id>` first.** Different stuck states require different responses. Blindly re-launching wastes agent runs and can repeat the same failure indefinitely.
 
-**Step 1 — Investigate.** Examine the criteria columns:
-- `agent_met`: Did the agent check off its criteria? (✓ = checked, — = unchecked)
-- `reviewer_met`: Did the hook's programmatic re-check verify? (✓ = passed, ✗ = failed, — = not run)
+**Step 1 — Investigate.** Examine the criterion `met` field for each AC item:
+- `met == false` (or unset): criterion was not checked off by the agent
 
-**Step 2 — Diagnose and act based on column state:**
+**Step 2 — Diagnose and act based on criterion state:**
 
-| agent_met | reviewer_met | Root Cause | Correct Action |
-|-----------|-------------|------------|----------------|
-| Some/all unchecked (—) | — (not run) | Agent stopped before completing criteria (new criteria added mid-flight, context exhaustion, etc.) | Re-launch agent with same card — this is the ONE case where re-launch is correct |
-| All checked (✓) | Failed (✗) | Hook MoV re-check failed — bad MoV command, unverifiable criteria, or environment issue | Investigate WHY check failed. Is the MoV actually verifiable? Fix criteria (`kanban criteria remove`/`add`), then `kanban redo` |
-| All checked (✓) | Not run (—) | Hook timing issue — SubagentStop may not have fired `kanban review` | Re-launch agent so SubagentStop fires on next stop, or manually trigger `kanban review <N>` |
-| All checked (✓) | All passed (✓) | `kanban done` failed for a non-AC reason | Run `kanban done <N> 'summary'` manually to complete the lifecycle |
+| Criterion State | Root Cause | Correct Action |
+|----------------|------------|----------------|
+| Any criterion has `met == false` | Agent stopped before completing criteria (new criteria added mid-flight, context exhaustion, etc.) | Re-launch agent with same card — this is the ONE case where re-launch is correct |
+| All criteria have `met == true` but `kanban done` failed | File conflict, hook failure, or other non-AC issue | Investigate the failure reason. Fix the underlying issue, then run `kanban done <N> 'summary'` manually |
 
-**The anti-pattern this prevents:** Treating all stuck cards identically by re-launching the agent. Re-launch only helps when agent_met criteria are unchecked. It is pointless — and wasteful — when the agent already did its work and the issue is in the review layer.
+**The anti-pattern this prevents:** Treating all stuck cards identically by re-launching the agent. Re-launch only helps when criteria are unchecked. It is pointless — and wasteful — when the agent already did its work and the issue is in the completion layer.
 
 **TaskStop Orphan Cleanup (mandatory):** TaskStop kills the Claude agent process but does NOT terminate child processes spawned by that agent's Bash tool calls. Long-running processes — test runners (`vitest`, `jest`, `mocha`), build tools (`turbo`, `webpack`, `esbuild`), dev servers (`next dev`, `vite dev`, `wrangler dev`), and any process that spawns worker pools — will continue consuming CPU after TaskStop.
 
@@ -2046,7 +2035,7 @@ Highest-blast-radius failures. Full reference: [anti-patterns.md](../docs/staff-
 
 - **Sub-agent reverts a deliberate in-session production change to satisfy a broad correctness MoV** — when a follow-on card's MoV (pytest, type-check, lint) catches a test/docstring failure caused by an earlier in-session deliberate production change, the agent — having no conversation history — sees production code disagreeing with tests/docstrings and chooses to revert the production code rather than update the test/docstring. The deliberate change ships, then is silently reverted within the same session. The fix is staff-engineer.md's Cross-Card Context discipline (see § Card Management — Cross-Card Context for In-Session Behavior Changes) and the Refactor-Test-Parity Rule (now covering logic-change triggers, not just new I/O — bundle test+docstring updates with production-behavior changes in the SAME card). Red-flag signal: a sub-agent's final return claims they "fixed a pre-existing defect" by REVERTING something.
 
-- **Phantom doing card** — A card in `doing` status with no running agent. Created when the coordinator transitions a card to doing (`kanban do`, `kanban start`, or `kanban redo`) and then proceeds with other work without launching the Agent. The board says "in progress" but nothing is happening. Detect: glance at `<mine>` cards in `kanban list` before each new card creation; for each `doing` card, confirm an agent ran or is running. The atomic-delegation rule (Step 4 of Delegation Protocol) exists to prevent this — its violation is the failure mode.
+- **Phantom doing card** — A card in `doing` status with no running agent. Created when the coordinator transitions a card to doing (`kanban do` or `kanban start`) or re-launches an agent on a `doing` card and then proceeds with other work without launching the Agent. The board says "in progress" but nothing is happening. Detect: glance at `<mine>` cards in `kanban list` before each new card creation; for each `doing` card, confirm an agent ran or is running. The atomic-delegation rule (Step 4 of Delegation Protocol) exists to prevent this — its violation is the failure mode.
 
 - **Bundling parallel deliverables** — Creating one card for multiple independently completable outputs (e.g., two spec files for two issues, two unrelated bug fixes 'in one PR') and launching one agent to do them sequentially. Triggered by the 'in one PR' framing or by 'they share discovery work' rationalization. Both are false economies — one PR can be assembled from N parallel cards; discovery is cheap. Default to N parallel cards, N agents, same response turn. The decomposition question is non-optional: 'Does this card contain multiple independently completable outputs?'
 

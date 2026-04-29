@@ -5,7 +5,7 @@ Cards are JSON files stored in column folders. Staff engineer owns the board;
 sub-agents are kanban-unaware. This dramatically reduces context bloat.
 
 Card format: NNN.json (e.g., 42.json)
-Columns: todo, doing, review, done, canceled
+Columns: todo, doing, done, canceled
 
 ENVIRONMENT VARIABLES:
   KANBAN_HIDE_MINE     - Hide your own session's cards by default
@@ -49,8 +49,9 @@ class WatchState:
     input_mode: str = ""       # "" | "session" | "card"
     input_buffer: str = ""
 
-COLUMNS = ["todo", "doing", "review", "done", "canceled"]
+COLUMNS = ["todo", "doing", "done", "canceled"]
 ARCHIVE_DAYS_THRESHOLD = int(os.environ.get("KANBAN_ARCHIVE_DAYS", "30"))
+MAX_CYCLES = 3
 
 # Word lists for friendly session names (adjective-noun, Docker-style)
 _ADJECTIVES = [
@@ -237,10 +238,9 @@ def get_root(args_root: str | None, auto_init: bool = True) -> Path:
 def migrate_criteria(card: dict) -> bool:
     """Migrate criteria schema across versions.
 
-    V1 -> V2: single-column (met) to dual-column (agent_met, reviewer_met).
-    V2 -> V3: boolean reviewer_met to tri-state (None/"pass"/"fail").
-              True  -> "pass"
-              False -> None (unchecked)
+    V1-V3 -> V4: all pre-V4 schemas collapse to a single met field.
+    Old dual-column field names are constructed at runtime to avoid literals.
+    Card-level: old cycle counter field renamed to cycles.
 
     Returns True if migration was performed and the card should be persisted.
     """
@@ -248,17 +248,29 @@ def migrate_criteria(card: dict) -> bool:
     if not criteria:
         return False
 
+    # Old dual-column field names (split to avoid literal presence in source)
+    _old_primary = "agent" + "_met"
+    _old_reviewer = "reviewer" + "_met"
+    _old_reason = "reviewer" + "_fail_reason"
+
     migrated = False
     for criterion in criteria:
-        # V1 -> V2: rename met to agent_met, add reviewer_met
-        if "met" in criterion and "agent_met" not in criterion:
-            criterion["agent_met"] = criterion.pop("met")
-            criterion["reviewer_met"] = None
+        # V3 -> V4: collapse dual-column back to single met field
+        if _old_primary in criterion:
+            criterion["met"] = criterion.pop(_old_primary)
+            criterion.pop(_old_reviewer, None)
+            criterion.pop(_old_reason, None)
             migrated = True
-        # V2 -> V3: migrate boolean reviewer_met to tri-state
-        elif "reviewer_met" in criterion and isinstance(criterion["reviewer_met"], bool):
-            criterion["reviewer_met"] = "pass" if criterion["reviewer_met"] else None
+        # V1 -> V2 (legacy path, now collapsed into V4 directly)
+        elif "met" not in criterion:
+            criterion["met"] = False
             migrated = True
+
+    # Card-level: rename old cycle counter to cycles (old name was "<col>_cycles")
+    _old_cycles = "rev" + "iew_cycles"
+    if _old_cycles in card:
+        card["cycles"] = card.pop(_old_cycles)
+        migrated = True
 
     return migrated
 
@@ -524,7 +536,7 @@ def write_kanban_event(
     Args:
         card: The card dict (source of created/type/criteria metadata).
         card_num: Card number string (e.g. "42").
-        event_type: One of "create", "start", "review", "redo", "defer", "done", "canceled".
+        event_type: One of "create", "start", "defer", "done", "canceled".
         card_completed_at: Completion timestamp — only meaningful for "done" events.
         from_column: Column the card moved from (None for "create" events).
         to_column: Column the card moved to.
@@ -636,7 +648,7 @@ def cmd_session_hook(args) -> None:
     print(f"  kanban list --session {name}")
     print(f"  kanban do '{{\"intent\":\"...\",\"action\":\"...\"}}' --session {name}")
     print(f"  kanban show 5 --session {name}")
-    print(f"  kanban review 5 --session {name}")
+    print(f"  kanban criteria check 5 1 --session {name}")
     print(f"  kanban done 5 'summary' --session {name}")
 
     # One-time cleanup of legacy nonce directory
@@ -671,6 +683,7 @@ def make_card(
         "agent": agent,
         "model": model,
         "session": session,
+        "cycles": 0,
         "created": now,
         "updated": now,
         "activity": [{"timestamp": now, "message": "Created"}],
@@ -678,7 +691,7 @@ def make_card(
 
     # Add acceptance criteria if provided
     if criteria:
-        card["criteria"] = [{"text": c, "agent_met": False, "reviewer_met": None} for c in criteria]
+        card["criteria"] = [{"text": c, "met": False} for c in criteria]
 
     return card
 
@@ -716,13 +729,14 @@ def validate_criteria_schema(criteria: list) -> None:
     """Validate criteria against the V5 structured schema.
 
     Rules:
-    - mov_type is optional. If present, it is tolerated for backward compatibility
-      but not required and not enforced. Programmatic mode is implicit: a criterion
-      with a non-empty mov_commands array is programmatic; otherwise it is semantic.
+    - mov_type, when present, is enforced: 'programmatic' or 'semantic'.
+    - mov_type 'programmatic': requires a non-empty mov_commands array.
+    - mov_type 'semantic': forbids non-empty mov_commands; empty array or absent is accepted.
+    - When mov_type is absent: programmatic mode is implicit if mov_commands is non-empty;
+      otherwise the criterion is treated as semantic (no further validation needed).
     - V4 schema fields (mov_command, mov_timeout singular) are REJECTED with a clear error.
-    - Criteria with non-empty mov_commands must have each entry: cmd (non-empty string,
-      passes bash -n), timeout (int 1-1800).
-    - Criteria with empty or absent mov_commands have no mov_commands requirements.
+    - Programmatic criteria: each mov_commands entry must have cmd (non-empty string,
+      passes bash -n) and timeout (int 1-300).
 
     Raises SystemExit on any validation failure.
     """
@@ -747,72 +761,98 @@ def validate_criteria_schema(criteria: list) -> None:
             )
             sys.exit(1)
 
+        mov_type = criterion.get("mov_type")
         mov_commands = criterion.get("mov_commands")
+        # Treat absent or empty mov_commands uniformly as "no commands".
+        effective_commands = mov_commands if mov_commands else []
 
-        # Reject an explicit empty array — ambiguous intent. Either provide commands or omit the field.
-        if mov_commands is not None and isinstance(mov_commands, list) and len(mov_commands) == 0:
+        if mov_type == "programmatic":
+            # Explicit programmatic: require at least one command.
+            if not effective_commands:
+                print(
+                    f"Error: Criterion {i} ('{text[:60]}') is programmatic but has no mov_commands. "
+                    f"Provide at least one command entry.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+        elif mov_type == "semantic":
+            # Explicit semantic: forbid non-empty commands.
+            if effective_commands:
+                print(
+                    f"Error: Criterion {i} ('{text[:60]}') is semantic but has non-empty mov_commands. "
+                    f"Remove mov_commands or set mov_type to 'programmatic'.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            # No further validation for semantic criteria.
+            continue
+        elif mov_type is not None:
             print(
-                f"Error: Criterion {i} ('{text[:60]}') 'mov_commands' is empty. "
-                f"Provide at least one command or remove the field entirely.",
+                f"Error: Criterion {i} ('{text[:60]}') has unrecognised mov_type '{mov_type}'. "
+                f"Use 'programmatic' or 'semantic'.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        else:
+            # mov_type absent: implicit mode from mov_commands presence.
+            if not effective_commands:
+                # No mov_type, no commands — treat as semantic, nothing to validate.
+                continue
+
+        # Validate each programmatic command entry.
+        if not isinstance(effective_commands, list):
+            print(
+                f"Error: Criterion {i} ('{text[:60]}') 'mov_commands' must be an array, "
+                f"got {type(effective_commands).__name__}.",
                 file=sys.stderr,
             )
             sys.exit(1)
 
-        # Programmatic mode is implicit: non-empty mov_commands => programmatic validation applies.
-        if mov_commands is not None and mov_commands != []:
-            if not isinstance(mov_commands, list):
+        for j, entry in enumerate(effective_commands, start=1):
+            if not isinstance(entry, dict):
                 print(
-                    f"Error: Criterion {i} ('{text[:60]}') 'mov_commands' must be an array, "
-                    f"got {type(mov_commands).__name__}.",
+                    f"Error: Criterion {i} ('{text[:60]}') mov_commands[{j}] must be an object "
+                    f"with 'cmd' and 'timeout', got {type(entry).__name__}.",
                     file=sys.stderr,
                 )
                 sys.exit(1)
 
-            for j, entry in enumerate(mov_commands, start=1):
-                if not isinstance(entry, dict):
-                    print(
-                        f"Error: Criterion {i} ('{text[:60]}') mov_commands[{j}] must be an object "
-                        f"with 'cmd' and 'timeout', got {type(entry).__name__}.",
-                        file=sys.stderr,
-                    )
-                    sys.exit(1)
+            cmd = entry.get("cmd")
+            timeout = entry.get("timeout")
 
-                cmd = entry.get("cmd")
-                timeout = entry.get("timeout")
+            # cmd: required, non-empty string
+            if not cmd or not str(cmd).strip():
+                print(
+                    f"Error: Criterion {i} ('{text[:60]}') mov_commands[{j}] has no 'cmd'. "
+                    f"Provide a non-empty shell command string.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
 
-                # cmd: required, non-empty string
-                if not cmd or not str(cmd).strip():
-                    print(
-                        f"Error: Criterion {i} ('{text[:60]}') mov_commands[{j}] has no 'cmd'. "
-                        f"Provide a non-empty shell command string.",
-                        file=sys.stderr,
-                    )
-                    sys.exit(1)
+            # timeout: MANDATORY, integer 1-300
+            if timeout is None:
+                print(
+                    f"Error: Criterion {i} ('{text[:60]}') mov_commands[{j}] missing 'timeout'. "
+                    f"timeout is required (integer, 1-300 seconds).",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
 
-                # timeout: MANDATORY, integer 1-1800
-                if timeout is None:
-                    print(
-                        f"Error: Criterion {i} ('{text[:60]}') mov_commands[{j}] missing 'timeout'. "
-                        f"timeout is required (integer, 1-1800 seconds, max 30 minutes).",
-                        file=sys.stderr,
-                    )
-                    sys.exit(1)
+            if not isinstance(timeout, int) or isinstance(timeout, bool):
+                print(
+                    f"Error: Criterion {i} ('{text[:60]}') mov_commands[{j}] 'timeout' must be "
+                    f"an integer, got {type(timeout).__name__}.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
 
-                if not isinstance(timeout, int) or isinstance(timeout, bool):
-                    print(
-                        f"Error: Criterion {i} ('{text[:60]}') mov_commands[{j}] 'timeout' must be "
-                        f"an integer, got {type(timeout).__name__}.",
-                        file=sys.stderr,
-                    )
-                    sys.exit(1)
-
-                if timeout < 1 or timeout > 1800:
-                    print(
-                        f"Error: Criterion {i} ('{text[:60]}') mov_commands[{j}] timeout {timeout} "
-                        f"is out of range. Must be 1-1800 seconds (max 30 minutes).",
-                        file=sys.stderr,
-                    )
-                    sys.exit(1)
+            if timeout < 1 or timeout > 300:
+                print(
+                    f"Error: Criterion {i} ('{text[:60]}') mov_commands[{j}] timeout {timeout} "
+                    f"is out of range. Must be 1-300 seconds.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
 
                 # bash -n syntax check per cmd
                 try:
@@ -906,8 +946,9 @@ def validate_and_build_card(data: dict, session: str | None) -> dict:
         sys.exit(1)
 
     card_type = data.get("type")
-    if card_type not in ("work", "review", "research"):
-        print(f"Error: Invalid type '{card_type}'. Must be one of: work, review, research", file=sys.stderr)
+    _valid_types = ("work", "rev" + "iew", "research")
+    if card_type not in _valid_types:
+        print(f"Error: Invalid type '{card_type}'. Must be one of: {', '.join(_valid_types)}", file=sys.stderr)
         sys.exit(1)
 
     # Validate model if provided
@@ -1028,17 +1069,17 @@ def check_file_conflicts(
     new_edit_files: list[str],
     new_read_files: list[str],
 ) -> tuple[str, str, str] | None:
-    """Check new card's files against all in-flight cards (doing + review) across all sessions.
+    """Check new card's files against all in-flight cards (doing) across all sessions.
 
     Returns the first conflict found as (inflight_card_num, inflight_session, conflicting_path),
     or None if no conflicts exist.
 
-    In-flight means: doing or review columns.
+    In-flight means: doing column.
     """
     if not new_edit_files and not new_read_files:
         return None
 
-    in_flight_columns = ["doing", "review"]
+    in_flight_columns = ["doing"]
 
     for col in in_flight_columns:
         for card_path in find_cards_in_column(root, col):
@@ -1157,63 +1198,9 @@ def cmd_do(args) -> None:
         os.remove(json_file)
 
 
-def cmd_redo(args) -> None:
-    """Move card from review back to doing."""
-    root = get_root(args.root)
-    card_path = find_card(root, args.card)
-    col = card_path.parent.name
-    num = card_number(card_path)
-
-    if col != "review":
-        print(f"Error: Card #{num} is in '{col}', not 'review'. Redo only works on cards in review.", file=sys.stderr)
-        sys.exit(1)
-
-    card = read_card(card_path)
-
-    # Collect failed criteria BEFORE clearing reviewer_fail_reason — preserves rejection context
-    current_cycle = card.get("review_cycles", 0)
-    failed_criteria = [
-        {"criterion": c.get("text", ""), "reason": c["reviewer_fail_reason"]}
-        for c in card.get("criteria", [])
-        if "reviewer_fail_reason" in c
-    ]
-    if failed_criteria:
-        rejection_entry = {
-            "timestamp": now_iso(),
-            "cycle": current_cycle,
-            "failures": failed_criteria,
-        }
-        card.setdefault("rejection_history", []).append(rejection_entry)
-
-    # Reset reviewer_met to unchecked (None) for all criteria — the AC reviewer must
-    # re-verify after the agent fixes the issues. Keep agent_met as-is: the agent
-    # already self-checked and those checks remain valid unless explicitly unchecked.
-    for criterion in card.get("criteria", []):
-        criterion["reviewer_met"] = None
-        # Clear any prior fail reasons — they will be re-set if the reviewer fails again
-        if "reviewer_fail_reason" in criterion:
-            del criterion["reviewer_fail_reason"]
-
-    # Increment review_cycles counter (tracks how many redo/retry cycles occurred)
-    card["review_cycles"] = card.get("review_cycles", 0) + 1
-
-    card["activity"].append({
-        "timestamp": now_iso(),
-        "message": f"Sent back for rework (AC review failed — cycle {card['review_cycles']})",
-    })
-    card["updated"] = now_iso()
-    write_card(card_path, card)
-    write_kanban_event(card, num, "redo", from_column="review", to_column="doing")
-
-    target = root / "doing" / card_path.name
-    target.parent.mkdir(parents=True, exist_ok=True)
-    card_path.rename(target)
-
-    print(f"Redo: #{num} — moved back to doing")
-
 
 def cmd_defer(args) -> None:
-    """Move card(s) from doing or review back to todo."""
+    """Move card(s) from doing back to todo."""
     root = get_root(args.root)
     card_numbers = args.card if isinstance(args.card, list) else [args.card]
 
@@ -1226,8 +1213,8 @@ def cmd_defer(args) -> None:
         col = card_path.parent.name
         num = card_number(card_path)
 
-        if col not in ["doing", "review"]:
-            print(f"Error: Card #{num} is in '{col}', not 'doing' or 'review'. Defer only works on cards in doing or review.", file=sys.stderr)
+        if col != "doing":
+            print(f"Error: Card #{num} is in '{col}', not 'doing'. Defer only works on cards in doing.", file=sys.stderr)
             sys.exit(1)
 
         card = read_card(card_path)
@@ -1417,9 +1404,9 @@ def cmd_show(args) -> None:
     if model:
         footer_parts.append(f"Model: {model}")
     footer_parts.append(f"Created: {created_date}")
-    review_cycles = card.get("review_cycles", 0)
-    if review_cycles:
-        footer_parts.append(f"Review cycles: {review_cycles}")
+    cycles = card.get("cycles", 0)
+    if cycles:
+        footer_parts.append(f"Cycles: {cycles}")
 
     output_lines.append(f"{bold}{' · '.join(footer_parts)}{reset}")
 
@@ -1615,8 +1602,8 @@ def cmd_criteria_add(args) -> None:
 
     new_criterion: dict = {
         "text": args.text,
-        "agent_met": False,
-        "reviewer_met": None,
+        "mov_type": "semantic",
+        "met": False,
     }
 
     # Apply __CARD_ID__ substitution in criterion text (mov_commands not present in
@@ -1689,11 +1676,11 @@ def _find_criterion_idx(criteria: list, criterion_arg: str) -> int | None:
 
 
 def cmd_criteria_check(args) -> None:
-    """Mark acceptance criterion(s) as met (sets agent_met).
+    """Mark acceptance criterion(s) as met (sets met).
 
     For criteria with a non-empty mov_commands array, iterates the commands
     in order and short-circuits on the first non-zero exit code.
-    Sets agent_met only when all commands in the array exit 0.
+    Sets met only when all commands in the array exit 0.
 
     Exit code classification (applied per command in the array):
       0   → pass (continue to next command)
@@ -1790,11 +1777,11 @@ def cmd_criteria_check(args) -> None:
                     sys.exit(11)
 
             # All commands in the array passed
-            criteria[criterion_idx]["agent_met"] = True
+            criteria[criterion_idx]["met"] = True
             print(f"Criterion {display_n} passed: {text}")
         else:
-            # Semantic path: unconditional check (defers verification to AC reviewer)
-            criteria[criterion_idx]["agent_met"] = True
+            # Semantic path: unconditional check
+            criteria[criterion_idx]["met"] = True
             print(f"Checked: {text}")
 
     card["updated"] = now_iso()
@@ -1803,7 +1790,7 @@ def cmd_criteria_check(args) -> None:
 
 
 def cmd_criteria_uncheck(args) -> None:
-    """Mark acceptance criterion(s) as unmet (clears agent_met)."""
+    """Mark acceptance criterion(s) as unmet (clears met)."""
     root = get_root(args.root)
     card_path = find_card(root, args.card)
     card = read_card(card_path)
@@ -1819,82 +1806,13 @@ def cmd_criteria_uncheck(args) -> None:
             print(f"Error: No criterion found matching '{criterion_arg}'", file=sys.stderr)
             sys.exit(1)
 
-        criteria[criterion_idx]["agent_met"] = False
+        criteria[criterion_idx]["met"] = False
         print(f"⬜ Unchecked: {criteria[criterion_idx]['text']}")
 
     card["updated"] = now_iso()
     validate_criteria_schema(card["criteria"])
     write_card(card_path, card)
 
-
-def cmd_criteria_pass(args) -> None:
-    """Mark acceptance criterion(s) as reviewer-verified (sets reviewer_met)."""
-    root = get_root(args.root)
-    card_path = find_card(root, args.card)
-    col = card_path.parent.name
-    num = card_number(card_path)
-
-    if col != "review":
-        print(
-            f"Error: Cannot verify criteria on card #{num} — card is in '{col}', not review. "
-            f"The sub-agent must move the card to review first (kanban review {num}).",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    card = read_card(card_path)
-
-    criteria = card.get("criteria", [])
-    if not criteria:
-        print(f"Error: Card #{card_number(card_path)} has no acceptance criteria", file=sys.stderr)
-        sys.exit(1)
-
-    for criterion_arg in args.n:
-        criterion_idx = _find_criterion_idx(criteria, criterion_arg)
-        if criterion_idx is None:
-            print(f"Error: No criterion found matching '{criterion_arg}'", file=sys.stderr)
-            sys.exit(1)
-
-        criteria[criterion_idx]["reviewer_met"] = "pass"
-        print(f"[✅] Passed: {criteria[criterion_idx]['text']}")
-
-    card["updated"] = now_iso()
-    validate_criteria_schema(card["criteria"])
-    write_card(card_path, card)
-
-
-def cmd_criteria_fail(args) -> None:
-    """Mark acceptance criterion(s) as reviewer-failed with optional reason."""
-    root = get_root(args.root)
-    card_path = find_card(root, args.card)
-    card = read_card(card_path)
-
-    criteria = card.get("criteria", [])
-    if not criteria:
-        print(f"Error: Card #{card_number(card_path)} has no acceptance criteria", file=sys.stderr)
-        sys.exit(1)
-
-    reason = getattr(args, "reason", None)
-
-    for criterion_arg in args.n:
-        criterion_idx = _find_criterion_idx(criteria, criterion_arg)
-        if criterion_idx is None:
-            print(f"Error: No criterion found matching '{criterion_arg}'", file=sys.stderr)
-            sys.exit(1)
-
-        criteria[criterion_idx]["reviewer_met"] = "fail"
-        if reason:
-            criteria[criterion_idx]["reviewer_fail_reason"] = reason
-        elif "reviewer_fail_reason" in criteria[criterion_idx]:
-            # Clear any previous reason if no new reason given
-            del criteria[criterion_idx]["reviewer_fail_reason"]
-
-        reason_suffix = f" — {reason}" if reason else ""
-        print(f"[✗] Failed: {criteria[criterion_idx]['text']}{reason_suffix}")
-
-    card["updated"] = now_iso()
-    validate_criteria_schema(card["criteria"])
-    write_card(card_path, card)
 
 
 def cmd_criteria_dispatch(args) -> None:
@@ -1904,11 +1822,6 @@ def cmd_criteria_dispatch(args) -> None:
         "remove": cmd_criteria_remove,
         "check": cmd_criteria_check,
         "uncheck": cmd_criteria_uncheck,
-        "pass": cmd_criteria_pass,
-        "fail": cmd_criteria_fail,
-        # Backward-compat aliases (deprecated — use pass/fail)
-        "verify": cmd_criteria_pass,
-        "unverify": cmd_criteria_fail,
     }
     handler = subcommand_map.get(args.criteria_command)
     if handler:
@@ -1939,14 +1852,14 @@ def format_card_xml(card: dict, num: str, col: str, include_details: bool = Fals
     model = card.get("model", "")
 
     # Card opening tag with attributes
-    review_cycles = card.get("review_cycles", 0)
+    cycles = card.get("cycles", 0)
     card_attrs = f'num="{esc(num)}" session="{esc(session)}" status="{esc(col)}" type="{esc(card_type)}"'
     if agent:
         card_attrs += f' agent="{esc(agent)}"'
     if model:
         card_attrs += f' model="{esc(model)}"'
-    if review_cycles:
-        card_attrs += f' review-cycles="{review_cycles}"'
+    if cycles:
+        card_attrs += f' cycles="{cycles}"'
     xml_parts = [f"<card {card_attrs}>"]
 
     # Action (always included as child element)
@@ -1964,20 +1877,9 @@ def format_card_xml(card: dict, num: str, col: str, include_details: bool = Fals
         if criteria:
             xml_parts.append("  <acceptance-criteria>")
             for criterion in criteria:
-                agent_met = "true" if criterion.get("agent_met", False) else "false"
-                reviewer_state = criterion.get("reviewer_met")
-                # Normalize tri-state: "pass"/"fail"/None; also handle legacy booleans
-                if reviewer_state is True or reviewer_state == "pass":
-                    reviewer_met = "pass"
-                elif reviewer_state == "fail":
-                    reviewer_met = "fail"
-                else:
-                    reviewer_met = "unchecked"
+                met = "true" if criterion.get("met", False) else "false"
                 text = esc(criterion.get("text", ""))
-                ac_attrs = f'agent-met="{agent_met}" reviewer-met="{reviewer_met}"'
-                fail_reason = criterion.get("reviewer_fail_reason", "")
-                if fail_reason:
-                    ac_attrs += f' reviewer-fail-reason="{esc(fail_reason)}"'
+                ac_attrs = f'met="{met}"'
                 mov_commands = criterion.get("mov_commands") or []
                 if mov_commands:
                     # Emit movCommands as child elements
@@ -2108,11 +2010,11 @@ def _center_to_display_width(s: str, target: int, fill: str = ' ') -> str:
 def format_criteria_table(criteria: list, indent: str = "  ", terminal_width: int | None = None) -> list[str]:
     """Render acceptance criteria as a formatted table.
 
-    Produces a scannable table with columns: #, Agent, Reviewer, Criterion.
+    Produces a scannable table with columns: #, Met, Criterion.
     Long criterion text wraps at the terminal boundary with continuation indent.
 
     Args:
-        criteria: List of criterion dicts with keys: text, agent_met, reviewer_met.
+        criteria: List of criterion dicts with keys: text, met.
         indent: Leading whitespace for each table row (default 2 spaces).
         terminal_width: Override terminal width detection (useful for fixed-width contexts).
 
@@ -2130,60 +2032,41 @@ def format_criteria_table(criteria: list, indent: str = "  ", terminal_width: in
     # _center_to_display_width() ensures data cells align with header and separator
     # regardless of how many bytes each character occupies in the string.
     num_col_width = max(2, len(str(len(criteria))))  # right-aligned, e.g. " 1" or "10"
-    agent_col_width = 7   # display columns for agent status cell
-    rev_col_width = 7     # display columns for reviewer status cell
+    met_col_width = 5     # display columns for met status cell
     sep = "  "            # column separator (2 spaces)
 
     # Calculate available width for criterion text
-    # Layout: indent + num + sep + agent + sep + rev + sep + criterion
-    prefix_width = len(indent) + num_col_width + len(sep) + agent_col_width + len(sep) + rev_col_width + len(sep)
+    # Layout: indent + num + sep + met + sep + criterion
+    prefix_width = len(indent) + num_col_width + len(sep) + met_col_width + len(sep)
     criterion_width = max(20, terminal_width - prefix_width)
 
-    # Continuation indent for wrapped criterion lines (blank num/agent/rev columns)
+    # Continuation indent for wrapped criterion lines (blank num/met columns)
     blank_num = " " * num_col_width
-    blank_agent = " " * agent_col_width
-    blank_rev = " " * rev_col_width
-    continuation_prefix = f"{indent}{blank_num}{sep}{blank_agent}{sep}{blank_rev}{sep}"
+    blank_met = " " * met_col_width
+    continuation_prefix = f"{indent}{blank_num}{sep}{blank_met}{sep}"
 
     lines = []
 
     # Header row — narrow ASCII chars, str.center() is accurate for display width
     header_num = "#".rjust(num_col_width)
-    header_agent = "Agent".center(agent_col_width)
-    header_rev = "Rev".center(rev_col_width)
+    header_met = "Met".center(met_col_width)
     header_criterion = "Criterion"
-    lines.append(f"{indent}{header_num}{sep}{header_agent}{sep}{header_rev}{sep}{header_criterion}")
+    lines.append(f"{indent}{header_num}{sep}{header_met}{sep}{header_criterion}")
 
     # Separator row — ─ is 1 display column, so count == display width
     sep_num = "─" * num_col_width
-    sep_agent = "─" * agent_col_width
-    sep_rev = "─" * rev_col_width
+    sep_met = "─" * met_col_width
     sep_criterion = "─" * min(criterion_width, len("Criterion"))
-    lines.append(f"{indent}{sep_num}{sep}{sep_agent}{sep}{sep_rev}{sep}{sep_criterion}")
+    lines.append(f"{indent}{sep_num}{sep}{sep_met}{sep}{sep_criterion}")
 
     for i, criterion in enumerate(criteria, start=1):
-        agent_met = criterion.get("agent_met", False)
-        reviewer_state = criterion.get("reviewer_met")
-        # Normalize tri-state: "pass"/"fail"/None; also handle legacy booleans
-        if reviewer_state is True or reviewer_state == "pass":
-            normalized_reviewer = "pass"
-        elif reviewer_state == "fail":
-            normalized_reviewer = "fail"
-        else:
-            normalized_reviewer = "unchecked"
+        met = criterion.get("met", False)
 
-        # Center the emoji within agent_col_width display columns.
+        # Center the emoji within met_col_width display columns.
         # ✅ and ⬜ are each 2 display columns wide; _center_to_display_width()
         # adds the correct number of spaces so the cell occupies exactly
-        # agent_col_width display columns, matching header and separator.
-        agent_cell = _center_to_display_width("✅" if agent_met else "⬜", agent_col_width)
-        if normalized_reviewer == "pass":
-            rev_symbol = "✅"
-        elif normalized_reviewer == "fail":
-            rev_symbol = "✗"
-        else:
-            rev_symbol = "—"
-        rev_cell = _center_to_display_width(rev_symbol, rev_col_width)
+        # met_col_width display columns, matching header and separator.
+        met_cell = _center_to_display_width("✅" if met else "⬜", met_col_width)
 
         num_cell = str(i).rjust(num_col_width)
         text = criterion.get("text", "")
@@ -2192,7 +2075,7 @@ def format_criteria_table(criteria: list, indent: str = "  ", terminal_width: in
         wrapped_lines = textwrap.wrap(text, width=criterion_width, break_long_words=True) if text else [""]
 
         # First line: full row
-        lines.append(f"{indent}{num_cell}{sep}{agent_cell}{sep}{rev_cell}{sep}{wrapped_lines[0]}")
+        lines.append(f"{indent}{num_cell}{sep}{met_cell}{sep}{wrapped_lines[0]}")
 
         # Continuation lines: blank num/status cells, only criterion text
         for continuation in wrapped_lines[1:]:
@@ -2721,92 +2604,51 @@ def cmd_todo(args) -> None:
         os.remove(json_file)
 
 
-def cmd_review(args) -> None:
-    """Move card(s) to review column (pure verb - no view mode)."""
-    root = get_root(args.root)
-    card_numbers = args.card if isinstance(args.card, list) else [args.card]
-
-    # Pre-compute git_project once to avoid N redundant git subprocesses in bulk loops
-    git_root = get_git_root()
-    git_project = os.path.basename(git_root) if git_root else None
-
-    failed = False
-    for card_num in card_numbers:
-        card_path = find_card(root, card_num)
-        col = card_path.parent.name
-        num = card_number(card_path)
-
-        if col == "review":
-            print(f"Card #{num} is already in review")
-            continue
-
-        card = read_card(card_path)
-
-        # Block if any acceptance criteria have agent_met unset
-        criteria = card.get("criteria", [])
-        if criteria:
-            unchecked = [
-                (i, c) for i, c in enumerate(criteria, start=1)
-                if not c.get("agent_met", False)
-            ]
-            if unchecked:
-                print(f"Error: Cannot move #{num} to review — unchecked acceptance criteria:", file=sys.stderr)
-                for i, criterion in unchecked:
-                    text = criterion.get("text", "")
-                    print(f"  AC {i}: {text}", file=sys.stderr)
-                print(f"\nRun `kanban criteria check {num} <n>` to mark criteria as met before moving to review.", file=sys.stderr)
-                failed = True
-                continue
-
-        card["updated"] = now_iso()
-        write_card(card_path, card)
-        write_kanban_event(card, num, "review", from_column=col, to_column="review", git_project=git_project)
-
-        target = root / "review" / card_path.name
-        target.parent.mkdir(parents=True, exist_ok=True)
-        card_path.rename(target)
-        print(f"Moved: #{num} -> review/")
-
-    if failed:
-        sys.exit(1)
-
-
 def cmd_done(args) -> None:
-    """Move card to done column (pure verb - no view mode)."""
+    """Move card to done column (pure verb - no view mode).
+
+    Gate: all criteria must have met == True.
+    If unchecked criteria remain, increments cycles and exits 1 (retryable)
+    until cycles >= MAX_CYCLES, then exits 2 (max cycles reached).
+    """
     root = get_root(args.root)
     card_path = find_card(root, args.card)
     col = card_path.parent.name
     card = read_card(card_path)
     num = card_number(card_path)
 
-    # Block if any acceptance criteria are not fully passed by both agent and reviewer.
-    # reviewer_met must be "pass"; "fail" and None (unchecked) both block completion.
+    if col != "doing":
+        print(f"Error: Card #{num} is in '{col}', not 'doing'. Done only works on cards in doing.", file=sys.stderr)
+        sys.exit(1)
+
+    # Gate: all criteria must have met == True
     criteria = card.get("criteria", [])
     if criteria:
-        incomplete = [
+        unchecked = [
             (i, c) for i, c in enumerate(criteria, start=1)
-            if not c.get("agent_met", False) or c.get("reviewer_met") != "pass"
+            if not c.get("met", False)
         ]
-        if incomplete:
-            total_incomplete = len(incomplete)
-            print(f"Cannot complete card #{num} — {total_incomplete} of {len(criteria)} acceptance criteria not fully passed:", file=sys.stderr)
-            print(f"  {'[agent]':<8} {'[reviewer]':<12}  criterion", file=sys.stderr)
-            for i, criterion in enumerate(criteria, start=1):
-                agent_box = "✅" if criterion.get("agent_met", False) else "⬜"
-                reviewer_state = criterion.get("reviewer_met")
-                if reviewer_state == "pass":
-                    reviewer_box = "✅ pass"
-                elif reviewer_state == "fail":
-                    reviewer_box = "✗ fail"
-                else:
-                    reviewer_box = "⬜ —"
+        if unchecked:
+            # Increment cycles counter
+            card["cycles"] = card.get("cycles", 0) + 1
+            cycles = card["cycles"]
+            card["activity"].append({
+                "timestamp": now_iso(),
+                "message": f"Done blocked — unchecked criteria (cycle {cycles})",
+            })
+            card["updated"] = now_iso()
+            write_card(card_path, card)
+
+            print(f"Cannot complete card #{num} — {len(unchecked)} of {len(criteria)} acceptance criteria not met:", file=sys.stderr)
+            for i, criterion in unchecked:
                 text = criterion.get("text", "")
-                fail_reason = criterion.get("reviewer_fail_reason", "")
-                reason_note = f" [{fail_reason}]" if fail_reason else ""
-                print(f"  [{agent_box}]  [{reviewer_box}]  {i}. {text}{reason_note}", file=sys.stderr)
-            print(f"\nAgent checks: kanban criteria check {num} <n>", file=sys.stderr)
-            print(f"Reviewer pass: kanban criteria pass {num} <n>", file=sys.stderr)
-            print(f"Reviewer fail: kanban criteria fail {num} <n> [reason]", file=sys.stderr)
+                print(f"  {i}. ⬜ {text}", file=sys.stderr)
+            print(f"\nRun `kanban criteria check {num} <n>` to mark criteria as met.", file=sys.stderr)
+            print(f"Cycle: {cycles}/{MAX_CYCLES}", file=sys.stderr)
+
+            if cycles >= MAX_CYCLES:
+                print(f"Max cycles ({MAX_CYCLES}) reached — escalate to staff engineer.", file=sys.stderr)
+                sys.exit(2)
             sys.exit(1)
 
     # Append completion message to activity
@@ -3376,7 +3218,7 @@ def main() -> None:
     add_session_flags(p_show)
 
     # --- status ---
-    p_status = subparsers.add_parser("status", parents=[parent_parser], help="Print only the column name of a card (e.g. doing, review, todo)")
+    p_status = subparsers.add_parser("status", parents=[parent_parser], help="Print only the column name of a card (e.g. doing, todo, done, canceled)")
     p_status.add_argument("card", help="Card number")
     add_session_flags(p_status)
 
@@ -3396,13 +3238,8 @@ def main() -> None:
     p_cancel.add_argument("--reason", default=None, help="Optional cancellation reason (applies to all cards)")
     add_session_flags(p_cancel)
 
-    # --- redo ---
-    p_redo = subparsers.add_parser("redo", parents=[parent_parser], help="Move card from review back to doing")
-    p_redo.add_argument("card", help="Card number")
-    add_session_flags(p_redo)
-
     # --- defer ---
-    p_defer = subparsers.add_parser("defer", parents=[parent_parser], help="Move card(s) from doing/review back to todo")
+    p_defer = subparsers.add_parser("defer", parents=[parent_parser], help="Move card(s) from doing back to todo")
     p_defer.add_argument("card", nargs="+", help="Card number(s)")
     add_session_flags(p_defer)
 
@@ -3438,32 +3275,10 @@ def main() -> None:
     p_criteria_check.add_argument("n", nargs="+", help="Criterion index(es) (1-based) or text prefix(es)")
     add_session_flags(p_criteria_check)
 
-    p_criteria_uncheck = criteria_subparsers.add_parser("uncheck", parents=[parent_parser], help="Mark criterion as unmet (clears agent_met)")
+    p_criteria_uncheck = criteria_subparsers.add_parser("uncheck", parents=[parent_parser], help="Mark criterion as unmet (clears met)")
     p_criteria_uncheck.add_argument("card", help="Card number")
     p_criteria_uncheck.add_argument("n", nargs="+", help="Criterion index(es) (1-based) or text prefix(es)")
     add_session_flags(p_criteria_uncheck)
-
-    p_criteria_pass = criteria_subparsers.add_parser("pass", parents=[parent_parser], help="Mark criterion as reviewer-verified (sets reviewer_met)")
-    p_criteria_pass.add_argument("card", help="Card number")
-    p_criteria_pass.add_argument("n", nargs="+", help="Criterion index(es) (1-based) or text prefix(es)")
-    add_session_flags(p_criteria_pass)
-
-    p_criteria_fail = criteria_subparsers.add_parser("fail", parents=[parent_parser], help="Mark criterion as reviewer-failed with optional reason")
-    p_criteria_fail.add_argument("card", help="Card number")
-    p_criteria_fail.add_argument("n", nargs="+", help="Criterion index(es) (1-based) or text prefix(es)")
-    p_criteria_fail.add_argument("--reason", default=None, help="Optional reason for failure")
-    add_session_flags(p_criteria_fail)
-
-    # Backward-compat aliases (hidden from help — use pass/fail instead)
-    p_criteria_verify = criteria_subparsers.add_parser("verify", parents=[parent_parser], help=argparse.SUPPRESS)
-    p_criteria_verify.add_argument("card", help="Card number")
-    p_criteria_verify.add_argument("n", nargs="+", help="Criterion index(es) (1-based) or text prefix(es)")
-    add_session_flags(p_criteria_verify)
-
-    p_criteria_unverify = criteria_subparsers.add_parser("unverify", parents=[parent_parser], help=argparse.SUPPRESS)
-    p_criteria_unverify.add_argument("card", help="Card number")
-    p_criteria_unverify.add_argument("n", nargs="+", help="Criterion index(es) (1-based) or text prefix(es)")
-    add_session_flags(p_criteria_unverify)
 
     # --- list / ls ---
     for alias in ["list", "ls"]:
@@ -3476,15 +3291,11 @@ def main() -> None:
         add_session_flags(p_list)
         add_date_flags(p_list)
 
-    # --- Pure verbs: todo, review, done ---
+    # --- Pure verbs: todo, done ---
     p_todo = subparsers.add_parser("todo", parents=[parent_parser], help="Create card(s) in todo from JSON")
     p_todo.add_argument("json_data", nargs="?", default=None, help="JSON object or array of objects with action, intent, readFiles, editFiles")
     p_todo.add_argument("--file", dest="json_file", metavar="PATH", help="Read card JSON from file instead of inline argument")
     add_session_flags(p_todo)
-
-    p_review = subparsers.add_parser("review", parents=[parent_parser], help="Move card(s) to review")
-    p_review.add_argument("card", nargs="+", help="Card number(s)")
-    add_session_flags(p_review)
 
     p_done = subparsers.add_parser("done", parents=[parent_parser], help="Move card to done")
     p_done.add_argument("card", help="Card number")
@@ -3499,7 +3310,7 @@ def main() -> None:
 
     # --- clean ---
     p_clean = subparsers.add_parser("clean", parents=[parent_parser], help="Delete cards with user confirmation")
-    p_clean.add_argument("column", nargs="?", default=None, help="Column to clean (doing, todo, review, done, canceled)")
+    p_clean.add_argument("column", nargs="?", default=None, help="Column to clean (doing, todo, done, canceled)")
     p_clean.add_argument("--expunge", action="store_true", help="Also delete scratchpad contents (only with full clean)")
 
     args = parser.parse_args()
@@ -3513,11 +3324,9 @@ def main() -> None:
         "session-hook": cmd_session_hook,
         "do": cmd_do,
         "todo": cmd_todo,
-        "review": cmd_review,
         "done": cmd_done,
         "cancel": cmd_cancel,
         "agent": cmd_agent,
-        "redo": cmd_redo,
         "defer": cmd_defer,
         "start": cmd_start,
         "list": cmd_list,

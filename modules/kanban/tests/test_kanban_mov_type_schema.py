@@ -64,8 +64,7 @@ def make_card_data_no_mov_type(action="Do the thing", cmd="rg -q X", timeout=10)
             {
                 "text": "Check something",
                 "mov_commands": [{"cmd": cmd, "timeout": timeout}],
-                "agent_met": False,
-                "reviewer_met": None,
+                "met": False,
             }
         ],
     }
@@ -82,8 +81,7 @@ def make_card_data_empty_mov_commands(action="Do the thing"):
             {
                 "text": "Check something",
                 "mov_commands": [],
-                "agent_met": False,
-                "reviewer_met": None,
+                "met": False,
             }
         ],
     }
@@ -91,7 +89,7 @@ def make_card_data_empty_mov_commands(action="Do the thing"):
 
 def _setup_board(tmp_path):
     """Create minimal kanban board directory structure."""
-    for col in ("todo", "doing", "review", "done", "canceled"):
+    for col in ("todo", "doing", "done", "canceled"):
         (tmp_path / col).mkdir(parents=True, exist_ok=True)
     return tmp_path
 
@@ -152,8 +150,7 @@ class TestMovTypeOptionalOnCreation:
             "criteria": [
                 {
                     "text": "Human-verified check",
-                    "agent_met": False,
-                    "reviewer_met": None,
+                    "met": False,
                 }
             ],
         }
@@ -178,8 +175,7 @@ class TestMovTypeOptionalOnCreation:
                     "text": "Check something",
                     "mov_type": "programmatic",
                     "mov_commands": [{"cmd": "rg -q X", "timeout": 10}],
-                    "agent_met": False,
-                    "reviewer_met": None,
+                    "met": False,
                 }
             ],
         }
@@ -196,29 +192,23 @@ class TestMovTypeOptionalOnCreation:
 
 
 # ---------------------------------------------------------------------------
-# AC #2: Empty mov_commands is rejected
+# AC #2: Empty and null mov_commands (no mov_type) is treated as semantic
 # ---------------------------------------------------------------------------
 
 class TestEmptyMovCommandsRejected:
-    """Criterion with empty mov_commands array is rejected on creation."""
+    """Criterion with empty or null mov_commands and no mov_type is treated as semantic (accepted)."""
 
-    def test_empty_mov_commands_rejected(self, kanban, capsys):
-        """Criterion with mov_commands=[] is rejected with exit 1."""
+    def test_empty_mov_commands_accepted_as_semantic(self, kanban):
+        """Criterion with mov_commands=[] and no mov_type is accepted as semantic."""
         data = make_card_data_empty_mov_commands()
-        with pytest.raises(SystemExit) as exc_info:
-            kanban.validate_and_build_card(data, session="test")
-        assert exc_info.value.code == 1
-        captured = capsys.readouterr()
-        assert "mov_commands" in captured.err
-
-    def test_empty_mov_commands_error_message_is_actionable(self, kanban, capsys):
-        """Error for empty mov_commands names the field and guides the fix."""
-        data = make_card_data_empty_mov_commands()
-        with pytest.raises(SystemExit):
-            kanban.validate_and_build_card(data, session="test")
-        captured = capsys.readouterr()
-        # Error must name the field so the user knows what to fix
-        assert "mov_commands" in captured.err
+        try:
+            card = kanban.validate_and_build_card(data, session="test")
+        except SystemExit as e:
+            pytest.fail(
+                f"Criterion with mov_commands=[] and no mov_type raised SystemExit({e.code}) — "
+                f"empty mov_commands without mov_type must be treated as semantic (accepted)"
+            )
+        assert card is not None
 
     def test_null_mov_commands_is_accepted(self, kanban):
         """Criterion with mov_commands=null (None) is accepted (same as absent)."""
@@ -231,8 +221,7 @@ class TestEmptyMovCommandsRejected:
                 {
                     "text": "Check something",
                     "mov_commands": None,
-                    "agent_met": False,
-                    "reviewer_met": None,
+                    "met": False,
                 }
             ],
         }
@@ -277,8 +266,7 @@ class TestXmlOutputOmitsMovType:
                 "text": "Check something",
                 "mov_type": "programmatic",  # present on disk (backward compat card)
                 "mov_commands": [{"cmd": "rg -q X", "timeout": 10}],
-                "agent_met": False,
-                "reviewer_met": None,
+                "met": False,
             }
         ]
         card_data = _make_card_with_criteria(criteria)
@@ -299,8 +287,7 @@ class TestXmlOutputOmitsMovType:
             {
                 "text": "Human-verified check",
                 "mov_type": "semantic",  # present on disk (backward compat card)
-                "agent_met": False,
-                "reviewer_met": None,
+                "met": False,
             }
         ]
         card_data = _make_card_with_criteria(criteria)
@@ -322,8 +309,7 @@ class TestXmlOutputOmitsMovType:
             {
                 "text": "Check something",
                 "mov_commands": [{"cmd": "rg -q X", "timeout": 10}],
-                "agent_met": False,
-                "reviewer_met": None,
+                "met": False,
             }
         ]
         card_data = _make_card_with_criteria(criteria)
@@ -344,8 +330,7 @@ class TestXmlOutputOmitsMovType:
             {
                 "text": "Check something",
                 "mov_commands": [{"cmd": "rg -q X", "timeout": 10}],
-                "agent_met": False,
-                "reviewer_met": None,
+                "met": False,
             }
         ]
         card_data = _make_card_with_criteria(criteria)

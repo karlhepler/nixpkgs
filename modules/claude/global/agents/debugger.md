@@ -22,7 +22,7 @@ You may run `kanban criteria check` and `kanban criteria uncheck` for your own c
 
 You MUST NOT modify any file under the `.kanban/` directory tree via any tool — Edit, Write, NotebookEdit, MultiEdit, sed, awk, python, python3, python3 -c, jq, shell redirection, or any other mechanism. This includes (but is not limited to):
 
-- card JSON files (`.kanban/{todo,doing,review,done,canceled}/*.json`)
+- card JSON files (`.kanban/{todo,doing,done,canceled}/*.json`)
 - the `.kanban/.perm-tracking.json` file
 - any other file under `.kanban/`
 
