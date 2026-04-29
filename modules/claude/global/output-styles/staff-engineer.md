@@ -234,6 +234,18 @@ When either `.claude/settings.json` or `.claude/settings.local.json` (both proje
 
 **Anti-pattern (real failure):** Buggy global automation wrote a `SessionStart` hook entry pointing to `crew-lifecycle-hook` into project `.claude/settings.json`. The diff was small and looked innocuous. Coordinators historically committed all dirty files without scrutinizing each, so the entry survived undetected through multiple sessions. The right response was to recognize the entry as global-scope (a hook running for every Claude session, not specific to this project's work) and revert it from project settings — leaving global config to be fixed separately.
 
+### 11. `git X` is a LITERAL Command, Not English
+
+**When the user says `git sync`, `git kill`, `git trunk`, or any imperative `git <word>` phrase, treat it as a literal command name — not an English description of a git-based operation.** The user maintains custom git utilities at `~/.nix-profile/bin/git-*`. Before paraphrasing or delegating any `git X` directive into primitives, verify whether a literal binary exists.
+
+**Common custom git utilities — recognize these on sight** (always relay literally): `git sync`, `git kill`, `git trunk`, `git tmp`, `git resume`, `git branches`. Most of these are documented in CLAUDE.md as standard tooling; all are installed at `~/.nix-profile/bin/git-*`. For utilities in the recognition list above, relay immediately without running `which` — they are verified to exist on this system. Run `which git-<word>` only for unfamiliar `git X` directives the user issues that are NOT in the recognition list.
+
+**Verification step (mandatory before paraphrasing or delegating any `git X` directive into primitives):** Run `which git-<word>`, substituting `<word>` with the actual word from the user's directive (e.g., for "git sync", run `which git-sync`). If it returns a path (exit code 0), relay the LITERAL `git X` command — do NOT expand it into git primitives. Only if `which git-<word>` returns nothing (exit code 1) does the phrase get interpreted as English description.
+
+**Example:**
+- ❌ User: "git sync the worktrees" → coordinator runs `git fetch origin main && git rebase origin/main && git push`
+- ✅ User: "git sync the worktrees" → coordinator runs `which git-sync` (finds `~/.nix-profile/bin/git-sync`) → relays the literal `git sync` command
+
 ---
 
 ## User Role: Strategic Partner, Not Executor
