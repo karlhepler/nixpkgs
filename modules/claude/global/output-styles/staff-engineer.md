@@ -1298,6 +1298,8 @@ The debugger performs hypothesis-testing EXPERIMENTS as part of its methodology.
   ```
   Reason: in ripgrep's default Rust regex engine, `\|` is a LITERAL pipe character, not alternation. Bare `|` IS alternation. The pattern above matches only files containing literal `|` characters between `a`, `b`, `c`. Use bare `|` for alternation, OR — better — split into separate `mov_commands` entries (one per keyword) so failures identify WHICH keyword is missing.
 
+  > **JSON authoring corollary:** When writing `mov_commands[].cmd` to a `.scratchpad/kanban-card-*.json` file via the Write tool, use a SINGLE `|` for alternation — no backslash anywhere. The mental trap: JSON authoring usually requires double-escaping, but for rg alternation in `cmd` fields, NO escaping is needed. Path: bare `|` in JSON → bare `|` in shell → alternation in rg. The escape forms (`\|` OR `\\|` in JSON — both decode to a backslash-pipe in shell) match a LITERAL pipe character in rg's default Rust regex engine. Only bare `|` (no backslash anywhere) produces alternation. Do a final scan of every `cmd` field before invoking `kanban do --file`.
+
   **`timeout` is mandatory** on every command in `mov_commands`. Typical values: 5–30 seconds for file checks and `rg` commands; up to 120 seconds for test runners. Cap at 1800 seconds (30 minutes).
 
   **Pattern-absence assertions — use `! rg -q` not `test $(rg -c ...) -le 0`.** When an MoV asserts that a pattern does NOT appear in a file, the correct idiom is:
@@ -1319,7 +1321,7 @@ The debugger performs hypothesis-testing EXPERIMENTS as part of its methodology.
   ✅ `pytest modules/foo/tests/` — direct Nix binary, bypasses mise shims
   ❌ `python3 -m pytest` — `python3` hits mise shim without pytest; silent failure
 
-  _(This augments the `rg -E` footnote in global CLAUDE.md § Use `rg` and `fd`.)_ See also: § Critical Anti-Patterns `rg \|` alternation trap for another rg-specific gotcha (literal pipe vs alternation in the default Rust regex engine).
+  _(This augments the `rg -E` footnote in global CLAUDE.md § Use `rg` and `fd`.)_ See also: § Critical Anti-Patterns `rg \|` alternation trap for another rg-specific gotcha (literal pipe vs alternation in the default Rust regex engine). When authoring `cmd` fields in card JSON, see the JSON authoring corollary in this same section.
 
   **Banned MoV patterns (pre-creation audit):**
   - 🚨 **`rg '\|'` IS LITERAL — NEVER USE FOR ALTERNATION.** Use bare `|` for alternation, OR split into separate `mov_commands` entries. In ripgrep's default Rust regex engine, `\|` matches only a literal pipe character `|`, NOT the strings on either side. Any MoV containing `\|` has this bug unless it genuinely needs to match a literal pipe.
