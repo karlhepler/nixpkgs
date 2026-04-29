@@ -1592,11 +1592,38 @@ def cmd_criteria_add(args) -> None:
     Without --mov-cmd, the criterion is created with an empty mov_commands array.
     Such criteria will be rejected by 'kanban criteria check' — use 'kanban do --file'
     to create programmatic criteria, or always supply at least one --mov-cmd.
+
+    If the card is in 'done' status, it is automatically transitioned back to 'doing'
+    and a warning is emitted to stderr (Option B: auto-reopen for mid-flight criterion add).
     """
     root = get_root(args.root)
     card_path = find_card(root, args.card)
     card = read_card(card_path)
     num = card_number(card_path)
+
+    # Guard: canceled cards are intentionally closed; criteria add is not allowed.
+    if card_path.parent.name == "canceled":
+        print(
+            f"Error: cannot add criteria to a canceled card #{num}. Canceled cards are intentionally closed.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # Track whether this is an auto-reopen (done -> doing) so we can rename AFTER write.
+    auto_reopen = card_path.parent.name == "done"
+    auto_reopen_target: "Path | None" = None
+    if auto_reopen:
+        doing_dir = root / "doing"
+        doing_dir.mkdir(parents=True, exist_ok=True)
+        auto_reopen_target = doing_dir / card_path.name
+
+        # F5: Scrub stale 'Completed' activity entry left by cmd_done.
+        if "activity" in card:
+            # Remove the most-recent 'Completed' entry to avoid misleading activity on a doing card.
+            for i in range(len(card["activity"]) - 1, -1, -1):
+                if card["activity"][i].get("message") == "Completed":
+                    card["activity"].pop(i)
+                    break  # scrub at most one entry
 
     # Initialize criteria list if it doesn't exist
     if "criteria" not in card:
@@ -1626,7 +1653,23 @@ def cmd_criteria_add(args) -> None:
     card["criteria"].append(new_criterion)
     card["updated"] = now_iso()
     validate_criteria_schema(card["criteria"])
+
+    # F2: write before rename — write_card to source path first (still in done/ for auto-reopen),
+    # then rename. This matches cmd_done's pattern and reduces the partial-state window on crash.
     write_card(card_path, card)
+
+    if auto_reopen:
+        card_path.rename(auto_reopen_target)
+
+        # F1: Record the done->doing transition in the metrics DB (audit trail / analytics dashboard).
+        write_kanban_event(card, num, "start", from_column="done", to_column="doing")
+
+        print(
+            f"Warning: card #{num} was auto-reopened from 'done' to 'doing' because a new acceptance criterion was added after the card was already marked done.\n"
+            f"         Re-launch the agent to verify the new criterion (the SubagentStop hook will catch it).",
+            file=sys.stderr,
+        )
+
     print(f"Added criterion to #{num}: {new_criterion['text']}")
 
 
