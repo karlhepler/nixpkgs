@@ -28,6 +28,10 @@ Covered paths:
 - git commit -m 'message with -n word' → allow (shlex false-positive guard)
 - mov_commands array index in denial message (mov_idx)
 - Backslash-pipe detection: rg/grep/sed/awk with \\| (should block); echo, bare pipe, double-escape, grep -P (should allow)
+- rg -c absence idiom: test $(rg -c ...) -le 0 and bracket/grep/quoted variants (should block); ! rg -q, rg -c -ge 5, bare rg -c (should allow)
+- rg -c absence idiom: backtick form, [[ double-bracket form, -lt 0/1/2, -le 1 variants (should block)
+- Empty mov_commands: criterion with [] (should block); one valid entry (should allow)
+- Missing mov_commands key: now blocked (policy change — missing key is same as empty list)
 """
 
 import importlib.util
@@ -303,8 +307,13 @@ class TestCleanCards:
         result = run_with_temp_file(hook, card)
         assert_allowed(result)
 
-    def test_no_mov_commands_allowed(self, hook):
-        """Criterion with no mov_commands is allowed."""
+    def test_no_mov_commands_blocked(self, hook):
+        """Criterion with no mov_commands key is now blocked (policy change).
+
+        Previously this was allowed (fail-open). Since a missing mov_commands key
+        is semantically equivalent to an empty list, it is now rejected at creation
+        time. See TestEmptyMovCommands for comprehensive coverage of this policy.
+        """
         card = {
             "action": "Do something",
             "criteria": [
@@ -312,14 +321,7 @@ class TestCleanCards:
             ],
         }
         result = run_with_temp_file(hook, card)
-        assert_allowed(result)
-
-    def test_empty_mov_commands_allowed(self, hook):
-        """Empty mov_commands list is allowed."""
-        card = make_card_json("")
-        card["criteria"][0]["mov_commands"] = []
-        result = run_with_temp_file(hook, card)
-        assert_allowed(result)
+        assert_blocked(result)
 
     def test_clean_rg_command_allowed(self, hook):
         """rg -qi 'pattern' (no capital E) is allowed."""
@@ -548,6 +550,232 @@ class TestBackslashPipeDetection:
     def test_grep_no_pcre_backslash_pipe_denied(self, hook):
         """grep '\\|' file without -P — BRE mode: must be blocked."""
         card = make_card_json(r"grep '\|' file")
+        result = run_with_temp_file(hook, card)
+        assert_blocked(result)
+
+
+# ---------------------------------------------------------------------------
+# TestRgCountAbsencePattern — rg/grep -c absence-via-count idiom detection
+# ---------------------------------------------------------------------------
+
+class TestRgCountAbsencePattern:
+    """test $(rg -c ...) -le N idiom must be denied; non-absence rg -c usage must be allowed."""
+
+    # --- Positive cases (must block) ---
+
+    def test_test_rg_c_le_0_denied(self, hook):
+        """test $(rg -c 'pat' file) -le 0 — canonical blocked case."""
+        card = make_card_json("test $(rg -c 'pattern' file.py) -le 0")
+        result = run_with_temp_file(hook, card)
+        assert_blocked(result)
+
+    def test_bracket_rg_c_le_0_denied(self, hook):
+        """[ $(rg -c 'pat' file) -le 0 ] — bracket form must be blocked."""
+        card = make_card_json("[ $(rg -c 'pattern' file.py) -le 0 ]")
+        result = run_with_temp_file(hook, card)
+        assert_blocked(result)
+
+    def test_test_rg_c_eq_0_denied(self, hook):
+        """test $(rg -c 'pat' file) -eq 0 — -eq 0 variant must be blocked."""
+        card = make_card_json("test $(rg -c 'pattern' file.py) -eq 0")
+        result = run_with_temp_file(hook, card)
+        assert_blocked(result)
+
+    def test_test_rg_c_quoted_substitution_denied(self, hook):
+        """test \"$(rg -c 'pat' file)\" -le 0 — quoted command substitution must be blocked."""
+        card = make_card_json('test "$(rg -c \'pattern\' file.py)" -le 0')
+        result = run_with_temp_file(hook, card)
+        assert_blocked(result)
+
+    def test_test_grep_c_le_0_denied(self, hook):
+        """test $(grep -c 'pat' file) -le 0 — grep -c variant must be blocked."""
+        card = make_card_json("test $(grep -c 'pattern' file.py) -le 0")
+        result = run_with_temp_file(hook, card)
+        assert_blocked(result)
+
+    def test_bracket_grep_c_eq_0_denied(self, hook):
+        """[ $(grep -c 'pat' file) -eq 0 ] — bracket + grep -c variant must be blocked."""
+        card = make_card_json("[ $(grep -c 'pattern' file.py) -eq 0 ]")
+        result = run_with_temp_file(hook, card)
+        assert_blocked(result)
+
+    def test_backtick_rg_c_le_0_denied(self, hook):
+        """test `rg -c 'pat' file` -le 0 — legacy backtick form must be blocked.
+
+        The backtick command substitution is equally fragile: when rg -c finds
+        zero matches it emits no stdout, producing empty expansion and exit 2.
+        """
+        card = make_card_json("test `rg -c 'pattern' file.py` -le 0")
+        result = run_with_temp_file(hook, card)
+        assert_blocked(result)
+
+    def test_backtick_grep_c_eq_0_denied(self, hook):
+        """test `grep -c 'pat' file` -eq 0 — backtick form with grep must be blocked."""
+        card = make_card_json("test `grep -c 'pattern' file.py` -eq 0")
+        result = run_with_temp_file(hook, card)
+        assert_blocked(result)
+
+    def test_double_bracket_rg_c_le_0_denied(self, hook):
+        """[[ $(rg -c 'pat' file) -le 0 ]] — bash double-bracket form must be blocked."""
+        card = make_card_json("[[ $(rg -c 'pattern' file.py) -le 0 ]]")
+        result = run_with_temp_file(hook, card)
+        assert_blocked(result)
+
+    def test_rg_c_lt_0_denied(self, hook):
+        """-lt 0 variant — nonsensical but structurally equivalent; must be blocked."""
+        card = make_card_json("test $(rg -c 'pattern' file.py) -lt 0")
+        result = run_with_temp_file(hook, card)
+        assert_blocked(result)
+
+    def test_rg_c_lt_1_denied(self, hook):
+        """-lt 1 variant — equivalent to -eq 0 for non-negative counts; must be blocked."""
+        card = make_card_json("test $(rg -c 'pattern' file.py) -lt 1")
+        result = run_with_temp_file(hook, card)
+        assert_blocked(result)
+
+    def test_rg_c_le_1_denied(self, hook):
+        """-le 1 variant — 'at most one' threshold used as absence proxy; must be blocked."""
+        card = make_card_json("test $(rg -c 'pattern' file.py) -le 1")
+        result = run_with_temp_file(hook, card)
+        assert_blocked(result)
+
+    def test_rg_c_lt_2_denied(self, hook):
+        """-lt 2 variant — 'less than 2' used as absence proxy; must be blocked."""
+        card = make_card_json("test $(rg -c 'pattern' file.py) -lt 2")
+        result = run_with_temp_file(hook, card)
+        assert_blocked(result)
+
+    # --- Negative cases (must allow) ---
+
+    def test_negated_quiet_match_allowed(self, hook):
+        """! rg -q 'pattern' file — correct absence idiom must NOT be blocked."""
+        card = make_card_json("! rg -q 'pattern' file.py")
+        result = run_with_temp_file(hook, card)
+        assert_allowed(result)
+
+    def test_rg_c_ge_5_allowed(self, hook):
+        """test $(rg -c X) -ge 5 — non-absence rg -c use (checking presence count) must be allowed."""
+        card = make_card_json("test $(rg -c 'TODO' src/) -ge 5")
+        result = run_with_temp_file(hook, card)
+        assert_allowed(result)
+
+    def test_rg_c_no_test_prefix_allowed(self, hook):
+        """rg -c 'pattern' file without test/[ prefix — plain count, not fragile idiom."""
+        card = make_card_json("rg -c 'pattern' file.py")
+        result = run_with_temp_file(hook, card)
+        assert_allowed(result)
+
+    def test_rg_count_in_echo_allowed(self, hook):
+        """echo $(rg -c 'pat' file) — no test/[ prefix, must not be blocked."""
+        card = make_card_json("echo $(rg -c 'pattern' file.py)")
+        result = run_with_temp_file(hook, card)
+        assert_allowed(result)
+
+
+# ---------------------------------------------------------------------------
+# TestEmptyMovCommands — empty/missing mov_commands rejection at creation time
+# ---------------------------------------------------------------------------
+
+class TestEmptyMovCommands:
+    """Criteria with empty or missing mov_commands must be rejected at creation time.
+
+    Policy note: the behavior here is a deliberate inversion from the original
+    design where empty mov_commands was allowed (fail-open). Both mov_commands: []
+    and a missing mov_commands key are now blocked because both represent the same
+    intent ('no programmatic check') and will always fail when kanban criteria check
+    runs. Blocking at creation time provides earlier feedback.
+    """
+
+    def test_empty_mov_commands_blocked(self, hook):
+        """A criterion with mov_commands: [] must be blocked."""
+        card = {
+            "action": "Test action",
+            "intent": "Test intent",
+            "criteria": [
+                {
+                    "description": "Test criterion",
+                    "mov_commands": [],
+                }
+            ],
+        }
+        result = run_with_temp_file(hook, card)
+        assert_blocked(result)
+
+    def test_empty_mov_commands_second_criterion_blocked(self, hook):
+        """Empty mov_commands on the second criterion must be blocked."""
+        card = {
+            "action": "Test action",
+            "intent": "Test intent",
+            "criteria": [
+                {
+                    "description": "First criterion (clean)",
+                    "mov_commands": [
+                        {"cmd": "rg -qi 'pattern' file.py", "timeout": 10},
+                    ],
+                },
+                {
+                    "description": "Second criterion (empty movs)",
+                    "mov_commands": [],
+                },
+            ],
+        }
+        result = run_with_temp_file(hook, card)
+        assert_blocked(result)
+
+    def test_denial_reason_mentions_empty_mov_commands(self, hook):
+        """Denial reason for empty mov_commands criterion is actionable."""
+        card = {
+            "action": "Test action",
+            "intent": "Test intent",
+            "criteria": [
+                {
+                    "description": "Test criterion",
+                    "mov_commands": [],
+                }
+            ],
+        }
+        result = run_with_temp_file(hook, card)
+        assert result is not None
+        reason = result.get("reason", "")
+        assert "mov_commands" in reason.lower(), f"Reason should mention mov_commands: {reason}"
+
+    def test_one_cmd_entry_not_blocked(self, hook):
+        """A criterion with one valid mov_commands entry must NOT be blocked."""
+        card = {
+            "action": "Test action",
+            "intent": "Test intent",
+            "criteria": [
+                {
+                    "description": "Test criterion",
+                    "mov_commands": [
+                        {"cmd": "rg -qi 'pattern' file.py", "timeout": 10},
+                    ],
+                }
+            ],
+        }
+        result = run_with_temp_file(hook, card)
+        assert_allowed(result)
+
+    def test_missing_mov_commands_key_blocked(self, hook):
+        """A criterion with no mov_commands key at all must be BLOCKED.
+
+        Policy change (deliberate): a missing key is semantically equivalent to
+        an empty list — both represent 'no programmatic check'. The SubagentStop
+        hook auto-fails both at check time, so creating such a card is always
+        wasted effort. The lint hook now rejects both forms at creation time.
+
+        (Previously this was test_missing_mov_commands_key_not_blocked which
+        validated fail-open behavior. That policy was inverted by #1648.)
+        """
+        card = {
+            "action": "Test action",
+            "intent": "Test intent",
+            "criteria": [
+                {
+                    "description": "Test criterion without mov_commands key",
+                }
+            ],
+        }
         result = run_with_temp_file(hook, card)
         assert_blocked(result)
 

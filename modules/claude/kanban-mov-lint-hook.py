@@ -26,6 +26,16 @@ BANNED PATTERNS:
     Double-escape (\\\\|) is NOT flagged — it can be legitimate in some tools.
   Hook-skip flags: --no-verify, --no-gpg-sign, git commit -n, HUSKY=0,
     HUSKY_SKIP_HOOKS=1 (should never appear in MoVs).
+  rg/grep -c absence idiom: test $(rg -c PATTERN FILE) -le N or equivalent,
+    including the legacy backtick form `rg -c PATTERN FILE`, and the bash [[
+    double-bracket form [[ $(rg -c ...) -le 0 ]].
+    When rg -c produces zero matches it emits NO stdout, making test $(empty) -le 0
+    structurally broken (exit 2 'unary operator expected').
+    Fix: use the negated quiet-match idiom: ! rg -q 'pattern' file
+  empty mov_commands: criteria[*].mov_commands must not be an empty list or absent.
+    Both mov_commands: [] and a missing mov_commands key represent the same intent
+    (no programmatic check). The SubagentStop hook auto-fails both at check time.
+    Every acceptance criterion must have at least one {cmd, timeout} entry.
 
 LIMITATIONS / SCOPE:
   This hook is a discipline aid, not a hard security boundary.
@@ -45,6 +55,14 @@ LIMITATIONS / SCOPE:
   - cmd values are echoed verbatim (after non-printable sanitization)
     in denial messages. Card authors must NOT put credentials in cmd
     fields; that is a card-authoring error.
+  - The absence-count detection fires on the raw cmd string: a cmd that
+    contains the forbidden pattern in a comment or quoted argument
+    (false-positive risk) will be blocked even if the actual command is
+    correct. Rephrase comments to avoid the pattern. Pipeline forms like
+    `rg -c ... | { read c; test "$c" -le 0; }` evade detection (pipeline
+    bypass) — the runtime failure backstop still applies.
+  - Empty `mov_commands` detection requires valid JSON parsing — cannot
+    fire on the fail-closed raw-text path.
 """
 
 import json
@@ -165,6 +183,30 @@ BANNED_PATTERNS: list[tuple[re.Pattern, str, str, bool]] = [
         ),
         True,  # hook-skip: fail closed on parse error
     ),
+    (
+        # Never matches — _is_rg_count_absence() handles this pattern out-of-band.
+        # This sentinel entry exists for table completeness so that BANNED_PATTERNS
+        # is the single inventory of all banned patterns.
+        re.compile(r'(?!x)x'),
+        "test $(rg -c PATTERN FILE) -le N (absence-via-count idiom)",
+        (
+            "Pattern: test $(rg -c PATTERN FILE) -le N (absence-via-count idiom)\n"
+            "Fix: Use the negated quiet-match idiom: `! rg -q 'pattern' file`."
+        ),
+        False,  # absence-count lint: fail open on parse error
+    ),
+    (
+        # Never matches — empty/missing mov_commands detection is handled inline
+        # in _scan_card_for_banned() before the command loop.
+        # This sentinel entry exists for table completeness.
+        re.compile(r'(?!x)x'),
+        "empty or missing mov_commands array",
+        (
+            "Fix: Every acceptance criterion must have at least one `{cmd, timeout}` "
+            "entry in `mov_commands`."
+        ),
+        False,  # empty mov_commands lint: fail open on parse error
+    ),
 ]
 
 
@@ -282,6 +324,81 @@ def _is_backslash_pipe_in_regex_tool(cmd: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# rg/grep -c absence idiom detection
+# ---------------------------------------------------------------------------
+#
+# Matches the structural prefix of the fragile absence-via-count pattern:
+#   test $(rg -c 'pat' file) -le 0
+#   test "$(rg -c 'pat' file)" -le 0
+#   test $(grep -c 'pat' file) -eq 0
+#   [ $(rg -c ...) -lt 0 ]
+#
+# When rg -c produces zero matches it emits NO stdout, so the command
+# substitution expands to an empty string. This makes `test  -le 0` break
+# with exit 2 ("unary operator expected") instead of succeeding as intended.
+#
+# The correct idiom for absence is: ! rg -q 'pattern' file
+#   (exits 0 when absent, 1 when present — no empty-expansion hazard).
+#
+# Detection: match the structural prefix — test/[/[[ followed by optional
+# whitespace, optional quote, $( or backtick and then rg/grep -c — AND the
+# command contains a comparison to zero (-le 0, -eq 0, -lt 1, -le 1, -lt 2).
+# Requiring the comparison-to-zero signal ensures we don't fire on
+# presence-count assertions like `test $(rg -c 'TODO') -ge 5`.
+#
+# The backtick form (` rg -c ...`) is included because it is equally fragile:
+# an empty-output expansion inside backticks causes the same 'unary operator
+# expected' exit-2 failure.
+#
+# The [[ double-bracket form is included because bash's [[ also suffers the
+# same empty-expansion hazard with arithmetic comparisons.
+_RG_COUNT_ABSENCE_RE = re.compile(
+    r'(?:test|\[\[?)\s+"?(?:\$\(|`)\s*(?:rg|grep)\s+-c\b'
+)
+
+# Matches the zero-comparison half:
+#   -le 0, -eq 0            — absent / exactly zero
+#   -lt 1, -le 1, -lt 2     — "less than 1/2" or "at most 1"; all indicate
+#                              an absence or near-absence threshold
+#
+# Note: -lt N and -le (N-1) are equivalent for non-negative integers.
+# -lt 0 is included because rg -c cannot return negative counts, making
+# it a nonsensical-but-structurally-equivalent form of the absence check.
+_ZERO_COMPARE_RE = re.compile(r'-(?:le|eq)\s+[01]\b|-lt\s+[012]\b')
+
+_RG_COUNT_ABSENCE_FIX = (
+    "Pattern: test $(rg -c PATTERN FILE) -le N (absence-via-count idiom)\n"
+    "Fix: This idiom is fragile — `rg -c` emits NO stdout when zero matches, "
+    "breaking the `test` command structurally with exit 2. "
+    "For pattern-absence assertions, use the negated quiet-match idiom: "
+    "`! rg -q 'pattern' file` (exits 0 if absent, 1 if present)."
+)
+
+_RG_COUNT_ABSENCE_NAME = "test $(rg -c PATTERN FILE) -le N (absence-via-count idiom)"
+
+
+def _is_rg_count_absence(cmd: str) -> bool:
+    """
+    Return True if cmd uses the fragile absence-via-count idiom:
+      test $(rg -c ...) -le 0   (or -eq 0, -lt 1, -le 1, -lt 2, etc.)
+      test "$(rg -c ...)" -le 0
+      [ $(rg -c ...) -le 0 ]
+      [[ $(rg -c ...) -le 0 ]]
+      test `rg -c ...` -le 0   (legacy backtick form)
+
+    Also matches the grep -c variant.
+
+    Does NOT fire on presence-count assertions like `test $(rg -c X) -ge 5`.
+    Requires both the structural prefix AND a comparison-to-zero signal.
+
+    Note: fires on the raw cmd string. If the pattern appears inside a shell
+    comment or quoted argument within cmd, it may trigger a false positive.
+    See LIMITATIONS section in module docstring.
+    """
+    return bool(_RG_COUNT_ABSENCE_RE.search(cmd) and _ZERO_COMPARE_RE.search(cmd))
+
+
+# ---------------------------------------------------------------------------
 # Command detection
 # ---------------------------------------------------------------------------
 
@@ -347,12 +464,36 @@ def _scan_card_for_banned(card: dict, card_index: int) -> "tuple[int, int, str, 
         mov_commands = criterion.get("mov_commands", [])
         if not isinstance(mov_commands, list):
             continue
+
+        # Check for missing or empty mov_commands — reject at creation time.
+        # Both a missing key and an empty list represent the same intent:
+        # no programmatic check. The SubagentStop hook auto-fails both at
+        # check time, so creating such a card is always wasted effort.
+        if len(mov_commands) == 0:
+            empty_fix = (
+                f"Pattern: empty or missing mov_commands on criterion {crit_idx}\n"
+                "Fix: Every acceptance criterion must have at least one programmatic "
+                "`{cmd, timeout}` entry in `mov_commands`. Semantic AC is not supported — "
+                "the SubagentStop hook auto-fails any criterion with empty or missing "
+                "mov_commands at check time, so creating the card is wasted effort. If you "
+                "genuinely cannot write a programmatic check, see § Pre-Card MoV Check "
+                "(Path A/B/C) in staff-engineer.md."
+            )
+            empty_name = f"empty or missing mov_commands on criterion {crit_idx}"
+            # Use -1 as sentinel mov_idx to indicate no commands exist (not a real index).
+            # The denial message formatter skips the index display when cmd == "(empty)".
+            return (crit_idx, -1, "(empty)", empty_name, empty_fix)
+
         for mov_idx, mov in enumerate(mov_commands):
             if not isinstance(mov, dict):
                 continue
             cmd = mov.get("cmd", "")
             if not cmd or not isinstance(cmd, str):
                 continue
+
+            # Check rg/grep -c absence idiom (fragile empty-expansion pattern)
+            if _is_rg_count_absence(cmd):
+                return (crit_idx, mov_idx, cmd, _RG_COUNT_ABSENCE_NAME, _RG_COUNT_ABSENCE_FIX)
 
             # Check git commit -n via shlex (takes precedence over regex for this pattern)
             if _is_git_commit_n(cmd):
@@ -506,9 +647,15 @@ def main() -> None:
 
         # Format the denial reason
         card_label = f"card[{card_idx}]" if len(cards) > 1 else "card"
+        # When mov_idx == -1 (sentinel for empty/missing mov_commands), omit the
+        # index display since there is no specific command to point to.
+        if cmd == "(empty)":
+            location = f"{card_label} → criteria[{crit_idx}] → mov_commands: []"
+        else:
+            location = f"{card_label} → criteria[{crit_idx}] → mov_commands[{mov_idx}].cmd"
         reason = (
             f"BANNED MoV PATTERN detected in {file_path_str}:\n\n"
-            f"  Location:  {card_label} → criteria[{crit_idx}] → mov_commands[{mov_idx}].cmd\n"
+            f"  Location:  {location}\n"
             f"  Command:   {safe_cmd!r}\n"
             f"  Pattern:   {pattern_name}\n\n"
             f"  Fix: {fix}\n\n"
