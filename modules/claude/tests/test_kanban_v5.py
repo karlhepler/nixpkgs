@@ -13,6 +13,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -394,30 +395,33 @@ class TestCriteriaCheckArrayIteration:
 
         assert exc_info.value.code == 11
 
-    def test_semantic_criterion_sets_met_unconditionally(self, kanban, tmp_path):
-        """Semantic criterion: met set without running any commands."""
+    def test_semantic_criterion_rejected_by_check(self, kanban, tmp_path, capsys):
+        """Criterion with no mov_commands is rejected by criteria check (exit 1).
+
+        Prior behavior: semantic criteria (empty/absent mov_commands) were unconditionally
+        marked met. This was a quality-gate bypass bug. The new behavior rejects them
+        with a clear error — they must be created with programmatic mov_commands.
+        """
         criteria = [{"text": "Semantic check", "mov_type": "semantic", "met": False}]
         card_path = self._build_card_file(tmp_path, criteria)
         args = self._make_args(str(tmp_path), "42", ["1"])
 
-        run_count = [0]
-
-        def fake_run(cmd, **kwargs):
-            if not isinstance(cmd, list) or cmd[0] != "kanban":
-                run_count[0] += 1
-            m = MagicMock()
-            m.returncode = 0
-            m.stdout = ""
-            m.stderr = ""
-            return m
-
-        with patch("subprocess.run", side_effect=fake_run):
+        with pytest.raises(SystemExit) as exc_info:
             kanban.cmd_criteria_check(args)
+
+        assert exc_info.value.code == 1, (
+            f"Expected exit 1 for criterion without mov_commands, got {exc_info.value.code}"
+        )
+        captured = capsys.readouterr()
+        assert "no programmatic verification provided" in captured.err, (
+            f"Expected 'no programmatic verification provided' in stderr, got: {captured.err!r}"
+        )
 
         import json as _json
         updated = _json.loads(card_path.read_text())
-        assert updated["criteria"][0]["met"] is True
-        assert run_count[0] == 0, "Expected no subprocess calls for semantic criterion"
+        assert updated["criteria"][0]["met"] is False, (
+            "Card state must not be mutated when criterion has no mov_commands"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -547,14 +551,14 @@ class TestCardIdSubstitution:
 # ---------------------------------------------------------------------------
 
 class TestCriteriaAddDefaultsSemantic:
-    """criteria add defaults to semantic criterion (no mov_commands)."""
+    """criteria add without --mov-cmd creates criterion with empty mov_commands."""
 
     def _build_card_file(self, tmp_path: Path, criteria: list | None = None) -> Path:
         """Write a minimal doing-column card and return its path."""
         doing_dir = tmp_path / "doing"
         doing_dir.mkdir(parents=True, exist_ok=True)
         if criteria is None:
-            criteria = [{"text": "Existing AC", "mov_type": "semantic", "met": False}]
+            criteria = [{"text": "Existing AC", "mov_commands": [{"cmd": "true", "timeout": 5}], "met": False}]
         card = {
             "action": "Test action",
             "intent": "Test intent",
@@ -571,41 +575,55 @@ class TestCriteriaAddDefaultsSemantic:
         card_path.write_text(json.dumps(card))
         return card_path
 
-    def test_criteria_add_defaults_to_semantic(self, kanban, tmp_path):
-        """kanban criteria add produces a semantic criterion with no mov_commands."""
+    def test_criteria_add_without_mov_cmd_has_empty_mov_commands(self, kanban, tmp_path):
+        """kanban criteria add without --mov-cmd creates criterion with empty mov_commands.
+
+        The criterion will be rejected by 'kanban criteria check' (exit 1).
+        This tests the add path only — the check-time rejection is tested elsewhere.
+        """
         card_path = self._build_card_file(tmp_path)
 
-        args = MagicMock()
-        args.root = str(tmp_path)
-        args.card = "99"
-        args.text = "New criterion added via CLI"
+        args = SimpleNamespace(
+            root=str(tmp_path),
+            card="99",
+            text="New criterion added via CLI",
+            mov_cmd=None,
+            mov_timeout=None,
+        )
 
         kanban.cmd_criteria_add(args)
 
         updated = json.loads(card_path.read_text())
-        # The newly appended criterion should be semantic
         new_criterion = updated["criteria"][-1]
-        assert new_criterion["mov_type"] == "semantic", (
-            f"Expected mov_type='semantic', got {new_criterion.get('mov_type')!r}"
+        assert new_criterion.get("mov_commands") == [], (
+            f"Expected empty mov_commands when --mov-cmd not provided, "
+            f"got {new_criterion.get('mov_commands')!r}"
         )
-        assert "mov_commands" not in new_criterion or new_criterion.get("mov_commands") in (None, []), (
-            "Expected no mov_commands on a semantic criterion added via CLI"
+        assert "mov_type" not in new_criterion, (
+            "mov_type must not be set by criteria add — it is legacy and unused"
         )
 
-    def test_criteria_add_semantic_passes_validation(self, kanban, tmp_path):
-        """Criterion added via criteria add passes validate_criteria_schema."""
+    def test_criteria_add_without_mov_cmd_passes_validation(self, kanban, tmp_path):
+        """Criterion added via criteria add (no --mov-cmd) passes validate_criteria_schema.
+
+        Schema validation allows empty mov_commands — rejection happens at check-time,
+        not at add-time. This test ensures add succeeds (no SystemExit).
+        """
         card_path = self._build_card_file(tmp_path)
 
-        args = MagicMock()
-        args.root = str(tmp_path)
-        args.card = "99"
-        args.text = "Another semantic criterion"
+        args = SimpleNamespace(
+            root=str(tmp_path),
+            card="99",
+            text="Another criterion",
+            mov_cmd=None,
+            mov_timeout=None,
+        )
 
         # Should not raise SystemExit
         try:
             kanban.cmd_criteria_add(args)
         except SystemExit as e:
-            pytest.fail(f"cmd_criteria_add raised SystemExit({e.code}) for a valid semantic add")
+            pytest.fail(f"cmd_criteria_add raised SystemExit({e.code}) for a valid add without --mov-cmd")
 
 
 class TestProgrammaticRequiresMoveCommands:
@@ -674,7 +692,7 @@ class TestCriteriaMutationValidation:
         return card_path
 
     def _build_valid_card_file(self, tmp_path: Path, column: str = "doing") -> Path:
-        """Write a card with a valid semantic criterion."""
+        """Write a card with valid programmatic criteria (non-empty mov_commands)."""
         col_dir = tmp_path / column
         col_dir.mkdir(parents=True, exist_ok=True)
         card = {
@@ -685,13 +703,13 @@ class TestCriteriaMutationValidation:
             "session": "test-session",
             "criteria": [
                 {
-                    "text": "Valid semantic criterion",
-                    "mov_type": "semantic",
+                    "text": "Valid programmatic criterion",
+                    "mov_commands": [{"cmd": "true", "timeout": 5}],
                     "met": False,
                 },
                 {
-                    "text": "Second valid semantic criterion",
-                    "mov_type": "semantic",
+                    "text": "Second valid programmatic criterion",
+                    "mov_commands": [{"cmd": "true", "timeout": 5}],
                     "met": False,
                 },
             ],
@@ -776,16 +794,23 @@ class TestCriteriaMutationValidation:
         assert exc_info.value.code == 1
 
     def test_valid_card_check_succeeds(self, kanban, tmp_path):
-        """Sanity check: valid semantic card passes check without validation error."""
+        """Sanity check: valid programmatic card passes check when mov_commands exit 0."""
         self._build_valid_card_file(tmp_path, column="doing")
         args = self._make_args(str(tmp_path), n=["1"])
 
-        with patch("subprocess.run") as mock_run:
-            # Should not raise SystemExit (semantic criterion — no subprocess needed)
+        def fake_run(cmd, **kwargs):
+            m = MagicMock()
+            m.returncode = 0
+            m.stdout = ""
+            m.stderr = ""
+            return m
+
+        with patch("subprocess.run", side_effect=fake_run):
+            # Should not raise SystemExit — valid programmatic criterion passes
             try:
                 kanban.cmd_criteria_check(args)
             except SystemExit as e:
-                pytest.fail(f"Valid semantic card raised SystemExit({e.code})")
+                pytest.fail(f"Valid programmatic card raised SystemExit({e.code})")
 
 
 # ---------------------------------------------------------------------------

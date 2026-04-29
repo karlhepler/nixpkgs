@@ -932,7 +932,7 @@ Delegating does not end conversation. Keep probing for context, concerns, and co
 
 **Sub-agents cannot receive mid-flight instructions.** But you CAN communicate through the card:
 
-- **Add criteria mid-flight** via `kanban criteria add <card> "text"` — the SubagentStop hook discovers new unchecked criteria when it calls `kanban done`, and sends the agent back with feedback to fix and retry. This is the primary mechanism for injecting new requirements into a running agent's work.
+- **Add criteria mid-flight** via `kanban criteria add <card> "text" --mov-cmd 'CMD' --mov-timeout N` — the SubagentStop hook discovers new unchecked criteria when it calls `kanban done`, and sends the agent back with feedback to fix and retry. This is the primary mechanism for injecting new requirements into a running agent's work. **Injected AC must include `--mov-cmd` to be checkable** — criteria without `mov_commands` are rejected by `kanban criteria check` (exit 1). Use `--mov-cmd` (repeatable) to append entries; use `--mov-timeout` to set the timeout for each (default 30s). Example: `kanban criteria add 42 "Pattern present" --mov-cmd 'rg -q pattern file' --mov-timeout 10 --session foo`
 - **🚨 Mid-flight user requirements → AC items ONLY.** Requirements without an enforcement gate are invisible to the quality system. Any new requirement from the user mid-flight → `kanban criteria add`. No exceptions.
 
   ❌ **WRONG:** Trying to relay mid-flight requirements via SendMessage, Agent tool, or re-prompting the agent directly

@@ -1586,10 +1586,12 @@ def cmd_agent(args) -> None:
 def cmd_criteria_add(args) -> None:
     """Add acceptance criterion to card.
 
-    Creates a criterion without mov_commands (no programmatic check). The CLI
-    cannot accept mov_commands via a plain text argument. To create a criterion
-    with programmatic MoV commands, cancel and recreate the card using the JSON
-    file input (kanban do --file card.json).
+    When --mov-cmd is provided, each occurrence appends an entry to mov_commands.
+    --mov-timeout sets the timeout for the most-recently-added --mov-cmd (default 30).
+
+    Without --mov-cmd, the criterion is created with an empty mov_commands array.
+    Such criteria will be rejected by 'kanban criteria check' — use 'kanban do --file'
+    to create programmatic criteria, or always supply at least one --mov-cmd.
     """
     root = get_root(args.root)
     card_path = find_card(root, args.card)
@@ -1600,16 +1602,26 @@ def cmd_criteria_add(args) -> None:
     if "criteria" not in card:
         card["criteria"] = []
 
+    # Build mov_commands from paired --mov-cmd / --mov-timeout arguments
+    mov_commands = []
+    if args.mov_cmd:
+        timeouts = list(args.mov_timeout) if args.mov_timeout else []
+        for i, cmd in enumerate(args.mov_cmd):
+            timeout = timeouts[i] if i < len(timeouts) else 30
+            mov_commands.append({"cmd": cmd, "timeout": timeout})
+
     new_criterion: dict = {
         "text": args.text,
-        "mov_type": "semantic",
+        "mov_commands": mov_commands,
         "met": False,
     }
 
-    # Apply __CARD_ID__ substitution in criterion text (mov_commands not present in
-    # plain-text criteria add, but substitute for future-proofing)
+    # Apply __CARD_ID__ substitution in criterion text and mov_commands
     if isinstance(new_criterion.get("text"), str):
         new_criterion["text"] = new_criterion["text"].replace("__CARD_ID__", str(num))
+    for entry in new_criterion.get("mov_commands", []):
+        if isinstance(entry.get("cmd"), str):
+            entry["cmd"] = entry["cmd"].replace("__CARD_ID__", str(num))
 
     card["criteria"].append(new_criterion)
     card["updated"] = now_iso()
@@ -1714,75 +1726,80 @@ def cmd_criteria_check(args) -> None:
         text = criterion.get("text", "")
         display_n = criterion_arg if str(criterion_arg).isdigit() else (criterion_idx + 1)
 
-        if mov_commands:
-            # Iterate mov_commands array in order; short-circuit on first non-zero exit
-            for cmd_idx, cmd_entry in enumerate(mov_commands):
-                cmd = cmd_entry.get("cmd", "")
-                timeout_secs = cmd_entry.get("timeout", 30)
+        if not mov_commands:
+            # Reject criteria with no programmatic verification
+            print(
+                f"invalid AC #{display_n}: no programmatic verification provided — "
+                f"criterion has no mov_commands. Use 'kanban criteria remove' to drop it, "
+                f"or recreate the card with programmatic mov_commands via 'kanban do --file'.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
-                try:
-                    result = subprocess.run(
-                        cmd,
-                        shell=True,
-                        capture_output=True,
-                        text=True,
-                        timeout=timeout_secs,
-                        cwd=working_dir,
-                        env=os.environ.copy(),
-                    )
-                    rc = result.returncode
+        # Iterate mov_commands array in order; short-circuit on first non-zero exit
+        for cmd_idx, cmd_entry in enumerate(mov_commands):
+            cmd = cmd_entry.get("cmd", "")
+            timeout_secs = cmd_entry.get("timeout", 30)
 
-                    if rc == 0:
-                        # This command passed; continue to next
-                        continue
-                    elif rc in (127, 126, 2):
-                        # mov_error: command not found, permission denied, or bash syntax error
-                        print(f"Criterion {display_n} check ERROR (exit {rc}) at command [{cmd_idx + 1}/{len(mov_commands)}].", file=sys.stderr)
-                        print(f"  failed_index: {cmd_idx}", file=sys.stderr)
-                        print(f"  failed_cmd: {cmd}", file=sys.stderr)
-                        print(f"  exit_code: {rc}", file=sys.stderr)
-                        if result.stdout.strip():
-                            print(f"  stdout: {result.stdout.rstrip()}", file=sys.stderr)
-                        if result.stderr.strip():
-                            print(f"  stderr: {result.stderr.rstrip()}", file=sys.stderr)
-                        if rc == 127:
-                            print("  cause: command not found", file=sys.stderr)
-                        elif rc == 126:
-                            print("  cause: permission denied (command not executable)", file=sys.stderr)
-                        else:
-                            print("  cause: bash syntax error at runtime", file=sys.stderr)
-                        sys.exit(10)
+            try:
+                result = subprocess.run(
+                    cmd,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout_secs,
+                    cwd=working_dir,
+                    env=os.environ.copy(),
+                )
+                rc = result.returncode
+
+                if rc == 0:
+                    # This command passed; continue to next
+                    continue
+                elif rc in (127, 126, 2):
+                    # mov_error: command not found, permission denied, or bash syntax error
+                    print(f"Criterion {display_n} check ERROR (exit {rc}) at command [{cmd_idx + 1}/{len(mov_commands)}].", file=sys.stderr)
+                    print(f"  failed_index: {cmd_idx}", file=sys.stderr)
+                    print(f"  failed_cmd: {cmd}", file=sys.stderr)
+                    print(f"  exit_code: {rc}", file=sys.stderr)
+                    if result.stdout.strip():
+                        print(f"  stdout: {result.stdout.rstrip()}", file=sys.stderr)
+                    if result.stderr.strip():
+                        print(f"  stderr: {result.stderr.rstrip()}", file=sys.stderr)
+                    if rc == 127:
+                        print("  cause: command not found", file=sys.stderr)
+                    elif rc == 126:
+                        print("  cause: permission denied (command not executable)", file=sys.stderr)
                     else:
-                        # Work failure: command ran but the criterion is not met
-                        print(f"Criterion {display_n} check FAILED at command [{cmd_idx + 1}/{len(mov_commands)}].", file=sys.stderr)
-                        print(f"  failed_index: {cmd_idx}", file=sys.stderr)
-                        print(f"  failed_cmd: {cmd}", file=sys.stderr)
-                        print(f"  exit_code: {rc}", file=sys.stderr)
-                        if result.stdout.strip():
-                            print(f"  stdout: {result.stdout.rstrip()}", file=sys.stderr)
-                        if result.stderr.strip():
-                            print(f"  stderr: {result.stderr.rstrip()}", file=sys.stderr)
-                        sys.exit(1)
+                        print("  cause: bash syntax error at runtime", file=sys.stderr)
+                    sys.exit(10)
+                else:
+                    # Work failure: command ran but the criterion is not met
+                    print(f"Criterion {display_n} check FAILED at command [{cmd_idx + 1}/{len(mov_commands)}].", file=sys.stderr)
+                    print(f"  failed_index: {cmd_idx}", file=sys.stderr)
+                    print(f"  failed_cmd: {cmd}", file=sys.stderr)
+                    print(f"  exit_code: {rc}", file=sys.stderr)
+                    if result.stdout.strip():
+                        print(f"  stdout: {result.stdout.rstrip()}", file=sys.stderr)
+                    if result.stderr.strip():
+                        print(f"  stderr: {result.stderr.rstrip()}", file=sys.stderr)
+                    sys.exit(1)
 
-                except subprocess.TimeoutExpired:
-                    print(
-                        f"Criterion {display_n} check TIMED OUT at command [{cmd_idx + 1}/{len(mov_commands)}] "
-                        f"after {timeout_secs}s.\n"
-                        f"  failed_index: {cmd_idx}\n"
-                        f"  failed_cmd: {cmd}\n"
-                        f"  The command did not complete within the timeout window ({timeout_secs}s).\n"
-                        f"  Result is ambiguous — verify manually.",
-                        file=sys.stderr,
-                    )
-                    sys.exit(11)
+            except subprocess.TimeoutExpired:
+                print(
+                    f"Criterion {display_n} check TIMED OUT at command [{cmd_idx + 1}/{len(mov_commands)}] "
+                    f"after {timeout_secs}s.\n"
+                    f"  failed_index: {cmd_idx}\n"
+                    f"  failed_cmd: {cmd}\n"
+                    f"  The command did not complete within the timeout window ({timeout_secs}s).\n"
+                    f"  Result is ambiguous — verify manually.",
+                    file=sys.stderr,
+                )
+                sys.exit(11)
 
-            # All commands in the array passed
-            criteria[criterion_idx]["met"] = True
-            print(f"Criterion {display_n} passed: {text}")
-        else:
-            # Semantic path: unconditional check
-            criteria[criterion_idx]["met"] = True
-            print(f"Checked: {text}")
+        # All commands in the array passed
+        criteria[criterion_idx]["met"] = True
+        print(f"Criterion {display_n} passed: {text}")
 
     card["updated"] = now_iso()
     validate_criteria_schema(card["criteria"])
@@ -3262,6 +3279,8 @@ def main() -> None:
     p_criteria_add = criteria_subparsers.add_parser("add", parents=[parent_parser], help="Add acceptance criterion")
     p_criteria_add.add_argument("card", help="Card number")
     p_criteria_add.add_argument("text", help="Criterion text")
+    p_criteria_add.add_argument("--mov-cmd", dest="mov_cmd", action="append", metavar="CMD", help="MoV command to append to mov_commands (repeatable)")
+    p_criteria_add.add_argument("--mov-timeout", dest="mov_timeout", action="append", type=int, metavar="N", help="Timeout in seconds for the most-recent --mov-cmd (default 30, repeatable)")
     add_session_flags(p_criteria_add)
 
     p_criteria_remove = criteria_subparsers.add_parser("remove", parents=[parent_parser], help="Remove acceptance criterion")

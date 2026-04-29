@@ -361,3 +361,269 @@ class TestCmdDoneExitCodes:
         """MAX_CYCLES constant is defined and equals 3."""
         assert hasattr(kanban, "MAX_CYCLES"), "MAX_CYCLES constant must be defined"
         assert kanban.MAX_CYCLES == 3, f"MAX_CYCLES must be 3, got {kanban.MAX_CYCLES}"
+
+
+# ---------------------------------------------------------------------------
+# Tests: criteria check strict rejection of empty mov_commands
+# ---------------------------------------------------------------------------
+
+def _make_card_with_empty_mov_commands(session="test-session"):
+    """Build a card dict with a criterion that has no mov_commands."""
+    return {
+        "action": "Do the thing",
+        "intent": "Because reasons",
+        "session": session,
+        "type": "work",
+        "agent": "swe-devex",
+        "model": "sonnet",
+        "editFiles": [],
+        "readFiles": [],
+        "criteria": [
+            {"text": "Criterion with no mov_commands", "mov_commands": [], "met": False},
+        ],
+        "cycles": 0,
+        "activity": [],
+        "created": "2026-01-01T00:00:00Z",
+        "updated": "2026-01-01T00:00:00Z",
+    }
+
+
+def _make_card_with_valid_mov_commands(session="test-session"):
+    """Build a card dict with a criterion that has a passing mov_commands entry."""
+    return {
+        "action": "Do the thing",
+        "intent": "Because reasons",
+        "session": session,
+        "type": "work",
+        "agent": "swe-devex",
+        "model": "sonnet",
+        "editFiles": [],
+        "readFiles": [],
+        "criteria": [
+            {
+                "text": "Criterion with passing mov_command",
+                "mov_commands": [{"cmd": "true", "timeout": 5}],
+                "met": False,
+            },
+        ],
+        "cycles": 0,
+        "activity": [],
+        "created": "2026-01-01T00:00:00Z",
+        "updated": "2026-01-01T00:00:00Z",
+    }
+
+
+def _make_check_args(board_root, card_num="1", criterion_nums=None, session="test-session"):
+    """Build a minimal args namespace for cmd_criteria_check."""
+    return SimpleNamespace(
+        root=str(board_root),
+        card=str(card_num),
+        n=[str(n) for n in (criterion_nums or [1])],
+        session=session,
+    )
+
+
+def _make_add_args(board_root, card_num="1", text="New criterion", mov_cmd=None, mov_timeout=None, session="test-session"):
+    """Build a minimal args namespace for cmd_criteria_add."""
+    return SimpleNamespace(
+        root=str(board_root),
+        card=str(card_num),
+        text=text,
+        mov_cmd=mov_cmd,
+        mov_timeout=mov_timeout,
+        session=session,
+    )
+
+
+class TestCriteriaCheckStrictness:
+    """criteria check rejects criteria with empty mov_commands."""
+
+    def test_criteria_check_rejects_empty_mov_commands(self, kanban, tmp_path):
+        """criteria check exits 1 when criterion has empty mov_commands."""
+        board = _setup_board(tmp_path)
+        card_data = _make_card_with_empty_mov_commands(session="test-session")
+        card_path = _write_card(board, "doing", "1", card_data)
+        args = _make_check_args(board, card_num="1", criterion_nums=[1])
+
+        with patch.object(kanban, "get_root", return_value=board):
+            with patch.object(kanban, "find_card", return_value=card_path):
+                with pytest.raises(SystemExit) as exc_info:
+                    kanban.cmd_criteria_check(args)
+
+        assert exc_info.value.code == 1, (
+            f"Expected exit code 1 for empty mov_commands, got {exc_info.value.code}"
+        )
+
+    def test_criteria_check_empty_mov_commands_prints_error(self, kanban, tmp_path, capsys):
+        """criteria check prints 'no programmatic verification provided' to stderr for empty mov_commands."""
+        board = _setup_board(tmp_path)
+        card_data = _make_card_with_empty_mov_commands(session="test-session")
+        card_path = _write_card(board, "doing", "1", card_data)
+        args = _make_check_args(board, card_num="1", criterion_nums=[1])
+
+        with patch.object(kanban, "get_root", return_value=board):
+            with patch.object(kanban, "find_card", return_value=card_path):
+                with pytest.raises(SystemExit):
+                    kanban.cmd_criteria_check(args)
+
+        captured = capsys.readouterr()
+        assert "no programmatic verification provided" in captured.err, (
+            f"Expected 'no programmatic verification provided' in stderr, got: {captured.err!r}"
+        )
+
+    def test_criteria_check_empty_mov_commands_does_not_mutate_card(self, kanban, tmp_path):
+        """criteria check does NOT set met=true when mov_commands is empty."""
+        board = _setup_board(tmp_path)
+        card_data = _make_card_with_empty_mov_commands(session="test-session")
+        card_path = _write_card(board, "doing", "1", card_data)
+        args = _make_check_args(board, card_num="1", criterion_nums=[1])
+
+        with patch.object(kanban, "get_root", return_value=board):
+            with patch.object(kanban, "find_card", return_value=card_path):
+                with pytest.raises(SystemExit):
+                    kanban.cmd_criteria_check(args)
+
+        on_disk = json.loads(card_path.read_text())
+        assert on_disk["criteria"][0]["met"] is False, (
+            "Card state must not be mutated when empty mov_commands check fails"
+        )
+
+    def test_criteria_check_with_passing_mov_commands_sets_met(self, kanban, tmp_path):
+        """criteria check sets met=True when all mov_commands exit 0 (regression check)."""
+        board = _setup_board(tmp_path)
+        card_data = _make_card_with_valid_mov_commands(session="test-session")
+        card_path = _write_card(board, "doing", "1", card_data)
+        args = _make_check_args(board, card_num="1", criterion_nums=[1])
+
+        with patch.object(kanban, "get_root", return_value=board):
+            with patch.object(kanban, "find_card", return_value=card_path):
+                with patch("sys.stdout", io.StringIO()):
+                    kanban.cmd_criteria_check(args)
+
+        on_disk = json.loads(card_path.read_text())
+        assert on_disk["criteria"][0]["met"] is True, (
+            "met must be True after passing criteria check with valid mov_commands"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tests: criteria add --mov-cmd / --mov-timeout flags
+# ---------------------------------------------------------------------------
+
+class TestCriteriaAddMovCmd:
+    """criteria add --mov-cmd populates mov_commands on the criterion."""
+
+    def test_criteria_add_with_mov_cmd_populates_mov_commands(self, kanban, tmp_path):
+        """--mov-cmd flag creates criterion with mov_commands populated."""
+        board = _setup_board(tmp_path)
+        card_data = _make_v4_card_all_met(session="test-session")
+        card_path = _write_card(board, "doing", "1", card_data)
+        args = _make_add_args(
+            board,
+            card_num="1",
+            text="Pattern present",
+            mov_cmd=["true"],
+            mov_timeout=[5],
+        )
+
+        with patch.object(kanban, "get_root", return_value=board):
+            with patch.object(kanban, "find_card", return_value=card_path):
+                with patch("sys.stdout", io.StringIO()):
+                    kanban.cmd_criteria_add(args)
+
+        on_disk = json.loads(card_path.read_text())
+        new_criterion = on_disk["criteria"][-1]
+        assert new_criterion["mov_commands"], "mov_commands must be non-empty when --mov-cmd provided"
+        assert new_criterion["mov_commands"][0]["cmd"] == "true"
+        assert new_criterion["mov_commands"][0]["timeout"] == 5
+
+    def test_criteria_add_multiple_mov_cmd_appends_all(self, kanban, tmp_path):
+        """Multiple --mov-cmd occurrences correctly append separate entries."""
+        board = _setup_board(tmp_path)
+        card_data = _make_v4_card_all_met(session="test-session")
+        card_path = _write_card(board, "doing", "1", card_data)
+        args = _make_add_args(
+            board,
+            card_num="1",
+            text="Multi-command criterion",
+            mov_cmd=["true", "test -d /tmp"],
+            mov_timeout=[5, 10],
+        )
+
+        with patch.object(kanban, "get_root", return_value=board):
+            with patch.object(kanban, "find_card", return_value=card_path):
+                with patch("sys.stdout", io.StringIO()):
+                    kanban.cmd_criteria_add(args)
+
+        on_disk = json.loads(card_path.read_text())
+        new_criterion = on_disk["criteria"][-1]
+        assert len(new_criterion["mov_commands"]) == 2, (
+            f"Expected 2 mov_commands entries, got {len(new_criterion['mov_commands'])}"
+        )
+        assert new_criterion["mov_commands"][0]["cmd"] == "true"
+        assert new_criterion["mov_commands"][0]["timeout"] == 5
+        assert new_criterion["mov_commands"][1]["cmd"] == "test -d /tmp"
+        assert new_criterion["mov_commands"][1]["timeout"] == 10
+
+    def test_criteria_add_without_mov_cmd_creates_empty_mov_commands(self, kanban, tmp_path):
+        """Without --mov-cmd, criterion has empty mov_commands (criteria check will reject it)."""
+        board = _setup_board(tmp_path)
+        card_data = _make_v4_card_all_met(session="test-session")
+        card_path = _write_card(board, "doing", "1", card_data)
+        args = _make_add_args(
+            board,
+            card_num="1",
+            text="Unverifiable criterion",
+            mov_cmd=None,
+            mov_timeout=None,
+        )
+
+        with patch.object(kanban, "get_root", return_value=board):
+            with patch.object(kanban, "find_card", return_value=card_path):
+                with patch("sys.stdout", io.StringIO()):
+                    kanban.cmd_criteria_add(args)
+
+        on_disk = json.loads(card_path.read_text())
+        new_criterion = on_disk["criteria"][-1]
+        assert new_criterion["mov_commands"] == [], (
+            "Without --mov-cmd, mov_commands must be empty list"
+        )
+
+    def test_criteria_add_mov_cmd_then_check_succeeds(self, kanban, tmp_path):
+        """criterion added with --mov-cmd passes criteria check when command exits 0."""
+        board = _setup_board(tmp_path)
+        # Start with a card that has one already-met criterion
+        card_data = _make_v4_card_all_met(session="test-session")
+        card_path = _write_card(board, "doing", "1", card_data)
+
+        add_args = _make_add_args(
+            board,
+            card_num="1",
+            text="Always-passing check",
+            mov_cmd=["true"],
+            mov_timeout=[5],
+        )
+
+        with patch.object(kanban, "get_root", return_value=board):
+            with patch.object(kanban, "find_card", return_value=card_path):
+                with patch("sys.stdout", io.StringIO()):
+                    kanban.cmd_criteria_add(add_args)
+
+        on_disk = json.loads(card_path.read_text())
+        new_criterion_idx = len(on_disk["criteria"])  # 1-based index
+
+        check_args = _make_check_args(board, card_num="1", criterion_nums=[new_criterion_idx])
+
+        with patch.object(kanban, "get_root", return_value=board):
+            with patch.object(kanban, "find_card", return_value=card_path):
+                with patch("sys.stdout", io.StringIO()):
+                    # Should not raise SystemExit
+                    try:
+                        kanban.cmd_criteria_check(check_args)
+                    except SystemExit as e:
+                        pytest.fail(f"criteria check raised SystemExit({e.code}) — expected success")
+
+        on_disk = json.loads(card_path.read_text())
+        assert on_disk["criteria"][-1]["met"] is True, (
+            "Newly added criterion with valid mov_command must be checkable and set met=True"
+        )

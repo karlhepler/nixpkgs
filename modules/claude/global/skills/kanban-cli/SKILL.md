@@ -1,6 +1,6 @@
 ---
 name: kanban-cli
-description: kanban CLI full command reference. Auto-load BEFORE running any kanban subcommand other than `do`/`todo`/`list`/`show`/`start`/`done`/`criteria check/uncheck` — even when you believe you know the syntax. Cancel/defer/criteria add/remove flag conventions are commonly misremembered. Covers all lifecycle commands (do, todo, start, defer, done, cancel), AC criteria commands (criteria check, criteria uncheck, criteria add, criteria remove), MoV schema, __CARD_ID__ placeholder, output-style conventions, workflow examples, and exit codes. This skill is the canonical source for all kanban CLI syntax — `--help` should never be needed when this skill is loaded.
+description: kanban CLI full command reference. Auto-load BEFORE running any kanban subcommand other than `do`/`todo`/`list`/`show`/`start`/`done`/`criteria check/uncheck` — even when you believe you know the syntax. Cancel/defer/criteria add/remove flag conventions are commonly misremembered. Covers all lifecycle commands (do, todo, start, defer, done, cancel), AC criteria commands (criteria check, criteria uncheck, criteria add [--mov-cmd/--mov-timeout], criteria remove), MoV schema, __CARD_ID__ placeholder, output-style conventions, workflow examples, and exit codes. This skill is the canonical source for all kanban CLI syntax — `--help` should never be needed when this skill is loaded.
 ---
 
 # kanban CLI — Full Command Reference
@@ -138,11 +138,20 @@ Display the rejection history for a card — all AC review cycles, what failed, 
 
 ## Acceptance Criteria
 
-### `kanban criteria add <card> <text> [--session SESSION]`
+### `kanban criteria add <card> <text> [--mov-cmd CMD] [--mov-timeout N] [--session SESSION]`
 
 Add a new criterion to a card. **`text` is plain text — NOT JSON.** Do not pass a JSON object as the `text` argument. The text is stored verbatim as the criterion statement. Use `kanban criteria add 42 "Pattern present in output file"` — not `kanban criteria add 42 '{"text": "..."}'`.
 
 - The criterion is added with `met` unset.
+- **`--mov-cmd CMD`** (repeatable) — each occurrence appends an entry to `mov_commands`. Example: `--mov-cmd 'rg -q pattern file'`. Without `--mov-cmd`, the criterion has empty `mov_commands` and will be **rejected by `kanban criteria check`** (exit 1) — always provide at least one `--mov-cmd` for mid-flight injection.
+- **`--mov-timeout N`** (repeatable, default 30) — sets the timeout in seconds for the most-recent `--mov-cmd`. Pair one `--mov-timeout` per `--mov-cmd` to set individual timeouts.
+- Multiple commands, each with its own timeout:
+  ```
+  kanban criteria add 42 "Pattern present" \
+    --mov-cmd 'rg -q pattern file' --mov-timeout 10 \
+    --mov-cmd 'test -f file' --mov-timeout 5 \
+    --session foo
+  ```
 - `__CARD_ID__` substitution applies to newly-added criteria too — the CLI substitutes the actual card number in both the `text` field and any `mov_commands[].cmd` entries at the time `kanban criteria add` runs.
 
 ### `kanban criteria remove <card> <n> <reason> [--session SESSION]`
@@ -188,7 +197,7 @@ Create kanban board structure in the current directory. Run once per project.
 
 ## Quirks Catalog
 
-1. **`criteria add` takes plain text, NOT JSON.** Passing a JSON blob stores it verbatim as the criterion statement text. Always pass plain English: `kanban criteria add 42 "Tests pass"`.
+1. **`criteria add` takes plain text, NOT JSON.** Passing a JSON blob stores it verbatim as the criterion statement text. Always pass plain English: `kanban criteria add 42 "Tests pass" --mov-cmd 'pytest -x' --mov-timeout 60`. Without `--mov-cmd`, the criterion has empty `mov_commands` and `kanban criteria check` will reject it (exit 1).
 
 2. **`criteria remove` requires `reason` as a positional arg, not a flag.** Correct: `kanban criteria remove 42 3 "reason"`. Wrong: `kanban criteria remove 42 3 --reason "reason"` (this will error — `--reason` is not a flag on `criteria remove`).
 
@@ -283,9 +292,11 @@ kanban do --file .scratchpad/kanban-card-tidy-crown.json --session tidy-crown
 
 > **Remember:** `mov_commands[].cmd` must NOT contain `&&`. Use separate array items for compound checks. See Quirks Catalog item 11.
 
-**Add a mid-flight requirement:**
+**Add a mid-flight requirement with programmatic verification:**
 ```bash
-kanban criteria add 42 "New requirement text" --session tidy-crown
+kanban criteria add 42 "New requirement text" \
+  --mov-cmd 'rg -q pattern file' --mov-timeout 10 \
+  --session tidy-crown
 ```
 
 **Remove a broken criterion:**
