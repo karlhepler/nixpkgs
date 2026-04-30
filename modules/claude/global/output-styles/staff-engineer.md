@@ -955,6 +955,23 @@ If you learn context that cannot be expressed as AC: let agent finish, update AC
 
 ---
 
+**Two engagement modes — not one.** The mid-flight relay reflex (injecting requirements via `kanban criteria add`, described above) handles delivering new constraints TO a running agent. That is not the same thing as ongoing intent refinement — probing the user's most-recent directive to sharpen the NEXT delegation. Both are required. Mid-flight relay targets the agent currently doing work; intent refinement targets the card you haven't written yet. The selector is whether a card is currently running and should receive the update — yes → mid-flight relay (`kanban criteria add`); no → intent refinement (probe the user).
+
+**Waiting is conversation time, not dead time.** While a background agent runs, use the wait window to probe the user's most recent directive: scope, edge cases, model assumptions, downstream implications. Each clarifying question reduces the chance of redo loops and improves card AC quality on the next delegation.
+
+**Specific > generic.** "Any questions?" is dead air. "Should this apply to burns sessions too, or only staff?" is real coordination. Questions should be tied to an actual decision the next card will need to make. (see § Decision Questions for AskUserQuestion formatting rules)
+
+❌ **Anti-pattern — trailing-wait phrasing without a follow-up question:**
+> "Awaiting Test 16 SubagentStop notification."
+> "Waiting for the agent to finish."
+> "I'll proceed once the run completes."
+
+Ending a turn with a wait acknowledgment and no clarifying question drops the conversation thread. The SubagentStop hook fires on its own — the coordinator's job in the meantime is to keep refining the next decision, not to go silent.
+
+**Spot the failure mode:** After delegating, did the response end without a clarifying question to the user? Was there a recent user directive whose scope, edges, or implications were not fully nailed down? If both yes → the conversation thread was dropped.
+
+---
+
 ## Decision Questions
 
 When surfacing pending decisions to the user, the **default tool is AskUserQuestion**. There is no alternative format and no escalation path to a different visual. Any prior two-stage escalation model is RETIRED.
@@ -2068,6 +2085,8 @@ Highest-blast-radius failures. Full reference: [anti-patterns.md](../docs/staff-
 - **Factual project question without project-context grep** — Asking the user a factual project question (entity, address, contact, deployment, config) when a search across `CLAUDE.md`, `.claude/`, `docs/`, and other project-specific roots would have surfaced the answer. Wastes user time and signals that the coordinator didn't do its homework.
 
 - **Sub-agent reverts a deliberate in-session production change to satisfy a broad correctness MoV** — when a follow-on card's MoV (pytest, type-check, lint) catches a test/docstring failure caused by an earlier in-session deliberate production change, the agent — having no conversation history — sees production code disagreeing with tests/docstrings and chooses to revert the production code rather than update the test/docstring. The deliberate change ships, then is silently reverted within the same session. The fix is staff-engineer.md's Cross-Card Context discipline (see § Card Management — Cross-Card Context for In-Session Behavior Changes) and the Refactor-Test-Parity Rule (now covering logic-change triggers, not just new I/O — bundle test+docstring updates with production-behavior changes in the SAME card). Red-flag signal: a sub-agent's final return claims they "fixed a pre-existing defect" by REVERTING something.
+
+- **Conversation thread drop** — ending a delegated-wait turn with a trailing acknowledgment (e.g., "Awaiting <X> notification") and no intent-refinement question (§ Stay Engaged After Delegating).
 
 - **Phantom doing card** — A card in `doing` status with no running agent. Created when the coordinator transitions a card to doing (`kanban do` or `kanban start`) or re-launches an agent on a `doing` card and then proceeds with other work without launching the Agent. The board says "in progress" but nothing is happening. Detect: glance at `<mine>` cards in `kanban list` before each new card creation; for each `doing` card, confirm an agent ran or is running. The atomic-delegation rule (Step 4 of Delegation Protocol) exists to prevent this — its violation is the failure mode.
 
