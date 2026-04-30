@@ -79,6 +79,22 @@ In ripgrep, `-E` means `--encoding`. The default regex engine already handles PC
 - ✅ `rg -q 'A|try \{|B' file` — escaped
 - ✅ Better: separate `mov_commands` entries (one per term)
 
+### Self-reference trap (searching for literal banned-pattern text)
+
+When authoring a MoV that needs to search for the literal text of a banned pattern in a file (e.g., to verify a review's scratchpad covers the `rg -E` flag confusion), the lint hook cannot distinguish flag USAGE from text SEARCH. Authoring `rg -qi 'rg -E|encoding...' .scratchpad/...` triggers a false-positive rejection because the cmd literally contains `rg -E` as a substring.
+
+**Workaround: use a synonym or descriptive phrase instead of the banned pattern's literal name.**
+
+| Banned pattern (don't search for) | Use this synonym instead |
+|-----------------------------------|--------------------------|
+| `rg -E` | `encoding flag`, `--encoding`, `not extended regex` |
+| `\|` (literal pipe) | `literal pipe`, `backslash.pipe`, `alternation trap` |
+| `&&` (AND-chain) | `AND-chain`, `chained command`, `compound shell` |
+| `--no-verify` | `hook bypass`, `skip hooks` |
+| `HUSKY=0` | `husky disable`, `husky skip` |
+
+The permanent structural fix (token-based detection in the kanban CLI that distinguishes flag usage from quoted-pattern search) is tracked separately. Until it lands, prefer descriptive phrases over literal pattern names in MoV search expressions.
+
 ### Pre-`kanban do --file` lint (mandatory before every CLI invocation)
 
 Before invoking the kanban CLI, scan every `mov_commands[].cmd` field for these banned patterns:
