@@ -298,6 +298,37 @@ class TestValidateMovCommandsContentUnit:
         captured = capsys.readouterr()
         assert "dash-leading" in captured.err.lower() or "separator" in captured.err.lower()
 
+    def test_rg_E_in_quoted_arg_is_not_flagged(self, kanban):
+        """rg -qi 'rg -E text' file: rg -E is inside the regex pattern, not a flag."""
+        card = make_card(criteria=[make_criterion(cmd="rg -qi 'rg -E text' file")])
+        try:
+            kanban.validate_mov_commands_content(card)
+        except SystemExit as e:
+            pytest.fail(
+                f"rg -E inside quoted pattern arg raised SystemExit({e.code}) — "
+                f"token-based detection should not flag this"
+            )
+
+    def test_rg_E_as_flag_is_still_flagged(self, kanban, capsys):
+        """rg -qiE 'pattern' file: -E is an actual flag to rg and must be rejected."""
+        card = make_card(criteria=[make_criterion(cmd="rg -qiE 'pattern' file")])
+        with pytest.raises(SystemExit) as exc_info:
+            kanban.validate_mov_commands_content(card)
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "rg -E" in captured.err or "-E" in captured.err or "encoding" in captured.err.lower()
+
+    def test_rg_E_in_grep_command_text_search(self, kanban):
+        """grep 'rg -E' file: grep is searching FOR the text 'rg -E', not using -E as its own flag."""
+        card = make_card(criteria=[make_criterion(cmd="grep 'rg -E' file")])
+        try:
+            kanban.validate_mov_commands_content(card)
+        except SystemExit as e:
+            pytest.fail(
+                f"grep searching for literal 'rg -E' text raised SystemExit({e.code}) — "
+                f"token-based detection should not flag grep's pattern content"
+            )
+
 
 # ---------------------------------------------------------------------------
 # Integration tests: inline-JSON path (subprocess-based)

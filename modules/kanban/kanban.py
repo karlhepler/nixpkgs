@@ -898,9 +898,11 @@ def validate_criteria_schema(criteria: list) -> None:
 # Pattern constants
 # ---------------------------------------------------------------------------
 
+# Fallback regex for rg -E detection when shlex tokenization fails (malformed input).
 # Matches rg invocations that include capital -E (--encoding, not extended regex).
 # Handles: rg -E, rg -qE, rg -qiE, rg -EI, etc.
 # Does NOT match grep -E or other non-rg tools.
+# NOTE: Used ONLY as a fallback — see _mov_is_rg_E_flag_token for the primary check.
 _MOV_RG_E_FLAG_RE = re.compile(r'\brg\s+-[a-zA-Z]*E[a-zA-Z]*\b')
 
 # Structural prefix of the fragile absence-via-count pattern:
@@ -1114,6 +1116,77 @@ def _mov_is_dash_leading_pattern(cmd: str) -> bool:
     return False
 
 
+def _mov_is_rg_E_flag_token(cmd: str) -> bool:
+    """True if cmd invokes rg with capital -E as an ACTUAL flag (not inside a quoted argument).
+
+    Uses token-based detection via shlex.split to distinguish between:
+      - rg -qiE 'pattern' file   → True  (E is a flag passed to rg)
+      - rg -qi 'rg -E text' file → False (rg -E is inside a quoted pattern arg, not a flag)
+      - grep 'rg -E' file        → False (grep is searching FOR the text "rg -E", not using it)
+
+    Token-walking rules:
+    1. Find the first `rg` token in the command.
+    2. Walk immediately-following tokens. If a token starts with `-` (but not `--`)
+       and contains `E`, it is a flag with -E → return True.
+    3. Stop at the first token that cannot be a flag (does not start with `-`),
+       which marks the start of the positional arguments (pattern or path).
+    4. `--` terminates the flag region → return False.
+    5. For long flags that consume a value token (e.g. --encoding VALUE, -f FILE),
+       skip the value token before continuing.
+
+    Falls back to _MOV_RG_E_FLAG_RE (substring) when shlex.split raises ValueError
+    (malformed/unclosed quotes), preserving the conservative safety guarantee.
+    """
+    try:
+        tokens = shlex.split(cmd)
+    except ValueError:
+        # Malformed input: fall back to substring detection so we stay safe.
+        return bool(_MOV_RG_E_FLAG_RE.search(cmd))
+
+    if not tokens:
+        return False
+
+    # Find the rg invocation (may be a path like /usr/bin/rg — check basename).
+    rg_idx = None
+    for i, tok in enumerate(tokens):
+        if tok.split("/")[-1] == "rg":
+            rg_idx = i
+            break
+    if rg_idx is None:
+        return False
+
+    post_rg = tokens[rg_idx + 1:]
+    i = 0
+    while i < len(post_rg):
+        tok = post_rg[i]
+        if tok == "--":
+            # End of flags.
+            return False
+        if tok.startswith("--"):
+            # Long flag: skip value if this flag consumes one.
+            if tok in _MOV_RG_FLAGS_WITH_VALUE:
+                i += 2
+            else:
+                i += 1
+            continue
+        if tok.startswith("-"):
+            # Short flag cluster (e.g. -qi, -qiE, -E).
+            # E in the cluster (at any position after the leading dash) means -E flag.
+            if "E" in tok[1:]:
+                return True
+            # If this short-flag cluster ends in a flag that consumes a value,
+            # skip the next token (its value). For simplicity, only -E itself
+            # consumes a value among single-char rg flags — and we already handle
+            # that above. All other single-char flags in a cluster are boolean.
+            i += 1
+            continue
+        # First non-flag token: positional argument (pattern or path). Stop here.
+        # The E inside this token is part of the pattern/path, not a flag.
+        return False
+
+    return False
+
+
 def _mov_check_cmd(cmd: str) -> "list[tuple[str, str]]":
     """
     Check a single cmd string against all banned MoV patterns.
@@ -1161,7 +1234,7 @@ def _mov_check_cmd(cmd: str) -> "list[tuple[str, str]]":
             ),
         ))
 
-    if _MOV_RG_E_FLAG_RE.search(cmd):
+    if _mov_is_rg_E_flag_token(cmd):
         violations.append((
             "rg -E (capital -E flag)",
             (
