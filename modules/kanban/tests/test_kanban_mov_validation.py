@@ -329,6 +329,33 @@ class TestValidateMovCommandsContentUnit:
                 f"token-based detection should not flag grep's pattern content"
             )
 
+    def test_rg_E_piped_multi_rg_pipeline_detected(self, kanban, capsys):
+        """rg -qi 'pattern' file | rg -E 'other': second rg -E in pipeline must be rejected."""
+        card = make_card(criteria=[make_criterion(cmd="rg -qi 'pattern' file | rg -E 'other'")])
+        with pytest.raises(SystemExit) as exc_info:
+            kanban.validate_mov_commands_content(card)
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "rg -E" in captured.err or "-E" in captured.err or "encoding" in captured.err.lower()
+
+    def test_rg_E_value_consuming_short_flag_f_detected(self, kanban, capsys):
+        """rg -f encodingfile -E 'pattern' file: -f consumes value, -E must still be detected."""
+        card = make_card(criteria=[make_criterion(cmd="rg -f encodingfile -E 'pattern' file")])
+        with pytest.raises(SystemExit) as exc_info:
+            kanban.validate_mov_commands_content(card)
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "rg -E" in captured.err or "-E" in captured.err or "encoding" in captured.err.lower()
+
+    def test_rg_E_shlex_fallback_with_unclosed_quotes(self):
+        """rg -qiE 'unclosed: shlex.split raises ValueError, fallback to regex detection returns True."""
+        mod = load_kanban()
+        result = mod._mov_is_rg_E_flag_token("rg -qiE 'unclosed")
+        assert result is True, (
+            "shlex fallback should return True for rg -qiE with unclosed quote "
+            "(regex detection catches it)"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Integration tests: inline-JSON path (subprocess-based)

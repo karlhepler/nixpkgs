@@ -1125,13 +1125,16 @@ def _mov_is_rg_E_flag_token(cmd: str) -> bool:
       - grep 'rg -E' file        → False (grep is searching FOR the text "rg -E", not using it)
 
     Token-walking rules:
-    1. Find the first `rg` token in the command.
-    2. Walk immediately-following tokens. If a token starts with `-` (but not `--`)
-       and contains `E`, it is a flag with -E → return True.
+    1. Find ALL `rg` tokens in the command (handles piped commands like `rg ... | rg -E ...`).
+    2. For each rg invocation, walk immediately-following tokens. If a token starts with `-`
+       (but not `--`) and contains `E`, it is a flag with -E → return True immediately when
+       -E is detected — there is no need to skip its value token (we already returned).
     3. Stop at the first token that cannot be a flag (does not start with `-`),
        which marks the start of the positional arguments (pattern or path).
-    4. `--` terminates the flag region → return False.
-    5. For long flags that consume a value token (e.g. --encoding VALUE, -f FILE),
+    4. `--` terminates the flag region → stop examining this rg invocation.
+    5. For long flags that consume a value token (e.g. --encoding VALUE),
+       skip the value token before continuing.
+    6. For short flags that consume a value token (e.g. -f FILE via _MOV_RG_FLAGS_WITH_VALUE),
        skip the value token before continuing.
 
     Falls back to _MOV_RG_E_FLAG_RE (substring) when shlex.split raises ValueError
@@ -1146,43 +1149,42 @@ def _mov_is_rg_E_flag_token(cmd: str) -> bool:
     if not tokens:
         return False
 
-    # Find the rg invocation (may be a path like /usr/bin/rg — check basename).
-    rg_idx = None
-    for i, tok in enumerate(tokens):
-        if tok.split("/")[-1] == "rg":
-            rg_idx = i
-            break
-    if rg_idx is None:
-        return False
+    # Walk ALL rg occurrences (handles multi-rg pipelines like `rg ... | rg -E ...`).
+    for rg_idx, tok in enumerate(tokens):
+        if tok.split("/")[-1] != "rg":
+            continue
 
-    post_rg = tokens[rg_idx + 1:]
-    i = 0
-    while i < len(post_rg):
-        tok = post_rg[i]
-        if tok == "--":
-            # End of flags.
-            return False
-        if tok.startswith("--"):
-            # Long flag: skip value if this flag consumes one.
-            if tok in _MOV_RG_FLAGS_WITH_VALUE:
-                i += 2
-            else:
-                i += 1
-            continue
-        if tok.startswith("-"):
-            # Short flag cluster (e.g. -qi, -qiE, -E).
-            # E in the cluster (at any position after the leading dash) means -E flag.
-            if "E" in tok[1:]:
-                return True
-            # If this short-flag cluster ends in a flag that consumes a value,
-            # skip the next token (its value). For simplicity, only -E itself
-            # consumes a value among single-char rg flags — and we already handle
-            # that above. All other single-char flags in a cluster are boolean.
-            i += 1
-            continue
-        # First non-flag token: positional argument (pattern or path). Stop here.
-        # The E inside this token is part of the pattern/path, not a flag.
-        return False
+        post_rg = tokens[rg_idx + 1:]
+        i = 0
+        while i < len(post_rg):
+            tok = post_rg[i]
+            if tok == "--":
+                # End of flags for this rg invocation.
+                break
+            if tok.startswith("--"):
+                # Long flag: skip value if this flag consumes one.
+                if tok in _MOV_RG_FLAGS_WITH_VALUE:
+                    i += 2
+                else:
+                    i += 1
+                continue
+            if tok.startswith("-"):
+                # Short flag cluster (e.g. -qi, -qiE, -E).
+                # E in the cluster (at any position after the leading dash) means -E flag.
+                if "E" in tok[1:]:
+                    return True
+                # If this short flag is a known value-consumer (e.g. -f FILE),
+                # skip the next token (its value) before continuing.
+                if tok in _MOV_RG_FLAGS_WITH_VALUE:
+                    i += 2
+                else:
+                    i += 1
+                # We return True immediately when -E is detected — there is no need to skip
+                # its value token.
+                continue
+            # First non-flag token: positional argument (pattern or path). Stop here.
+            # The E inside this token is part of the pattern/path, not a flag.
+            break
 
     return False
 
