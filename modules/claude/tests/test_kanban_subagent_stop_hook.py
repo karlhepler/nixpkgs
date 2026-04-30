@@ -1123,3 +1123,240 @@ class TestExtractAgentOutput:
             result = hook.extract_agent_output(transcript)
 
         assert "Analysis complete. Files look good." in result
+
+
+# ---------------------------------------------------------------------------
+# Hedge-word audit unit tests
+# ---------------------------------------------------------------------------
+
+# A sufficiently long text (>= 200 chars) with no hedge words — the baseline.
+_CLEAN_RETURN = (
+    "The implementation is complete. "
+    "The file src/config.py:42 defines the timeout constant. "
+    "The handler at src/handler.py:18 uses the constant directly. "
+    "Integration tests at tests/test_handler.py:55 verify the behavior end-to-end. "
+    "All criteria are satisfied by the code as written."
+)
+
+# A sufficiently long text with multiple hedge words but no citations.
+_HEDGED_NO_CITATIONS = (
+    "The implementation is essentially complete and should work for the use case. "
+    "The daemon basically registers the handler, which effectively means it will "
+    "generally respond to incoming events. The behavior is roughly as expected and "
+    "likely covers all the cases described in the acceptance criteria. "
+    "The code appears to handle edge cases and should be fine in production. "
+    "Overall the feature is conceptually done and the integration is functionally present."
+)
+
+# A sufficiently long hedged text that IS grounded with 3+ citations.
+# Note: each citation is unique — duplicate citations would inflate the count
+# and mask threshold regressions. Text must exceed _HEDGE_MIN_LENGTH (400 chars).
+_HEDGED_WITH_CITATIONS = (
+    "The implementation essentially wraps the existing logic and delegates event handling. "
+    "See src/daemon.py:14 for the registration call, src/handler.py:72 for the "
+    "dispatch logic, and src/parser.py:108 for the coverage. "
+    "The approach is generally aligned with the existing pattern and should work "
+    "in the typical case. The daemon basically delegates to the handler "
+    "and appears to process events correctly based on the implementation reviewed."
+)
+
+
+class TestHedgeWordAudit:
+    """Unit tests for hedge_audit() — hedge-word audit gate."""
+
+    def test_clean_return_no_system_reminder(self, hook):
+        """Return text with no hedge words → empty string (no SystemReminder emitted)."""
+        result = hook.hedge_audit(
+            _CLEAN_RETURN,
+            card_number="100",
+            session="test-session",
+            card_type="work",
+        )
+        assert result == "", (
+            f"Expected empty string for clean return, got: {result!r}"
+        )
+
+    def test_hedges_zero_citations_emit_system_reminder(self, hook):
+        """Hedged return with 0 citations → non-empty SystemReminder emitted."""
+        result = hook.hedge_audit(
+            _HEDGED_NO_CITATIONS,
+            card_number="101",
+            session="test-session",
+            card_type="work",
+        )
+        assert result != "", "Expected SystemReminder for hedged return with no citations"
+        assert "Hedge-word audit" in result, (
+            f"Expected 'Hedge-word audit' in SystemReminder. Got: {result!r}"
+        )
+        assert "101" in result, "Expected card number in SystemReminder"
+
+    def test_hedges_with_three_citations_no_system_reminder(self, hook):
+        """Hedged return grounded by ≥3 file:line citations → empty string (grounded)."""
+        result = hook.hedge_audit(
+            _HEDGED_WITH_CITATIONS,
+            card_number="102",
+            session="test-session",
+            card_type="work",
+        )
+        assert result == "", (
+            f"Expected empty string (grounded) for hedged return with 3 citations, got: {result!r}"
+        )
+
+    def test_research_card_type_skips_audit(self, hook):
+        """card_type='research' → audit skipped, empty string returned."""
+        result = hook.hedge_audit(
+            _HEDGED_NO_CITATIONS,
+            card_number="103",
+            session="test-session",
+            card_type="research",
+        )
+        assert result == "", (
+            f"Expected empty string for research card (audit skipped), got: {result!r}"
+        )
+
+    def test_terse_return_skips_audit(self, hook):
+        """Return text < 400 chars → audit skipped, empty string returned."""
+        terse = "The work is essentially done."
+        assert len(terse) < 400, "Precondition: terse text must be < 400 chars"
+        result = hook.hedge_audit(
+            terse,
+            card_number="104",
+            session="test-session",
+            card_type="work",
+        )
+        assert result == "", (
+            f"Expected empty string for terse return (audit skipped), got: {result!r}"
+        )
+
+    def test_system_reminder_contains_hedge_list(self, hook):
+        """SystemReminder for hedged return should list detected hedge words."""
+        result = hook.hedge_audit(
+            _HEDGED_NO_CITATIONS,
+            card_number="105",
+            session="test-session",
+            card_type="work",
+        )
+        assert result, "Expected non-empty SystemReminder"
+        # At least one hedge word from the text should appear in the reminder.
+        any_hedge_mentioned = any(
+            word in result.lower()
+            for word in ["essentially", "should work", "basically", "effectively",
+                         "generally", "likely", "conceptually", "functionally", "roughly"]
+        )
+        assert any_hedge_mentioned, (
+            f"Expected at least one hedge word listed in reminder. Got: {result!r}"
+        )
+
+    def test_system_reminder_contains_citation_count(self, hook):
+        """SystemReminder should report the citation count found."""
+        result = hook.hedge_audit(
+            _HEDGED_NO_CITATIONS,
+            card_number="106",
+            session="test-session",
+            card_type="work",
+        )
+        assert result, "Expected non-empty SystemReminder"
+        # The reminder should mention the citation count (0 in this case).
+        assert "0" in result or "Citations found" in result, (
+            f"Expected citation count in reminder. Got: {result!r}"
+        )
+
+    def test_hedges_inside_code_blocks_not_detected(self, hook):
+        """Hedge words inside triple-backtick code blocks must NOT trigger the audit.
+
+        This verifies that _strip_code_and_quotes correctly suppresses false positives
+        from code blocks containing hedge-word identifiers or comments.
+        """
+        # Construct a text with enough non-hedge prose (> 400 chars) and hedge words
+        # that appear ONLY inside code blocks.
+        prose = (
+            "The implementation is complete and all tests pass. "
+            "The configuration file defines the required constants. "
+            "All acceptance criteria have been verified against the live system. "
+            "The handler processes requests correctly and returns expected results. "
+            "No regressions were found during the verification pass."
+        )
+        # Hedge words buried inside code blocks — should be stripped before scan.
+        code_block = (
+            "```python\n"
+            "# This should work — basically a no-op\n"
+            "# essentially wraps the underlying call\n"
+            "def roughly_equal(a, b): return abs(a - b) < 0.01\n"
+            "```"
+        )
+        text = prose + "\n\n" + code_block
+        assert len(text) > 400, f"Precondition: text must exceed 400 chars, got {len(text)}"
+
+        result = hook.hedge_audit(
+            text,
+            card_number="107",
+            session="test-session",
+            card_type="work",
+        )
+        assert result == "", (
+            f"Expected empty string (hedge words in code blocks should be ignored), got: {result!r}"
+        )
+
+    def test_review_card_type_skips_audit(self, hook):
+        """card_type='review' → audit skipped, empty string returned."""
+        result = hook.hedge_audit(
+            _HEDGED_NO_CITATIONS,
+            card_number="108",
+            session="test-session",
+            card_type="review",
+        )
+        assert result == "", (
+            f"Expected empty string for review card (audit skipped), got: {result!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Integration test: process_subagent_stop hedge_audit wiring
+# ---------------------------------------------------------------------------
+
+class TestProcessSubagentStopHedgeWiring:
+    """Integration test verifying hedge_audit is wired into process_subagent_stop."""
+
+    def test_process_subagent_stop_includes_system_message_when_hedged(
+        self, hook, tmp_transcript
+    ):
+        """When the agent's final return is hedged and ungrounded, process_subagent_stop
+        returns a systemMessage key in the allow response (exit 0 path).
+
+        This verifies that the hedge_audit result is not silently discarded — if the
+        wiring at 'return allow(message, system_message=hedge_reminder)' were accidentally
+        removed, this test would fail.
+        """
+        # Build a transcript whose last assistant message is a hedged return (no citations).
+        entries = [
+            make_card_header_entry("200", "sess-hedge"),
+            {
+                "role": "assistant",
+                "content": _HEDGED_NO_CITATIONS,
+            },
+        ]
+        transcript = tmp_transcript(entries)
+        payload = make_stop_payload(transcript_path=transcript)
+
+        def fake_subprocess_run(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd[0] == "kanban":
+                sub = cmd[1] if len(cmd) > 1 else ""
+                if sub == "status":
+                    return KanbanMockResponses.success(stdout="doing")
+                if sub == "done":
+                    return KanbanMockResponses.success(stdout="Card #200 done.")
+                return KanbanMockResponses.success()
+            return KanbanMockResponses.success()
+
+        with patch.object(hook, "send_transition_notification"):
+            with patch("subprocess.run", side_effect=fake_subprocess_run):
+                result = run_process_stop(hook, payload)
+
+        assert result.get("decision") == "allow", f"Expected allow, got: {result}"
+        assert "systemMessage" in result, (
+            f"Expected 'systemMessage' key in allow response when hedged, got: {result}"
+        )
+        system_msg = result["systemMessage"]
+        assert "Hedge-word audit" in system_msg, (
+            f"Expected 'Hedge-word audit' in systemMessage. Got: {system_msg!r}"
+        )

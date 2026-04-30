@@ -64,6 +64,45 @@ _CARD_XML_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# ---------------------------------------------------------------------------
+# Hedge-word audit constants
+# ---------------------------------------------------------------------------
+
+HEDGE_PATTERNS = [
+    r"\bconceptually\b",
+    r"\beffectively\b",
+    r"\bessentially\b",
+    r"\bbasically\b",
+    r"\bmore or less\b",
+    r"\bin spirit\b",
+    r"\bappears to\b",
+    r"\bseems to\b",
+    r"\bshould work\b",
+    r"\blikely\b",
+    r"\bpresumably\b",
+    r"\bfunctionally\b",
+    r"\broughly\b",  # approximately/roughly: legitimate in measurement contexts; flag with care
+    r"\bapproximately\b",  # approximately/roughly: legitimate in measurement contexts; flag with care
+    r"\bsort of\b",
+    r"\bkind of\b",
+    r"\bfor the most part\b",
+    r"\btypically\b",
+    r"\bgenerally\b",
+]
+
+CITATION_PATTERN = r"\b[A-Za-z0-9_\-]+(?:[./][A-Za-z0-9_\-]+)*\.[a-z]+:[0-9]+\b"  # path.ext:line
+
+# Minimum number of file:line citations to consider a hedged return "grounded".
+_HEDGE_CITATION_THRESHOLD = 3
+
+# Minimum character length of final return text before running hedge audit.
+_HEDGE_MIN_LENGTH = 400
+
+# Maximum transcript size before skipping transcript-reading operations.
+_TRANSCRIPT_MAX_BYTES = 50 * 1024 * 1024  # 50 MB
+
+# ---------------------------------------------------------------------------
+
 # Patterns for detecting permission-gate stalls in Claude Code dontAsk mode.
 # Denied Bash commands produce tool results containing these phrases.
 _PERMISSION_DENIAL_PATTERN = re.compile(
@@ -162,11 +201,13 @@ def log_info(message: str) -> None:
 # Allow/block response helpers
 # ---------------------------------------------------------------------------
 
-def allow(message: str = "") -> dict:
+def allow(message: str = "", system_message: str = "") -> dict:
     """Return a decision=allow response."""
     result = {"decision": "allow"}
     if message:
         result["reason"] = message
+    if system_message:
+        result["systemMessage"] = system_message
     return result
 
 
@@ -191,6 +232,13 @@ def extract_agent_output(transcript_path: str) -> str:
 
     Returns the extracted output string, or empty string if not found.
     """
+    # Size guard: skip for very large transcripts (consistent with gaming detection).
+    try:
+        if Path(transcript_path).stat().st_size > _TRANSCRIPT_MAX_BYTES:
+            return ""
+    except OSError:
+        pass
+
     last_assistant_content = ""
     try:
         with open(transcript_path, "r", encoding="utf-8") as fh:
@@ -376,7 +424,6 @@ def detect_criteria_gaming(transcript_path: str) -> bool:
         # Size guard: skip gaming detection for very large transcripts to avoid
         # spiking Python memory usage (50 MB transcript → ~200-300 MB in-memory).
         # Fail open: a large transcript is unlikely to be gaming anyway.
-        _TRANSCRIPT_MAX_BYTES = 50 * 1024 * 1024  # 50 MB
         try:
             transcript_size = Path(transcript_path).stat().st_size
             if transcript_size > _TRANSCRIPT_MAX_BYTES:
@@ -488,6 +535,103 @@ def detect_criteria_gaming(transcript_path: str) -> bool:
     except Exception as exc:
         log_error(f"detect_criteria_gaming: unexpected error for {transcript_path}: {exc}")
         return False
+
+
+# ---------------------------------------------------------------------------
+# Hedge-word audit
+# ---------------------------------------------------------------------------
+
+def _strip_code_and_quotes(text: str) -> str:
+    """Remove triple-backtick code blocks and quoted strings from text.
+
+    This prevents false positives where the agent quotes a user question or
+    code snippet that happens to contain hedge words.
+    """
+    # Strip triple-backtick code blocks (```...```)
+    text = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
+    # Strip inline backtick code spans (`...`)
+    text = re.sub(r"`[^`]*`", "", text)
+    # Strip double-quoted strings — conservative: only single-line strings
+    text = re.sub(r'"[^"\n]{0,300}"', "", text)
+    # Note: single-quote stripping is intentionally omitted — it strips possessives
+    # and contractions (e.g. "it's", "don't"), which can remove hedge words mid-sentence.
+    # The primary false-positive risk is code blocks and inline code, handled above.
+    return text
+
+
+def hedge_audit(
+    final_return_text: str,
+    card_number: str,
+    session: str,
+    card_type: str = "work",
+) -> str:
+    """Audit the agent's final return text for hedge words without grounding evidence.
+
+    Returns a non-empty SystemReminder string if the audit trips; empty string otherwise.
+
+    Decision logic:
+    - No hedges → no action (return "")
+    - Hedges + ≥3 file:line citations → grounded, no action (return "")
+    - Hedges + <3 citations → return SystemReminder string
+
+    Edge-case skips:
+    - card_type in ('research', 'review') → skip (these card types report analysis/findings
+      which inherently use hedging language like "appears to", "generally", "likely")
+    - len(final_return_text) < _HEDGE_MIN_LENGTH → skip (not enough text)
+    """
+    # Skip research and review cards — hedging language is expected for analytical reports.
+    if card_type in ("research", "review"):
+        return ""
+
+    # Skip terse returns — not enough text to form a reliable hedge pattern.
+    if len(final_return_text) < _HEDGE_MIN_LENGTH:
+        return ""
+
+    # Strip code blocks and quoted strings to reduce false positives.
+    scan_text = _strip_code_and_quotes(final_return_text)
+
+    # Find all hedge matches.
+    detected_hedges: list[str] = []
+    for pattern in HEDGE_PATTERNS:
+        compiled = re.compile(pattern, re.IGNORECASE)
+        matches = compiled.findall(scan_text)
+        if matches:
+            # Record the canonical hedge word (first capture or the match itself).
+            detected_hedges.extend(matches)
+
+    if not detected_hedges:
+        return ""
+
+    # Count file:line citations in the original text (not stripped — citations may
+    # appear near code blocks).
+    citation_matches = re.findall(CITATION_PATTERN, final_return_text)
+    citation_count = len(citation_matches)
+
+    if citation_count >= _HEDGE_CITATION_THRESHOLD:
+        # Sufficiently grounded — hedge words are acceptable.
+        return ""
+
+    # Deduplicate hedge list for display, preserving order.
+    seen: set[str] = set()
+    unique_hedges: list[str] = []
+    for h in detected_hedges:
+        lh = h.lower()
+        if lh not in seen:
+            seen.add(lh)
+            unique_hedges.append(h)
+
+    hedge_list = ", ".join(f'"{h}"' for h in unique_hedges[:10])
+    reminder = (
+        f"\U0001f6a8 Hedge-word audit on card #{card_number} (session {session}):\n\n"
+        f"The agent's final return contains hedging language without sufficient\n"
+        f"file:line evidence. This pattern has historically masked stub work.\n\n"
+        f"Hedges detected: {hedge_list}\n"
+        f"Citations found: {citation_count} (need ≥{_HEDGE_CITATION_THRESHOLD} for acceptance)\n\n"
+        f"Per § Hedge-Word Auto-Reject Trigger: spawn a verification card before\n"
+        f"briefing the user. Use a domain specialist sub-agent (e.g., /researcher\n"
+        f"or /debugger) with AC asserting concrete observable evidence."
+    )
+    return reminder
 
 
 # ---------------------------------------------------------------------------
@@ -603,8 +747,12 @@ def _get_tmux_context() -> str:
             ["tmux", "display-message", "-t", tmux_pane, "-p", "#W"],
             capture_output=True, text=True, timeout=3,
         ).stdout.strip()
-        if session and window:
-            return f"{session} → {window}"
+        # Scrub embedded newlines — tmux names could theoretically contain them,
+        # which would break the AppleScript string literal in send_transition_notification.
+        safe_session = session.replace("\n", " ").replace("\r", " ")  # replace newline chars
+        safe_window = window.replace("\n", " ").replace("\r", " ")  # replace newline chars
+        if safe_session and safe_window:
+            return f"{safe_session} → {safe_window}"
     except Exception:
         pass
     return ""
@@ -660,6 +808,61 @@ def get_card_status(card_number: str, session: str) -> str | None:
     return None
 
 
+def get_card_type(card_number: str, session: str, transcript_path: str = "") -> str:
+    """Fetch card type, reading from injected XML in transcript first.
+
+    Primary path: parse the injected <card> XML already present in the transcript
+    (inserted by the PreToolUse hook). This avoids an extra kanban show call after
+    kanban done has already moved the card to done state.
+
+    Fallback: issue kanban show if the transcript path is not provided or the XML
+    does not contain a type attribute.
+
+    Returns 'work' on failure/absence (the most common type).
+    """
+    # Primary: read card type from transcript's injected XML (_CARD_XML_PATTERN).
+    if transcript_path:
+        try:
+            with open(transcript_path, "r", encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line, strict=False)
+                    except json.JSONDecodeError:
+                        continue
+                    texts = _extract_text_from_entry(entry)
+                    for text in texts:
+                        m = re.search(
+                            r'<card\b[^>]*\bnum="' + re.escape(card_number) + r'"[^>]*\btype="([^"]*)"',
+                            text,
+                            re.IGNORECASE,
+                        )
+                        if not m:
+                            # Also try reversed attribute order: type before num
+                            m = re.search(
+                                r'<card\b[^>]*\btype="([^"]*)"[^>]*\bnum="' + re.escape(card_number) + r'"',
+                                text,
+                                re.IGNORECASE,
+                            )
+                        if m:
+                            return m.group(1).strip().lower()
+        except Exception:
+            pass
+
+    # Fallback: kanban show (used if transcript path absent or XML extraction failed).
+    try:
+        result = run_kanban(["show", card_number, "--output-style=xml", "--session", session], timeout=10)
+        if result.returncode == 0:
+            m = re.search(r'<card\b[^>]*\btype="([^"]*)"', result.stdout)
+            if m:
+                return m.group(1).strip().lower()
+    except Exception:
+        pass
+    return "work"
+
+
 def get_all_criteria_numbers(card_number: str, session: str) -> list[int]:
     """Return 1-based index list of all acceptance criteria on a card.
 
@@ -713,6 +916,10 @@ def process_subagent_stop(payload: dict) -> dict:
     4. Call kanban done and map exit code to allow/block
     """
     transcript_path = payload.get("agent_transcript_path", "")
+    # Note: transcript_path is accepted without canonicalization (no Path.resolve()
+    # or home-directory restriction). The path arrives from the Claude Code daemon,
+    # which is a trusted internal process on this single-user system. Deferred —
+    # revisit if this hook is ever exposed to multi-user or network-delivered input.
 
     if not transcript_path or not os.path.exists(transcript_path):
         log_info("No transcript path or file not found — allowing stop")
@@ -802,6 +1009,18 @@ def process_subagent_stop(payload: dict) -> dict:
     )
     exit_code = done_result.returncode
 
+    # Step 5: Hedge-word audit (additive, runs after kanban done regardless of outcome).
+    # Fetch the card type here once — used for audit skip logic.
+    # Reads from injected transcript XML first; falls back to kanban show only if needed.
+    card_type = get_card_type(card_number, session, transcript_path=transcript_path)
+    final_return_text = extract_agent_output(transcript_path)
+    hedge_reminder = hedge_audit(final_return_text, card_number, session, card_type)
+    if hedge_reminder:
+        log_info(
+            f"Hedge-word audit tripped for card #{card_number}: "
+            f"{len(hedge_reminder)} char reminder generated"
+        )
+
     if exit_code == 0:
         # Card completed successfully
         intent = get_card_intent(card_number, session)
@@ -809,18 +1028,14 @@ def process_subagent_stop(payload: dict) -> dict:
         message = f"Card #{card_number} completed successfully."
         message += format_deferred_notification(session)
         log_info(f"Card #{card_number} done (exit 0)")
-        return allow(message)
+        return allow(message, system_message=hedge_reminder)
 
     if exit_code == 2:
-        # Max cycles reached — allow stop, surface to staff
+        # Max cycles reached — allow stop, surface to staff; hedge_reminder forwarded.
         kanban_output = done_result.stderr.strip() or done_result.stdout.strip()
-        message = (
-            f"Card #{card_number} max cycles reached — requires manual intervention by staff engineer.\n\n"
-            f"{kanban_output}"
-        )
-        message += format_deferred_notification(session)
+        max_cycles_msg = f"Card #{card_number} max cycles reached — requires manual intervention.\n\n{kanban_output}" + format_deferred_notification(session)
         log_info(f"Card #{card_number} max cycles reached (exit 2): {kanban_output}")
-        return allow(message)
+        return allow(max_cycles_msg, system_message=hedge_reminder)
 
     if exit_code == 1:
         # Retryable failure — block agent with kanban's feedback verbatim
@@ -834,7 +1049,7 @@ def process_subagent_stop(payload: dict) -> dict:
             f"when you stop."
         )
         log_info(f"Card #{card_number} not done yet (exit 1): {kanban_output}")
-        return block(reason)
+        return block(reason, system_message=hedge_reminder)
 
     # Other non-zero exit — unexpected error
     kanban_output = done_result.stderr.strip() or done_result.stdout.strip()
