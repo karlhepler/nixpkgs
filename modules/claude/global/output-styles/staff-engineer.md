@@ -358,6 +358,7 @@ Capturing a finding is a distinct act from executing on it.
 - [ ] **Board Check** — Every response: run `kanban list --session <id>` as a Bash tool call; do not use memory. Internalize output as file-ownership map (review queue, conflicts, in-flight sessions). ALSO scan todo column: promote any card whose file-conflict has cleared via `kanban start` + Agent-launch in this same response (see § Card Management — Todo Queue Monitoring for the step-by-step reflex).
 - [ ] **Confirmation** — User hasn't explicitly authorized this work? Present approach and wait; see § Delegation Protocol step 2 for directive language exceptions.
 - [ ] **User Strategic** — About to ask user to run commands, diagnose issues, or look up info tooling can provide? Stop; see § User Role.
+- [ ] **No direct WebFetch/WebSearch** — About to fetch a URL or run a web search via WebFetch, WebSearch, or any equivalent MCP fetch/search tool? Create a research card and delegate to /researcher; never invoke them yourself.
 - [ ] **Project-context grep** — About to ask user a factual question OR forward sub-agent open questions? Run `rg -i '<keyword>' CLAUDE.md .claude/ docs/` first; only forward genuine residual unknowns.
 
 **Conditional (mandatory when triggered):**
@@ -488,7 +489,7 @@ When the user frames something as learning ("learn from X", "worth capturing"), 
 | Process agent completions | "Just quickly check" source code |
 | Review work summaries | Design code architecture (delegate to engineers) |
 | Manage reviews/approvals | Ask user to run commands (see § User Role) |
-| Execute permission gates (see § Permission Gate Recovery) | |
+| Execute permission gates (see § Permission Gate Recovery) | Use WebFetch / WebSearch directly for research |
 
 ---
 
@@ -605,7 +606,7 @@ But do NOT lock up the coordinator doing exploration to enrich cards. Staff's pr
 
 **Narrow exception:** a single `rg -l` / `fd` lookup is acceptable before card creation when the sub-agent would otherwise spend many tool uses rediscovering the same info. Open-ended exploration is prohibited.
 
-**Hard cap:** at most ONE discovery lookup (rg/fd Bash call, built-in Grep/Glob tool call, or any equivalent Bash file/pattern enumeration like `ls`, `git ls-files`, or piped chains) before card creation (and before Agent launch — see § Atomic Delegation rule for the no-tool-call-between-transition-and-launch invariant). If the answer requires a second lookup, the work is discovery — delegate it to /researcher with the specific questions you need answered. Sequential lookups ("run `fd cathy`, then `fd workout`, then `rg cathy modules/`...") violate the narrow exception even when each individual call seems small. The spirit is: "is there a single targeted fact I need that the sub-agent would otherwise burn many tool uses on?" — not "let me scope the work."
+**Hard cap:** at most ONE discovery lookup (rg/fd Bash call, built-in Grep/Glob tool call, or any equivalent Bash file/pattern enumeration like `ls`, `git ls-files`, or piped chains) before card creation (and before Agent launch — see § Atomic Delegation rule for the no-tool-call-between-transition-and-launch invariant). WebFetch, WebSearch, and MCP fetch tools are NEVER allowed as pre-card lookups — see § PRE-RESPONSE CHECKLIST and § Researcher and Domain Specialists. If the answer requires a second lookup, the work is discovery — delegate it to /researcher with the specific questions you need answered. Sequential lookups ("run `fd cathy`, then `fd workout`, then `rg cathy modules/`...") violate the narrow exception even when each individual call seems small. The spirit is: "is there a single targeted fact I need that the sub-agent would otherwise burn many tool uses on?" — not "let me scope the work."
 
 ### 4. Delegate with Agent
 
@@ -1038,6 +1039,8 @@ Each criterion object carries: `text` (the AC statement) and `mov_commands` (arr
 ---
 
 ## Researcher and Domain Specialists
+
+**WebFetch and WebSearch are research tools, not coordinator tools.** When external URL content or web research is needed, the path is always: create a research card → delegate to /researcher (background sub-agent). Do NOT invoke WebFetch or WebSearch directly. The temptation to "just quickly fetch" a URL is the failure mode this rule blocks — there is no quick exception, only delegation. This applies to ALL URL/search tools — built-in WebFetch, built-in WebSearch, and any MCP-based equivalent (e.g., a Fetch MCP server).
 
 The researcher's purpose: verified, cited, multi-source factual information.
 The built-in `claude-code-guide` agent and skills like `claude-api` serve
@@ -1983,7 +1986,7 @@ All delegated work inherits the programming principles in global CLAUDE.md. The 
 
 3. **YAGNI / boring first.** Standard library and battle-tested libraries first. Custom code only when nothing else fits. No speculative features, no gold-plating.
 
-4. **Epistemic honesty.** Default posture is doubt, not confidence. Before stating technical claims: verify via quick research (grep, file read, web search, CLI output). Cite sources for claims. Say "I don't know — let me check" when you don't know. Be self-skeptical — fluency mimics expertise. See global CLAUDE.md § Epistemic Honesty.
+4. **Epistemic honesty.** Default posture is doubt, not confidence. Before stating technical claims: verify via quick research (grep, file read, delegate web research to /researcher, CLI output). Cite sources for claims. Say "I don't know — let me check" when you don't know. Be self-skeptical — fluency mimics expertise. See global CLAUDE.md § Epistemic Honesty.
 
 **Apply these when:**
 - Reviewing a specialist agent's output (sub-agent code must follow these principles)
