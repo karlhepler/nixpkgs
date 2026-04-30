@@ -28,6 +28,73 @@ Exhaustive reference built from `kanban --help` and `kanban <sub> --help`. Use t
 
 ---
 
+## 🚨 MoV Authoring Banned Patterns
+
+These patterns recur in MoV authoring. Each one fails structurally — the kanban CLI lint hook will reject `kanban do --file` invocations containing them. Verify your `mov_commands[].cmd` fields against this list BEFORE invoking the CLI.
+
+### `\|` is LITERAL in ripgrep — NEVER use for alternation
+
+In ripgrep's default Rust regex engine, `\|` matches a literal pipe character `|`, NOT alternation. Use bare `|` for alternation, OR split into separate `mov_commands` entries (one per term) so failure attribution is per-term.
+
+- ❌ `rg 'a\|b\|c' file` — matches files containing literal pipes between a, b, c
+- ✅ `rg 'a|b|c' file` — alternation; matches files containing any of a, b, c
+- ✅ Better: separate `mov_commands` entries — failure tells you WHICH term is missing
+
+### `&&` AND-chains are HARD-PROHIBITED
+
+The kanban CLI validator structurally rejects `&&` in `mov_commands[].cmd`. Split into separate array entries — one command per entry. Failures are per-command actionable.
+
+- ❌ `rg X file && rg Y file` — rejected by validator
+- ✅ Two `mov_commands` entries: `[{"cmd": "rg X file"}, {"cmd": "rg Y file"}]`
+
+(See also: Quirks Catalog item 11 for full rationale on AND-chain failure-attribution issues.)
+
+### `rg -E` is `--encoding`, NOT extended regex
+
+In ripgrep, `-E` means `--encoding`. The default regex engine already handles PCRE-style patterns. Use `rg -q` or `rg -qi` for case-insensitive matching.
+
+- ❌ `rg -qE 'pattern' file` — exits 2 with stderr 'unknown encoding' error (NOT silent)
+- ✅ `rg -qi 'pattern' file` — case-insensitive, regex default
+
+### Pattern-absence: use `! rg -q`, not `test $(rg -c) -le 0`
+
+`rg -c` emits no stdout on zero matches, making `test $(empty) -le 0` syntactically broken (exit 2).
+
+- ❌ `test $(rg -c 'pattern' file) -le 0` — exit 2 when no matches present
+- ✅ `! rg -q 'pattern' file` — exit 0 if absent, 1 if present
+
+### Dash-leading patterns need `--` or `-e` separator
+
+`rg` parses leading `-` as a flag. For literal patterns starting with `-`, use the end-of-flags marker.
+
+- ❌ `rg -qF '--watch' file` — exit 2 'unrecognized flag'
+- ✅ `rg -qF -- '--watch' file` — `--` ends flag parsing
+- ✅ `rg -qi -e '-pattern' file` — explicit pattern flag
+
+### Unbalanced `{` in regex alternation
+
+`{` is a PCRE2 quantifier opener. An unmatched `{` in alternation triggers a regex parse error. Escape (`\{`) or split into separate `mov_commands` entries.
+
+- ❌ `rg -q 'A|try {|B' file` — PCRE2 parse error: unmatched `{`
+- ✅ `rg -q 'A|try \{|B' file` — escaped
+- ✅ Better: separate `mov_commands` entries (one per term)
+
+### Pre-`kanban do --file` lint (mandatory before every CLI invocation)
+
+Before invoking the kanban CLI, scan every `mov_commands[].cmd` field for these banned patterns:
+- `&&` (AND-chain) — split into separate array entries
+- `\|` (literal pipe in rg) — use bare `|` for alternation, OR split into separate entries
+- `rg -E` (means --encoding, not extended regex) — use `rg -q` or `rg -qi`
+- `test $(rg -c pattern) -le 0` for absence — use `! rg -q 'pattern' file`
+- Dash-leading patterns without `--` or `-e` separator
+- Backtick in double-quoted `-c`/`-e` source — backticks expand BEFORE inner language runs
+
+The kanban CLI lint hook is the second-line defense. Every catch is an authoring failure.
+
+For the comprehensive banned-patterns reference and rationale, see `~/.claude/output-styles/staff-engineer.md` § Card Management — Card Fields.
+
+---
+
 **Global flag available on every subcommand:**
 - `--session SESSION` — Filter by session ID. **Mandatory on all lifecycle commands** (do, todo, start, cancel, defer, done, show, list, criteria, agent, etc.). Always pass `--session <session-id>` unless explicitly scoping across all sessions (e.g., destructive git op board checks).
 - `--output-style {simple,xml,detail}` — Available on `show` and `list`. Use `xml` for machine-readable output. Use `detail` for full card text in human-readable form.
