@@ -30,6 +30,8 @@ Exhaustive reference built from `kanban --help` and `kanban <sub> --help`. Use t
 
 ## 🚨 MoV Authoring Banned Patterns
 
+Note: when authoring a MoV that searches for the literal text of any banned pattern below (e.g., to verify a review covers it), see § Self-reference trap.
+
 These patterns recur in MoV authoring. Each one fails structurally — the kanban CLI lint hook will reject `kanban do --file` invocations containing them. Verify your `mov_commands[].cmd` fields against this list BEFORE invoking the CLI.
 
 ### `\|` is LITERAL in ripgrep — NEVER use for alternation
@@ -81,19 +83,22 @@ In ripgrep, `-E` means `--encoding`. The default regex engine already handles PC
 
 ### Self-reference trap (searching for literal banned-pattern text)
 
-When authoring a MoV that needs to search for the literal text of a banned pattern in a file (e.g., to verify a review's scratchpad covers the `rg -E` flag confusion), the lint hook cannot distinguish flag USAGE from text SEARCH. Authoring `rg -qi 'rg -E|encoding...' .scratchpad/...` triggers a false-positive rejection because the cmd literally contains `rg -E` as a substring.
+When authoring a MoV that needs to search for the literal text of a banned pattern in a file (e.g., to verify a review's scratchpad covers the `rg -E` flag confusion), the lint hook cannot distinguish flag USAGE from text SEARCH. Authoring `rg -qi 'rg -E|encoding...' .scratchpad/...` triggers a false-positive rejection because the cmd literally contains `rg -E` as a substring. Or, similarly, `rg -qi 'AND-chain|backslash.pipe' .scratchpad/...` triggers rejection on the literal `&&` if you wrote that as part of the search keyword set.
 
-**Workaround: use a synonym or descriptive phrase instead of the banned pattern's literal name.**
+**Workaround: MUST use a synonym or descriptive phrase instead of the banned pattern's literal name.**
 
 | Banned pattern (don't search for) | Use this synonym instead |
 |-----------------------------------|--------------------------|
-| `rg -E` | `encoding flag`, `--encoding`, `not extended regex` |
+| `rg -E` | `encoding flag`, `not extended regex` |
 | `\|` (literal pipe) | `literal pipe`, `backslash.pipe`, `alternation trap` |
 | `&&` (AND-chain) | `AND-chain`, `chained command`, `compound shell` |
-| `--no-verify` | `hook bypass`, `skip hooks` |
-| `HUSKY=0` | `husky disable`, `husky skip` |
+| `test $(rg -c) -le 0` | `pattern-absence anti-pattern`, `absence-via-count`, `absence test idiom` |
+| dash-leading patterns (`--watch`, `-pattern`) | `dash-leading pattern`, `flag-prefixed pattern`, `leading-dash literal` |
+| backtick in `-c`/`-e` source | `backtick in inner source`, `shell-expansion trap`, `inner-source backtick` |
+| `--no-verify` | `hook bypass`, `skip hooks` (also applies to hook-bypass keywords — banned by CLAUDE.md § Dangerous Operations) |
+| `HUSKY=0` | `husky disable`, `husky skip` (also applies to hook-bypass keywords — banned by CLAUDE.md § Dangerous Operations) |
 
-The permanent structural fix (token-based detection in the kanban CLI that distinguishes flag usage from quoted-pattern search) is tracked separately. Until it lands, prefer descriptive phrases over literal pattern names in MoV search expressions.
+The permanent structural fix (token-based detection in the kanban CLI that distinguishes flag usage from quoted-pattern search) is tracked separately. Until it lands, ALWAYS use descriptive phrases over literal pattern names in MoV search expressions.
 
 ### Pre-`kanban do --file` lint (mandatory before every CLI invocation)
 
