@@ -1,16 +1,59 @@
 # Hook Tests
 
-pytest-based regression guard for the two load-bearing Python hooks in
+pytest-based regression guard for the load-bearing Python hooks in
 `modules/claude/`. Tests run locally against real hook source files using
 monkeypatched subprocess calls — no real kanban cards are created or read.
+
+## Test Pyramid
+
+### Tier 1 — Unit Tests (this directory)
+
+Fast, isolated tests for hook and lint logic. Run on every local change.
+
+```bash
+pytest modules/claude/tests/
+```
+
+Pattern: hooks accept JSON on stdin; tests construct synthetic payloads and
+pipe them via subprocess or monkeypatched stdin. Each test class targets one
+behavioral path of one hook.
+
+### Tier 2 — E2E Runbook (manual)
+
+Full-stack validation against a live kanban session. Run on-demand, not in CI.
+
+Location: `.scratchpad/kanban-staff-engineer-stress-test.md`
+
+Covers: card lifecycle (todo → doing → done), multi-agent delegation, criteria
+checking, hook enforcement with real kanban state.
+
+**Tier 3 (deferred):** Sandboxed integration tests with a real kanban CLI in a
+tmpdir. Not yet implemented; manual Tier 2 runbook covers cross-module behavior
+for now.
 
 ## Files
 
 | File | What it tests |
 |------|--------------|
 | `conftest.py` | Shared fixtures: payload builders, transcript helpers, `KanbanMockResponses` |
-| `test_kanban_pretool_hook.py` | `kanban-pretool-hook.py` — PreToolUse enforcement |
+| `test_pretool_hook.py` | Starter/pattern file — cardless and general-purpose denial via subprocess |
+| `test_kanban_pretool_hook.py` | `kanban-pretool-hook.py` — comprehensive PreToolUse enforcement |
 | `test_kanban_subagent_stop_hook.py` | `kanban-subagent-stop-hook.py` — SubagentStop AC review |
+| `test_kanban_mov_lint_hook.py` | `kanban-mov-lint-hook.py` — MoV lint detection logic |
+| `test_kanban_permission_hook.py` | `kanban-permission-hook.py` — permission enforcement |
+| `test_kanban_subagent_cmd_hook.py` | `kanban-subagent-cmd-hook.py` — subagent command hook |
+| `test_kanban_v5.py` | kanban v5 criteria check protocol |
+| `test_bash_cd_compound_hook.py` | bash cd compound command guard |
+| `test_git_no_verify_hook.py` | git --no-verify guard |
+| `test_kanban_done_reminder_hook.py` | kanban done reminder hook |
+| `test_senior_staff_cron_hook.py` | senior staff cron hook |
+| `test_taskstop_reminder_hook.py` | taskstop reminder hook |
+
+### Other Module Tests
+
+| File | What it tests |
+|------|--------------|
+| `test_crew.py` | crew lifecycle |
 
 ## Running the Tests
 
@@ -38,18 +81,39 @@ pytest modules/claude/tests/test_kanban_subagent_stop_hook.py::TestProgrammaticM
 `pytest` is declared in `modules/packages.nix` and installed via `hms`. If it
 is not available, run `hms` first.
 
+## Hook Test Pattern
+
+Hooks take JSON on stdin. Tests construct synthetic payloads and pipe them via
+subprocess or monkeypatched stdin:
+
+**Subprocess style** (exercises real hook I/O, slower):
+
+```python
+result = subprocess.run(
+    [sys.executable, str(_HOOK_PATH)],
+    input=json.dumps(payload),
+    capture_output=True,
+    text=True,
+)
+```
+
+**Monkeypatch style** (unit-level, faster, used in test_kanban_pretool_hook.py):
+
+```python
+with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
+    with patch("builtins.print", side_effect=captured_output.append):
+        hook_mod.main()
+```
+
 ## Adding a New Test
 
 1. Identify which hook the test covers.
-2. Open the corresponding test file (`test_kanban_pretool_hook.py` or
-   `test_kanban_subagent_stop_hook.py`).
-3. Add a class or method in the appropriate section. Follow the existing class
-   naming convention (`TestWhatIsBeingTested`).
-4. Use `conftest.py` fixtures (`tmp_transcript`, `kanban_responses`, etc.) and
-   mock `subprocess.run` to avoid real kanban calls.
+2. Open the corresponding test file or create a new one.
+3. Add a class or method. Follow the `TestWhatIsBeingTested` naming convention.
+4. Use `conftest.py` fixtures and mock `subprocess.run` to avoid real kanban calls.
 5. Run `pytest modules/claude/tests/ -x` to confirm the new test passes.
 
-### Minimal test skeleton (pretool hook)
+### Minimal test skeleton (pretool hook — monkeypatch style)
 
 ```python
 def test_my_new_case(self, hook):
@@ -70,6 +134,14 @@ def test_my_new_case(self, hook, tmp_transcript):
     # ... mock subprocess.run, then call run_process_stop(hook, payload)
 ```
 
+## Follow-up Test Files (planned)
+
+These test files will be added in follow-up improvement cards:
+
+- `test_kanban_cli.py` — 18+ kanban CLI lifecycle test cases
+- `test_subagentstop_hook.py` — hook protocol invariants (distinct from existing test_kanban_subagent_stop_hook.py which covers AC review)
+- `test_prompt_coverage.py` — rg-based assertions on staff-engineer.md
+
 ## Coverage
 
 ### `kanban-pretool-hook.py`
@@ -88,6 +160,8 @@ def test_my_new_case(self, hook, tmp_transcript):
 | Non-Agent tool passthrough | `TestNonAgentTool` |
 | Response structure validation | `TestResponseStructure` |
 | `extract_card_and_session` patterns | `TestCardPatternExtraction` |
+| Destructive git safeguard | `TestDestructiveGitSafeguard` (planned) |
+| `.kanban/` path guard | `TestKanbanPathGuard` (planned) |
 
 ### `kanban-subagent-stop-hook.py`
 
