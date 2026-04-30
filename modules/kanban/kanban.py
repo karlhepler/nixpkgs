@@ -940,6 +940,15 @@ def validate_and_build_card(data: dict, session: str | None) -> dict:
         print("Error: Action field must be a non-empty string.", file=sys.stderr)
         sys.exit(1)
 
+    if "intent" not in data:
+        print("Error: JSON must include 'intent' field", file=sys.stderr)
+        sys.exit(1)
+
+    # Validate intent is non-empty
+    if not isinstance(data["intent"], str) or not data["intent"].strip():
+        print("Error: 'intent' field must be a non-empty string", file=sys.stderr)
+        sys.exit(1)
+
     # Validate type field (REQUIRED)
     if "type" not in data:
         print("Error: JSON must include 'type' field", file=sys.stderr)

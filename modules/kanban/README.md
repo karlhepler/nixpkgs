@@ -58,13 +58,13 @@ kanban todo '<JSON>' --session <id>
 kanban do '[{...}, {...}]' --session <id>
 ```
 
-**Required JSON fields:**
+### Required JSON fields
+- `intent` — Why (the desired outcome)
 - `type` — `"work"`, `"review"`, or `"research"`
 - `action` — What to do (the task description, can be long)
 - `criteria` — Array of acceptance criteria strings (minimum 1)
 
-**Optional JSON fields:**
-- `intent` — Why (the desired outcome)
+### Optional JSON fields
 - `editFiles` / `readFiles` — File path hints for conflict detection
 - `persona` — Skill name (e.g., `"swe-backend"`)
 - `model` — `"haiku"`, `"sonnet"`, or `"opus"`
