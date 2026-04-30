@@ -126,10 +126,24 @@ def extract_card_and_session(prompt: str) -> tuple[str, str] | None:
 
     Returns (card_number_str, session_id) or None if not found.
     Tries patterns from most to least specific.
+
+    Multi-card safety: if Pattern 1 finds multiple KANBAN CARD headers (e.g. a
+    prompt quoting a prior delegation or composing multiple cards), the extraction
+    is ambiguous — acting on the first match could mutate the wrong card's
+    agent_launch_pending flag. In that case, log a warning and return None so the
+    clear callback is skipped entirely for that invocation.
     """
     # Pattern 1: "KANBAN CARD #N | Session: session-name"
-    m = _CARD_FULL_PATTERN.search(prompt)
-    if m:
+    all_matches = _CARD_FULL_PATTERN.findall(prompt)
+    if len(all_matches) > 1:
+        log_error(
+            f"extract_card_and_session: multiple KANBAN CARD headers found "
+            f"({len(all_matches)} matches) — skipping clear callback to avoid "
+            f"wrong-card mutation"
+        )
+        return None
+    if len(all_matches) == 1:
+        m = _CARD_FULL_PATTERN.search(prompt)
         return (m.group(1), m.group(2))
 
     # Pattern 2: "#N ... --session session-name" on same line
@@ -1078,6 +1092,41 @@ def main() -> None:
 
     # Inject card content into the prompt
     new_prompt = inject_card_into_prompt(prompt, card_xml, card_number, session)
+
+    # Clear agent_launch_pending flag — confirms the agent was actually launched.
+    # Invokes: kanban clear-agent-launch-pending (cmd_clear_agent_launch_pending in kanban.py).
+    # Fails open: any error here must not block the agent launch.
+    #
+    # Phase 2 ordering note: this call runs synchronously BEFORE the kanban agent
+    # update below. If interrupted between here and the agent update (e.g. Python
+    # crash, SIGKILL), the card will show agent_launch_pending=False but with a
+    # stale/empty agent field. The card is NOT a phantom (it was genuinely launched),
+    # but its agent attribution will be wrong. This is an acceptable rare edge case
+    # for Phase 1; Phase 2 phantom-doing detection should treat missing agent as
+    # "launched, agent unknown" rather than "phantom". (stale attribution, no phantom)
+    #
+    # Fail-open consequence: if this call fails (timeout, CLI unavailable), the flag
+    # stays True. The Phase 2 phantom-doing detector will see the card as still-pending
+    # after the actual launch — a false-positive phantom detection for this card.
+    # Logged to ERROR_LOG_PATH so the condition is observable.
+    try:
+        clear_result = subprocess.run(
+            ["kanban", "clear-agent-launch-pending", card_number, "--session", session],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+        )
+        if clear_result.returncode != 0:
+            log_error(
+                f"kanban clear-agent-launch-pending failed for #{card_number} "
+                f"(exit {clear_result.returncode})"
+            )
+        else:
+            log_info(f"agent_launch_pending cleared for #{card_number}")
+    except subprocess.TimeoutExpired:
+        log_error(f"kanban clear-agent-launch-pending timed out for #{card_number}")
+    except Exception as exc:
+        log_error(f"kanban clear-agent-launch-pending failed for #{card_number}: {exc}")
 
     # Update card's agent field with the actual sub-agent type.
     # Run synchronously so we know it succeeded before attempting the DB update.

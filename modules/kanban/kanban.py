@@ -281,6 +281,10 @@ def read_card(path: Path) -> dict:
     card = json.loads(path.read_text())
     if migrate_criteria(card):
         write_card(path, card)
+    # Backward compat: cards created before Phase 1 lack agent_launch_pending.
+    # Default to False so callers can use card["agent_launch_pending"] safely
+    # without KeyError on legacy cards.
+    card.setdefault("agent_launch_pending", False)
     return card
 
 
@@ -685,6 +689,7 @@ def make_card(
         "model": model,
         "session": session,
         "cycles": 0,
+        "agent_launch_pending": False,
         "created": now,
         "updated": now,
         "activity": [{"timestamp": now, "message": "Created"}],
@@ -1536,6 +1541,8 @@ def cmd_do(args) -> None:
     """Create card(s) directly in the doing column from JSON input.
 
     Accepts either a single JSON object or an array of objects for bulk creation.
+    Sets agent_launch_pending=True on cards placed in doing (conflict-deferred
+    cards go to todo and do NOT get agent_launch_pending=True).
     """
     root = get_root(args.root)
 
@@ -1596,6 +1603,7 @@ def cmd_do(args) -> None:
                 print(f"Card #{num} deferred to todo: editFiles conflict with card #{inflight_num} (session {inflight_session}) on path {conflict_path}", file=sys.stderr)
                 had_conflict = True
             else:
+                card["agent_launch_pending"] = True
                 num = create_card_in_column(root, "doing", card)
                 write_kanban_event(card, str(num), "create", to_column="doing", git_project=git_project)
                 print(num)
@@ -1619,6 +1627,7 @@ def cmd_do(args) -> None:
             print(f"Card #{num} deferred to todo: editFiles conflict with card #{inflight_num} (session {inflight_session}) on path {conflict_path}", file=sys.stderr)
             sys.exit(1)
         else:
+            card["agent_launch_pending"] = True
             num = create_card_in_column(root, "doing", card)
             write_kanban_event(card, str(num), "create", to_column="doing", git_project=git_project)
             print(num)
@@ -1652,6 +1661,7 @@ def cmd_defer(args) -> None:
             sys.exit(1)
 
         card = read_card(card_path)
+        card["agent_launch_pending"] = False
         card["updated"] = now_iso()
         write_card(card_path, card)
         write_kanban_event(card, num, "defer", from_column=col, to_column="todo", git_project=git_project)
@@ -1666,26 +1676,19 @@ def cmd_start(args) -> None:
     """Move card(s) from todo to doing (pick up queued work)."""
     root = get_root(args.root)
     card_numbers = args.card if isinstance(args.card, list) else [args.card]
-
-    # Pre-compute git_project once to avoid N redundant git subprocesses in bulk loops
     git_root = get_git_root()
     git_project = os.path.basename(git_root) if git_root else None
-
     failed = False
     for card_num in card_numbers:
         try:
             card_path = find_card(root, card_num)
             col = card_path.parent.name
             num = card_number(card_path)
-
             if col != "todo":
                 print(f"Error: Card #{num} is in '{col}', not 'todo'. Start only works on cards in todo.", file=sys.stderr)
                 failed = True
                 continue
-
             card = read_card(card_path)
-
-            # Check for file conflicts before moving to doing
             edit_files = card.get("editFiles") or []
             read_files = card.get("readFiles") or []
             conflict = check_file_conflicts(root, edit_files, read_files)
@@ -1694,24 +1697,21 @@ def cmd_start(args) -> None:
                 print(f"Error: Cannot start card #{num}: editFiles conflict with card #{inflight_num} (session {inflight_session}) on path {conflict_path}", file=sys.stderr)
                 failed = True
                 continue
-
-            card["updated"] = now_iso()
-            write_card(card_path, card)
-            write_kanban_event(card, num, "start", from_column="todo", to_column="doing", git_project=git_project)
-
+            # Rename before write: flag never lands in todo/ on crash (atomic, matches cmd_do).
             target = root / "doing" / card_path.name
             target.parent.mkdir(parents=True, exist_ok=True)
             card_path.rename(target)
+            card["agent_launch_pending"], card["updated"] = True, now_iso()
+            write_card(target, card)
+            write_kanban_event(card, num, "start", from_column="todo", to_column="doing", git_project=git_project)
             print(f"Started: #{num} — moved to doing")
         except SystemExit:
-            # find_card calls sys.exit(1) if card not found
             failed = True
             continue
         except (json.JSONDecodeError, OSError) as e:
             print(f"Error: Failed to process card {card_num}: {e}", file=sys.stderr)
             failed = True
             continue
-
     if failed:
         sys.exit(1)
 
@@ -2015,6 +2015,37 @@ def cmd_agent(args) -> None:
     write_card(card_path, card)
     print(f"Card #{card_number(card_path)} agent set to: {agent_type}")
 
+
+def cmd_clear_agent_launch_pending(args) -> None:
+    """Clear the agent_launch_pending flag on a card.
+
+    Called by the pretool hook when an Agent tool launch is detected for the
+    card, confirming that the coordinator has actually launched the agent.
+    Sets agent_launch_pending=False so phantom-doing detection can distinguish
+    cards that are genuinely in-flight from cards stuck in doing with no agent.
+
+    Column guard: only operates on cards in the 'doing' column. Calling this on
+    a todo or done card is semantically incorrect (the flag only applies to
+    in-flight cards) and exits with an error.
+
+    Note: session ownership intentionally not enforced — single-user platform.
+    If multi-user/CI extension is added later, add:
+        if card.get("session") and args.session and card["session"] != args.session:
+            sys.exit(1)
+    guard before write.
+    """
+    root = get_root(args.root)
+    card_path = find_card(root, args.card)
+    col = card_path.parent.name
+    if col != "doing":
+        num = card_number(card_path)
+        print(f"Error: Card #{num} is in '{col}', not 'doing'. clear-agent-launch-pending only works on cards in doing.", file=sys.stderr)
+        sys.exit(1)
+    card = read_card(card_path)
+    card["agent_launch_pending"] = False
+    card["updated"] = now_iso()
+    write_card(card_path, card)
+    print(f"Card #{card_number(card_path)} agent_launch_pending cleared")
 
 
 def cmd_criteria_add(args) -> None:
@@ -3771,6 +3802,15 @@ def main() -> None:
     p_agent.add_argument("agent_type", help="Agent type (e.g. swe-backend, researcher)")
     add_session_flags(p_agent)
 
+    # --- clear-agent-launch-pending ---
+    p_clear_alp = subparsers.add_parser(
+        "clear-agent-launch-pending",
+        parents=[parent_parser],
+        help="Clear the agent_launch_pending flag (called by pretool hook on agent launch)",
+    )
+    p_clear_alp.add_argument("card", help="Card number")
+    add_session_flags(p_clear_alp)
+
     # --- criteria (with subcommands) ---
     p_criteria = subparsers.add_parser("criteria", parents=[parent_parser], help="Manage acceptance criteria", aliases=["ac"])
     criteria_subparsers = p_criteria.add_subparsers(dest="criteria_command", help="Criteria subcommands")
@@ -3845,6 +3885,7 @@ def main() -> None:
         "done": cmd_done,
         "cancel": cmd_cancel,
         "agent": cmd_agent,
+        "clear-agent-launch-pending": cmd_clear_agent_launch_pending,
         "defer": cmd_defer,
         "start": cmd_start,
         "list": cmd_list,

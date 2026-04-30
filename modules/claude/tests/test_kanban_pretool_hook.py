@@ -1202,3 +1202,140 @@ class TestKanbanPathGuard:
         payload = make_bash_payload("python3 -c 'open(\".kanban/x\",\"w\")'")
         result = run_hook_main(hook, payload)
         assert_denied(result, "Direct file modification of .kanban/")
+
+
+# ---------------------------------------------------------------------------
+# Tests: agent_launch_pending clear callback
+# ---------------------------------------------------------------------------
+
+class TestAgentLaunchPendingClear:
+    """Pretool hook calls clear-agent-launch-pending on Agent launch with card reference."""
+
+    def test_clear_agent_launch_pending_called_on_agent_launch(self, hook):
+        """Hook calls 'kanban clear-agent-launch-pending <N> --session <s>' on Agent launch."""
+        payload = make_pretool_payload(
+            prompt="KANBAN CARD #42 | Session: test-session\nDo some work.",
+        )
+        card_xml = KanbanMockResponses.card_xml(card_number="42", session="test-session")
+
+        called_commands = []
+
+        def fake_subprocess_run(cmd, **kwargs):
+            if isinstance(cmd, list):
+                called_commands.append(cmd)
+                if cmd[0] == "kanban" and cmd[1] == "show":
+                    return KanbanMockResponses.success(stdout=card_xml)
+                if cmd[0] == "kanban" and cmd[1] == "clear-agent-launch-pending":
+                    return KanbanMockResponses.success()
+                if cmd[0] == "kanban" and cmd[1] == "agent":
+                    return KanbanMockResponses.success()
+            return KanbanMockResponses.failure()
+
+        with patch("subprocess.run", side_effect=fake_subprocess_run):
+            result = run_hook_main(hook, payload)
+
+        assert_allowed(result)
+
+        # Verify clear-agent-launch-pending was called with correct args
+        clear_calls = [
+            c for c in called_commands
+            if c[0] == "kanban" and c[1] == "clear-agent-launch-pending"
+        ]
+        assert len(clear_calls) == 1, (
+            f"Expected exactly 1 clear-agent-launch-pending call, got {len(clear_calls)}: {clear_calls}"
+        )
+        clear_cmd = clear_calls[0]
+        assert "42" in clear_cmd, f"Expected card number 42 in clear command: {clear_cmd}"
+        assert "--session" in clear_cmd, f"Expected --session in clear command: {clear_cmd}"
+        assert "test-session" in clear_cmd, f"Expected session in clear command: {clear_cmd}"
+
+    def test_clear_agent_launch_pending_fails_open(self, hook):
+        """If clear-agent-launch-pending fails, hook still allows the agent launch."""
+        payload = make_pretool_payload(
+            prompt="KANBAN CARD #42 | Session: test-session\nDo some work.",
+        )
+        card_xml = KanbanMockResponses.card_xml(card_number="42", session="test-session")
+
+        def fake_subprocess_run(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd[0] == "kanban" and cmd[1] == "show":
+                return KanbanMockResponses.success(stdout=card_xml)
+            if isinstance(cmd, list) and cmd[0] == "kanban" and cmd[1] == "clear-agent-launch-pending":
+                # Simulate failure
+                return KanbanMockResponses.failure(returncode=1, stderr="card not found")
+            if isinstance(cmd, list) and cmd[0] == "kanban" and cmd[1] == "agent":
+                return KanbanMockResponses.success()
+            return KanbanMockResponses.failure()
+
+        with patch("subprocess.run", side_effect=fake_subprocess_run):
+            result = run_hook_main(hook, payload)
+
+        # Hook must still allow even if clear-agent-launch-pending fails
+        assert_allowed(result)
+
+    def test_clear_agent_launch_pending_not_called_when_no_card_xml(self, hook):
+        """If kanban show fails (no card XML), clear-agent-launch-pending is not called."""
+        payload = make_pretool_payload(
+            prompt="KANBAN CARD #42 | Session: test-session\nDo some work.",
+        )
+
+        called_commands = []
+
+        def fake_subprocess_run(cmd, **kwargs):
+            if isinstance(cmd, list):
+                called_commands.append(cmd)
+                if cmd[0] == "kanban" and cmd[1] == "show":
+                    return KanbanMockResponses.failure(returncode=1)
+            return KanbanMockResponses.success()
+
+        with patch("subprocess.run", side_effect=fake_subprocess_run):
+            result = run_hook_main(hook, payload)
+
+        # Hook allows (fails open) when show fails
+        assert_allowed(result)
+
+        # clear-agent-launch-pending must NOT be called when card XML is unavailable
+        clear_calls = [
+            c for c in called_commands
+            if isinstance(c, list) and c[0] == "kanban" and c[1] == "clear-agent-launch-pending"
+        ]
+        assert len(clear_calls) == 0, (
+            f"clear-agent-launch-pending must not be called when kanban show fails, got: {clear_calls}"
+        )
+
+    def test_clear_agent_launch_pending_called_before_agent_update(self, hook):
+        """clear-agent-launch-pending is invoked as part of Agent launch processing."""
+        payload = make_pretool_payload(
+            prompt="KANBAN CARD #42 | Session: test-session\nDo some work.",
+            subagent_type="swe-devex",
+        )
+        card_xml = KanbanMockResponses.card_xml(card_number="42", session="test-session")
+
+        call_order = []
+
+        def fake_subprocess_run(cmd, **kwargs):
+            if isinstance(cmd, list):
+                if cmd[0] == "kanban" and cmd[1] == "show":
+                    return KanbanMockResponses.success(stdout=card_xml)
+                if cmd[0] == "kanban" and cmd[1] == "clear-agent-launch-pending":
+                    call_order.append("clear-agent-launch-pending")
+                    return KanbanMockResponses.success()
+                if cmd[0] == "kanban" and cmd[1] == "agent":
+                    call_order.append("agent")
+                    return KanbanMockResponses.success()
+            return KanbanMockResponses.failure()
+
+        with patch("subprocess.run", side_effect=fake_subprocess_run):
+            with patch("sqlite3.connect", return_value=MagicMock(
+                __enter__=MagicMock(return_value=MagicMock()),
+                __exit__=MagicMock(return_value=False),
+                execute=MagicMock(),
+                commit=MagicMock(),
+                close=MagicMock(),
+            )):
+                result = run_hook_main(hook, payload)
+
+        assert_allowed(result)
+        assert "clear-agent-launch-pending" in call_order, (
+            f"clear-agent-launch-pending must be called during agent launch processing; "
+            f"call_order: {call_order}"
+        )

@@ -196,8 +196,8 @@ class TestV5SchemaValidation:
         assert exc_info.value.code == 1
 
     def test_timeout_out_of_range_rejected(self, kanban, capsys):
-        """timeout=0 or timeout=301 are rejected."""
-        for bad_timeout in (0, 301, -1):
+        """timeout=0, timeout=1801, and timeout=-1 are rejected (range is 1-1800)."""
+        for bad_timeout in (0, 1801, -1):
             criteria = [make_v5_criterion(cmds=[{"cmd": "true", "timeout": bad_timeout}])]
             with pytest.raises(SystemExit):
                 kanban.validate_criteria_schema(criteria)

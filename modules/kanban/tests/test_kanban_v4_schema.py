@@ -1,11 +1,17 @@
 """
-Tests for V4 schema migration and cmd_done exit code behavior.
+Tests for V4 schema migration, cmd_done exit code behavior, and
+agent_launch_pending field lifecycle.
 
 Covers:
 - V4 migration: agent_met -> met, reviewer_met dropped, review_cycles -> cycles
 - cmd_done exits 0 when all criteria are met
 - cmd_done exits 1 (retryable) when criteria are unchecked (first and second attempt)
 - cmd_done exits 2 (max cycles) on the 3rd call with unchecked criteria
+- agent_launch_pending set to True by cmd_do (doing path)
+- agent_launch_pending set to True by cmd_start (todo -> doing)
+- clear_agent_launch_pending sets the flag to False
+- flag persists in card JSON across invocations
+- backward compat: cards without the field default to False on read
 """
 
 import importlib.util
@@ -776,4 +782,286 @@ class TestTimeoutBoundary:
         captured = capsys.readouterr()
         assert "Must be 1-1800 seconds" in captured.err, (
             f"Expected 'Must be 1-1800 seconds' in stderr for timeout=-1, got: {captured.err!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Helpers: agent_launch_pending tests
+# ---------------------------------------------------------------------------
+
+def _make_valid_card_json() -> str:
+    """Build a minimal valid card JSON string for cmd_do tests."""
+    return json.dumps({
+        "action": "Do the thing",
+        "intent": "Because reasons",
+        "type": "work",
+        "agent": "swe-devex",
+        "criteria": [
+            {
+                "text": "Some check",
+                "mov_type": "programmatic",
+                "mov_commands": [{"cmd": "true", "timeout": 5}],
+                "met": False,
+            }
+        ],
+    })
+
+
+def _make_do_args(board_root, json_data: str, session: str = "test-session"):
+    """Build a minimal args namespace for cmd_do."""
+    return SimpleNamespace(
+        root=str(board_root),
+        json_data=json_data,
+        json_file=None,
+        session=session,
+    )
+
+
+def _make_start_args(board_root, card_num: str, session: str = "test-session"):
+    """Build a minimal args namespace for cmd_start."""
+    return SimpleNamespace(
+        root=str(board_root),
+        card=[card_num],
+        session=session,
+    )
+
+
+def _make_clear_alp_args(board_root, card_num: str, session: str = "test-session"):
+    """Build a minimal args namespace for cmd_clear_agent_launch_pending."""
+    return SimpleNamespace(
+        root=str(board_root),
+        card=card_num,
+        session=session,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tests: agent_launch_pending field lifecycle
+# ---------------------------------------------------------------------------
+
+class TestAgentLaunchPending:
+    """agent_launch_pending field is set and cleared correctly across card lifecycle."""
+
+    def test_cmd_do_sets_agent_launch_pending_true(self, kanban, tmp_path):
+        """cmd_do sets agent_launch_pending=True on newly created doing card."""
+        board = _setup_board(tmp_path)
+        args = _make_do_args(board, _make_valid_card_json())
+
+        with patch.object(kanban, "write_kanban_event"):
+            kanban.cmd_do(args)
+
+        # Find the created card in doing/
+        doing_cards = list((board / "doing").glob("*.json"))
+        assert len(doing_cards) == 1, f"Expected 1 card in doing, got {len(doing_cards)}"
+        card_data = json.loads(doing_cards[0].read_text())
+        assert card_data.get("agent_launch_pending") is True, (
+            f"cmd_do must set agent_launch_pending=True on doing card, got {card_data.get('agent_launch_pending')!r}"
+        )
+
+    def test_cmd_do_conflict_does_not_set_agent_launch_pending(self, kanban, tmp_path):
+        """cmd_do sets agent_launch_pending=False when card is deferred to todo due to conflict."""
+        board = _setup_board(tmp_path)
+
+        # Create an in-flight card with the same editFile to trigger conflict
+        inflight_card = {
+            "action": "Inflight work",
+            "intent": "Already doing",
+            "type": "work",
+            "agent": "swe-devex",
+            "model": "sonnet",
+            "session": "other-session",
+            "editFiles": ["modules/kanban/kanban.py"],
+            "readFiles": [],
+            "criteria": [{"text": "check", "met": False}],
+            "cycles": 0,
+            "agent_launch_pending": False,
+            "created": "2026-01-01T00:00:00Z",
+            "updated": "2026-01-01T00:00:00Z",
+            "activity": [],
+        }
+        _write_card(board, "doing", "99", inflight_card)
+
+        conflict_card_json = json.dumps({
+            "action": "Conflicting work",
+            "intent": "Same file",
+            "type": "work",
+            "agent": "swe-devex",
+            "editFiles": ["modules/kanban/kanban.py"],
+            "criteria": [{"text": "check", "mov_type": "programmatic", "mov_commands": [{"cmd": "true", "timeout": 5}], "met": False}],
+        })
+        args = _make_do_args(board, conflict_card_json)
+
+        with patch.object(kanban, "write_kanban_event"):
+            with pytest.raises(SystemExit) as exc_info:
+                kanban.cmd_do(args)
+
+        assert exc_info.value.code == 1
+
+        # Card should be in todo, not doing
+        todo_cards = list((board / "todo").glob("*.json"))
+        assert len(todo_cards) == 1, f"Expected 1 card in todo, got {len(todo_cards)}"
+        card_data = json.loads(todo_cards[0].read_text())
+        # Not set to True — card is in todo, not doing
+        assert card_data.get("agent_launch_pending") is not True, (
+            "Conflicted card deferred to todo must NOT have agent_launch_pending=True"
+        )
+
+    def test_cmd_start_sets_agent_launch_pending_true(self, kanban, tmp_path):
+        """cmd_start sets agent_launch_pending=True when moving card from todo to doing."""
+        board = _setup_board(tmp_path)
+
+        # Place a card in todo
+        todo_card = {
+            "action": "Queued work",
+            "intent": "Will do it later",
+            "type": "work",
+            "agent": "swe-devex",
+            "model": "sonnet",
+            "session": "test-session",
+            "editFiles": [],
+            "readFiles": [],
+            "criteria": [{"text": "check", "met": False}],
+            "cycles": 0,
+            "agent_launch_pending": False,
+            "created": "2026-01-01T00:00:00Z",
+            "updated": "2026-01-01T00:00:00Z",
+            "activity": [],
+        }
+        card_path = _write_card(board, "todo", "7", todo_card)
+        args = _make_start_args(board, card_num="7")
+
+        with patch.object(kanban, "write_kanban_event"):
+            kanban.cmd_start(args)
+
+        # Card should be moved to doing with agent_launch_pending=True
+        doing_path = board / "doing" / "7.json"
+        assert doing_path.exists(), "Card must be moved to doing/ after cmd_start"
+        card_data = json.loads(doing_path.read_text())
+        assert card_data.get("agent_launch_pending") is True, (
+            f"cmd_start must set agent_launch_pending=True, got {card_data.get('agent_launch_pending')!r}"
+        )
+
+    def test_cmd_start_deferred_then_restart_resets_flag(self, kanban, tmp_path):
+        """cmd_start re-sets agent_launch_pending=True even if it was previously cleared."""
+        board = _setup_board(tmp_path)
+
+        # Card was previously launched (flag cleared), then deferred back to todo
+        todo_card = {
+            "action": "Restarted work",
+            "intent": "Coming back to this",
+            "type": "work",
+            "agent": "swe-devex",
+            "model": "sonnet",
+            "session": "test-session",
+            "editFiles": [],
+            "readFiles": [],
+            "criteria": [{"text": "check", "met": False}],
+            "cycles": 0,
+            "agent_launch_pending": False,  # was cleared by previous launch
+            "created": "2026-01-01T00:00:00Z",
+            "updated": "2026-01-01T00:00:00Z",
+            "activity": [],
+        }
+        _write_card(board, "todo", "8", todo_card)
+        args = _make_start_args(board, card_num="8")
+
+        with patch.object(kanban, "write_kanban_event"):
+            kanban.cmd_start(args)
+
+        doing_path = board / "doing" / "8.json"
+        card_data = json.loads(doing_path.read_text())
+        assert card_data.get("agent_launch_pending") is True, (
+            "cmd_start must re-set agent_launch_pending=True on restart"
+        )
+
+    def test_clear_agent_launch_pending_sets_flag_false(self, kanban, tmp_path):
+        """cmd_clear_agent_launch_pending sets agent_launch_pending=False."""
+        board = _setup_board(tmp_path)
+
+        # Card in doing with flag set
+        doing_card = {
+            "action": "Work in progress",
+            "intent": "Agent was launched",
+            "type": "work",
+            "agent": "swe-devex",
+            "model": "sonnet",
+            "session": "test-session",
+            "editFiles": [],
+            "readFiles": [],
+            "criteria": [{"text": "check", "met": False}],
+            "cycles": 0,
+            "agent_launch_pending": True,
+            "created": "2026-01-01T00:00:00Z",
+            "updated": "2026-01-01T00:00:00Z",
+            "activity": [],
+        }
+        card_path = _write_card(board, "doing", "5", doing_card)
+        args = _make_clear_alp_args(board, card_num="5")
+
+        with patch.object(kanban, "get_root", return_value=board):
+            with patch.object(kanban, "find_card", return_value=card_path):
+                kanban.cmd_clear_agent_launch_pending(args)
+
+        card_data = json.loads(card_path.read_text())
+        assert card_data.get("agent_launch_pending") is False, (
+            f"cmd_clear_agent_launch_pending must set flag to False, got {card_data.get('agent_launch_pending')!r}"
+        )
+
+    def test_agent_launch_pending_persists_in_json(self, kanban, tmp_path):
+        """agent_launch_pending field survives a write/read cycle (persists in JSON)."""
+        board = _setup_board(tmp_path)
+        args = _make_do_args(board, _make_valid_card_json())
+
+        with patch.object(kanban, "write_kanban_event"):
+            kanban.cmd_do(args)
+
+        doing_cards = list((board / "doing").glob("*.json"))
+        assert len(doing_cards) == 1
+        card_path = doing_cards[0]
+
+        # Re-read via read_card (not raw JSON) to confirm round-trip
+        card_data = kanban.read_card(card_path)
+        assert card_data.get("agent_launch_pending") is True, (
+            "agent_launch_pending=True must persist in card JSON across read_card calls"
+        )
+
+    def test_card_without_field_defaults_to_false(self, kanban, tmp_path):
+        """Cards without agent_launch_pending field read back as False (backward compat)."""
+        board = _setup_board(tmp_path)
+
+        # Write a card without the field (simulating a pre-Phase1 card)
+        old_card = {
+            "action": "Old card",
+            "intent": "No agent_launch_pending field",
+            "type": "work",
+            "agent": "swe-devex",
+            "model": "sonnet",
+            "session": "test-session",
+            "editFiles": [],
+            "readFiles": [],
+            "criteria": [{"text": "check", "met": False}],
+            "cycles": 0,
+            "created": "2026-01-01T00:00:00Z",
+            "updated": "2026-01-01T00:00:00Z",
+            "activity": [],
+        }
+        card_path = _write_card(board, "doing", "3", old_card)
+
+        card_data = kanban.read_card(card_path)
+        # Field is absent — .get() returns None/False; either way it must not be True
+        assert card_data.get("agent_launch_pending", False) is not True, (
+            "Old cards without agent_launch_pending must not read as True"
+        )
+
+    def test_make_card_includes_agent_launch_pending_false(self, kanban):
+        """make_card includes agent_launch_pending=False in the returned dict."""
+        card = kanban.make_card(
+            action="Test action",
+            intent="Test intent",
+        )
+        assert "agent_launch_pending" in card, (
+            "make_card must include agent_launch_pending field"
+        )
+        assert card["agent_launch_pending"] is False, (
+            f"make_card must set agent_launch_pending=False by default, got {card['agent_launch_pending']!r}"
         )
