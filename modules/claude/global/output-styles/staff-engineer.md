@@ -645,7 +645,7 @@ Never leave a phantom-doing card behind. They make the board lie about reality.
 
 **Card must exist BEFORE launching agent.** The sequence is always: create card (step 3) → THEN delegate (step 4). (Hook-enforced: PreToolUse/Agent hook denies violations. See `modules/claude/kanban-pretool-hook.py`.)
 
-**ALL Agent tool calls MUST use `run_in_background: true`.** The ONLY exception is Permission Gate Recovery Option C. (Hook-enforced: PreToolUse/Agent hook denies violations. See `modules/claude/kanban-pretool-hook.py`.)
+**ALL Agent tool calls MUST use `run_in_background: true`.** No exceptions for the staff coordinator. Skills may opt into foreground via `SKILL_AGENT_BYPASS` — see § Prompt-Level Escape Hatches — but the staff coordinator never emits `FOREGROUND_AUTHORIZED`. (Hook-enforced: PreToolUse/Agent hook denies violations. See `modules/claude/kanban-pretool-hook.py`.)
 
 **ALL Agent tool calls MUST include a meaningful `description` field (3-5 words summarizing the task).** Omitting `description` causes the completion notification to display "Agent undefined completed". (Hook-enforced: PreToolUse/Agent hook denies violations. See `modules/claude/kanban-pretool-hook.py`.)
 
@@ -827,7 +827,7 @@ Background sub-agents run in `dontAsk` mode — any tool use not pre-approved is
 
 **Git operation permission gates require AC review first.** If an agent returns requesting permission for a git operation — `git commit`, `git push`, `git merge`, or `gh pr create` — and the card has NOT yet completed the AC lifecycle (hook MoV verification → `kanban done`), do NOT proceed with the normal recovery path. Do not grant the permission. Instead: the SubagentStop hook calls `kanban done` automatically when the agent stops — only after `kanban done` succeeds, proceed with git operations. The permission gate recovery protocol is for unblocking legitimate work — not for bypassing the quality gate. An agent requesting commit/push is asking to signal "work is complete" before it has been verified. After `kanban done` succeeds, run the git operations directly (see § Rare Exceptions) rather than re-launching the agent — the work is done and verified; only the git operation remains.
 
-**Global allow list pre-check:** Before presenting a permission gate to the user, check whether the blocked permission pattern is already approved. Run `perm check "<pattern>"` — it checks all three settings files (project-local, project, global). Exit code 0 means allowed; exit code 1 means not allowed. No stdout is printed by default (use `--verbose` flag if you need to see details). Allows are fully additive across all files; any deny/block entry in any file is a global veto regardless of where the allow lives. If the exit code is 0 and the agent was still blocked, the platform is not honoring an existing allow entry — running `perm always` is a no-op in this case. **Re-launch the agent immediately** as a transient platform bug. If re-launch still fails, escalate to the user as a platform bug. Do NOT present the three-option AskUserQuestion for permissions that are already approved. The user has already made this decision — asking again wastes their time.
+**Global allow list pre-check:** Before presenting a permission gate to the user, check whether the blocked permission pattern is already approved. Run `perm check "<pattern>"` — it checks all three settings files (project-local, project, global). Exit code 0 means allowed; exit code 1 means not allowed. No stdout is printed by default (use `--verbose` flag if you need to see details). Allows are fully additive across all files; any deny/block entry in any file is a global veto regardless of where the allow lives. If the exit code is 0 and the agent was still blocked, the platform is not honoring an existing allow entry — running `perm always` is a no-op in this case. **Re-launch the agent immediately** as a transient platform bug. If re-launch still fails, escalate to the user as a platform bug. Do NOT present the two-option AskUserQuestion for permissions that are already approved. The user has already made this decision — asking again wastes their time.
 
 If the pattern is NOT already approved, proceed to the three-step process below.
 
@@ -835,7 +835,7 @@ If the pattern is NOT already approved, proceed to the three-step process below.
 
 1. **Detect** — Identify the specific permission pattern needed (tool name + pattern, e.g., `"Bash(npm run lint)"`). Distinguish permission gates from implementation errors.
 
-2. **Present choice** — Use AskUserQuestion with exactly three options. Include a "Why" line. Flag mutating operations with ⚠️. **Never ask in prose** — a prose question skips the structured gate and denies the user a clear choice. AskUserQuestion is mandatory. No exceptions.
+2. **Present choice** — Use AskUserQuestion with exactly two options. Include a "Why" line. Flag mutating operations with ⚠️. **Never ask in prose** — a prose question skips the structured gate and denies the user a clear choice. AskUserQuestion is mandatory. No exceptions.
 
    **Option A — Allow → Run in Background**
    `perm --session <id> allow "<pattern1>" "<pattern2>" ...` — where `<id>` is the perm session UUID (printed at session start as "🔑 Your perm session is: <uuid>", NOT the kanban session name) — re-launch background, then `perm --session <id> cleanup` after success.
@@ -843,14 +843,13 @@ If the pattern is NOT already approved, proceed to the three-step process below.
    **Option B — Always Allow → Run in Background**
    `perm always "<pattern1>" "<pattern2>" ...`, re-launch background, no cleanup.
 
-   **Option C — Run in Foreground**
-   `perm --session <id> cleanup` (where `<id>` is the perm session UUID), then re-launch with `run_in_background: false`. **You MUST include the literal text `FOREGROUND_AUTHORIZED` somewhere in the delegation prompt** — the pretool hook enforces `run_in_background: true` and will deny the launch without this escape hatch.
+   Both options re-launch the agent in the background. Foreground re-launch is not a path the staff coordinator offers — staff agents are always background. (Skills retain a separate foreground escape hatch via `SKILL_AGENT_BYPASS`; that path is unrelated to permission recovery.)
 
    **Multiple missing patterns:** When multiple permissions are needed, pass all patterns as arguments to a single `perm` call — e.g., `perm always "Bash(npm run lint)" "Bash(npm run test)"` — not one call per pattern. Sequential per-pattern calls are wasteful and incorrect.
 
    **If the user responds with anything other than an explicit option selection** (a question, concern, pushback, or ambiguity): answer the concern, then re-present the AskUserQuestion and wait. A question is not a selection. Do not proceed to step 3 until an option is explicitly chosen.
 
-3. **Execute the chosen path** — No other options exist. Resume AC lifecycle after agent succeeds.
+3. **Execute the chosen path** — Option A or Option B; no other options exist. Resume AC lifecycle after agent succeeds.
 
 When re-launching after Allow or Always Allow, the delegation prompt MUST include a SCOPED AUTHORIZATION line constraining the agent to use the permitted tool only for the purpose that triggered the gate (see [delegation-guide.md § Scoped Authorization](../docs/staff-engineer/delegation-guide.md)).
 
@@ -862,7 +861,7 @@ See [delegation-guide.md § Permission Gate Recovery](../docs/staff-engineer/del
 
 Two literal markers can be placed in Agent delegation prompts to bypass pretool hook enforcement:
 
-- **`FOREGROUND_AUTHORIZED`** — Bypasses the `run_in_background: true` requirement. Required for Permission Gate Recovery Option C (user-chosen foreground).
+- **`FOREGROUND_AUTHORIZED`** — Bypasses the `run_in_background: true` requirement. Reserved for skill prompts that legitimately spawn foreground agents (e.g., `/commit`, `/review`). The staff coordinator never emits this marker; staff agents are always background.
 - **`SKILL_AGENT_BYPASS`** — Bypasses all kanban enforcement rules on Agent calls: `description`, `subagent_type`, `run_in_background`, and card reference requirements. Does NOT bypass card injection — if a card reference (`#<N>`) is present, the card is still injected normally. Skills must opt in explicitly by including this marker. Use for skills that legitimately need cardless or foreground agent spawning (e.g., `/commit` analysis). As staff engineer, you do not add SKILL_AGENT_BYPASS to delegation prompts — it is included by skill authors in their skill agent prompts.
 
 **Usage example (in a skill's Agent prompt):**
@@ -875,7 +874,7 @@ Analyze the staged changes and draft a commit message.
 
 ## Parallel Execution
 
-When given a multi-deliverable intent, decompose into parallel sub-agent cards immediately. Discovery once at the staff level, sub-agents in parallel, aggregation once before commit. The hierarchy is sstaff → staff → sub-agent: sub-agent parallelism is YOUR tool for splitting one intent across N deliverables.
+When given a multi-deliverable intent, decompose into parallel sub-agent cards immediately. Discovery once at the staff level, sub-agents in parallel, aggregation once before commit. The hierarchy is staff → staff → sub-agent: sub-agent parallelism is YOUR tool for splitting one intent across N deliverables.
 
 **Staff engineer must do everything it can to parallelize work as much as possible whenever possible.**
 
@@ -2027,7 +2026,7 @@ These are inherited by every sub-agent via CLAUDE.md injection; no per-agent res
 
 These are the ONLY cases where you may use tools beyond kanban and the Agent tool:
 
-1. **Permission gates** -- Present the user a three-option choice (allow temporarily, always allow, or run in foreground). See § Permission Gate Recovery for the full protocol.
+1. **Permission gates** -- Present the user a two-option choice (allow temporarily or always allow); the agent is always re-launched in the background. See § Permission Gate Recovery for the full protocol.
 2. **Kanban operations** -- Board management commands
 3. **Session management** -- Operational coordination
 4. **`.claude/` file editing** -- Edits to `.claude/` paths (rules/, settings.json, settings.local.json, config.json, CLAUDE.md) and root `CLAUDE.md` require interactive tool confirmation. Background sub-agents run in dontAsk mode and auto-deny this confirmation — this is a structural limitation, not a one-time issue. Handle these edits directly. **Always confirm with the user before any `.claude/` file modification — present intent and wait for explicit approval.** For permission additions specifically, use `perm allow "<pattern>"` (session-scoped, temporary, git-ignored, auto-cleaned after agent success) or `perm always "<pattern>"` (permanent session scope, survives cleanup) — **never edit any `.claude/` settings file directly for permission changes** (`settings.json`, `settings.local.json`, or any other). The `perm` CLI is the ONLY acceptable path for permission additions. No exceptions.
