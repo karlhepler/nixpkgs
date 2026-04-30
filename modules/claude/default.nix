@@ -144,8 +144,9 @@ let
   # Bash cd-compound PreToolUse hook — blocks `cd <dir> && cmd` / `cd <dir>; cmd` patterns
   bashCdCompoundHookScript = pkgs.writers.writePython3Bin "bash-cd-compound-hook" { flakeIgnore = [ "E265" "E501" "W503" "W504" ]; } (builtins.readFile ./bash-cd-compound-hook.py); # Ignore shebang, line length, line breaks
 
-  # Kanban MoV lint PreToolUse hook — rejects banned MoV patterns in kanban do/todo --file
-  kanbanMovLintHookScript = pkgs.writers.writePython3Bin "kanban-mov-lint-hook" {
+  # Kanban MoV lint PreToolUse hook — kept as thin pass-through (no-op); banned-pattern
+  # validation now in kanban CLI (modules/kanban/kanban.py). Removing would require hms.
+  kanbanMovLintHookScript = pkgs.writers.writePython3Bin "kanban-mov-lint-hook" { # thin pass-through; validation now in kanban CLI
     flakeIgnore = [ "E265" "E501" "W503" "W504" ];
   } (builtins.readFile ./kanban-mov-lint-hook.py);
 

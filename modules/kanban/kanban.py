@@ -20,6 +20,7 @@ import html
 import json
 import os
 import re
+import shlex
 import select
 import shutil
 import sqlite3
@@ -880,6 +881,393 @@ def validate_criteria_schema(criteria: list) -> None:
                     sys.exit(1)
 
 
+# =============================================================================
+# MoV (Measure of Verification) banned-pattern validation
+#
+# These checks run at card-creation time for BOTH inline JSON and --file paths.
+# They mirror (and are the authoritative source for) the patterns documented in
+# staff-engineer.md § Card Management — Card Fields — MoV discipline.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Pattern constants
+# ---------------------------------------------------------------------------
+
+# Matches rg invocations that include capital -E (--encoding, not extended regex).
+# Handles: rg -E, rg -qE, rg -qiE, rg -EI, etc.
+# Does NOT match grep -E or other non-rg tools.
+_MOV_RG_E_FLAG_RE = re.compile(r'\brg\s+-[a-zA-Z]*E[a-zA-Z]*\b')
+
+# Structural prefix of the fragile absence-via-count pattern:
+#   test $(rg -c ...) -le 0, [ $(grep -c ...) -le 0 ], [[ $(rg -c ...) -le 0 ]]
+_MOV_RG_COUNT_ABSENCE_RE = re.compile(
+    r'(?:test|\[\[?)\s+"?(?:\$\(|`)\s*(?:rg|grep)\s+-c\b'
+)
+# Comparison-to-zero half of the pattern.
+_MOV_ZERO_COMPARE_RE = re.compile(r'-(?:le|eq)\s+[01]\b|-lt\s+[012]\b')
+
+# Backslash immediately followed by pipe, NOT preceded by another backslash.
+# Catches \| (literal-pipe trap) but not \\| (double-escape, may be legitimate).
+_MOV_BACKSLASH_PIPE_RE = re.compile(r'(?<!\\)\\[|]')
+
+# Regex-context tools for which \| is meaningfully wrong (alternation trap).
+# Restricted to rg/grep only — sed/awk use BRE where \| is legitimate alternation.
+_MOV_REGEX_TOOL_RE = re.compile(r'\b(?:rg|grep)\b')
+
+# grep in PCRE mode (-P / --perl-regexp): \| IS valid alternation in PCRE.
+_MOV_GREP_PCRE_RE = re.compile(r'(?<!\w)-P\b|--perl-regexp\b')
+
+# Hook-skip literal strings (fail-closed subset — security-critical).
+# Used for raw-text scanning when JSON parse fails (see cmd_do / cmd_todo).
+# _MOV_HOOK_SKIP_RES is derived from these entries to keep a single source of truth:
+# when adding a new hook-skip pattern, add its literal here AND a compiled entry below.
+_MOV_HOOK_SKIP_LITERALS: list[str] = [
+    "--no-verify",
+    "--no-gpg-sign",
+    "HUSKY=0",
+    "HUSKY_SKIP_HOOKS=1",
+]  # keep in sync with _MOV_HOOK_SKIP_RES (compiled patterns initialized from _MOV_HOOK_SKIP_LITERALS)
+_MOV_HOOK_SKIP_RES: list[tuple[re.Pattern, str]] = [
+    (re.compile(r'--no-verify\b'),       "--no-verify (hook-skip flag)"),
+    (re.compile(r'--no-gpg-sign\b'),     "--no-gpg-sign (hook-skip flag)"),
+    (re.compile(r'\bHUSKY\s*=\s*0\b'),   "HUSKY=0 (hook-skip env var)"),
+    (re.compile(r'\bHUSKY_SKIP_HOOKS\s*=\s*1\b'), "HUSKY_SKIP_HOOKS=1 (hook-skip env var)"),
+]
+
+# rg/grep flags that consume the next token as a value (for dash-leading detection).
+_MOV_RG_FLAGS_WITH_VALUE: frozenset[str] = frozenset([
+    "-f", "--file", "--encoding", "-E", "--type-add",
+    "--iglob", "--glob", "-g", "--replace", "-r",
+    "--max-count", "-m", "--max-depth",
+    "--context", "-C", "--before-context", "-B", "--after-context", "-A",
+    "--color", "--colors", "--field-match-separator", "--field-context-separator",
+    "--path-separator", "--sort", "--sortr",
+    "--type", "-t", "--type-not", "-T",
+])
+
+_MOV_GREP_FLAGS_WITH_VALUE: frozenset[str] = frozenset([
+    "-e", "--regexp", "-f", "--file",
+    "-m", "--max-count",
+    "-A", "--after-context", "-B", "--before-context", "-C", "--context",
+    "--label", "--include", "--exclude", "--color", "--colour",
+])
+
+# Known rg boolean long flags (take no value).
+_MOV_RG_BOOL_LONG_FLAGS: frozenset[str] = frozenset([
+    "--no-ignore", "--no-ignore-vcs", "--no-ignore-global", "--no-ignore-parent",
+    "--no-ignore-dot", "--ignore", "--hidden", "--no-hidden",
+    "--follow", "--no-follow", "--fixed-strings", "--no-fixed-strings",
+    "--word-regexp", "--no-word-regexp", "--line-regexp", "--no-line-regexp",
+    "--multiline", "--no-multiline", "--multiline-dotall", "--crlf", "--no-crlf",
+    "--null", "--null-data", "--only-matching", "--passthru", "--invert-match",
+    "--count", "--count-matches", "--files", "--files-with-matches",
+    "--files-without-match", "--list-file-types", "--quiet",
+    "--case-sensitive", "--ignore-case", "--smart-case",
+    "--pcre2", "--no-pcre2", "--vimgrep", "--json",
+    "--line-number", "--no-line-number", "--column", "--no-column",
+    "--with-filename", "--no-filename", "--heading", "--no-heading",
+    "--trim", "--glob-case-insensitive", "--no-glob-case-insensitive",
+    "--binary", "--no-binary", "--text", "--search-zip", "--no-search-zip",
+    "--mmap", "--no-mmap", "--unicode", "--no-unicode",
+    "--one-file-system", "--no-messages", "--stats", "--debug", "--trace",
+    "--version", "--help",
+])
+
+# Known grep boolean long flags (take no value).
+_MOV_GREP_BOOL_LONG_FLAGS: frozenset[str] = frozenset([
+    "--extended-regexp", "--fixed-strings", "--basic-regexp", "--perl-regexp",
+    "--ignore-case", "--no-ignore-case", "--word-regexp", "--line-regexp",
+    "--count", "--line-number", "--only-matching", "--quiet", "--silent",
+    "--recursive", "--dereference-recursive", "--invert-match",
+    "--files-with-matches", "--files-without-match", "--with-filename",
+    "--no-filename", "--null", "--binary", "--text", "--no-messages",
+    "--version", "--help",
+])
+
+
+# ---------------------------------------------------------------------------
+# Per-cmd detection helpers
+# ---------------------------------------------------------------------------
+
+def _mov_is_rg_count_absence(cmd: str) -> bool:
+    """True if cmd uses the fragile absence-via-count idiom (test $(rg -c ...) -le 0)."""
+    return bool(_MOV_RG_COUNT_ABSENCE_RE.search(cmd) and _MOV_ZERO_COMPARE_RE.search(cmd))
+
+
+def _mov_is_backslash_pipe_in_regex_tool(cmd: str) -> bool:
+    """True if cmd invokes a regex-context tool with \\| (literal-pipe trap)."""
+    if not _MOV_REGEX_TOOL_RE.search(cmd):
+        return False
+    # Exempt grep -P / --perl-regexp: in PCRE mode, \\| is valid alternation.
+    if re.search(r'\bgrep\b', cmd) and _MOV_GREP_PCRE_RE.search(cmd):
+        return False
+    return bool(_MOV_BACKSLASH_PIPE_RE.search(cmd))
+
+
+def _mov_is_git_commit_n(cmd: str) -> bool:
+    """True if cmd is `git commit` with the -n short flag (--no-verify shorthand).
+
+    Handles value-consuming git flags (e.g., -C <path>, -c <key>=<val>,
+    --git-dir <dir>, --work-tree <dir>) that appear between `git` and `commit`.
+    These flags consume the following token as a value, so the value token is
+    skipped rather than treated as a non-flag that stops the search.
+    """
+    try:
+        tokens = shlex.split(cmd)
+    except ValueError:
+        return False
+    if not tokens:
+        return False
+    try:
+        git_idx = tokens.index("git")
+    except ValueError:
+        return False
+    post_git = tokens[git_idx + 1:]
+    # Value-consuming flags that git itself accepts before the subcommand.
+    # When we see one of these flags, we skip the following token (its value).
+    git_value_consuming_flags: frozenset[str] = frozenset([
+        "-C", "-c", "--git-dir", "--work-tree", "--namespace",
+        "--super-prefix", "--exec-path",
+    ])
+    commit_idx = None
+    i = 0
+    while i < len(post_git):
+        tok = post_git[i]
+        if tok == "commit":
+            commit_idx = i
+            break
+        if tok in git_value_consuming_flags:
+            # Skip this flag AND the value token that follows it.
+            i += 2
+            continue
+        if not tok.startswith("-"):
+            return False
+        i += 1
+    if commit_idx is None:
+        return False
+    flags_with_args = frozenset(["-m", "--message", "-F", "--file",
+                                  "-C", "--reuse-message", "--author", "--date"])
+    post_commit = post_git[commit_idx + 1:]
+    i = 0
+    while i < len(post_commit):
+        tok = post_commit[i]
+        if tok in flags_with_args:
+            i += 2
+            continue
+        if tok == "--":
+            break
+        if tok.startswith("-") and not tok.startswith("--"):
+            if "n" in tok[1:]:
+                return True
+        i += 1
+    return False
+
+
+def _mov_is_dash_leading_pattern(cmd: str) -> bool:
+    """True if rg/grep is invoked with a '--'-leading pattern but no '--' or '-e' guard."""
+    try:
+        tokens = shlex.split(cmd)
+    except ValueError:
+        return False
+    if not tokens:
+        return False
+    tool_idx = None
+    for i, tok in enumerate(tokens):
+        base = tok.split("/")[-1]
+        if base in ("rg", "grep"):
+            tool_idx = i
+            break
+    if tool_idx is None:
+        return False
+    base_tool = tokens[tool_idx].split("/")[-1]
+    if base_tool == "rg":
+        flags_with_value = _MOV_RG_FLAGS_WITH_VALUE
+        bool_long_flags = _MOV_RG_BOOL_LONG_FLAGS
+    else:
+        flags_with_value = _MOV_GREP_FLAGS_WITH_VALUE
+        bool_long_flags = _MOV_GREP_BOOL_LONG_FLAGS
+    post_tool = tokens[tool_idx + 1:]
+    i = 0
+    while i < len(post_tool):
+        tok = post_tool[i]
+        if tok == "--":
+            return False
+        if tok in ("-e", "--regexp"):
+            return False
+        if tok.startswith("--"):
+            if tok in flags_with_value:
+                i += 2
+                continue
+            if tok in bool_long_flags:
+                i += 1
+                continue
+            return True
+        if tok.startswith("-"):
+            i += 1
+            continue
+        return False
+    return False
+
+
+def _mov_check_cmd(cmd: str) -> "list[tuple[str, str]]":
+    """
+    Check a single cmd string against all banned MoV patterns.
+
+    Returns a list of (pattern_name, fix_suggestion) tuples for ALL violations
+    found in this cmd. Returns an empty list if the cmd is clean.
+
+    All matching patterns are checked and collected rather than returning on
+    the first match, so a cmd with multiple violations surfaces them all.
+    """
+    violations: list[tuple[str, str]] = []
+
+    if _mov_is_rg_count_absence(cmd):
+        violations.append((
+            "test $(rg -c PATTERN FILE) -le N (absence-via-count idiom)",
+            (
+                "This idiom is fragile — `rg -c` emits NO stdout when zero matches, "
+                "breaking `test` structurally with exit 2. "
+                "For pattern-absence assertions, use: `! rg -q 'pattern' file`"
+            ),
+        ))
+
+    if _mov_is_git_commit_n(cmd):
+        violations.append((
+            "git commit -n (hook-skip short flag)",
+            "`git commit -n` is shorthand for `--no-verify` and must never appear in a MoV.",
+        ))
+
+    if _mov_is_backslash_pipe_in_regex_tool(cmd):
+        violations.append((
+            "backslash-pipe (literal pipe, not alternation)",
+            (
+                r"In ripgrep's default Rust regex engine, `\|` is a LITERAL pipe — not alternation. "
+                r"Fix: use bare-pipe alternation (`foo|bar`) or split into separate mov_commands entries."
+            ),
+        ))
+
+    if _mov_is_dash_leading_pattern(cmd):
+        violations.append((
+            "rg/grep dash-leading pattern without `--` or `-e` separator",
+            (
+                "When the search pattern starts with `--`, use: "
+                "`rg -qF -- '--watch' file` or `rg -qF -e '--watch' file`. "
+                "Without the guard, rg/grep parses the pattern as an unrecognized flag and exits 2."
+            ),
+        ))
+
+    if _MOV_RG_E_FLAG_RE.search(cmd):
+        violations.append((
+            "rg -E (capital -E flag)",
+            (
+                "In ripgrep, `-E` means `--encoding`, NOT extended regex. "
+                "PCRE2 regex is the default — no flag needed. "
+                "Fix: replace `rg -qiE` with `rg -qi`, `rg -E` with `rg`."
+            ),
+        ))
+
+    for pattern, name in _MOV_HOOK_SKIP_RES:
+        if pattern.search(cmd):
+            violations.append((
+                name,
+                f"`{name.split(' ')[0]}` skips git hooks and must never appear in a MoV. Remove the flag.",
+            ))
+
+    return violations
+
+
+# ---------------------------------------------------------------------------
+# Public validation function
+# ---------------------------------------------------------------------------
+
+def validate_mov_commands_content(card_json) -> None:
+    """Validate all mov_commands[].cmd fields in card_json against banned patterns.
+
+    Accepts a single card dict or a list of card dicts (bulk creation).
+
+    For each criterion's mov_commands, checks every cmd against the banned-patterns
+    list (backslash-pipe, AND-chain, rg -E, absence-via-count idiom, hook-skip flags,
+    dash-leading patterns, empty mov_commands).
+
+    Collects ALL violations across all cards before exiting, so the author sees
+    every problem in one pass.
+
+    Exits with code 1 if any violations are found, printing an actionable error
+    report to stderr. Returns normally when all commands are clean.
+
+    Note: && (AND-chain) is validated separately by _collect_ampersand_errors /
+    _print_ampersand_chain_errors. This function covers the remaining banned patterns.
+
+    Note: violation reports echo cmd content verbatim to stderr (truncated at 80 chars).
+    Card authors MUST NOT put credentials in mov_commands cmd fields — this function
+    does not sanitize cmd values before displaying them in error output.
+    """
+    # Normalize to list
+    if isinstance(card_json, dict):
+        cards = [card_json]
+    elif isinstance(card_json, list):
+        cards = [c for c in card_json if isinstance(c, dict)]
+    else:
+        return  # Not a card — nothing to validate
+
+    all_violations: list[tuple[int, int, int, str, str, str]] = []
+    # Each entry: (card_idx, ac_idx, cmd_idx, pattern_name, fix, cmd_snippet)
+
+    for card_idx, card in enumerate(cards):
+        criteria = card.get("criteria") or card.get("ac", [])
+        if not isinstance(criteria, list):
+            continue
+
+        for ac_idx, criterion in enumerate(criteria):
+            if not isinstance(criterion, dict):
+                continue
+
+            # Skip semantic criteria (no mov_commands expected).
+            mov_type = criterion.get("mov_type")
+            if mov_type == "semantic":
+                continue
+
+            mov_commands = criterion.get("mov_commands") or []
+            if not isinstance(mov_commands, list):
+                continue
+
+            # Empty mov_commands on a non-semantic criterion is caught elsewhere
+            # (validate_criteria_schema). Skip here to avoid duplicate errors.
+            if not mov_commands:
+                continue
+
+            for cmd_idx, entry in enumerate(mov_commands):
+                if not isinstance(entry, dict):
+                    continue
+                cmd = entry.get("cmd", "")
+                if not cmd or not isinstance(cmd, str):
+                    continue
+
+                for pattern_name, fix in _mov_check_cmd(cmd):
+                    all_violations.append((card_idx, ac_idx, cmd_idx, pattern_name, fix, cmd))
+
+    if not all_violations:
+        return
+
+    is_bulk = len(cards) > 1
+
+    print("Error: Banned MoV pattern(s) detected in card JSON.", file=sys.stderr)
+    print("", file=sys.stderr)
+    for card_idx, ac_idx, cmd_idx, pattern_name, fix, cmd in all_violations:
+        card_label = f"card[{card_idx}] " if is_bulk else ""
+        cmd_display = cmd if len(cmd) <= 80 else cmd[:77] + "..."
+        print(
+            f"  {card_label}criteria[{ac_idx}] → mov_commands[{cmd_idx}].cmd",
+            file=sys.stderr,
+        )
+        print(f"    Pattern: {pattern_name}", file=sys.stderr)
+        print(f"    Command: {cmd_display!r}", file=sys.stderr)
+        print(f"    Fix: {fix}", file=sys.stderr)
+        print("", file=sys.stderr)
+    print("Correct the MoV commands before running kanban do/todo.", file=sys.stderr)
+    sys.exit(1)
+
+
 def _collect_ampersand_errors(criteria: list) -> list:
     """Return list of (criterion_num, cmd) tuples where cmd contains '&&'.
 
@@ -1020,11 +1408,39 @@ def validate_and_build_card(data: dict, session: str | None) -> dict:
     return card
 
 
+def _mov_fail_closed_scan(raw_input_text: str, source: str) -> None:
+    """Fail-closed raw-text scan for hook-skip literals when JSON parse fails.
+
+    When card JSON is malformed, we cannot parse mov_commands to run the normal
+    pattern checks. As a safety net, scan the raw input text for hook-skip literals
+    (e.g., --no-verify, HUSKY=0) and emit a specific security block message before
+    falling back to the generic JSON parse error. This ensures hook-skip patterns
+    in intentionally malformed JSON are caught with an actionable message.
+    """
+    found = [lit for lit in _MOV_HOOK_SKIP_LITERALS if lit in raw_input_text]
+    if found:
+        print(
+            f"Error: Banned hook-skip pattern(s) detected in malformed card JSON from {source}.",
+            file=sys.stderr,
+        )
+        for lit in found:
+            print(f"  Literal found: {lit!r}", file=sys.stderr)
+        print(
+            "Remove all hook-skip flags/env-vars before fixing the JSON syntax.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+
 def resolve_json_input(args) -> object:
     """Resolve card JSON from either --file flag or inline positional argument.
 
     Enforces mutual exclusion: exactly one of --file or positional json_data must
     be provided. Returns the parsed JSON object or array.
+
+    When JSON parsing fails, performs a fail-closed raw-text scan for hook-skip
+    literals (see _mov_fail_closed_scan). If hook-skip content is detected in
+    malformed JSON, emits a specific security block message before the parse error.
     """
     json_file = getattr(args, "json_file", None)
     json_data = getattr(args, "json_data", None)
@@ -1049,6 +1465,10 @@ def resolve_json_input(args) -> object:
         return json.loads(raw)
     except json.JSONDecodeError as e:
         source = json_file if json_file else "<inline>"
+        # Fail-closed: scan raw text for hook-skip literals before emitting the
+        # generic parse error, so intentionally malformed JSON with hook-skip strings
+        # gets a security-specific block message rather than just a JSON error.
+        _mov_fail_closed_scan(raw, source)
         print(f"Error: Invalid JSON from {source}: {e}", file=sys.stderr)
         sys.exit(1)
 
@@ -1119,7 +1539,12 @@ def cmd_do(args) -> None:
     """
     root = get_root(args.root)
 
+    # resolve_json_input performs a fail-closed raw-text scan for hook-skip literals
+    # when JSON is malformed (see _mov_fail_closed_scan), then returns parsed data.
     data = resolve_json_input(args)
+
+    # Run banned-pattern validation before structural checks for clearer error messages.
+    validate_mov_commands_content(data)
 
     session = args.session if hasattr(args, "session") and args.session else get_current_session_id()
 
@@ -1606,6 +2031,23 @@ def cmd_criteria_add(args) -> None:
     and a warning is emitted to stderr (Option B: auto-reopen for mid-flight criterion add).
     """
     root = get_root(args.root)
+
+    # Validate --mov-cmd entries for banned patterns early, before card I/O.
+    # This closes the bypass path where criteria add could introduce hook-skip
+    # or other banned patterns without going through cmd_do/cmd_todo.
+    if args.mov_cmd:
+        criteria_add_violations: list[str] = []
+        for raw_cmd in args.mov_cmd:
+            for pattern_name, fix in _mov_check_cmd(raw_cmd):
+                criteria_add_violations.append(
+                    f"  cmd: {raw_cmd!r}\n    Pattern: {pattern_name}\n    Fix: {fix}"
+                )
+        if criteria_add_violations:
+            print("Error: Banned MoV pattern(s) detected in --mov-cmd argument.", file=sys.stderr)
+            for msg in criteria_add_violations:
+                print(msg, file=sys.stderr)
+            sys.exit(1)
+
     card_path = find_card(root, args.card)
     card = read_card(card_path)
     num = card_number(card_path)
@@ -2614,7 +3056,12 @@ def cmd_todo(args) -> None:
     """
     root = get_root(args.root)
 
+    # resolve_json_input performs a fail-closed raw-text scan for hook-skip literals
+    # when JSON is malformed (see _mov_fail_closed_scan), then returns parsed data.
     data = resolve_json_input(args)
+
+    # Run banned-pattern validation before structural checks for clearer error messages.
+    validate_mov_commands_content(data)
 
     session = args.session if hasattr(args, "session") and args.session else get_current_session_id()
 
