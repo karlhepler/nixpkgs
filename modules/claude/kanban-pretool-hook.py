@@ -71,6 +71,10 @@ _CARD_SESSION_PATTERN = re.compile(
 _CARD_BARE_PATTERN = re.compile(r'card\s+#(\d+)', re.IGNORECASE)
 _SESSION_BARE_PATTERN = re.compile(r'[Ss]ession[:\s]+([a-z0-9][a-z0-9-]+)')
 
+# Markers for enforcement bypasses in agent prompts
+_SKILL_AGENT_BYPASS_RE = re.compile(r'^\s*SKILL_AGENT_BYPASS\s*$', re.MULTILINE)
+_FOREGROUND_AUTHORIZED_RE = re.compile(r'^\s*FOREGROUND_AUTHORIZED\s*$', re.MULTILINE)
+
 
 # ---------------------------------------------------------------------------
 # Error logging
@@ -990,7 +994,10 @@ def main() -> None:
     # the bypass marker, skip all enforcement deny rules but still attempt card
     # injection if a card reference is present.
     # Only check the pre-injection portion to prevent card XML from injecting bypass.
-    skill_bypass = bool(pre_injection_prompt and "SKILL_AGENT_BYPASS" in pre_injection_prompt)
+    skill_bypass = bool(
+        pre_injection_prompt
+        and _SKILL_AGENT_BYPASS_RE.search(pre_injection_prompt)
+    )
     if skill_bypass:
         log_info("SKILL_AGENT_BYPASS detected — skipping enforcement rules")
 
@@ -1045,14 +1052,14 @@ def main() -> None:
         run_in_background = tool_input.get("run_in_background")
         if run_in_background is not True:
             # Only check the pre-injection portion to prevent card XML from injecting bypass.
-            if "FOREGROUND_AUTHORIZED" not in pre_injection_prompt:
+            if not _FOREGROUND_AUTHORIZED_RE.search(pre_injection_prompt):
                 reason = (
                     "Agent tool call denied: missing `run_in_background: true`. "
                     "All Agent tool calls MUST run in the background to keep the "
                     "coordination loop available. Add `run_in_background: true` to "
                     "your Agent tool call. Exception: Permission Gate Recovery "
-                    "Option C — include 'FOREGROUND_AUTHORIZED' in the delegation "
-                    "prompt to allow a foreground launch."
+                    "Option C — place FOREGROUND_AUTHORIZED on its own line "
+                    "in the delegation prompt to allow a foreground launch."
                 )
                 log_info("Agent denied — missing run_in_background: true")
                 print(json.dumps(deny_with_reason(reason)))

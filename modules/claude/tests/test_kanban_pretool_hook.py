@@ -396,6 +396,26 @@ class TestForegroundAuthorized:
 
         assert_allowed(result)
 
+    def test_foreground_authorized_with_whitespace_padding_bypasses(self, hook):
+        """FOREGROUND_AUTHORIZED with leading/trailing whitespace on its own line is allowed."""
+        payload = make_pretool_payload(
+            run_in_background=False,
+            prompt="  FOREGROUND_AUTHORIZED  \nKANBAN CARD #42 | Session: test-session\nDo some work.",
+        )
+        card_xml = KanbanMockResponses.card_xml()
+
+        def fake_subprocess_run(cmd, **kwargs):
+            if cmd[0] == "kanban" and cmd[1] == "show":
+                return KanbanMockResponses.success(stdout=card_xml)
+            if cmd[0] == "kanban" and cmd[1] == "agent":
+                return KanbanMockResponses.success()
+            return KanbanMockResponses.failure()
+
+        with patch("subprocess.run", side_effect=fake_subprocess_run):
+            result = run_hook_main(hook, payload)
+
+        assert_allowed(result)
+
     def test_foreground_authorized_still_enforces_description(self, hook):
         """FOREGROUND_AUTHORIZED does NOT bypass description check."""
         payload = make_pretool_payload(
@@ -405,6 +425,20 @@ class TestForegroundAuthorized:
         )
         result = run_hook_main(hook, payload)
         assert_denied(result, "description")
+
+    def test_foreground_authorized_in_negation_prose_is_denied(self, hook):
+        """FOREGROUND_AUTHORIZED embedded in prose (negation) must NOT bypass check.
+
+        Bug fix: 'no FOREGROUND_AUTHORIZED marker' used to bypass the check via
+        substring match. The line-anchored regex must reject prose that merely
+        contains the marker text — the marker must occupy its own line.
+        """
+        payload = make_pretool_payload(
+            run_in_background=False,
+            prompt="This prompt says no FOREGROUND_AUTHORIZED marker is present.",
+        )
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "run_in_background")
 
 
 class TestSkillAgentBypass:
@@ -436,6 +470,32 @@ class TestSkillAgentBypass:
         )
         result = run_hook_main(hook, payload)
         assert_allowed(result)
+
+    def test_skill_agent_bypass_with_whitespace_padding_bypasses(self, hook):
+        """SKILL_AGENT_BYPASS with leading/trailing whitespace on its own line is allowed."""
+        payload = make_pretool_payload(
+            run_in_background=False,
+            prompt="  SKILL_AGENT_BYPASS  \nsome skill invocation",
+        )
+        result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+    def test_skill_agent_bypass_in_negation_prose_is_denied(self, hook):
+        """SKILL_AGENT_BYPASS embedded in prose must NOT trigger bypass.
+
+        Bug fix: 'no SKILL_AGENT_BYPASS marker' used to bypass enforcement
+        via substring match. The line-anchored regex must reject prose that
+        merely contains the marker text.
+        """
+        payload = make_pretool_payload(
+            run_in_background=False,
+            description="",
+            subagent_type="",
+            prompt="This prompt says no SKILL_AGENT_BYPASS marker should be here.",
+        )
+        result = run_hook_main(hook, payload)
+        # Without bypass, empty description triggers deny
+        assert_denied(result, "description")
 
     def test_bypass_with_card_reference_still_injects(self, hook):
         """With SKILL_AGENT_BYPASS and a card reference, injection still occurs."""
