@@ -32,6 +32,7 @@ Covered paths:
 - rg -c absence idiom: backtick form, [[ double-bracket form, -lt 0/1/2, -le 1 variants (should block)
 - Empty mov_commands: criterion with [] (should block); one valid entry (should allow)
 - Missing mov_commands key: now blocked (policy change — missing key is same as empty list)
+- Dash-leading pattern: rg/grep with '--pattern' missing -- or -e (should block); -- and -e forms (should allow)
 """
 
 import importlib.util
@@ -778,6 +779,96 @@ class TestEmptyMovCommands:
         }
         result = run_with_temp_file(hook, card)
         assert_blocked(result)
+
+
+# ---------------------------------------------------------------------------
+# TestDashLeadingPattern — rg/grep dash-leading pattern without -- or -e
+# ---------------------------------------------------------------------------
+
+class TestDashLeadingPattern:
+    """rg/grep with a dash-leading search pattern (missing -- or -e) must be denied.
+
+    When the search pattern starts with '-' and no end-of-flags marker ('--') or
+    explicit pattern flag ('-e'/'--regexp') precedes it, rg/grep parses the pattern
+    as an unknown flag and exits 2 ('unrecognized flag'). The MoV will always fail.
+
+    Safe invocations (must be allowed):
+      rg -qF -- '--watch' file    (end-of-flags marker before pattern)
+      rg -qF -e '--watch' file    (explicit -e pattern flag)
+      rg -qi -- '--lint' file     (end-of-flags marker)
+
+    Unsafe invocations (must be denied):
+      rg -qF '--watch' file       (pattern parsed as flag → exit 2)
+      rg -qi '--lint' file        (same hazard)
+      grep '--debug' file         (same hazard)
+    """
+
+    # --- Positive cases (must block) ---
+
+    def test_rg_dash_leading_double_dash_pattern_denied(self, hook):
+        """rg -qF '--watch' file — '--watch' is the pattern but rg parses it as a flag."""
+        card = make_card_json("rg -qF '--watch' file")
+        result = run_with_temp_file(hook, card)
+        assert_blocked(result)
+
+    def test_rg_dash_leading_single_dash_pattern_denied(self, hook):
+        """rg -qi '--lint' file — '--lint' is the pattern but rg parses it as a flag."""
+        card = make_card_json("rg -qi '--lint' file")
+        result = run_with_temp_file(hook, card)
+        assert_blocked(result)
+
+    def test_grep_dash_leading_pattern_denied(self, hook):
+        """grep '--debug' file — dash-leading pattern without guard must be denied."""
+        card = make_card_json("grep '--debug' file")
+        result = run_with_temp_file(hook, card)
+        assert_blocked(result)
+
+    # --- Negative cases (must allow) ---
+
+    def test_rg_end_of_flags_marker_allowed(self, hook):
+        """rg -qF -- '--watch' file — end-of-flags marker present; must NOT be denied."""
+        card = make_card_json("rg -qF -- '--watch' file")
+        result = run_with_temp_file(hook, card)
+        assert_allowed(result)
+
+    def test_rg_explicit_e_flag_allowed(self, hook):
+        """rg -qF -e '--watch' file — explicit -e flag present; must NOT be denied."""
+        card = make_card_json("rg -qF -e '--watch' file")
+        result = run_with_temp_file(hook, card)
+        assert_allowed(result)
+
+    def test_rg_qi_end_of_flags_marker_allowed(self, hook):
+        """rg -qi -- '--lint' file — end-of-flags marker present; must NOT be denied."""
+        card = make_card_json("rg -qi -- '--lint' file")
+        result = run_with_temp_file(hook, card)
+        assert_allowed(result)
+
+    def test_rg_normal_pattern_no_dash_allowed(self, hook):
+        """rg -qi 'foo' file — no dash-leading pattern; existing detection unaffected."""
+        card = make_card_json("rg -qi 'foo' file")
+        result = run_with_temp_file(hook, card)
+        assert_allowed(result)
+
+    def test_rg_flag_with_dash_not_pattern_allowed(self, hook):
+        """rg --no-ignore 'foo' file — dash-leading appears in a flag, not the pattern."""
+        card = make_card_json("rg --no-ignore 'foo' file")
+        result = run_with_temp_file(hook, card)
+        assert_allowed(result)
+
+    def test_rg_single_dash_pattern_bypass_not_blocked(self, hook):
+        """rg -qi '-foo' file — single-dash leading pattern is NOT blocked.
+
+        Known limitation: single-dash leading patterns (e.g., '-foo') are
+        indistinguishable from short-flag bundles after shlex tokenization.
+        The token '-foo' is consumed as a combined short-flag bundle and never
+        reaches the positional-argument check. This hook only detects
+        double-dash leading patterns ('--FOO' style). Single-dash hazards
+        require discipline at authoring time per staff-engineer.md.
+        """
+        card = make_card_json("rg -qi '-foo' file")
+        result = run_with_temp_file(hook, card)
+        # Single-dash pattern is not detected — this is the known limitation.
+        assert_allowed(result)
 
 
 # ---------------------------------------------------------------------------

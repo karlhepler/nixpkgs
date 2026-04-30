@@ -36,6 +36,14 @@ BANNED PATTERNS:
     Both mov_commands: [] and a missing mov_commands key represent the same intent
     (no programmatic check). The SubagentStop hook auto-fails both at check time.
     Every acceptance criterion must have at least one {cmd, timeout} entry.
+  dash-leading patterns: rg/grep invocations where the search pattern starts with
+    '--' (double-dash) but no end-of-flags marker ('--') or explicit pattern flag
+    ('-e') precedes it. rg/grep parses the pattern as a flag and returns exit 2
+    'unrecognized flag'. Detection covers '--'-leading patterns only; single-dash
+    patterns (e.g., '-foo') are indistinguishable from short-flag bundles after
+    shlex tokenization and cannot be reliably detected.
+    Fix: use rg -qF -- '--watch' file  (end-of-flags marker)
+      or rg -qF -e '--watch' file  (explicit pattern flag)
 
 LIMITATIONS / SCOPE:
   This hook is a discipline aid, not a hard security boundary.
@@ -206,6 +214,28 @@ BANNED_PATTERNS: list[tuple[re.Pattern, str, str, bool]] = [
             "entry in `mov_commands`."
         ),
         False,  # empty mov_commands lint: fail open on parse error
+    ),
+    (
+        # Never matches — _is_dash_leading_pattern() handles this out-of-band via
+        # shlex tokenization. This sentinel entry exists for table completeness.
+        re.compile(r'(?!x)x'),
+        "rg/grep dash-leading pattern without `--` or `-e` separator",
+        (
+            "BANNED MoV PATTERN detected — rg/grep dash-leading pattern "
+            "(--FOO style) without `--` or `-e` separator\n"
+            "\n"
+            "  Pattern: rg/grep dash-leading pattern (--FOO style) without "
+            "`--` or `-e` separator\n"
+            "\n"
+            "  Fix: When the search pattern starts with `--`, use one of:\n"
+            "    rg -qF -- '--watch' file    (end-of-flags marker)\n"
+            "    rg -qF -e '--watch' file    (explicit pattern flag)\n"
+            "  Otherwise rg/grep parses the pattern as a flag.\n"
+            "  (Note: single-dash leading patterns like '-foo' are also a "
+            "hazard but cannot be reliably detected by this hook — exercise "
+            "discipline at authoring time per staff-engineer.md.)"
+        ),
+        False,  # dash-leading lint: fail open on parse error
     ),
 ]
 
@@ -399,6 +429,235 @@ def _is_rg_count_absence(cmd: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Dash-leading pattern detection
+# ---------------------------------------------------------------------------
+#
+# When a rg/grep invocation has a search pattern that starts with '-',
+# the tool parses it as an unknown flag and exits 2 ('unrecognized flag').
+#
+# Safe invocations that must NOT be flagged:
+#   rg -qF -- '--watch' file    (end-of-flags marker before pattern)
+#   rg -qF -e '--watch' file    (explicit -e / --regexp before pattern)
+#
+# Unsafe invocations that must be flagged:
+#   rg -qF '--watch' file       (pattern parsed as flag → exit 2)
+#   grep '--debug' file         (same hazard)
+#   rg -qi '--lint' file        (same hazard)
+
+# Flags that consume the very next token as their value — skip that token.
+# This prevents mistaking a flag value for the search pattern.
+# Note: -e/--regexp are intentionally excluded here; they trigger an early
+# return at the `-e`/`--regexp` guard in _is_dash_leading_pattern() before
+# the with-value check is ever reached.
+_RG_FLAGS_WITH_VALUE: frozenset[str] = frozenset([
+    "-f", "--file",
+    "--encoding", "-E",
+    "--type-add",
+    "--iglob", "--glob", "-g",
+    "--replace", "-r",
+    "--max-count", "-m",
+    "--max-depth",
+    "--context", "-C",
+    "--before-context", "-B",
+    "--after-context", "-A",
+    "--color",
+    "--colors",
+    "--field-match-separator",
+    "--field-context-separator",
+    "--path-separator",
+    "--sort", "--sortr",
+    "--type", "-t",
+    "--type-not", "-T",
+])
+
+# Known rg boolean long flags (take no value). Used to distinguish legitimate
+# rg flags from a dash-leading pattern that looks like an unknown flag.
+_RG_BOOL_LONG_FLAGS: frozenset[str] = frozenset([
+    "--no-ignore", "--no-ignore-vcs", "--no-ignore-global", "--no-ignore-parent",
+    "--no-ignore-dot", "--ignore", "--hidden", "--no-hidden",
+    "--follow", "--no-follow",
+    "--fixed-strings", "--no-fixed-strings",
+    "--word-regexp", "--no-word-regexp",
+    "--line-regexp", "--no-line-regexp",
+    "--multiline", "--no-multiline",
+    "--multiline-dotall",
+    "--crlf", "--no-crlf",
+    "--null", "--null-data",
+    "--only-matching",
+    "--passthru",
+    "--invert-match",
+    "--count", "--count-matches",
+    "--files", "--files-with-matches", "--files-without-match",
+    "--list-file-types",
+    "--quiet",
+    "--case-sensitive", "--ignore-case", "--smart-case",
+    "--pcre2", "--no-pcre2",
+    "--vimgrep",
+    "--json",
+    "--line-number", "--no-line-number",
+    "--column", "--no-column",
+    "--with-filename", "--no-filename",
+    "--heading", "--no-heading",
+    "--trim",
+    "--glob-case-insensitive", "--no-glob-case-insensitive",
+    "--binary", "--no-binary",
+    "--text",
+    "--search-zip", "--no-search-zip",
+    "--mmap", "--no-mmap",
+    "--unicode", "--no-unicode",
+    "--one-file-system",
+    "--no-messages",
+    "--stats",
+    "--debug", "--trace",
+    "--version",
+    "--help",
+])
+
+_GREP_FLAGS_WITH_VALUE: frozenset[str] = frozenset([
+    "-e", "--regexp",
+    "-f", "--file",
+    "-m", "--max-count",
+    "-A", "--after-context",
+    "-B", "--before-context",
+    "-C", "--context",
+    "--label",
+    "--include",
+    "--exclude",
+    "--color", "--colour",
+])
+
+# Known grep boolean long flags (take no value).
+_GREP_BOOL_LONG_FLAGS: frozenset[str] = frozenset([
+    "--extended-regexp", "--fixed-strings", "--basic-regexp", "--perl-regexp",
+    "--ignore-case", "--no-ignore-case",
+    "--word-regexp", "--line-regexp",
+    "--count", "--line-number", "--only-matching",
+    "--quiet", "--silent",
+    "--recursive", "--dereference-recursive",
+    "--invert-match",
+    "--files-with-matches", "--files-without-match", "--with-filename", "--no-filename",
+    "--null",
+    "--binary", "--text",
+    "--no-messages",
+    "--version", "--help",
+])
+
+
+def _is_dash_leading_pattern(cmd: str) -> bool:
+    """
+    Return True if cmd invokes rg or grep with a search pattern that starts
+    with '--' (double-dash), without a preceding '--' (end-of-flags) or
+    '-e'/'--regexp' (explicit pattern flag).
+
+    CONTRACT: This function detects double-dash leading patterns only (e.g.,
+    '--watch', '--lint'). Single-dash leading patterns (e.g., '-foo') are
+    indistinguishable from short-flag bundles after shlex tokenization and
+    cannot be reliably detected — they are silently skipped as flags. Single-
+    dash patterns are still a hazard; exercise discipline at authoring time
+    per staff-engineer.md guidance.
+
+    Uses shlex tokenization to distinguish flag tokens from positional arguments.
+    Fails open (returns False) if shlex parsing fails.
+
+    Algorithm:
+      For each token after the rg/grep binary:
+        - If token is '--', all subsequent tokens are positional (end-of-flags).
+          → safe (caller explicitly ended flags). Return False.
+        - If token is '-e' or '--regexp', the next token is the explicit pattern.
+          → safe. Return False.
+        - If token starts with '--', classify it:
+            * Known long flag with value: skip it and the next token (the value).
+            * Known boolean long flag: skip it (no value consumed).
+            * Unknown long flag ('--foo' not in either known set): this is the
+              double-dash leading hazard — rg/grep will parse it as an
+              unrecognized flag and exit 2 → return True.
+        - If token starts with '-' (single-dash), treat as a short flag bundle
+          (e.g., -qiF, -qi, -q) and skip it. NOTE: single-dash leading patterns
+          like '-foo' as a search argument are not detected here — they are
+          consumed as short-flag bundles and silently pass through.
+        - Otherwise, the token is the first positional argument (search pattern).
+          The pattern is safe → return False.
+
+    Note: shlex strips quotes, so '--watch' in the cmd string becomes --watch
+    after splitting. An unknown '--watch' token cannot be a valid rg flag and
+    would cause rg to exit 2 ('unrecognized flag') → correctly detected.
+    """
+    try:
+        tokens = shlex.split(cmd)
+    except ValueError:
+        # Unterminated quotes or other shlex errors — fail open
+        return False
+
+    if not tokens:
+        return False
+
+    # Find rg or grep token; only check the first such invocation in the command.
+    tool_idx = None
+    for i, tok in enumerate(tokens):
+        # Strip path prefix in case of /usr/bin/grep etc.
+        base = tok.split("/")[-1]
+        if base in ("rg", "grep"):
+            tool_idx = i
+            break
+
+    if tool_idx is None:
+        return False
+
+    # Determine which flag sets to use based on the tool.
+    base_tool = tokens[tool_idx].split("/")[-1]
+    if base_tool == "rg":
+        flags_with_value = _RG_FLAGS_WITH_VALUE
+        bool_long_flags = _RG_BOOL_LONG_FLAGS
+    else:
+        flags_with_value = _GREP_FLAGS_WITH_VALUE
+        bool_long_flags = _GREP_BOOL_LONG_FLAGS
+
+    post_tool = tokens[tool_idx + 1:]
+    i = 0
+    while i < len(post_tool):
+        tok = post_tool[i]
+
+        if tok == "--":
+            # End-of-flags marker — all following tokens are positional.
+            # The caller explicitly ended flags, so any dash-leading pattern
+            # after '--' is intentional and safe. Nothing to flag.
+            return False
+
+        if tok in ("-e", "--regexp"):
+            # Explicit pattern flag — next token is the explicit pattern; safe.
+            return False
+
+        if tok.startswith("--"):
+            # Long flag form.
+            if tok in flags_with_value:
+                # Known long flag that consumes the next token as its value.
+                i += 2
+                continue
+            if tok in bool_long_flags:
+                # Known boolean long flag — takes no value.
+                i += 1
+                continue
+            # Unknown long flag: this is the dash-leading hazard.
+            # rg/grep will parse it as an unrecognized flag and exit 2.
+            return True
+
+        if tok.startswith("-"):
+            # Short flag or combined short flags (e.g. -qiF, -qi, -q).
+            # Short combined bundles take no separate value token in combined
+            # form. Skip the whole bundle.
+            i += 1
+            continue
+
+        # Reached the first positional argument (the search pattern). All
+        # dash-prefixed tokens (short or long flags) are handled above.
+        # Pattern does not start with '-' → safe.
+        return False
+
+    # No positional argument found — no pattern to flag.
+    return False
+
+
+# ---------------------------------------------------------------------------
 # Command detection
 # ---------------------------------------------------------------------------
 
@@ -508,6 +767,12 @@ def _scan_card_for_banned(card: dict, card_index: int) -> "tuple[int, int, str, 
                     if name == "backslash-pipe (literal pipe, not alternation)":
                         return (crit_idx, mov_idx, cmd, name, fix)
 
+            # Check dash-leading pattern without -- or -e separator
+            if _is_dash_leading_pattern(cmd):
+                for pattern, name, fix, _ in BANNED_PATTERNS:
+                    if name == "rg/grep dash-leading pattern without `--` or `-e` separator":
+                        return (crit_idx, mov_idx, cmd, name, fix)
+
             # Check remaining patterns via regex
             for pattern, name, fix, _ in BANNED_PATTERNS:
                 if name == "git commit -n (hook-skip short flag)":
@@ -515,6 +780,9 @@ def _scan_card_for_banned(card: dict, card_index: int) -> "tuple[int, int, str, 
                     continue
                 if name == "backslash-pipe (literal pipe, not alternation)":
                     # Already handled by _is_backslash_pipe_in_regex_tool above — skip regex path
+                    continue
+                if name == "rg/grep dash-leading pattern without `--` or `-e` separator":
+                    # Already handled by _is_dash_leading_pattern above — skip regex path
                     continue
                 if pattern.search(cmd):
                     return (crit_idx, mov_idx, cmd, name, fix)
