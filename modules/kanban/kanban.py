@@ -1615,6 +1615,13 @@ def _globs_overlap(globs_a: list[str], globs_b: list[str]) -> list[str]:
 
     Uses fnmatch for glob matching: a entry from globs_a overlaps with an entry
     from globs_b if they are equal, or one matches the other as a glob pattern.
+
+    Limitation: fnmatch does NOT treat '/' as a directory separator. The '**'
+    recursive-directory glob (e.g. '**/*.ts') is NOT reliably supported — it may
+    match on some platforms but should not be relied upon. If recursive glob
+    matching is needed, consider switching to pathlib.PurePath.match(), which
+    provides proper '**' support. For now, avoid '**' patterns in editFiles; use
+    explicit directory prefixes (e.g. 'src/*.ts') instead.
     """
     overlap = []
     for ga in globs_a:
@@ -1724,19 +1731,17 @@ def cmd_do(args) -> None:
         had_conflict = False
         for card in cards:
             edit_files = card.get("editFiles") or []
-            read_files = card.get("readFiles") or []
-            # Use check_editfiles_overlap for named API (cross-session, glob-aware)
+            # New cards have no ID yet; pass '' so check_editfiles_overlap doesn't try to self-exclude.
             overlap_conflicts = check_editfiles_overlap("", edit_files, doing_cards)
             if overlap_conflicts and not force:
-                conflict = check_file_conflicts(root, edit_files, read_files)
-                if conflict:
-                    inflight_num, inflight_session, conflict_path = conflict
-                    num = create_card_in_column(root, "todo", card)
-                    write_kanban_event(card, str(num), "create", to_column="todo", git_project=git_project)
-                    print(num)
-                    print(f"Card #{num} deferred to todo: editFiles conflict with card #{inflight_num} (session {inflight_session}) on path {conflict_path}", file=sys.stderr)
-                    had_conflict = True
-                    continue
+                inflight_num, inflight_session, conflict_files = overlap_conflicts[0]
+                conflict_path = conflict_files[0] if conflict_files else "(unknown)"
+                num = create_card_in_column(root, "todo", card)
+                write_kanban_event(card, str(num), "create", to_column="todo", git_project=git_project)
+                print(num)
+                print(f"Card #{num} deferred to todo: editFiles conflict with card #{inflight_num} (session {inflight_session}) on path {conflict_path}", file=sys.stderr)
+                had_conflict = True
+                continue
             if overlap_conflicts and force:
                 card["forced"] = True
             card["agent_launch_pending"] = True
@@ -1752,21 +1757,20 @@ def cmd_do(args) -> None:
         edit_files = card.get("editFiles") or []
         read_files = card.get("readFiles") or []
         doing_cards = _load_all_doing_cards(root)
-        # Use check_editfiles_overlap for named API (cross-session, glob-aware)
+        # New cards have no ID yet; pass '' so check_editfiles_overlap doesn't try to self-exclude.
         overlap_conflicts = check_editfiles_overlap("", edit_files, doing_cards)
         if overlap_conflicts and not force:
-            conflict = check_file_conflicts(root, edit_files, read_files)
-            if conflict:
-                inflight_num, inflight_session, conflict_path = conflict
-                num = create_card_in_column(root, "todo", card)
-                write_kanban_event(card, str(num), "create", to_column="todo", git_project=git_project)
-                print(num)
-                # Clean up --file before exiting so it never pre-exists on next use
-                json_file = getattr(args, "json_file", None)
-                if json_file:
-                    os.remove(json_file)
-                print(f"Card #{num} deferred to todo: editFiles conflict with card #{inflight_num} (session {inflight_session}) on path {conflict_path}", file=sys.stderr)
-                sys.exit(1)
+            inflight_num, inflight_session, conflict_files = overlap_conflicts[0]
+            conflict_path = conflict_files[0] if conflict_files else "(unknown)"
+            num = create_card_in_column(root, "todo", card)
+            write_kanban_event(card, str(num), "create", to_column="todo", git_project=git_project)
+            print(num)
+            # Clean up --file before exiting so it never pre-exists on next use
+            json_file = getattr(args, "json_file", None)
+            if json_file:
+                os.remove(json_file)
+            print(f"Card #{num} deferred to todo: editFiles conflict with card #{inflight_num} (session {inflight_session}) on path {conflict_path}", file=sys.stderr)
+            sys.exit(1)
         if overlap_conflicts and force:
             card["forced"] = True
         card["agent_launch_pending"] = True
@@ -1822,6 +1826,8 @@ def cmd_start(args) -> None:
     git_project = os.path.basename(git_root) if git_root else None
     force = getattr(args, "force", False)
     failed = False
+    # Snapshot doing cards once before the loop to avoid N redundant directory scans.
+    doing_cards = _load_all_doing_cards(root)
     for card_num in card_numbers:
         try:
             card_path = find_card(root, card_num)
@@ -1833,25 +1839,21 @@ def cmd_start(args) -> None:
                 continue
             card = read_card(card_path)
             edit_files = card.get("editFiles") or []
-            read_files = card.get("readFiles") or []
-            doing_cards = _load_all_doing_cards(root)
-            # Use check_editfiles_overlap for named API (cross-session, glob-aware)
             overlap_conflicts = check_editfiles_overlap(num, edit_files, doing_cards)
             if overlap_conflicts and not force:
-                conflict = check_file_conflicts(root, edit_files, read_files)
-                if conflict:
-                    inflight_num, inflight_session, conflict_path = conflict
-                    print(
-                        f"Error: Cannot start card #{num} — file conflict with active card.\n"
-                        f"  Conflicting card: #{inflight_num} (session '{inflight_session}', status doing)\n"
-                        f"  Overlapping files: {conflict_path}\n"
-                        f"Use `kanban todo --file <card>` instead to queue this card. Run `kanban start {num}`\n"
-                        f"once the conflicting card reaches `done` (changes committed).\n"
-                        f"Override with --force if you genuinely need parallel writes (audit-logged).",
-                        file=sys.stderr,
-                    )
-                    failed = True
-                    continue
+                inflight_num, inflight_session, conflict_files = overlap_conflicts[0]
+                conflict_path = conflict_files[0] if conflict_files else "(unknown)"
+                print(
+                    f"Error: Cannot start card #{num} — file conflict with active card.\n"
+                    f"  Conflicting card: #{inflight_num} (session '{inflight_session}', status doing)\n"
+                    f"  Overlapping files: {conflict_path}\n"
+                    f"Use `kanban todo --file <card>` instead to queue this card. Run `kanban start {num}`\n"
+                    f"once the conflicting card reaches `done` (changes committed).\n"
+                    f"Override with --force if you genuinely need parallel writes (audit-logged).",
+                    file=sys.stderr,
+                )
+                failed = True
+                continue
             # Rename before write: flag never lands in todo/ on crash (atomic, matches cmd_do).
             target = root / "doing" / card_path.name
             target.parent.mkdir(parents=True, exist_ok=True)
