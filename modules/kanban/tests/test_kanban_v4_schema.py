@@ -627,3 +627,153 @@ class TestCriteriaAddMovCmd:
         assert on_disk["criteria"][-1]["met"] is True, (
             "Newly added criterion with valid mov_command must be checkable and set met=True"
         )
+
+
+# ---------------------------------------------------------------------------
+# Tests: timeout boundary validation (cap at 1800 seconds)
+# ---------------------------------------------------------------------------
+
+def _make_card_with_timeout(timeout_value, session="test-session"):
+    """Build a minimal V4 card with a single criterion using the given timeout."""
+    return {
+        "action": "Do the thing",
+        "intent": "Because reasons",
+        "session": session,
+        "type": "work",
+        "agent": "swe-devex",
+        "model": "sonnet",
+        "editFiles": [],
+        "readFiles": [],
+        "criteria": [
+            {
+                "text": "Criterion with custom timeout",
+                "mov_commands": [{"cmd": "true", "timeout": timeout_value}],
+                "met": False,
+            },
+        ],
+        "cycles": 0,
+        "activity": [],
+        "created": "2026-01-01T00:00:00Z",
+        "updated": "2026-01-01T00:00:00Z",
+    }
+
+
+class TestTimeoutBoundary:
+    """criteria check enforces 1-1800 second timeout range."""
+
+    def test_timeout_1800_is_accepted(self, kanban, tmp_path, capsys):
+        """timeout=1800 is within range and criteria check proceeds past validation."""
+        board = _setup_board(tmp_path)
+        card_data = _make_card_with_timeout(1800)
+        card_path = _write_card(board, "doing", "1", card_data)
+        args = _make_check_args(board, card_num="1", criterion_nums=[1])
+
+        with patch.object(kanban, "get_root", return_value=board):
+            with patch.object(kanban, "find_card", return_value=card_path):
+                with patch("sys.stdout", io.StringIO()):
+                    try:
+                        kanban.cmd_criteria_check(args)
+                    except SystemExit:
+                        pass  # Other failures (e.g., met=False) are acceptable
+
+        captured = capsys.readouterr()
+        assert "Must be 1-1800 seconds" not in captured.err, (
+            f"timeout=1800 must not trigger the out-of-range error message, got: {captured.err!r}"
+        )
+
+    def test_timeout_1800_does_not_print_range_error(self, kanban, tmp_path, capsys):
+        """timeout=1800 does NOT trigger the out-of-range error message."""
+        board = _setup_board(tmp_path)
+        card_data = _make_card_with_timeout(1800)
+        card_path = _write_card(board, "doing", "1", card_data)
+        args = _make_check_args(board, card_num="1", criterion_nums=[1])
+
+        with patch.object(kanban, "get_root", return_value=board):
+            with patch.object(kanban, "find_card", return_value=card_path):
+                with patch("sys.stdout", io.StringIO()):
+                    try:
+                        kanban.cmd_criteria_check(args)
+                    except SystemExit:
+                        pass
+
+        captured = capsys.readouterr()
+        assert "Must be 1-1800 seconds" not in captured.err, (
+            "timeout=1800 must not trigger the out-of-range error message"
+        )
+
+    def test_timeout_1801_is_rejected(self, kanban, tmp_path):
+        """timeout=1801 exceeds cap and criteria check exits 1."""
+        board = _setup_board(tmp_path)
+        card_data = _make_card_with_timeout(1801)
+        card_path = _write_card(board, "doing", "1", card_data)
+        args = _make_check_args(board, card_num="1", criterion_nums=[1])
+
+        with patch.object(kanban, "get_root", return_value=board):
+            with patch.object(kanban, "find_card", return_value=card_path):
+                with pytest.raises(SystemExit) as exc_info:
+                    kanban.cmd_criteria_check(args)
+
+        assert exc_info.value.code == 1, (
+            f"Expected exit code 1 for timeout=1801 (out of range), got {exc_info.value.code}"
+        )
+
+    def test_timeout_1801_prints_range_error(self, kanban, tmp_path, capsys):
+        """timeout=1801 prints the out-of-range error message referencing 1-1800 seconds."""
+        board = _setup_board(tmp_path)
+        card_data = _make_card_with_timeout(1801)
+        card_path = _write_card(board, "doing", "1", card_data)
+        args = _make_check_args(board, card_num="1", criterion_nums=[1])
+
+        with patch.object(kanban, "get_root", return_value=board):
+            with patch.object(kanban, "find_card", return_value=card_path):
+                with pytest.raises(SystemExit):
+                    kanban.cmd_criteria_check(args)
+
+        captured = capsys.readouterr()
+        assert "Must be 1-1800 seconds" in captured.err, (
+            f"Expected 'Must be 1-1800 seconds' in stderr for timeout=1801, got: {captured.err!r}"
+        )
+
+    def test_timeout_1_is_accepted(self, kanban, tmp_path, capsys):
+        """timeout=1 is the lower bound and should be accepted — no range error in stderr."""
+        criteria = _make_card_with_timeout(1)["criteria"]
+        # validate_criteria_schema should not raise for timeout=1
+        try:
+            kanban.validate_criteria_schema(criteria)
+        except SystemExit:
+            pass  # Other failures are not expected; capture stderr to check
+
+        captured = capsys.readouterr()
+        assert "Must be 1-1800 seconds" not in captured.err, (
+            f"timeout=1 must not trigger the out-of-range error message, got: {captured.err!r}"
+        )
+
+    def test_timeout_0_is_rejected(self, kanban, tmp_path, capsys):
+        """timeout=0 is below the lower bound and schema validation should print the range error and exit 1."""
+        criteria = _make_card_with_timeout(0)["criteria"]
+
+        with pytest.raises(SystemExit) as exc_info:
+            kanban.validate_criteria_schema(criteria)
+
+        assert exc_info.value.code == 1, (
+            f"Expected exit code 1 for timeout=0 (out of range), got {exc_info.value.code}"
+        )
+        captured = capsys.readouterr()
+        assert "Must be 1-1800 seconds" in captured.err, (
+            f"Expected 'Must be 1-1800 seconds' in stderr for timeout=0, got: {captured.err!r}"
+        )
+
+    def test_timeout_minus1_is_rejected(self, kanban, tmp_path, capsys):
+        """timeout=-1 is negative and schema validation should print the range error and exit 1."""
+        criteria = _make_card_with_timeout(-1)["criteria"]
+
+        with pytest.raises(SystemExit) as exc_info:
+            kanban.validate_criteria_schema(criteria)
+
+        assert exc_info.value.code == 1, (
+            f"Expected exit code 1 for timeout=-1 (out of range), got {exc_info.value.code}"
+        )
+        captured = capsys.readouterr()
+        assert "Must be 1-1800 seconds" in captured.err, (
+            f"Expected 'Must be 1-1800 seconds' in stderr for timeout=-1, got: {captured.err!r}"
+        )
