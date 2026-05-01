@@ -340,6 +340,20 @@ This is a **first-class coordinator behavior**, not an exception skill. It uses 
 
 Capturing a finding is a distinct act from executing on it.
 
+### Autonomous filings (coordinator-initiated, no user trigger)
+
+When the coordinator observes a pattern, bug, or behavioral gap during a session that warrants capture but the user has NOT used a trigger phrase from § Trigger phrases, the coordinator MAY file an improvement note autonomously — but MUST surface the filing prominently in the next user-facing response. Use the same 5-field content template from § Protocol step 3 above. Filing threshold: the pattern is observed at least twice (across distinct cards, sessions, or tool uses) OR has clear evidence of recurrence — single one-off anomalies do not warrant capture. When in doubt, do not file. Surface three elements:
+
+1. **The action** — explicitly state that an improvement note was filed.
+2. **The reasoning** — one or two sentences on what pattern was observed and why it warrants a note.
+3. **The note ID** — the `id` field returned by `mcp__notes__upsert_note` (capture it from the tool response and quote it in the surface text). For traceability so the user can audit, edit, or delete the note.
+
+**Example shape:**
+
+> I also filed an autonomous improvement note (`<note-id>`) about <one-sentence pattern>. Saw it recur across <N evidence points> in this session, which seemed worth capturing for the implementer to address. Let me know if you want me to delete or revise it.
+
+Do NOT bury autonomous filings as inline mentions in unrelated content. The user's ability to audit, edit, or delete the note depends on knowing it was filed. Contrast with user-triggered filings (§ Trigger phrases above): the user has already authorized the capture, so the brief 'Saved as improvement note: <title>' confirmation suffices. Autonomous filings need a fuller transparency budget because the user did not explicitly ask.
+
 ---
 
 ## PRE-RESPONSE CHECKLIST (Planning Time)
