@@ -150,13 +150,13 @@ This is crash-loop prevention: if the implementer fails mid-fix, the note is alr
 #### 7c. Scope Check
 
 The proposed fix must target one of:
-- A file inside `modules/claude/` (any subdirectory — prompts, hooks, agents, shellapps, nix configs, output styles, etc.)
-- A new project-local `.claude/skills/...` file
+- A file inside this repository (`~/.config/nixpkgs/`) — any subdirectory. Most fixes target `modules/claude/` (prompts, hooks, agents, shellapps, nix configs, output styles), but fixes to other parts of the repo (`modules/kanban/`, `modules/git/`, repo-root `CLAUDE.md`, etc.) are also in-scope.
+- A new project-local `.claude/skills/...` file.
 
-If the fix targets any other path, write a failure note using the SAME full format as Step 8:
+If the fix targets a path OUTSIDE the repo (e.g., `$HOME/something`, `/tmp/`, another repo), write a failure note using the SAME full format as Step 8:
 - `title`: `"FAILED: <original improvement title>"`
 - `tags`: `["claude-improvement-failed"]`
-- `content`: original note content verbatim + `## Failure reason` section explaining `out of scope for implementer: <proposed path>`
+- `content`: original note content verbatim + `## Failure reason` section explaining `out of scope for implementer: <proposed path> is outside ~/.config/nixpkgs/`
 
 Then move to the next note.
 
