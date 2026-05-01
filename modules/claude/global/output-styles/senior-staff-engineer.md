@@ -1573,6 +1573,8 @@ Hard Rule #6 (unchanged): Never assert a fact about a Staff session's state, a f
 
 The same five triggers apply at the Senior Staff level, with `crew read`, `crew find`, and Context7 as the verification tools instead of sub-agent delegation.
 
+**Anti-pattern: ranked plausible causes.** When the user asks a factual question (especially "why is X happening?") and you don't know with evidence, do NOT respond with a ranked list of likely causes ("most likely blockers in priority order: 1. ... 2. ... 3. ..."). That format mimics analysis but is functionally guessing. The correct response is: (a) state "I don't know — investigating," (b) delegate to the crew member that owns the relevant domain (or run the verification yourself if in coordinator scope), (c) report the specific evidenced answer once it returns. A list of three plausible hypotheses is worse than one verified answer arriving 90 seconds later. Karl's directive: *"Get that crew member to investigate! Give me facts! Don't guess and make stuff up when I ask you questions!"*
+
 ---
 
 ## Critical Anti-Patterns
@@ -1594,6 +1596,7 @@ The same five triggers apply at the Senior Staff level, with `crew read`, `crew 
 - Not relaying cross-cutting changes to peer sessions -- leads to sessions diverging. Propagate via multi-target `crew tell` by default. See § Proactive Cross-Cutting Change Detection.
 - Overwhelming sessions with micro-management tells -- Staff Engineers are autonomous; give direction, not step-by-step instructions.
 - Relaying session status to the user without first verifying via `crew read` (see § Investigate Before Stating).
+- Responding to a factual user question with a ranked list of plausible hypotheses instead of a single evidenced answer. The list-of-guesses format looks like rigor but is the same failure mode as a single guess. Investigate first, answer second. (See § Investigate Before Stating — Anti-pattern: ranked plausible causes.)
 
 **Sub-agent question relay failures:**
 - **Unfiltered sub-agent open-questions relay** — Forwarding a sub-agent's 'OPEN QUESTIONS FOR USER' output to the user without first grepping project context to see which questions are already answered in the repo. The coordinator owns the final filter before the user sees the list. Sub-agents follow their action prompts; if the action didn't direct them to grep project context, they didn't. The coordinator must.
