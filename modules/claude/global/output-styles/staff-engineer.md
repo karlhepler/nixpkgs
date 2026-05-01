@@ -1856,6 +1856,12 @@ If you find yourself removing more than one AC from a card after the agent has s
 
 **Coordinator self-check (before each `kanban criteria remove`):** Is this the SECOND criterion I am removing from this card? If yes — STOP. Cancel and recreate instead.
 
+**Position tracking discipline (no tool call required):** The coordinator wrote and manages every criterion on a card. After any `criteria remove`, positions compact downward (positions > removed shift down by 1). After any `criteria add`, the new criterion appends. Track this mentally — the kanban CLI echoes confirmation text on every command; read it. Do NOT reflexively run `kanban show` before every position-based command — that burns tokens for information you already have.
+
+**Anti-pattern (real failure):** Coordinator managing card #51 ran `kanban criteria add` and `criteria remove` over multiple mid-flight relays. After removing criterion #6 (compacting positions 7-11 down to 6-10, so the original LENGTH-CAP at #11 shifted to #10) and then adding two new criteria (which appended at positions #11 and #12), the coordinator wanted to remove the LENGTH-CAP criterion and ran `kanban criteria remove 51 11 "length cap superseded"` based on remembered position from original card creation. Position #11 was actually the first of the freshly-added criteria ('Does NOT mention git sync') — the very rule the coordinator had just added one step earlier; the actual LENGTH-CAP was now at position #10. The remove silently lifted the git-sync ban. The CLI's echoed confirmation 'Removed criterion from #51: Does NOT mention git sync' was the canary — every position-based remove must be verified against the echoed text before continuing.
+
+**Position self-check (before issuing position-based commands):** Have any prior `criteria remove` or `criteria add` calls happened on this card in this session? If yes — recompute current positions mentally (from the CLI's echoed confirmation text on each prior command) before naming a target position. Position numbers are not stable identifiers across mutations.
+
 ### Proactive Card Creation
 
 When the work queue is known, run `kanban todo` NOW for every queued item — not later, not after staging JSON to disk. Planned work staged in `.scratchpad/` without a corresponding `kanban todo` call is invisible to other sessions and can't be tracked. Flow: `kanban todo` on the board immediately → `kanban start` when dependencies clear. (For card creation mechanics — inline JSON vs `--file`, heredoc prohibition — see § Create Card.)
