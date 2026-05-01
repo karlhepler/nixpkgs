@@ -370,6 +370,7 @@ Do NOT bury autonomous filings as inline mentions in unrelated content. The user
 - [ ] **Avoid Source Code** — Accessing source code yourself? Delegate instead; see § Hard Rules. (Coordination docs = read; source/configs/scripts/tests = delegate.)
 - [ ] **Understand WHY** — Can't explain underlying goal or what happens after? Ask user before proceeding.
 - [ ] **Board Check** — Every response: run `kanban list --session <id>` as a Bash tool call; do not use memory. Internalize output as file-ownership map (review queue, conflicts, in-flight sessions). ALSO scan todo column: promote any card whose file-conflict has cleared via `kanban start` + Agent-launch in this same response (see § Card Management — Todo Queue Monitoring for the step-by-step reflex).
+- [ ] **Post-compaction phantom-doing check** — Cannot directly recall, in this context window, having launched an Agent for a `doing` card? Treat every such card as phantom-doing until verified. Relaunch any confirmed phantoms as the FIRST action — before any other work. See § Phantom-Doing Recovery (Post-Compaction) for the full procedure.
 - [ ] **Confirmation** — User hasn't explicitly authorized this work? Present approach and wait; see § Delegation Protocol step 2 for directive language exceptions.
 - [ ] **User Strategic** — About to ask user to run commands, diagnose issues, or look up info tooling can provide? Stop; see § User Role.
 - [ ] **No direct WebFetch/WebSearch** — About to fetch a URL or run a web search via WebFetch, WebSearch, or any equivalent MCP fetch/search tool? Create a research card and delegate to /researcher; never invoke them yourself.
@@ -717,7 +718,7 @@ If a tool use is denied or you receive a permission error, STOP IMMEDIATELY. Rep
 
 If a `kanban criteria check` command returns unexpected output or fails in a way that looks like a tooling issue rather than a code problem (e.g., weird regex behavior, binary paths you don't recognize, or messages about `.kanban-wrapped`), STOP and describe what happened in your final return. Do NOT investigate the kanban CLI, read `.kanban-wrapped`, trace kanban internals, or try `which kanban`. kanban is not your concern; the work is.
 
-After completing all AC, end your final response with the Final Return Format (see § Delegation Protocol → Step 4 → Final Return Format).
+After completing all AC, end your final response with the Final Return Format (see § Delegation Protocol step 4, Final Return Format).
 
 **Git operations are the coordinator's responsibility — DO NOT commit.** Do NOT run `git commit`, `git push`, `git add`, `git rebase`, or any state-mutating git command. The coordinator stages and commits your changes after the SubagentStop hook fires. If you have changes you want committed, leave them in the working tree (modified, unstaged). Read-only git commands (`git status`, `git diff`, `git log`, `git show`) are fine.
 ```
@@ -965,6 +966,18 @@ Delegating does not end conversation. Keep probing for context, concerns, and co
 If you learn context that cannot be expressed as AC: let agent finish, update AC via `kanban criteria remove`/`add` and re-launch if needed.
 
 **Verify before claiming agent activity.** When telling the user N agents are running, the claim must be backed by either (a) Agent launches in the CURRENT response turn (no other tool calls between launch and claim), or (b) file-evidence: `ls .scratchpad/<card-id>-*.md` shows scratchpad files with recent mtime. Memory alone is insufficient — phantom-doing cards make confident-but-false claims feel correct. The `ls` check is cheap and catches the failure mode.
+
+### Phantom-Doing Recovery (Post-Compaction)
+
+After compaction, in-flight tracking state is gone and any pre-compaction agents were killed. If you cannot directly recall, in the current context window, having launched an Agent for a given `doing` card — treat it as phantom-doing until verified.
+
+**For each suspect `doing` card:**
+
+1. **Work cards** (have `editFiles`): run `git diff --name-only -- <editFiles>`. If file changes exist, the agent ran — not phantom.
+2. **Review/research cards** (no `editFiles`): check for a scratchpad file (`.scratchpad/<card-id>-<agent>.md`). If found, not phantom. If not found, also check whether the Agent tool's SubagentStop notification fired for this card during the current session — if a notification exists in the notification trail, the agent completed and findings were returned via the Agent tool return value; not phantom.
+3. **If no evidence exists for any path above** — the card is phantom-doing. Relaunch the agent IMMEDIATELY as the first action of this session, before any other work. Do not wait for the user to notice.
+
+Cross-references: § Stay Engaged After Delegating for the ongoing phantom-doing reflex; § Delegation Protocol step 4 for the atomic-delegation rule that prevents phantom-doing during normal operation.
 
 ---
 
