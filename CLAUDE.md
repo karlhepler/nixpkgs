@@ -122,8 +122,21 @@ Some capabilities intentionally have no agent definition because they run differ
 - `burns "prompt"` or `burns file.md`: Run Ralph Orchestrator with Monty Burns coordinator hat (multi-hat YAML assembled at Nix build time) — source: `modules/claude/burns.py`
 - `smithers` or `smithers <PR>`: Autonomous PR watcher (monitors checks, fixes issues, handles bot comments) — source: `modules/claude/smithers.py`
 - `prc`: PR comment management tool (list, reply, resolve, collapse) — source: `modules/claude/prc.py`; see `/manage-pr-comments` skill for usage documentation
+- `prr`: PR Review submission CLI using GitHub REST API; submits structured PR reviews with inline comments from a findings JSON file — source: `modules/claude/prr.py`
 
-For kanban workflow and command reference, see global CLAUDE.md.
+#### Coordination CLIs
+
+> **`staff`, `sstaff`, and `crew` are the coordination-tier CLIs** — they launch or interact with Claude sessions that operate as coordinators. All three are shellapps defined in `modules/claude/` and deployed via `hms`.
+
+- `staff`: Launch Claude Code with the Staff Engineer output style (loads `~/.claude/output-styles/staff-engineer.md`) — source: `modules/claude/staff.bash`
+- `sstaff`: Launch Claude Code with the Senior Staff Engineer output style (loads `~/.claude/output-styles/senior-staff-engineer.md`, coordinator-of-coordinators tier) — source: `modules/claude/sstaff.bash`
+- `crew`: Pane-based session orchestrator — subcommands: `list`, `tell`, `read`, `dismiss`, `find`, `create`, `status`, `project-path`, `resume`, `sessions`, `smithers` — source: `modules/claude/crew.py`; see `crew-cli` skill for full reference
+
+#### Analytics and Lifecycle CLIs
+
+- `claude-inspect`: Session and usage analytics CLI — subcommands: `session`, `agents`, `tools`, `cards`, `compare`, `list`, `estimate`, `throughput`, `criterion-rejections` (`ac-rejections`) — source: `modules/claude/claude-inspect.py`
+- `kanban`: Card lifecycle management (subcommands: `do`, `todo`, `start`, `defer`, `done`, `cancel` plus `criteria` with `check`/`uncheck` sub-subcommands; full reference in `kanban-cli` skill) — source: `modules/kanban/kanban.py`
+- `perm`: Permission management (subcommands: `allow`, `always`, `cleanup`, `cleanup-stale`, `list`, `check` — plus `session-hook`/`hook` which are internal hook handlers; `purge` is user-only) — source: `modules/claude/perm.py`; mechanics documented in § Reference Documentation
 
 ## Critical Requirements
 
@@ -331,6 +344,11 @@ The mandatory review protocol that determines when work requires review is defin
 
 **Ralph vs. Kanban:**
 Ralph is a self-contained event-loop orchestrator with its own memory system. Kanban is the human-facing coordination layer for staff engineers. These systems are separate. When burns runs, it sets `BURNS_SESSION=1` to suppress kanban session instructions — injecting kanban context would confuse the model. Ralph uses its internal memory system (`ralph tools memory`) instead of kanban cards.
+
+**`burns` vs. `staff` / `sstaff`:**
+- `burns` — Multi-agent event-loop orchestrator (Ralph + Monty Burns). Accepts a prompt or file. Internally manages specialist dispatch. No interactive Claude Code TUI.
+- `staff` — Launches an interactive Claude Code session pre-loaded with the Staff Engineer output style. Intended for human-facing coordination work tracked on the kanban board.
+- `sstaff` — Same as `staff` but loads the Senior Staff Engineer output style (coordinator-of-coordinators tier). Coordinates multiple `staff` sessions via `crew`.
 
 **Available agents (delegatable team members):** (For the authoritative list, see `modules/claude/global/agents/` — this list may not include system/internal agents.)
 - Engineering: swe-backend, swe-frontend, swe-fullstack, swe-devex, swe-infra, swe-security, swe-sre
