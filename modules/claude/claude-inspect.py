@@ -15,7 +15,7 @@ Commands:
   estimate [--type TYPE] [--model MODEL] [--batch N]
                                    Card completion time estimates from historical data
   throughput [kanban-session]      Cards completed per hour
-  ac-rejections                    AC reviewer rejection patterns
+  criterion-rejections             Acceptance-criteria rejection events
     [--agent AGENT] [--card-type TYPE] [--model MODEL]
     [--session SESSION] [--since DATE]
     [--summary]
@@ -1052,7 +1052,7 @@ def cmd_throughput(kanban_session: Optional[str], fmt: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Command: ac-rejections
+# Command: criterion-rejections
 # ---------------------------------------------------------------------------
 
 def _truncate(s: str, max_len: int) -> str:
@@ -1075,7 +1075,7 @@ def _parse_rejection_reasons(raw: Optional[str]) -> List[Dict[str, str]]:
     return []
 
 
-def cmd_ac_rejections(
+def cmd_criterion_rejections(
     agent: Optional[str],
     card_type: Optional[str],
     model: Optional[str],
@@ -1130,7 +1130,7 @@ def cmd_ac_rejections(
         ).fetchall()
 
         if not rows_raw:
-            emit_error("No AC rejections found matching the given filters.", fmt, "NOT_FOUND")
+            emit_error("No criterion rejections found matching the given filters.", fmt, "NOT_FOUND")
             sys.exit(1)
 
         if summary:
@@ -1160,7 +1160,7 @@ def cmd_ac_rejections(
                 emit_result(result, fmt)
                 return
 
-            print(f"AC Rejection Patterns ({len(rows_raw)} redo events)")
+            print(f"Criterion Rejection Patterns ({len(rows_raw)} redo events)")
             print()
 
             headers = ["Agent", "Card Type", "Count", "Criterion (truncated)"]
@@ -1197,7 +1197,7 @@ def cmd_ac_rejections(
                 emit_result(result, fmt)
                 return
 
-            print(f"AC Rejections ({len(rows_raw)} redo events)")
+            print(f"Criterion Rejections ({len(rows_raw)} redo events)")
             print()
 
             if verbose:
@@ -1274,11 +1274,11 @@ Examples:
   claude-inspect --format json estimate
   claude-inspect throughput
   claude-inspect throughput kind-vale
-  claude-inspect ac-rejections
-  claude-inspect ac-rejections --agent swe-backend
-  claude-inspect ac-rejections --card-type work --since 2025-01-01
-  claude-inspect --verbose ac-rejections
-  claude-inspect ac-rejections --summary
+  claude-inspect criterion-rejections
+  claude-inspect criterion-rejections --agent swe-backend
+  claude-inspect criterion-rejections --card-type work --since 2025-01-01
+  claude-inspect --verbose criterion-rejections
+  claude-inspect criterion-rejections --summary
 """,
     )
 
@@ -1335,14 +1335,14 @@ Examples:
     throughput_parser = subparsers.add_parser("throughput", help="Cards completed per hour")
     throughput_parser.add_argument("kanban_session", nargs="?", help="Kanban session name (omit for aggregate)")
 
-    # ac-rejections
-    ac_rej_parser = subparsers.add_parser("ac-rejections", help="AC reviewer rejection patterns")
-    ac_rej_parser.add_argument("--agent", help="Filter by agent/specialist name")
-    ac_rej_parser.add_argument("--card-type", dest="card_type", choices=["work", "review", "research"], help="Filter by card type")
-    ac_rej_parser.add_argument("--model", help="Filter by model (e.g., sonnet, haiku, opus)")
-    ac_rej_parser.add_argument("--session", dest="session", help="Filter by kanban session name")
-    ac_rej_parser.add_argument("--since", help="Filter by date (ISO format, e.g., 2025-01-01)")
-    ac_rej_parser.add_argument("--summary", action="store_true", help="Aggregate view: top rejection reason patterns by agent and card type")
+    # criterion-rejections
+    crit_rej_parser = subparsers.add_parser("criterion-rejections", aliases=["ac-rejections"], help="Acceptance-criteria rejection events")
+    crit_rej_parser.add_argument("--agent", help="Filter by agent/specialist name")
+    crit_rej_parser.add_argument("--card-type", dest="card_type", choices=["work", "review", "research"], help="Filter by card type")
+    crit_rej_parser.add_argument("--model", help="Filter by model (e.g., sonnet, haiku, opus)")
+    crit_rej_parser.add_argument("--session", dest="session", help="Filter by kanban session name")
+    crit_rej_parser.add_argument("--since", help="Filter by date (ISO format, e.g., 2025-01-01)")
+    crit_rej_parser.add_argument("--summary", action="store_true", help="Aggregate view: top rejection reason patterns by agent and card type")
 
     args = parser.parse_args()
 
@@ -1370,8 +1370,8 @@ Examples:
             cmd_estimate(args.card_type, args.model, args.batch, fmt)
         elif args.command == "throughput":
             cmd_throughput(args.kanban_session, fmt)
-        elif args.command == "ac-rejections":
-            cmd_ac_rejections(
+        elif args.command in ("criterion-rejections", "ac-rejections"):
+            cmd_criterion_rejections(
                 agent=args.agent,
                 card_type=args.card_type,
                 model=args.model,

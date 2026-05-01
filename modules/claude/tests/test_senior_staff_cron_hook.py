@@ -132,14 +132,14 @@ class TestAlwaysSilent:
         )
         assert result is None, f"Expected no output when KANBAN_AGENT is unset, got: {result}"
 
-    def test_silent_for_ac_reviewer_agent(self, hook):
-        """KANBAN_AGENT=ac-reviewer → no stdout output."""
+    def test_silent_for_unknown_agent(self, hook):
+        """KANBAN_AGENT=<unrecognized-agent-name> → no stdout output."""
         result = run_hook_main(
             hook,
             make_session_start_payload(),
-            {"KANBAN_AGENT": "ac-reviewer"},
+            {"KANBAN_AGENT": "unknown-agent"},
         )
-        assert result is None, f"Expected no output for ac-reviewer, got: {result}"
+        assert result is None, f"Expected no output for unknown agent, got: {result}"
 
 
 # ---------------------------------------------------------------------------
