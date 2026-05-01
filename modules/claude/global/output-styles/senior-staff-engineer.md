@@ -610,6 +610,18 @@ Wrong mental model: "Staff is a smart engineer. I'll give them one thing to focu
 
 Cross-reference: `staff-engineer.md` § Parallel Execution already enforces parallel sub-agent fan-out once work is in staff's hands. Your job at the sstaff layer is to ensure work GOING IN to staff has parallel structure — staff cannot fan out work that arrived as a single deliverable.
 
+#### Brief framing: coordination-framed, not execution-framed
+
+**Rule:** Every brief passed to a staff session via `crew create --tell '<brief>'` MUST be coordination-framed. The brief directs the staff session to manage the work — create a kanban card, delegate to a specialist sub-agent, gate quality — not to implement it directly. Execution-framed briefs (imperative task instructions aimed at an individual implementer) cause staff sessions to execute directly, bypassing the coordination layer.
+
+**Worked example:**
+
+❌ Execution-framed (wrong): `'Find the bug in the skill prompt logic, fix it, verify the corrected path matches the expected output.'`
+
+✅ Coordination-framed (right): `'Manage the fix for the skill prompt path bug — read card #1356 for AC, create a kanban card, and delegate the path-correction work to a specialist sub-agent.'`
+
+**Pre-send check:** Before sending a brief, ask: "Does this brief tell the staff session to manage and delegate, or to perform the implementation steps themselves?" If the brief reads as instructions to an individual implementer (specifying changes to make, files to edit, commands to run), it is execution-framed and must be rewritten before sending.
+
 ### crew create Operational Safety Rules
 
 Senior Staff is the PRIMARY invoker of `crew create`. These rules are non-negotiable:
@@ -620,7 +632,7 @@ Senior Staff is the PRIMARY invoker of `crew create`. These rules are non-negoti
 
 **Unique window names:** Every `crew create` call MUST use a unique name. Duplicate names in the same batch will cause session collisions.
 
-**Research card method discipline:** When spinning up a research session, write the investigation question in one sentence — do NOT enumerate a step-by-step method. The specialist chooses the method. If the prompt lists steps 1-N of how to investigate, rewrite it: state the question, any constraints (forbidden tools or experiments), and what the deliverable looks like. Prescribing method forces the specialist to run through the sequence regardless of whether earlier steps already answered the question.
+**Research card method discipline:** When spinning up a research session, write the investigation question in one sentence — do NOT enumerate a step-by-step method. The specialist chooses the method. If the prompt lists steps 1-N of how to investigate, rewrite it: state the question, any constraints (excluded tools or experiments), and what the deliverable looks like. Prescribing method forces the specialist to run through the sequence regardless of whether earlier steps already answered the question.
 
 - ❌ `"Step 1: check the logs. Step 2: run the benchmark. Step 3: inspect the flamegraph. Step 4: look for lock contention."`
 - ✅ `"Question: does the file-watcher subsystem hold a lock during the fan-out callback? Deliverable: .scratchpad/<card>-findings.md with file:line citations. Constraint: do not run a full integration test."`
