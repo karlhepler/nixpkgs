@@ -2161,12 +2161,12 @@ class TestExtractOrgRepoFromRemote:
     """Unit tests for the org/repo extractor used by resolve_worktree_path."""
 
     @pytest.mark.parametrize("url,expected", [
-        ("git@github.com:mctx-ai/mctx.git", "mctx-ai/mctx"),
+        ("git@github.com:proj-a/proj-b.git", "proj-a/proj-b"),
         ("git@github.com:karlhepler/nixpkgs.git", "karlhepler/nixpkgs"),
-        ("https://github.com/mctx-ai/mctx.git", "mctx-ai/mctx"),
+        ("https://github.com/proj-a/proj-b.git", "proj-a/proj-b"),
         ("https://github.com/karlhepler/nixpkgs.git", "karlhepler/nixpkgs"),
         # Without .git suffix (some remotes omit it)
-        ("git@github.com:mctx-ai/mctx", "mctx-ai/mctx"),
+        ("git@github.com:proj-a/proj-b", "proj-a/proj-b"),
         ("https://github.com/org/repo", "org/repo"),
     ])
     def test_extracts_org_repo(self, url, expected):
@@ -2181,18 +2181,18 @@ class TestResolveWorktreePath:
 
     def test_ssh_remote_produces_nested_path(self, monkeypatch, tmp_path):
         """SSH remote URL → ~/worktrees/<org>/<repo>/<branch> (parity with workout.bash)."""
-        # workout.bash formula for git@github.com:mctx-ai/mctx.git + branch "fix":
-        #   ~/worktrees/mctx-ai/mctx/fix
+        # workout.bash formula for git@github.com:proj-a/proj-b.git + branch "fix":
+        #   ~/worktrees/proj-a/proj-b/fix
         worktree_root = str(tmp_path / "worktrees")
         monkeypatch.setenv("WORKTREE_ROOT", worktree_root)
 
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = fake_run_result(
-                stdout="git@github.com:mctx-ai/mctx.git\n"
+                stdout="git@github.com:proj-a/proj-b.git\n"
             )
             path, used_fallback = resolve_worktree_path("/fake/repo", "fix")
 
-        expected = str(tmp_path / "worktrees" / "mctx-ai" / "mctx" / "fix")
+        expected = str(tmp_path / "worktrees" / "proj-a" / "proj-b" / "fix")
         assert path == expected
         assert used_fallback is False
 
@@ -2255,15 +2255,15 @@ class TestResolveWorktreePath:
         that was manually verified against workout.bash.
 
         Secondary hardcoded assertion (manually verified):
-            Input:  remote URL = "git@github.com:mctx-ai/mctx.git", branch = "my-feature"
+            Input:  remote URL = "git@github.com:proj-a/proj-b.git", branch = "my-feature"
             workout.bash sed: sed -E 's#.*[:/]([^/]+/[^/]+)\\.git$#\\1#'
-                            → extracts "mctx-ai/mctx"
-            Expected path:  $WORKTREE_ROOT/mctx-ai/mctx/my-feature
+                            → extracts "proj-a/proj-b"
+            Expected path:  $WORKTREE_ROOT/proj-a/proj-b/my-feature
         """
         worktree_root = str(tmp_path / "worktrees")
         monkeypatch.setenv("WORKTREE_ROOT", worktree_root)
 
-        remote_url = "git@github.com:mctx-ai/mctx.git"
+        remote_url = "git@github.com:proj-a/proj-b.git"
         branch = "my-feature"
 
         with patch("subprocess.run") as mock_run:
@@ -2271,10 +2271,10 @@ class TestResolveWorktreePath:
             crew_path, used_fallback = resolve_worktree_path("/fake/repo", branch)
 
         # Hardcoded expected value manually verified against workout.bash formula:
-        #   echo "git@github.com:mctx-ai/mctx.git" | sed -E 's#.*[:/]([^/]+/[^/]+)\.git$#\1#'
-        #   → mctx-ai/mctx
-        #   path = $WORKTREE_ROOT/mctx-ai/mctx/my-feature
-        expected_path = os.path.join(worktree_root, "mctx-ai", "mctx", "my-feature")
+        #   echo "git@github.com:proj-a/proj-b.git" | sed -E 's#.*[:/]([^/]+/[^/]+)\.git$#\1#'
+        #   → proj-a/proj-b
+        #   path = $WORKTREE_ROOT/proj-a/proj-b/my-feature
+        expected_path = os.path.join(worktree_root, "proj-a", "proj-b", "my-feature")
         assert crew_path == expected_path, (
             f"crew path {crew_path!r} != workout.bash-verified path {expected_path!r}"
         )
