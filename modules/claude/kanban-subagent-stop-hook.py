@@ -635,6 +635,124 @@ def hedge_audit(
 
 
 # ---------------------------------------------------------------------------
+# Stuck-criterion detection
+# ---------------------------------------------------------------------------
+
+# Matches criterion index lines in `kanban done` stderr output.
+# kanban done prints lines like:  "  [⬜]  [⬜ —]  1. some criterion text"
+# We extract the 1-based index (the integer before the period).
+_DONE_CRITERION_INDEX_PATTERN = re.compile(
+    r'^\s*\[.*?\]\s+\[.*?\]\s+(\d+)\.',
+    re.MULTILINE,
+)
+
+# Matches the same pattern in block-feedback messages previously sent to the
+# agent (the hook embeds kanban's stderr verbatim in its block reason).
+# Uses ^ anchor + re.MULTILINE (symmetric with _DONE_CRITERION_INDEX_PATTERN).
+_BLOCK_FEEDBACK_CRITERION_INDEX_PATTERN = re.compile(r'^\s*\[.*?\]\s+\[.*?\]\s+(\d+)\.', re.MULTILINE)  # noqa: E501
+
+
+def _extract_criterion_indices_from_done_output(done_output: str) -> set[int]:
+    """Parse 1-based criterion indices from `kanban done` stderr output.
+
+    Looks for lines with the pattern `[box] [box] N. text` and returns
+    the set of integer indices found. Returns empty set on no match.
+    """
+    return {int(m.group(1)) for m in _DONE_CRITERION_INDEX_PATTERN.finditer(done_output)}
+
+
+def _extract_criterion_indices_from_block_feedback(text: str) -> set[int]:
+    """Parse 1-based criterion indices from a prior block-feedback message.
+
+    Matches the same `[box] [box] N.` pattern embedded in feedback text.
+    """
+    return {int(m.group(1)) for m in _BLOCK_FEEDBACK_CRITERION_INDEX_PATTERN.finditer(text)}
+
+
+def detect_stuck_criteria(
+    current_done_output: str,
+    transcript_path: str,
+    card_number: str,
+) -> list[int]:
+    """Detect criteria that have been unchecked across 2+ consecutive cycles.
+
+    A criterion is considered stuck only if it failed in the IMMEDIATELY
+    PREVIOUS cycle AND fails again in the current cycle.  Criteria that failed
+    earlier but were resolved (or the cycle was non-consecutive) are NOT flagged.
+
+    Algorithm:
+    1. Extract the set of unchecked criterion indices from the current
+       `kanban done` exit-1 output.
+    2. Scan the JSONL transcript for prior block-feedback messages from
+       this hook (identified by "kanban done failed for card #N").
+    3. Identify the most-recent such prior feedback message and extract the
+       unchecked criterion indices it listed.
+    4. Return the sorted list of indices that appear in BOTH the current output
+       AND the most-recent prior feedback — these are stuck across two
+       consecutive cycles.
+
+    Fails open: any error returns an empty list so normal hook flow continues.
+
+    Args:
+        current_done_output: The stderr/stdout from the current `kanban done` call.
+        transcript_path: Absolute path to the agent's JSONL transcript.
+        card_number: The card number string (for scoping feedback lookups).
+
+    Returns:
+        Sorted list of 1-based criterion indices that are stuck (failed in the
+        immediately previous cycle AND the current cycle). Empty list if none
+        found or on any error.
+    """
+    try:
+        current_indices = _extract_criterion_indices_from_done_output(current_done_output)
+        if not current_indices:
+            return []
+
+        # Scan transcript for prior block feedback messages for this card.
+        # The hook embeds "kanban done failed for card #N:" in the block reason,
+        # followed by kanban's stderr verbatim.  We want only the most-recent
+        # prior feedback to check for true consecutive-cycle failures.
+        feedback_marker = f"kanban done failed for card #{card_number}:"
+        most_recent_feedback: str | None = None
+
+        try:
+            if Path(transcript_path).stat().st_size > _TRANSCRIPT_MAX_BYTES:
+                return []
+        except OSError:
+            pass
+
+        try:
+            with open(transcript_path, "r", encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line, strict=False)
+                    except json.JSONDecodeError:
+                        continue
+                    texts = _extract_text_from_entry(entry)
+                    for text in texts:
+                        if feedback_marker in text:
+                            # Keep the last (most-recent) match
+                            most_recent_feedback = text
+        except (OSError, IOError) as exc:
+            log_error(f"detect_stuck_criteria: failed to read transcript {transcript_path}: {exc}")
+            return []
+
+        if most_recent_feedback is None:
+            return []
+
+        previous_cycle_indices = _extract_criterion_indices_from_block_feedback(most_recent_feedback)
+        stuck = sorted(current_indices & previous_cycle_indices)
+        return stuck
+
+    except Exception as exc:
+        log_error(f"detect_stuck_criteria: unexpected error for card #{card_number}: {exc}")
+        return []
+
+
+# ---------------------------------------------------------------------------
 # Kanban CLI helpers
 # ---------------------------------------------------------------------------
 
@@ -1059,6 +1177,18 @@ def process_subagent_stop(payload: dict) -> dict:
             f"when you stop."
         )
         log_info(f"Card #{card_number} not done yet (exit 1): {kanban_output}")
+
+        # Stuck-criterion early warning: detect criteria unchecked on 2+ consecutive
+        # cycles — a signal that the MoV itself may be structurally broken.
+        stuck = detect_stuck_criteria(kanban_output, transcript_path, card_number)
+        if stuck:
+            indices_str = ", ".join(str(i) for i in stuck)
+            log_info(
+                f"Warning: Card #{card_number} criterion {indices_str} has failed AC "
+                f"verification on 2+ consecutive cycles — MoV may be structurally broken. "
+                f"Investigate before further retries."
+            )
+
         return block(reason, system_message=hedge_reminder)
 
     # Other non-zero exit — unexpected error

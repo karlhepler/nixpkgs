@@ -19,6 +19,7 @@ kanban cards are created or read during these tests.
 import importlib.util
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -1359,4 +1360,331 @@ class TestProcessSubagentStopHedgeWiring:
         system_msg = result["systemMessage"]
         assert "Hedge-word audit" in system_msg, (
             f"Expected 'Hedge-word audit' in systemMessage. Got: {system_msg!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Stuck-criterion detection unit tests
+# ---------------------------------------------------------------------------
+
+# Sample kanban done stderr output with two unchecked criteria (indices 1 and 3)
+_DONE_STDERR_TWO_UNCHECKED = (
+    "Cannot complete card #42 — 2 of 3 acceptance criteria not fully passed:\n"
+    "  [agent]  [reviewer]    criterion\n"
+    "  [⬜]  [⬜ —]  1. Hook contains a new stuck-criterion warning\n"
+    "  [✅]  [⬜ —]  2. Existing tests pass after change\n"
+    "  [⬜]  [⬜ —]  3. No new state-file writes introduced\n"
+)
+
+# Prior block-feedback text that mentions criteria 1 and 3 as previously unchecked
+_PRIOR_FEEDBACK_CRITERIA_1_AND_3 = (
+    "kanban done failed for card #42:\n\n"
+    "Cannot complete card #42 — 2 of 3 acceptance criteria not fully passed:\n"
+    "  [agent]  [reviewer]    criterion\n"
+    "  [⬜]  [⬜ —]  1. Hook contains a new stuck-criterion warning\n"
+    "  [✅]  [⬜ —]  2. Existing tests pass after change\n"
+    "  [⬜]  [⬜ —]  3. No new state-file writes introduced\n"
+    "\n\nInvestigate each unchecked criterion..."
+)
+
+
+class TestDetectStuckCriteria:
+    """Unit tests for detect_stuck_criteria() — stuck-criterion early warning."""
+
+    def test_same_criterion_in_prior_feedback_returns_index(self, hook, tmp_transcript):
+        """Criterion index that appears in both current output and prior feedback is stuck."""
+        # Put the prior feedback in the transcript as a user-role block message
+        prior_feedback_entry = {
+            "role": "user",
+            "content": _PRIOR_FEEDBACK_CRITERIA_1_AND_3,
+        }
+        entries = [
+            make_card_header_entry("42", "test-session"),
+            prior_feedback_entry,
+        ]
+        transcript = tmp_transcript(entries)
+
+        with patch.object(hook, "log_info"):
+            with patch.object(hook, "log_error"):
+                # Current output has criteria 1 and 3 unchecked; prior had 1 and 3 too
+                stuck = hook.detect_stuck_criteria(
+                    _DONE_STDERR_TWO_UNCHECKED, transcript, "42"
+                )
+
+        assert 1 in stuck, f"Expected criterion 1 in stuck list, got: {stuck}"
+        assert 3 in stuck, f"Expected criterion 3 in stuck list, got: {stuck}"
+
+    def test_new_failure_not_in_prior_feedback_not_stuck(self, hook, tmp_transcript):
+        """Criterion that fails for the first time (not in prior feedback) is not stuck."""
+        prior_feedback_only_criterion_3 = (
+            "kanban done failed for card #42:\n\n"
+            "  [⬜]  [⬜ —]  3. No new state-file writes introduced\n"
+        )
+        prior_feedback_entry = {
+            "role": "user",
+            "content": prior_feedback_only_criterion_3,
+        }
+        entries = [
+            make_card_header_entry("42", "test-session"),
+            prior_feedback_entry,
+        ]
+        transcript = tmp_transcript(entries)
+
+        # Current output shows criterion 1 unchecked for the first time
+        current_only_criterion_1 = (
+            "Cannot complete card #42 — 1 of 3 criteria not passed:\n"
+            "  [⬜]  [⬜ —]  1. Hook contains a new stuck-criterion warning\n"
+        )
+
+        with patch.object(hook, "log_info"):
+            with patch.object(hook, "log_error"):
+                stuck = hook.detect_stuck_criteria(
+                    current_only_criterion_1, transcript, "42"
+                )
+
+        assert 1 not in stuck, (
+            f"Expected criterion 1 not stuck (first failure), got: {stuck}"
+        )
+
+    def test_no_prior_feedback_returns_empty(self, hook, tmp_transcript):
+        """Transcript with no prior block-feedback → no stuck criteria detected."""
+        entries = [make_card_header_entry("42", "test-session")]
+        transcript = tmp_transcript(entries)
+
+        with patch.object(hook, "log_info"):
+            with patch.object(hook, "log_error"):
+                stuck = hook.detect_stuck_criteria(
+                    _DONE_STDERR_TWO_UNCHECKED, transcript, "42"
+                )
+
+        assert stuck == [], f"Expected empty list for no prior feedback, got: {stuck}"
+
+    def test_feedback_for_different_card_not_matched(self, hook, tmp_transcript):
+        """Prior feedback for card #99 does not affect stuck detection for card #42."""
+        wrong_card_feedback = (
+            "kanban done failed for card #99:\n\n"
+            "  [⬜]  [⬜ —]  1. Some criterion\n"
+        )
+        prior_feedback_entry = {
+            "role": "user",
+            "content": wrong_card_feedback,
+        }
+        entries = [
+            make_card_header_entry("42", "test-session"),
+            prior_feedback_entry,
+        ]
+        transcript = tmp_transcript(entries)
+
+        with patch.object(hook, "log_info"):
+            with patch.object(hook, "log_error"):
+                stuck = hook.detect_stuck_criteria(
+                    _DONE_STDERR_TWO_UNCHECKED, transcript, "42"
+                )
+
+        assert stuck == [], (
+            f"Expected no stuck criteria when prior feedback is for different card, got: {stuck}"
+        )
+
+    def test_nonexistent_transcript_returns_empty(self, hook):
+        """Nonexistent transcript file → empty list (fail open)."""
+        with patch.object(hook, "log_info"):
+            with patch.object(hook, "log_error"):
+                stuck = hook.detect_stuck_criteria(
+                    _DONE_STDERR_TWO_UNCHECKED,
+                    "/tmp/no-such-transcript-xyz.jsonl",
+                    "42",
+                )
+
+        assert stuck == [], f"Expected fail-open (empty list) for missing transcript, got: {stuck}"
+
+    def test_empty_done_output_returns_empty(self, hook, tmp_transcript):
+        """Empty kanban done output → no indices to match, returns empty list."""
+        prior_feedback_entry = {
+            "role": "user",
+            "content": _PRIOR_FEEDBACK_CRITERIA_1_AND_3,
+        }
+        entries = [
+            make_card_header_entry("42", "test-session"),
+            prior_feedback_entry,
+        ]
+        transcript = tmp_transcript(entries)
+
+        with patch.object(hook, "log_info"):
+            with patch.object(hook, "log_error"):
+                stuck = hook.detect_stuck_criteria("", transcript, "42")
+
+        assert stuck == [], f"Expected empty list for empty done output, got: {stuck}"
+
+    def test_result_is_sorted(self, hook, tmp_transcript):
+        """Stuck criterion indices are returned in sorted order."""
+        prior_feedback_all = (
+            "kanban done failed for card #42:\n\n"
+            "  [⬜]  [⬜ —]  3. Third criterion\n"
+            "  [⬜]  [⬜ —]  1. First criterion\n"
+        )
+        prior_feedback_entry = {"role": "user", "content": prior_feedback_all}
+        entries = [
+            make_card_header_entry("42", "test-session"),
+            prior_feedback_entry,
+        ]
+        transcript = tmp_transcript(entries)
+
+        current_output = (
+            "  [⬜]  [⬜ —]  3. Third criterion\n"
+            "  [⬜]  [⬜ —]  1. First criterion\n"
+        )
+
+        with patch.object(hook, "log_info"):
+            with patch.object(hook, "log_error"):
+                stuck = hook.detect_stuck_criteria(current_output, transcript, "42")
+
+        assert stuck == sorted(stuck), f"Expected sorted list, got: {stuck}"
+        assert 1 in stuck and 3 in stuck
+
+    def test_transcript_exceeding_max_bytes_returns_empty(self, hook, tmp_path):
+        """Transcript file exceeding _TRANSCRIPT_MAX_BYTES early-returns without scanning."""
+        # Write a transcript containing prior block feedback that would normally
+        # trigger stuck detection — confirms the size guard short-circuits before scan.
+        transcript_file = tmp_path / "large_transcript.jsonl"
+        prior_line = json.dumps({
+            "role": "user",
+            "content": _PRIOR_FEEDBACK_CRITERIA_1_AND_3,
+        })
+        transcript_file.write_text(prior_line + "\n")
+
+        # Patch Path.stat to report a size above the guard threshold
+        import os as _os
+        max_bytes = hook._TRANSCRIPT_MAX_BYTES
+        fake_stat = _os.stat_result((0o644, 0, 0, 1, 0, 0, max_bytes + 1, 0, 0, 0))
+
+        mock_path = MagicMock()
+        mock_path.stat.return_value = fake_stat
+
+        with patch.object(hook, "Path", return_value=mock_path):
+            with patch.object(hook, "log_info"):
+                with patch.object(hook, "log_error"):
+                    stuck = hook.detect_stuck_criteria(
+                        _DONE_STDERR_TWO_UNCHECKED,
+                        str(transcript_file),
+                        "42",
+                    )
+
+        assert stuck == [], (
+            f"Expected empty list when transcript exceeds MAX_BYTES, got: {stuck}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Integration test: stuck-criterion warning wired into process_subagent_stop
+# ---------------------------------------------------------------------------
+
+class TestStuckCriterionWarningWiring:
+    """Integration tests verifying stuck-criterion warning is logged on exit 1."""
+
+    def test_stuck_criterion_warning_logged_when_same_criterion_fails_twice(
+        self, hook, tmp_transcript
+    ):
+        """When the same criterion fails on 2+ consecutive cycles, a WARNING is logged."""
+        # Simulate prior block-feedback in transcript for criterion 1
+        prior_feedback_entry = {
+            "role": "user",
+            "content": (
+                "kanban done failed for card #300:\n\n"
+                "  [⬜]  [⬜ —]  1. Hook contains stuck-criterion warning\n\n"
+                "Investigate each unchecked criterion..."
+            ),
+        }
+        entries = [
+            make_card_header_entry("300", "sess-stuck"),
+            prior_feedback_entry,
+        ]
+        transcript = tmp_transcript(entries)
+        payload = make_stop_payload(transcript_path=transcript)
+
+        # Current kanban done exit 1 output also shows criterion 1 unchecked
+        current_done_stderr = (
+            "Cannot complete card #300 — 1 of 2 criteria not passed:\n"
+            "  [⬜]  [⬜ —]  1. Hook contains stuck-criterion warning\n"
+            "  [✅]  [⬜ —]  2. Some passing criterion\n"
+        )
+
+        logged_warnings = []
+
+        def fake_subprocess_run(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd[0] == "kanban":
+                sub = cmd[1] if len(cmd) > 1 else ""
+                if sub == "status":
+                    return KanbanMockResponses.success(stdout="doing")
+                if sub == "done":
+                    return KanbanMockResponses.failure(
+                        returncode=1, stderr=current_done_stderr
+                    )
+                return KanbanMockResponses.success()
+            return KanbanMockResponses.success()
+
+        _WARNING_PATTERN = re.compile(
+            r"Warning: Card #\d+ criterion .+ has failed AC verification on 2\+ consecutive cycles"
+        )
+
+        def capture_log_info(msg):
+            if _WARNING_PATTERN.search(msg):
+                logged_warnings.append(msg)
+
+        # Call process_subagent_stop directly with our own log_info capture
+        # (do NOT use run_process_stop — it patches log_info with a no-op MagicMock)
+        with patch.object(hook, "log_info", side_effect=capture_log_info):
+            with patch.object(hook, "log_error"):
+                with patch("subprocess.run", side_effect=fake_subprocess_run):
+                    result = hook.process_subagent_stop(payload)
+
+        assert result.get("decision") == "block", f"Expected block, got: {result}"
+        assert len(logged_warnings) >= 1, (
+            f"Expected at least one warning log for stuck criterion, got: {logged_warnings}"
+        )
+        warning_text = logged_warnings[0]
+        assert "300" in warning_text, f"Expected card number in warning: {warning_text}"
+        assert "1" in warning_text, f"Expected criterion index in warning: {warning_text}"
+
+    def test_no_warning_logged_when_first_failure(self, hook, tmp_transcript):
+        """No warning logged when criterion fails for the first time (no prior feedback)."""
+        entries = [make_card_header_entry("301", "sess-first")]
+        transcript = tmp_transcript(entries)
+        payload = make_stop_payload(transcript_path=transcript)
+
+        current_done_stderr = (
+            "Cannot complete card #301 — 1 of 1 criteria not passed:\n"
+            "  [⬜]  [⬜ —]  1. Some new criterion\n"
+        )
+
+        logged_warnings = []
+
+        def fake_subprocess_run(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd[0] == "kanban":
+                sub = cmd[1] if len(cmd) > 1 else ""
+                if sub == "status":
+                    return KanbanMockResponses.success(stdout="doing")
+                if sub == "done":
+                    return KanbanMockResponses.failure(
+                        returncode=1, stderr=current_done_stderr
+                    )
+                return KanbanMockResponses.success()
+            return KanbanMockResponses.success()
+
+        _WARNING_PATTERN = re.compile(
+            r"Warning: Card #\d+ criterion .+ has failed AC verification on 2\+ consecutive cycles"
+        )
+
+        def capture_log_info(msg):
+            if _WARNING_PATTERN.search(msg):
+                logged_warnings.append(msg)
+
+        # Call process_subagent_stop directly with our own log_info capture
+        with patch.object(hook, "log_info", side_effect=capture_log_info):
+            with patch.object(hook, "log_error"):
+                with patch("subprocess.run", side_effect=fake_subprocess_run):
+                    result = hook.process_subagent_stop(payload)
+
+        assert result.get("decision") == "block", f"Expected block, got: {result}"
+        assert len(logged_warnings) == 0, (
+            f"Expected no WARNING for first failure, got: {logged_warnings}"
         )
