@@ -1001,6 +1001,16 @@ def process_subagent_stop(payload: dict) -> dict:
         )
         return block(gaming_reason)
 
+    # Idempotency check: if the card is already in 'done' state, a prior stop event
+    # has already triggered the lifecycle transition. Calling `kanban done` again
+    # would error and surface as a false `Status: blocked` in the agent's final
+    # return. Treat as a no-op. Fetch fresh status here (not reusing the earlier
+    # `status_for_stall_check` from line 940) to narrow the TOCTOU window.
+    fresh_status = get_card_status(card_number, session)
+    if fresh_status == "done":
+        log_info(f"Card #{card_number} already in done state — skipping kanban done call")
+        return allow()
+
     # Step 4: Call kanban done and map exit code.
     log_info(f"Calling kanban done for card #{card_number}")
     done_result = run_kanban(
