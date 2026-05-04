@@ -141,6 +141,12 @@ let
     flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
   } (builtins.readFile ./kanban-subagent-stop-hook.py);
 
+  # Orphan agent tracker hook — tracks active background agents and warns coordinator
+  # Subcommands: pretool (PreToolUse/Agent), subagent-stop (SubagentStop), user-prompt-submit (UserPromptSubmit)
+  orphanAgentTrackerHookScript = pkgs.writers.writePython3Bin "orphan-agent-tracker-hook" {
+    flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
+  } (builtins.readFile ./orphan-agent-tracker-hook.py);
+
   # Bash cd-compound PreToolUse hook — blocks `cd <dir> && cmd` / `cd <dir>; cmd` patterns
   bashCdCompoundHookScript = pkgs.writers.writePython3Bin "bash-cd-compound-hook" { flakeIgnore = [ "E265" "E501" "W503" "W504" ]; } (builtins.readFile ./bash-cd-compound-hook.py); # Ignore shebang, line length, line breaks
 
@@ -422,6 +428,14 @@ $orphan_warning"
         description = "SubagentStop hook that runs dual-loop AC review via haiku before allowing agent stop";
         mainProgram = "kanban-subagent-stop-hook";
         homepage = "${builtins.toString ./.}/kanban-subagent-stop-hook.py";
+      };
+    };
+
+    orphan-agent-tracker-hook = orphanAgentTrackerHookScript // {
+      meta = {
+        description = "Orphan agent tracker: warns coordinator when background agents are still running (PreToolUse/Agent, SubagentStop, UserPromptSubmit)";
+        mainProgram = "orphan-agent-tracker-hook";
+        homepage = "${builtins.toString ./.}/orphan-agent-tracker-hook.py";
       };
     };
 
@@ -1063,6 +1077,10 @@ $orphan_warning"
               }
               {
                 type = "command";
+                command = "${shellapps.orphan-agent-tracker-hook}/bin/orphan-agent-tracker-hook subagent-stop";
+              }
+              {
+                type = "command";
                 command = "${shellapps.kanban-subagent-stop-hook}/bin/kanban-subagent-stop-hook";
                 timeout = 600000;
               }
@@ -1084,14 +1102,26 @@ $orphan_warning"
               }
             ];
           }];
+          UserPromptSubmit = [{
+            hooks = [{
+              type = "command";
+              command = "${shellapps.orphan-agent-tracker-hook}/bin/orphan-agent-tracker-hook user-prompt-submit";
+            }];
+          }];
           PreToolUse = [
             {
               matcher = "Agent";
-              hooks = [{
-                type = "command";
-                command = "${shellapps.kanban-pretool-hook}/bin/kanban-pretool-hook";
-                timeout = 600000;
-              }];
+              hooks = [
+                {
+                  type = "command";
+                  command = "${shellapps.kanban-pretool-hook}/bin/kanban-pretool-hook";
+                  timeout = 600000;
+                }
+                {
+                  type = "command";
+                  command = "${shellapps.orphan-agent-tracker-hook}/bin/orphan-agent-tracker-hook pretool";
+                }
+              ];
             }
             {
               matcher = "Bash";
