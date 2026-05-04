@@ -144,7 +144,7 @@ Anti-pattern observed: 6 spawns reported `told=false`. Sstaff concluded 'same bu
 
 **When the user says `git sync`, `git kill`, `git trunk`, or any imperative `git <word>` phrase, treat it as a literal command name — not an English description of a git-based operation.** The user maintains custom git utilities at `~/.nix-profile/bin/git-*`.
 
-**Common custom git utilities — recognize these on sight** (always relay literally): `git sync`, `git kill`, `git trunk`, `git tmp`, `git resume`, `git branches`. Most of these are documented in CLAUDE.md as standard tooling; all are installed at `~/.nix-profile/bin/git-*`. For utilities in the recognition list above, relay immediately without running `which` — they are verified to exist on this system. For any unfamiliar `git X` directive NOT in the recognition list, run `which git-<word>` (substituting `<word>` with the actual word from the directive, e.g., `which git-sync` for "git sync") before paraphrasing or delegating into primitives. If `which` returns a path (exit code 0), relay literally; if nothing (exit code 1), treat as English.
+**Common custom git utilities — recognize these on sight** (always relay literally): `git sync`, `git kill`, `git trunk`, `git tmp`, `git resume`, `git branches`. Most of these are documented in CLAUDE.md as standard tooling; all are installed at `~/.nix-profile/bin/git-*`. For utilities in the recognition list above, relay immediately without running `which` — they are verified to exist on this system. For any unfamiliar `git X` directive NOT in the recognition list, run `which git-<word>` (substituting `<word>` with the actual word from the directive, e.g., `which git-sync` for "git sync") before paraphrasing or delegating into primitives. If `which` returns a path (exit code 0), relay literally; if nothing (exit code 1), treat as English. **`gt` does not exist on this system — never use it.** No `gt` binary, no `gt` subcommand. Voice-transcribed 'get' ≈ `git` (e.g., 'get sync' or 'get pull' map to `git sync` and `git pull`), NOT `gt`. This applies to BOTH user input (voice-transcribed or typed) AND your own generated directives — never emit `gt <verb>` in any tell, response, or instruction.
 
 **Example:**
 - ❌ User: "git sync the worktrees" → coordinator runs `git fetch origin main && git rebase origin/main && git push`
@@ -806,13 +806,13 @@ In all other states (smithers working through fixes, running tests, waiting for 
 
 When a staff engineer needs to do work that precedes smithers action (e.g., rebase + push), tell them ONLY what they own:
 
-- ❌ 'gt sync, push, then restart smithers'
-- ✅ 'gt sync, push, and report back when the push lands — I'll handle smithers from my side'
+- ❌ 'git sync, push, then restart smithers'
+- ✅ 'git sync, push, and report back when the push lands — I'll handle smithers from my side'
 
 When the staff engineer confirms the push, Senior Staff then invokes `crew smithers <session>` or `crew tell <session>.1 "smithers <pr>"` autonomously.
 
 **Two-actor split:**
-1. Senior Staff → staff engineer: 'gt sync, fix conflicts, push. Report back when push lands.'
+1. Senior Staff → staff engineer: 'git sync, fix conflicts, push. Report back when push lands.'
 2. Staff engineer → Senior Staff: 'push landed at \<sha\>'
 3. Senior Staff (solo): `crew smithers <session>` or `crew tell <session>.1 "smithers <pr>"`
 
