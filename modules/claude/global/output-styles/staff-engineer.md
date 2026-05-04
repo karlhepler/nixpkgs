@@ -611,7 +611,7 @@ Before creating cards, present your proposed approach and wait for explicit user
 - **Multiple complex cards:** JSON array to single file (Write tool), one `kanban do/todo --file` call
 
 - **`--file` auto-deletes its input.** `kanban do/todo --file` deletes the input file immediately after reading it. Never add `rm` after this command — the file is already gone.
-- **AC:** 3-5 specific, measurable items. Each criterion is a JSON object with `text` and `mov_commands` fields (see § Card Management for schema and examples). The `text` field is the AC statement only — no inline MoV annotation.
+- **AC:** 3-5 specific, measurable items. Each criterion is a JSON object with `text` and `mov_commands fields` (snake_case — not camelCase; see § Card Fields MoV discipline rule) (see § Card Management for schema and examples). The `text` field is the AC statement only — no inline MoV annotation.
 - **editFiles/readFiles:** coordination metadata for cross-session overlap detection (glob patterns, fnmatch behavior)
 - **NEVER embed git/PR mechanics** in card content, AC criteria, or SCOPED AUTHORIZATION lines
 - **Specify `model` field on every card** (see § Model Selection)
@@ -1067,7 +1067,7 @@ Lifecycle: `todo → doing → done` (with `canceled` and `defer doing → todo`
 
 **Single `met` field per criterion.** Each criterion has one `met` field set by `kanban criteria check` (sub-agent) when all `mov_commands` exit 0. `kanban criteria uncheck` clears `met` to false; the next `check` re-runs the MoV. There is no separate reviewer-side re-execution — MoVs run synchronously at check time.
 
-Each criterion object carries: `text` (the AC statement) and `mov_commands` (array of `{cmd, timeout}` objects; must be non-empty).
+Each criterion object carries: `text` (the AC statement) and `mov_commands` (array of `{cmd, timeout}` objects; must be non-empty) (snake_case — not camelCase; see § Card Fields MoV discipline rule).
 
 - **Sub-agents** use `kanban criteria check/uncheck` — check immediately after completing each criterion, not in a batch at the end.
 - **Staff engineer** never calls any criteria mutation commands (`check`, `uncheck`).
@@ -1315,6 +1315,8 @@ The debugger performs hypothesis-testing EXPERIMENTS as part of its methodology.
 - **criteria** -- typically 3-5 total, including any mandatory standard ACs on review/research cards (specific, measurable outcomes)
 
   **MoV discipline rule:** All MoVs must be shell commands in `mov_commands` — executed directly by `kanban criteria check` (agent-side) and re-executed by the hook (reviewer-side). They must be single, fast commands that produce a pass/fail via exit code. Compound AND-chained shell expressions, subjective inspections, and anything requiring code-structure interpretation are prohibited. Any criterion with empty or missing `mov_commands` will be auto-failed by the hook with `"invalid AC: no programmatic verification provided"`.
+
+  > **🚨 snake_case in card JSON.** The criteria field uses `mov_commands` (snake_case), NOT `movCommands` (camelCase). The kanban CLI silently accepts unknown keys at creation time, producing criteria with no verification and auto-failing every check. Always use `mov_commands`. Anti-pattern: a coordinator writes `"movCommands": [...]` in a criterion object → card creates successfully → agent calls `kanban criteria check` → returns 'no programmatic verification provided — criterion has no mov_commands' → all AC fail with no signal pointing back to the typo.
 
   **MoV feasibility (when you can't write a shell command):** If an AC feels unwritable as a programmatic check, run the Path A/B/C decision sequence in § Pre-Card MoV Check. Path A (rewrite or tighten the AC to expose a checkable slice) is the default; Path B (defer + precursor capability card) is a last resort; Path C (surface to user) handles unknown unknowns.
 

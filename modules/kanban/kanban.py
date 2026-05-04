@@ -15,6 +15,7 @@ ENVIRONMENT VARIABLES:
 """
 
 import argparse
+import difflib
 import fnmatch
 import html
 import json
@@ -1394,11 +1395,88 @@ def _print_ampersand_chain_errors(violations: list, card_label: str | None = Non
     )
 
 
+_KNOWN_CARD_FIELDS = frozenset({
+    "action", "intent", "type", "criteria", "ac",
+    "editFiles", "readFiles", "agent", "model",
+})
+
+_KNOWN_CRITERION_FIELDS = frozenset({
+    "text", "mov_commands", "mov_type", "met",
+})
+
+_KNOWN_MOV_ENTRY_FIELDS = frozenset({
+    "cmd", "timeout",
+})
+
+
+def _suggest_field(unknown: str, known: frozenset) -> str | None:
+    """Return a close-match suggestion for unknown against known fields, or None."""
+    matches = difflib.get_close_matches(unknown, known, n=1, cutoff=0.6)
+    return matches[0] if matches else None
+
+
+def validate_no_unknown_fields(data: dict) -> None:
+    """Reject card JSON containing unknown/misspelled field names.
+
+    Validates top-level card fields and each criterion object against their
+    respective known field sets. Prints a helpful 'did you mean?' error message
+    to stderr and exits non-zero on any unknown field.
+
+    This runs BEFORE structural validation so typos (e.g. movCommands instead
+    of mov_commands) produce an actionable error instead of silently passing
+    with broken MoV.
+    """
+    errors: list[str] = []
+
+    for field in data:
+        if field not in _KNOWN_CARD_FIELDS:
+            suggestion = _suggest_field(field, _KNOWN_CARD_FIELDS)
+            msg = f"Error: Unknown field '{field}' in card"
+            if suggestion:
+                msg += f" — did you mean '{suggestion}'?"
+            errors.append(msg)
+
+    criteria = data.get("criteria") or data.get("ac", [])
+    if isinstance(criteria, list):
+        for i, criterion in enumerate(criteria):
+            if not isinstance(criterion, dict):
+                continue
+            for field in criterion:
+                if field not in _KNOWN_CRITERION_FIELDS:
+                    suggestion = _suggest_field(field, _KNOWN_CRITERION_FIELDS)
+                    msg = f"Error: Unknown field '{field}' in criteria[{i}]"
+                    if suggestion:
+                        msg += f" — did you mean '{suggestion}'?"
+                    errors.append(msg)
+            mov_commands = criterion.get("mov_commands")
+            if isinstance(mov_commands, list):
+                for j, entry in enumerate(mov_commands):
+                    if not isinstance(entry, dict):
+                        continue
+                    for field in entry:
+                        if field not in _KNOWN_MOV_ENTRY_FIELDS:
+                            suggestion = _suggest_field(field, _KNOWN_MOV_ENTRY_FIELDS)
+                            msg = (
+                                f"Error: Unknown field '{field}' in "
+                                f"criteria[{i}].mov_commands[{j}]"
+                            )
+                            if suggestion:
+                                msg += f" — did you mean '{suggestion}'?"
+                            errors.append(msg)
+
+    if errors:
+        for err in errors:
+            print(err, file=sys.stderr)
+        sys.exit(1)
+
+
 def validate_and_build_card(data: dict, session: str | None) -> dict:
     """Validate card data and build card dict.
 
     Raises SystemExit on validation failure.
     """
+    validate_no_unknown_fields(data)
+
     if "action" not in data:
         print("Error: JSON must include 'action' field", file=sys.stderr)
         sys.exit(1)
@@ -1688,7 +1766,9 @@ def cmd_do(args) -> None:
     # when JSON is malformed (see _mov_fail_closed_scan), then returns parsed data.
     data = resolve_json_input(args)
 
-    # Run banned-pattern validation before structural checks for clearer error messages.
+    # Run banned-pattern validation (validate_mov_commands_content) here, before
+    # per-card structural validation. validate_no_unknown_fields runs later, inside
+    # validate_and_build_card, at the start of each card's structural validation pass.
     validate_mov_commands_content(data)
 
     session = args.session if hasattr(args, "session") and args.session else get_current_session_id()
@@ -3252,7 +3332,9 @@ def cmd_todo(args) -> None:
     # when JSON is malformed (see _mov_fail_closed_scan), then returns parsed data.
     data = resolve_json_input(args)
 
-    # Run banned-pattern validation before structural checks for clearer error messages.
+    # Run banned-pattern validation (validate_mov_commands_content) here, before
+    # per-card structural validation. validate_no_unknown_fields runs later, inside
+    # validate_and_build_card, at the start of each card's structural validation pass.
     validate_mov_commands_content(data)
 
     session = args.session if hasattr(args, "session") and args.session else get_current_session_id()
