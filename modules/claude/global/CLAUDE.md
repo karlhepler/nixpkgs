@@ -362,6 +362,17 @@ Two questions — that's all:
 
 **Rules:** Scannable in 10 seconds. No file-by-file breakdowns, no implementation details, no config details visible in the diff. When updating, rewrite from scratch — reflect current HEAD, not commit history.
 
+**Anti-patterns (banned phrasing):**
+- ❌ 'Placeholders are now guarded against duplicates' — narrates a fix
+- ❌ 'Eliminating the brief gap where no loading indicator was shown' — narrates what changed
+- ❌ 'Now correctly handles X' / 'No longer fails when Y' — narrates fixed-vs-broken state
+- ❌ 'Updated to support Z' — narrates progression from prior version
+- ✅ 'Loading placeholders remain visible until the service button is confirmed in the DOM.' — describes end state
+- ✅ 'Handles X correctly.' — describes current behavior
+- ✅ 'Supports Z.' — describes capability
+
+**The principle:** The reader of a PR description is reviewing or using the FINAL CODE. They do not care what was broken before, what was fixed, or what was eliminated — only what the merged code does. Words like 'now', 'no longer', 'eliminated', 'fixed', 'updated to', 'changed from', 'previously', 'before', 'instead of', 'replaces', 'resolves' are red flags signaling commit-history narration. Split-sentence patterns like 'ensures ... no longer' are equally suspect. Rewrite as plain present-tense descriptions of behavior.
+
 ---
 
 ## Git Branch Naming
