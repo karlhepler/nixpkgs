@@ -1654,7 +1654,14 @@ Proceed?
 
   4. **Identifier collision** — For each pattern that references an identifier (env-var name, function name, type name), enumerate every identifier mentioned in this same card's action field. Ask: does my pattern (under the case-sensitivity it specifies) match any of them as a substring? If yes, the pattern is too broad — narrow with `\b` boundaries, switch to case-sensitive, or rewrite to anchor on a more specific token (e.g., `os.getenv` or `vim.env\[` instead of the env-var name itself).
 
-  5. **Alternation pattern check (rg / grep / sed regex)** — does any `mov_commands[].cmd` contain `\|`? If YES — STOP. In ripgrep's default engine, `\|` is a LITERAL pipe character, NOT alternation. Replace with bare `|` (which IS alternation) OR split the pattern into separate `mov_commands` entries (one per term) so failure attribution is per-term.
+  5. **Call-site vs import collision** — when checking line ordering of a function/constructor that is both imported and called, `rg -nF 'Symbol' | head -1` returns the import line, not the call site. The import line is structurally first; `head -1` always returns it. Fix: append `(` to the pattern to match call expressions only.
+
+     - ❌ `rg -nF 'makeDepWatcherPresenter' file | head -1 | cut -d: -f1` — returns the line of `import { makeDepWatcherPresenter } from '...'`
+     - ✅ `rg -nF 'makeDepWatcherPresenter(' file | head -1 | cut -d: -f1` — returns the first call-site line
+
+     Applies to any function/constructor name that appears in both an `import { ... }` statement (TypeScript/JavaScript) and a call expression. The same trap exists in Python (`from module import Symbol` then `Symbol()`) and any language with named-import syntax that omits parentheses around the imported symbol.
+
+  6. **Alternation pattern check (rg / grep / sed regex)** — does any `mov_commands[].cmd` contain `\|`? If YES — STOP. In ripgrep's default engine, `\|` is a LITERAL pipe character, NOT alternation. Replace with bare `|` (which IS alternation) OR split the pattern into separate `mov_commands` entries (one per term) so failure attribution is per-term.
 
   Concrete heuristic at card-creation time: for each AC pattern, scroll up to the action field and ctrl-F for the pattern's anchor word. If it matches more than the intended target, the pattern needs tightening.
 
