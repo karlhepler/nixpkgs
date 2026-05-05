@@ -17,6 +17,8 @@ Usage:
     smithers --purge 123                   # Delete .ralph memory, then watch (--expunge is an alias)
     smithers --debug                       # Enable Ralph diagnostics mode
     smithers --debug 123                   # Debug mode with explicit PR number
+    smithers --settle-window 120 123       # Stay alive 120s after clean, restart if bot comments arrive
+    smithers --wait-for-merge 123          # Stay alive until PR merges or closes
 
 Options:
     --max-ralph-iterations N    How many times to ask Ralph to fix issues (default: 4)
@@ -27,6 +29,12 @@ Options:
                                 clean-slate restart (uses trash CLI, not rm -rf)
     --debug                     Enable Ralph diagnostics mode (passes --debug to burns,
                                 sets RALPH_DIAGNOSTICS=1, generates JSONL logs in .ralph/diagnostics/)
+    --settle-window N           After all threads/CI are clean, keep polling for N seconds.
+                                If new bot comments arrive within the window, restart the
+                                iteration loop. Default: 0 (exit immediately when clean).
+    --wait-for-merge            After all threads/CI are clean, keep polling until the PR
+                                is MERGED or CLOSED. Encompasses settle-window behavior.
+                                Default: false.
     Priority: CLI flag > env var > default
 """
 
@@ -66,6 +74,13 @@ FAIL_FAST_CONCLUSIONS = {"failure", "timed_out", "action_required", "startup_fai
 WORKFLOW_FAILURE_TRACKER = {}
 # Track last HEAD commit SHA for cleanup
 LAST_HEAD_COMMIT_SHA = None
+
+SETTLE_POLL_INTERVAL = 30  # seconds between polls during settle window
+
+
+class _SettleRestartSignal(Exception):
+    """Raised inside settle window when new bot comments arrive and the main loop must restart."""
+    pass
 
 
 def log(msg: str):
@@ -1827,6 +1842,92 @@ def _promote_from_draft_if_needed(pr_number: int) -> bool:
     return True
 
 
+def _get_pr_updated_at(pr_number: int) -> str:
+    """Return the PR's updatedAt ISO timestamp string, or empty string on error."""
+    code, stdout, _ = run_gh(["pr", "view", str(pr_number), "--json", "updatedAt"])
+    if code != 0 or not stdout.strip():
+        return ""
+    try:
+        return json.loads(stdout).get("updatedAt", "")
+    except json.JSONDecodeError:
+        return ""
+
+
+def _run_settle_window(pr_number: int, owner: str, repo: str, settle_seconds: int) -> None:
+    """Poll for new bot activity for settle_seconds after the PR is declared clean.
+
+    If new actionable bot comments arrive within the window, raises _SettleRestartSignal
+    so the caller can restart the main watch loop from cycle 1.
+
+    If the full window elapses with no new bot activity, returns normally.
+
+    Args:
+        pr_number: PR number to poll.
+        owner: Repository owner.
+        repo: Repository name.
+        settle_seconds: How long to keep polling (seconds). Must be > 0; caller is
+            responsible for skipping the call when settle_window == 0.
+    """
+    deadline = time.time() + settle_seconds
+    log(f"⏳ Settle window: polling for {settle_seconds}s to catch late bot comments...")
+    # Poll-first (do-while) so the first check happens immediately at T+0, not T+SETTLE_POLL_INTERVAL.
+    while True:
+        if has_unaddressed_bot_comments(owner, repo, pr_number):
+            log("🤖 New bot comments arrived during settle window — restarting watch loop")
+            raise _SettleRestartSignal()
+        if time.time() >= deadline:
+            break
+        remaining = int(deadline - time.time())
+        log(f"  Settle window: {remaining}s remaining — sleeping {SETTLE_POLL_INTERVAL}s")
+        time.sleep(SETTLE_POLL_INTERVAL)
+
+    log("✓ Settle window elapsed with no new bot activity")
+
+
+def _run_wait_for_merge(pr_number: int, owner: str, repo: str, settle_seconds: int) -> None:
+    """Keep polling until the PR is MERGED or CLOSED.
+
+    If settle_seconds > 0, also checks for new bot comments on each poll and
+    raises _SettleRestartSignal if new actionable comments arrive, so the watch
+    loop can handle them before re-entering the merge wait.
+
+    Args:
+        pr_number: PR number to poll.
+        owner: Repository owner.
+        repo: Repository name.
+        settle_seconds: Settle window seconds (0 = skip bot comment checks during wait).
+    """
+    log("⏳ Waiting for PR to merge or close (--wait-for-merge)...")
+    reference_updated_at = _get_pr_updated_at(pr_number)
+    while True:
+        time.sleep(SETTLE_POLL_INTERVAL)
+        code, stdout, _ = run_gh(["pr", "view", str(pr_number), "--json", "state,updatedAt"])
+        if code != 0 or not stdout.strip():
+            log("  wait-for-merge: gh pr view failed — retrying next poll")
+            continue
+        try:
+            data = json.loads(stdout)
+        except json.JSONDecodeError:
+            log("  wait-for-merge: failed to parse gh output — retrying next poll")
+            continue
+        state = data.get("state", "").upper()
+        if state in ("MERGED", "CLOSED"):
+            log(f"  PR is now {state} — exiting")
+            sys.exit(0)
+
+        # While waiting for merge, also surface new bot comments if settle_seconds > 0
+        if settle_seconds > 0:
+            current_updated_at = data.get("updatedAt", "")
+            if current_updated_at and current_updated_at != reference_updated_at:
+                log("  PR updated during merge wait — checking for new bot comments")
+                reference_updated_at = current_updated_at
+                if has_unaddressed_bot_comments(owner, repo, pr_number):
+                    log("🤖 New bot comments arrived during merge wait — restarting watch loop")
+                    raise _SettleRestartSignal()
+
+        log(f"  PR state: {state} — still waiting for merge...")
+
+
 def _handle_pr_ready(
     pr_number: int,
     pr_url: str,
@@ -1837,13 +1938,24 @@ def _handle_pr_ready(
     elapsed: float,
     checks: list,
     bot_comments: dict,
-    max_ralph_invocations: int
+    max_ralph_invocations: int,
+    settle_window: int = 0,
+    wait_for_merge: bool = False
 ) -> None:
     """Handle the success path when no work is needed and PR is verified clean.
 
     Promotes the PR from draft to ready if needed, then attempts auto-merge
     if the PR is approved and mergeable. Posts to Slack and sends a
-    notification. Always exits with code 0.
+    notification.
+
+    With settle_window > 0: polls for settle_window seconds before exiting.
+    If new bot comments arrive, raises _SettleRestartSignal to restart the loop.
+
+    With wait_for_merge=True: polls until the PR is MERGED or CLOSED (supersedes
+    settle_window — bot comment checks are still performed during the merge wait
+    if settle_window > 0).
+
+    Exits with code 0 unless a _SettleRestartSignal is raised.
 
     Args:
         pr_number: PR number
@@ -1856,6 +1968,8 @@ def _handle_pr_ready(
         checks: CI check results
         bot_comments: Bot comment data
         max_ralph_invocations: Max Ralph invocations (used in fallback notification)
+        settle_window: Seconds to poll for late bot comments before exiting (0 = skip).
+        wait_for_merge: When True, keep polling until PR is MERGED or CLOSED.
     """
     # Promote draft → ready before any approval/merge logic.
     # PRs are always created in draft mode; Smithers owns the transition.
@@ -1910,6 +2024,20 @@ def _handle_pr_ready(
         # Post to Slack webhook if configured
         post_to_slack_webhook(pr_url, pr_info)
 
+    # --wait-for-merge supersedes --settle-window: stay alive until PR merges/closes.
+    # Bot comment checks during the wait use settle_window > 0 as the signal to bother.
+    if wait_for_merge:
+        _run_wait_for_merge(pr_number, owner, repo, settle_window)
+        # _run_wait_for_merge exits via sys.exit(0) on MERGED/CLOSED,
+        # or raises _SettleRestartSignal if new bot comments detected.
+        return  # unreachable, but explicit for clarity
+
+    # --settle-window: poll for late bot comments before exiting.
+    if settle_window > 0:
+        _run_settle_window(pr_number, owner, repo, settle_window)
+        # _run_settle_window returns normally when window elapses with no new comments,
+        # or raises _SettleRestartSignal if new bot comments detected.
+
     sys.exit(0)
 
 
@@ -1952,6 +2080,28 @@ def main():
         action="store_true",
         default=False,
         help="Enable Ralph diagnostics mode (passes --debug to burns, sets RALPH_DIAGNOSTICS=1)"
+    )
+    parser.add_argument(
+        "--settle-window",
+        type=int,
+        default=0,
+        metavar="SECONDS",
+        help=(
+            "After all threads/CI are clean, keep polling for SECONDS seconds. "
+            "If new bot comments (e.g. from Sourcery) arrive within the window, "
+            "restart the watch loop. Default: 0 (exit immediately when clean)."
+        )
+    )
+    parser.add_argument(
+        "--wait-for-merge",
+        action="store_true",
+        default=False,
+        help=(
+            "After all threads/CI are clean, keep polling until the PR is MERGED or CLOSED. "
+            "Encompasses --settle-window: bot comment checks are still active during the wait "
+            "if --settle-window > 0. Takes precedence over --settle-window alone. "
+            "Exits with code 0 on both MERGED and CLOSED states."
+        )
     )
 
     args = parser.parse_args()
@@ -2003,89 +2153,124 @@ def main():
     if max_cycles < 1:
         print("Error: max-iterations must be a positive integer", file=sys.stderr)
         sys.exit(1)
+    if args.settle_window < 0:
+        print("Error: --settle-window must be a non-negative integer", file=sys.stderr)
+        sys.exit(1)
+
+    settle_window = args.settle_window
+    wait_for_merge = args.wait_for_merge
 
     pr_url = get_pr_url(args.pr)
     owner, repo, pr_number = parse_pr_url(pr_url)
 
     log(f"🔍 Watching PR #{pr_number}: {pr_url}")
-    log(f"Poll interval: {POLL_INTERVAL}s | Max cycles: {max_cycles}")
+    settle_info = f" | Settle window: {settle_window}s" if settle_window > 0 else ""
+    merge_info = " | Wait-for-merge: on" if wait_for_merge else ""
+    log(f"Poll interval: {POLL_INTERVAL}s | Max cycles: {max_cycles}{settle_info}{merge_info}")
+    if settle_window > 0 or wait_for_merge:
+        log(f"Settle/merge poll interval: {SETTLE_POLL_INTERVAL}s")
 
     ralph_invocation_count = 0
     stagnation_count = 0
     current_cycle = 0  # Track which cycle we're on
-    cycle = 1
     effective_max_cycles = max_cycles
-    try:
-        while cycle <= effective_max_cycles:
-            current_cycle = cycle
 
-            # Capture HEAD SHA before Ralph invocation for stagnation detection
-            pre_sha_result = subprocess.run(
-                ["git", "rev-parse", "HEAD"],
-                capture_output=True, text=True, check=False
-            )
-            pre_sha = pre_sha_result.stdout.strip() if pre_sha_result.returncode == 0 else None
+    # Outer restart loop: re-entered when _SettleRestartSignal fires (new bot comments
+    # arrive during a settle window or merge wait after the PR appeared clean).
+    while True:
+        cycle = 1
+        try:
+            while cycle <= effective_max_cycles:
+                current_cycle = cycle
 
-            ralph_invoked, should_restart = main_loop_iteration(
-                cycle, ralph_invocation_count, pr_number, pr_url, owner, repo,
-                max_ralph_invocations, effective_max_cycles, start_time,
-                debug=args.debug
-            )
-            if ralph_invoked:
-                ralph_invocation_count += 1
-
-                # Stagnation detection: check if Ralph produced any new commits
-                post_sha_result = subprocess.run(
+                # Capture HEAD SHA before Ralph invocation for stagnation detection
+                pre_sha_result = subprocess.run(
                     ["git", "rev-parse", "HEAD"],
                     capture_output=True, text=True, check=False
                 )
-                post_sha = post_sha_result.stdout.strip() if post_sha_result.returncode == 0 else None
+                pre_sha = pre_sha_result.stdout.strip() if pre_sha_result.returncode == 0 else None
 
-                if pre_sha and post_sha and pre_sha == post_sha:
-                    stagnation_count += 1
-                    log(f"⚠️  No new commits produced by Ralph (stagnation count: {stagnation_count})")
-                    if stagnation_count >= 2:
-                        log(
-                            f"🚨 Ralph invoked {stagnation_count} times with no commits produced — "
-                            "stopping to avoid infinite loop. Ralph may be blocked by a hook or "
-                            "structural issue that cannot be resolved by retrying."
-                        )
-                        sys.exit(1)
-                else:
+                try:
+                    ralph_invoked, should_restart = main_loop_iteration(
+                        cycle, ralph_invocation_count, pr_number, pr_url, owner, repo,
+                        max_ralph_invocations, effective_max_cycles, start_time,
+                        debug=args.debug,
+                        settle_window=settle_window,
+                        wait_for_merge=wait_for_merge
+                    )
+                except _SettleRestartSignal:
+                    log("🔄 Restarting smithers from cycle 1 (new bot comments during settle/merge wait)")
+                    cycle = 1
                     stagnation_count = 0
+                    ralph_invocation_count = 0
+                    continue
 
-            # Handle verification restart - if verification found new work, completely restart
-            if should_restart:
-                log("🔄 Restarting smithers from cycle 1/4 (verification found new work)")
-                cycle = 1
-                continue  # Skip cycle increment, restart from cycle 1
+                if ralph_invoked:
+                    ralph_invocation_count += 1
 
-            cycle += 1
+                    # Stagnation detection: check if Ralph produced any new commits
+                    post_sha_result = subprocess.run(
+                        ["git", "rev-parse", "HEAD"],
+                        capture_output=True, text=True, check=False
+                    )
+                    post_sha = post_sha_result.stdout.strip() if post_sha_result.returncode == 0 else None
 
-        # Check for cycle extension if unaddressed bot comments exist
-        if has_unaddressed_bot_comments(owner, repo, pr_number):
-            log("📝 Unaddressed bot comments detected - extending by ONE cycle")
-            current_cycle = effective_max_cycles + 1
-            ralph_invoked, _ = main_loop_iteration(
-                effective_max_cycles + 1, ralph_invocation_count, pr_number, pr_url, owner, repo,
-                max_ralph_invocations, effective_max_cycles + 1, start_time,
-                debug=args.debug
+                    if pre_sha and post_sha and pre_sha == post_sha:
+                        stagnation_count += 1
+                        log(f"⚠️  No new commits produced by Ralph (stagnation count: {stagnation_count})")
+                        if stagnation_count >= 2:
+                            log(
+                                f"🚨 Ralph invoked {stagnation_count} times with no commits produced — "
+                                "stopping to avoid infinite loop. Ralph may be blocked by a hook or "
+                                "structural issue that cannot be resolved by retrying."
+                            )
+                            sys.exit(1)
+                    else:
+                        stagnation_count = 0
+
+                # Handle verification restart - if verification found new work, completely restart
+                if should_restart:
+                    log("🔄 Restarting smithers from cycle 1/4 (verification found new work)")
+                    cycle = 1
+                    continue  # Skip cycle increment, restart from cycle 1
+
+                cycle += 1
+
+            # Check for cycle extension if unaddressed bot comments exist
+            if has_unaddressed_bot_comments(owner, repo, pr_number):
+                log("📝 Unaddressed bot comments detected - extending by ONE cycle")
+                current_cycle = effective_max_cycles + 1
+                ralph_invoked, _ = main_loop_iteration(
+                    effective_max_cycles + 1, ralph_invocation_count, pr_number, pr_url, owner, repo,
+                    max_ralph_invocations, effective_max_cycles + 1, start_time,
+                    debug=args.debug,
+                    settle_window=settle_window,
+                    wait_for_merge=wait_for_merge
+                )
+                if ralph_invoked:
+                    ralph_invocation_count += 1
+        except _SettleRestartSignal:
+            # Reachable only if _SettleRestartSignal propagates from the cycle-extension call
+            # above (line ~2243); the inner except above catches signals from the normal inner loop.
+            log("🔄 Restarting smithers from cycle 1 (new bot comments arrived during settle/merge wait)")
+            stagnation_count = 0
+            ralph_invocation_count = 0
+            effective_max_cycles = max_cycles
+            continue  # restart outer while True
+        except KeyboardInterrupt:
+            elapsed = time.time() - start_time
+            pr_info, checks, bot_comments = _gather_final_state(pr_number, owner, repo)
+
+            _show_card_and_notify(
+                "🟡", "Interrupted by User",
+                pr_number, pr_url, pr_info, owner, repo,
+                current_cycle, elapsed, checks, bot_comments,
+                "Smithers Interrupted",
+                f"PR #{pr_number} watch interrupted by user",
+                "Basso"
             )
-            if ralph_invoked:
-                ralph_invocation_count += 1
-    except KeyboardInterrupt:
-        elapsed = time.time() - start_time
-        pr_info, checks, bot_comments = _gather_final_state(pr_number, owner, repo)
-
-        _show_card_and_notify(
-            "🟡", "Interrupted by User",
-            pr_number, pr_url, pr_info, owner, repo,
-            current_cycle, elapsed, checks, bot_comments,
-            "Smithers Interrupted",
-            f"PR #{pr_number} watch interrupted by user",
-            "Basso"
-        )
-        sys.exit(130)
+            sys.exit(130)
+        break  # Normal exit: max cycles reached without PR being ready
 
     # Max cycles reached without PR being ready
     elapsed = time.time() - start_time
@@ -2112,7 +2297,9 @@ def main_loop_iteration(
     max_ralph_invocations: int,
     max_cycles: int,
     start_time: float,
-    debug: bool = False
+    debug: bool = False,
+    settle_window: int = 0,
+    wait_for_merge: bool = False
 ) -> tuple:
     """Single iteration of the main watch loop.
 
@@ -2218,7 +2405,9 @@ def main_loop_iteration(
         elapsed = time.time() - start_time
         _handle_pr_ready(
             pr_number, pr_url, pr_info, owner, repo,
-            cycle, elapsed, checks, bot_comments, max_ralph_invocations
+            cycle, elapsed, checks, bot_comments, max_ralph_invocations,
+            settle_window=settle_window,
+            wait_for_merge=wait_for_merge
         )
 
     # 6. Handle final cycle - show errors but don't invoke Ralph
