@@ -95,10 +95,21 @@ When authoring a MoV that needs to search for the literal text of a banned patte
 | `test $(rg -c) -le 0` | `pattern-absence anti-pattern`, `absence-via-count`, `absence test idiom` |
 | dash-leading patterns (`--watch`, `-pattern`) | `dash-leading pattern`, `flag-prefixed pattern`, `leading-dash literal` |
 | backtick in `-c`/`-e` source | `backtick in inner source`, `shell-expansion trap`, `inner-source backtick` |
+| `rg -o` on directory + sort -u | `directory filename prefix`, `unfiltered match prefix`, `sort -u uniqueness break` |
 | `--no-verify` | `hook bypass`, `skip hooks` (also applies to hook-bypass keywords — banned by CLAUDE.md § Dangerous Operations) |
 | `HUSKY=0` | `husky disable`, `husky skip` (also applies to hook-bypass keywords — banned by CLAUDE.md § Dangerous Operations) |
 
 The permanent structural fix (token-based detection in the kanban CLI that distinguishes flag usage from quoted-pattern search) is tracked separately. Until it lands, ALWAYS use descriptive phrases over literal pattern names in MoV search expressions.
+
+### `rg -o` on a directory prepends filename — breaks `sort -u` content-uniqueness checks
+
+When extracting matches across multiple files for a uniqueness assertion, `rg -o <pattern> <directory>` outputs `<filename>:<match>` per line. Piping to `sort -u` deduplicates on the full line, not the match. Two files containing the same match produce two unique lines.
+
+- ❌ `test "$(rg -o 'pattern' .github/ | sort -u | wc -l)" -eq 1` — counts unique `filename:match` pairs, not unique matches
+- ✅ `test "$(rg --no-filename -o 'pattern' .github/ | sort -u | wc -l)" -eq 1` — counts unique matches across all files
+- ✅ Shorthand: `rg -Io 'pattern' .github/` (`-I` = `--no-filename`; note `-N` is `--no-line-number`, NOT a valid shorthand here)
+
+Trap is invisible at glance because `rg -o` works correctly on a single file (no filename prefix). Only when the input is a directory does the filename-prepending behavior kick in.
 
 ### Pre-`kanban do --file` lint (mandatory before every CLI invocation)
 
