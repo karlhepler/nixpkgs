@@ -29,7 +29,6 @@ Known Issues:
 
 import fnmatch
 import json
-import os
 import re
 import shlex
 import sqlite3
@@ -39,6 +38,8 @@ import traceback
 import warnings
 import xml.etree.ElementTree as ET
 from pathlib import Path
+
+from _session_env import is_non_coordinator_session
 
 # Suppress Python deprecation warnings to prevent stderr output,
 # which Claude Code interprets as hook errors.
@@ -918,9 +919,11 @@ def deny_with_reason(reason: str) -> dict:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    # Skip if running inside a Burns/Ralph session to avoid confusing Ralph
-    # with kanban context injection.
-    if os.environ.get("BURNS_SESSION") == "1":
+    # Skip if running inside a non-coordinator session (Burns/Ralph, Personal Trainer)
+    # to avoid injecting kanban coordinator context where it doesn't belong.
+    # is_non_coordinator_session() checks BURNS_SESSION=1 and PERSONAL_TRAINER_SESSION=1;
+    # add new session-type flags in _session_env.py as new modes are introduced.
+    if is_non_coordinator_session():
         print(json.dumps(allow_unchanged()))
         return
 

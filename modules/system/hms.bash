@@ -101,8 +101,11 @@ ln -sf user."$timestamp".nix ~/.backup/.config/nixpkgs/user.latest.nix
 cp ~/.config/nixpkgs/overconfig.nix ~/.backup/.config/nixpkgs/overconfig."$timestamp".nix
 ln -sf overconfig."$timestamp".nix ~/.backup/.config/nixpkgs/overconfig.latest.nix
 
-# Temporarily track user.nix and overconfig.nix
-git -C ~/.config/nixpkgs update-index --no-assume-unchanged user.nix overconfig.nix
+# Temporarily un-hide user.nix and overconfig.nix so Home Manager can read them.
+# These files are marked --skip-worktree by home.nix activation hooks (home.nix:52,56).
+# --no-skip-worktree is the correct inverse; --no-assume-unchanged would NOT clear
+# the skip-worktree bit and would silently deploy the committed blank template.
+git -C ~/.config/nixpkgs update-index --no-skip-worktree user.nix overconfig.nix
 
 # Run home-manager switch
 home-manager switch --flake ~/.config/nixpkgs

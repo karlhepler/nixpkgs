@@ -13,6 +13,17 @@ let
     _sys.path.insert(0, "${claudeHookCommonDir}")
   '';
 
+  # Shared session-environment helper for kanban/orphan-agent hook scripts.
+  # Provides is_non_coordinator_session() used by the three kanban hooks to
+  # detect Burns/Ralph and Personal Trainer sessions before processing payloads.
+  sessionEnvDir = pkgs.writeTextDir "_session_env.py" (builtins.readFile ./_session_env.py);
+
+  # sys.path shim injected into kanban hook scripts so they can import _session_env.py
+  sessionEnvPathShim = ''
+    import sys as _sys
+    _sys.path.insert(0, "${sessionEnvDir}")
+  '';
+
   # Strip YAML frontmatter from a markdown file
   stripFrontmatter = raw:
     let
@@ -133,19 +144,19 @@ let
 
   # Kanban PreToolUse(Agent) hook — injects card content into sub-agent prompts
   kanbanPretoolHookScript = pkgs.writers.writePython3Bin "kanban-pretool-hook" {
-    flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
-  } (builtins.readFile ./kanban-pretool-hook.py);
+    flakeIgnore = [ "E265" "E402" "E501" "W503" "W504" ];  # E402: shim injects sys.path before imports
+  } (sessionEnvPathShim + builtins.readFile ./kanban-pretool-hook.py);
 
   # Kanban SubagentStop hook — dual-loop AC review system
   kanbanSubagentStopHookScript = pkgs.writers.writePython3Bin "kanban-subagent-stop-hook" {
-    flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
-  } (builtins.readFile ./kanban-subagent-stop-hook.py);
+    flakeIgnore = [ "E265" "E402" "E501" "W503" "W504" ];  # E402: shim injects sys.path before imports
+  } (sessionEnvPathShim + builtins.readFile ./kanban-subagent-stop-hook.py);
 
   # Orphan agent tracker hook — tracks active background agents and warns coordinator
   # Subcommands: pretool (PreToolUse/Agent), subagent-stop (SubagentStop), user-prompt-submit (UserPromptSubmit)
   orphanAgentTrackerHookScript = pkgs.writers.writePython3Bin "orphan-agent-tracker-hook" {
-    flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
-  } (builtins.readFile ./orphan-agent-tracker-hook.py);
+    flakeIgnore = [ "E265" "E402" "E501" "W503" "W504" ];  # E402: shim injects sys.path before imports
+  } (sessionEnvPathShim + builtins.readFile ./orphan-agent-tracker-hook.py);
 
   # Bash cd-compound PreToolUse hook — blocks `cd <dir> && cmd` / `cd <dir>; cmd` patterns
   bashCdCompoundHookScript = pkgs.writers.writePython3Bin "bash-cd-compound-hook" { flakeIgnore = [ "E265" "E501" "W503" "W504" ]; } (builtins.readFile ./bash-cd-compound-hook.py); # Ignore shebang, line length, line breaks
@@ -248,6 +259,15 @@ in {
         # need kanban session registration, perm setup, board state injection, or
         # TOOLS.md context. Exit immediately with a minimal valid response.
         if [ "''${KANBAN_AGENT:-}" = "ac-reviewer" ]; then
+          printf '{"result":""}'
+          exit 0
+        fi
+
+        # Non-coordinator session modes: skip kanban/perm injection entirely.
+        # BURNS_SESSION=1  — Ralph orchestrator (manages its own state)
+        # PERSONAL_TRAINER_SESSION=1 — personal-trainer plugin (no kanban context wanted)
+        # OR-logic: add new session-type flags here as new modes are introduced.
+        if [ "''${BURNS_SESSION:-}" = "1" ] || [ "''${PERSONAL_TRAINER_SESSION:-}" = "1" ]; then
           printf '{"result":""}'
           exit 0
         fi

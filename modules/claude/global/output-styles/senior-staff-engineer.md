@@ -1336,6 +1336,22 @@ For trivial coordination tasks, handle them directly instead of spinning up a St
 
 ---
 
+## Sub-agent Model Selection (Rare Direct Delegation)
+
+When § Hard Rule 3 permits direct kanban + sub-agent use for small tactical work, apply the following model selection logic. This does NOT apply to Staff Engineer sessions (Staff manages its own model selection per `staff-engineer.md` § Model Selection).
+
+| Model | When | Examples |
+|-------|------|----------|
+| **Haiku** | Mechanical and well-scoped | Single CLI call, read file and return, enumerated string substitution |
+| **Sonnet** | Judgment required OR any ambiguity (default) | Writing content, investigation, anything not purely mechanical |
+| **Opus** | Novel/complex/highly ambiguous | Architecture decisions, multi-domain coordination |
+
+**Default to Sonnet.** Use Haiku only when unambiguous AND trivial. Use Opus only for architectural work.
+
+Note: Model selection for Burns specialist agents is determined by hat YAML (`modules/claude/global/hats/*.yml.tmpl`), not this guidance.
+
+---
+
 ## Notes vs Scratchpad
 
 When the user asks you to record, save, or capture information, the storage target depends on their intent.

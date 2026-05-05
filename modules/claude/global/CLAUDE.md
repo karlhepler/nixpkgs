@@ -25,7 +25,6 @@
 
 ### Outright Prohibitions (Never Run)
 
-- `kanban clean` / `kanban clean --expunge` / `kanban clean <column>` — **PROHIBITED**. Use `kanban cancel` instead. (Future: `kanban purge` is the intended rename once the external kanban CLI is updated.)
 - `perm purge` — **USER-ONLY.** Claude agents must NEVER call this.
 - **NEVER skip hooks** (`--no-verify`, `--no-gpg-sign`, `git commit -n`, `git push --no-verify`, husky bypass env vars like `HUSKY=0` or `HUSKY_SKIP_HOOKS=1`, or any equivalent). Hooks are part of the contract — they run, every time.
 
@@ -143,10 +142,6 @@ Skip for simple commands ("Read file", "Run tests").
 | **Opus** | Novel/complex/highly ambiguous | Architecture design, multi-domain coordination |
 
 **When in doubt** → Always choose Sonnet. Size ≠ complexity. Failed Haiku work costs more than the model difference.
-
-**For Coordinators (Staff Engineer, Ralph):** Use `model: haiku` only when unambiguous AND trivial. Default to `model: sonnet`. Use `model: opus` for architectural work.
-
-**Note on Ralph:** Model selection for burns specialist agents is determined by hat YAML (`modules/claude/global/hats/*.yml.tmpl`), not this guidance.
 
 ---
 
@@ -279,8 +274,8 @@ This applies across every level: coordinators, sub-agent specialists, and the hu
 ## Bash/Shell Guidelines
 
 **Bash/Shell Conventions:**
-- Environment variables: ALL_CAPS_WITH_UNDERSCORES (e.g., `KANBAN_SESSION`, `CONTEXT7_API_KEY`)
-- Script-local variables: lowercase_with_underscores (e.g., `card_number`, `output_file`)
+- Environment variables: ALL_CAPS_WITH_UNDERSCORES (e.g., `CONTEXT7_API_KEY`)
+- Script-local variables: lowercase_with_underscores (e.g., `session_name`, `output_file`)
 - **Error handling:** Use `set -euo pipefail` at script start for fail-fast behavior
 
 **Bash Tool Usage — One Command Per Call:**
@@ -409,13 +404,7 @@ Use `pinact run` to pin, `pinact run -u` to update, `pinact run --check` in CI t
 
 **Skill:** A specialized capability invoked via Skill tool. Exception/workflow skills live at `skills/<name>/SKILL.md`; slash-commands live at `~/.claude/commands/`.
 
-**Session ID:** Friendly name identifier for Claude session (e.g., `clear-vale`, `swift-falcon`, `smart-bell`). Automatically injected at startup. Use with `--session` flag on kanban commands.
-
-**Card:** Kanban board work item with action (what), intent (why), and acceptance criteria (definition of done)
-
-**Work Card:** Card where AC verifies file changes (implementations, fixes, modifications)
-
-**Review Card:** Card where AC verifies information returned (analysis, findings, recommendations)
+**Session ID:** Friendly name identifier for Claude session (e.g., `clear-vale`, `swift-falcon`, `smart-bell`). Automatically injected at startup via the SessionStart hook. Used by coordinator-tier tools (kanban, perm) as an ownership key to scope session state.
 
 **Open:** When the user says "open X", Claude runs the macOS `open` command via Bash (e.g., `open file.txt`, `open https://example.com`). "Open" means launch/display, not read or process in Claude.
 
@@ -439,7 +428,7 @@ Use `pinact run` to pin, `pinact run -u` to update, `pinact run --check` in CI t
 
 ## Scratchpad
 
-`.scratchpad/` (at the project root, sibling to `.kanban/`) is the canonical location for temporary working files. Not git-tracked, persists across sessions. The directory is guaranteed to exist — the SessionStart hook creates it automatically.
+`.scratchpad/` (at the project root) is the canonical location for temporary working files. Not git-tracked, persists across sessions. The directory is guaranteed to exist — the SessionStart hook creates it automatically.
 
 **Do NOT** run `ls .scratchpad` or `mkdir -p .scratchpad` before writing scratchpad files — just write.
 
@@ -467,6 +456,6 @@ See project CLAUDE.md § Team Member Terminology for the full add/update/remove 
 
 ## Reference Commands
 
-For kanban commands, run `kanban --help`. For session analytics, run `claude-inspect --help`.
+For session analytics, run `claude-inspect --help`. For permission management, run `perm --help`.
 
 - `tmux-restore`: Pick and restore a tmux-resurrect snapshot via fzf

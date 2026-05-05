@@ -47,6 +47,8 @@ import warnings
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from _session_env import is_non_coordinator_session
+
 # Suppress Python deprecation warnings to prevent stderr output,
 # which Claude Code interprets as hook errors.
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -475,8 +477,10 @@ def cmd_user_prompt_submit(_payload: dict) -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    # Skip if running inside a Burns/Ralph session
-    if os.environ.get("BURNS_SESSION") == "1":
+    # Skip if running inside a non-coordinator session (Burns/Ralph, Personal Trainer).
+    # is_non_coordinator_session() checks BURNS_SESSION=1 and PERSONAL_TRAINER_SESSION=1;
+    # add new session-type flags in _session_env.py as new modes are introduced.
+    if is_non_coordinator_session():
         return
 
     if len(sys.argv) < 2:

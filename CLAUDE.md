@@ -87,11 +87,13 @@ Some capabilities intentionally have no agent definition because they run differ
 ## Quick Commands
 
 ### Configuration Management
-- `hms`: Apply Home Manager changes (Claude Code must never use `--purge` flag)
-- `hme`: Edit the `home.nix` file (main configuration)
-- `hmu`: Edit the `user.nix` file (user-specific identity)
-- `hmo`: Edit the `overconfig.nix` file (machine-specific customizations)
-- `hm`: Change directory to `~/.config/nixpkgs`
+- `hms`: Apply Home Manager changes — validates user.nix, backs up user.nix and overconfig.nix (user.nix and overconfig.nix are git-invisible; see § File Management), temporarily un-hides them for the build, runs `home-manager switch --flake` (also runs flake8 — the real pre-commit gate; `nix flake check` is not sufficient), installs Claude Code if absent and enforces pinned Ralph version, sets local git identity. See `modules/system/HMS.md` for full reference.
+- `hms --purge` (alias `--expunge`): Same as `hms`, but registers an EXIT trap that kills the tmux server unconditionally — even if the deploy fails mid-run (e.g., validation error at Step 4, Nix eval error at Step 7). Claude Code must NEVER run this flag — it will terminate the session it is running in.
+- `hme`: Open `home.nix` in vim (zsh alias — not a standalone command; never invoke from Bash tool — opens interactive vim)
+- `hmu`: Open `user.nix` in vim (zsh alias — not a standalone command; never invoke from Bash tool — opens interactive vim)
+- `hmo`: Open `overconfig.nix` in vim (zsh alias — not a standalone command; never invoke from Bash tool — opens interactive vim)
+- `hm`: Change directory to `~/.config/nixpkgs` (zsh alias — not a standalone command)
+- For deep hms semantics (failure modes, backup mechanism, `--purge` EXIT trap, git-invisible cycle): see `modules/system/HMS.md`.
 
 ### Git Workflow
 - `commit "message"`: Stage all changes and commit
@@ -135,14 +137,13 @@ Some capabilities intentionally have no agent definition because they run differ
 #### Analytics and Lifecycle CLIs
 
 - `claude-inspect`: Session and usage analytics CLI — subcommands: `session`, `agents`, `tools`, `cards`, `compare`, `list`, `estimate`, `throughput`, `criterion-rejections` (`ac-rejections`) — source: `modules/claude/claude-inspect.py`
-- `kanban`: Card lifecycle management (subcommands: `do`, `todo`, `start`, `defer`, `done`, `cancel` plus `criteria` with `check`/`uncheck` sub-subcommands; full reference in `kanban-cli` skill) — source: `modules/kanban/kanban.py`
 - `perm`: Permission management (subcommands: `allow`, `always`, `cleanup`, `cleanup-stale`, `list`, `check` — plus `session-hook`/`hook` which are internal hook handlers; `purge` is user-only) — source: `modules/claude/perm.py`; mechanics documented in § Reference Documentation
 
 ## Critical Requirements
 
 1. **Repository Location**: MUST be installed at `~/.config/nixpkgs`
 2. **Backup Synchronization**: Sync `~/.backup` folder with cloud storage for machine-specific configuration safety (human maintenance task — not Claude-actionable)
-3. **--purge Flag**: Claude Code must NEVER use the `--purge` flag with `hms`
+3. **--purge Flag**: Claude Code must NEVER use the `--purge` flag with `hms`. What `--purge` does: it registers an EXIT trap (hms.bash:79) that fires unconditionally when the script exits — whether hms completes successfully, aborts mid-run on validation failure (Step 4), fails during `home-manager switch` (Step 7), or exits for any other reason. There is no way to run `hms --purge` without killing the tmux server and closing every active tmux session, including the one Claude Code is running in. This is irreversible. The flag exists for the user to run deliberately after tmux config changes, not for automation. Full semantics: `modules/system/HMS.md`.
 4. **macOS ARM Only**: This configuration is locked to `aarch64-darwin` (Apple Silicon Macs)
 
 ## Configuration Structure
@@ -326,7 +327,7 @@ user.nix and overconfig.nix are made git-invisible by `hms` after first run. Bac
 - Grafana-based dashboard for Claude Code usage analytics (user nickname: "claudit")
 - Dashboard definition: `modules/claudit/dashboard.json`
 - Metrics collection: `modules/claudit/claude-metrics-hook.py` (captures metrics via Claude Code metrics hook)
-- Displays: Total cost (today/all-time), token breakdown (input/output/cache), cost by kanban session, turn statistics by agent type, tool usage heat map (by tool and agent)
+- Displays: Total cost (today/all-time), token breakdown (input/output/cache), cost by session, turn statistics by agent type, tool usage heat map (by tool and agent)
 - Access via Grafana interface (configured in Home Manager)
 
 ## Burns and Ralph Architecture
@@ -342,12 +343,9 @@ The assembled YAML path is substituted at build time in `modules/claude/default.
 **Tiered Review Protocol:**
 The mandatory review protocol that determines when work requires review is defined in `modules/claude/global/hats/monty-burns.yml.tmpl` ("On work.done" event handler). Three tiers: Tier 1 (mandatory: auth/authz, financial, infra, PII DB, CI/CD), Tier 2 (high-risk: API endpoints, third-party, performance, migrations, deps, shell scripts), Tier 3 (recommended: UI, monitoring, large refactors). The protocol activates when a specialist emits 'work.done' event.
 
-**Ralph vs. Kanban:**
-Ralph is a self-contained event-loop orchestrator with its own memory system. Kanban is the human-facing coordination layer for staff engineers. These systems are separate. When burns runs, it sets `BURNS_SESSION=1` to suppress kanban session instructions — injecting kanban context would confuse the model. Ralph uses its internal memory system (`ralph tools memory`) instead of kanban cards.
-
 **`burns` vs. `staff` / `sstaff`:**
-- `burns` — Multi-agent event-loop orchestrator (Ralph + Monty Burns). Accepts a prompt or file. Internally manages specialist dispatch. No interactive Claude Code TUI.
-- `staff` — Launches an interactive Claude Code session pre-loaded with the Staff Engineer output style. Intended for human-facing coordination work tracked on the kanban board.
+- `burns` — Multi-agent event-loop orchestrator (Ralph + Monty Burns). Accepts a prompt or file. Internally manages specialist dispatch. No interactive Claude Code TUI. When burns runs, it sets `BURNS_SESSION=1` to suppress coordinator-session instructions — Ralph uses its internal memory system (`ralph tools memory`) instead.
+- `staff` — Launches an interactive Claude Code session pre-loaded with the Staff Engineer output style. Intended for human-facing coordination work.
 - `sstaff` — Same as `staff` but loads the Senior Staff Engineer output style (coordinator-of-coordinators tier). Coordinates multiple `staff` sessions via `crew`.
 
 **Available agents (delegatable team members):** (For the authoritative list, see `modules/claude/global/agents/` — this list may not include system/internal agents.)
@@ -365,6 +363,8 @@ See "Available agents" in the Burns and Ralph Architecture section above. For th
 ## Reference Documentation
 
 **User setup:** See README.md for installation and daily usage procedures.
+
+**hms deep reference:** See `modules/system/HMS.md` — covers every flag, every execution step, all side effects, backup mechanism, git-invisible behavior, failure modes, and a worked example of `hms --purge` with recovery.
 
 **Command reference:** See `~/.claude/TOOLS.md` (auto-generated from shellapp metadata on `hms`).
 
