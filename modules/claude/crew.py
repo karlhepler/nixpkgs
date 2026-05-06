@@ -2144,7 +2144,12 @@ def cmd_create(
         branch_was_new = False
         if not _branch_exists(repo, branch):
             result = subprocess.run(
-                ["git", "branch", branch, effective_base],
+                # --no-track prevents the new branch from inheriting <base>'s upstream
+                # tracking config. Without it, if <base> tracks origin/main, the new
+                # branch also tracks origin/main — meaning a bare `git push` would ship
+                # feature work directly to main instead of requiring `git push -u origin
+                # <branch>` to establish the correct remote tracking relationship first.
+                ["git", "branch", "--no-track", branch, effective_base],
                 capture_output=True, text=True, check=False, cwd=repo
             )
             if result.returncode != 0:

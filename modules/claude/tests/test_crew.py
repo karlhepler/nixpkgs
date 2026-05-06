@@ -622,6 +622,176 @@ class TestCmdCreate:
         output = captured.out + captured.err
         assert "BRANCH_NOT_FOUND" in output or "does not exist" in output
 
+    def test_git_branch_uses_no_track_flag(self, capsys, tmp_path):
+        """git branch create must include --no-track at argv[2] (position 2).
+
+        Required shape: [git, branch, --no-track, <branch>, <base>].
+        Without --no-track at the correct position, a branch from a base that
+        tracks origin/main would inherit that tracking ref, causing a bare
+        `git push` to ship feature work directly to main.
+        """
+        with patch("subprocess.run") as mock_run:
+            self._run_create(mock_run, name="test-worker", repo="/some/repo",
+                             branch="test-worker", base="main", fmt="xml")
+
+        def _is_branch_create(argv):
+            """True for git branch <new> <base> calls; excludes -D, -m, --list, -r."""
+            return (isinstance(argv, list) and len(argv) >= 5
+                    and argv[0] == "git" and argv[1] == "branch"
+                    and not {"-D", "-m", "--list", "-r"}.intersection(argv)
+                    and "worktree" not in argv)
+
+        branch_create_calls = [c[0][0] for c in mock_run.call_args_list
+                                if _is_branch_create(c[0][0])]
+        assert branch_create_calls, "Expected at least one git branch create call"
+        for argv in branch_create_calls:
+            assert "--no-track" in argv, f"--no-track missing from git branch argv: {argv!r}"
+            assert argv.index("--no-track") == 2, (
+                f"--no-track must be at argv[2] in [git, branch, --no-track, ...]. "
+                f"Got: {argv!r}"
+            )
+
+
+# ---------------------------------------------------------------------------
+# Integration tests for cmd_create — uses a real ephemeral git repo
+# ---------------------------------------------------------------------------
+
+class TestCmdCreateIntegration:
+    """Integration tests that exercise cmd_create against a real git repo.
+
+    These tests are intentionally slower than the unit tests in TestCmdCreate
+    because they run real git commands.  Tmux calls are intercepted via a
+    selective subprocess.run side_effect so that CI machines without tmux
+    can still run the suite.
+    """
+
+    def _make_real_repo(self, tmp_path):
+        """Return (remote_dir, local_dir) — a bare remote plus a local clone
+        whose 'main' branch tracks 'origin/main'."""
+        remote_dir = str(tmp_path / "remote.git")
+        local_dir = str(tmp_path / "local")
+
+        subprocess.run(
+            ["git", "init", "--bare", remote_dir], capture_output=True, check=True
+        )
+        subprocess.run(
+            ["git", "clone", remote_dir, local_dir], capture_output=True, check=True
+        )
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"],
+            capture_output=True, check=True, cwd=local_dir,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"],
+            capture_output=True, check=True, cwd=local_dir,
+        )
+        init_file = os.path.join(local_dir, "init.txt")
+        with open(init_file, "w") as fh:
+            fh.write("init\n")
+        subprocess.run(
+            ["git", "add", "init.txt"], capture_output=True, check=True, cwd=local_dir
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "init"],
+            capture_output=True, check=True, cwd=local_dir,
+        )
+        subprocess.run(
+            ["git", "push", "-u", "origin", "main"],
+            capture_output=True, check=True, cwd=local_dir,
+        )
+        return remote_dir, local_dir
+
+    def _tmux_side_effect(self, real_subprocess_run):
+        """Return a side_effect function that mocks tmux calls and delegates
+        everything else to the real subprocess.run."""
+        def side_effect(cmd, **kwargs):
+            cmd_list = cmd if isinstance(cmd, list) else [cmd]
+            joined = " ".join(str(c) for c in cmd_list)
+            # Mock all tmux interactions so CI machines without tmux work fine
+            if "tmux" in joined:
+                if "display-message" in joined and "session_name" in joined:
+                    return fake_run_result(stdout="test-session\n")
+                if "display-message" in joined and "window_id" in joined:
+                    return fake_run_result(stdout="@1\n")
+                if "list-windows" in joined:
+                    return fake_run_result(stdout="")
+                if "new-window" in joined:
+                    return fake_run_result()
+                if "send-keys" in joined:
+                    return fake_run_result()
+                if "capture-pane" in joined:
+                    return fake_run_result(stdout="> \n")
+                if "run-shell" in joined:
+                    return fake_run_result()
+                return fake_run_result()
+            # Let all non-tmux (git) calls through to real subprocess
+            return real_subprocess_run(cmd, **kwargs)
+        return side_effect
+
+    def test_new_branch_does_not_inherit_upstream_tracking(self, capsys, tmp_path):
+        """cmd_create must pass --no-track when creating a branch from a base that
+        tracks origin/main.  A regression removing --no-track from crew.py would
+        cause the new branch to inherit the upstream tracking ref, which this test
+        catches by inspecting the real git config after cmd_create runs.
+
+        The new branch must NOT have branch.<new>.merge set after creation,
+        confirming that a bare 'git push' would require '-u origin <branch>'
+        rather than silently pushing to main.
+        """
+        _remote_dir, local_dir = self._make_real_repo(tmp_path)
+        new_branch = "feat-integration-test"
+        worktree_dest = str(tmp_path / "worktrees" / new_branch)
+
+        # Precondition: main must track origin/main (confirms test setup is valid)
+        merge_ref = subprocess.run(
+            ["git", "config", "--get", "branch.main.merge"],
+            capture_output=True, text=True, check=False, cwd=local_dir,
+        )
+        assert merge_ref.stdout.strip() == "refs/heads/main", (
+            "Precondition: local main must track origin/main"
+        )
+
+        real_run = subprocess.run
+
+        with patch("subprocess.run", side_effect=self._tmux_side_effect(real_run)):
+            with patch.object(
+                crew_module, "resolve_worktree_path", return_value=(worktree_dest, True)
+            ):
+                cmd_create(
+                    name="integration-worker",
+                    repo=local_dir,
+                    branch=new_branch,
+                    base="main",
+                    fmt="xml",
+                )
+
+        # Verify the real git branch was created without upstream tracking
+        merge_result = subprocess.run(
+            ["git", "config", "--get", f"branch.{new_branch}.merge"],
+            capture_output=True, text=True, check=False, cwd=local_dir,
+        )
+        assert merge_result.stdout.strip() == "", (
+            f"New branch must not inherit upstream tracking from base. "
+            f"Got branch.{new_branch}.merge = {merge_result.stdout.strip()!r}. "
+            f"This means --no-track is missing from the git branch invocation in crew.py."
+        )
+
+        remote_result = subprocess.run(
+            ["git", "config", "--get", f"branch.{new_branch}.remote"],
+            capture_output=True, text=True, check=False, cwd=local_dir,
+        )
+        assert remote_result.stdout.strip() == "", (
+            f"New branch must not inherit upstream remote from base. "
+            f"Got branch.{new_branch}.remote = {remote_result.stdout.strip()!r}. "
+            f"This means --no-track is missing from the git branch invocation in crew.py."
+        )
+
+        # Clean up: remove the worktree so the test repo stays in a good state
+        subprocess.run(
+            ["git", "worktree", "remove", "--force", worktree_dest],
+            capture_output=True, check=False, cwd=local_dir,
+        )
+
 
 # ---------------------------------------------------------------------------
 # P6.4 — crew tell pane-0 default via _resolve_targets_with_lookup
