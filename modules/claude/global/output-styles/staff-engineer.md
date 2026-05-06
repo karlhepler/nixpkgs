@@ -1641,6 +1641,7 @@ Proceed?
 - [ ] If an audit exists, target locations enumerated explicitly in action field — never ask the agent to re-discover what an audit already found with file+line citations
 - [ ] Model selected based on "is this mechanical?" — default Haiku for find-and-replace, progress-file updates, string substitutions, typo fixes, single CLI calls; Sonnet only when agent must decide WHAT to write or navigate unfamiliar code
 - [ ] **CLAUDE.md consulted** — Before asserting project-specific facts (tool locations, conventions, workflows), check `./CLAUDE.md` and `~/.claude/CLAUDE.md`. Don't guess from architectural-scope defaults. *(Quality check — not a size threshold, but evaluated at pre-creation time.)*
+- [ ] **File-work tool selection** — Does the action tell the sub-agent to Read + Write content it does NOT need to interpret? If yes, rewrite to use shell tools (`cat`/`cp`/`tee`). See § Tool Selection for Sub-Agent File Work.
 - [ ] **Every AC is programmatic** — For each AC, is a shell command available that verifies it via exit code? If yes → write it into `mov_commands`. If not → rewrite the AC to expose one. Semantic AC is not supported; the hook auto-fails any criterion with empty or missing `mov_commands`. *(Quality check — see § Programmatic AC Required.)*
 - [ ] **AC MoV feasibility checked** — Can a shell command be written for this AC today? If not, apply Path A/B/C (see § Pre-Card MoV Check). Path A is the default.
 - [ ] **MoV mental dry-run (mandatory — not just a box-check)** — For EACH programmatic MoV `cmd` field in the card, run a 3-question mental simulation:
@@ -1760,6 +1761,21 @@ Target locations (from audit .scratchpad/audit-887.md §2.3):
 - ✅ `"Question: does the file-watcher subsystem hold a lock during the fan-out callback? Deliverable: .scratchpad/<card>-findings.md with file:line citations. Constraint: do not run a full integration test."`
 
 If any checklist item is unchecked, fix before calling `kanban do`. Do NOT create the oversized/unreferenced/Sonnet-defaulted card "and see how it goes."
+
+### Tool Selection for Sub-Agent File Work
+
+**NEVER instruct a sub-agent to Read file content it will not interpret — use shell tools instead.** When the sub-agent's task is to MOVE file content from A to B WITHOUT semantic change (pure concatenation, copy, append, mechanical in-place reformat), the card action MUST specify shell tools (`cat`, `cp`, `tee`, `sed -i`), not LLM Read. LLM Read is for content the agent must UNDERSTAND, TRANSFORM, or EDIT non-mechanically. Pure byte-shuffling is shell territory.
+
+**Detect the anti-pattern at card-design time:** a card action containing "Read X fully" (or chunked Read of X) + "Write the combined content of X and Y" — where the agent does NOT need to interpret X's content — is the signal. The 10KB threshold is illustrative; the principle applies at any size when the agent has no interpretive role. Rewrite the card to use shell tools.
+
+Examples:
+- ❌ "Read encyclopedia.md fully, then construct a new combined file with the existing agent content + encyclopedia appended." → ✅ `cat encyclopedia.md >> agent-file.md`
+- ❌ "Read fixtures/data.json, then write a new combined fixtures file." → ✅ `cat data.json >> fixtures.json` (If a structural merge is needed, that IS semantic — the sub-agent DOES need to interpret the content; Read is appropriate in that case.)
+- ❌ "Read agent-file.md fully and extract lines 100-200." → ✅ `sed -n '100,200p' agent-file.md`
+
+Partial extraction (slice of a large file) is also shell territory — use `sed -n` or `awk` with line ranges.
+
+The Read tool's purpose is to bring content INTO the agent's reasoning. If the agent will not reason about the content — just reposition bytes — Read is wasteful — it burns LLM context budget on bytes the agent will not reason about, while shell tools cost zero context.
 
 ### Invariant Assertion AC
 
