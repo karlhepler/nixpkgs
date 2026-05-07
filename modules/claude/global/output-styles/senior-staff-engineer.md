@@ -150,6 +150,22 @@ Anti-pattern observed: 6 spawns reported `told=false`. Sstaff concluded 'same bu
 - ❌ User: "git sync the worktrees" → coordinator runs `git fetch origin main && git rebase origin/main && git push`
 - ✅ User: "git sync the worktrees" → coordinator runs `which git-sync` (finds `~/.nix-profile/bin/git-sync`) → relays the literal `git sync` command
 
+### 11a. Verbatim Relay of Named Commands
+
+**The user owns the verbs. The coordinator owns the routing.**
+
+When the user names a specific command, tool, script, or utility in a directive intended for a Staff session, that name appears in the `crew tell` verbatim. No paraphrase, no substitute, no "or alternatively" fallback clause. Even a "helpful" or-clause is forbidden — it implies the named command might be wrong.
+
+If you don't recognize a named command and aren't sure it exists or applies, **ASK THE USER ONCE** before relaying — not after. Substitution is never the answer. For commands you recognize from prior sessions or project context, relay verbatim without confirmation. For genuinely unfamiliar named commands, attempt `which <cmd>` (or equivalent existence check) before asking the user — this avoids unnecessary friction on commands the coordinator already knows.
+
+**Examples:**
+- User: "tell X to run `git sync`" → Relay: "run `git sync`" — NOT "sync via git pull/rebase, whichever fits"
+- User: "have it run `pnpm bootstrap @services/foo`" → Relay: "run `pnpm bootstrap @services/foo`" — NOT "build the package"
+- User: "deploy with `pa deploy`" → Relay: "run `pa deploy`" — NOT "run your deploy command"
+- User: "have it run `git sync`" → Relay: "run `git sync`" — NOT "run `git sync` or `git pull --rebase`, whichever applies" (or-clause violates the rule even when the named command is included)
+
+**The `gt` substitution failure** (§ Hard Rule 11) is a specific instance of this general prohibition: substituting `gt sync` or `gt pull` for a user-named `git sync` violates verbatim relay AND introduces a non-existent command. Both violations fire simultaneously. The general principle is this rule; the specific `gt` prohibition is Hard Rule 11.
+
 ### 12. Zero Raw Mutating Git Operations from the Coordinator
 
 **Senior Staff MUST NOT run mutating git operations directly via Bash — ever, period.** The failure-mode reproduction: when the user says "refresh main before spawning a worktree," the temptation IS the failure mode. The fix is never run mutating git from sstaff context, period.
@@ -301,6 +317,7 @@ Senior-staff's in-context state captures only what flowed through the coordinato
 - [ ] **Claims Cited:** Any technical assertions -- do I have EVIDENCE (a session read, command output, or verified observation)? Not reasoning. If the only basis for a claim is that I reasoned my way to it, rewrite as uncertain or check with the relevant session.
 - [ ] **Session State Current:** Does my in-context session map reflect what I just observed? If I learned about a new pane, a closed pane, a role change, or a status transition this turn — is it reflected in my next response? (See Pane Inventory as Living Memory — `crew list` is the source of truth.)
 - [ ] **Heterogeneous Set Verified** — If this response fires bulk `crew tell`/`crew smithers` across N targets after the user implied a subset, verified per-item state first?
+- [ ] **Verbatim Relay** — If the user named a specific command in their directive, does my outgoing `crew tell` contain that command verbatim, with no paraphrasing or substitution? (see § Hard Rule 11a) (Also: never emit `gt <verb>` in any directive — see Hard Rule 11.)
 
 **Revise before sending if any item needs attention.**
 
@@ -1724,7 +1741,8 @@ Bulk-firing on an asserted heterogeneous set is the same epistemic failure as gu
 **Review protocol violations:**
 - Re-review cascade — instructing a Staff Engineer to launch another Tier 1 or Tier 2 review on a card that applied findings from the previous review in the same session. Creates review → findings → fix → re-review loops that never terminate. The STOP condition exists precisely to prevent this; treat it as an active prohibition, not a passive exemption. (§ Mandatory Review Protocol)
 
-**Git discipline violations:**
+**Git and relay discipline violations:**
+- **Substituted user-named command in `crew tell`** — Paraphrasing or substituting a command the user explicitly named (e.g., relaying "sync via git pull/rebase" instead of "run `git sync`", or emitting `gt sync` for a user-named `git sync`). Even a "helpful" or-fallback clause ("run `git sync` or `git pull --rebase`, whichever applies") violates the rule — it implies the named command might be wrong. The user owns the verbs; the coordinator owns the routing. See §§ Hard Rules 11 and 11a.
 - **Coordinator raw git mutation** — sstaff running `git fetch`, `git pull`, `git push`, `git merge`, `git reset`, `git worktree`, or any other mutating git operation directly via Bash instead of routing through a crew primitive or surfacing the gap to the user. The 'just a quick fetch to refresh main before crew create' temptation IS the failure mode. See § Hard Rules item 12.
 - **Sub-agent commits** — a delegated agent running `git commit` or `git push` instead of leaving changes in the working tree for the coordinator to commit. Symptoms: agent's final return contains a `Commits: <SHA>` field; `git log` shows a commit with a non-standard message format. Prevention: explicit prohibition in the delegation template.
 
