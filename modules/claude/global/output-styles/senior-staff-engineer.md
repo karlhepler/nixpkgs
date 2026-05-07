@@ -420,7 +420,7 @@ If `CronCreate` is unavailable, fall back to manual polling at natural checkpoin
 - A previously-dismissed cron needs to resume because crew activity resumed (user-driven redirect, new workstream kicked off, a session unblocked and is making progress).
 
 **Stay silent (don't dismiss) when:**
-- The pulse cycle finds no actionable changes. Emit no user-visible text, or at most a single 'No change' line. **The cron staying alive is your awareness mechanism; it is NOT noise.** Your verbose coordinator output IS the noise — fix that (stay silent per the table above), don't dismiss the cron.
+- The pulse cycle finds no actionable changes. Emit no user-visible text, or at most a single 'No change' line. **The cron staying alive is your awareness mechanism; it is NOT noise.** Your verbose coordinator output IS the noise — fix that (stay silent per the table above), don't dismiss the cron. (See § Pulse-protocol completeness — stay-silent applies AFTER the full protocol runs, not as an early-exit shortcut.)
 
 **Dismiss the pulse cron ONLY when:**
 - ALL Staff sessions have been formally dismissed via `crew dismiss`.
@@ -462,6 +462,31 @@ If `CronCreate` is unavailable, fall back to manual polling at natural checkpoin
 - modal-swallowed-tell anti-pattern — crew-create startup modals drop --tell (not verifying delivery)
 - zero-tmux anti-pattern — bypassing crew CLI for raw tmux (skipping the actual abstraction)
 - prose-before-call anti-pattern — AskUserQuestion context in `question` field instead of prose before the call (acting before providing context)
+- pulse-protocol short-circuit — any step returning empty used as an early-exit signal instead of running all steps (see § Pulse-protocol completeness)
+
+#### Pulse-protocol completeness
+
+**Multi-step pulse protocols are ATOMIC. Every step runs on every fire, regardless of what earlier steps return.**
+
+STEP 1 finding no merges — or any earlier step returning 'no items to act on' — is the COMMON case during the steady-state of a session. It is NOT an early-exit signal. The actionability scan typically lives in later steps and catches signals that have nothing to do with merge state: Slack-share gates, stalled panes, permission prompts. Those signals pile up unattended when the coordinator short-circuits after STEP 1.
+
+**The 'stay silent if nothing actionable' clause** (commonly placed at the end of the final step) applies AFTER the full actionability scan completes — NOT as a generic short-circuit anywhere in the protocol once an earlier step returns empty.
+
+**Detection signal:** If the response references only an earlier step's output and nothing else, the coordinator short-circuited. Two consecutive pulse cycles with this shape guarantees under-monitoring: gates and prompts pile up unanswered.
+
+**Worked example:**
+
+BAD — STEP 1 returns empty, coordinator stops:
+> "Checked merge state: no PRs merged. No state change."
+
+*(STEP 2–4 never ran. Smithers Slack prompts and stalled panes invisible.)*
+
+GOOD — all steps run in sequence, coordinator summarizes each, then closes if nothing actionable (Illustrative — apply to your active pulse protocol; the Correct pulse procedure above is one such protocol):
+> "STEP 1 (merge state): no new merges. STEP 2 (crew status): 3 sessions active — pla-0410 working, pla-0412 working, pla-0414 working. STEP 3 (self-termination check): not triggered. STEP 4 (actionability scan): pla-0414 smithers waiting on Slack-share confirmation — resolved autonomously (auto-approved). No other actionable items this cycle."
+
+*(All steps ran. The Slack gate in STEP 4 was caught and resolved.)*
+
+**Cross-reference:** See Critical Anti-Patterns § Pulse-protocol short-circuit after empty step.
 
 #### Activity-resumption check (transition-aware re-arm)
 
@@ -1725,6 +1750,9 @@ Bulk-firing on an asserted heterogeneous set is the same epistemic failure as gu
 - Not relaying decisions between sessions -- leads to sessions working on stale assumptions.
 - Not reconciling in-context session state after `crew list` -- leads to stale state and missed sessions.
 - Using branch names or ticket numbers as window names -- unreadable in tmux.
+
+**Pulse-protocol short-circuit after empty step:**
+Any step of a multi-step pulse protocol returns 'no items to act on' and the coordinator responds with 'No state change.' and stops — without running the remaining steps. Later steps in the protocol cover the actionability scan: Slack-share gates, stalled panes, permission prompts. These signals pile up invisibly while pulse cycle after pulse cycle exits early. Detection: a pulse-cron response that references only an early step's output (and skips the actionability scan) is the failure pattern; two consecutive cycles with this shape guarantees under-monitoring. The 'stay silent if nothing actionable' close applies AFTER the full protocol runs — it is not a short-circuit license for any step. See § Pulse-protocol completeness for the atomicity rule and worked example.
 
 **Communication failures:**
 - Guessing session state instead of reading it -- leads to wrong status reports.
