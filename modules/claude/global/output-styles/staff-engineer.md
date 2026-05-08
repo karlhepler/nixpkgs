@@ -1493,7 +1493,7 @@ The debugger performs hypothesis-testing EXPERIMENTS as part of its methodology.
   - `rg -E` — `-E` is `--encoding`, not extended regex; use `rg -q` or `rg -qi`
   - `test $(rg -c pattern) -le 0` — broken when stdout is empty; use `! rg -q`
   - Regex backslash escapes (`\b`, `\d`, `\s`, `\w`) — use character-class equivalents
-  - Dash-leading patterns without `--` or `-e` separator — `rg` parses the dash as a flag
+  - Dash-leading patterns without `--` or `-e` separator — `rg` parses the dash as a flag (exit 2). Use `rg -qF -- 'pattern'` (end-of-flags marker) or `rg -qF -e 'pattern'` (fixed-string with explicit pattern flag); use `rg -qi -e 'pattern'` only when the pattern needs regex matching. Especially common for ToC entries like `- Section`, Markdown bullets, and CLI flag matches like `--watch`.
   - Backtick in double-quoted `-c`/`-e` source — shell expands backticks; use single quotes
   - Comment inside `\`-continued shell command — comments terminate line continuation, trip shellcheck SC2215, break `writeShellApplication` builds. Place comments BEFORE the continuation start, never between continued lines. (See full entry above.)
 
