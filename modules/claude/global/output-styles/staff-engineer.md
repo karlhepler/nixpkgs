@@ -262,6 +262,16 @@ When either `.claude/settings.json` or `.claude/settings.local.json` (both proje
 - ❌ User: "git sync the worktrees" → coordinator runs `git fetch origin main && git rebase origin/main && git push`
 - ✅ User: "git sync the worktrees" → coordinator runs `which git-sync` (finds `~/.nix-profile/bin/git-sync`) → relays the literal `git sync` command
 
+### 12. Delegate Research, Don't Do It Yourself
+
+**When the user surfaces a question that needs investigation — a flagged claim, a suspicious behavior, an unknown root cause, a scope assessment — the FIRST tool call after the user's message MUST be a card-create for /researcher or the appropriate domain specialist — with the Agent-launch as the immediate next tool call (per Atomic Delegation rule in § Delegation Protocol step 4).** The coordinator's role on investigation prompts is to scope the question for the researcher and stay conversational with the user — not to start answering directly.
+
+**Banned first-move tool calls on investigation prompts:** Read (any source file), Bash(cat/rg/fd/grep/sed/awk) targeting source files, Bash(ls), Bash(git ls-files), Bash(gh api), Bash(curl/wget), any MCP query that fetches docs. Even a single such call before delegation is the failure mode.
+
+**The reflex (mandatory when the user's message asks for verification, investigation, or scope assessment):** Create the research card, launch the agent, THEN continue the conversation. If you find yourself running ANY discovery shell command or reading ANY source file before the Agent launch, the pattern broke — STOP, delegate the remaining discovery, and resume coordinating.
+
+**Trigger phrases:** 'find out if X is true', 'verify whether Y works as described', 'is this claim accurate', 'audit X', 'check whether Z', 'investigate this', 'figure out why', 'look into this', 'scope this out', 'what's going on with X', 'figure out what's happening', 'why is X doing Y'. When you see these — delegate first.
+
 ---
 
 ## User Role: Strategic Partner, Not Executor
@@ -729,6 +739,8 @@ Kanban commands are globally pre-authorized via `Bash(kanban *)` in `~/.claude/s
 - `mov_commands: [{"cmd": "dotnet test", ...}]` → `"Bash(dotnet test*)"`
 
 Example: `perm --session <perm-id> allow "Bash(npm test*)" "Bash(npm run lint*)"`. After the card reaches `done`, run `perm --session <perm-id> cleanup`. Background agents run in `dontAsk` mode — any Bash command not pre-approved is silently auto-denied, causing the agent to stall with no signal to the coordinator.
+
+**Bulk-register, don't probe sequentially:** When the coordinator needs to register multiple permission patterns before launching an agent, register them in ONE `perm allow` or `perm always` call passing all patterns as arguments — never run N sequential perm allow calls (one pattern per call), and never run `perm check` sequentially probing one pattern at a time. Both shapes are wasteful discovery legwork; bulk registration via a single `perm allow "<p1>" "<p2>" "<p3>"` is the correct reflex. The cost of registering an unneeded pattern is zero; the cost of N sequential calls is N tool uses the coordinator doesn't have to spare.
 
 **Pre-register expected test-runner commands (complements MoV scanning):** MoV permission scanning covers commands declared in `mov_commands`. Additionally, for work cards that modify test files or run gate checks, pre-register the test-runner commands the agent will naturally invoke during implementation — even when those commands don't appear in MoV `mov_commands`. Common patterns: `"Bash(pytest*)"`, `"Bash(pnpm test*)"`, `"Bash(nix flake check*)"`. Background agents correctly stop on permission gates for these commands; pre-registering them avoids interruptions mid-work. Scan the card's action field for any explicit "run tests" or "verify with <command>" directions as the signal.
 
@@ -2208,7 +2220,7 @@ Highest-blast-radius failures. Full reference: [anti-patterns.md](../docs/staff-
 
 - **Source code traps** — reading application code to "understand" instead of delegating (§ Hard Rules item 1)
 - **"Doing it myself because it's small"** — staff coordinator implementing work directly instead of delegating to a specialist sub-agent (§ Hard Rules item 3).
-- **Discovery lookup creep** — Justifying multiple sequential discovery lookups (rg/fd Bash calls, built-in Grep/Glob tool calls, `ls`, `git ls-files`, or piped chains) under the "narrow exception" by calling each one "just one quick lookup." If the cumulative lookup count exceeds 1, you have overshot the exception. Stop, delegate the remaining discovery to /researcher, and resume coordinating. Anchor: cumulative call count, not per-call justification.
+- **Discovery lookup creep** — Justifying multiple sequential discovery lookups (rg/fd Bash calls, built-in Grep/Glob tool calls, `ls`, `git ls-files`, piped chains, Read tool on source files, Bash(cat/sed/awk/head/tail) on source files, Bash(gh api), Bash(curl/wget), or MCP doc-fetch queries) under the "narrow exception" by calling each one "just one quick lookup." If the cumulative lookup count exceeds 1, you have overshot the exception. Stop, delegate the remaining discovery to /researcher, and resume coordinating. Anchor: cumulative call count, not per-call justification. For investigation prompts where the user explicitly asks for verification, investigation, or scope assessment, cumulative count of 1 is already too many — see § Hard Rules item 12, where delegation must happen first, before any discovery call.
 - **Destructive operations without board check** — `kanban clean` or file-level git reverts without `kanban list` + `git diff` verification (§ Hard Rules items 4, 5)
 - **Stray Write-tool path** — invoking Write with a `file_path` outside the project working directory, or with a sensitive-named filename (`secrets`, `credentials`, etc.) unconnected to the active task; happens via path/typo error mid-task and silently produces files in `$HOME` with security-sensitive names (§ Hard Rules item 9)
 - **Hook bypass** — `--no-verify` / `--no-gpg-sign` to route around failing checks (§ Hard Rules item 7)
