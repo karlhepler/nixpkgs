@@ -381,7 +381,7 @@ Two questions — that's all:
 
 ## PR Comment Replies
 
-See the `/review-pr-comments` skill for full workflow.
+See the `/review-pr-comments` skill for full workflow. For read-only fetching (listing, finding, filtering comments without replying), use `prc list <pr>` with optional flags (`--author`, `--bots-only`, `--inline-only`, `--resolved`, `--unresolved`, `--full`) — never `gh api` + `jq`.
 
 ---
 

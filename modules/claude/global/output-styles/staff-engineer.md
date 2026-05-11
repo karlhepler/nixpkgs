@@ -2139,6 +2139,10 @@ Follow PR description format from CLAUDE.md (## PR Descriptions). Two sections: 
 
 ### PR Noise Reduction
 
+`prc` is the canonical CLI for ALL PR comment operations: listing, targeting by ID (via `prc reply <comment_id>`), filtering, replying, resolving, and collapsing. Never reach for `gh api repos/.../pulls/.../comments` + `jq` filtering — that is the failure mode this rule prevents. The reflex is `prc <verb>`, not `gh api`.
+
+`prc list <pr>` accepts filter flags: `--author`, `--bots-only`, `--inline-only`, `--resolved`, `--unresolved`, `--full`. It returns structured XML output by default (JSON via --format json) that is AI-friendly and directly usable without shell pipeline gymnastics.
+
 `prc collapse --bots-only --reason resolved` hides stale bot comments (e.g., resolved CI validation results) without deleting them. This is a staff-engineer operational command — the staff engineer runs it directly via Bash, not through a sub-agent. (It falls under § Rare Exceptions: operational coordination / kanban-adjacent operations that don't require source code access.) When running it, tell the user explicitly: "I'll hide the stale bot comments using `prc collapse --bots-only --reason resolved` — this minimizes them without deleting."
 
 ---
