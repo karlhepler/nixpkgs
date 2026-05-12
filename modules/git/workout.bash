@@ -535,7 +535,9 @@ is_branch_merged() {
   fi
 
   # Check if this branch is merged into default branch
-  if git branch --merged "$default_branch" 2>/dev/null | grep -q "^[*+ ] $branch\$"; then
+  local merged_branches
+  merged_branches="$(git branch --merged "$default_branch" 2>/dev/null)"
+  if grep -q "^[*+ ] $branch\$" <<< "$merged_branches"; then
     return 0
   fi
 
@@ -558,7 +560,7 @@ clean_worktrees() {
 
   # Get git root directory (primary repo) to exclude from deletion
   local git_root
-  git_root="$(git worktree list --porcelain | awk '/^worktree / {print substr($0, 10); exit}')"
+  git_root="$(git worktree list --porcelain | awk '/^worktree / && !found {result=substr($0, 10); found=1} END {if (found) print result}')"
 
   # Get current directory to exclude from deletion
   local current_dir="$PWD"
@@ -668,7 +670,15 @@ clean_worktrees() {
   fi
 
   echo -n "$prompt" >&2
-  read -r response < /dev/tty
+  local response
+  if [[ -e /dev/tty && -r /dev/tty ]]; then
+    read -r response < /dev/tty
+  else
+    echo "No interactive terminal available — cancelling" >&2
+    # return 2 (vs return 1 for user-typed-no below): signals 'cannot run in this environment',
+    # not 'user declined' — useful for callers that distinguish env failures from user cancellation
+    return 2
+  fi
 
   # Only proceed if user types exactly "yes"
   if [ "$response" != "yes" ]; then
