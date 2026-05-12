@@ -10,6 +10,25 @@ Nix Home Manager configuration managing development environments with flakes. Cr
 
 **Homebrew is FORBIDDEN.** See global CLAUDE.md § PACKAGE INSTALLATION for details. Use Nix (`modules/packages.nix`), direct binary downloads, or language-specific managers ONLY.
 
+## 🚨 macOS Trash CLI — Use `pkgs.darwin.trash`, NEVER `pkgs.trash-cli` 🚨
+
+**When a shellapp needs the `trash` command, add `pkgs.darwin.trash` to `runtimeInputs` — never `pkgs.trash-cli`.**
+
+Two nixpkgs packages both provide a binary named `trash` on `aarch64-darwin`:
+
+- ✅ **`pkgs.darwin.trash`** — moves files to the macOS-native Trash (`~/.Trash/`); **visible in Finder**; recoverable via right-click → Put Back. This is what users expect when they hear "trash."
+- ❌ **`pkgs.trash-cli`** — moves files to the freedesktop.org trash directory (`~/.local/share/Trash/files/`); **invisible to Finder**. Files are technically recoverable, but the user-facing semantics ("show me the trash bin") are broken.
+
+This is a class of failure that has already caused real damage in this repo (160 worktree folders silently routed to the freedesktop dir instead of macOS Trash). Do not repeat it.
+
+**General principle — verify package SEMANTICS, not just the binary name:**
+
+When a Nix package supplies a binary that has multiple implementations across nixpkgs, the binary name is NOT sufficient to identify the right package. Before adding any `<package>` to `runtimeInputs`:
+
+1. Check `pkgs.<package>.meta.description` via `nix eval --raw nixpkgs#<package>.meta.description`.
+2. If multiple packages provide the same binary, compare their descriptions and verify which behavior matches user expectation on this platform.
+3. When the system is macOS-only (this repo is locked to `aarch64-darwin`), prefer the `pkgs.darwin.*` namespace for any tool that interacts with macOS-specific surfaces (Trash, keychain, notifications, accessibility, etc.).
+
 ## 🚨 SOURCE OF TRUTH PRINCIPLE 🚨
 
 **CRITICAL: When working in this repository, NEVER edit files outside of this repository.**
