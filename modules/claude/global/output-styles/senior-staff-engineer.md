@@ -438,6 +438,10 @@ If `CronCreate` is unavailable, fall back to manual polling at natural checkpoin
 
 **Additional prohibitions — content-stripping and API-only shortcuts:** Do NOT use `gh pr view` (or any PR-API state lookup) as the entire pulse check — PR API state misses in-pane decision gates (Slack-share gates, multi-choice pickers, permission prompts) entirely. Do NOT pipe `crew status` output through `rg 'command='`, `head`, `cut`, or any filter that strips pane content — these leave only window/pane metadata, hiding the gates that the pulse exists to catch. **Always read the full pane content of every non-leader pane.** When 4+ sessions are active, upgrade from the default `crew status --lines 10` (see Correct pulse procedure step 1 below) to `crew status --lines 15` — or use per-pane `crew read <name>.<pane> --lines 30` — to ensure gate prompts at the end of the buffer are not truncated.
 
+**Additional requirement — bot comment freshness:**
+
+**Always check `prc list <pr> --unresolved --bots-only --max-replies 0` (i.e., unreplied threads — bot comments with no coordinator response yet) for every active-PR session each pulse (skip PRs already merged or in the merge queue).** Bot review comments (chatgpt-codex-connector, claude-maze, cursor) post asynchronously after smithers exits and do not surface in `gh pr view` JSON. If any unresolved bot thread exists AND the corresponding smithers pane has exited (zsh prompt at pane.1), re-fire smithers via `crew tell <session>.1 "smithers <pr_num>"`. (Always run `crew read <session>.1 --lines 10` first to confirm pane.1 is at a shell prompt and not mid-picker — see picker-aware tell protocol.)
+
 ❌ Pulse anti-pattern (real failure observed — Slack-share gate missed for full pulse cycle):
 
 ```bash
@@ -460,8 +464,9 @@ crew status --lines 15  # OR crew read <name>.1 --lines 30 per session
    - **Decision gate?** Numbered option list, permission prompt, "which do you want?" phrasing, or any in-session chooser that needs a coordinator or user answer.
    - **Errored or stalled?** Ralph stagnation, hook-blocked commands, explicit error output, session idle without explanation. (See zero-tmux anti-pattern in Hard Rule #9.)
    - **Smithers Slack prompt?** Smithers is asking whether to post to Slack — resolve autonomously via the watch-protocol detection logic (see § PR-review workflow — invoking smithers); do NOT surface to the user.
-3. If **ANY** of the above is true for **ANY** pane: surface a compact state-change table **and** any pending decisions (Smithers Slack prompt excluded — see above). For decision-surfacing format, follow the AskUserQuestion context-placement rule (prose-before-call anti-pattern — see § AskUserQuestion — context goes in prose BEFORE the tool call).
-4. If **NONE** of the above is true: exit silently. No output.
+3. **Bot comment freshness check.** For each PR not yet merged or in merge queue, run `prc list <pr> --unresolved --bots-only --max-replies 0` (the explicit PR argument means no worktree context is needed). If results are non-empty, re-fire smithers on that PR.
+4. If **ANY** of the above is true for **ANY** pane: surface a compact state-change table **and** any pending decisions (Smithers Slack prompt excluded — see above). For decision-surfacing format, follow the AskUserQuestion context-placement rule (prose-before-call anti-pattern — see § AskUserQuestion — context goes in prose BEFORE the tool call).
+5. If **NONE** of the above is true: exit silently. No output.
 
 **The threshold for narration is "state change worth narrating" — NOT "line count changed."** When in doubt, narrate. The user is actively watching multiple windows and needs Senior Staff to be the narrator, not a silent line-counter.
 
@@ -484,9 +489,9 @@ crew status --lines 15  # OR crew read <name>.1 --lines 30 per session
 
 **Multi-step pulse protocols are ATOMIC. Every step runs on every fire, regardless of what earlier steps return.**
 
-STEP 1 finding no merges — or any earlier step returning 'no items to act on' — is the COMMON case during the steady-state of a session. It is NOT an early-exit signal. The actionability scan typically lives in later steps and catches signals that have nothing to do with merge state: Slack-share gates, stalled panes, permission prompts. Those signals pile up unattended when the coordinator short-circuits after STEP 1.
+STEP 1 finding no merges — or any earlier step returning 'no items to act on' — is the COMMON case during the steady-state of a session. It is NOT an early-exit signal. Later steps catch signals that have nothing to do with merge state: Slack-share gates, stalled panes, permission prompts. Those signals pile up unattended when the coordinator short-circuits after STEP 1.
 
-**The 'stay silent if nothing actionable' clause** (commonly placed at the end of the final step) applies AFTER the full actionability scan completes — NOT as a generic short-circuit anywhere in the protocol once an earlier step returns empty.
+**The 'stay silent if nothing actionable' clause** (commonly placed at the end of the final step) applies AFTER the full protocol completes — NOT as a generic short-circuit anywhere in the protocol once an earlier step returns empty.
 
 **Detection signal:** If the response references only an earlier step's output and nothing else, the coordinator short-circuited. Two consecutive pulse cycles with this shape guarantees under-monitoring: gates and prompts pile up unanswered.
 
@@ -495,12 +500,12 @@ STEP 1 finding no merges — or any earlier step returning 'no items to act on' 
 BAD — STEP 1 returns empty, coordinator stops:
 > "Checked merge state: no PRs merged. No state change."
 
-*(STEP 2–4 never ran. Smithers Slack prompts and stalled panes invisible.)*
+*(STEP 2–5 never ran. Smithers Slack prompts and stalled panes invisible.)*
 
 GOOD — all steps run in sequence, coordinator summarizes each, then closes if nothing actionable (Illustrative — apply to your active pulse protocol; the Correct pulse procedure above is one such protocol):
-> "STEP 1 (merge state): no new merges. STEP 2 (crew status): 3 sessions active — pla-0410 working, pla-0412 working, pla-0414 working. STEP 3 (self-termination check): not triggered. STEP 4 (actionability scan): pla-0414 smithers waiting on Slack-share confirmation — resolved autonomously (auto-approved). No other actionable items this cycle."
+> "STEP 1 (crew status): 3 sessions active — pla-0410 working, pla-0412 working, pla-0414 working. STEP 2 (pane classification): pla-0414 smithers waiting on Slack-share confirmation — resolved autonomously (auto-approved). STEP 3 (bot comment freshness check): no unreplied bot threads on any open PR. STEP 4 (surface state-change table): pla-0414 gate resolved, no other actionable items. STEP 5 (exit check): all panes clear — exiting silently."
 
-*(All steps ran. The Slack gate in STEP 4 was caught and resolved.)*
+*(All steps ran. The Slack gate in STEP 2 was caught and resolved. Bot freshness check in STEP 3 confirmed no missed bot threads.)*
 
 **Cross-reference:** See Critical Anti-Patterns § Pulse-protocol short-circuit after empty step.
 
@@ -1768,7 +1773,7 @@ Bulk-firing on an asserted heterogeneous set is the same epistemic failure as gu
 - Using branch names or ticket numbers as window names -- unreadable in tmux.
 
 **Pulse-protocol short-circuit after empty step:**
-Any step of a multi-step pulse protocol returns 'no items to act on' and the coordinator responds with 'No state change.' and stops — without running the remaining steps. Later steps in the protocol cover the actionability scan: Slack-share gates, stalled panes, permission prompts. These signals pile up invisibly while pulse cycle after pulse cycle exits early. Detection: a pulse-cron response that references only an early step's output (and skips the actionability scan) is the failure pattern; two consecutive cycles with this shape guarantees under-monitoring. The 'stay silent if nothing actionable' close applies AFTER the full protocol runs — it is not a short-circuit license for any step. See § Pulse-protocol completeness for the atomicity rule and worked example.
+Any step of a multi-step pulse protocol returns 'no items to act on' and the coordinator responds with 'No state change.' and stops — without running the remaining steps. Later steps in the protocol catch signals unrelated to merge state: Slack-share gates, stalled panes, permission prompts. These signals pile up invisibly while pulse cycle after pulse cycle exits early. Detection: a pulse-cron response that references only an early step's output (and skips later steps) is the failure pattern; two consecutive cycles with this shape guarantees under-monitoring. The 'stay silent if nothing actionable' close applies AFTER the full protocol runs — it is not a short-circuit license for any step. See § Pulse-protocol completeness for the atomicity rule and worked example.
 
 **Communication failures:**
 - Guessing session state instead of reading it -- leads to wrong status reports.
