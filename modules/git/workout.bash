@@ -520,10 +520,11 @@ detect_default_branch() {
 }
 
 # Check if a branch is merged into the default branch
-# Arguments: worktree_path default_branch
+# Arguments: worktree_path default_branch merged_branches_list
 is_branch_merged() {
   local worktree_path="$1"
   local default_branch="$2"
+  local merged_branches="$3"
 
   # Get the branch name for this worktree
   local branch
@@ -535,8 +536,6 @@ is_branch_merged() {
   fi
 
   # Check if this branch is merged into default branch
-  local merged_branches
-  merged_branches="$(git branch --merged "$default_branch" 2>/dev/null)"
   if grep -q "^[*+ ] $branch\$" <<< "$merged_branches"; then
     return 0
   fi
@@ -575,6 +574,12 @@ clean_worktrees() {
     fi
   fi
 
+  # Pre-compute merged branches once (avoid N×git branch --merged in the loop)
+  local merged_branches_list=""
+  if [ "$expunge" = false ]; then
+    merged_branches_list="$(git branch --merged "$default_branch" 2>/dev/null)"
+  fi
+
   # Collect worktrees to delete
   local -a worktrees_to_delete=()
   local -a worktree_info=()
@@ -601,7 +606,7 @@ clean_worktrees() {
       worktree_info+=("$branch|$head|$path")
     else
       # Regular mode: target worktrees with merged branches
-      if is_branch_merged "$path" "$default_branch"; then
+      if is_branch_merged "$path" "$default_branch" "$merged_branches_list"; then
         worktrees_to_delete+=("$path")
         worktree_info+=("$branch|$head|$path")
       fi

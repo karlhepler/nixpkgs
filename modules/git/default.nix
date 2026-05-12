@@ -109,14 +109,14 @@ in {
     };
     workout = shellApp {
       name = "workout";
-      runtimeInputs = [ pkgs.git pkgs.coreutils pkgs.gnused pkgs.fzf pkgs.tmux ];
+      runtimeInputs = [ pkgs.git pkgs.coreutils pkgs.gnused pkgs.fzf pkgs.tmux pkgs.trash-cli ];
       text = builtins.readFile ./workout.bash;
       description = "Create and navigate git worktrees organized by org/repo/branch. Supports batch creation with TMUX windows.";
       sourceFile = "workout.bash";
     };
     workout-delete = shellApp {
       name = "workout-delete";
-      runtimeInputs = [ pkgs.git pkgs.coreutils ];
+      runtimeInputs = [ pkgs.git pkgs.coreutils pkgs.trash-cli ];
       text = builtins.readFile ./workout-delete.bash;
       description = "Delete a git worktree";
       sourceFile = "workout-delete.bash";

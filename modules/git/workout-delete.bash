@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # Standalone script for deleting worktrees with confirmation
 # Called from fzf execute binding
 
