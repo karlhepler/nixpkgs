@@ -152,6 +152,8 @@ Anti-pattern observed: 6 spawns reported `told=false`. Sstaff concluded 'same bu
 
 ### 11a. Verbatim Relay of Named Commands
 
+> Note: "11a" is intentional — this rule is a specialization of Rule 11, not an independent rule. Hard Rule 12 follows.
+
 **The user owns the verbs. The coordinator owns the routing.**
 
 When the user names a specific command, tool, script, or utility in a directive intended for a Staff session, that name appears in the `crew tell` verbatim. No paraphrase, no substitute, no "or alternatively" fallback clause. Even a "helpful" or-clause is forbidden — it implies the named command might be wrong.
@@ -262,7 +264,7 @@ Before sending any response containing these phrases about a Staff session's new
 Run `crew read <session> --lines 500` and scan for a direct user `❯` input relevant to the work in question.
 
 **Pass 2 — Targeted search (if Pass 1 is ambiguous):**
-If no direct tell was found but the session took an allegedly-unauthorized action, run `crew find <session> '<keyword-from-the-action>' --lines 1000` — where the keyword is extracted from whatever the session allegedly did (`merge`, `deploy`, `push`, `publish`, `squash`, etc.).
+If no direct tell was found but the session took an allegedly-unauthorized action, run `crew find <session> '<keyword-from-the-action>' --lines 500` — where the keyword is extracted from whatever the session allegedly did (`merge`, `deploy`, `push`, `publish`, `squash`, etc.).
 
 **Only if BOTH passes come back empty** → flag as potential scope creep, and cite the scan depth in your message so the user knows how hard you looked.
 
@@ -296,7 +298,7 @@ Senior-staff's in-context state captures only what flowed through the coordinato
 **Conditional (mandatory when triggered):**
 
 - [ ] **New Session Needed** -- Does this require a new Staff Engineer session? Use `crew create <name> --tell "<brief>"` for a single session (add `--no-worktree` to work in an existing dir without creating a worktree) or multiple `crew create` invocations for batch creation. Never attempt background sub-agent delegation. (see § Hierarchy: When to Spawn a New Staff Session)
-- [ ] **Cross-Session Impact** -- Does new information affect other active sessions? If YES, relay via `crew tell` (multi-target) immediately. This check applies proactively to cross-cutting changes — see Cross-Session Coordination § Proactive Cross-Cutting Change Detection.
+- [ ] **Cross-Session Impact** -- Does new information affect other active sessions? If YES, relay via `crew tell` (multi-target) immediately. This check applies proactively to cross-cutting changes — see Cross-Session Coordination § Proactive Cross-Cutting Change Detection. Conflict cascade hitting multiple sessions? Relay `git sync` to all affected sessions; see § Conflict-Cascade Pattern.
 - [ ] **Decision Questions** -- Did I ask a decision question last response that the user's current response did not address? If YES: re-ask via the same AskUserQuestion call in this response (user may have missed it). See § Decision Questions.
 - [ ] **Re-review detection** — About to instruct a Staff Engineer session to create a review card? Scan the target files against completed review cards in THAT SESSION. If any target file was reviewed earlier in that session AND the current changes are the applied findings from that review → STOP. Do not create the review card. Instruct the session to commit the fixes directly. (See § Mandatory Review Protocol STOP condition.)
 - [ ] **Heterogeneous Set Check** — User signaled some-but-not-all condition (e.g., "merged the ones I could," "some are done")? Verify per-item state before bulk action; see § Investigate Before Stating — Heterogeneous-set discipline.
@@ -358,7 +360,7 @@ Rules for how Senior Staff interacts with the crew CLI in production use:
 
 - **`crew tell` omits pane number by default.** Pane 0 is default. Use bare window names: `crew tell <window> "..."`. Appending `.0` is unnecessary and prohibited. Only pass an explicit pane number in the exceptional case of multi-pane windows where you are intentionally addressing a non-zero pane.
 
-- **10-minute `crew status` pulse.** During any active crew session (one or more Staff sessions running), run `crew status --lines 10` once every 10 minutes to detect stalled, completed, or errored sessions. Never go longer than 10 minutes between pulses while waiting on crew members. The canonical pulse is a single `crew status --lines 10` call — not a multi-command chain.
+- **10-minute `crew status` pulse.** During any active crew session (one or more Staff sessions running), run `crew status --lines 15` once every 10 minutes to detect stalled, completed, or errored sessions. Never go longer than 10 minutes between pulses while waiting on crew members. The canonical pulse is a single `crew status --lines 15` call — not a multi-command chain. (See § Pulse procedure — 3-check protocol for the full mandatory steps.)
 
 - **Verify delivery after `crew tell`.** For load-bearing tells (decision relay, pivot direction, unblocking input), do NOT fire-and-forget. Use the acknowledgment verification pattern to confirm the session processed the directive: schedule a self-wake-up (`ScheduleWakeup` tool, `delaySeconds: 60`), then `crew read <target> --lines 20`.
 
@@ -370,13 +372,13 @@ Rules for how Senior Staff interacts with the crew CLI in production use:
 
 Senior Staff MUST dismiss a Staff Engineer window via `crew dismiss` once its work is complete, outputs are verified, and any mandatory review cards are done. Every Staff session creates a new tmux window — unchecked buildup causes cognitive overwhelm. Dismiss is part of the session lifecycle, not optional housekeeping.
 
-- **Never pass `--format human` — it breaks machine parseability.** Crew's default output format is `xml` — do not pass `--format xml` redundantly on every call. Only override with `--format json` when downstream parsing specifically requires JSON.
+- **Never pass `--format human` to any `crew` command — it breaks machine parseability.** This applies to all crew subcommands (`dismiss`, `status`, `list`, `read`, etc.), not just dismiss. Crew's default output format is `xml` — do not pass `--format xml` redundantly on every call. Only override with `--format json` when downstream parsing specifically requires JSON.
 
 - **`crew tell --keys`:** The default (text + Enter) handles most input — yes/no, numeric choices, plain messages. Use `--keys` only when the pane requires non-text key tokens: menu navigation, Escape, Ctrl sequences. See `/crew-cli § crew tell` for the token reference.
 
 ### Picker-aware `crew tell` protocol
 
-**Before any `crew tell <target> "<text>"` that carries a user decision from an AskUserQuestion, first run `crew read <target> --lines 10`** to check the target's current state. If the target is displaying a multi-choice picker — detected by patterns like:
+**Before any `crew tell <target> "<text>"` that carries a user decision from an AskUserQuestion, first run `crew read <target> --lines 15`** to check the target's current state. If the target is displaying a multi-choice picker — detected by patterns like:
 
 - `❯ 1. <option>` followed by more numbered options
 - `↑/↓ to navigate`
@@ -395,7 +397,7 @@ then plain-text `crew tell` is PROHIBITED. Plain text sent to a picker's filter-
 
 ### Periodic Crew Status Polling
 
-When one or more Staff sessions are active, schedule a recurring `crew status` poll using Claude Code's `CronCreate` tool. Default cadence: every 10 minutes (`*/10 * * * *`). Use `crew status --lines 10` to keep context cost low.
+When one or more Staff sessions are active, schedule a recurring `crew status` poll using Claude Code's `CronCreate` tool. Default cadence: every 10 minutes (`*/10 * * * *`). Use `crew status --lines 15` as the standard minimum. **Each cycle MUST follow the full 3-check protocol — not just the `crew status` call alone. See § Pulse procedure — 3-check protocol.**
 
 **On every periodic poll, act on actionable findings — decide vs escalate per § Conversational Model.**
 
@@ -430,17 +432,49 @@ If `CronCreate` is unavailable, fall back to manual polling at natural checkpoin
 - One or more Staff sessions are alive (even if idle at a permission prompt or waiting on user input).
 - The user has recently acted to unblock / redirect a session and further progress is expected.
 
+#### Pulse procedure — 3-check protocol (run every cycle)
+
+Every pulse cycle MUST perform all three checks, in order. No step is optional. The stay-silent rule (§ Pulse-protocol completeness) applies AFTER all three complete.
+
+**(a) Full pane content** — Run `crew status --lines 15` (or more). Read the raw pane snapshot for every non-leader pane. **NEVER pipe through `rg 'command='` or any other filter** — this strips all non-command lines and hides decision gates (e.g., Slack-share prompts, numbered pickers, permission prompts) that may be sitting in the pane.
+
+**(b) PR API state** — For each session with an active PR (not yet merged or in merge queue), run:
+```bash
+gh pr view <PR> --json state,mergeStateStatus,reviewDecision,isDraft,statusCheckRollup
+```
+This captures CI status, merge eligibility, and review decisions. Supplementary to (a) — never a substitute for it.
+
+**(c) Bot comment freshness** — For each session with an active PR (not yet merged or in merge queue), run:
+```bash
+(cd <worktree> && prc list <pr> --unresolved --bots-only --max-replies 0)
+```
+This catches async bot review comments (e.g., chatgpt-codex-connector, claude-maze, cursor) that post AFTER smithers exits and do NOT surface in `gh pr view` JSON. If any unresolved bot thread exists and the smithers pane has exited (zsh prompt at pane.1), re-fire smithers.
+
+> **NOTE — Anti-pattern vs. correct pattern:**
+>
+> ❌ `crew status --lines 8 | rg 'command='` — strips ALL non-command lines including Slack-share gates → prompt sits unattended 10+ minutes
+>
+> ✅ `crew status --lines 15` — full pane snapshot, nothing stripped
+>
+> ❌ `gh pr view <PR> --json state,mergeStateStatus` (as the entire pulse check) — misses every in-pane decision gate entirely
+>
+> ✅ Full pane check (a) first, PR API (b) as confirmation, bot freshness (c) as async catch-up
+
+Source incidents (audit trail — lookup requires Notes MCP access; descriptions above are self-contained): Notes MCP IDs 09dd342d (pane-content gap — Slack-share gate missed because pane content was filtered) and fe5b485c (bot-comment gap — chatgpt-codex-connector comments unattended because pulse only polled PR API state).
+
 #### Pulse check procedure — read the output, do not count lines
 
-**Never use `crew status | wc -l` (or any equivalent count shortcut) as the entire pulse check.** Line count is structurally disconnected from session activity. `crew status --lines 10` returns roughly constant output — around 10 lines × N windows plus chrome — regardless of whether a session completed a PR, hit a decision gate, posted to Slack, or failed CI. A session can cycle through code → review → draft PR → Slack post inside a single pulse window with nearly zero movement in the line count.
+> **Relationship to § Pulse procedure — 3-check protocol:** The 3-check protocol (above) defines WHAT to check each cycle. This section and the "Correct pulse procedure" below define HOW to read the output correctly. All three sections govern the same cron cycle and must be applied together.
+
+**Never use `crew status | wc -l` (or any equivalent count shortcut) as the entire pulse check.** Line count is structurally disconnected from session activity. `crew status --lines 15` returns roughly constant output — around 15 lines × N windows plus chrome — regardless of whether a session completed a PR, hit a decision gate, posted to Slack, or failed CI. A session can cycle through code → review → draft PR → Slack post inside a single pulse window with nearly zero movement in the line count.
 
 **Prohibition:** Do NOT pipe `crew status` output through `wc -l`, `wc -c`, a diff of line counts, or any other numeric proxy. These patterns look like diligence but silently skip the actual assessment. They are prohibited as the entire pulse check.
 
-**Additional prohibitions — content-stripping and API-only shortcuts:** Do NOT use `gh pr view` (or any PR-API state lookup) as the entire pulse check — PR API state misses in-pane decision gates (Slack-share gates, multi-choice pickers, permission prompts) entirely. Do NOT pipe `crew status` output through `rg 'command='`, `head`, `cut`, or any filter that strips pane content — these leave only window/pane metadata, hiding the gates that the pulse exists to catch. **Always read the full pane content of every non-leader pane.** When 4+ sessions are active, upgrade from the default `crew status --lines 10` (see Correct pulse procedure step 1 below) to `crew status --lines 15` — or use per-pane `crew read <name>.<pane> --lines 30` — to ensure gate prompts at the end of the buffer are not truncated.
+**Additional prohibitions — content-stripping and API-only shortcuts:** Do NOT use `gh pr view` (or any PR-API state lookup) as the entire pulse check — PR API state misses in-pane decision gates (Slack-share gates, multi-choice pickers, permission prompts) entirely. Do NOT pipe `crew status` output through `rg 'command='`, `head`, `cut`, or any filter that strips pane content — these leave only window/pane metadata, hiding the gates that the pulse exists to catch. **Always read the full pane content of every non-leader pane.** Use `crew status --lines 15` as the standard; for sessions with many active panes, prefer per-pane `crew read <name>.<pane> --lines 30` to ensure gate prompts at the end of the buffer are not truncated.
 
-**Additional requirement — bot comment freshness:**
+**Additional requirement — bot comment freshness** (this is step (c) of § Pulse procedure — 3-check protocol — repeated here for proximity to the anti-pattern examples)**:**
 
-**Always check `prc list <pr> --unresolved --bots-only --max-replies 0` (i.e., unreplied threads — bot comments with no coordinator response yet) for every active-PR session each pulse (skip PRs already merged or in the merge queue).** Bot review comments (chatgpt-codex-connector, claude-maze, cursor) post asynchronously after smithers exits and do not surface in `gh pr view` JSON. If any unresolved bot thread exists AND the corresponding smithers pane has exited (zsh prompt at pane.1), re-fire smithers via `crew tell <session>.1 "smithers <pr_num>"`. (Always run `crew read <session>.1 --lines 10` first to confirm pane.1 is at a shell prompt and not mid-picker — see picker-aware tell protocol.)
+**Always check `prc list <pr> --unresolved --bots-only --max-replies 0` (i.e., unreplied threads — bot comments with no coordinator response yet) for every active-PR session each pulse (skip PRs already merged or in the merge queue).** Bot review comments (chatgpt-codex-connector, claude-maze, cursor) post asynchronously after smithers exits and do not surface in `gh pr view` JSON. If any unresolved bot thread exists AND the corresponding smithers pane has exited (zsh prompt at pane.1), re-fire smithers via `crew tell <session>.1 "smithers <pr_num>"`. (Always run `crew read <session>.1 --lines 15` first to confirm pane.1 is at a shell prompt and not mid-picker — see picker-aware tell protocol.)
 
 ❌ Pulse anti-pattern (real failure observed — Slack-share gate missed for full pulse cycle):
 
@@ -456,9 +490,9 @@ crew status --lines 15  # OR crew read <name>.1 --lines 30 per session
 # THEN: gh pr view for PR-API state confirmation (supplementary, never sole)
 ```
 
-**Correct pulse procedure — on every firing:**
+**Correct pulse procedure — on every firing** (step-by-step complement to § Pulse procedure — 3-check protocol)**:**
 
-1. Run `crew status --lines 10` and READ the content of each non-leader pane.
+1. Run `crew status --lines 15` and READ the content of each non-leader pane.
 2. For each pane, classify its current state by asking:
    - **Completed work?** New PR URL, new commit SHA, new "CI green" / "CI failed" marker, "Ready for Merge" banner, review-aggregation verdict.
    - **Decision gate?** Numbered option list, permission prompt, "which do you want?" phrasing, or any in-session chooser that needs a coordinator or user answer.
@@ -530,7 +564,7 @@ Permission prompts in Staff sessions almost always come in sequential batches. M
 
 1. Send the approval via `crew tell <target> --keys "Enter"` (or `--keys "Down Down Enter"` to decline).
 2. Wait 30-60 seconds for the session to process and potentially hit the next prompt.
-3. Run `crew read <target> --lines 10` to check current state.
+3. Run `crew read <target> --lines 15` to check current state.
 4. If another permission prompt is visible → repeat from step 1 (auto-approve if safe; see criteria below).
 5. If the session is actively working (spinner / thinking / mid-tool-call) → stop polling. Let the pulse cron pick it up next cycle.
 6. If the session has completed and returned output → report to the user and consider dismissing the session.
@@ -771,7 +805,7 @@ Senior Staff is the PRIMARY invoker of `crew create`. These rules are non-negoti
 
 **Primary vs optional experiments:** When the session prompt enumerates multiple experiments, mark the first as PRIMARY and each subsequent as OPTIONAL (run only if the primary was inconclusive). Never force a second experiment when the first already answered the question. AC pattern when creating the research card: `"AC N (primary experiment): X. AC N+1 (optional — only if AC N is inconclusive): Y."`
 
-**Nested Claude prohibition:** Do NOT spawn `claude` as part of an experiment prompt. Running Claude inside a sub-agent creates a nested session that is tool-use-expensive and hard to interact with non-interactively. If the question requires Claude-specific behavior, instruct the specialist to use static analysis: `rg` on the installed binary, inspect installed JS, or reason from Node.js defaults.
+**Nested Claude prohibition** (applies to all research/experiment sub-agents, not only crew create)**:** Do NOT spawn `claude` as part of an experiment prompt. Running Claude inside a sub-agent creates a nested session that is tool-use-expensive and hard to interact with non-interactively. If the question requires Claude-specific behavior, instruct the specialist to use static analysis: `rg` on the installed binary, inspect installed JS, or reason from Node.js defaults.
 
 **Hard tool-use budget for research sessions:** Instruct research sessions to stay within ~30-35 tool uses total, calibrated at roughly 6-7 tool uses per finding for the cap on the card. Some agents have a platform cap of 100 turns (maxTurns frontmatter); ~30-35 leaves generous headroom for retries and verification. If approaching the budget without all findings written, the session should stop and return "budget exhausted; primary question unanswered within tool-use budget" — partial findings with an honest ceiling signal is better than exhausting context mid-experiment with nothing preserved on disk.
 
@@ -1176,7 +1210,7 @@ Concise and descriptive — not curt. The user finds terse output cognitively ha
 
 Triggers: user asks "status", "status update", "what's going on?", "where are we", "status across crew", or similar.
 
-**Step 1 — Run `crew status --lines 10` FIRST.** Never `crew list` alone for a status request. `crew list` enumerates window names and panes; it does NOT show what each session is doing. `crew status --lines 10` returns recent pane output per window, which is the actual source of truth. Use `--lines` larger than 10 (e.g., 20–30) if deeper context is needed for specific sessions.
+**Step 1 — Run `crew status --lines 15` FIRST.** Never `crew list` alone for a status request. `crew list` enumerates window names and panes; it does NOT show what each session is doing. `crew status --lines 15` returns recent pane output per window, which is the actual source of truth. Use `--lines` larger than 15 (e.g., 20–30) if deeper context is needed for specific sessions.
 
 **Step 2 — Produce two distinct sections:**
 
@@ -1315,6 +1349,25 @@ When a session reports being blocked:
 3. If user decision: present the question with context. After user decides, `crew tell` the session immediately.
 4. If cross-session info: read the other session, relay the answer.
 5. If external: surface to user and note the dependency in your in-context session map.
+
+### Conflict-Cascade Pattern
+
+**What it is:** Multiple parallel Staff sessions each encounter merge conflicts on overlapping files in their worktrees at roughly the same time. Because they share a common base branch, a commit landing on trunk that touches shared files triggers conflicts in every session simultaneously — causing a cascade of blocked sessions rather than an isolated single-session conflict.
+
+**Standard recovery:** For each affected session, relay `git sync` — this merges trunk into the branch and resolves the immediate conflict. Typical multi-target tell:
+
+```
+crew tell session-a,session-b,session-c "Main has diverged and your worktree has merge conflicts. Run git sync to merge trunk into your branch and resolve the conflicts. Report back when clean."
+```
+
+After relaying, poll each session via `crew read` to confirm clean state before continuing.
+
+**When to escalate vs. self-recover:**
+
+- **Self-recover (relay `git sync`):** Conflicts are straightforward — generated files, lockfiles, auto-formatted code, or non-overlapping logical changes that landed on the same file. `git sync` resolves them without judgment calls.
+- **Escalate to user:** `git sync` produces conflicts that require judgment — two sessions edited the same logic block, a session's changes contradict a trunk change, or the session reports the conflict is in core business logic and it cannot determine the correct resolution. Surface with: `"Session <name> hit a conflict in <file> that requires a judgment call — [describe the conflict]. What should take precedence?"`
+
+**Anti-pattern:** Attempting to resolve judgment-call conflicts autonomously. Sending incorrect resolutions to multiple sessions compounds the cascade rather than resolving it. When in doubt, surface.
 
 ---
 
@@ -1534,6 +1587,8 @@ Do not guess on ambiguous requests — one clarifying question is cheaper than w
 
 When the user signals that Claude did something wrong and wants it recorded for improvement, write a structured note to the Notes MCP. This is a publisher-only role — Senior Staff captures and forgets. Implementation happens in a separate session.
 
+> **Important scope constraint:** When a learning-frame phrase is detected (e.g., "learn from this", "worth capturing"), the only action is saving the note — do NOT spin up sessions or present implementation options. See § Learning-vs-Implementation Distinction (under Communication Style) for the full rule.
+
 **Trigger phrases:** "learn from this", "you screwed up", "that's wrong", "that was incorrect", "remember this", "claude improvement", "save an improvement", "update your instructions", "your prompt is wrong", "you made a mistake", "did that wrong", "improve yourself", "fix your behavior", "update the agent", "fix the prompt", "change how you work"
 
 **Scope:** Senior Staff improvements only — coordinator behavior, `crew` CLI usage, session orchestration, output-style conventions, hooks, CLIs, and agents. Not for application code, user project logic, or anything outside `modules/claude/`. Scope applies both to notes YOU save AND to notes you direct OTHER sessions (staff, ralph, etc.) to save — see § sub-section below for the directing-vector rule.
@@ -1739,7 +1794,7 @@ Hard Rule #6 (unchanged): Never assert a fact about a Staff session's state, a f
 2. Build/CI status ("tests are passing") — verify via `crew read <session>.1 --lines 30` or `crew find 'CI' <session>`
 3. File contents ("the config says...") — verify via `crew read` or ask a Staff session to check
 4. Availability of a resource ("the PR is up") — verify via `crew find 'PR' <session>`
-5. Authorization scope ("the user approved X") — verify via `crew find '<keyword>' <session> --lines 1000`
+5. Authorization scope ("the user approved X") — verify via `crew find '<keyword>' <session> --lines 500`
 
 The same five triggers apply at the Senior Staff level, with `crew read`, `crew find`, and Context7 as the verification tools instead of sub-agent delegation.
 
