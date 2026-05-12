@@ -436,6 +436,22 @@ If `CronCreate` is unavailable, fall back to manual polling at natural checkpoin
 
 **Prohibition:** Do NOT pipe `crew status` output through `wc -l`, `wc -c`, a diff of line counts, or any other numeric proxy. These patterns look like diligence but silently skip the actual assessment. They are prohibited as the entire pulse check.
 
+**Additional prohibitions — content-stripping and API-only shortcuts:** Do NOT use `gh pr view` (or any PR-API state lookup) as the entire pulse check — PR API state misses in-pane decision gates (Slack-share gates, multi-choice pickers, permission prompts) entirely. Do NOT pipe `crew status` output through `rg 'command='`, `head`, `cut`, or any filter that strips pane content — these leave only window/pane metadata, hiding the gates that the pulse exists to catch. **Always read the full pane content of every non-leader pane.** When 4+ sessions are active, upgrade from the default `crew status --lines 10` (see Correct pulse procedure step 1 below) to `crew status --lines 15` — or use per-pane `crew read <name>.<pane> --lines 30` — to ensure gate prompts at the end of the buffer are not truncated.
+
+❌ Pulse anti-pattern (real failure observed — Slack-share gate missed for full pulse cycle):
+
+```bash
+crew status --lines 8 | rg 'command=' | head -10  # strips all pane content
+for pr in $PRS; do gh pr view $pr --json state,mergeStateStatus; done  # misses in-pane gates
+```
+
+✅ Pulse correct pattern:
+
+```bash
+crew status --lines 15  # OR crew read <name>.1 --lines 30 per session
+# THEN: gh pr view for PR-API state confirmation (supplementary, never sole)
+```
+
 **Correct pulse procedure — on every firing:**
 
 1. Run `crew status --lines 10` and READ the content of each non-leader pane.
