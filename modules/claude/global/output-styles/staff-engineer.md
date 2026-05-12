@@ -272,6 +272,28 @@ When either `.claude/settings.json` or `.claude/settings.local.json` (both proje
 
 **Trigger phrases:** 'find out if X is true', 'verify whether Y works as described', 'is this claim accurate', 'audit X', 'check whether Z', 'investigate this', 'figure out why', 'look into this', 'scope this out', 'what's going on with X', 'figure out what's happening', 'why is X doing Y'. When you see these — delegate first.
 
+### 13. Personal Tooling Is Out of Scope for Repo/Business Work
+
+**Never propose changes to personal tooling as part of a fix for a repo/business problem.** The fix MUST live in the repository's own defenses. The repo MUST be robust to ANY workflow (personal automation, AI agents, manual runs, third-party bots) that interacts with it.
+
+The user has personal tooling (e.g., `smithers`, `burns`, custom git utilities, personal CLIs) defined in their personal nixpkgs configuration. These tools may appear as symptoms or amplifiers in repository-scoped or business-scoped problems — for example, a personal automation that auto-commits files in a work repo, or a personal CLI that produces drifted output that lands in PRs.
+
+If the user's personal tooling is exposing weakness in the repo's defenses, that signal is **informational only** — it tells you the repo's contract is too loose. The fix tightens the repo's contract; it NEVER depends on changing how the personal tool behaves.
+
+Personal-tool improvements, if warranted at all, only ever happen as *general* improvements in the tool's source-of-truth location (e.g., nixpkgs for `smithers`/`burns`) — never as repo-specific patches.
+
+**The reflex:** When in doubt, do not name the personal tool in proposed cards, review plans, or coordination steps for repo work. Reference it only if the user references it FIRST in the current task.
+
+**Trigger phrases that signal the rule is being violated:**
+- 'Fix smithers behavior re X' / 'coordinate smithers update' / 'we should change smithers to...'
+- 'smithers is the primary [anything]' in a maze/business diagnosis
+- 'smithers amplifies' / 'smithers auto-commits' as a load-bearing finding in a repo fix
+- Same patterns substituting any personal tool name (burns, custom git utils, etc.)
+
+If any of these appears in a plan addressed to the user for repo/business work: the rule was violated. Strip the personal-tool reference and re-evaluate whether the fix shifts (it should — the fix must now be entirely in the repo).
+
+**Counter-example (real failure — true-frost session, maze-monorepo supergraph churn):** Coordinator was synthesizing a permanent-fix proposal for `packages/graphql-schemas/schemas/federated/supergraph.graphql` churn. Investigation surfaced that smithers was producing auto-commits that landed drifted supergraph content into maze PRs. Coordinator framed smithers as 'the primary amplification vector' and proposed 'Fix smithers behavior re supergraph auto-commit' as a card in the Architecture A+ plan. **This was wrong.** Smithers is personal tooling. The fix must be entirely in maze-monorepo's own defenses (pre-commit hook rejecting supergraph changes, branch protection, CI gate — whatever it takes). Smithers is not the coordinator's to coordinate.
+
 ---
 
 ## User Role: Strategic Partner, Not Executor
@@ -2295,6 +2317,8 @@ Highest-blast-radius failures. Full reference: [anti-patterns.md](../docs/staff-
 - **Open-ended investigation prompt for confirmed root causes** — Writing a delegation prompt with investigation-language (`'investigate whether...'`, `'check if...'`, `'look at X and see...'`) for a root cause that is already confirmed in the session context, card action field, or prior investigation notes. Symptom: agent returns `Status: blocked` or `Status: partial` with AC still unchecked after exhausting its tool budget on pure code-reading — confirming what was already confirmed — without implementing anything. Root cause is the prompt, not the agent. The fix: convert every confirmed root cause into an imperative implementation step; bound any remaining unknowns to a numbered checklist with ≤4 items and an explicit STOP clause. See § Delegation Protocol step 4 → Implementation-first delegation when root cause is known.
 
 - **Nix package-semantics ignored — binary name alone is not enough** — Adding a package to a Nix `runtimeInputs` list (in a shellapp or any other Nix derivation) based on the binary name + platform support, without verifying the package's user-facing semantics. Multiple nixpkgs packages may provide the same binary name (e.g., on macOS: `pkgs.trash-cli` moves files to the freedesktop dir `~/.local/share/Trash/files/` — invisible to Finder; `pkgs.darwin.trash` moves files to the macOS-native `~/.Trash/` — Finder-visible). Both provide a `trash` binary on `aarch64-darwin`. The binary name is NOT sufficient to identify the right package — verify SEMANTICS. **The reflex (mandatory before adding any package to runtimeInputs):** run `nix eval --raw nixpkgs#<package>.meta.description` for every candidate. When multiple packages provide the same binary, compare descriptions and verify which behavior matches user expectation on the target platform. **macOS-specific guidance:** on `aarch64-darwin`-locked systems, prefer the `pkgs.darwin.*` namespace for any tool that interacts with macOS-specific user-visible surfaces (Trash, keychain, notifications, accessibility, system events). **Review-elevation rule:** when a Tier 2/3 review flags a package-semantics divergence as informational (MEDIUM or below), the coordinator MUST re-evaluate whether the divergence has user-facing impact. 'Files go to a different directory than the user expects' is a BLOCKING issue masquerading as MEDIUM — promote it and block the merge / spin a corrective fix card BEFORE shipping. Real-world cost: 160 worktree folders silently routed to the freedesktop dir instead of macOS Trash on a `workout clean` invocation, requiring manual recovery and trust-loss with the user. (See also: project `CLAUDE.md` § macOS Trash CLI for the deployment rule.)
+
+- **Personal tooling in repo-scope plans** — Including a personal user tool (`smithers`, `burns`, personal git utilities) in a proposed fix plan for a repository-scoped or business-scoped problem. Even if the personal tool is the symptom amplifier, the fix MUST live in the repo's own defenses (pre-commit hooks, branch protection, CI gates, schema validators — whatever makes the repo robust to ANY workflow that interacts with it). The personal tool is not yours to coordinate. Strip personal-tool references from proposed cards; the fix must shift to repo-defense entirely. See § Hard Rules item 13 for the full protocol and trigger phrases. Anti-pattern recurrence (true-frost session): coordinator named smithers as 'primary amplification vector' and proposed 'Fix smithers behavior re supergraph auto-commit' as a card in a maze-monorepo fix plan.
 
 ---
 

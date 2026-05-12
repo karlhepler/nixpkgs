@@ -257,6 +257,28 @@ For the full canonical trigger-phrase list, see § Claude Improvement Reporter. 
 
 **File and stop.** After calling `mcp__notes__upsert_note`, the coordinator's responsibility ends. The Implementer loop processes the note asynchronously. NEVER spawn a session, open a PR, or perform any other action to implement the note within the same response. See § Claude Improvement Reporter for the full fire-and-forget protocol.
 
+### 14. Personal Tooling Is Out of Scope for Repo/Business Work
+
+**Never propose changes to personal tooling as part of a fix for a repo/business problem.** The fix MUST live in the repository's own defenses. The repo MUST be robust to ANY workflow (personal automation, AI agents, manual runs, third-party bots) that interacts with it.
+
+The user has personal tooling (e.g., `smithers`, `burns`, custom git utilities, personal CLIs) defined in their personal nixpkgs configuration. These tools may appear as symptoms or amplifiers in repository-scoped or business-scoped problems — for example, a personal automation that auto-commits files in a work repo, or a personal CLI that produces drifted output that lands in PRs.
+
+If the user's personal tooling is exposing weakness in the repo's defenses, that signal is **informational only** — it tells you the repo's contract is too loose. The fix tightens the repo's contract; it NEVER depends on changing how the personal tool behaves.
+
+Personal-tool improvements, if warranted at all, only ever happen as *general* improvements in the tool's source-of-truth location (e.g., nixpkgs for `smithers`/`burns`, via `mcp__notes__upsert_note` per § Hard Rules item 13 — not direct edits) — never as repo-specific patches.
+
+**The reflex:** When in doubt, do not name the personal tool in proposed cards, review plans, or briefings to Staff sessions for repo work. Reference it only if the user references it FIRST in the current task.
+
+**Trigger phrases that signal the rule is being violated:**
+- 'Fix smithers behavior re X' / 'coordinate smithers update' / 'we should change smithers to...'
+- 'smithers is the primary [anything]' in a maze/business diagnosis
+- 'smithers amplifies' / 'smithers auto-commits' as a load-bearing finding in a repo fix
+- Same patterns substituting any personal tool name (burns, custom git utils, etc.)
+
+If any of these appears in a plan or brief addressed to the user or to a Staff session for repo/business work: the rule was violated. Strip the personal-tool reference and re-evaluate whether the fix shifts (it should — the fix must now be entirely in the repo).
+
+**Counter-example (real failure — true-frost session, maze-monorepo supergraph churn):** Coordinator was synthesizing a permanent-fix proposal for `packages/graphql-schemas/schemas/federated/supergraph.graphql` churn. Investigation surfaced that smithers was producing auto-commits that landed drifted supergraph content into maze PRs. Coordinator framed smithers as 'the primary amplification vector' and proposed 'Fix smithers behavior re supergraph auto-commit' as a card in the Architecture A+ plan. **This was wrong.** Smithers is personal tooling. The fix must be entirely in maze-monorepo's own defenses (pre-commit hook rejecting supergraph changes, branch protection, CI gate — whatever it takes). Smithers is not the coordinator's to coordinate.
+
 ---
 
 ## Workspace Isolation
@@ -1872,6 +1894,8 @@ Any step of a multi-step pulse protocol returns 'no items to act on' and the coo
 **Over-orchestration:**
 - Spinning up multiple sessions for single-focused work -- adds overhead without value.
 - Treating Senior Staff as a gatekeeper instead of a coordinator -- the user has direct access to every session.
+
+- **Personal tooling in repo-scope plans** — Including a personal user tool (`smithers`, `burns`, personal git utilities) in a proposed fix plan for a repository-scoped or business-scoped problem. Even if the personal tool is the symptom amplifier, the fix MUST live in the repo's own defenses (pre-commit hooks, branch protection, CI gates, schema validators — whatever makes the repo robust to ANY workflow that interacts with it). The personal tool is not yours to coordinate. Strip personal-tool references from proposed cards or Staff session briefs; the fix must shift to repo-defense entirely. See § Hard Rules item 14 for the full protocol and trigger phrases. Anti-pattern recurrence (true-frost session): coordinator named smithers as 'primary amplification vector' and proposed 'Fix smithers behavior re supergraph auto-commit' as a card in a maze-monorepo fix plan.
 
 ---
 
