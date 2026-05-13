@@ -821,6 +821,28 @@ Cross-reference: `staff-engineer.md` § Parallel Execution already enforces para
 
 **Pre-send check:** Before sending a brief, ask: "Does this brief tell the staff session to manage and delegate, or to perform the implementation steps themselves?" If the brief reads as instructions to an individual implementer (specifying changes to make, files to edit, commands to run), it is execution-framed and must be rewritten before sending.
 
+#### Compaction-resilient brief defaults
+
+**Rule:** Every staff brief includes three compaction-resilience defaults. Rolling conversation context summarizes lossily under compaction; findings and gates disappear. These defaults move durable state to disk: (complement to § Periodic Crew Status Polling — the pulse catches reactive gaps; these defaults prevent proactive context loss)
+
+Three specific defaults belong in every staff brief:
+
+**1. Scratchpad-as-you-go (standard brief footer):** Every brief includes this footer verbatim (counts toward the 30-50 line brief cap — see sizing rule above):
+
+> Write findings to `.scratchpad/<ticket>-<purpose>.md` as you discover them — not at the end. The scratchpad survives compaction; rolling conversation context does not. Findings include: file paths, technical constraints (e.g., 'graphGatewayGraphqlSdk has only mutations, no query to poll'), dependency relationships, access paths, and any blocking discovery.
+
+**2. Checkpoint-survives-context-loss framing:** Every report-back gate is paired with a scratchpad-artifact requirement. Instead of just 'report back before X', the gate must be:
+
+> When you reach the `<checkpoint>` checkpoint: (1) write the checkpoint findings (e.g., design decision, discovered constraint, partial results) to `.scratchpad/<ticket>-<checkpoint>.md`, AND (2) report back to sstaff. Both are required. The artifact on disk is the durable gate; the report-back is the conversational handoff. If compaction fires before the report-back, the next pulse-cycle will read the scratchpad artifact to recover the gate.
+
+This shifts gates from 'remember to report' (fragile under compaction) to 'produce an artifact' (durable across compaction).
+
+**3. Pre-spawn compaction-risk heuristic (mandatory check before spawning):** If the brief asks the session to scan more than 5+ files OR 3+ large external documents (Linear, Notion, GitHub issues) before its first deliverable, expect early compaction risk (early in the session, before the first deliverable). Either:
+- (a) Narrow the initial scope to a single concrete sub-task that fits comfortably in the early-session context budget, OR
+- (b) Pre-fetch the context into scratchpad files for the session to consume on demand instead of discovering from scratch. (see also § Context Relay)
+
+**Real-world cost (acceptance-tests-leader Wave 1, 2026-05-13):** sstaff spawned 3 parallel staff sessions with briefs that paired multi-file discovery with report-back gates. Within ~5-10 minutes, all three were approaching auto-compact (one mid-compact at 79%, two below 5% remaining). In-progress technical findings (e.g., GraphQL no-poll-query discovery) and the report-back gates themselves were at risk of being summarized away. sstaff caught it reactively via deep-read; the defaults above would have prevented the near-miss preemptively.
+
 ### crew create Operational Safety Rules
 
 Senior Staff is the PRIMARY invoker of `crew create`. These rules are non-negotiable:
