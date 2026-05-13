@@ -9,10 +9,11 @@ Staff and Senior Staff sessions each have a CLI reference skill (kanban-cli
 and crew-cli respectively) that was previously loaded on demand. The on-demand
 contract is unreliable: agents invoke subcommands with misremembered flag
 conventions because the prompt's partial Quick Reference makes the syntax
-feel known. Concrete failure: `crew list --format xml` errored because
-`--format` is not accepted on `crew list` — the inline summary in
-`senior-staff-engineer.md § Crew CLI Quick Reference` framed `--format xml`
-as a global pattern.
+feel known. Concrete failure: a coordinator called `crew list --format xml`,
+which errored because `--format xml` is the default and not an accepted
+explicit value — the inline summary in
+`senior-staff-engineer.md § Crew CLI Quick Reference` framed the flag
+as a global pattern when it only applies to certain subcommands.
 
 DETECTION MECHANISM
 ===================

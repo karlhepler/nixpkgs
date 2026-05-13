@@ -90,7 +90,7 @@ crew create pricing --tell "Build auth" --mcp-trust none                # Skip M
 Enumerate tmux windows and panes. Scoped to the current tmux session only.
 
 ```bash
-crew list [--all] [--format xml|json|human]
+crew list [--all] [--format json|human]
 ```
 
 **Arguments:**
@@ -409,7 +409,7 @@ crew resume auth --format json             # JSON output
 Resolve a worktree path to its Claude Code project directory key. Shows the mangled key Claude uses to store session files and lists any `.jsonl` session files found there.
 
 ```bash
-crew project-path <worktree> [--format xml|json|human]
+crew project-path <worktree> [--format json|human]
 ```
 
 **Arguments:**
@@ -452,7 +452,7 @@ crew project-path ~/worktrees/pricing --format json  # JSON output
 Drop a smithers pane into a crew member's tmux window. **sstaff-only** — staff engineers do not invoke this command.
 
 ```bash
-crew smithers <name> [--format xml|json|human]
+crew smithers <name> [--format json|human]
 ```
 
 **Arguments:**
@@ -498,7 +498,7 @@ crew smithers pricing --format json  # JSON output
 
 ## Format and Exit Codes
 
-**Output format:** Applies to subcommands that produce structured output: `crew list`, `crew read`, `crew find`, `crew status`, `crew sessions`, `crew resume`, `crew project-path`. These accept `--format xml` (default), `--format json`, or `--format human`. Since `xml` is the default, omit the `--format` flag in the common case — only pass `--format json` when downstream parsing requires JSON. Never use `--format human` for AI coordination — it breaks parseability.
+**Output format:** Applies to subcommands that produce structured output: `crew list`, `crew read`, `crew find`, `crew status`, `crew sessions`, `crew resume`, `crew project-path`. Default output is XML — omit `--format` in the common case. Override with `--format json` when downstream parsing requires JSON. Never use `--format human` for AI coordination — it breaks parseability.
 
 **Exit codes:**
 - `0` — Success

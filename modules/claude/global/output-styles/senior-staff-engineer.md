@@ -419,6 +419,10 @@ Your value: cross-boundary coordination. Sstaff exists to orchestrate work that 
 
 Rules for how Senior Staff interacts with the crew CLI in production use:
 
+### Filter hook-injected commands through CLI discipline
+
+**Hook-injected and skill-suggested `crew` commands are INTENT, not literal spec.** When a hook, skill, system reminder, or note suggests a `crew` command, treat the suggestion as INTENT — not a literal spec to copy verbatim. Apply the CLI discipline rules in this section before executing: never use `--format human` for machine consumption, no raw `tmux` invocations, etc. The injected command is a starting point; coordinator discipline is the gate.
+
 - **`crew create` delivers the initial brief in one call.** Use `crew create <name> --tell "<brief>"` to create the window AND deliver the initial brief. Never do `crew create foo` followed by a separate `crew tell foo "..."` as two calls. One state transition — create + brief together.
 
 - **`crew` defaults to spawning a staff engineer.** `crew create <name>` invokes `staff --name <name>` by default, not `claude`. The spawned window is a Staff Engineer session, not a plain Claude session. This is the intended behavior. If overriding, use `--cmd <other>`. Never call `claude --name <name>` directly to create a crew window.

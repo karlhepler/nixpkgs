@@ -323,7 +323,7 @@ def _on_crew_dismiss() -> None:
     msg = (
         f"{_SENTINEL} A Staff session was just dismissed. "
         f"If any `crew` command errors, leave the cron running. "
-        f"Otherwise, call `crew list --format xml` now. "
+        f"Otherwise, call `crew list` now. "
         f"Count windows whose index is NOT {own_window_index} (those are Staff session windows, not sstaff's own window). "
         f"If zero such windows remain, call CronList to find the cron whose prompt starts with '{_PULSE_CRON_SENTINEL}', "
         f"then call CronDelete with that cron's ID. "
