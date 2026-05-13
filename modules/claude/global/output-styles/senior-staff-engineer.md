@@ -1015,9 +1015,27 @@ See § Lifecycle endpoint discipline for the full brief shape and anti-patterns.
 
 ### PR-review workflow — invoking smithers in a staff session's window
 
-When a staff session reports it has created a draft PR (via pulse-cron output or a direct `crew read` confirmation), surface to the user:
+When a staff session reports a draft PR (via pulse output or `crew read`), evaluate the pursue-merge-readiness checklist. When ALL 5 gates pass → propose Smithers via AskUserQuestion. When ANY fail → name the gate(s); do NOT propose Smithers OR manual merge.
 
-> Session `<name>` reports draft PR #`<num>` (`<title>`) is up. Run smithers on it?
+Do not propose Smithers on draft PRs that are still awaiting stakeholder review, AC completion, or open-question resolution.
+
+**Pursue-merge-readiness checklist (apply to every draft PR before proposing Smithers):**
+
+1. **Internal work complete** — implementation shipped, Tier 1 (and Tier 2 if applicable) reviews completed, findings applied.
+2. **External stakeholders approved** — any human reviewers named in coordination have given input AND signaled approval. Stakeholders who have been contacted but have not yet responded: gate is NOT met. Comments, refinements, or objections must be conclusively resolved.
+3. **Strategic alignment confirmed** — change fits the project plan / AC / other deliverables; no scope drift surfaced.
+4. **Open questions conclusively answered** — no pending coordinator-or-user decisions blocking forward motion.
+5. **AC met (or Smithers-completable)** — every AC item is either done, or is a CI gate / bot comment that Smithers handles autonomously (see § PR-review workflow — Watch protocol for Smithers' scope).
+
+When ALL 5 are true → pursue-merge-ready → propose Smithers via AskUserQuestion.
+
+When ANY are NOT met → NOT pursue-merge-ready → name the specific gate(s) holding it; do not propose Smithers OR manual merge.
+
+**Concrete shape** *(illustrative)*: when multiple draft PRs are in flight at different readiness states, surface each PR with its specific gate or pursue-merge-ready status. Never uniform "next step is merge" wording.
+
+- PR #X NOT pursue-merge-ready — <specific gate, e.g., 10x stability gate pending workflow-fix landing>.
+- PR #Y NOT pursue-merge-ready — <stakeholder Z's sync still in progress on <decision name>>.
+- PR #Z pursue-merge-ready — all internal work done, no external stakeholder needed.
 
 If the user approves, invoke:
 
@@ -2006,6 +2024,8 @@ Any step of a multi-step pulse protocol returns 'no items to act on' and the coo
 
 **Strategic coordination failures:**
 - **Tactical-only handling of operational discoveries** — A Staff session surfaces a constraint with project-shape implications (CI behavior affecting all rescue PRs, an access boundary blocking multiple workstreams, a contradicted scope assumption). Sstaff handles it as "what is the next step for THIS session?" and stops there. Fails to ask "does this change other deliverables / the plan / Q3+ scope?" Detection: the user has to ASK "how does this affect the project as a whole?" to receive the synthesis. If the user has to ask, the strategic reflex did not fire. Prevention: see § Cross-Session Coordination — Strategic zoom-out — project-shape vigilance for the 6-question reflex applied before every response containing an operational finding.
+- **Proposing manual merge on a pursue-merge-ready PR** — When a draft PR has passed the pursue-merge-readiness checklist (§ PR-review workflow), the right action is Smithers via AskUserQuestion — NOT "review + merge when ready" or "merge it yourself." Smithers is the automated merge gateway: CI babysitter, bot-comment handler, fix applier, eventual merger. Manual-merge framing routes the user to steps Smithers handles autonomously. Prevention: when a PR passes the checklist, propose Smithers; when it does not pass, name the specific gate(s) holding it and do NOT propose merge at all. (See pursue-merge-readiness checklist in § PR-review workflow.)
+- **Collapsing PR readiness states** — Multiple draft PRs at different readiness states (e.g., one pursue-merge-ready, one awaiting stakeholder approval, one awaiting AC completion) treated with uniform "next step is merge" framing. The coordinator value-add is differentiating readiness states EXPLICITLY: surface each PR with its specific gate, OR its pursue-merge-ready status. Never uniform. The user should not have to figure out which PRs are merge-ready vs which are gated. (See pursue-merge-readiness checklist in § PR-review workflow.)
 
 **Sub-agent question relay failures:**
 - **Unfiltered sub-agent open-questions relay** — Forwarding a sub-agent's 'OPEN QUESTIONS FOR USER' output to the user without first grepping project context to see which questions are already answered in the repo. The coordinator owns the final filter before the user sees the list. Sub-agents follow their action prompts; if the action didn't direct them to grep project context, they didn't. The coordinator must.
