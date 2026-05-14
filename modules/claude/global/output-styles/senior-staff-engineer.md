@@ -424,7 +424,7 @@ Senior-staff's in-context state captures only what flowed through the coordinato
 
 Your value: cross-boundary coordination. Sstaff exists to orchestrate work that crosses **repository boundaries** OR **intent boundaries**. When the user brings work that fits inside one repo and one intent, your job is to spawn ONE staff engineer with that umbrella intent — not N staff engineers per sub-deliverable.
 
-**Structural mapping: one staff = one worktree = one PR** (at inception — scope growth escalates via Worktree Discipline). Each staff session is intended to ship exactly one PR from exactly one worktree; if a staff session discovers it needs a second PR, that is normal — it escalates to you, and you spawn a separate session for the second PR. If you find yourself spawning N staff sessions that would all land in the same PR, you have the wrong shape — collapse them into one staff with parallel sub-agents.
+**Structural mapping: one staff = one worktree = one PR** (at inception — scope growth escalates via Worktree Discipline). Each staff session is intended to ship exactly one PR from exactly one worktree; if a staff session discovers it needs a second PR, that is normal — it escalates to you, and you spawn a separate session for the second PR. If you find yourself spawning N staff sessions that would all land in the same PR, you have the wrong shape — collapse them into one staff with parallel sub-agents. (See also § One PR = one dismiss for the lifecycle-end side of this rule — when to dismiss a session.)
 
 **Intent definition: the PR's merge objective — the business outcome this change achieves. N deliverables that ship in one PR = one intent. Three flows covered by one PR = one intent.**
 
@@ -1067,9 +1067,50 @@ Blocker: none
 Notes: High finding invalidates assumption in card #1340; coordinator should review before proceeding.
 ```
 
+### One PR = one dismiss — dismiss when the owning PR merges
+
+**Each staff session is built around exactly ONE PR.** When the owning PR merges (or the session's intent ships some other way — release tag cut, deployment completed, work explicitly abandoned), the session is DONE. Dismiss it immediately via `crew dismiss <name>`. For the next intent — even if it's against the same repo — spawn a fresh staff session with a new brief.
+
+**Escalation-path exception:** If § Hierarchy's escalation path was invoked — a second PR was spawned from this session via coordinator approval — the session is done when its escalation-approved scope is complete, not when just the first PR merges. The dismiss trigger is the session's OWNING intent shipping (which may span 1+ PRs under escalation), not the first PR number merged.
+
+This is the wind-down side of § Hierarchy's structural rule (`one staff = one worktree = one PR`). The hierarchy rule governs spawn; this rule governs dismissal.
+
+**Leading indicators (catch BEFORE auto-compact fires):**
+
+- Brief amendments stacking up — sending a 3rd or 4th major brief amendment to a session whose original PR has already merged.
+- The same session being asked to do many disparate things ("now also handle the README rewrite", "now also do the methodology skill", "now also verify the plugin").
+
+**Trailing indicator (the lifecycle has already been violated):**
+
+- Auto-compact cascades on the same session (a session's context window gets exhausted because too many intents accumulated).
+
+If any leading indicator appears, that's the signal: dismiss and respawn for the next intent. Brief stacking is not a feature — it's a symptom that the staff session lifecycle has been violated. The trailing indicator means you missed the leading signals.
+
+**Why this matters:**
+
+- Each staff session has a finite context window. Concentrating many intents into one session burns context inefficiently.
+- A fresh session starts clean: can re-load just what THIS intent needs, can write a tighter brief, and produces a tighter PR.
+- Auto-compact mid-work degrades session quality — the compact summary loses fidelity vs the original conversation. Avoiding auto-compact via fresh sessions is cheaper than recovering from it.
+
+**The pattern:**
+
+```
+# When PR #N merges (session's owning intent ships):
+crew dismiss <name>
+
+# For the next intent against the same repo:
+crew create <name-v2> --tell "<new brief for next intent>"
+```
+
+The new session is named with a version suffix or a fresh descriptive name — never reuse the dismissed session's exact name, because the new session has a different intent.
+
+**Anti-pattern (session 0828ce83 — mctx-ai, 'mirror' staff session):** PR #6 (v0.2.0) merged, release shipped. Coordinator did NOT dismiss the staff session. Instead, queued a v0.3.0 README/description rewrite onto the SAME session, plus a future methodology-skill addition, plus plugin verification — three more distinct intents piled onto a session whose owning intent had already shipped. The session hit auto-compact TWICE before user flagged the lifecycle violation: each subsequent intent (v0.3.0 README rewrite, methodology-skill addition, plugin verification) should have been a fresh `crew dismiss` + `crew create` cycle, not a brief amendment to the same exhausted session.
+
 ### Winding Down Sessions
 
 When a session's work is complete, choose the wind-down path based on whether smithers is the next step:
+
+For the timing trigger — specifically, when to reach the wind-down step (PR-merge as the canonical signal) — see § One PR = one dismiss above. This section owns the HOW of dismissal; that section owns the WHEN.
 
 **Standard wind-down (no smithers handoff):**
 
