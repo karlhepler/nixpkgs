@@ -217,7 +217,7 @@ Review tiers by artifact type:
 - Surface **non-blocking** findings to stdout
 - Implement non-blocking findings by default (per staff-engineer § After Review Cards Complete)
 
-#### Step 7g. Deploy and Verify
+#### 7g. Deploy and Verify
 
 Run in sequence:
 ```bash
