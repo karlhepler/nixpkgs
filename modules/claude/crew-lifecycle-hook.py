@@ -65,8 +65,9 @@ _PULSE_CRON_SENTINEL = "<<pulse-cron-v1>>"
 # Hook-level sentinel that prefixes all lifecycle directives (unchanged).
 _SENTINEL = "<<pulse-cron-lifecycle>>"
 
-# Active-work indicators (shared definition used in both pulse STEP 2 and
-# dismiss activity check — single source of truth keeps them in sync).
+# Active-work indicators used by _on_crew_dismiss() as a secondary activity
+# check fallback after the primary crew list window-count gate.
+# pulse STEP 2 uses ONLY the window-count gate and does not consult this list.
 _ACTIVITY_INDICATORS = (
     "local agents still running|Working for|Churned for|Baked for|"
     "✻ \\w+|[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]"
@@ -169,7 +170,7 @@ def _detect_own_window_index() -> str | None:
 # The returned pulse prompt has three steps executed on one `crew status`
 # call:
 #   STEP 1: run the single call.
-#   STEP 2: self-termination check — CronDelete if all other windows are idle.
+#   STEP 2: self-termination check — CronDelete if zero Staff windows remain (all formally dismissed).
 #   STEP 3: actionability scan — surface stalls/completions/errors otherwise.
 # STEP 2 and STEP 3 are mutually exclusive; STEP 3 only runs when STEP 2
 # does not self-terminate.
@@ -181,18 +182,27 @@ def _build_pulse_cron_command(own_window_index: str) -> str:
     directive immediately after. The CronCreate path uses an idempotent sentinel
     check (CronList + grep for <<pulse-cron-v1>> before creating), so the worst
     case is a brief cron gap — acceptable.
+    Under the new STEP 2 (window-count-based termination), this race is much rarer:
+    STEP 2 only attempts CronDelete when zero Staff windows remain, so a simultaneous
+    `crew create` must occur within the narrow window between `crew list` returning
+    zero windows and the CronDelete call.
     """
     return (
         f"{_PULSE_CRON_SENTINEL}\n"
         f"STEP 1: Run `crew status --lines 10` once to get recent output from all active Claude panes. "
         f"If this command errors, skip this pulse cycle silently. "
-        f"STEP 2 (self-termination check): Scan the `crew status` output. IGNORE any pane whose window index is `{own_window_index}` — "
-        f"that is sstaff's own window running this pulse; only count activity from OTHER windows. "
-        f"Active-work indicators: 'local agents still running', 'Working for', 'Churned for', 'Baked for', '✻ ' followed by a verb, or braille spinner characters (⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏). "
-        f"If NO OTHER window shows active-work indicators, all Staff panes are idle — "
+        f"STEP 2 (self-termination check): Run `crew list` once to enumerate windows. "
+        f"If `crew list` errors, leave the cron running and proceed to STEP 3 (do NOT self-terminate). "
+        f"Count windows whose index is NOT `{own_window_index}` (those are Staff session windows, not sstaff's own window). "
+        f"(`crew list` enumerates Staff session windows managed by crew, not arbitrary tmux windows.) "
+        f"If ZERO Staff windows exist (all sessions have been formally dismissed via `crew dismiss`), "
         f"call CronList to find the cron whose prompt starts with '{_PULSE_CRON_SENTINEL}', "
         f"then call CronDelete with that cron's ID, then exit silently. "
-        f"STEP 3 (actionability scan): If STEP 2 did NOT self-terminate (at least one other window has active-work indicators), "
+        f"Note: Staff sessions that are alive but idle at their prompt are NOT a self-termination trigger — "
+        f"they may be waiting on external state (CI runs, review feedback, smithers cycles, Currents.dev updates). "
+        f"Only formal dismissal via `crew dismiss` should trigger pulse-cron termination. "
+        f"If at least one Staff window exists, proceed to STEP 3. "
+        f"STEP 3 (actionability scan): If STEP 2 did NOT self-terminate (at least one Staff window exists), "
         f"scan the same `crew status` output for actionable items (stalled panes, completed work, errors, permission prompts) "
         f"and surface them. Stay silent if nothing actionable."
     )
@@ -314,7 +324,7 @@ def _on_crew_dismiss() -> None:
         msg = (
             f"{_SENTINEL} A Staff session was just dismissed, but sstaff's tmux window "
             f"index could not be detected at hook time. Leave the cron running — "
-            f"it will self-terminate on next pulse if no activity is detected."
+            f"it will self-terminate on next pulse if all Staff sessions have been formally dismissed via `crew dismiss`."
         )
         print(_additional_context(msg))
         return
@@ -376,8 +386,8 @@ def show_help() -> None:
     print("  Fallback: if window detection fails, leaves cron running (fail open).")
     print()
     print("PULSE CRON (self-terminating):")
-    print("  Pulse STEP 2 calls CronDelete itself when zero activity detected.")
-    print("  This ensures idle sessions eventually stop the cron without a dismiss.")
+    print("  Pulse STEP 2 calls CronDelete itself when zero Staff windows remain (all formally dismissed).")
+    print("  Idle Staff sessions do NOT stop the cron — only formal dismissal via `crew dismiss` triggers self-termination.")
     print()
     print("OUTPUT:")
     print("  SessionStart: writes sentinel file; no stdout (logs to stderr only).")
