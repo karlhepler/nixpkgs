@@ -371,6 +371,26 @@ If no direct tell was found but the session took an allegedly-unauthorized actio
 
 Senior-staff's in-context state captures only what flowed through the coordinator. It does not reflect direct user↔Staff interactions that bypass senior-staff entirely.
 
+**Mobile/remote-control mode invalidates the user-direct-pane framing.** The 'user has direct pane access' framing applies only when the user is at the local keyboard. When the user is on mobile, remote control, or otherwise not-at-local-keyboard, their only interaction surface is the coordinator (`crew tell` and AskUserQuestion). Direct pane access is structurally impossible.
+
+**In that mode, when unexpected pane activity appears, verify FIRST and conclude SECOND:**
+
+1. **Check coordinator-issued commands** in the time window matching the unexpected activity. Search recent `crew tell`, `crew tell --keys`, and CronCreate-scheduled actions for anything that could have produced the observed pane state.
+2. **Check for picker-collision evidence.** If a `crew tell` was issued in the same window as the unexpected activity, run `crew read <target> --lines 50` and look for picker-state markers in the surrounding scrollback.
+3. **Only if step 1 and step 2 come back empty** → the default explanation is 'coordinator protocol violation produced a phantom signal' that wasn't the simple cases above (e.g., session echo, autonomous session loop). NEVER conclude 'user direct-paneled' in mobile mode without explicit user statement that they did so.
+
+**Common coordinator-protocol violations that produce phantom signals:**
+
+- Plain-text `crew tell` arriving while a picker was open (picker accepts the tell content as filter input — see § Picker-aware `crew tell` protocol).
+- Stray `--keys` sequence that hit a different pane than intended.
+- Autonomous session loop that took an action based on its own internal state.
+- CronCreate-scheduled action that targeted the wrong session during a poll cycle.
+- Session echo/replay (e.g., terminal scroll-back re-execution on resize events).
+
+The user signals mobile mode via phrases like 'I'm walking', 'on my phone', 'remote-controlling', 'not at the computer', 'commuting', 'AFK', 'away from keyboard', 'in a meeting', or by the absence of activity in unmediated channels (no recent local terminal commands). Any phrase implying physical mobility, device-constrained access, or non-desktop interface should trigger mobile-mode inference.
+
+**Never confidently attribute unexpected pane activity to 'you direct-paneled' without explicit user statement.** If unsure who/what caused a pane state change, frame as 'this state change appeared — checking what caused it' rather than 'you answered the question.'
+
 ---
 
 ## PRE-RESPONSE CHECKLIST (Planning Time)
@@ -497,7 +517,7 @@ Senior Staff MUST dismiss a Staff Engineer window via `crew dismiss` once its wo
 
 ### Picker-aware `crew tell` protocol
 
-**Before any `crew tell <target> "<text>"` that carries a user decision from an AskUserQuestion, first run `crew read <target> --lines 10`** to check the target's current state. If the target is displaying a multi-choice picker — detected by patterns like:
+**Before any `crew tell <target> "<text>"`, first run `crew read <target> --lines 10`** to check the target's current state. The cost of checking is one fast command; the cost of NOT checking is silent corruption of the session's state — plain-text sent to a picker's filter-box gets interpreted as filter input, selecting whatever option the picker had highlighted, with the actual tell content discarded. The check is unconditional — if you're about to send a plain-text tell, you first run `crew read`. No window, no scope gate; just the check. If the target is displaying a multi-choice picker — detected by patterns like:
 
 - `❯ 1. <option>` followed by more numbered options
 - `↑/↓ to navigate`
@@ -513,6 +533,8 @@ then plain-text `crew tell` is PROHIBITED. Plain text sent to a picker's filter-
 3. If `--keys` is unavailable or denied AND the decision is not a pre-existing option, STOP and surface to the real user.
 
 **Never fall back to plain-text tell at a picker.** The silent-failure mode is worse than blocking — the coordinator proceeds with a wrong decision the user never made.
+
+**Mobile/remote-mode corollary:** When the user is on mobile/remote-control, a picker-aware-protocol violation does NOT get caught by the user direct-paneling to fix it — the user CAN'T reach the pane. Phantom signals produced by picker violations in mobile mode propagate as unauthorized work until the coordinator catches its own protocol violation. The picker-aware check is therefore EVEN MORE important in mobile mode. See § Verify scrollback before flagging scope creep → 'Mobile/remote-control mode invalidates the user-direct-pane framing.'
 
 ### Periodic Crew Status Polling
 
