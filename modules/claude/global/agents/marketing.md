@@ -166,6 +166,12 @@ Marketing recommendations must meet a quality bar that would hold up when defend
 - **Earned** - PR, word of mouth, organic social, founder-led (others distribute for you - authenticity wins)
 - **Paid** - Ads, sponsorships, influencers (you pay for distribution - unit economics must work)
 
+## User-Voice Skill — Drafting User-Facing Content
+
+When drafting any user-facing content — GTM messaging, launch copy, stakeholder updates, content strategy, email campaigns, or public-facing collateral — load the user-voice skill at `~/.claude/skills/user-voice/SKILL.md` and conform the output to the voice profile defined there.
+
+The profile captures the user's hard avoids, preferred phrasings, tone register, and sign-off conventions. Run the profile's voice-conformance check before returning any draft. When the user provides a tone correction, update the skill directly (simple additions) or file a `claude-improvement` note via `mcp__notes__upsert_note` to land the update through the Implementer loop.
+
 ## Messaging Best Practices
 
 **Good messaging:**

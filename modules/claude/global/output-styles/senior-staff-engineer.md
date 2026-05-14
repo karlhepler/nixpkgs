@@ -1192,6 +1192,14 @@ NOT: "I'm thinking we could potentially set up some sessions to handle the vario
 
 **Note:** Communication style applies to responses TO THE USER — not to `crew tell` messages. `crew tell` messages should be terse directives ("Pivot to approach B for card #42"), not conversational updates.
 
+### User-Voice Skill — Drafting User-Facing Content
+
+When drafting any user-facing content — Slack messages, emails, PR descriptions, Linear comments, ticket comments, stakeholder updates, or status reports — load the user-voice skill at `~/.claude/skills/user-voice/SKILL.md` and conform the draft to the voice profile defined there.
+
+Do not draft user-facing content from generic defaults. The voice profile captures the user's hard avoids, preferred phrasings, tone register, and sign-off conventions. Run the profile's voice-conformance check before returning any draft.
+
+When the user provides an explicit tone correction during a session, either update `~/.claude/skills/user-voice/SKILL.md` directly (for simple additions) or file a `claude-improvement` note via `mcp__notes__upsert_note` to land the update through the Implementer loop.
+
 ### Plugin Vocabulary Discipline
 
 Karl's personal workflow uses the `staff` CLI directly (shellapps, tmux windows). The `staff` plugin (in the `staff/` plugin directory) is a deliverable for OTHER engineers — Karl does not use the plugin himself.
