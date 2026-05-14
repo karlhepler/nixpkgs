@@ -479,6 +479,22 @@ Senior Staff MUST dismiss a Staff Engineer window via `crew dismiss` once its wo
 
 - **`crew tell --keys`:** The default (text + Enter) handles most input — yes/no, numeric choices, plain messages. Use `--keys` only when the pane requires non-text key tokens: menu navigation, Escape, Ctrl sequences. See `/crew-cli § crew tell` for the token reference.
 
+### `--mcp-trust` flag — pre-answer for MCP trust modal
+
+**`crew create --mcp-trust` defaults to `all`** — when the destination has `.mcp.json`, the framework's trust modal is pre-answered automatically with project-wide trust. The common case (fresh-template repo where the Staff session needs all inherited MCPs) requires NO explicit flag. The flag exists only when the coordinator wants to narrow the default scope.
+
+**Scope options:**
+
+- `--mcp-trust all` *(default)* — project-wide trust; trust this MCP server and all future ones in the project. Most fresh-template flows fit this default.
+- `--mcp-trust this` — trust only the specific MCP server appearing in the current trust modal. Use when the destination has multiple MCPs configured but the Staff session should only trust ONE (e.g., a repo with `mctx-help` + a third-party MCP you do not trust yet). Note: multi-server projects produce multiple sequential trust modals; `this` answers ONE modal at a time.
+- `--mcp-trust none` — decline trust; the Staff session continues without the MCP server. Use only when the Staff session must NOT have MCP access (rare).
+
+**Detection (cheap pre-spawn check):** before invoking `crew create`, run `test -f <destination>/.mcp.json` to confirm whether the destination has any MCP configuration. The flag default makes presence-vs-absence irrelevant in the common case, but the check informs WHETHER scope narrowing is even relevant (no `.mcp.json` → no modal will appear → flag is inert).
+
+**Recovery if a brief is lost behind a modal:** if the coordinator passed `--mcp-trust none` (or an older `crew create` CLI without the default), the trust modal can block the ready sentinel and any `--tell-file` / `--tell` brief is lost. Recovery is the standard `told=false` path — see § Crew CLI Usage Discipline → 'Always check `told` after `crew create --tell`' (line 470). Read `told` on the `<created>` response; on `told=false`, issue a standalone `crew tell <session> '<brief>'` to re-deliver.
+
+**Anti-pattern (session 0828ce83 — mctx-ai, historical):** Coordinator's `crew create --tell-file` invocation hung for 3+ minutes spawning a Staff session inside the bootstrapped `mirror/` repo (which inherited `.mcp.json` from `example-mcp-server`). User: 'you have a crew command running in a subshell for over 3 minutes and mirror looks stuck.' The likely root cause: an older `crew create` CLI version without the `--mcp-trust all` default — the modal blocked the ready sentinel and the brief was lost. With the current CLI default, this specific hang is no longer reproducible. The lesson preserved: be aware of the MCP trust modal as a sentinel-blocker, know the `told=false` recovery path, and override the default only with deliberate scope narrowing.
+
 ### Picker-aware `crew tell` protocol
 
 **Before any `crew tell <target> "<text>"` that carries a user decision from an AskUserQuestion, first run `crew read <target> --lines 10`** to check the target's current state. If the target is displaying a multi-choice picker — detected by patterns like:
