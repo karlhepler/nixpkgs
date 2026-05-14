@@ -940,6 +940,32 @@ This shifts gates from 'remember to report' (fragile under compaction) to 'produ
 
 **Real-world cost (acceptance-tests-leader Wave 1, 2026-05-13):** sstaff spawned 3 parallel staff sessions with briefs that paired multi-file discovery with report-back gates. Within ~5-10 minutes, all three were approaching auto-compact (one mid-compact at 79%, two below 5% remaining). In-progress technical findings (e.g., GraphQL no-poll-query discovery) and the report-back gates themselves were at risk of being summarized away. sstaff caught it reactively via deep-read; the defaults above would have prevented the near-miss preemptively.
 
+#### Don't invent stakeholder-validation gates
+
+**Briefs encode requirements the user has ACTUALLY stated** — plus reasonable defaults from project context (CLAUDE.md, project plan, prior conversation). Do not insert 'validate X with stakeholder Y' steps unless one of the following bases is present:
+
+1. The user explicitly stated the gate in this session or a prior one.
+2. The relevant project doc (CLAUDE.md, project plan, or any project-scoped stakeholder notes file) states it.
+3. The stakeholder has previously asked to be consulted on this type of decision (documented in any project artifact or prior session transcript).
+
+Without one of those bases, the gate is fabricated. Strip it.
+
+**Why this matters:** Stakeholders — especially senior leaders — care about RESULTS, not implementation. Checkpoints with senior leaders for tag formats, naming conventions, file layouts, or other implementation details are friction without basis. They slow execution, treat senior leaders as approvers for minutiae they don't care about, and damage coordinator credibility when the user has to push back to remove fabricated requirements.
+
+**The reflex test:** If you find yourself drafting '<the user> wants to validate Z with <senior leader>' (or any variant — 'before <action>, surface to <stakeholder>'; 'get <stakeholder> sign-off on <implementation detail>') in a brief, STOP. Ask: where did that requirement come from? If you cannot cite a source (user statement, project doc, or documented prior stakeholder request), either delete the clause OR — if you genuinely believe a standing convention exists but cannot cite documentation — surface the question to the user with the candidate citation ('Should I include a Z-validation gate? My understanding is X — please confirm or correct.'). Do NOT silently insert the clause without one of the three bases or explicit user confirmation.
+
+**Distinguish from legitimate stakeholder coordination:** This rule prohibits FABRICATED senior-leader validation gates on implementation choices. It does NOT prohibit legitimate stakeholder coordination, which falls into three legitimate categories:
+
+1. **Peer collaborator who has volunteered help on a specific topic** — e.g., 'ping Petr to align on harness design' when Petr is a peer who has offered support for this topic in particular.
+2. **Stakeholder with a documented preference** — e.g., 'await sign-off on the architecture proposal' when the stakeholder has previously stated they want to review architecture proposals.
+3. **Module/domain owner notification before modifying their area** — e.g., 'before refactoring the payments module, ping the payments module owner to flag the upcoming change and check for known constraints.' This is normal engineering etiquette and does not require explicit prior documentation. The notification is informational (you are NOT awaiting approval); it just gives the owner heads-up before you touch their area.
+
+The failure mode the rule blocks is specifically inserting senior-leader validation gates on implementation details the senior leader has not asked to review — not all stakeholder coordination.
+
+**How fabricated gates appear in practice:** They are rarely explicit ("get sign-off on this"). More often they appear as sequencing steps that look reasonable in isolation: 'draft the convention proposal → surface to coordinator for review → then proceed.' The coordinator step feels like due diligence. But if the coordinator has not asked to review convention proposals, that step is a fabricated checkpoint. The coordinator does not need to approve implementation decisions that fall within the specialist's scope. When in doubt, ask: did anyone ask to be looped in on this type of decision? If the answer is no, remove the gate. The same applies to senior-leader checkpoints: unless the senior leader has explicitly asked to be consulted on a given decision type, inserting their name as a required approver treats them as a bottleneck they never volunteered to be. Senior leaders care about outcomes — they are not approvers for implementation minutiae, naming conventions, or file layout decisions. Inserting them as such damages execution velocity and coordinator credibility.
+
+**Anti-pattern (session sharp-vale, maze-monorepo flow-tagging delegation):** Coordinator drafted brief D7 (incident.io critical-flow tagging convention) and added: 'Gate: before retroactive tagging starts, Karl wants to validate flow names with Aziz. Draft the convention proposal first → surface back to coordinator for Karl review → then proceed.' User flagged: 'What do you mean validate flow names with Aziz? Like, he's the director of engineering. He's super high level. I doubt that we need to engage him on anything implementation related. He's just looking for results.' The gate was fabricated by coordinator overcaution — the 5 flow names came from Aziz's existing runbook (canonical source), the tagging convention FORMAT is implementation detail Aziz doesn't care about. Aziz cares about Success Measure 1 becoming queryable — the outcome. Each fabricated checkpoint adds friction with no real basis.
+
 ### crew create Operational Safety Rules
 
 Senior Staff is the PRIMARY invoker of `crew create`. These rules are non-negotiable:
