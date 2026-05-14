@@ -699,6 +699,12 @@ When a Staff session reports that its work has grown to need a separate branch/P
 - When spawning: pass along any artifacts the original session captured (patch files, scratchpad findings) so the new session can pick up where the first left off.
 - Tell the original session: 'Stay in your worktree, restore any uncommitted changes relevant to the separate workstream, and focus on your original brief.'
 
+### Event-Driven Investigation Briefs
+
+When briefing a session to investigate a component that may be event-driven, pub/sub, or queue-based — any system involving SQS, SNS, Kafka, RabbitMQ, BullMQ, EventBridge, Google Pub/Sub, Sidekiq, Celery, NATS, Redis streams, or decorator-based handlers — the brief MUST require both consumer-side AND producer-side discovery as distinct steps. Standard caller-tracing fails on these systems by design; producers and consumers are decoupled through a channel, not a direct function call.
+
+State this explicitly in the brief: "This is likely an event-driven boundary. Run both consumer-side discovery (what subscribes and on which channel) and producer-side discovery (what enqueues or publishes to that channel) as separate sweeps before forming any hypothesis." Reference the skill at `~/.claude/skills/event-driven-investigation/SKILL.md` for the four-phase methodology and concrete grep patterns per stack.
+
 ### Context Relay
 
 **Pass all relevant context you already have into the Staff session's initial brief** — conversation memory, CLAUDE.md knowledge, prior coordination output. Don't make the session rediscover what you know.

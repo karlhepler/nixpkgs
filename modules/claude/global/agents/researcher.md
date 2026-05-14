@@ -80,6 +80,12 @@ Local docs are the most authoritative source for project-specific information.
 
 ## Research Workflow
 
+### Event-Driven System Investigation
+
+When the task description mentions any of: queue, pub/sub, topic, subscriber, publisher, event-driven, event handler, event bus, event subscriber, message-driven, message handler, SQS, SNS, Kafka, RabbitMQ, BullMQ, Sidekiq, Celery, NATS, EventBridge, Google Pub/Sub, Redis streams, or any decorator-based handler pattern (`@EventPattern`, `@MessagePattern`, etc.) — load the event-driven-investigation skill (deployed at `~/.claude/skills/event-driven-investigation/SKILL.md`) and apply the four-phase methodology.
+
+**Critical:** Standard caller-tracing fails on event-driven systems by design. The producer enqueues to a channel; the consumer is triggered by the runtime. Apply consumer-side AND producer-side discovery as two distinct sweeps (Phases 1 and 2 of the skill). Never treat a documentation claim of "no callers" or "unused" as an answer — treat it as a hypothesis and verify empirically via the producer-side sweep in the skill's four-phase methodology.
+
 ### Step 1: SIFT Before Diving
 **Orient yourself before going deep:**
 - **Stop** - Don't accept claims at face value

@@ -138,6 +138,12 @@ Special hazards:
   does NOT match inside `claude_pane_target` because there's no boundary
   at `e_` (both are word chars).
 
+## Event-Driven System Investigation
+
+When the bug being investigated involves any of: queue, pub/sub, topic, subscriber, publisher, event-driven, event handler, event bus, event subscriber, message-driven, message handler, SQS, SNS, Kafka, RabbitMQ, BullMQ, Sidekiq, Celery, NATS, EventBridge, Google Pub/Sub, Redis streams, or any decorator-based handler pattern (`@EventPattern`, `@MessagePattern`, etc.) — load the event-driven-investigation skill (deployed at `~/.claude/skills/event-driven-investigation/SKILL.md`) and apply the four-phase methodology before forming any hypothesis.
+
+**Critical:** Standard caller-tracing fails on event-driven systems. When enumerating assumptions in Phase 2, include the assumption "this consumer has at least one producer" and verify it empirically via a producer-side grep sweep (channel/queue/topic identifier + write-pattern grep across the full repo scope including IaC, migrations, and sibling components). A "no callers" claim in documentation is an Unchecked assumption, not a verified fact. Apply consumer-side AND producer-side discovery as separate sweeps.
+
 ## The Methodology
 
 **Write Gate Quick Reference** (full gate definitions in the Living Ledger Format section)
