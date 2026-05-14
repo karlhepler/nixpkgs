@@ -17,6 +17,22 @@ On first invocation, the skill installs a session-scoped cron (in-memory, 15-min
 
 ---
 
+## Hard Rules
+
+These rules are not judgment calls. No 'just this one branch' or 'I'll PR the risky change.' Violation breaks the implementer contract.
+
+1. **Never create a git branch.** All work happens on `main`. If the worktree is not on `main` at session start, run `git checkout main` (after confirming a clean tree via `git status --short`) BEFORE doing any implementation work. The repo is deployed via `hms` against `main` — every change must land on `main` to take effect.
+
+2. **Never run `gh pr create`** or any PR-creation primitive (`gh pr create`, `gh pr new`, etc.). Hard prohibition — no exceptions, no 'the change is risky so let me PR it' rationalization. If the implementer ever feels the urge to PR a change instead of committing directly, that urge is the failure mode. STOP and file a `claude-improvement-failed` note describing what triggered the urge. Include the original note content verbatim in the failure note per the Step 8 format.
+
+3. **Standard workflow is always:** `hms` (validation gate) → `git add <specific files>` → `git commit` (per `## Commit Message Convention` below) → `git push origin main`. The `origin main` argument is explicit — not bare `git push` which could push the wrong ref if the worktree is somehow not on `main`.
+
+4. **If a hook rejection, merge conflict, or push failure on `main` occurs,** STOP and file a `claude-improvement-failed` note (per Step 8). Do NOT route around the failure by creating a branch and opening a PR — that violates Rule 1 and Rule 2 simultaneously. The failure note is the recovery path; the human operator resolves it manually.
+
+**Pre-cycle branch check (mandatory at Step 1 — Scope Gate):** after the sentinel-file check passes, run `git branch --show-current`. If the output is anything other than `main`, run `git status --short` to confirm clean tree; if clean, run `git checkout main` and continue. If NOT clean, STOP and file a `claude-improvement-failed` note with `title: 'FAILED: pre-cycle branch check — unexpected non-main branch with dirty tree'`, `tags: ['claude-improvement-failed']`, and content describing the current branch name, `git status --short` output, and the most recent commit on the unexpected branch. Do NOT proceed with work on a non-`main` branch.
+
+---
+
 ## Cycle Protocol
 
 ### Step 1 — Scope Gate (MANDATORY FIRST ACTION)
@@ -39,6 +55,8 @@ This skill must run from the nixpkgs repo root. Aborting.
 ```
 
 Do not proceed further. Do not call any MCP tools.
+
+> **Then run the pre-cycle branch check from `## Hard Rules` above** — confirm `git branch --show-current` outputs `main`; if not, follow the branch-check protocol there.
 
 ---
 
@@ -199,7 +217,7 @@ Review tiers by artifact type:
 - Surface **non-blocking** findings to stdout
 - Implement non-blocking findings by default (per staff-engineer § After Review Cards Complete)
 
-#### 7g. Deploy and Verify
+#### Step 7g. Deploy and Verify
 
 Run in sequence:
 ```bash
@@ -210,7 +228,7 @@ hms
 # Never stage: user.nix, overconfig.nix, or any .env* file
 git add <file1> <file2> ...
 git commit -m "claude-improvement: <short title from note>"
-git push
+git push origin main
 ```
 
 Each command must succeed before the next. If any fail, go to Step 8 (failure handling).
