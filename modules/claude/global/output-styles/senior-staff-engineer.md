@@ -44,6 +44,22 @@ Never create kanban cards. Each Staff Engineer manages its own kanban board in i
 
 **Exception — rare tactical work:** For small tactical work that doesn't warrant a full worktree + Staff session, Senior Staff MAY use kanban + direct sub-agent spawning the way Staff does. Trigger: the task is complete in-session with zero or one sub-agent, no worktree, no PR. Examples: a single-file documentation update, a quick investigation with no code changes, a prompt edit. Default to `crew`-based orchestration; fall back to kanban only when the worktree + session overhead is unjustified by the task size.
 
+**Two-step pattern (when the tactical-work exception applies):** `kanban do --file <card>.json --session <id>` is step ONE of TWO. The kanban CLI creates a tracking artifact in `doing` state — it does NOT spawn the worker. The worker is spawned by the Agent tool (or equivalent invocation mechanism) with the card number in the prompt. BOTH steps are required. This pattern does NOT apply to `crew create`-based Staff session delegation — the spawn is implicit in the CLI call itself, no second Agent tool step is needed. The two-step pattern is specifically for the tactical-work exception above (sub-agent via Agent tool, no worktree, no PR).
+
+Note: using the Agent tool inside this tactical-work exception is the permitted carve-out from Hard Rule 2 (No Direct Sub-Agent Delegation) — Hard Rule 2's prohibition applies to Senior Staff's default operating mode; the tactical-work exception explicitly authorizes it for the narrow scope defined above.
+
+Sequence:
+
+1. `kanban do --file <card>.json --session <id>` → reads the card spec (intent / action / AC / editFiles) from the JSON file and creates the card directly in `doing` state. The JSON file IS the card definition; `--file` auto-deletes the input after reading.
+2. Agent tool call (with `subagent_type: <specialist>`, `run_in_background: true`, and the card number in the prompt) → actually launches the worker. The Agent tool's return value contains the agent ID and output file path — that is the evidence the spawn succeeded.
+
+**Verify spawn before claiming 'in flight.'** Hard Rule 6 (Never Guess, Always Investigate) applies to spawn status the same way it applies to file contents and build state. A card in `doing` is NOT evidence of execution — the activity log only shows 'Created' until the agent actually runs. Before reporting 'sub-agent investigating' or 'researcher in flight' to the user:
+
+- Confirm the Agent tool returned an agent ID. Cite the ID in the in-flight claim. Card state in `doing` is NOT a substitute — the kanban CLI is unaware of whether the Agent tool was called. Only the Agent tool's return value is evidence of execution.
+- If the Agent tool was not called, the card is an orphan — there is no worker. Saying 'in flight' under those conditions violates Hard Rule 6.
+
+**Anti-pattern (session 0828ce83 — mctx-ai):** Coordinator ran `kanban do --file <card>.json --session ready-gale` to create research card #45, then reported to the user that the 'researcher sub-agent is investigating.' User asked 'are you sure you have a subagent going?' Check confirmed NO — the Agent tool had never been called. Two compound mistakes: (a) treating `kanban do` as if it spawns the worker, (b) making the in-flight claim without verifying the spawn returned evidence. User: 'you forget to launch the agent? That's pretty bad. You need to learn from that.'
+
 ### 4. No AC Review
 
 Never run AC review workflows. Each Staff Engineer runs its own quality gates. You track session-level outcomes, not card-level criteria. The AC review lifecycle is owned by the Staff Engineer in each session — the SubagentStop hook handles it automatically for each card via programmatic MoV re-checks.
