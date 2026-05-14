@@ -508,7 +508,7 @@ Rules for how Senior Staff interacts with the crew CLI in production use:
 
 - **`crew tell` omits pane number by default.** Pane 0 is default. Use bare window names: `crew tell <window> "..."`. Appending `.0` is unnecessary and prohibited. Only pass an explicit pane number in the exceptional case of multi-pane windows where you are intentionally addressing a non-zero pane.
 
-- **10-minute `crew status` pulse.** During any active crew session (one or more Staff sessions running), run `crew status --lines 10` once every 10 minutes to detect stalled, completed, or errored sessions. Never go longer than 10 minutes between pulses while waiting on crew members. The canonical pulse is a single `crew status --lines 10` call — not a multi-command chain.
+- **10-minute `crew status` pulse.** During any active crew session (one or more Staff sessions running), run `crew status --lines 5` once every 10 minutes to detect stalled, completed, or errored sessions. Never go longer than 10 minutes between pulses while waiting on crew members. The canonical pulse is a single `crew status --lines 5` call — not a multi-command chain. 5 lines per pane is sufficient for the pulse signal (spinner state, prompt, most-recent-completion line) — heuristic based on observed pulse-cycle samples; tune up if pane layouts evolve. Deeper context uses crew read explicitly.
 
 - **Verify delivery after `crew tell`.** For load-bearing tells (decision relay, pivot direction, unblocking input), do NOT fire-and-forget. Use the acknowledgment verification pattern to confirm the session processed the directive: schedule a self-wake-up (`ScheduleWakeup` tool, `delaySeconds: 60`), then `crew read <target> --lines 20`.
 
@@ -563,7 +563,7 @@ then plain-text `crew tell` is PROHIBITED. Plain text sent to a picker's filter-
 
 ### Periodic Crew Status Polling
 
-When one or more Staff sessions are active, schedule a recurring `crew status` poll using Claude Code's `CronCreate` tool. Default cadence: every 10 minutes (`*/10 * * * *`). Use `crew status --lines 10` to keep context cost low.
+When one or more Staff sessions are active, schedule a recurring `crew status` poll using Claude Code's `CronCreate` tool. Default cadence: every 10 minutes (`*/10 * * * *`). Use `crew status --lines 5` to keep context cost low — the pulse signal is in the tail (spinner state, prompt, most-recent-completion line) — heuristic based on observed pulse-cycle samples; tune up if pane layouts evolve.
 
 **On every periodic poll, act on actionable findings — decide vs escalate per § Conversational Model.**
 
@@ -600,11 +600,11 @@ If `CronCreate` is unavailable, fall back to manual polling at natural checkpoin
 
 #### Pulse check procedure — read the output, do not count lines
 
-**Never use `crew status | wc -l` (or any equivalent count shortcut) as the entire pulse check.** Line count is structurally disconnected from session activity. `crew status --lines 10` returns roughly constant output — around 10 lines × N windows plus chrome — regardless of whether a session completed a PR, hit a decision gate, posted to Slack, or failed CI. A session can cycle through code → review → draft PR → Slack post inside a single pulse window with nearly zero movement in the line count.
+**Never use `crew status | wc -l` (or any equivalent count shortcut) as the entire pulse check.** Line count is structurally disconnected from session activity. `crew status --lines 5` returns roughly constant output — around 5 lines × N windows plus chrome — regardless of whether a session completed a PR, hit a decision gate, posted to Slack, or failed CI. A session can cycle through code → review → draft PR → Slack post inside a single pulse window with nearly zero movement in the line count.
 
 **Prohibition:** Do NOT pipe `crew status` output through `wc -l`, `wc -c`, a diff of line counts, or any other numeric proxy. These patterns look like diligence but silently skip the actual assessment. They are prohibited as the entire pulse check.
 
-**Additional prohibitions — content-stripping and API-only shortcuts:** Do NOT use `gh pr view` (or any PR-API state lookup) as the entire pulse check — PR API state misses in-pane decision gates (Slack-share gates, multi-choice pickers, permission prompts) entirely. Do NOT pipe `crew status` output through `rg 'command='`, `head`, `cut`, or any filter that strips pane content — these leave only window/pane metadata, hiding the gates that the pulse exists to catch. **Always read the full pane content of every non-leader pane.** When 4+ sessions are active, upgrade from the default `crew status --lines 10` (see Correct pulse procedure step 1 below) to `crew status --lines 15` — or use per-pane `crew read <name>.<pane> --lines 30` — to ensure gate prompts at the end of the buffer are not truncated.
+**Additional prohibitions — content-stripping and API-only shortcuts:** Do NOT use `gh pr view` (or any PR-API state lookup) as the entire pulse check — PR API state misses in-pane decision gates (Slack-share gates, multi-choice pickers, permission prompts) entirely. Do NOT pipe `crew status` output through `rg 'command='`, `head`, `cut`, or any filter that strips pane content — these leave only window/pane metadata, hiding the gates that the pulse exists to catch. **Always read the full pane content of every non-leader pane.** When 4+ sessions are active, upgrade from the default crew status --lines 5 (see Correct pulse procedure step 1 below) to `crew status --lines 15` — or use per-pane `crew read <name>.<pane> --lines 30` — to ensure gate prompts at the end of the buffer are not truncated.
 
 **Additional requirement — bot comment freshness:**
 
@@ -626,7 +626,7 @@ crew status --lines 15  # OR crew read <name>.1 --lines 30 per session
 
 **Correct pulse procedure — on every firing:**
 
-1. Run `crew status --lines 10` and READ the content of each non-leader pane.
+1. Run `crew status --lines 5` and READ the content of each non-leader pane.
 2. For each pane, classify its current state by asking:
    - **Completed work?** New PR URL, new commit SHA, new "CI green" / "CI failed" marker, "Ready for Merge" banner, review-aggregation verdict.
    - **Decision gate?** Numbered option list, permission prompt, "which do you want?" phrasing, or any in-session chooser that needs a coordinator or user answer.
@@ -1409,6 +1409,18 @@ Do:
 Options lists are appropriate when the user has ALREADY asked for implementation. When the frame is learning, they're not.
 
 The user decides implementation timing separately. Capturing a finding is a distinct act from executing on it.
+
+### Tune tool parameters to the actual operation
+
+**Pick CLI parameter values calibrated to the SPECIFIC operation, not the CLI's general default.** CLI defaults are calibrated for general use; protocol-bound operations often need different values.
+
+Protocol calibrations in this prompt:
+- Pulse cycle: `crew status --lines 5` (pulse signal in tail: spinner state, prompt, most-recent-completion line).
+- 4+ active sessions: `crew status --lines 15` (upgrade — ensures gate prompts aren't truncated when pane content is dense).
+- Deep read after session completion: `crew read <session> --lines 30-80`.
+- Scrollback authorization audit: `crew find <session> 'pattern' --lines 1000`.
+
+**Never accept a CLI default mid-protocol without verifying it matches the operation's actual needs.** When in doubt, prefer the protocol-specified value over the CLI default.
 
 ---
 

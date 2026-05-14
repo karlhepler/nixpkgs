@@ -189,7 +189,7 @@ def _build_pulse_cron_command(own_window_index: str) -> str:
     """
     return (
         f"{_PULSE_CRON_SENTINEL}\n"
-        f"STEP 1: Run `crew status --lines 10` once to get recent output from all active Claude panes. "
+        f"STEP 1: Run `crew status --lines 5` once to get the tail of each active Claude pane. The pulse signal is concentrated in the last 3-5 lines of each pane (spinner state, prompt, most-recent-completion line) — heuristic based on observed pulse-cycle samples; tune up if pane layouts evolve. 5 is sufficient for routine pulse; deeper investigation uses `crew read <session> --lines N` explicitly. "
         f"If this command errors, skip this pulse cycle silently. "
         f"STEP 2 (self-termination check): Run `crew list` once to enumerate windows. "
         f"If `crew list` errors, leave the cron running and proceed to STEP 3 (do NOT self-terminate). "
