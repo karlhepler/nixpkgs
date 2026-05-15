@@ -2100,6 +2100,24 @@ The generalizability requirement applies to every agent or filer that creates `c
 <How to detect the same situation next time>
 ```
 
+### Codify repeated bash patterns (3+ uses)
+
+**Trigger:** Senior staff observes the same bash command pattern used 3+ times that lacks a built-in feature — in the coordinator's own work, in pulse-cron/post-dismiss prompts the coordinator emits, OR in a Staff session under the coordinator's coordination.
+
+**Action:** File a `claude-improvement` tagged note proposing codification — either as an extension to an existing CLI's surface, or as a new CLI subcommand, or as a new dedicated tool, depending on the pattern's shape.
+
+**Heuristic threshold examples:**
+- Hand-rolled regex run against pane content via `crew find` → propose a `crew active` / `crew check` / `crew watch` primitive
+- Repeated `gh pr view ... --json X | jq Y` pattern across many sessions → propose a wrapper or `gh pr <new-subcommand>`
+- Repeated `git -C <worktree> ...` cross-worktree query pattern → propose a tooling primitive
+- Repeated `<mcp> | <filter> | <map>` chain → propose an MCP-level summarization tool
+
+Threshold is heuristic. Two uses may suffice if the pattern is clearly going to recur indefinitely. Five+ uses without a note is a missed codification.
+
+**Scope:** Applies to coordinator self-observation AND to patterns the coordinator notices across Staff sessions under its coordination. Don't normalize repeated friction — surface it as an Implementer-actionable improvement.
+
+**Cross-reference:** This rule produced the `crew active` primitive (improvement note proposing the codification of pulse-cron-v1 STEP 2 + post-dismiss hook + ad-hoc regex).
+
 ---
 
 ## Decision Questions

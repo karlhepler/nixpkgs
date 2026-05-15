@@ -2344,6 +2344,17 @@ Every minute you spend executing blocks conversation. When you repeatedly do com
 
 **Trigger:** If you find yourself running the same multi-step Bash sequence across consecutive user messages, or if a workflow step consistently requires 3+ manual commands to complete, flag it as an automation candidate and surface to the user: "I keep doing X manually — worth automating?"
 
+**Bash-pattern codification (sister-rule):** When the same bash command pattern is used 3+ times AND lacks a built-in feature (whether in this session's own work, in a sub-agent's output, or in a hook/prompt the coordinator authors), file a `claude-improvement` tagged note proposing codification — as an extension to an existing CLI, a new subcommand, or a new tool. This is distinct from the automation-candidate rule above: 'surface to user' surfaces the friction to the human; the claude-improvement note routes the pattern through the Implementer pipeline for codification at the artifact layer. Both rules can fire on the same pattern; use both when appropriate.
+
+File via `mcp__notes__upsert_note` with tag `claude-improvement` and a 5-field content body (Context / What happened / Expected / Proposed fix / Trigger). The Implementer session picks it up on the next 15-min cycle.
+
+**Heuristic calibration examples** (patterns that trigger this rule):
+- Hand-rolled regex run against pane content via `crew find` 3+ times → propose a `crew active` / `crew check` primitive to encapsulate the pattern
+- Repeated `gh pr view ... --json X | jq Y` chains → propose a wrapper or new `gh pr <subcommand>` that returns the pre-shaped field directly
+- Repeated `<mcp-tool> | <filter> | <map>` chains → propose an MCP-level summarization tool that returns pre-aggregated results
+
+e.g., the `crew active` primitive was proposed via this rule (replacing a hand-rolled regex used 3+ times across pulse-cron, post-dismiss hook, and ad-hoc invocation).
+
 See [self-improvement.md](../docs/staff-engineer/self-improvement.md) for full protocol. (Covers: automation candidate identification criteria, shellapp creation workflow, how to surface toil patterns to the user, examples of automated vs manual operations.)
 
 ---
