@@ -199,6 +199,24 @@ As a staff engineer, follow the card-first workflow:
 
 Model selection for delegation: use `model: sonnet` by default. Use `model: opus` only for architectural complexity (multi-file restructures, cross-cutting behavior changes). Use `model: haiku` only for strictly mechanical edits with zero ambiguity. See staff-engineer.md § Model Selection for the full decision tree.
 
+**MoV authoring banned-pattern self-check (mandatory before `kanban do --file`):** Before invoking `kanban do --file <path>`, scan every `mov_commands[].cmd` field in the card JSON for these banned patterns:
+
+- `rg -qF ... '|' ...` or `rg -qiF ... '|' ...` — `-F` makes `|` a LITERAL pipe character, NOT alternation. Use bare `rg -qi 'A|B'` (no `-F`) OR split into separate `mov_commands` entries (one per phrase).
+- `rg -qF ...` with regex metacharacters in the pattern — `-F` (fixed-strings) makes ALL regex metacharacters literal: `|` is NOT alternation, `()` are NOT grouping, `\d` is NOT a digit class, etc. If you intend regex behavior, drop `-F` and use bare `rg -qi`.
+- `rg -qi 'a\|b\|c'` (backslash-pipe alternation) — RECURRENT authoring failure. In ripgrep's default Rust regex engine, `\|` is a LITERAL pipe character, NOT alternation. Bare `|` IS alternation. Root cause: JSON-escape muscle memory misfire — `|` is a regular character in JSON strings and requires NO escaping. Use bare `|` for alternation OR split into separate `mov_commands` entries.
+- `&&` (AND-chain) — split into separate array entries. (The kanban CLI validator rejects this explicitly, but the self-check catches it before the CLI round-trip.)
+- `rg -E ...` — `-E` means `--encoding` in ripgrep, NOT extended regex. Use bare `rg -qi`.
+- `rg -qF ... -- '<dash-leading-pattern>' ...` with NO `--` or `-e` separator — `rg` parses dash-leading patterns as flags (exit 2). Use `rg -qF -- '-leading'` or `rg -qi -e '-leading'`.
+- `test $(rg -c 'pattern' file) -le 0` for pattern-absence — broken when stdout is empty (`rg -c` produces NO output on zero matches, making `test $(empty) -le 0` syntactically broken with exit 2). Use `! rg -q 'pattern' file` instead — exits 0 if pattern is absent.
+
+If ANY pattern is present, fix BEFORE the CLI call. The kanban CLI validator catches `&&` and a few others, but the `-F` + `|` combination passes the validator and produces silently-broken MoVs — the implementing agent then either reports the MoV as unsatisfiable OR corrupts the artifact to make the literal pattern match. Both failure modes are preventable at authoring time.
+
+**Worked example of the failure:** Card #1995 (broadcast voice patterns added to user-voice/SKILL.md) used `rg -qiF 'parens-reference|(reference)' file.md` intending alternation between two voice-profile entries. The agent inserted the literal string `parens-reference|(reference)` into the file to satisfy the MoV (artifact corruption). A follow-up cleanup card was required. Catch this at authoring time.
+
+**Two gates:** This self-check fires before `kanban do --file`. There is ALSO a Write-tool-time reflex (see staff-engineer.md § Card Management — Write-tool-time reflex): scan the `cmd` fields BEFORE invoking the Write tool on the card JSON. Two gates = defense in depth. Both fire on every card.
+
+**See also:** `kanban-cli` SKILL § MoV Authoring Banned Patterns and `staff-engineer.md` § Card Management — Card Fields (banned MoV patterns) for the comprehensive list (~14 patterns) and rationale. The self-check above is a short-form summary of the most-common failures.
+
 #### 7e. Mandatory Reviews (No Exceptions)
 
 **ALWAYS run mandatory reviews for every change.** Do not skip even for "trivial" edits.
