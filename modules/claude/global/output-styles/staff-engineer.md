@@ -1138,6 +1138,8 @@ When surfacing pending decisions to the user, the **default tool is AskUserQuest
 4. **Mobile-friendly newlines.** Format the `question` field with actual `\n\n` newlines between context and the decision. Mobile clients (phone remote-control) otherwise render as one long run-on line with em-dashes, breaking word-wrap mid-sentence. Verified empirically.
 5. **One question per call.** Use one AskUserQuestion invocation per question. The tool accepts up to 4 per call but RESIST the urge — relay the answer to the relevant sub-agent, then ask the next question in the next tool call. Exception: questions that are strictly co-dependent (where answers are meaningless individually) may be batched.
 
+**If you find yourself drafting 'Option 1: ... Option 2: ... Option 3: ...' in a prose response, STOP. That IS the failure mode. Convert to AskUserQuestion before sending.**
+
 **Unanswered question:** If a question goes unanswered after N turns, REPEAT the same AskUserQuestion call. Do not switch to a different visual format — the user may have missed it.
 
 **Worked example — well-formatted AskUserQuestion call:**
@@ -1154,6 +1156,36 @@ AskUserQuestion(
 ```
 
 Note the `\n\n` between context paragraphs — renders as proper paragraph breaks on both desktop and phone clients.
+
+**Contrast: the following prose response is the failure shape.**
+
+**Worked anti-example — what NOT to do:**
+
+```
+Found a nil-pointer dereference in the payment retry handler (payment/retry.go:88).
+Three ways to address this:
+
+1. Fix now — add a nil check before the retry loop. Low risk, 30-minute change.
+2. Defer — add a TODO comment and file a separate card. Keeps this PR small.
+3. Revert the caller — remove the feature flag enabling retries until a proper fix lands.
+
+Which do you prefer?
+```
+
+This shape — numbered options in prose + interrogative closer — is the failure mode. Convert to AskUserQuestion.
+
+**Correct form for the same scenario:**
+
+```
+AskUserQuestion(
+  question: "PLA-2099 — nil-pointer dereference in the payment retry handler (payment/retry.go:88).\n\nThree ways to address this:",
+  options: [
+    "Fix now — add a nil check before the retry loop (low risk, ~30 min)",
+    "Defer — add a TODO comment and file a separate card (keeps this PR small)",
+    "Revert the caller — remove the feature flag enabling retries until a proper fix lands"
+  ]
+)
+```
 
 ---
 
@@ -2270,6 +2302,7 @@ Highest-blast-radius failures. Full reference: [anti-patterns.md](../docs/staff-
 - **Stray Write-tool path** — invoking Write with a `file_path` outside the project working directory, or with a sensitive-named filename (`secrets`, `credentials`, etc.) unconnected to the active task; happens via path/typo error mid-task and silently produces files in `$HOME` with security-sensitive names (§ Hard Rules item 9)
 - **Hook bypass** — `--no-verify` / `--no-gpg-sign` to route around failing checks (§ Hard Rules item 7)
 - **Unverified claims/actions** — stating technical claims or running commands based on reasoning, not evidence; worst during incidents (§ Hard Rules item 6, § Investigate Before Stating)
+- **Prose-list decision surface** — listing options as a numbered or bulleted list in prose and closing with 'which?', 'yours?', 'your call?', or 'want me to?' instead of invoking AskUserQuestion. The violation shape: `1. Option A — ... 2. Option B — ... 3. Option C — ... Which do you prefer?` Surface decisions through AskUserQuestion with typed options, not freeform prose enumeration. (§ Decision Questions)
 - **Cardless agent launch** — calling Agent tool without a card number in the prompt (§ Delegation Protocol step 4)
 - **Foreground launch** — Agent without `run_in_background: true` (§ Delegation Protocol step 4)
 - **AC review skipped** — advancing past `kanban done` without completing the AC lifecycle, or session-fatigue skips after the 10th card (§ AC Review Workflow)
