@@ -9,6 +9,10 @@ This skill is a voice profile template. Load it when drafting any user-facing co
 
 ## When to Load
 
+This skill defines TWO voice modes: DM/peer 1:1 (short paragraphs, polite-but-direct openers) and Broadcast/channel-post (section headers, no greeting opener). Identify the audience type first; the modes are structurally different.
+
+Step 0 (before drafting): identify the audience type — DM (peer 1:1), broadcast (channel/team post), reply (in-thread continuation), or cold outreach. The structural template depends on audience type. See § Verbatim Examples for the DM vs broadcast distinction.
+
 Load this skill whenever drafting:
 - Slack messages or thread replies
 - Emails (internal or external)
@@ -48,6 +52,17 @@ Underlying anti-patterns: hedging closers, context-free closings, passive exit s
 - `leave it as fuel`
 - `I'll move on with whatever I'm doing in my project` (vague)
 
+**Broadcast / channel-post only:**
+
+- Opening a channel/broadcast post with `Hey -` (reserved for DMs only)
+- Pasting full URLs with query parameters into channel posts when a soft invitational pointer works (`Take a look in [tool] if you want some more detail` is the pattern)
+
+Note: "thread continuation" (existing Slack thread you're replying inside) and "channel reply" (replying in a broadcast thread) are distinct from "new channel post" (top-level broadcast). The Hey-opener avoid applies to all three — only DMs/cold outreach use `Hey -`.
+
+**DM / 1:1 only:**
+
+_(No DM-specific hard avoids beyond the shared list above — all entries above apply to both modes unless labeled Broadcast-only.)_
+
 _Add more from user corrections as they occur._
 
 ---
@@ -85,6 +100,20 @@ Specific replacements and formulations the user reaches for:
 - `Curious what you think on [X]`
 - `Let me know what you think`
 
+---
+
+### DM / 1:1 phrasings
+
+_(See Openers, Action language, Tentative-commitment language, Timeline language, and Closing / next-step language above — those sections are DM-default.)_
+
+---
+
+### Broadcast / channel-post phrasings
+
+- `Project Update` / `Up Next` as plain-text section headers in broadcast posts (no markdown — text label only)
+- `Take a look in [tool] if you want some more detail` — soft invitational pointer to discoverable evidence (reader-controlled depth)
+- `(reference)` — parens-reference placeholder for inline link typography; Karl writes `(reference)` in the message and applies the hyperlink to that parenthesized word
+
 _Add more from user corrections as they occur._
 
 ---
@@ -110,6 +139,7 @@ Adjust framing and detail level based on recipient. These are real named stakeho
 - **Agentic Engineering DRI (Petr):** Scope-and-sequencing framing. Collaborative tone, peer level. Focus on what's in flight, what's next, and how pieces fit together.
 - **Q&O DRI (Daniela):** Lead with quality/ops impact (test coverage, reliability, on-call burden); name the operational surface affected; assume domain ownership. <!-- TODO: confirm Q&O expansion — placeholder framing used here -->
 - **Peer backend engineers (Matt, Tommy):** Technical detail with plain-language framing. Casual, direct. Use `would you mind` / `curious if` for requests. No need to justify decisions unless they're non-obvious.
+- **Project channel broadcast (broader engineering audience):** Factual, evidence-led, milestone-focused. Section-header structure (`Project Update` / `Up Next`). Soft invitational pointer to deeper evidence rather than pasting URLs. No `Hey` opener.
 
 ---
 
@@ -138,7 +168,9 @@ Preferred terms and terms to avoid in this user's domain:
 
 Real messages Karl has written. Use these to calibrate voice — not for content, for pattern.
 
-**Tommy ping (peer review request):**
+> **Note:** This skill distinguishes two voice modes: **peer DM voice** (Tommy ping example below — short paragraphs, polite-but-direct opener) and **broadcast voice** (Project Update example below — section headers, no greeting). Before drafting, the coordinator MUST identify the audience type and apply the matching structural template.
+
+**Peer DM (Tommy ping — peer review request):**
 
 > Would you mind taking another look when you get a chance please? I made some changes since your review.
 >
@@ -159,6 +191,32 @@ Patterns visible in this example:
 
 ---
 
+**Broadcast / Channel Post (Project Update — engineering channel):**
+
+> Project Update
+>
+> I just merged a fix for customTemplates spec.
+>
+> It was quarantined via config.skipTests. I migrated it to the SetupOrgPlanUserSession builder, replaced module-level mutable state with proper test isolation, and proved 10 consecutive green CI runs before un-quarantining.
+>
+> Before (2 weeks pre-rescue, 2026-04-29 → 2026-05-13): 2.99% failure rate, 0.54% flake rate across 1,472 executions.
+> After (fix + 10x checks, 2026-05-14 → 2026-05-15): 0% failure rate, 0% flake rate across 173 executions.
+>
+> Take a look in currents if you want some more detail.
+>
+> Up Next
+> I am working on resultsFiltering now with the same methodology (reference).
+
+Patterns visible in this example:
+- Section headers (text labels, not markdown): `Project Update` opens; `Up Next` separates forward-look
+- No `Hey` opener — section header is the opener for channel posts
+- Forward-look `Up Next` as its own structural block (not folded into closing sentence)
+- Soft invitational pointer to evidence tool: `Take a look in [tool] if you want some more detail` (avoids pasting full URLs)
+- Parens-reference typography for inline links: `(reference)` as a placeholder Karl replaces with a hyperlinked word
+- Before/After evidence inline: `Before (window, dates): X% rate, Y% flake rate across N executions.` Dense, factual, NOT a separate `Evidence:` section header
+
+---
+
 ### Structural Patterns (Karl)
 
 - **Message length calibration.** Slack: brief (1-3 paragraphs max). Email: structured but compact. PR description: two paragraphs max (see global CLAUDE.md § PR Descriptions).
@@ -168,6 +226,45 @@ Patterns visible in this example:
 - **Conservative timelines.** (See Timeline language under Preferred Phrasings above for examples.)
 - **No closing question when Karl has made the call.** Just state what he's doing. Asking framing is reserved for genuine peer-input requests.
 - **Internal project codes stay internal.** D1, D2, D3 etc. are for internal use. When messaging external stakeholders, use the actual deliverable name + Linear ID, not the internal code.
+
+#### Broadcast / Channel Post Template
+
+Broadcast posts come in several shapes. Pick the shape that matches the post's purpose. All shapes share the section-header conventions and no-greeting opener.
+
+**Milestone announcement shape** (use when announcing a completed merge, fix, or release):
+
+1. Opening header (no markdown — text label only, e.g., `Project Update`)
+2. State-change statement (one short paragraph: `I just merged X.`)
+3. Mechanism summary (what was done, in one or two short paragraphs)
+4. Evidence (Before/After inline — concrete numbers + N + dates). If no concrete before/after evidence is available, OMIT step 4 entirely (don't write an empty evidence block, don't apologize for missing numbers — just skip).
+5. Soft pointer to deeper evidence tool (invitational, reader-controlled depth)
+6. `Up Next` section (forward-look + reference link as separate block)
+
+**Weekly update shape** (use for recurring team status posts):
+
+1. Opening header (e.g., `Weekly Update` / `Week of YYYY-MM-DD`)
+2. What landed this week (bullet list of completed items + links)
+3. What's in flight (bullet list of active items + owners if relevant)
+4. `Up Next` (forward-look — what's planned next week)
+5. (Optional) Blockers or asks — only if present
+
+**Blocker call-out shape** (use when asking the team for help or a decision):
+
+1. Opening header (`Blocker` / `Help needed`)
+2. State the blocker in one factual sentence
+3. What was tried (one short paragraph)
+4. What's needed (a specific ask — `@person can you look at X` or `we need a decision on Y`)
+5. (Optional) Pointer to evidence/repro
+
+**Decision broadcast shape** (use when announcing an architectural or process decision):
+
+1. Opening header (`Decision` / `Architecture call`)
+2. The decision in one sentence
+3. Why (one paragraph: trade-offs considered, what tipped it)
+4. Implications (what changes, who's affected)
+5. `Up Next` (next steps, owners)
+
+Note: broadcast posts open with the section header itself — not with `Hey`, `Thanks!`, or any greeting. Greetings are reserved for DMs.
 
 ---
 
@@ -218,10 +315,12 @@ This is a **living document** — the profile grows from real corrections, not f
 
 Before surfacing any user-facing draft, run a quick self-check:
 
-1. **Hard-avoid scan** — does the draft contain any word/phrase from the Hard Avoids section? Rewrite those phrases.
+0. **Audience-type check** — was the right structural template applied for the audience type (DM vs broadcast)? If broadcast, verify section-header shape and no-greeting opener.
+1. **Hard-avoid scan** — does the draft contain any word/phrase from the Hard Avoids section? Rewrite those phrases. (Note: some Hard Avoids are mode-specific — e.g., `Hey -` is valid in DMs but forbidden in broadcast posts. Apply avoids relative to the audience type identified in step 0.)
 2. **Length check** — is the draft proportional to the message type? (Slack: brief; email: structured; PR description: two paragraphs max.)
 3. **Sign-off check** — does the closing match the Greeting / Sign-Off conventions for this message type?
 4. **Framing check** — is customer/user impact mentioned before technical rationale (where applicable)?
 5. **Domain vocabulary scan** — does the draft use any term from the Avoid column of the Domain-Specific Vocabulary table? Substitute with the Preferred column term.
+6. **Broadcast-mode check (if channel/broadcast post):** Section-header opener present (no greeting)? Soft invitational pointer used (not pasted URL)? Up Next section as its own block (not inline closing)? If any step missed, rewrite to match the broadcast template.
 
 Fix any failures before returning the draft.
