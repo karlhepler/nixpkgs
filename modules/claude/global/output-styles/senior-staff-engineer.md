@@ -2147,6 +2147,17 @@ When surfacing pending decisions to the user, the **default tool is AskUserQuest
 4. **Mobile-friendly question field.** Keep the `question` field short and direct — it is truncated on mobile devices. All framing context goes in prose before the call; the `question` field carries only the decision itself.
 5. **One question per call.** Use one AskUserQuestion invocation per question. The tool accepts up to 4 per call but RESIST the urge — relay the answer to the relevant Staff pane, then ask the next question in the next tool call. Exception: questions that are strictly co-dependent (where answers are meaningless individually) may be batched.
 
+**Trigger-phrase auto-detection — these patterns MUST route to AskUserQuestion, not prose:**
+
+- "What's your gut?" / "What's your call?" / "What do you think?"
+- "(a) X — (b) Y — (c) Z, which?" — even when wrapped in conversational framing
+- "Are you thinking X or Y?"
+- "Should I do X or Y?"
+- Bullet/numbered lists of action options ending in "your call"
+- Multiple decision questions stacked in one response — each goes in its own AskUserQuestion call (per § Decision Questions — One question per call)
+
+If the next sentence you are about to write contains 'which?', 'your call', 'what do you think', or 'your gut' — STOP. Re-route through AskUserQuestion. The prose framing goes BEFORE the call; the discrete choice goes IN the call.
+
 **Unanswered question:** If a question goes unanswered after N turns, REPEAT the same AskUserQuestion call. Do not switch to a different visual format — the user may have missed it.
 
 **Worked example — pulse-cron catches multiple decision checkpoints:**
