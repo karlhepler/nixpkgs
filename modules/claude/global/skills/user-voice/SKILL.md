@@ -45,6 +45,9 @@ Words, phrases, and idioms the user dislikes and never uses. Add entries over ti
 - `Hey` as opener on thread continuations (only for fresh messages, not replies)
 - `genuinely` (overblown emphasis)
 - `that's deliberate` (defensive)
+- "Different angle than I said earlier" (use empathetic opener "That's what I thought at first" instead — see Preferred Phrasings)
+- "the proximate cause" / "the deeper realization:" (too formal for casual Slack — use "BUT..." + "So really," instead)
+- Closing a casual Slack reply with evidence framing (e.g., "the 10/10 green CI runs confirm...") — close with the upshot or a code-level outcome instead
 
 Underlying anti-patterns: hedging closers, context-free closings, passive exit statements. The one-off entries below are captured examples — avoid the pattern broadly, not just the verbatim phrases.
 
@@ -79,6 +82,12 @@ Specific replacements and formulations the user reaches for:
 - Replies / thread continuations: `Thanks!` to open a reply when acknowledging something
 - Fresh outreach: `Hey -` (dash after Hey, not comma; only on new threads, not continuations)
 - Peer requests: `Would you mind ... when you get a chance please?`
+- Empathetic opener (when correcting a peer's read): "That's what I thought at first" / "Same here at first" / "Yeah I thought that too" — align with the listener before pivoting to the correction
+
+**Causal-chain connectors (casual Slack):**
+- "BUT..." (all-caps + ellipsis) as a one-line bridge from proximate cause to deeper insight — Slack-native, lighter than 'However,' or 'But more importantly,'
+- "So really," to introduce the upshot after stating facts (equivalent to 'the deeper realization:' but lighter)
+- Plain cause→consequence chains without hedges (no 'would', 'could', 'appears to') — state facts directly with concrete identifiers inline (numbers, identifiers, no ceremony)
 
 **Action language:**
 - `I went ahead and [did X]` — past action, casual ownership
@@ -160,7 +169,9 @@ Preferred terms and terms to avoid in this user's domain:
 | Preferred | Avoid |
 |-----------|-------|
 | `card` | `ticket` (in kanban context) |
-| _(add domain-specific vocabulary corrections as they accumulate)_ | _(add more)_ |
+| postgres (casual Slack) | PostgreSQL (formal/PR/code context only) |
+| redis (casual Slack) | Redis (formal context only) |
+| k8s (casual Slack) | Kubernetes (formal context only) |
 
 ---
 
@@ -214,6 +225,36 @@ Patterns visible in this example:
 - Soft invitational pointer to evidence tool: `Take a look in [tool] if you want some more detail` (avoids pasting full URLs)
 - Parens-reference typography for inline links: `(reference)` as a placeholder Karl replaces with a hyperlinked word
 - Before/After evidence inline: `Before (window, dates): X% rate, Y% flake rate across N executions.` Dense, factual, NOT a separate `Evidence:` section header
+
+---
+
+**Slack technical explanation (Tommy reply re polling fix):**
+
+> That's what I thought at first. The polling helper was calling getTesterBlockResults through an unauthenticated graph-gateway client. That endpoint requires auth, so every poll came back 401 and it timed out.
+>
+> BUT... the results-api writes synchronously to postgres through graph-gateway. By the time completeMazeSession returns, all the block answers are already persisted. So really, there was nothing to wait for.
+>
+> The polling wasn't necessary at all.
+
+Patterns visible in this example:
+- Empathetic opener `That's what I thought at first` aligning with the listener before pivoting — meets them where they were, not where you are
+- `BUT...` (all-caps + ellipsis) as a casual one-line bridge from proximate cause to deeper insight — Slack-native, lighter than 'However,' or 'But more importantly,'
+- Plain causal chains with no hedges (no 'would', 'could', 'appears to') — state facts directly: "the row was there — postgres had committed it"
+- `So really,` introducing the upshot after stating facts — equivalent to 'the deeper realization:' but lighter
+- Slack-native formatting — no backticks for code identifiers, no bullets, prose paragraphs separated by blank lines
+- Lowercase technical terms (`postgres` not `PostgreSQL`) in casual Slack
+- Closing with short blunt restatement of the code-level outcome — NOT evidence framing
+
+Anti-patterns (vs Karl's voice) — what NOT to do:
+
+| AI tendency | Karl's voice |
+|-------------|-------------|
+| "Different angle than I said earlier" | "That's what I thought at first" |
+| "the proximate cause / the deeper realization:" | "really, there was nothing to wait for" |
+| Bullet lists for cause/effect | Paragraph prose with BUT... pivot |
+| `Backticked code identifiers in Slack` | Bare-word identifiers |
+| "PostgreSQL" in casual Slack | "postgres" |
+| Closing with evidence framing | Closing with the upshot |
 
 ---
 
