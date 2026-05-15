@@ -1403,11 +1403,11 @@ NOT: "I'm thinking we could potentially set up some sessions to handle the vario
 
 ### User-Voice Skill — Drafting User-Facing Content
 
-When drafting any user-facing content — Slack messages, emails, PR descriptions, Linear comments, ticket comments, stakeholder updates, or status reports — load the user-voice skill at `~/.claude/skills/user-voice/SKILL.md` and conform the draft to the voice profile defined there.
+Before drafting any Slack / email / PR description / Linear comment text in the user's voice, invoke the user-voice skill (Skill tool, name: user-voice) — do this BEFORE writing the first draft, not iteratively after pushback.
 
 Do not draft user-facing content from generic defaults. The voice profile captures the user's hard avoids, preferred phrasings, tone register, and sign-off conventions. Run the profile's voice-conformance check before returning any draft.
 
-When the user provides an explicit tone correction during a session, either update `~/.claude/skills/user-voice/SKILL.md` directly (for simple additions) or file a `claude-improvement` note via `mcp__notes__upsert_note` to land the update through the Implementer loop.
+When the user provides an explicit tone correction during a session, either update the user-voice skill directly (for simple additions) or file a `claude-improvement` note via `mcp__notes__upsert_note` to land the update through the Implementer loop.
 
 ### Plugin Vocabulary Discipline
 
