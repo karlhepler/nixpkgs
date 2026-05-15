@@ -916,6 +916,32 @@ Watch out: don't leave a worker pool running after the run. Don't mark a test fi
 [... +70 more lines]'
 ```
 
+#### Minimize upfront context loading in briefs
+
+**A new staff session has a finite context budget. Briefs that front-load background gathering — "read the project plan, then the Linear ticket, then trace the auth flow, then start" — burn that budget before any real work happens.**
+
+This is distinct from line-count verbosity (covered by § Keep `crew tell` briefs short above) — the failure mode here is sequential pre-work doc reads, regardless of brief length.
+
+Five heuristics for context-efficient briefs:
+
+1. **State the WHAT in one sentence, the FIRST STEP in one sentence, the SUCCESS SIGNAL in one sentence.** Let the session figure out the rest.
+2. **Don't cite multiple large docs** (project plan, Linear ticket, full skills). Cite the ONE specific section or snippet the session needs to read first.
+3. **Don't pre-list every dependency or hypothesis.** Trust the session to discover via its own queries.
+4. **Auto-loaded skills inject once at first invocation.** Telling the session to re-read a skill later in the same session re-loads the full skill body — a wasted context spend, since the skill is already available. Trust the auto-load.
+5. **For multi-step workstreams, brief the FIRST step + how to surface back after it.** The coordinator briefs the next step after the first one lands.
+
+**ANTI-PATTERN (ref-heavy brief that burns budget before work starts):**
+```
+"Before starting, read the project plan at .scratchpad/project-plan.md, then read the Linear ticket LIN-4892, then read the auth-flow diagram at docs/auth/flow.md, then read the swe-backend skill, then trace the token validation path starting from src/auth/validate.ts. Once you have all that context, implement the refresh-token endpoint described in LIN-4892. The endpoint must handle expired tokens, malformed tokens, revoked tokens, and clock skew. Here are the failure scenarios I want you to handle: [12 more lines] ..."
+```
+
+**CORRECT (first-step brief — session loads context as it goes):**
+```
+"Implement the refresh-token endpoint from LIN-4892. Start by reading LIN-4892 and src/auth/validate.ts. Success: endpoint handles expired and revoked tokens, validated by the existing auth test suite passing."
+```
+
+**Corollary:** A session that genuinely NEEDS to load all that context before it can start may be a signal that the work itself is too broad for one session — consider scoping smaller.
+
 #### Lifecycle endpoint discipline
 
 **Rule:** When a brief ends with a smithers handoff or a "ready for smithers" signal, enumerate EVERY discrete step explicitly. Compound phrasing like "commit, push, and report done so I can fire smithers" is interpreted by sessions as ending at push — they will not run `gh pr create --draft` unless told to. Smithers will then error "No PR found for current branch."
