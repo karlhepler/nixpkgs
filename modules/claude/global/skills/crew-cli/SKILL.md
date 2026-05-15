@@ -496,9 +496,72 @@ crew smithers pricing --format json  # JSON output
 
 ---
 
+## crew active
+
+Classify each pane in the current tmux session as active or idle based on spinner-verb and loop-pattern detection. Reports which windows have at least one active pane.
+
+```bash
+crew active [--names-only] [--format xml|json|human]
+```
+
+**Arguments:**
+- `--names-only` — Print just the names of windows with at least one active pane, one per line. Intended for shell-script consumers. `--names-only` takes precedence; if both are provided, `--format` is silently ignored.
+
+**Active detection (recent lines only — NOT scrollback):**
+- `claude-thinking`: A Claude Code spinner verb (e.g. `Brewing`, `Architecting`, `Crystallizing`) appears alongside a spinner glyph (`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ · ✻ ✳ ✶`) on one of the last 2 visible pane lines.
+- `smithers`: Smithers/Ralph loop-control output (`Cycle N/M`, `ITERATION N`, `Waiting for CI checks`) appears on a recent line.
+
+Historical completion markers like `✻ Baked for 13m 13s` in scrollback do NOT trigger active classification — only the last 2 visible lines are examined for active-work indicators.
+
+**Idle detection:**
+- `claude-empty`: Claude pane at empty prompt (`❯` with nothing after it).
+- `shell`: Shell prompt with no foreground command.
+- `unknown`: Does not match any known pattern.
+
+**Window-level aggregation:** A window is reported as active if ANY of its panes is active.
+
+**Output (XML default):** Only active windows are included in the `<active>` root element.
+
+```xml
+<active>
+  <window name="results-rescue">
+    <pane index="0" state="active" activity="claude-thinking" verb="Brewing" />
+    <pane index="1" state="idle" prompt="shell" />
+  </window>
+  <window name="deliver-carve">
+    <pane index="0" state="idle" prompt="claude-empty" />
+    <pane index="1" state="active" activity="smithers" cycle="Cycle 3/10" />
+  </window>
+</active>
+```
+
+**`--names-only` output:**
+```
+results-rescue
+deliver-carve
+```
+
+**Examples:**
+```bash
+crew active                          # XML: active windows and pane states
+crew active --names-only             # Names of active windows, one per line
+crew active --format json            # JSON output
+crew active --format human           # Human-readable output
+```
+
+**When to use vs `crew list`:**
+- `crew list` — shows all windows and panes that exist (presence).
+- `crew active` — shows which of those windows currently have a pane doing work (activity).
+
+**Common use cases:**
+- Before CronDelete: run `crew active --names-only` to verify all panes are idle before deleting the pulse cron. If any output appears, leave the cron running.
+- Post-dismiss verification: after `crew dismiss <name>`, run `crew active --names-only` to confirm the remaining sessions have no active panes before concluding the workstream is fully idle.
+
+---
+
 ## Format and Exit Codes
 
-**Output format:** Applies to subcommands that produce structured output: `crew list`, `crew read`, `crew find`, `crew status`, `crew sessions`, `crew resume`, `crew project-path`. Default output is XML — omit `--format` in the common case. Override with `--format json` when downstream parsing requires JSON. Never use `--format human` for AI coordination — it breaks parseability.
+**Output format:** Applies to subcommands that produce structured output: `crew list`, `crew read`, `crew find`, `crew status`, `crew sessions`, `crew resume`, `crew project-path`, `crew active`. Default output is XML — omit `--format` in the common case. Override with `--format json` when downstream parsing requires JSON. Never use `--format human` for AI coordination — it breaks parseability.
 
 **Exit codes:**
 - `0` — Success
@@ -506,6 +569,7 @@ crew smithers pricing --format json  # JSON output
 - `2` — Argument error (invalid name, duplicate window, missing required argument)
 
 **Quirks and conventions:**
+- `crew active` empty result: when no windows are active, `crew active` exits 0 with an empty `<active/>` element (not exit 1). Use `crew active --names-only` output presence (non-empty stdout) as the activity signal, not the exit code.
 - `crew tell` default: bare window name targets pane 0. Explicit `window.pane` for non-zero panes.
 - `crew create` default spawn: `staff --name <name>` (not `claude`). Override with `--cmd <other>`.
 - `crew list` / `crew status` scope: current tmux session only — no cross-session visibility.

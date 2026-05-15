@@ -65,14 +65,6 @@ _PULSE_CRON_SENTINEL = "<<pulse-cron-v1>>"
 # Hook-level sentinel that prefixes all lifecycle directives (unchanged).
 _SENTINEL = "<<pulse-cron-lifecycle>>"
 
-# Active-work indicators used by _on_crew_dismiss() as a secondary activity
-# check fallback after the primary crew list window-count gate.
-# pulse STEP 2 uses ONLY the window-count gate and does not consult this list.
-_ACTIVITY_INDICATORS = (
-    "local agents still running|Working for|Churned for|Baked for|"
-    "✻ \\w+|[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]"
-)
-
 # Match 'crew create <name>' at the start of the command (.strip() removes leading whitespace before match).
 _CREW_CREATE_RE = re.compile(r"crew\s+create\s+\S")
 
@@ -306,10 +298,10 @@ def _on_crew_create() -> None:
 def _on_crew_dismiss() -> None:
     """Emit CronDelete directive (conditional: only if no Staff windows with active work remain).
 
-    Uses Option B: the dismiss directive checks both presence AND activity.
-    Activity uses the same indicators as the pulse STEP 2 (_ACTIVITY_INDICATORS),
-    keeping the activity gate defined in one place. This avoids an idle Staff
-    window at a shell prompt keeping the cron alive indefinitely.
+    Uses crew active --names-only to determine whether any remaining Staff windows
+    have active panes (Claude spinner or Smithers/Ralph loop running). This replaces
+    the prior hand-crafted regex approach (activity-indicator regexes + crew find) with
+    a structured primitive that classifies pane state directly.
     """
     own_window_index = _detect_own_window_index()
 
@@ -329,7 +321,6 @@ def _on_crew_dismiss() -> None:
         print(_additional_context(msg))
         return
 
-    crew_find_cmd = "crew find '" + _ACTIVITY_INDICATORS + "' --lines 30"
     msg = (
         f"{_SENTINEL} A Staff session was just dismissed. "
         f"If any `crew` command errors, leave the cron running. "
@@ -337,13 +328,13 @@ def _on_crew_dismiss() -> None:
         f"Count windows whose index is NOT {own_window_index} (those are Staff session windows, not sstaff's own window). "
         f"If zero such windows remain, call CronList to find the cron whose prompt starts with '{_PULSE_CRON_SENTINEL}', "
         f"then call CronDelete with that cron's ID. "
-        f"If one or more Staff windows remain, run `{crew_find_cmd}` "
-        f"against those windows. "
-        f"Active-work indicators: 'local agents still running', 'Working for', 'Churned for', 'Baked for', '✻ ' followed by a verb, or braille spinner characters (⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏). "
-        f"If `crew find` returns no matches across all remaining Staff windows, all sessions are idle — "
+        f"If one or more Staff windows remain, run `crew active --names-only` to check for active panes. "
+        f"If `crew active --names-only` errors (non-zero exit), leave the cron running. "
+        f"`crew active --names-only` outputs one window name per line for each window where a Claude spinner or Smithers/Ralph loop is currently running; it produces no output when all panes are idle. "
+        f"If `crew active --names-only` produces no output across all remaining Staff windows, all sessions are idle — "
         f"call CronList to find the cron whose prompt starts with '{_PULSE_CRON_SENTINEL}', "
         f"then call CronDelete with that cron's ID. "
-        f"If `crew find` matched at least one active-work indicator, leave the cron running."
+        f"If `crew active --names-only` produced at least one window name, leave the cron running."
     )
     print(_additional_context(msg))
 
@@ -382,7 +373,7 @@ def show_help() -> None:
     print("CRON DELETE (crew dismiss):")
     print("  Uses detected window index to identify Staff windows vs sstaff's own.")
     print("  Checks both presence AND activity before deleting — idle Staff windows")
-    print("  do not keep the cron alive. Activity uses same indicators as pulse STEP 2.")
+    print("  do not keep the cron alive. Activity detected via `crew active --names-only`.")
     print("  Fallback: if window detection fails, leaves cron running (fail open).")
     print()
     print("PULSE CRON (self-terminating):")

@@ -8,6 +8,7 @@ Subcommands:
   read <targets>           Capture pane buffer content
   find <pattern> [targets] Search pane content for pattern
   status                   Composite: list + read N lines from every pane (Claude panes only by default)
+  active                   Classify each pane as active or idle based on spinner verbs / loop patterns
   smithers <name>          Create a horizontal split in the target window and run smithers in the new pane
 
 Target format: <window>[.<pane>]  — pane defaults to 0
@@ -2592,6 +2593,275 @@ def cmd_smithers(name: str, fmt: str) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Subcommand: active
+# ---------------------------------------------------------------------------
+
+# Canonical Claude Code SPINNER_VERBS extracted from the Claude Code binary.
+# Source: /Users/karlhepler/.local/share/claude/versions/2.1.142
+#         (EJ8 array — the default spinnerVerbs list used by Claude Code's TUI spinner)
+# TODO: keep in sync with upstream Claude Code SPINNER_VERBS — source:
+#       /Users/karlhepler/.local/share/claude/versions/<version>
+#       (binary — search for 'EJ8=["Accomplishing"' with `strings <binary> | rg 'EJ8=\["Accom'`)
+SPINNER_VERBS: frozenset = frozenset([
+    "Accomplishing", "Actioning", "Actualizing", "Architecting", "Baking",
+    "Beaming", "Beboppin'", "Befuddling", "Billowing", "Blanching",
+    "Bloviating", "Boogieing", "Boondoggling", "Booping", "Bootstrapping",
+    "Brewing", "Bunning", "Burrowing", "Calculating", "Canoodling",
+    "Caramelizing", "Cascading", "Catapulting", "Cerebrating", "Channeling",
+    "Channelling", "Choreographing", "Churning", "Clauding", "Coalescing",
+    "Cogitating", "Combobulating", "Composing", "Computing", "Concocting",
+    "Considering", "Contemplating", "Cooking", "Crafting", "Creating",
+    "Crunching", "Crystallizing", "Cultivating", "Deciphering", "Deliberating",
+    "Determining", "Dilly-dallying", "Discombobulating", "Doing", "Doodling",
+    "Drizzling", "Ebbing", "Effecting", "Elucidating", "Embellishing",
+    "Enchanting", "Envisioning", "Evaporating", "Fermenting", "Fiddle-faddling",
+    "Finagling", "Flambéing", "Flibbertigibbeting", "Flowing", "Flummoxing",
+    "Fluttering", "Forging", "Forming", "Frolicking", "Frosting",
+    "Gallivanting", "Galloping", "Garnishing", "Generating", "Gesticulating",
+    "Germinating", "Gitifying", "Grooving", "Gusting", "Harmonizing",
+    "Hashing", "Hatching", "Herding", "Honking", "Hullaballooing",
+    "Hyperspacing", "Ideating", "Imagining", "Improvising", "Incubating",
+    "Inferring", "Infusing", "Ionizing", "Jitterbugging", "Julienning",
+    "Kneading", "Leavening", "Levitating", "Lollygagging", "Manifesting",
+    "Marinating", "Meandering", "Metamorphosing", "Misting", "Moonwalking",
+    "Moseying", "Mulling", "Mustering", "Musing", "Nebulizing",
+    "Nesting", "Newspapering", "Noodling", "Nucleating", "Orbiting",
+    "Orchestrating", "Osmosing", "Perambulating", "Percolating", "Perusing",
+    "Philosophising", "Photosynthesizing", "Pollinating", "Pondering", "Pontificating",
+    "Pouncing", "Precipitating", "Prestidigitating", "Processing", "Proofing",
+    "Propagating", "Puttering", "Puzzling", "Quantumizing", "Razzle-dazzling",
+    "Razzmatazzing", "Recombobulating", "Reticulating", "Roosting", "Ruminating",
+    "Sautéing", "Scampering", "Schlepping", "Scurrying", "Seasoning",
+    "Shenaniganing", "Shimmying", "Simmering", "Skedaddling", "Sketching",
+    "Slithering", "Smooshing", "Sock-hopping", "Spelunking", "Spinning",
+    "Sprouting", "Stewing", "Sublimating", "Swirling", "Swooping",
+    "Symbioting", "Synthesizing", "Tempering", "Thinking", "Thundering",
+    "Tinkering", "Tomfoolering", "Topsy-turvying", "Transfiguring", "Transmuting",
+    "Twisting", "Undulating", "Unfurling", "Unravelling", "Vibing",
+    "Waddling", "Wandering", "Warping", "Whatchamacalliting", "Whirlpooling",
+    "Whirring", "Whisking", "Wibbling", "Working", "Wrangling",
+    "Zesting", "Zigzagging",
+])
+
+# Spinner glyphs used by Claude Code's TUI spinner (braille + special chars).
+# A recent pane line showing a SPINNER_VERB alongside one of these glyphs
+# indicates Claude Code is actively processing.
+_SPINNER_GLYPHS = frozenset("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏·✻✳✶")
+
+# Regex to match Smithers / Ralph loop-control output on a recent line.
+# These patterns indicate an active background loop (not idle at a prompt).
+_LOOP_ACTIVE_RE = re.compile(
+    r"Cycle\s+\d+/\d+"          # 'Cycle N/M'
+    r"|ITERATION\s+\d+"          # 'ITERATION N'
+    r"|Waiting for CI checks"    # smithers CI-wait message
+)
+
+# Number of recent visible lines to examine for active-work indicators.
+# 2 lines captures the spinner line and any companion line; avoids matching
+# historical scrollback completions (e.g. '✻ Baked for 13m 13s').
+_ACTIVE_SCAN_LINES = 2
+
+# Duration pattern guard for completion banners.
+# The Claude Code completion banner ('✻ Baked for 13m 13s') contains both a
+# spinner glyph (✻) and a SPINNER_VERB ('Baked'), which would trigger a
+# false-positive active classification. Lines matching this duration pattern
+# are completion banners — skip the active classification for them.
+_DURATION_RE = re.compile(r"for \d+[mhs]")
+
+
+def _classify_pane_activity(
+    tmux_target: str,
+) -> Tuple[str, str, str]:
+    """Classify pane activity state by inspecting the last visible lines.
+
+    Returns (state, activity, detail) where:
+      state    — 'active' or 'idle'
+      activity — activity subtype (see below)
+      detail   — extra context string (e.g. matched verb, cycle info)
+
+    Active subtypes:
+      'claude-thinking'  — Claude spinner verb + spinner glyph visible on recent line
+      'smithers'         — Smithers/Ralph loop-control output on recent line
+
+    Idle subtypes:
+      'claude-empty'     — Claude pane at empty prompt (❯ with no following content)
+      'shell'            — Shell prompt with no foreground command (zsh/bash/sh)
+      'unknown'          — Does not match any known pattern
+
+    Detection is intentionally conservative: only RECENT lines (last
+    _ACTIVE_SCAN_LINES) are examined for active-work indicators so that
+    historical completion markers like '✻ Baked for 13m 13s' in scrollback
+    do NOT trigger a false 'active' classification.
+
+    Single-capture optimisation: active and idle scans are merged into one
+    5-line capture call (consolidated capture). Active indicators are checked
+    against only the last _ACTIVE_SCAN_LINES lines; idle-prompt patterns use
+    the full 5-line window. This halves the subprocess count per pane compared
+    to the two-call approach (active scan + idle scan) in the worst case.
+    """
+    # Merged/consolidated capture: 5 lines covers both the active scan window
+    # (_ACTIVE_SCAN_LINES=2) and the broader idle-prompt detection window (5 lines).
+    _IDLE_SCAN_LINES = 5
+    result = subprocess.run(
+        ["tmux", "capture-pane", "-p", "-t", tmux_target, "-S", f"-{_IDLE_SCAN_LINES}"],
+        capture_output=True, text=True, check=False,
+    )
+    if result.returncode != 0:
+        return "idle", "unknown", ""
+
+    all_lines = result.stdout.splitlines()
+    # Active indicators are only checked on the last _ACTIVE_SCAN_LINES lines.
+    recent_lines = [ln for ln in all_lines[-_ACTIVE_SCAN_LINES:] if ln.strip()]
+
+    for line in recent_lines:
+        # Check for Smithers / Ralph loop-control patterns first (before spinner
+        # verb check) so 'Cycle N/M' is attributed to smithers, not claude-thinking.
+        if _LOOP_ACTIVE_RE.search(line):
+            m = _LOOP_ACTIVE_RE.search(line)
+            return "active", "smithers", m.group(0) if m else ""
+
+        # Check for Claude spinner: a SPINNER_VERB token plus a spinner glyph on
+        # the same line. Both must be present to avoid matching plain output that
+        # happens to contain a word from the verbs list.
+        # Duration-pattern guard: skip lines that match the completion-banner
+        # format ('✻ Baked for 13m 13s') — those contain both a SPINNER_VERB and
+        # a spinner glyph but indicate finished work, not active work.
+        words = line.split()
+        matched_verb = next((w for w in words if w in SPINNER_VERBS), None)
+        if matched_verb:
+            has_glyph = any(ch in _SPINNER_GLYPHS for ch in line)
+            if has_glyph and not _DURATION_RE.search(line):
+                return "active", "claude-thinking", matched_verb
+
+    # No active-work indicators on recent lines — inspect for idle prompt states
+    # using the full 5-line capture already obtained above.
+    all_recent = result.stdout
+
+    # Claude empty prompt: '❯' character with nothing after it on the line
+    # (Claude Code's input chevron at an empty prompt).
+    if re.search(r"❯\s*$", all_recent, re.MULTILINE):
+        return "idle", "claude-empty", ""
+
+    # Shell idle prompt: common shell prompt patterns with no foreground command.
+    if re.search(r"[$#%]\s*$", all_recent, re.MULTILINE):
+        return "idle", "shell", ""
+
+    return "idle", "unknown", ""
+
+
+def cmd_active(names_only: bool, fmt: str) -> None:
+    """Classify each pane in the current crew session as active or idle.
+
+    Iterates all panes across all windows in the current tmux session.
+    For each pane, classifies its state using spinner-verb and loop-pattern
+    detection on the last few visible lines (NOT scrollback).
+
+    A window is considered 'active' if ANY of its panes is active.
+
+    With --names-only: prints just window names with at least one active pane,
+    one per line. Intended for shell-script consumers (e.g. crew-lifecycle-hook).
+
+    Default output: XML structured output with pane-level state detail.
+    """
+    current_session = get_current_session()
+    if current_session is None:
+        emit_error(
+            "crew active: not in a tmux session",
+            fmt,
+            error_code="NOT_IN_TMUX",
+            exit_code=1,
+        )
+    all_panes = get_all_panes(session=current_session)
+
+    # Group panes by window key (session:window_index) preserving order.
+    windows_ordered: List[str] = []
+    window_data: Dict[str, Dict] = {}
+    for session, window_index, window_name, pane_index, pane_cmd in all_panes:
+        wkey = f"{session}:{window_index}"
+        if wkey not in window_data:
+            windows_ordered.append(wkey)
+            window_data[wkey] = {"name": window_name, "panes": []}
+        window_data[wkey]["panes"].append((session, window_index, window_name, pane_index, pane_cmd))
+
+    # Classify all panes per window.
+    # window_results: list of (window_name, is_active, pane_results)
+    # where pane_results: list of (pane_index, state, activity, detail)
+    window_results = []
+    for wkey in windows_ordered:
+        winfo = window_data[wkey]
+        window_name = winfo["name"]
+        pane_results = []
+        window_active = False
+        for session, window_index, _wname, pane_index, _pane_cmd in winfo["panes"]:
+            tmux_target = f"{session}:{window_index}.{pane_index}"
+            state, activity, detail = _classify_pane_activity(tmux_target)
+            pane_results.append((pane_index, state, activity, detail))
+            if state == "active":
+                window_active = True
+        window_results.append((window_name, window_active, pane_results))
+
+    # --names-only: just print active window names, one per line.
+    if names_only:
+        for window_name, window_active, _pane_results in window_results:
+            if window_active:
+                print(window_name)
+        return
+
+    # Structured output.
+    if fmt == "xml":
+        root = ET.Element("active")
+        for window_name, window_active, pane_results in window_results:
+            if not window_active:
+                continue  # Only include windows with active panes
+            win_elem = ET.SubElement(root, "window", name=window_name)
+            for pane_index, state, activity, detail in pane_results:
+                attrs: Dict[str, str] = {"index": pane_index, "state": state}
+                if state == "active":
+                    attrs["activity"] = activity
+                    if detail:
+                        if activity == "claude-thinking":
+                            attrs["verb"] = detail
+                        elif activity == "smithers":
+                            attrs["cycle"] = detail
+                else:
+                    attrs["prompt"] = activity
+                ET.SubElement(win_elem, "pane", **attrs)
+        print(xml_to_string(root))
+    elif fmt == "json":
+        windows_out = []
+        for window_name, window_active, pane_results in window_results:
+            if not window_active:
+                continue
+            panes_out = []
+            for pane_index, state, activity, detail in pane_results:
+                pane_obj: Dict[str, str] = {"index": pane_index, "state": state}
+                if state == "active":
+                    pane_obj["activity"] = activity
+                    if detail:
+                        if activity == "claude-thinking":
+                            pane_obj["verb"] = detail
+                        elif activity == "smithers":
+                            pane_obj["cycle"] = detail
+                else:
+                    pane_obj["prompt"] = activity
+                panes_out.append(pane_obj)
+            windows_out.append({"name": window_name, "panes": panes_out})
+        print(json.dumps({"active": windows_out}, indent=2))
+    else:
+        # human format
+        for window_name, window_active, pane_results in window_results:
+            if not window_active:
+                continue
+            print(f"window: {window_name}")
+            for pane_index, state, activity, detail in pane_results:
+                if state == "active":
+                    extra = f" ({detail})" if detail else ""
+                    print(f"  pane {pane_index}: active [{activity}{extra}]")
+                else:
+                    print(f"  pane {pane_index}: idle [{activity}]")
+
+
+# ---------------------------------------------------------------------------
 # CLI wiring
 # ---------------------------------------------------------------------------
 
@@ -2958,6 +3228,43 @@ def build_parser() -> argparse.ArgumentParser:
         help="Use an explicit worktree path instead of tmux window lookup",
     )
 
+    # active
+    p_active = sub.add_parser(
+        "active",
+        help="Classify each pane as active or idle using spinner-verb / loop-pattern detection",
+        description=(
+            "Inspect each pane in the current tmux session and classify it as active or idle.\n\n"
+            "Active detection (recent lines only — NOT scrollback):\n"
+            "  active (claude-thinking): a Claude Code SPINNER_VERB appears alongside a\n"
+            "      spinner glyph on one of the last 2 visible lines.\n"
+            "  active (smithers): Smithers/Ralph loop-control output ('Cycle N/M',\n"
+            "      'ITERATION N', 'Waiting for CI checks') appears on a recent line.\n\n"
+            "Idle detection:\n"
+            "  idle (claude-empty): Claude pane at empty prompt (❯ with nothing after).\n"
+            "  idle (shell): Shell prompt with no foreground command.\n"
+            "  idle (unknown): Does not match any known pattern.\n\n"
+            "Historical completion markers like '✻ Baked for 13m 13s' in scrollback\n"
+            "do NOT trigger active classification — only RECENT visible lines are examined.\n\n"
+            "A window is 'active' if ANY of its panes is active.\n\n"
+            "Examples:\n"
+            "  crew active                   # XML output: active windows and pane states\n"
+            "  crew active --names-only      # Print active window names, one per line\n"
+            "  crew active --format json     # JSON output\n"
+            "  crew active --format human    # Human-readable output\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_active.add_argument(
+        "--names-only",
+        action="store_true",
+        default=False,
+        dest="names_only",
+        help=(
+            "Print just the names of windows with at least one active pane, one per line. "
+            "Intended for shell-script consumers — output is a plain list, not XML/JSON."
+        ),
+    )
+
     # smithers
     p_smithers = sub.add_parser(
         "smithers",
@@ -3050,6 +3357,8 @@ def main() -> None:
             send = _SessionsSend(fmt)
             cmd_sessions(fmt, send, window_filter=args.window, worktree_filter=args.worktree)
             send.flush()
+        elif args.command == "active":
+            cmd_active(args.names_only, fmt)
         elif args.command == "smithers":
             rc = cmd_smithers(args.name, fmt)
             sys.exit(rc)

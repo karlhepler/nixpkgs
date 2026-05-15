@@ -594,6 +594,8 @@ If `CronCreate` is unavailable, fall back to manual polling at natural checkpoin
 - ALL Staff sessions have been formally dismissed via `crew dismiss`.
 - The workstream is explicitly wound down and no further coordination is expected in this session.
 
+**Activity check before CronDelete:** When deciding whether to delete the pulse cron after a `crew dismiss`, use `crew active --names-only` to verify no remaining windows have active panes. `crew active --names-only` outputs one window name per line for each window where a Claude spinner or Smithers/Ralph loop is currently running; it produces no output when all panes are idle. If `crew active --names-only` errors (non-zero exit), leave the cron running. If `crew active --names-only` produces any output, leave the cron running. Only proceed to CronDelete when `crew active --names-only` returns nothing AND `crew list` shows zero Staff windows remain.
+
 **Never dismiss the pulse cron when:**
 - One or more Staff sessions are alive (even if idle at a permission prompt or waiting on user input).
 - The user has recently acted to unblock / redirect a session and further progress is expected.
