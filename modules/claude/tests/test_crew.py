@@ -33,11 +33,9 @@ from crew import (
     _list_panes_in_window,
     _looks_like_message_not_target,
     _mangle_path_to_project_key,
-    _pane_is_running_smithers,
     _pane_shows_prompt_ready,
     _resolve_targets_with_lookup,
     _sentinel_path,
-    _SMITHERS_SPLIT_PERCENT,
     _tmux_fire_and_forget,
     _wait_for_sentinel,
     build_parser,
@@ -48,7 +46,6 @@ from crew import (
     cmd_project_path,
     cmd_resume,
     cmd_sessions,
-    cmd_smithers,
     cmd_status,
     cmd_tell,
     get_all_panes,
@@ -928,7 +925,7 @@ class TestIsClaudePaneRegression:
         ("zsh", False),
         ("bash", False),
         ("vim", False),
-        ("smithers", False),
+        ("python3", False),
         ("staff", False),  # staff is NOT claude itself; crew filters on pane cmd
     ])
     def test_is_claude_pane(self, cmd, expected):
@@ -2521,224 +2518,6 @@ class TestResolveWorktreePath:
 
 
 # ---------------------------------------------------------------------------
-# cmd_smithers — idempotency, split creation, error cases
-# ---------------------------------------------------------------------------
-
-class TestCmdSmithers:
-    """Tests for the crew smithers subcommand."""
-
-    def _make_window_lookup(self, name: str = "feature-xyz") -> dict:
-        """Return a window lookup dict for a single window."""
-        return {name: ("free-brook:0", "@1")}
-
-    def test_smithers_creates_split_when_none_exists(self, capsys):
-        """No split → split-window + send-keys smithers are called in sequence."""
-        panes_before = [("0", "2.1.100", "/home/user/worktrees/feature-xyz")]
-
-        with patch.object(crew_module, "get_window_lookup", return_value=self._make_window_lookup()):
-            with patch.object(crew_module, "_list_panes_in_window", return_value=panes_before):
-                with patch("subprocess.run") as mock_run:
-                    # split-window succeeds and returns pane index "1"
-                    # display-message for cwd fallback (if triggered): not needed since path in pane tuple
-                    # send-keys succeeds
-                    def side_effect(cmd, **kwargs):
-                        joined = " ".join(str(c) for c in cmd)
-                        if "split-window" in joined:
-                            return fake_run_result(stdout="1\n")
-                        if "send-keys" in joined:
-                            return fake_run_result()
-                        return fake_run_result()
-                    mock_run.side_effect = side_effect
-
-                    rc = cmd_smithers("feature-xyz", fmt="human")
-
-        assert rc == 0
-        out = capsys.readouterr().out
-        assert "started smithers" in out
-        assert "feature-xyz" in out
-
-        # Verify split-window was called
-        split_calls = [
-            c for c in mock_run.call_args_list
-            if "split-window" in " ".join(str(x) for x in c[0][0])
-        ]
-        assert len(split_calls) == 1, f"Expected 1 split-window call, got {len(split_calls)}"
-
-        # Verify send-keys was called with 'smithers'
-        send_calls = [
-            c for c in mock_run.call_args_list
-            if "send-keys" in " ".join(str(x) for x in c[0][0])
-        ]
-        assert any("smithers" in " ".join(str(x) for x in c[0][0]) for c in send_calls), (
-            "Expected send-keys call with 'smithers'"
-        )
-
-        # Verify split-window was called with the correct CWD (-c pane_current_path)
-        assert len(split_calls) == 1
-        split_cmd = " ".join(str(x) for x in split_calls[0][0][0])
-        pane_0_cwd = panes_before[0][2]  # third element of pane tuple is pane_current_path
-        assert pane_0_cwd in split_cmd, (
-            f"Expected pane 0 CWD {pane_0_cwd!r} in split-window call, got: {split_cmd!r}"
-        )
-
-    def test_smithers_idempotent_when_already_running(self, capsys):
-        """If a split exists and smithers is running in pane 1, report success without creating a new split."""
-        panes_with_smithers = [
-            ("0", "2.1.100", "/home/user/worktrees/feature-xyz"),
-            ("1", "smithers", "/home/user/worktrees/feature-xyz"),
-        ]
-
-        with patch.object(crew_module, "get_window_lookup", return_value=self._make_window_lookup()):
-            with patch.object(crew_module, "_list_panes_in_window", return_value=panes_with_smithers):
-                with patch("subprocess.run") as mock_run:
-                    rc = cmd_smithers("feature-xyz", fmt="human")
-
-        assert rc == 0
-        out = capsys.readouterr().out
-        assert "already running" in out
-        assert "feature-xyz.1" in out
-
-        # split-window must NOT have been called (idempotent)
-        split_calls = [
-            c for c in mock_run.call_args_list
-            if "split-window" in " ".join(str(x) for x in c[0][0])
-        ]
-        assert len(split_calls) == 0, "split-window must not be called when smithers is already running"
-
-    def test_smithers_errors_when_ambiguous_extra_pane(self, capsys):
-        """Extra pane exists but is NOT running smithers → error returned, no overwrite."""
-        panes_with_other = [
-            ("0", "2.1.100", "/home/user/worktrees/feature-xyz"),
-            ("1", "zsh", "/home/user/worktrees/feature-xyz"),
-        ]
-
-        with patch.object(crew_module, "get_window_lookup", return_value=self._make_window_lookup()):
-            with patch.object(crew_module, "_list_panes_in_window", return_value=panes_with_other):
-                with patch("subprocess.run") as mock_run:
-                    rc = cmd_smithers("feature-xyz", fmt="human")
-
-        assert rc == 1
-        err = capsys.readouterr().err
-        assert "ambiguous" in err.lower() or "refusing" in err.lower()
-
-        # split-window must NOT have been called
-        split_calls = [
-            c for c in mock_run.call_args_list
-            if "split-window" in " ".join(str(x) for x in c[0][0])
-        ]
-        assert len(split_calls) == 0, "split-window must not be called in ambiguous state"
-
-    def test_smithers_uses_correct_split_percentage(self, capsys):
-        """The split is created with _SMITHERS_SPLIT_PERCENT (25%), matching prefix+s keybinding."""
-        panes_before = [("0", "2.1.100", "/home/user/worktrees/feature-xyz")]
-
-        with patch.object(crew_module, "get_window_lookup", return_value=self._make_window_lookup()):
-            with patch.object(crew_module, "_list_panes_in_window", return_value=panes_before):
-                with patch("subprocess.run") as mock_run:
-                    def side_effect(cmd, **kwargs):
-                        joined = " ".join(str(c) for c in cmd)
-                        if "split-window" in joined:
-                            return fake_run_result(stdout="1\n")
-                        return fake_run_result()
-                    mock_run.side_effect = side_effect
-
-                    cmd_smithers("feature-xyz", fmt="human")
-
-        # The split percentage constant must be 25 (matching prefix+s binding in modules/tmux/default.nix)
-        assert _SMITHERS_SPLIT_PERCENT == 25, (
-            f"Expected split percent 25 (matching tmux prefix+s), got {_SMITHERS_SPLIT_PERCENT}"
-        )
-
-        # Verify the split-window call used the correct percentage
-        split_calls = [
-            c for c in mock_run.call_args_list
-            if "split-window" in " ".join(str(x) for x in c[0][0])
-        ]
-        assert len(split_calls) == 1
-        split_cmd = " ".join(str(x) for x in split_calls[0][0][0])
-        assert "25%" in split_cmd, f"Expected '25%' in split-window call, got: {split_cmd!r}"
-
-    def test_smithers_no_such_window(self, capsys):
-        """Window doesn't exist → clean error, rc=1."""
-        with patch.object(crew_module, "get_window_lookup", return_value={}):
-            rc = cmd_smithers("nonexistent-window", fmt="human")
-
-        assert rc == 1
-        err = capsys.readouterr().err
-        assert "nonexistent-window" in err
-        assert "not found" in err.lower()
-
-    def test_smithers_registered_in_argparse(self):
-        """crew smithers is registered as a subcommand in argparse."""
-        parser = build_parser()
-        # Should parse without error
-        args = parser.parse_args(["smithers", "my-window"])
-        assert args.command == "smithers"
-        assert args.name == "my-window"
-
-    def test_smithers_xml_output_started(self, capsys):
-        """Started state emits valid XML with status=started."""
-        panes_before = [("0", "2.1.100", "/home/user/worktrees/feature-xyz")]
-
-        with patch.object(crew_module, "get_window_lookup", return_value=self._make_window_lookup()):
-            with patch.object(crew_module, "_list_panes_in_window", return_value=panes_before):
-                with patch("subprocess.run") as mock_run:
-                    def side_effect(cmd, **kwargs):
-                        if "split-window" in " ".join(str(c) for c in cmd):
-                            return fake_run_result(stdout="1\n")
-                        return fake_run_result()
-                    mock_run.side_effect = side_effect
-
-                    rc = cmd_smithers("feature-xyz", fmt="xml")
-
-        assert rc == 0
-        out = capsys.readouterr().out
-        assert 'status="started"' in out
-        assert 'window="feature-xyz"' in out
-
-    def test_smithers_xml_output_already_running(self, capsys):
-        """Already-running state emits valid XML with status=already-running."""
-        panes = [
-            ("0", "2.1.100", "/home/user/worktrees/feature-xyz"),
-            ("1", "smithers", "/home/user/worktrees/feature-xyz"),
-        ]
-
-        with patch.object(crew_module, "get_window_lookup", return_value=self._make_window_lookup()):
-            with patch.object(crew_module, "_list_panes_in_window", return_value=panes):
-                with patch("subprocess.run"):
-                    rc = cmd_smithers("feature-xyz", fmt="xml")
-
-        assert rc == 0
-        out = capsys.readouterr().out
-        assert 'status="already-running"' in out
-        assert 'pane="1"' in out
-
-
-# ---------------------------------------------------------------------------
-# _pane_is_running_smithers helper
-# ---------------------------------------------------------------------------
-
-class TestPaneIsRunningSmithers:
-    """Unit tests for the smithers-detection helper."""
-
-    def test_returns_true_for_smithers_command(self):
-        pane = ("1", "smithers", "/some/path")
-        assert _pane_is_running_smithers(pane) is True
-
-    def test_returns_false_for_zsh(self):
-        pane = ("1", "zsh", "/some/path")
-        assert _pane_is_running_smithers(pane) is False
-
-    def test_returns_false_for_claude_version(self):
-        pane = ("1", "2.1.116", "/some/path")
-        assert _pane_is_running_smithers(pane) is False
-
-    def test_returns_false_for_empty_command(self):
-        pane = ("1", "", "/some/path")
-        assert _pane_is_running_smithers(pane) is False
-
-
-# ---------------------------------------------------------------------------
 # cmd_status multi-pane extension
 # ---------------------------------------------------------------------------
 
@@ -2746,10 +2525,10 @@ class TestCmdStatusMultiPane:
     """Tests that crew status surfaces per-pane activity for multi-pane windows."""
 
     def test_status_shows_multiple_panes_xml(self, capsys):
-        """Window with Claude in pane 0 and smithers in pane 1 → both appear in status XML."""
+        """Window with Claude in pane 0 and an extra pane 1 → both appear in status XML."""
         all_panes = [
             ("free-brook", "0", "feature-xyz", "0", "2.1.100"),   # Claude pane
-            ("free-brook", "0", "feature-xyz", "1", "smithers"),   # smithers pane
+            ("free-brook", "0", "feature-xyz", "1", "zsh"),        # extra pane
         ]
 
         with patch.object(crew_module, "get_current_session", return_value="free-brook"):
@@ -2765,10 +2544,10 @@ class TestCmdStatusMultiPane:
         assert 'name="feature-xyz"' in out
 
     def test_status_shows_multiple_panes_human(self, capsys):
-        """Human format includes both panes when a window has Claude + smithers."""
+        """Human format includes both panes when a window has Claude and an extra pane."""
         all_panes = [
             ("free-brook", "0", "feature-xyz", "0", "2.1.100"),
-            ("free-brook", "0", "feature-xyz", "1", "smithers"),
+            ("free-brook", "0", "feature-xyz", "1", "zsh"),
         ]
 
         with patch.object(crew_module, "get_current_session", return_value="free-brook"):
@@ -2779,13 +2558,13 @@ class TestCmdStatusMultiPane:
         out = capsys.readouterr().out
         # Both panes appear in the listing
         assert "feature-xyz" in out
-        assert "smithers" in out
+        assert "zsh" in out
 
     def test_status_excludes_windows_without_claude_pane(self, capsys):
         """Windows without any Claude pane must not appear in default (non --all) status."""
         all_panes = [
             ("free-brook", "0", "feature-xyz", "0", "2.1.100"),   # Claude
-            ("free-brook", "0", "feature-xyz", "1", "smithers"),   # smithers
+            ("free-brook", "0", "feature-xyz", "1", "zsh"),        # extra pane
             ("free-brook", "1", "pure-zsh-win", "0", "zsh"),       # no Claude — excluded
         ]
 
