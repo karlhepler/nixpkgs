@@ -9,7 +9,6 @@ Tracks temporary vs permanent patterns for lifecycle cleanup.
 import argparse
 import fnmatch
 import json
-import os
 import re
 import signal
 import subprocess
@@ -366,10 +365,6 @@ def cmd_session_hook() -> None:
 
     # Suppress for sub-agents (they have agent_type in the JSON)
     if data.get("agent_type", ""):
-        return
-
-    # Suppress for burns sessions
-    if os.environ.get("BURNS_SESSION", ""):
         return
 
     print(f"\U0001f511 Your perm session is: {session_id}")

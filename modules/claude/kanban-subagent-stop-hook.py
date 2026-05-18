@@ -22,8 +22,8 @@ Output format (SubagentStop hook):
 
 Fails open: any error results in allowing the agent to stop unchanged.
 
-Skip condition: BURNS_SESSION=1 or PERSONAL_TRAINER_SESSION=1 means a non-coordinator
-session is running — skip AC review. See _session_env.is_non_coordinator_session().
+Skip condition: PERSONAL_TRAINER_SESSION=1 means a non-coordinator session is
+running — skip AC review. See _session_env.is_non_coordinator_session().
 """
 
 import html
@@ -1210,8 +1210,8 @@ def process_subagent_stop(payload: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    # Skip if running inside a non-coordinator session (Burns/Ralph, Personal Trainer).
-    # is_non_coordinator_session() checks BURNS_SESSION=1 and PERSONAL_TRAINER_SESSION=1;
+    # Skip if running inside a non-coordinator session (Personal Trainer, etc.).
+    # is_non_coordinator_session() checks PERSONAL_TRAINER_SESSION=1;
     # add new session-type flags in _session_env.py as new modes are introduced.
     if is_non_coordinator_session():
         print(json.dumps(allow()))

@@ -28,7 +28,7 @@ Constraints:
   - Concurrent-safe writes via fcntl.flock (exclusive lock on the tracker file).
   - Session detection via KANBAN_SESSION env var; no-op cleanly if absent.
   - Stale entries (> 24h old) are pruned silently in user-prompt-submit.
-  - BURNS_SESSION=1 → no-op (Ralph manages its own state).
+  - PERSONAL_TRAINER_SESSION=1 → no-op (non-coordinator session).
   - Recent entries (< 5 min old) are suppressed from the warning (expected in-flight).
 
 # Reinforces:
@@ -477,8 +477,8 @@ def cmd_user_prompt_submit(_payload: dict) -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    # Skip if running inside a non-coordinator session (Burns/Ralph, Personal Trainer).
-    # is_non_coordinator_session() checks BURNS_SESSION=1 and PERSONAL_TRAINER_SESSION=1;
+    # Skip if running inside a non-coordinator session (Personal Trainer, etc.).
+    # is_non_coordinator_session() checks PERSONAL_TRAINER_SESSION=1;
     # add new session-type flags in _session_env.py as new modes are introduced.
     if is_non_coordinator_session():
         return

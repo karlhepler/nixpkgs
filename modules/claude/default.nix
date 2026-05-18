@@ -175,10 +175,9 @@ in {
         fi
 
         # Non-coordinator session modes: skip kanban/perm injection entirely.
-        # BURNS_SESSION=1  — Ralph orchestrator (manages its own state)
         # PERSONAL_TRAINER_SESSION=1 — personal-trainer plugin (no kanban context wanted)
-        # OR-logic: add new session-type flags here as new modes are introduced.
-        if [ "''${BURNS_SESSION:-}" = "1" ] || [ "''${PERSONAL_TRAINER_SESSION:-}" = "1" ]; then
+        # Add new session-type flags here as new modes are introduced.
+        if [ "''${PERSONAL_TRAINER_SESSION:-}" = "1" ]; then
           printf '{"result":""}'
           exit 0
         fi

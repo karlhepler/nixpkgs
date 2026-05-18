@@ -10,7 +10,7 @@ Columns: todo, doing, done, canceled
 ENVIRONMENT VARIABLES:
   KANBAN_HIDE_MINE     - Hide your own session's cards by default
   KANBAN_ARCHIVE_DAYS  - Days before auto-archiving done cards (default: 30)
-  KANBAN_SESSION       - Override session detection (for smithers/burns)
+  KANBAN_SESSION       - Override session detection
   KANBAN_ROOT          - Override board location
 """
 
@@ -635,11 +635,6 @@ def cmd_session_hook(args) -> None:
 
     # Sub-agents (Task tool) have agent_type in stdin JSON — suppress for them
     if data.get("agent_type"):
-        return
-
-    # Burns sessions (Ralph-spawned via ralph CLI) don't have agent_type but
-    # should also be suppressed — burns.py sets BURNS_SESSION=1 in the env
-    if os.environ.get("BURNS_SESSION"):
         return
 
     # Resolve UUID to friendly name via .kanban/sessions.json

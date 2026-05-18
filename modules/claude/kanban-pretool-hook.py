@@ -13,8 +13,8 @@ Output format (PreToolUse hook):
 Fails open: any error (no card found, kanban show fails, JSON parse error)
 results in allowing the tool call unchanged.
 
-Skip condition: BURNS_SESSION=1 env var means Ralph is running — skip injection
-to avoid confusing the model with kanban context.
+Skip condition: PERSONAL_TRAINER_SESSION=1 means a non-coordinator session is
+running — skip injection to avoid confusing the model with kanban context.
 
 Known Issues:
     - Claude Code displays 'PreToolUse:Agent hook error' in the UI even when
@@ -702,7 +702,7 @@ def _validate_bash_destructive_git(payload: dict) -> "dict | None":
 
     Rules:
     - Only applies when running inside a sub-agent (agent_id present in payload).
-    - BURNS_SESSION=1 is handled upstream (early return in main).
+    - Non-coordinator sessions are handled upstream (early return in main).
     - Parses the command for destructive git ops.
     - Fetches the doing card's editFiles for the sub-agent's session.
     - Rejects if any target file is not in editFiles.
@@ -919,9 +919,9 @@ def deny_with_reason(reason: str) -> dict:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    # Skip if running inside a non-coordinator session (Burns/Ralph, Personal Trainer)
+    # Skip if running inside a non-coordinator session (Personal Trainer, etc.)
     # to avoid injecting kanban coordinator context where it doesn't belong.
-    # is_non_coordinator_session() checks BURNS_SESSION=1 and PERSONAL_TRAINER_SESSION=1;
+    # is_non_coordinator_session() checks PERSONAL_TRAINER_SESSION=1;
     # add new session-type flags in _session_env.py as new modes are introduced.
     if is_non_coordinator_session():
         print(json.dumps(allow_unchanged()))
