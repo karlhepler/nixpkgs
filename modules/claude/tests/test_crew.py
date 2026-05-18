@@ -30,7 +30,6 @@ from crew import (
     _cleanup_sentinel,
     _CREW_SENTINEL_DIR,
     _extract_org_repo_from_remote,
-    _list_panes_in_window,
     _looks_like_message_not_target,
     _mangle_path_to_project_key,
     _pane_shows_prompt_ready,

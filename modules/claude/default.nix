@@ -1201,7 +1201,6 @@ EOF
       '';
     in lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       # Copy all global configuration (mirrors global/ -> ~/.claude/ structure)
-      # EXCLUDE hats/ directory - contains build-time template files only
       $DRY_RUN_CMD mkdir -p ~/.claude
 
       # Make existing files writable BEFORE copying, so cp can overwrite read-only
@@ -1215,8 +1214,7 @@ EOF
       # Copy subdirectories (commands, agents, etc.) into ~/.claude/
       # -mindepth 1: excludes the store path root itself (prevents creating
       #              ~/.claude/HASH-global/ directories on every hms run)
-      # ! -name hats: excludes build-time template directory
-      $DRY_RUN_CMD find ${claudeGlobalDir} -mindepth 1 -maxdepth 1 -type d ! -name hats -exec cp -rf {} ~/.claude/ \;
+      $DRY_RUN_CMD find ${claudeGlobalDir} -mindepth 1 -maxdepth 1 -type d -exec cp -rf {} ~/.claude/ \;
 
       # Ensure all subdirectories exist (in case cp didn't create them)
       $DRY_RUN_CMD mkdir -p ~/.claude/commands ~/.claude/output-styles ~/.claude/docs ~/.claude/agents

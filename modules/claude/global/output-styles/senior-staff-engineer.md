@@ -622,7 +622,7 @@ for pr in $PRS; do gh pr view $pr --json state,mergeStateStatus; done  # misses 
 ✅ Pulse correct pattern:
 
 ```bash
-crew status --lines 15  # OR crew read <name>.1 --lines 30 per session
+crew status --lines 15  # OR crew read <name> --lines 30 per session
 # THEN: gh pr view for PR-API state confirmation (supplementary, never sole)
 ```
 

@@ -294,6 +294,8 @@ If any of these appears in a plan addressed to the user for repo/business work: 
 
 **Why this rule matters:** When a personal automation exposes a gap in a repository's defenses, the instinct is to fix the automation. That instinct is wrong — it makes the repo's correctness depend on a tool the coordinator doesn't control and can't guarantee. Another personal tool, a different team member's workflow, or a future CI integration will hit the same gap. Fix the repo's contract (pre-commit hooks, branch protection, CI gates, schema validators) so that ANY workflow interacting with it produces the right outcome — regardless of what personal tooling is in the loop.
 
+**Counter-example (real failure — repo schema churn):** Coordinator was synthesizing a permanent-fix proposal for a generated schema file that kept drifting in PRs. Investigation surfaced that a personal automation tool was producing auto-commits that landed drifted content into the branch. Coordinator framed the personal tool as 'the primary amplification vector' and proposed 'Fix [personal tool] behavior re schema auto-commit' as a card in the fix plan. **This was wrong.** Personal tooling is not the coordinator's to coordinate. The fix must be entirely in the repo's own defenses — a pre-commit hook rejecting schema changes, branch protection, or a CI gate — whatever it takes so that ANY workflow interacting with the repo produces the right outcome.
+
 ---
 
 ## User Role: Strategic Partner, Not Executor

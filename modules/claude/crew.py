@@ -2252,7 +2252,7 @@ def cmd_create(
 
     # --- 11. Start staff (or --cmd override) in the new window ---
     # Default command is `staff --model sonnet --name <name>` (spawns a staff
-    # engineer session pinned to Sonnet — prevents accidental Opus burns on
+    # engineer session pinned to Sonnet — prevents accidental Opus overspend on
     # crew-spawned sessions). The `--cmd` flag overrides the default entirely;
     # callers that need plain `claude` or a different model can pass `--cmd claude`.
     #
@@ -2353,70 +2353,6 @@ def cmd_create(
     # --- 14. Auto-delete --tell-file on successful tell delivery ---
     if tell_file_path is not None and told:
         os.unlink(tell_file_path)
-
-
-def _list_panes_in_window(session_idx: str) -> List[Tuple[str, str, str]]:
-    """Return panes in the given window as list of (pane_index, pane_current_command, pane_current_path).
-
-    session_idx is in 'session:window_index' format (e.g. 'free-brook:0').
-    """
-    result = subprocess.run(
-        [
-            "tmux", "list-panes",
-            "-t", session_idx,
-            "-F", "#{pane_index}|#{pane_current_command}|#{pane_current_path}",
-        ],
-        capture_output=True, text=True, check=False,
-    )
-    panes = []
-    for line in result.stdout.splitlines():
-        parts = line.split("|", 2)
-        if len(parts) == 3:
-            panes.append(tuple(parts))  # type: ignore[arg-type]
-    return panes  # type: ignore[return-value]
-
-
-def _split_window_horizontal(session_idx: str, percent: int, cwd: str) -> Optional[str]:
-    """Create a horizontal (top/bottom) split below the current pane in the given window.
-
-    Uses `split-window -v` which creates a new pane BELOW the existing one.
-    `-l <percent>%` sets the new pane size as a percentage of the total window height.
-    `-c <cwd>` sets the new pane's working directory.
-
-    Returns the new pane index as a string, or None on failure.
-    """
-    result = subprocess.run(
-        [
-            "tmux", "split-window",
-            "-v",
-            "-t", session_idx,
-            "-l", f"{percent}%",
-            "-c", cwd,
-            "-P",        # print new pane index to stdout
-            "-F", "#{pane_index}",
-        ],
-        capture_output=True, text=True, check=False,
-    )
-    if result.returncode != 0:
-        return None
-    pane_index = result.stdout.strip()
-    return pane_index if pane_index else None
-
-
-def _send_command_to_pane(pane_target: str, cmd: str) -> bool:
-    """Send a command string followed by Enter to the given pane target.
-
-    pane_target is in 'session:window_index.pane_index' format.
-    Returns True on success, False on failure.
-
-    Note: cmd must not contain shell-special characters that would confuse
-    tmux send-keys.
-    """
-    result = subprocess.run(
-        ["tmux", "send-keys", "-t", pane_target, cmd, "Enter"],
-        capture_output=True, check=False,
-    )
-    return result.returncode == 0
 
 
 # ---------------------------------------------------------------------------

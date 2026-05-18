@@ -624,7 +624,6 @@ def cmd_init(args) -> None:
     print(f"Kanban board ready at: {path}")
 
 
-
 def cmd_session_hook(args) -> None:
     """Handle SessionStart hook — extract session UUID, output kanban instructions."""
     data = json.loads(sys.stdin.read())

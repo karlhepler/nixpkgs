@@ -15,7 +15,7 @@ ROSTER FORMAT:
   .scratchpad/senior-staff-roster.json:
   {"sessions":[
     {"window":"pricing","workstream":"Stripe pricing model",
-     "panes":{"0":"claude (staff-engineer)","1":"smithers (ci)"}}
+     "panes":{"0":"claude (staff-engineer)"}}
   ]}
 
 CLAUDE PANE DISCOVERY:
@@ -66,7 +66,7 @@ def show_help() -> None:
     print("  .scratchpad/senior-staff-roster.json:")
     print('  {"sessions":[')
     print('    {"window":"pricing","workstream":"Stripe pricing model",')
-    print('     "panes":{"0":"claude (staff-engineer)","1":"smithers (ci)"}}')
+    print('     "panes":{"0":"claude (staff-engineer)"}}')
     print('  ]}')
     print()
     print("CLAUDE PANE DISCOVERY:")

@@ -10,7 +10,6 @@ Covered paths:
 - Permission stall detection: ≥2 denials → allow with stall diagnostic
 - Anti-gaming detection: criteria recheck without substantive work → block
 - No transcript / no card found → fails open (allow)
-- Burns session → allow immediately
 
 All kanban CLI and subprocess calls are monkeypatched — no real
 kanban cards are created or read during these tests.
@@ -688,6 +687,33 @@ class TestCardAlreadyDone:
         # Card in done: stall check skips (status != "doing"), proceeds to kanban done
         # which succeeds (exit 0), so allow is returned.
         assert_allow(result)
+
+
+# ---------------------------------------------------------------------------
+# Personal Trainer session skip
+# ---------------------------------------------------------------------------
+
+class TestPersonalTrainerSession:
+    """PERSONAL_TRAINER_SESSION=1 → main() immediately allows stop."""
+
+    def test_personal_trainer_session_allows_stop(self, hook):
+        import io
+        captured = []
+
+        def fake_print(val, **kwargs):
+            captured.append(val)
+
+        payload = {"agent_transcript_path": "", "session_id": "x", "cwd": "/tmp"}
+        with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
+            with patch("builtins.print", side_effect=fake_print):
+                with patch.dict(os.environ, {"PERSONAL_TRAINER_SESSION": "1"}, clear=False):
+                    with patch.object(hook, "log_error"):
+                        with patch.object(hook, "log_info"):
+                            hook.main()
+
+        assert captured, "Hook produced no output"
+        result = json.loads(captured[-1])
+        assert result.get("decision") == "allow"
 
 
 # ---------------------------------------------------------------------------

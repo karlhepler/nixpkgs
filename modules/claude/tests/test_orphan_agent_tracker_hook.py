@@ -232,6 +232,17 @@ def test_pretool_noop_when_no_tool_use_id(hook, tmp_path):
     assert not tracker.exists()
 
 
+def test_pretool_personal_trainer_session_noop(hook, tmp_path):
+    """pretool no-ops when PERSONAL_TRAINER_SESSION=1."""
+    payload = _make_pretool_payload(tool_use_id="toolu_pt")
+    env = {"KANBAN_SESSION": "pt-session", "PERSONAL_TRAINER_SESSION": "1"}
+
+    _run_subcommand(hook, "pretool", payload, env=env, cwd=tmp_path)
+
+    tracker = tmp_path / ".scratchpad" / "orphan-tracker-pt-session.jsonl"
+    assert not tracker.exists()
+
+
 # ---------------------------------------------------------------------------
 # Tests: subagent-stop subcommand
 # ---------------------------------------------------------------------------
@@ -453,6 +464,22 @@ def test_user_prompt_submit_noop_when_no_session(hook, tmp_path):
 
     output = _run_subcommand(hook, "user-prompt-submit", payload, env=env, cwd=tmp_path)
 
+    assert output.strip() == ""
+
+
+def test_user_prompt_submit_personal_trainer_session_noop(hook, tmp_path):
+    """No output when PERSONAL_TRAINER_SESSION=1."""
+    tracker = tmp_path / ".scratchpad" / "orphan-tracker-pt2-session.jsonl"
+    _write_tracker(tracker, [
+        {"id": "toolu_pt", "description": "pt agent", "started_at": _now_iso()}
+    ])
+
+    payload = _make_user_prompt_payload()
+    env = {"KANBAN_SESSION": "pt2-session", "PERSONAL_TRAINER_SESSION": "1"}
+
+    output = _run_subcommand(hook, "user-prompt-submit", payload, env=env, cwd=tmp_path)
+
+    # PERSONAL_TRAINER_SESSION=1 → hook exits immediately, no output
     assert output.strip() == ""
 
 

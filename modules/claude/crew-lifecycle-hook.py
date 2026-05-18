@@ -191,7 +191,7 @@ def _build_pulse_cron_command(own_window_index: str) -> str:
         f"call CronList to find the cron whose prompt starts with '{_PULSE_CRON_SENTINEL}', "
         f"then call CronDelete with that cron's ID, then exit silently. "
         f"Note: Staff sessions that are alive but idle at their prompt are NOT a self-termination trigger — "
-        f"they may be waiting on external state (CI runs, review feedback, smithers cycles, Currents.dev updates). "
+        f"they may be waiting on external state (CI runs, review feedback, Currents.dev updates). "
         f"Only formal dismissal via `crew dismiss` should trigger pulse-cron termination. "
         f"If at least one Staff window exists, proceed to STEP 3. "
         f"STEP 3 (actionability scan): If STEP 2 did NOT self-terminate (at least one Staff window exists), "
@@ -299,7 +299,7 @@ def _on_crew_dismiss() -> None:
     """Emit CronDelete directive (conditional: only if no Staff windows with active work remain).
 
     Uses crew active --names-only to determine whether any remaining Staff windows
-    have active panes (Claude spinner or Smithers/Ralph loop running). This replaces
+    have active panes (Claude spinner or loop activity running). This replaces
     the prior hand-crafted regex approach (activity-indicator regexes + crew find) with
     a structured primitive that classifies pane state directly.
     """
@@ -330,7 +330,7 @@ def _on_crew_dismiss() -> None:
         f"then call CronDelete with that cron's ID. "
         f"If one or more Staff windows remain, run `crew active --names-only` to check for active panes. "
         f"If `crew active --names-only` errors (non-zero exit), leave the cron running. "
-        f"`crew active --names-only` outputs one window name per line for each window where a Claude spinner or Smithers/Ralph loop is currently running; it produces no output when all panes are idle. "
+        f"`crew active --names-only` outputs one window name per line for each window where a Claude spinner or loop activity is currently running; it produces no output when all panes are idle. "
         f"If `crew active --names-only` produces no output across all remaining Staff windows, all sessions are idle — "
         f"call CronList to find the cron whose prompt starts with '{_PULSE_CRON_SENTINEL}', "
         f"then call CronDelete with that cron's ID. "
