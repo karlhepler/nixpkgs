@@ -13,6 +13,7 @@ import argparse
 import json
 import os
 import random
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -23,9 +24,34 @@ from pathlib import Path
 POSITIVE_EMOJIS = ["😊", "🙏", "✨", "🎉", "🚀", "🙌", "🤝", "👏", "🎊"]
 
 
+def _repo_root() -> Path:
+    """Return the git repository root for the current working directory.
+
+    Uses `git rev-parse --show-toplevel` so the marker lands in the correct
+    .scratchpad/ regardless of which subdirectory the CLI is invoked from.
+    """
+    result = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Could not determine git repository root: {result.stderr.strip()}"
+        )
+    return Path(result.stdout.strip())
+
+
 def marker_path(pr_number: int) -> Path:
-    """Return the dedup marker file path for a given PR number."""
-    return Path(".scratchpad") / f"pr-slack-posted-{pr_number}.flag"
+    """Return the dedup marker file path for a given PR number.
+
+    Resolves the path relative to the git repository root (via
+    `git rev-parse --show-toplevel`) so the marker lands in the correct
+    .scratchpad/ even when the CLI is invoked from a subdirectory.
+    """
+    if not isinstance(pr_number, int) or pr_number <= 0:
+        raise ValueError(f"pr_number must be a positive integer, got {pr_number!r}")
+    return _repo_root() / ".scratchpad" / f"pr-slack-posted-{pr_number}.flag"
 
 
 def build_slack_payload(
@@ -112,11 +138,7 @@ def post_to_webhook(webhook_url: str, payload: dict) -> None:
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=10) as response:
-        status = response.getcode()
-        if status < 200 or status >= 300:
-            raise urllib.error.HTTPError(
-                webhook_url, status, f"Non-2xx response: {status}", {}, None
-            )
+        response.read()
 
 
 def main() -> None:
@@ -126,6 +148,18 @@ def main() -> None:
             "Post a PR completion notification to Slack. "
             "Deduplicates across sessions using a .scratchpad marker file."
         ),
+        epilog=(
+            "Example:\n"
+            "  pr-slack-post --pr 123 --pr-url https://github.com/org/repo/pull/123"
+            " --title 'Add feature X' --repo my-repo"
+            " --why 'Supports Y capability' --what 'Splits Z into A and B'\n\n"
+            "Exit codes:\n"
+            "  0  Posted successfully, or already posted (dedup skipped), or"
+            " SMITHERS_SLACK_WEBHOOK_URL not set (graceful skip)\n"
+            "  1  Post failed (network error, HTTP error, or unexpected exception)\n"
+            "  2  Argument error (handled by argparse)"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "--pr",
@@ -202,6 +236,13 @@ def main() -> None:
 
     try:
         post_to_webhook(webhook_url, payload)
+        # Write dedup marker atomically via tmp-then-rename to prevent torn
+        # writes on concurrent invocations or mid-write process termination.
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now(timezone.utc).isoformat()
+        tmp = marker.with_suffix(marker.suffix + ".tmp")
+        tmp.write_text(ts + "\n")
+        os.replace(tmp, marker)
     except urllib.error.HTTPError as exc:
         print(
             f"Error: Slack webhook returned HTTP {exc.code} for PR {args.pr}",
@@ -220,11 +261,6 @@ def main() -> None:
             file=sys.stderr,
         )
         sys.exit(1)
-
-    # Write dedup marker on successful post
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now(timezone.utc).isoformat()
-    marker.write_text(ts + "\n")
 
     print(f"Posted to Slack for PR {args.pr}")
 

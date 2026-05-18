@@ -47,7 +47,7 @@ Each iteration executes steps 1–15 in order. Any step may terminate early by s
 
 Run:
 ```
-gh pr view <PR> --json state,headRefName,baseRefName,title,isDraft,reviewDecision
+gh pr view <PR> --json state,headRefName,baseRefName,title,isDraft
 ```
 
 If `state == "MERGED"` or `state == "CLOSED"`: send a macOS notification (`osascript -e 'display notification "PR <N> is <state>" with title "Smithers"'`), print a summary, and **stop** (no ScheduleWakeup).
@@ -61,7 +61,7 @@ Run:
 gh pr checks <PR> --json name,state,bucket,link
 ```
 
-On error (non-zero exit): log a warning (`Warning: gh pr checks failed — skipping cycle`) and ScheduleWakeup 1 minute.
+On error (non-zero exit): log a warning (`Warning: gh pr checks failed — skipping cycle`). Update cycle tally in the conversation narrative (e.g., `Cycle <N> of <max_cycles> — gh API error; will retry on next wakeup.`) before scheduling. ScheduleWakeup with `delaySeconds: 60`, `reason: "gh pr checks API error — retrying after 1 minute"`, and `prompt: "Continue /smithers <PR_URL>"`.
 
 Parse the JSON array. Each check has: `name`, `state`, `bucket`, `link`.
 
@@ -96,6 +96,8 @@ Run:
 gh pr view <PR> --json mergeable,mergeStateStatus
 ```
 
+On error (non-zero exit): log the error in the cycle narrative, set `has_conflicts = false` (unknown — treat as no conflicts to proceed safely), and continue.
+
 Compute: `has_conflicts = (mergeable == "CONFLICTING" or mergeStateStatus == "DIRTY")`.
 
 ---
@@ -115,7 +117,9 @@ no_actionable_work = (all checks pending AND actionable_bots == 0 AND NOT has_co
 
 ### Step 6: Early exit if nothing actionable yet
 
-If `no_actionable_work` is true (all checks still pending, no bot comments, no conflicts): log `"Cycle <N>: no actionable work yet — checks still pending"` and ScheduleWakeup 1 minute.
+**If `gh pr checks` returned no checks (empty list):** Log `"Cycle <N>: no checks found yet — treat as no actionable CI work"` and ScheduleWakeup with `delaySeconds: 60`, `reason: "No CI checks present yet — waiting for workflow triggers"`, and `prompt: "Continue /smithers <PR_URL>"`.
+
+Otherwise, if `no_actionable_work` is true (all checks still pending, no bot comments, no conflicts): log `"Cycle <N>: no actionable work yet — checks still pending"` and ScheduleWakeup with `delaySeconds: 60`, `reason: "All CI checks still pending — waiting for results"`, and `prompt: "Continue /smithers <PR_URL>"`.
 
 ---
 
@@ -142,7 +146,7 @@ If `isDraft == true`: run `gh pr ready <PR>` to promote from draft.
 
 Run:
 ```
-gh pr view <PR> --json isDraft,mergeable,mergeStateStatus,reviewDecision
+gh pr view <PR> --json isDraft,mergeable,mergeStateStatus
 ```
 
 Check if mergeable:
@@ -327,15 +331,7 @@ Store this as `pre_sha` to detect stagnation after the specialist returns.
 
 ### Step 11: Delegate to specialist via Agent tool
 
-Examine the actual failures and bot comments to determine which specialist(s) fit:
-
-- Test failures, code bugs, linting issues → `swe-fullstack`
-- Build tooling, CI config, devex pipeline → `swe-devex`
-- Infrastructure, Kubernetes, Nix, IaC → `swe-infra`
-- Security vulnerabilities, secret leaks → `swe-security`
-- Backend API, database schema → `swe-backend`
-- Mixed or unclear → `swe-fullstack` (default)
-- Multiple distinct domains → delegate to multiple specialists in parallel
+When fix work is needed, delegate via the Agent tool to specialist(s) chosen based on the ACTUAL work content using normal staff-coordinator judgment — examine the failures and bot comments, then pick the right specialist(s). Multi-specialist parallel delegation is encouraged where work spans domains (e.g., a test failure related to security flagging both → `swe-fullstack` + `swe-security` in parallel). Do NOT use a hardcoded failure-category-to-specialist mapping.
 
 Invoke the Agent tool with the prompt from Step 9, targeting the appropriate specialist agent(s). This is blocking — wait for the specialist to complete before proceeding.
 
@@ -345,7 +341,7 @@ Increment `ralph_count` by 1.
 
 ### Step 12: Post-delegation cleanup
 
-**Security audit:** Run `git log --since="30 minutes ago" --format="%H %s"` and scan commit subjects for prohibited patterns: `kubectl apply`, `terraform apply`, `terraform destroy`, `pulumi up`, `DROP TABLE`, `sudo`, `ssh`. Log a warning for any matches (do not abort).
+**Security audit:** Run `git log --since="30 minutes ago" --patch` and scan both commit subjects AND the patch body for prohibited patterns: `kubectl apply`, `terraform apply`, `terraform destroy`, `pulumi up`, `DROP TABLE`, `sudo`, `ssh`. Log a warning for any matches (do not abort).
 
 **Push unpushed commits:** Run `git log @{u}.. --oneline`. If non-empty: run `git push`. On push failure: log the error and **stop** (no ScheduleWakeup — push failures indicate a real problem).
 
@@ -377,7 +373,11 @@ Log a brief status summary: `"Cycle complete. ralph_count=<N> stagnation=<N> cyc
 ScheduleWakeup in 1 minute, continuing with the same PR:
 
 ```
-ScheduleWakeup(delay="1m", task="Continue /smithers <PR_URL>")
+ScheduleWakeup(
+  delaySeconds=60,
+  reason="Waiting 1 minute before next smithers polling cycle for PR <N>",
+  prompt="Continue /smithers <PR_URL>"
+)
 ```
 
 ---
