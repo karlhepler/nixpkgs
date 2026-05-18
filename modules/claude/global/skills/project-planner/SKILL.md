@@ -130,7 +130,7 @@ The plan framework sections are the **spine** of your document. Protect their in
 - **BACKGROUND AND CONTEXT = the situation and motivation** (why this initiative exists at all)
 - **BACKGROUND AND CONTEXT ≠ the goal** (what we want to achieve belongs in GOAL)
 
-Keep the two separate. Background explains what's happening and why it matters now. Goal defines the desired end state.
+Keep the two separate. Background explains what's happening and why it matters now. Goal defines the desired end state. When BACKGROUND AND CONTEXT exists as its own section, GOAL must not restate any of it — the desired end state belongs in GOAL, and the current situation belongs in BACKGROUND AND CONTEXT.
 
 **Process:**
 1. Ask: "What's happening that makes this important right now?"
@@ -175,13 +175,16 @@ Keep the two separate. Background explains what's happening and why it matters n
 **Test:** Would a fifth-grader understand this? Can you say it at dinner?
 
 **Example:**
-"Developers waste 3 hours every day waiting for slow tests and debugging flaky ones. This means they can't ship features fast enough. **We need to unblock developers so they can ship features 50% faster.**"
+"**Developers ship features 50% faster, with local test runs under 5 minutes and no daily blocked time from flaky tests.**"
+
+(The "with..." clauses scope a fuzzy claim with concrete sub-targets — they are not problem-restatement. Each clause maps to a measurable outcome.)
 
 **Red flags:**
 - Jargon ("leverage", "utilize", "implement") - use plain words
 - Missing "who for" - who benefits from this?
 - Missing impact - why does the outcome matter?
 - Unmeasurable claims - if you can't measure it, reframe it
+- Restating background or problem state in the GOAL section — when BACKGROUND AND CONTEXT exists as its own section, GOAL must contain ONLY the desired end state. If the opening sentence describes the current state ("Today, developers...", "Right now we...", "Users currently..."), that is the trap; rewrite to lead with the desired state.
 
 ### OBJECTIVE - What Deliverables Will We Produce?
 
@@ -638,7 +641,7 @@ The test suite has grown from 500 to 8,000 tests over three years with no infras
 
 ### GOAL - What Outcome Are We Achieving?
 
-Developers waste 3 hours every day waiting for slow tests (45 minutes locally) and debugging flaky test failures. This means they can't ship features fast enough. Users are waiting for important features while developers fix false alarms. **We need to unblock developers so they can ship features 50% faster and users get what they need in half the time.**
+**Developers ship features 50% faster, with local test runs under 5 minutes and no daily blocked time from flaky tests.**
 
 ### OBJECTIVE - What Deliverables Will We Produce?
 
@@ -769,7 +772,7 @@ The team doubled in size last quarter and we have no written onboarding material
 
 ### GOAL - What Outcome Are We Achieving?
 
-New engineers take 4 weeks to make their first meaningful contribution. They spend 60% of that time asking questions that docs should answer. **We need new engineers to contribute meaningfully in <2 weeks by self-serving answers instead of asking senior engineers.**
+**New engineers contribute meaningfully within 2 weeks, spending less than 20% of their ramp-up time asking questions that documentation answers.**
 
 ### OBJECTIVE - What Deliverables Will We Produce?
 
