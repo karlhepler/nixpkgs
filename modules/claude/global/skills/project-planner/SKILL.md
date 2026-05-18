@@ -171,6 +171,8 @@ Keep the two separate. Background explains what's happening and why it matters n
 
 **Purpose:** Surface the desired outcome/change using Five Whys technique.
 
+**The GOAL is almost always inherited, not authored.** A staff engineer's project should ladder up to an existing organizational initiative, OKR, or strategic objective. The GOAL of the project is the verbatim or near-verbatim language of that parent initiative. Authoring a new goal at the project level is the *exception* — reserved for cases where (a) no parent initiative exists, AND (b) the user has confirmed they have the authority to create one. Five Whys still runs to validate the project's contribution to the inherited goal, not to invent the goal from scratch.
+
 > **Recall the LogFrame causal chain:** Deliverables + Assumptions → Objective (environmental change in place) → Goal (strategic outcome that this project contributes to alongside others). The objective is ONE causal step removed from the deliverables; the goal is ONE causal step removed from the objective.
 
 **Important distinction:**
@@ -192,10 +194,11 @@ Keep the two separate. Background explains what's happening and why it matters n
 **Watch for the XY Problem:** The stated request is often a solution (Y), not the actual problem (X). "We want to implement Bazel" is Y. "Developers waste 3 hours/day on slow tests" is X. The Five Whys process exists to find X. Never plan around Y without first confirming what X is — you might solve the wrong problem beautifully.
 
 **Process:**
-1. Start with stated request ("We want to implement Bazel")
-2. Ask "Why?" repeatedly (up to 5 times) until reaching root motivation
-3. Identify the **desired outcome/change** (not just the problem)
-4. Document in plain, fifth-grader language
+1. Start with the inherited parent initiative identified in step 3.5 of the workflow
+2. Use Five Whys to VALIDATE: does this project actually contribute to that initiative? Ask "Why?" repeatedly (up to 5 times) to trace the connection between the stated request and the parent initiative
+3. If after five whys the project's purpose doesn't clearly ladder up to the parent initiative, stop — either you've picked the wrong parent initiative, or this project shouldn't be done
+4. Document the inherited goal in plain, fifth-grader language using the existing language of the parent initiative
+5. If no parent initiative exists (confirmed by search and user), then use Five Whys to identify the desired outcome/change and author a goal only with user confirmation of authority to do so
 
 **Format:** 2-4 sentences maximum.
 
@@ -213,6 +216,7 @@ Keep the two separate. Background explains what's happening and why it matters n
 - Unmeasurable claims - if you can't measure it, reframe it
 - Restating background or problem state in the GOAL section — when BACKGROUND AND CONTEXT exists as its own section, GOAL must contain ONLY the desired end state. If the opening sentence describes the current state ("Today, developers...", "Right now we...", "Users currently..."), that is the trap; rewrite to lead with the desired state.
 - Goal describes the mechanism — phrases like "X can only happen through Y", "every change requires Z", "all destructive actions must go through W" are objective-level. The goal is what those mechanisms cause to be true in the world.
+- Drafting a goal at the project level without first checking for an existing organizational initiative — most projects should inherit their goal verbatim from a parent initiative (company OKR, VP-level program, strategic pillar). If you find yourself authoring a fresh goal in the planner skill, stop and ask: "is there an existing higher-level initiative this should ladder up to?"
 
 ### OBJECTIVE - What Deliverables Will We Produce?
 
@@ -911,7 +915,8 @@ Every time you edit one section, scan all others for consistency. This back-and-
 1. **Understand the request** - What's the stated ask?
 2. **CREATE THE PLAN DOCUMENT IMMEDIATELY** - Before any dialogue, write a blank template to `.scratchpad/project-plan-<slug>.md` with placeholder text in each section. Open it with `open <filepath>`. Tell the user it's ready and you'll fill it in as you work together.
 3. **Establish BACKGROUND AND CONTEXT** - What's happening now that makes this important? What prompted this? Update the document section in-place as the dialogue develops.
-4. **Five Whys for GOAL** - Dig to desired outcome/change (not just problem). Update the document section in-place.
+3.5. **Identify the parent initiative** - Before running Five Whys for the GOAL, identify the larger strategic initiative this project ladders up to. Ask the user: "What organizational initiative or strategic goal does this project contribute to?" If the user doesn't know offhand, search internal docs (Notion, Linear, Confluence, README.md files, CLAUDE.md) for company-level objectives, OKRs, or named initiatives. Use the *existing language* of the parent initiative as the GOAL of this project — do not re-author it.
+4. **Five Whys for GOAL** - Dig to desired outcome/change (not just problem). Five Whys now operates as VALIDATION: does this project actually contribute to the inherited parent initiative? If after five whys the project's purpose doesn't clearly ladder up to the parent initiative's goal, that's a signal — either you've picked the wrong parent initiative, or this project shouldn't be done. Update the document section in-place.
 5. **Crystallize OBJECTIVE** - Define the environmental change this project will cause. Always start with "By [date],..." as the opening of the objective statement. The objective describes the outcome of having the deliverables — NOT a list of the deliverables themselves. Update the document section in-place.
 6. **Define SUCCESS** - How do we measure goal achievement? Update the document section in-place.
 7. **Challenge unmeasurable claims** - Use generative mode: suggest measurable alternatives, refuse to proceed if can't measure.
