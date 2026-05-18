@@ -10,7 +10,6 @@ Covered paths:
 - user-prompt-submit: emits nothing when tracker is empty
 - user-prompt-submit: warning includes count, IDs, descriptions, durations
 - user-prompt-submit: prunes stale entries (>24h) silently
-- user-prompt-submit: BURNS_SESSION=1 → no-op (no output, no write)
 - pretool: no-op when session ID absent (KANBAN_SESSION not set)
 - pretool: no-op when tool_use_id absent from payload
 - user-prompt-submit: warning suppressed for entries <5min old (expected in-flight)
@@ -230,17 +229,6 @@ def test_pretool_noop_when_no_tool_use_id(hook, tmp_path):
     _run_subcommand(hook, "pretool", payload, env=env, cwd=tmp_path)
 
     tracker = tmp_path / ".scratchpad" / "orphan-tracker-noid-session.jsonl"
-    assert not tracker.exists()
-
-
-def test_pretool_burns_session_noop(hook, tmp_path):
-    """pretool no-ops when BURNS_SESSION=1."""
-    payload = _make_pretool_payload(tool_use_id="toolu_burns")
-    env = {"KANBAN_SESSION": "burns-session", "BURNS_SESSION": "1"}
-
-    _run_subcommand(hook, "pretool", payload, env=env, cwd=tmp_path)
-
-    tracker = tmp_path / ".scratchpad" / "orphan-tracker-burns-session.jsonl"
     assert not tracker.exists()
 
 
@@ -465,22 +453,6 @@ def test_user_prompt_submit_noop_when_no_session(hook, tmp_path):
 
     output = _run_subcommand(hook, "user-prompt-submit", payload, env=env, cwd=tmp_path)
 
-    assert output.strip() == ""
-
-
-def test_user_prompt_submit_burns_session_noop(hook, tmp_path):
-    """No output when BURNS_SESSION=1."""
-    tracker = tmp_path / ".scratchpad" / "orphan-tracker-burns2-session.jsonl"
-    _write_tracker(tracker, [
-        {"id": "toolu_burns", "description": "burns agent", "started_at": _now_iso()}
-    ])
-
-    payload = _make_user_prompt_payload()
-    env = {"KANBAN_SESSION": "burns2-session", "BURNS_SESSION": "1"}
-
-    output = _run_subcommand(hook, "user-prompt-submit", payload, env=env, cwd=tmp_path)
-
-    # BURNS_SESSION=1 → hook exits immediately, no output
     assert output.strip() == ""
 
 

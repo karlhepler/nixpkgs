@@ -529,17 +529,6 @@ class TestSkillAgentBypass:
         )
 
 
-class TestBurnsSession:
-    """BURNS_SESSION=1 → hook skips all processing and allows unchanged."""
-
-    def test_burns_session_allows_unchanged(self, hook):
-        payload = make_pretool_payload(run_in_background=False, description="", subagent_type="")
-        result = run_hook_main(hook, payload, env={"BURNS_SESSION": "1"})
-        assert_allowed(result)
-        # No updatedInput — completely unchanged
-        assert "updatedInput" not in result.get("hookSpecificOutput", {})
-
-
 class TestNonAgentTool:
     """Non-Agent tool_name → allow unchanged (hook is Agent-only)."""
 

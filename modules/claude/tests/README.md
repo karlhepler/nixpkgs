@@ -156,7 +156,6 @@ These test files will be added in follow-up improvement cards:
 | No card reference → denied | `TestNoCardReference` |
 | `FOREGROUND_AUTHORIZED` marker | `TestForegroundAuthorized` |
 | `SKILL_AGENT_BYPASS` marker | `TestSkillAgentBypass` |
-| `BURNS_SESSION=1` skip | `TestBurnsSession` |
 | Non-Agent tool passthrough | `TestNonAgentTool` |
 | Response structure validation | `TestResponseStructure` |
 | `extract_card_and_session` patterns | `TestCardPatternExtraction` |
@@ -175,6 +174,5 @@ These test files will be added in follow-up improvement cards:
 | MoV exit nonzero → `kanban criteria fail` | `TestProgrammaticMovFailure` |
 | MoV exit 126/127/124 → mov_error diagnostic | `TestMovErrorExitCodes` |
 | Missing/nonexistent transcript → allow | `TestFailOpenBehavior` |
-| `BURNS_SESSION=1` skip | `TestBurnsSession` |
 | `extract_card_from_transcript` patterns | `TestTranscriptParsing` |
 | Card already done → allow | `TestCardAlreadyDone` |

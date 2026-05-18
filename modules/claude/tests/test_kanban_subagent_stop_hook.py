@@ -691,33 +691,6 @@ class TestCardAlreadyDone:
 
 
 # ---------------------------------------------------------------------------
-# Burns session skip
-# ---------------------------------------------------------------------------
-
-class TestBurnsSession:
-    """BURNS_SESSION=1 → main() immediately allows stop."""
-
-    def test_burns_session_allows_stop(self, hook):
-        import io
-        captured = []
-
-        def fake_print(val, **kwargs):
-            captured.append(val)
-
-        payload = {"agent_transcript_path": "", "session_id": "x", "cwd": "/tmp"}
-        with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
-            with patch("builtins.print", side_effect=fake_print):
-                with patch.dict(os.environ, {"BURNS_SESSION": "1"}, clear=False):
-                    with patch.object(hook, "log_error"):
-                        with patch.object(hook, "log_info"):
-                            hook.main()
-
-        assert captured, "Hook produced no output"
-        result = json.loads(captured[-1])
-        assert result.get("decision") == "allow"
-
-
-# ---------------------------------------------------------------------------
 # Transcript parsing unit tests
 # ---------------------------------------------------------------------------
 
