@@ -98,12 +98,6 @@ let
       (builtins.readFile ./global/hats/wrapper.yml.tmpl)
   );
 
-  # Python environment for smithers with required packages
-  smithersPython = pkgs.python3.withPackages (ps: with ps; [
-    wcwidth   # Unicode display width calculation for terminal formatting
-    requests  # HTTP requests for Slack webhook posting
-  ]);
-
   # Burns Python CLI (Ralph with Ralph Coordinator output style)
   burnsScript = pkgs.writers.writePython3Bin "burns" {
     flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
@@ -111,12 +105,6 @@ let
     ["RALPH_COORDINATOR_HAT_YAML"]
     ["${montyBurnsHatYaml}"]
     (builtins.readFile ./burns.py));
-
-  # Smithers Python CLI (token-efficient PR watcher)
-  smithersScript = pkgs.writeScriptBin "smithers" ''
-    #!${smithersPython}/bin/python3
-    ${builtins.readFile ./smithers.py}
-  '';
 
   # Shared Python utilities for prc/prr (and future Python CLIs)
   claudeToolingDir = pkgs.writeTextDir "claude_tooling.py" (builtins.readFile ./claude_tooling.py);
@@ -393,14 +381,6 @@ $orphan_warning"
         description = "Run Ralph Orchestrator with Ralph Coordinator output style (accepts prompt string or file path)";
         mainProgram = "burns";
         homepage = "${builtins.toString ./.}/burns.py";
-      };
-    };
-
-    smithers = smithersScript // {
-      meta = {
-        description = "Token-efficient PR watcher (polls CI, invokes Ralph only when work needed)";
-        mainProgram = "smithers";
-        homepage = "${builtins.toString ./.}/smithers.py";
       };
     };
 
@@ -1364,7 +1344,6 @@ EOF
       # Workout skills (4) — deleted in F1 Phase 3
       $DRY_RUN_CMD rm -f ~/.claude/commands/workout-burns.md
       $DRY_RUN_CMD rm -f ~/.claude/commands/workout-staff.md
-      $DRY_RUN_CMD rm -f ~/.claude/commands/workout-smithers.md
       $DRY_RUN_CMD rm -f ~/.claude/commands/workout-shared.md
       # Exception skills (4) — migrated to skills/<name>/SKILL.md in F1 Phase 3
       $DRY_RUN_CMD rm -f ~/.claude/commands/learn.md
