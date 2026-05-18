@@ -29,7 +29,7 @@ On error (PR not found, no branch tracking): print a clear error message and sto
 State lives in conversation history — no state files (except the Slack dedup marker below). Track these values mentally across iterations:
 
 - `cycle` — iteration counter, starts at 1
-- `ralph_count` — number of times you have delegated fix work to a specialist
+- `fix_count` — number of times you have delegated fix work to a specialist
 - `stagnation_count` — consecutive cycles where HEAD did not advance after a fix delegation
 - `pre_sha` — HEAD commit SHA captured before delegating fix work
 - `max_cycles` — 10 (hard limit on total iterations)
@@ -187,7 +187,7 @@ After posting (or skip): **stop** (no ScheduleWakeup). The PR is clean and handl
 
 ### Step 8: Check budget limits
 
-If `ralph_count >= max_ralph_invocations`: log `"Max specialist delegations (4) reached — stopping"`, send osascript notification, and **stop** (no ScheduleWakeup).
+If `fix_count >= max_ralph_invocations`: log `"Max specialist delegations (4) reached — stopping"`, send osascript notification, and **stop** (no ScheduleWakeup).
 
 If `cycle >= max_cycles`: log `"Max cycles (10) reached — stopping"`, send osascript notification, and **stop** (no ScheduleWakeup).
 
@@ -335,7 +335,7 @@ When fix work is needed, delegate via the Agent tool to specialist(s) chosen bas
 
 Invoke the Agent tool with the prompt from Step 9, targeting the appropriate specialist agent(s). This is blocking — wait for the specialist to complete before proceeding.
 
-Increment `ralph_count` by 1.
+Increment `fix_count` by 1.
 
 ---
 
@@ -364,7 +364,7 @@ Store as `post_sha`. Compare to `pre_sha`:
 
 Increment `cycle` by 1.
 
-Log a brief status summary: `"Cycle complete. ralph_count=<N> stagnation=<N> cycle=<N>/<max_cycles>"`.
+Log a brief status summary: `"Cycle complete. fix_count=<N> stagnation=<N> cycle=<N>/<max_cycles>"`.
 
 ---
 
@@ -387,7 +387,7 @@ ScheduleWakeup(
 Stop (no ScheduleWakeup) when any of the following occur:
 1. PR is MERGED or CLOSED (Step 1)
 2. PR is clean and auto-merge attempted (Step 7a)
-3. `ralph_count >= max_ralph_invocations` (Step 8)
+3. `fix_count >= max_ralph_invocations` (Step 8)
 4. `cycle >= max_cycles` (Step 8)
 5. `stagnation_count >= 2` (Step 13)
 6. `git push` fails (Steps 7 or 12)
@@ -399,5 +399,5 @@ Stop (no ScheduleWakeup) when any of the following occur:
 
 - The 1-minute ScheduleWakeup is a platform constraint (minimum cadence). The original smithers polled every 30 seconds; 1 minute is acceptable for typical CI pipelines.
 - Do not write state files. All state is in the conversation context. The ONLY on-disk persistent state is the Slack dedup marker (written by `pr-slack-post`).
-- If this session is killed and restarted, the loop restarts from cycle 1 with a fresh `ralph_count` and `stagnation_count`. This is acceptable — state loss on restart is known behavior.
+- If this session is killed and restarted, the loop restarts from cycle 1 with a fresh `fix_count` and `stagnation_count`. This is acceptable — state loss on restart is known behavior.
 - `pr-slack-post` handles deduplication: it will not post twice for the same PR across sessions.

@@ -530,7 +530,7 @@ Historical completion markers like `✻ Baked for 13m 13s` in scrollback do NOT 
   </window>
   <window name="deliver-carve">
     <pane index="0" state="idle" prompt="claude-empty" />
-    <pane index="1" state="active" activity="smithers" cycle="Cycle 3/10" />
+    <pane index="1" state="active" activity="loop" detail="Cycle 3/10" />
   </window>
 </active>
 ```
