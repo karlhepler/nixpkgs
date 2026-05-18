@@ -154,6 +154,8 @@ Keep the two separate. Background explains what's happening and why it matters n
 
 **Purpose:** Surface the desired outcome/change using Five Whys technique.
 
+> **Recall the LogFrame causal chain:** Deliverables + Assumptions → Objective (mechanism/capability in place) → Goal (environmental outcome). The goal is one causal step REMOVED from the mechanism — it's what the mechanism produces in the world, not the mechanism itself.
+
 **Important distinction:**
 - **GOAL = the outcome/change we want to achieve** (concretely defined by success measures)
 - **GOAL ≠ problem statement** (problems are context; goal is the desired end state)
@@ -161,6 +163,13 @@ Keep the two separate. Background explains what's happening and why it matters n
 - But: every claim, term, or promise in the goal MUST map to at least one success measure. No unmapped claims. If something cannot be measured, it must be reframed or removed
 
 **Mnemonic: GOAL = Gains we want to see (outcomes), OBJECTIVE = Outputs we will build (deliverables)**
+
+> **Granularity test for GOAL:** Does your goal describe a MECHANISM ("X happens through Y", "we have Z process", "every change requires W approval") or an ENVIRONMENTAL OUTCOME ("workplace injuries decrease", "customers experience fewer outages", "engineering velocity scales without proportional incident growth")? If mechanism → that's objective-level; move it. The goal is what the mechanism CAUSES in the world.
+
+**Worked contrast example (same project at three levels):**
+- Deliverable: "Build a maker-checker workflow"
+- Objective: "By [date], a maker-checker mechanism gates all destructive production actions"
+- Goal: "Production outages caused by operator error become rare events"
 
 **Watch for the XY Problem:** The stated request is often a solution (Y), not the actual problem (X). "We want to implement Bazel" is Y. "Developers waste 3 hours/day on slow tests" is X. The Five Whys process exists to find X. Never plan around Y without first confirming what X is — you might solve the wrong problem beautifully.
 
@@ -185,6 +194,7 @@ Keep the two separate. Background explains what's happening and why it matters n
 - Missing impact - why does the outcome matter?
 - Unmeasurable claims - if you can't measure it, reframe it
 - Restating background or problem state in the GOAL section — when BACKGROUND AND CONTEXT exists as its own section, GOAL must contain ONLY the desired end state. If the opening sentence describes the current state ("Today, developers...", "Right now we...", "Users currently..."), that is the trap; rewrite to lead with the desired state.
+- Goal describes the mechanism — phrases like "X can only happen through Y", "every change requires Z", "all destructive actions must go through W" are objective-level. The goal is what those mechanisms cause to be true in the world.
 
 ### OBJECTIVE - What Deliverables Will We Produce?
 
