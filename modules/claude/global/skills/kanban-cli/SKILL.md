@@ -111,6 +111,19 @@ When extracting matches across multiple files for a uniqueness assertion, `rg -o
 
 Trap is invisible at glance because `rg -o` works correctly on a single file (no filename prefix). Only when the input is a directory does the filename-prepending behavior kick in.
 
+### Standalone Nix-managed lint/format tools in `~/.config/nixpkgs`
+
+In this nixpkgs repo specifically (and any repo that deploys lint/format tools via Nix's build sandbox), **standalone `flake8 <file>`, `black <file>`, `shellcheck <file>`, `prettier <file>`, `mypy <file>`, `isort <file>` (and similar) MoV cmds exit 127 (`command not found`).** These tools are NOT in the agent's PATH from the Bash environment — they only exist inside the Nix build sandbox, invoked by `hms` during `home-manager switch`.
+
+**Symptom:** card's MoV cmd exits 127. Agent correctly stops on structurally broken MoV (per the agent hard rule) instead of corrupting the artifact. Coordinator must remove the AC and re-launch — wasted agent run.
+
+**Fixes (in priority order):**
+- **Use `hms` as the lint MoV** — it runs flake8 internally with the project's actual ignore flags (E265, E501, W503, W504, etc.). Single MoV catches all Python lint, Nix syntax, and shell lint issues that the build cares about.
+- If a standalone check is genuinely needed: `nix-shell -p flake8 --run 'flake8 <file>'` or invoke the nix-store path directly.
+- Apply symmetrically to ANY standalone invocation of a Nix-managed build-time tool: `flake8`, `black`, `isort`, `mypy`, `shellcheck`, `prettier`, `pylint`, `ruff`, etc.
+
+**Recurrence indicator:** any card with `editFiles` under `modules/claude/`, `modules/git/`, `modules/kanban/`, etc., that has a standalone lint tool name as the first token of a `mov_commands[].cmd`.
+
 ### Pre-`kanban do --file` lint (mandatory before every CLI invocation)
 
 Before invoking the kanban CLI, scan every `mov_commands[].cmd` field for these banned patterns:
@@ -120,6 +133,7 @@ Before invoking the kanban CLI, scan every `mov_commands[].cmd` field for these 
 - `test $(rg -c pattern) -le 0` for absence — use `! rg -q 'pattern' file`
 - Dash-leading patterns without `--` or `-e` separator
 - Backtick in double-quoted `-c`/`-e` source — backticks expand BEFORE inner language runs
+- Standalone Nix-managed lint tool (`flake8`, `black`, `shellcheck`, `prettier`, `mypy`, `isort`, etc.) in `~/.config/nixpkgs` — exits 127 (NOT in agent's PATH); use `hms` as the lint MoV
 
 The kanban CLI lint hook is the second-line defense. Every catch is an authoring failure.
 
