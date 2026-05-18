@@ -156,6 +156,7 @@ Some capabilities intentionally have no agent definition because they run differ
 #### Analytics and Lifecycle CLIs
 
 - `claude-inspect`: Session and usage analytics CLI — subcommands: `session`, `agents`, `tools`, `cards`, `compare`, `list`, `estimate`, `throughput`, `criterion-rejections` (`ac-rejections`) — source: `modules/claude/claude-inspect.py`
+- `kanban`: Project coordination-board CLI — subcommands: `do`, `todo`, `start`, `defer`, `done`, `cancel`; criteria management; inspection commands like `list`, `show`, `status` — source: `modules/kanban/kanban.py`
 - `perm`: Permission management (subcommands: `allow`, `always`, `cleanup`, `cleanup-stale`, `list`, `check` — plus `session-hook`/`hook` which are internal hook handlers; `purge` is user-only) — source: `modules/claude/perm.py`; mechanics documented in § Reference Documentation
 
 ## Critical Requirements
