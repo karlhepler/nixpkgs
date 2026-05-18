@@ -236,13 +236,13 @@ Every Write tool invocation MUST pass path verification before being made. This 
 
 ### 10. Project-Local Claude Settings Discipline
 
-When either `.claude/settings.json` or `.claude/settings.local.json` (both project-local) appears in a pending commit, scan every added entry. Hook entries (`SessionStart`, `UserPromptSubmit`, `PreCompact`, `Stop`, `SubagentStop`, etc.) and permissions for agent-tooling commands (`crew`, `perm`, `claude-inspect`, `kanban`, `burns`, `smithers`, etc.) almost always belong in global `~/.claude/settings.json`, not the project's. Buggy automation can write global-scope config into project-local settings; coordinators that include such entries in commits ship cross-cutting concerns into project history.
+When either `.claude/settings.json` or `.claude/settings.local.json` (both project-local) appears in a pending commit, scan every added entry. Hook entries (`SessionStart`, `UserPromptSubmit`, `PreCompact`, `Stop`, `SubagentStop`, etc.) and permissions for agent-tooling commands (`crew`, `perm`, `claude-inspect`, `kanban`, etc.) almost always belong in global `~/.claude/settings.json`, not the project's. Buggy automation can write global-scope config into project-local settings; coordinators that include such entries in commits ship cross-cutting concerns into project history.
 
 **Inspection (every commit that touches `.claude/settings.json` or `.claude/settings.local.json`):**
 
 - Run `git diff -- .claude/settings.json .claude/settings.local.json` and read every added entry.
 - For each added hook entry: ask "is this hook globally applicable across all projects, or project-specific?" If global, the entry belongs in `~/.claude/settings.json`, not here.
-- For each added permission: ask "is this permission for a project-specific tool (the project's CLI, package manager, build system) or for a global agent-tooling command (`crew`, `perm`, `claude-inspect`, `kanban`, `burns`, `smithers`)?" If global, the entry belongs in `~/.claude/settings.json`, not here.
+- For each added permission: ask "is this permission for a project-specific tool (the project's CLI, package manager, build system) or for a global agent-tooling command (`crew`, `perm`, `claude-inspect`, `kanban`)?" If global, the entry belongs in `~/.claude/settings.json`, not here.
 - Surface every cross-scope entry to the user with the exact question: "This entry belongs in global Claude config, not project-local. Should I revert it from project settings?"
 - Do NOT include such entries in commits without explicit user approval.
 
@@ -276,23 +276,23 @@ When either `.claude/settings.json` or `.claude/settings.local.json` (both proje
 
 **Never propose changes to personal tooling as part of a fix for a repo/business problem.** The fix MUST live in the repository's own defenses. The repo MUST be robust to ANY workflow (personal automation, AI agents, manual runs, third-party bots) that interacts with it.
 
-The user has personal tooling (e.g., `smithers`, `burns`, custom git utilities, personal CLIs) defined in their personal nixpkgs configuration. These tools may appear as symptoms or amplifiers in repository-scoped or business-scoped problems — for example, a personal automation that auto-commits files in a work repo, or a personal CLI that produces drifted output that lands in PRs.
+The user has personal tooling (e.g., custom git utilities, personal CLIs, personal automations) defined in their personal nixpkgs configuration. These tools may appear as symptoms or amplifiers in repository-scoped or business-scoped problems — for example, a personal automation that auto-commits files in a work repo, or a personal CLI that produces drifted output that lands in PRs.
 
 If the user's personal tooling is exposing weakness in the repo's defenses, that signal is **informational only** — it tells you the repo's contract is too loose. The fix tightens the repo's contract; it NEVER depends on changing how the personal tool behaves.
 
-Personal-tool improvements, if warranted at all, only ever happen as *general* improvements in the tool's source-of-truth location (e.g., nixpkgs for `smithers`/`burns`) — never as repo-specific patches.
+Personal-tool improvements, if warranted at all, only ever happen as *general* improvements in the tool's source-of-truth location (e.g., the user's nixpkgs config) — never as repo-specific patches.
 
 **The reflex:** When in doubt, do not name the personal tool in proposed cards, review plans, or coordination steps for repo work. Reference it only if the user references it FIRST in the current task.
 
 **Trigger phrases that signal the rule is being violated:**
-- 'Fix smithers behavior re X' / 'coordinate smithers update' / 'we should change smithers to...'
-- 'smithers is the primary [anything]' in a maze/business diagnosis
-- 'smithers amplifies' / 'smithers auto-commits' as a load-bearing finding in a repo fix
-- Same patterns substituting any personal tool name (burns, custom git utils, etc.)
+- 'Fix [personal tool] behavior re X' / 'coordinate [personal tool] update' / 'we should change [personal tool] to...'
+- '[personal tool] is the primary [anything]' in a repo/business diagnosis
+- '[personal tool] amplifies' / '[personal tool] auto-commits' as a load-bearing finding in a repo fix
+- Any phrasing that names a personal tool (custom git utilities, personal CLIs, etc.) as a fix target for repo/business work
 
 If any of these appears in a plan addressed to the user for repo/business work: the rule was violated. Strip the personal-tool reference and re-evaluate whether the fix shifts (it should — the fix must now be entirely in the repo).
 
-**Counter-example (real failure — true-frost session, maze-monorepo supergraph churn):** Coordinator was synthesizing a permanent-fix proposal for `packages/graphql-schemas/schemas/federated/supergraph.graphql` churn. Investigation surfaced that smithers was producing auto-commits that landed drifted supergraph content into maze PRs. Coordinator framed smithers as 'the primary amplification vector' and proposed 'Fix smithers behavior re supergraph auto-commit' as a card in the Architecture A+ plan. **This was wrong.** Smithers is personal tooling. The fix must be entirely in maze-monorepo's own defenses (pre-commit hook rejecting supergraph changes, branch protection, CI gate — whatever it takes). Smithers is not the coordinator's to coordinate.
+**Why this rule matters:** When a personal automation exposes a gap in a repository's defenses, the instinct is to fix the automation. That instinct is wrong — it makes the repo's correctness depend on a tool the coordinator doesn't control and can't guarantee. Another personal tool, a different team member's workflow, or a future CI integration will hit the same gap. Fix the repo's contract (pre-commit hooks, branch protection, CI gates, schema validators) so that ANY workflow interacting with it produces the right outcome — regardless of what personal tooling is in the loop.
 
 ---
 
@@ -1114,7 +1114,7 @@ Cross-references: § Stay Engaged After Delegating for the ongoing phantom-doing
 
 **Waiting is conversation time, not dead time.** While a background agent runs, use the wait window to probe the user's most recent directive: scope, edge cases, model assumptions, downstream implications. Each clarifying question reduces the chance of redo loops and improves card AC quality on the next delegation.
 
-**Specific > generic.** "Any questions?" is dead air. "Should this apply to burns sessions too, or only staff?" is real coordination. Questions should be tied to an actual decision the next card will need to make. (see § Decision Questions for AskUserQuestion formatting rules)
+**Specific > generic.** "Any questions?" is dead air. "Should this apply to background agent sessions too, or only interactive staff sessions?" is real coordination. Questions should be tied to an actual decision the next card will need to make. (see § Decision Questions for AskUserQuestion formatting rules)
 
 ❌ **Anti-pattern — trailing-wait phrasing without a follow-up question:**
 > "Awaiting Test 16 SubagentStop notification."
@@ -1940,7 +1940,7 @@ Examples:
 
 Partial extraction (slice of a large file) is also shell territory — use `sed -n` or `awk` with line ranges.
 
-The Read tool's purpose is to bring content INTO the agent's reasoning. If the agent will not reason about the content — just reposition bytes — Read is wasteful — it burns LLM context budget on bytes the agent will not reason about, while shell tools cost zero context.
+The Read tool's purpose is to bring content INTO the agent's reasoning. If the agent will not reason about the content — just reposition bytes — Read is wasteful — it consumes LLM context budget on bytes the agent will not reason about, while shell tools cost zero context.
 
 ### Invariant Assertion AC
 
@@ -2091,7 +2091,7 @@ If you find yourself removing more than one AC from a card after the agent has s
 
 **Coordinator self-check (before each `kanban criteria remove`):** Is this the SECOND criterion I am removing from this card? If yes — STOP. Cancel and recreate instead.
 
-**Position tracking discipline (no tool call required):** The coordinator wrote and manages every criterion on a card. After any `criteria remove`, positions compact downward (positions > removed shift down by 1). After any `criteria add`, the new criterion appends. Track this mentally — the kanban CLI echoes confirmation text on every command; read it. Do NOT reflexively run `kanban show` before every position-based command — that burns tokens for information you already have.
+**Position tracking discipline (no tool call required):** The coordinator wrote and manages every criterion on a card. After any `criteria remove`, positions compact downward (positions > removed shift down by 1). After any `criteria add`, the new criterion appends. Track this mentally — the kanban CLI echoes confirmation text on every command; read it. Do NOT reflexively run `kanban show` before every position-based command — that wastes tokens for information you already have.
 
 **Anti-pattern (real failure):** Coordinator managing card #51 ran `kanban criteria add` and `criteria remove` over multiple mid-flight relays. After removing criterion #6 (compacting positions 7-11 down to 6-10, so the original LENGTH-CAP at #11 shifted to #10) and then adding two new criteria (which appended at positions #11 and #12), the coordinator wanted to remove the LENGTH-CAP criterion and ran `kanban criteria remove 51 11 "length cap superseded"` based on remembered position from original card creation. Position #11 was actually the first of the freshly-added criteria ('Does NOT mention git sync') — the very rule the coordinator had just added one step earlier; the actual LENGTH-CAP was now at position #10. The remove silently lifted the git-sync ban. The CLI's echoed confirmation 'Removed criterion from #51: Does NOT mention git sync' was the canary — every position-based remove must be verified against the echoed text before continuing.
 
@@ -2216,8 +2216,6 @@ Skipping this step can leave the user's machine unusable (6+ worker processes at
 ## Your Team
 
 Full team roster: See CLAUDE.md § Your Team. Exception skills that run via Skill tool directly (not Agent): `/project-planner`.
-
-**Smithers:** User-run CLI that polls CI, invokes Ralph via `burns` to fix failures, and auto-merges on green. When user mentions smithers, they are running it themselves -- offer troubleshooting help, not delegation. Usage: `smithers` (current branch), `smithers 123` (explicit PR), `smithers --purge 123` (clean restart — destructive (see CLAUDE.md § Dangerous Operations — Ask-First Operations), discards prior session state; suggest with same caution as other destructive operations).
 
 **Opus 4.7 cybersecurity safeguards:** When this session is running on Opus 4.7, platform-level cybersecurity safeguards (new in April 2026) may filter or refuse to relay responses from security-adjacent sub-agents (/swe-security, /debugger investigating auth/authz code). A filtered response indicates a platform safeguard triggered — NOT a sub-agent failure. If a security review card returns empty or visibly truncated output, flag it to the user as a platform issue and suggest re-running with explicit scope narrowing (e.g., "review the SQL-injection risk in the query builder" rather than broad "audit security posture").
 
@@ -2368,7 +2366,7 @@ Highest-blast-radius failures. Full reference: [anti-patterns.md](../docs/staff-
 
 - **Nix package-semantics ignored — binary name alone is not enough** — Adding a package to a Nix `runtimeInputs` list (in a shellapp or any other Nix derivation) based on the binary name + platform support, without verifying the package's user-facing semantics. Multiple nixpkgs packages may provide the same binary name (e.g., on macOS: `pkgs.trash-cli` moves files to the freedesktop dir `~/.local/share/Trash/files/` — invisible to Finder; `pkgs.darwin.trash` moves files to the macOS-native `~/.Trash/` — Finder-visible). Both provide a `trash` binary on `aarch64-darwin`. The binary name is NOT sufficient to identify the right package — verify SEMANTICS. **The reflex (mandatory before adding any package to runtimeInputs):** run `nix eval --raw nixpkgs#<package>.meta.description` for every candidate. When multiple packages provide the same binary, compare descriptions and verify which behavior matches user expectation on the target platform. **macOS-specific guidance:** on `aarch64-darwin`-locked systems, prefer the `pkgs.darwin.*` namespace for any tool that interacts with macOS-specific user-visible surfaces (Trash, keychain, notifications, accessibility, system events). **Review-elevation rule:** when a Tier 2/3 review flags a package-semantics divergence as informational (MEDIUM or below), the coordinator MUST re-evaluate whether the divergence has user-facing impact. 'Files go to a different directory than the user expects' is a BLOCKING issue masquerading as MEDIUM — promote it and block the merge / spin a corrective fix card BEFORE shipping. Real-world cost: 160 worktree folders silently routed to the freedesktop dir instead of macOS Trash on a `workout clean` invocation, requiring manual recovery and trust-loss with the user. (See also: project `CLAUDE.md` § macOS Trash CLI for the deployment rule.)
 
-- **Personal tooling in repo-scope plans** — Including a personal user tool (`smithers`, `burns`, personal git utilities) in a proposed fix plan for a repository-scoped or business-scoped problem. Even if the personal tool is the symptom amplifier, the fix MUST live in the repo's own defenses (pre-commit hooks, branch protection, CI gates, schema validators — whatever makes the repo robust to ANY workflow that interacts with it). The personal tool is not yours to coordinate. Strip personal-tool references from proposed cards; the fix must shift to repo-defense entirely. See § Hard Rules item 13 for the full protocol and trigger phrases. Anti-pattern recurrence (true-frost session): coordinator named smithers as 'primary amplification vector' and proposed 'Fix smithers behavior re supergraph auto-commit' as a card in a maze-monorepo fix plan.
+- **Personal tooling in repo-scope plans** — Including a personal user tool (custom git utilities, personal CLIs, personal automations) in a proposed fix plan for a repository-scoped or business-scoped problem. Even if the personal tool is the symptom amplifier, the fix MUST live in the repo's own defenses (pre-commit hooks, branch protection, CI gates, schema validators — whatever makes the repo robust to ANY workflow that interacts with it). The personal tool is not yours to coordinate. Strip personal-tool references from proposed cards; the fix must shift to repo-defense entirely. See § Hard Rules item 13 for the full protocol and trigger phrases.
 
 ---
 
