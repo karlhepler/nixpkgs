@@ -106,7 +106,7 @@ Some capabilities intentionally have no agent definition because they run differ
 ## Quick Commands
 
 ### Configuration Management
-- `hms`: Apply Home Manager changes — validates user.nix, backs up user.nix and overconfig.nix (user.nix and overconfig.nix are git-invisible; see § File Management), temporarily un-hides them for the build, runs `home-manager switch --flake` (also runs flake8 — the real pre-commit gate; `nix flake check` is not sufficient), installs Claude Code if absent and enforces pinned Ralph version, sets local git identity. See `modules/system/HMS.md` for full reference.
+- `hms`: Apply Home Manager changes — validates user.nix, backs up user.nix and overconfig.nix (user.nix and overconfig.nix are git-invisible; see § File Management), temporarily un-hides them for the build, runs `home-manager switch --flake` (also runs flake8 — the real pre-commit gate; `nix flake check` is not sufficient), installs Claude Code if absent, sets local git identity. See `modules/system/HMS.md` for full reference.
 - `hms --purge` (alias `--expunge`): Same as `hms`, but registers an EXIT trap that kills the tmux server unconditionally — even if the deploy fails mid-run (e.g., validation error at Step 4, Nix eval error at Step 7). Claude Code must NEVER run this flag — it will terminate the session it is running in.
 - `hme`: Open `home.nix` in vim (zsh alias — not a standalone command; never invoke from Bash tool — opens interactive vim)
 - `hmu`: Open `user.nix` in vim (zsh alias — not a standalone command; never invoke from Bash tool — opens interactive vim)
@@ -140,8 +140,6 @@ Some capabilities intentionally have no agent definition because they run differ
 - `q "question"`: Quick Claude question (haiku model - fastest)
 - `qq "question"`: Claude question (sonnet model - balanced)
 - `qqq "question"`: Complex Claude question (opus model - most capable)
-- `burns "prompt"` or `burns file.md`: Run Ralph Orchestrator with Monty Burns coordinator hat (multi-hat YAML assembled at Nix build time) — source: `modules/claude/burns.py`
-- `smithers` or `smithers <PR>`: Autonomous PR watcher (monitors checks, fixes issues, handles bot comments) — source: `modules/claude/smithers.py`
 - `prc`: PR comment management tool (list, reply, resolve, collapse) — source: `modules/claude/prc.py`; see `/manage-pr-comments` skill for usage documentation
 - `prr`: PR Review submission CLI using GitHub REST API; submits structured PR reviews with inline comments from a findings JSON file — source: `modules/claude/prr.py`
 
@@ -151,7 +149,7 @@ Some capabilities intentionally have no agent definition because they run differ
 
 - `staff`: Launch Claude Code with the Staff Engineer output style (loads `~/.claude/output-styles/staff-engineer.md`) — source: `modules/claude/staff.bash`
 - `sstaff`: Launch Claude Code with the Senior Staff Engineer output style (loads `~/.claude/output-styles/senior-staff-engineer.md`, coordinator-of-coordinators tier) — source: `modules/claude/sstaff.bash`
-- `crew`: Pane-based session orchestrator — subcommands: `list`, `tell`, `read`, `dismiss`, `find`, `create`, `status`, `project-path`, `resume`, `sessions`, `smithers` — source: `modules/claude/crew.py`; see `crew-cli` skill for full reference
+- `crew`: Pane-based session orchestrator — subcommands: `list`, `tell`, `read`, `dismiss`, `find`, `create`, `status`, `project-path`, `resume`, `sessions` — source: `modules/claude/crew.py`; see `crew-cli` skill for full reference
 
 #### Analytics and Lifecycle CLIs
 
@@ -350,35 +348,9 @@ user.nix and overconfig.nix are made git-invisible by `hms` after first run. Bac
 - Displays: Total cost (today/all-time), token breakdown (input/output/cache), cost by session, turn statistics by agent type, tool usage heat map (by tool and agent)
 - Access via Grafana interface (configured in Home Manager)
 
-## Burns and Ralph Architecture
-
-**Build-time Assembly:**
-Burns uses a multi-hat YAML configuration assembled at Nix build time. The Ralph orchestrator invokes a composite YAML formed from:
-- `modules/claude/global/hats/wrapper.yml.tmpl` - Ralph event-loop wrapper
-- `modules/claude/global/hats/monty-burns.yml.tmpl` - Monty Burns coordinator hat
-- 8 specialist skill hats (swe-backend, swe-frontend, swe-fullstack, swe-infra, swe-devex, swe-sre, swe-security, researcher)
-
-The assembled YAML path is substituted at build time in `modules/claude/default.nix`.
-
-**Tiered Review Protocol:**
-The mandatory review protocol that determines when work requires review is defined in `modules/claude/global/hats/monty-burns.yml.tmpl` ("On work.done" event handler). Three tiers: Tier 1 (mandatory: auth/authz, financial, infra, PII DB, CI/CD), Tier 2 (high-risk: API endpoints, third-party, performance, migrations, deps, shell scripts), Tier 3 (recommended: UI, monitoring, large refactors). The protocol activates when a specialist emits 'work.done' event.
-
-**`burns` vs. `staff` / `sstaff`:**
-- `burns` — Multi-agent event-loop orchestrator (Ralph + Monty Burns). Accepts a prompt or file. Internally manages specialist dispatch. No interactive Claude Code TUI. When burns runs, it sets `BURNS_SESSION=1` to suppress coordinator-session instructions — Ralph uses its internal memory system (`ralph tools memory`) instead.
-- `staff` — Launches an interactive Claude Code session pre-loaded with the Staff Engineer output style. Intended for human-facing coordination work.
-- `sstaff` — Same as `staff` but loads the Senior Staff Engineer output style (coordinator-of-coordinators tier). Coordinates multiple `staff` sessions via `crew`.
-
-**Available agents (delegatable team members):** (For the authoritative list, see `modules/claude/global/agents/` — this list may not include system/internal agents.)
-- Engineering: swe-backend, swe-frontend, swe-fullstack, swe-devex, swe-infra, swe-security, swe-sre
-- QA: qa-engineer
-- Design: product-ux, visual-designer
-- Support: researcher, scribe, ai-expert, ac-reviewer, debugger
-- Business: finance, lawyer, marketing
-- Exception Skills (invoked via Skill tool directly): project-planner, review-pr-comments, manage-pr-comments, review
-
 ## Your Team
 
-See "Available agents" in the Burns and Ralph Architecture section above. For the full roster, see global CLAUDE.md.
+For the full roster of delegatable agents and exception skills, see global CLAUDE.md.
 
 ## Reference Documentation
 
