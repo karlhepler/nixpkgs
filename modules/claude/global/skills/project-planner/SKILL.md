@@ -384,6 +384,8 @@ If user cannot define measurable outcome → **Cannot proceed with planning.** M
 
 ### ASSUMPTIONS - What We Can't Control
 
+**Assumptions and deliverables are two sides of the same sort.** Every candidate the objective requires is either something we directly produce (deliverable) or something we depend on but cannot control (assumption). The work of authoring this section is inseparable from authoring DELIVERABLES — both populate together as we brainstorm what the objective needs and sort each candidate by control.
+
 **🚨 TWO MANDATORY ASSUMPTION GATES:**
 1. **First-pass gate (step 10):** Every candidate passes the "Can the team affect this?" filter BEFORE appearing in the plan. Apply rigorously on the first draft — do not present team-controllable items as assumptions and let the user catch them.
 2. **Continuous gate (every design decision):** After EVERY design decision during planning, re-scan the assumptions table. Has anything been eliminated? Has any risk level changed? Has anything new been introduced? Do not wait for the user to flag stale assumptions.
@@ -477,6 +479,7 @@ Apply the same Verification Feasibility Check from the SUCCESS MEASURES section.
 - Missing "How to Monitor" (can't track assumption health without it)
 - "How to Monitor" references non-existent capability without adding it as deliverable
 - Missing "Contingency Plan" for Medium-risk assumptions (monitoring tells you WHEN; contingency tells you WHAT TO DO)
+- Authoring DELIVERABLES or ASSUMPTIONS in isolation without continuously checking the other — they are co-developed. If you find yourself with a complete deliverables list but no assumptions (or vice versa), you have authored half the LogFrame causal equation. Restart the sort with both sections in scope.
 
 **Mnemonic:** If you can build it, it's not an assumption.
 
@@ -495,6 +498,8 @@ The assumption filter is not a one-time gate. Re-apply it every time the design 
 ### DELIVERABLES - What We'll Build
 
 **Purpose:** Numbered list of outputs with acceptance criteria.
+
+Deliverables are the items the team directly produces to achieve the objective. They are identified together with assumptions during the candidate-sort phase — every candidate that passes the "can the team affect this?" filter lands here. Items that fail the filter become assumptions.
 
 **The plan document IS the scope boundary.** There are no "goals and non-goals" — everything in the document is in scope, everything not in it is out of scope. The sufficient-and-necessary check enforces this: if a deliverable isn't necessary, remove it. If something is missing, add it. The document is conclusive.
 
@@ -922,17 +927,29 @@ Every time you edit one section, scan all others for consistency. This back-and-
 7. **Challenge unmeasurable claims** - Use generative mode: suggest measurable alternatives, refuse to proceed if can't measure.
 8. **Map GOAL to SUCCESS, OBJECTIVE to DELIVERABLES** - Every claim in GOAL must have a success measure. Every claim in OBJECTIVE must map to a deliverable. Goal and objective can use simple, broad language because their constituent parts (success measures and deliverables respectively) give every term concrete meaning — but no unmapped claims.
 9. **Verification Feasibility Check for SUCCESS** - For EVERY means of verification: Can we get this data TODAY? Annotate inline: `<br>✅ *(exists)*` OR `<br>⚠️ [missing] → **Deliverable #N**`. If building the capability is impractical, remove the success measure entirely — unmeasurable measures create false confidence. When adding a verification deliverable, prefer frontloading it to capture the baseline before other work begins.
-10. **Identify ASSUMPTIONS** - Scan ALL dimensions (technical, financial, organizational, staffing, external, regulatory, market, timeline, vendor). What's outside team control? Update the document section in-place.
-11. **Convert assumptions (HARD GATE)** - Apply filter to EVERY candidate: "Can the team affect this?" YES → deliverable, not assumption. PARTIAL → add mitigating deliverables, may keep. NO → keep as assumption. No assumption reaches the plan document without passing this filter on the FIRST pass. If unsure, default to deliverable.
-12. **Monitoring Feasibility Check for ASSUMPTIONS** - For EVERY "How to Monitor": Can we collect this data TODAY? Annotate inline: `<br>✅ *(exists)*` OR `<br>⚠️ [missing] → **Deliverable #N**`. Add contingency plan for each Medium-risk assumption.
-13. **Run pre-deliverable research gate** - Before defining ANY custom deliverable, check: (a) existing team tools/libraries, (b) existing vendor capabilities, (c) third-party solutions. Only define custom deliverables after confirming none of these work.
-14. **Define DELIVERABLES** - What outputs achieve the objective? Run `claude-inspect estimate` to ground each deliverable timeline in historical data. Include P90 projection in the plan document.
-    - After defining deliverables, re-scan assumptions: Has any assumption become team-controllable via a deliverable just defined? Has any risk level changed? Remove or update immediately.
-15. **Add End of Project Status Report** - Mandatory final deliverable for accountability (include HOW to verify/monitor instructions)
-16. **Sufficient and necessary test (Layer 1 + Layer 2)** - Produce the necessity table (Layer 1) and sufficiency checklist (Layer 2) from the DELIVERABLES section format. Cut unnecessary deliverables, add missing ones. Update the document if changes needed.
-17. **Validate causal chain (Layer 3)** - Produce the causal chain diagram, link-by-link validation, and confidence assessment. The causal claim: DELIVERABLES + ASSUMPTIONS → OBJECTIVE (environmental change) → GOAL (strategic outcome, verified by success measures). Update the document if changes needed.
+10. **Co-develop DELIVERABLES and ASSUMPTIONS** — These are two outputs of one sorting process. Work through them together: brainstorm what the OBJECTIVE (concretely defined by success measures) requires. For each candidate, apply the filter "can the team affect this?":
+    - **YES (Full Control)** → deliverable (with acceptance criteria)
+    - **PARTIAL (Some Control)** → add mitigating deliverable + keep residual assumption (Medium-risk)
+    - **NO (Zero Control)** → assumption (with risk level, monitoring, contingency)
+
+    **Candidate dimensions to scan** (technical, financial, organizational, staffing, external, regulatory, market, timeline, vendor) — each dimension may yield deliverables, assumptions, or both.
+
+    Continuously check **sufficient** (deliverables + assumptions → objective) and **necessary** (each item required, else cut). Iterate until both sufficient and necessary hold.
+
+    No assumption reaches the plan document without passing the "can the team affect this?" filter on the FIRST pass. If unsure, default to deliverable.
+
+    **Pre-deliverable research gate:** Before defining ANY custom deliverable, check: (a) existing team tools/libraries, (b) existing vendor capabilities, (c) third-party solutions. Only define custom deliverables after confirming none of these work.
+
+    Run `claude-inspect estimate` to ground each deliverable timeline in historical data. Include P90 projection in the plan document.
+
+    After every design decision: re-scan both sections. Has any assumption become team-controllable via a deliverable just defined? Has any risk level changed? Remove or update immediately.
+
+11. **Monitoring Feasibility Check for ASSUMPTIONS** - For EVERY "How to Monitor": Can we collect this data TODAY? Annotate inline: `<br>✅ *(exists)*` OR `<br>⚠️ [missing] → **Deliverable #N**`. Add contingency plan for each Medium-risk assumption.
+12. **Add End of Project Status Report** - Mandatory final deliverable for accountability (include HOW to verify/monitor instructions)
+13. **Sufficient and necessary test (Layer 1 + Layer 2)** - Produce the necessity table (Layer 1) and sufficiency checklist (Layer 2) from the DELIVERABLES section format. Cut unnecessary deliverables, add missing ones. Update the document if changes needed.
+14. **Validate causal chain (Layer 3)** - Produce the causal chain diagram, link-by-link validation, and confidence assessment. The causal claim: DELIVERABLES + ASSUMPTIONS → OBJECTIVE (environmental change) → GOAL (strategic outcome, verified by success measures). Update the document if changes needed.
     - Scan assumptions table: Has any design decision eliminated a risk? Is any assumption now validatable by building a deliverable? Remove dead assumptions.
-18. **Iterate on the document** - When user requests changes, edit the file in place. Brief chat note on what changed. The document is the deliverable. **After every design decision that changes scope or architecture, re-scan the assumptions table — remove eliminated assumptions, note changed risk levels, add any new ones. Assumptions are living; treat them that way throughout iteration.**
+15. **Iterate on the document** - When user requests changes, edit the file in place. Brief chat note on what changed. The document is the deliverable. **After every design decision that changes scope or architecture, re-scan the assumptions table — remove eliminated assumptions, note changed risk levels, add any new ones. Assumptions are living; treat them that way throughout iteration.**
 
 ## Working With Others
 
