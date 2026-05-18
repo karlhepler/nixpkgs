@@ -24,88 +24,6 @@ let
     _sys.path.insert(0, "${sessionEnvDir}")
   '';
 
-  # Strip YAML frontmatter from a markdown file
-  stripFrontmatter = raw:
-    let
-      parts = lib.splitString "---" raw;
-      contentParts = lib.drop 2 parts;
-    in lib.concatStringsSep "---" contentParts;
-
-  # Indent each non-empty line of text by N spaces (for YAML embedding)
-  # Empty lines are preserved as-is (no trailing spaces)
-  indentLines = spaces: text:
-    let
-      prefix = lib.concatStrings (lib.genList (_: " ") spaces);
-    in
-    lib.concatMapStringsSep "\n"
-      (line: if line == "" then "" else "${prefix}${line}")
-      (lib.splitString "\n" text);
-
-  # Read a hat template file and substitute INSTRUCTIONS_PLACEHOLDER with
-  # the provided instructions content (already indented).
-  processTemplate = templateFile: instructionsContent:
-    builtins.replaceStrings
-      [ "INSTRUCTIONS_PLACEHOLDER" ]
-      [ instructionsContent ]
-      (builtins.readFile templateFile);
-
-  # Trim leading and trailing empty lines from a string
-  trimLines = s:
-    let
-      lines = lib.splitString "\n" s;
-      dropLeadingEmpty = lst:
-        if lst == [] || builtins.head lst != ""
-        then lst
-        else dropLeadingEmpty (builtins.tail lst);
-      dropTrailingEmpty = lst: lib.reverseList (dropLeadingEmpty (lib.reverseList lst));
-      trimmed = dropTrailingEmpty (dropLeadingEmpty lines);
-    in lib.concatStringsSep "\n" trimmed;
-
-  # Process a skill file: strip frontmatter, replace $ARGUMENTS, trim empty lines, then indent
-  # to 10 spaces for YAML block scalar embedding inside <behavior> tags.
-  processSkillFile = filePath:
-    let
-      raw = builtins.readFile filePath;
-      body = stripFrontmatter raw;
-      withArgs = builtins.replaceStrings
-        [ "$ARGUMENTS" ]
-        [ "You receive your task from the event payload that triggered you and the session context.\nComplete the work described, then emit your completion event." ]
-        body;
-      trimmed = trimLines withArgs;
-    in indentLines 10 trimmed;
-
-  # Assemble all hat YAML blocks from templates
-  hatYaml = lib.concatStrings [
-    (builtins.readFile ./global/hats/monty-burns.yml.tmpl)
-    (processTemplate ./global/hats/swe-backend.yml.tmpl  (processSkillFile ./global/agents/swe-backend.md))
-    (processTemplate ./global/hats/swe-frontend.yml.tmpl (processSkillFile ./global/agents/swe-frontend.md))
-    (processTemplate ./global/hats/swe-fullstack.yml.tmpl (processSkillFile ./global/agents/swe-fullstack.md))
-    (processTemplate ./global/hats/swe-devex.yml.tmpl    (processSkillFile ./global/agents/swe-devex.md))
-    (processTemplate ./global/hats/swe-infra.yml.tmpl    (processSkillFile ./global/agents/swe-infra.md))
-    (processTemplate ./global/hats/swe-security.yml.tmpl (processSkillFile ./global/agents/swe-security.md))
-    (processTemplate ./global/hats/swe-sre.yml.tmpl      (processSkillFile ./global/agents/swe-sre.md))
-    (processTemplate ./global/hats/researcher.yml.tmpl   (processSkillFile ./global/agents/researcher.md))
-  ];
-
-  # Generate multi-hat Ralph YAML with Monty Burns coordinator + 8 specialists
-  # Use builtins.readFile + replaceStrings to avoid Nix indented string indentation stripping,
-  # which would misalign top-level YAML keys (event_loop:, cli:, hats:) if the string is
-  # indented within the Nix expression.
-  montyBurnsHatYaml = pkgs.writeText "monty-burns-hat.yml" (
-    builtins.replaceStrings
-      [ "HATS_PLACEHOLDER" ]
-      [ hatYaml ]
-      (builtins.readFile ./global/hats/wrapper.yml.tmpl)
-  );
-
-  # Burns Python CLI (Ralph with Ralph Coordinator output style)
-  burnsScript = pkgs.writers.writePython3Bin "burns" {
-    flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
-  } (builtins.replaceStrings
-    ["RALPH_COORDINATOR_HAT_YAML"]
-    ["${montyBurnsHatYaml}"]
-    (builtins.readFile ./burns.py));
-
   # Shared Python utilities for prc/prr (and future Python CLIs)
   claudeToolingDir = pkgs.writeTextDir "claude_tooling.py" (builtins.readFile ./claude_tooling.py);
 
@@ -374,14 +292,6 @@ $orphan_warning"
       text = builtins.readFile ./sstaff.bash;
       description = "Launch Claude Code with Senior Staff Engineer output style (coordinates Staff Engineer sessions)";
       sourceFile = "sstaff.bash";
-    };
-
-    burns = burnsScript // {
-      meta = {
-        description = "Run Ralph Orchestrator with Ralph Coordinator output style (accepts prompt string or file path)";
-        mainProgram = "burns";
-        homepage = "${builtins.toString ./.}/burns.py";
-      };
     };
 
     prc = prcScript // {
