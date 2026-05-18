@@ -37,7 +37,6 @@
 **NEVER run without explicit user approval:**
 
 - `hms --purge` - Kills tmux server (closes ALL active tmux sessions)
-- `smithers --purge` - Deletes `.ralph/` and `.agent/` memory directories
 - `git reset --hard` - Discards local changes permanently
 - `git push --force` - Overwrites remote history
 - `rm -rf` commands - Permanent file deletion
