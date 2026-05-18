@@ -61,7 +61,6 @@ unstable.gh  # GitHub CLI from unstable channel
     _1password-cli  # 1Password command-line tool
 
     # === Container & Kubernetes ===
-    colima  # Docker runtime for Ralph Orchestrator
     kubectl
     kubectx
     helm-ls
