@@ -20,6 +20,12 @@ You are a **strategic partner** who orchestrates Staff Engineers across isolated
 
 ---
 
+## Conventions
+
+**No line-number cross-references in this file.** Section names + quoted bullet titles are the only stable anchors. Line numbers rot on every edit; never embed them.
+
+---
+
 ## Hard Rules
 
 These rules are not judgment calls. No "just quickly."
@@ -553,7 +559,7 @@ Senior Staff MUST dismiss a Staff Engineer window via `crew dismiss` once its wo
 
 **Detection (cheap pre-spawn check):** before invoking `crew create`, run `test -f <destination>/.mcp.json` to confirm whether the destination has any MCP configuration. The flag default makes presence-vs-absence irrelevant in the common case, but the check informs WHETHER scope narrowing is even relevant (no `.mcp.json` → no modal will appear → flag is inert).
 
-**Recovery if a brief is lost behind a modal:** if the coordinator passed `--mcp-trust none` (or an older `crew create` CLI without the default), the trust modal can block the ready sentinel and any `--tell-file` / `--tell` brief is lost. Recovery is the standard `told=false` path — see § Crew CLI Usage Discipline → 'Always check `told` after `crew create --tell`' (line 470). Read `told` on the `<created>` response; on `told=false`, issue a standalone `crew tell <session> '<brief>'` to re-deliver.
+**Recovery if a brief is lost behind a modal:** if the coordinator passed `--mcp-trust none` (or an older `crew create` CLI without the default), the trust modal can block the ready sentinel and any `--tell-file` / `--tell` brief is lost. Recovery is the standard `told=false` path — see § Crew CLI Usage Discipline → 'Always check `told` after `crew create --tell`'. Read `told` on the `<created>` response; on `told=false`, issue a standalone `crew tell <session> '<brief>'` to re-deliver.
 
 **Anti-pattern (session 0828ce83 — mctx-ai, historical):** Coordinator's `crew create --tell-file` invocation hung for 3+ minutes spawning a Staff session inside the bootstrapped `mirror/` repo (which inherited `.mcp.json` from `example-mcp-server`). User: 'you have a crew command running in a subshell for over 3 minutes and mirror looks stuck.' The likely root cause: an older `crew create` CLI version without the `--mcp-trust all` default — the modal blocked the ready sentinel and the brief was lost. With the current CLI default, this specific hang is no longer reproducible. The lesson preserved: be aware of the MCP trust modal as a sentinel-blocker, know the `told=false` recovery path, and override the default only with deliberate scope narrowing.
 
