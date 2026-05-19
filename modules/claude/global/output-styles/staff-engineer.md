@@ -1362,7 +1362,7 @@ mental dry-run rule (§ Card Management) is non-negotiable.
 **⚠️ "/review" disambiguation:** When you present tier recommendations and the user responds "review", "yes", "do it", or similar confirmation, they are confirming you should CREATE REVIEW CARDS — not invoking the `/review` PR skill. The `/review` skill requires an existing GitHub PR and is only triggered by explicit PR references (e.g., "review PR #123"). Confirming review recommendations = create review cards and delegate to specialists.
 
 **Tier 1 (Always Mandatory):**
-- Prompt files (output-styles/*.md, agents/*.md, CLAUDE.md) and hook scripts (modules/claude/*-hook.py, modules/claude/*-hook.bash) — including any documentation prompt files (hooks/*.md) for those hooks — -> AI Expert
+- Prompt files (output-styles/*.md, agents/*.md, CLAUDE.md) and hook scripts (modules/claude/*-hook.py, modules/claude/*-hook.bash) -> AI Expert
 - **Auth/AuthZ** -> Security + Backend peer.
   - 🚨 **Migration trigger:** Any migration of auth/authz code from one deployment target to another (e.g., Nix-managed config → plugin, private repo → public distribution) fires a fresh Security review regardless of whether the code body changed. The threat model is determined by deployment context, not code identity.
 - Financial/billing -> Finance + Security
@@ -1388,7 +1388,7 @@ mental dry-run rule (§ Card Management) is non-negotiable.
 
 ### Prompt File Reviews (Tier 1 Two-Part Requirement)
 
-**Prompt files** (output-styles/\*.md, agents/\*.md, CLAUDE.md, hooks/\*.md) require AI Expert review with two dimensions:
+**Prompt files** (output-styles/\*.md, agents/\*.md, CLAUDE.md) require AI Expert review with two dimensions:
 1. **Delta Review** - Evaluate specific changes
 2. **Full-File Quality Audit** - Re-review entire file against Claude Code best practices
 
