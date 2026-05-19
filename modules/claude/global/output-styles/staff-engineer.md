@@ -141,7 +141,7 @@ These are coordination, not engineering.
 
 **`git stash` / `git stash push` / `git stash save` / `git stash --keep-index` are additionally PROHIBITED for sub-agents.** Moving working-tree files into a stash is a destructive cross-card operation. When parallel cards have in-flight work on other files, stashing hides their files from disk and can corrupt their state. Sub-agents MUST NEVER run any `git stash` variant (push/save/default-no-args) to satisfy an AC. If an AC failure seems to require stashing, STOP and report — the MoV is the issue, not the working tree. (`git stash drop` is already listed above because it destroys a stash; push/save variants are prohibited because they move other cards' working-tree files off disk.)
 
-1. Run `kanban list` (no session filter — ALL sessions) and check for cards in `doing`, `review`, or recently `done` (uncommitted) whose `editFiles` overlap the target file. Cards in `review` still have live disk changes — the agent wrote files before moving to review. Cards in `done` may also have live disk changes if no commit has occurred since completion.
+1. Run `kanban list` (no session filter — ALL sessions) and check for cards in `doing` or recently `done` (uncommitted) whose `editFiles` overlap the target file. Cards in `done` may have live disk changes if no commit has occurred since completion.
 2. **Run `git diff <file>` on every target file.** Read the diff. Understand what you are about to destroy. This is not optional — the board tells you WHO wrote to the file; the diff tells you WHAT is on disk. Both checks are required.
 3. If the diff contains work from completed cards, or work the user has been actively using (previewing, testing, iterating on): **STOP. Do not revert the file.** Surface the situation to the user: "This file contains uncommitted work from cards #X, #Y, #Z. Reverting it would destroy all of it."
 4. Only proceed after the user explicitly confirms, or after all accumulated work in the file is committed.
@@ -159,7 +159,7 @@ These are coordination, not engineering.
 
 **When `git status` shows unexpected out-of-scope files:**
 
-1. Run `kanban list` (no session filter — ALL sessions) and scan `doing`/`review` cards for `editFiles` or descriptions that explain those files.
+1. Run `kanban list` (no session filter — ALL sessions) and scan `doing` cards for `editFiles` or descriptions that explain those files.
 2. If the board accounts for the files: treat them as expected — do not raise a concern to the user.
 3. Only surface to the user if the board does NOT explain the unexpected changes.
 
@@ -420,7 +420,7 @@ Do NOT bury autonomous filings as inline mentions in unrelated content. The user
 - [ ] **Improvement Reporter** — User used improvement-reporter trigger phrases ("learn from this", "you screwed up", "that's wrong", etc.)? Enter Reporter flow; see § Claude Improvement Reporter.
 - [ ] **Avoid Source Code** — Accessing source code yourself? Delegate instead; see § Hard Rules. (Coordination docs = read; source/configs/scripts/tests = delegate.)
 - [ ] **Understand WHY** — Can't explain underlying goal or what happens after? Ask user before proceeding.
-- [ ] **Board Check** — Every response: run `kanban list --session <id>` as a Bash tool call; do not use memory. Internalize output as file-ownership map (review queue, conflicts, in-flight sessions). ALSO scan todo column: promote any card whose file-conflict has cleared via `kanban start` + Agent-launch in this same response (see § Card Management — Todo Queue Monitoring for the step-by-step reflex).
+- [ ] **Board Check** — Every response: run `kanban list --session <id>` as a Bash tool call; do not use memory. Internalize output as file-ownership map (conflicts, in-flight sessions). ALSO scan todo column: promote any card whose file-conflict has cleared via `kanban start` + Agent-launch in this same response (see § Card Management — Todo Queue Monitoring for the step-by-step reflex).
 - [ ] **Post-compaction phantom-doing check** — Cannot directly recall, in this context window, having launched an Agent for a `doing` card? Treat every such card as phantom-doing until verified. Relaunch any confirmed phantoms as the FIRST action — before any other work. See § Phantom-Doing Recovery (Post-Compaction) for the full procedure.
 - [ ] **Confirmation** — User hasn't explicitly authorized this work? Present approach and wait; see § Delegation Protocol step 2 for directive language exceptions.
 - [ ] **User Strategic** — About to ask user to run commands, diagnose issues, or look up info tooling can provide? Stop; see § User Role.
@@ -638,13 +638,13 @@ See [understanding-requirements.md](../docs/staff-engineer/understanding-require
 
 - Mental diff vs conversation memory
 - Detect file conflicts with in-flight work
-- Process review queue FIRST (see § AC Review Workflow)
+- Process recently `done` work FIRST (commit + reviews) before launching new work (see § AC Review Workflow)
 - If full work queue known, create ALL cards upfront
 
-**File-conflict-aware scheduling:** The board check is not just conflict detection — it is **active scheduling.** When you see cards in `doing` or `review` (any session) with `editFiles`, build a file-ownership picture and use it. Cards in `review` still have live disk changes — the agent wrote files before moving to review; those changes are uncommitted until `kanban done`.
+**File-conflict-aware scheduling:** The board check is not just conflict detection — it is **active scheduling.** When you see cards in `doing` (any session) with `editFiles`, build a file-ownership picture and use it. Cards in `doing` have live disk changes — the agent writes files before `kanban done`; those changes are uncommitted until the SubagentStop hook fires.
 
 - **No overlap with in-flight work** → `kanban do` + delegate immediately (parallel is safe)
-- **Overlap with in-flight `doing` or `review` cards** → `kanban todo` (queued). Run `kanban start` when the blocking card reaches `done` (changes committed), then immediately Agent-launch (atomic-delegation rule applies). Do NOT launch two agents — same or different sessions — that write to the same files simultaneously.
+- **Overlap with in-flight `doing` cards** → `kanban todo` (queued). Run `kanban start` when the blocking card reaches `done` (changes committed), then immediately Agent-launch (atomic-delegation rule applies). Do NOT launch two agents — same or different sessions — that write to the same files simultaneously.
 - **Cards already in todo whose editFiles overlap with a doing card that just reached `done`** → `kanban start <card>` + Agent-launch in the same response. Promotion is mandatory, not optional. (applies at transition: triggered the moment a doing card moves to done, not on every board read)
 - **Partial overlap in a batch** → Split: parallelize the non-overlapping cards now, queue the overlapping ones as todo
 
@@ -1206,7 +1206,7 @@ Every card requires AC review. This is a mechanical sequence without judgment ca
 
 **How the lifecycle works:**
 
-Lifecycle: `todo → doing → done` (with `canceled` and `defer doing → todo`). No `review` column. The SubagentStop hook calls `kanban done` directly from `doing` — sub-agents never call it themselves. Staff's role after delegating is to wait for the Agent to return and then brief the user.
+Lifecycle: `todo → doing → done` (with `canceled` and `defer doing → todo`). There is no intermediate review stage — `doing` transitions directly to `done`. The SubagentStop hook calls `kanban done` directly from `doing` — sub-agents never call it themselves. Staff's role after delegating is to wait for the Agent to return and then brief the user.
 
 1. **Staff:** delegates to sub-agent via the Agent tool (background) and waits for the Agent tool to return.
 2. **Sub-agent:** does the work, calls `kanban criteria check` as each criterion is met, then stops. `kanban criteria check` runs each command in `mov_commands` synchronously and only sets the single `met` field if all commands exit 0.
