@@ -1503,6 +1503,25 @@ The debugger performs hypothesis-testing EXPERIMENTS as part of its methodology.
   Reason: compound AND-chain — any failure masks which part failed. Prefer splitting compound checks into separate AC criteria, or into separate entries in the `mov_commands` array — failures are individually actionable.
 
   **HARD-PROHIBITED.** `&&` (AND-chain) is rejected by the kanban CLI validator on `kanban do/todo --file`. Split into separate `mov_commands` array entries — one command per entry. The validator error message includes the exact rewrite pattern. Pipes (`|`), redirects (`>`, `2>&1`), and other shell features inside a single `cmd` remain permitted; only `&&` is structurally rejected.
+
+  ❌ Separate `mov_commands` array entries when OR semantics is intended — multiple entries in `mov_commands` are AND-evaluated (ALL must exit 0 for the AC to pass). When the AC means 'file with extension A OR B exists' or 'pattern matches in convention X OR Y', do NOT use two separate entries — that forces the agent to satisfy BOTH (e.g., create files matching BOTH patterns) and produces duplicate artifacts. Use a single `rg` command with multiple `--glob` flags (which IS OR-evaluated in ripgrep): `rg -ql 'pattern' src/ --glob='*.test.*' --glob='*.spec.*'`. The `--glob` flag repeated produces OR semantics within ONE command; separate entries are still AND.
+  ```json
+  // ❌ Looks like OR, but is AND — agent will create BOTH *.test.* AND *.spec.* files
+  {
+    "text": "Test file uses either .test. or .spec. convention",
+    "mov_commands": [
+      {"cmd": "rg -ql 'describe' src/ --glob='*.test.*'", "timeout": 10},
+      {"cmd": "rg -ql 'describe' src/ --glob='*.spec.*'", "timeout": 10}
+    ]
+  }
+  // ✅ True OR — one command with repeated --glob flags
+  {
+    "text": "Test file uses either .test. or .spec. convention",
+    "mov_commands": [{"cmd": "rg -ql 'describe' src/ --glob='*.test.*' --glob='*.spec.*'", "timeout": 10}]
+  }
+  ```
+
+  For the `&&` AND-chain case:
   ```json
   {
     "text": "Dispatch matches expected patterns",
@@ -1584,6 +1603,7 @@ The debugger performs hypothesis-testing EXPERIMENTS as part of its methodology.
 
   **Pre-`kanban do --file` `mov_commands` lint (mandatory before every CLI invocation):** Mentally scan every `mov_commands[].cmd` field for these banned patterns BEFORE invoking the kanban CLI:
   - `&&` (AND-chain) — HARD-PROHIBITED; split into separate array entries (this is the most common authoring mistake)
+  - Separate array entries when OR semantics is intended — multiple `mov_commands` entries are AND-evaluated (ALL must exit 0); for 'A OR B exists' checks, use a single `rg` command with repeated `--glob` flags: `rg -ql 'pattern' src/ --glob='*.test.*' --glob='*.spec.*'`. Separate entries force the agent to satisfy BOTH, producing duplicate artifacts.
   - `\|` (backslash-pipe alternation) — `\|` is a LITERAL pipe character in ripgrep's default Rust regex engine, NOT alternation. Use bare `|` (no backslash anywhere) for alternation, OR split into separate `mov_commands` entries.
   - Case-sensitive multi-word anchor (e.g., `hard.cap`) — may collide with unrelated text; use `rg -F` (fixed-strings) or `rg -i` (case-insensitive); see § Card Sizing and Scope — pre-creation checklist (MoV mental dry-run, step 1) for full guidance
   - Case-insensitive identifier matching with `.` wildcard — `-i` plus `.` collides with lifecycle prose; use `! rg -q 'identifier'` (case-sensitive) or `! rg -qF 'identifier'` (fixed-strings)
