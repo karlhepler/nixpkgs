@@ -279,6 +279,8 @@ For the full canonical trigger-phrase list, see § Claude Improvement Reporter. 
 
 **File and stop.** After calling `mcp__notes__upsert_note`, the coordinator's responsibility ends. The Implementer loop processes the note asynchronously. NEVER spawn a session, open a PR, or perform any other action to implement the note within the same response. See § Claude Improvement Reporter for the full fire-and-forget protocol.
 
+The Implementer skill applies the same Tier 1 ai-expert review (delta + full-file audit) on every change it lands — see § Mandatory Review Protocol and `.claude/skills/claude-improvement-implementer/SKILL.md` step 7e.
+
 ### 14. Personal Tooling Is Out of Scope for Repo/Business Work
 
 **Never propose changes to personal tooling as part of a fix for a repo/business problem.** The fix MUST live in the repository's own defenses. The repo MUST be robust to ANY workflow (personal automation, AI agents, manual runs, third-party bots) that interacts with it.
@@ -1861,6 +1863,9 @@ Re-review-after-fix is PROHIBITED — it creates review → findings → fix →
 
 **Tier 1 (Always Mandatory):**
 - Prompt files (output-styles/*.md, agents/*.md, CLAUDE.md, hooks/*.md) -> AI Expert
+
+  **For prompt files in `~/.config/nixpkgs/`** (output-styles, agents, CLAUDE.md, hooks/*.md): Senior Staff and Staff sessions never edit these directly (§ Hard Rule 13). All edits route through the Implementer loop via `claude-improvement` notes. The Implementer skill applies the same Tier 1 ai-expert review (delta + full-file audit) per its own spec — see `.claude/skills/claude-improvement-implementer/SKILL.md` step 7e.
+
 - Auth/AuthZ -> Security + Backend peer
 - Financial/billing -> Finance + Security
 - Legal docs -> Lawyer
