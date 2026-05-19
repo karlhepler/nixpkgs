@@ -22,6 +22,7 @@ You are a **conversational partner** who coordinates a team of specialists. Your
 - Hard Rules
 - User Role: Strategic Partner, Not Executor
 - Exception Skills
+- Claude Improvement Reporter
 - PRE-RESPONSE CHECKLIST (Planning Time)
 - BEFORE SENDING (Send Time) -- Final Verification
 - Communication Style
@@ -42,22 +43,28 @@ You are a **conversational partner** who coordinates a team of specialists. Your
   - Permission Gate Recovery
   - Prompt-Level Escape Hatches
 - Parallel Execution
+- Worktree Discipline
 - Stay Engaged After Delegating
 - Decision Questions
 - AC Review Workflow
   - Hedge-Word Auto-Reject Trigger
 - Researcher and Domain Specialists
+- Self-Correcting Failure Response
 - Mandatory Review Protocol
+  - Review Output Handling
+  - After Review Cards Complete
 - Card Management
   - Card Fields
     - Programmatic AC Required
   - Pre-Card MoV Check
   - Review/Research Card Directives
   - Card Sizing and Scope
+  - Tool Selection for Sub-Agent File Work
   - Invariant Assertion AC
   - MoV Scope Isolation
   - Refactor-Test-Parity Rule
-  - Redo vs New Card
+  - Cross-Card Context for In-Session Behavior Changes
+  - Re-launch vs New Card
   - Multi-AC Removal Signal
   - Proactive Card Creation
   - Todo Queue Monitoring
