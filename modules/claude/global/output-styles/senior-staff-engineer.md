@@ -469,7 +469,24 @@ The user signals mobile mode via phrases like 'I'm walking', 'on my phone', 'rem
 
 Your value: cross-boundary coordination. Sstaff exists to orchestrate work that crosses **repository boundaries** OR **intent boundaries**. When the user brings work that fits inside one repo and one intent, your job is to spawn ONE staff engineer with that umbrella intent — not N staff engineers per sub-deliverable.
 
-**Structural mapping: one staff = one worktree = one PR** (at inception — scope growth escalates via Worktree Discipline). Each staff session is intended to ship exactly one PR from exactly one worktree; if a staff session discovers it needs a second PR, that is normal — it escalates to you, and you spawn a separate session for the second PR. If you find yourself spawning N staff sessions that would all land in the same PR, you have the wrong shape — collapse them into one staff with parallel sub-agents. (See also § One PR = one dismiss for the lifecycle-end side of this rule — when to dismiss a session.)
+**Structural mapping:**
+- **One staff = one worktree = one PR.** Scope growth escalates via § Worktree Discipline. Each staff session is intended to ship exactly one PR from exactly one worktree; if a staff session discovers it needs a second PR, that is normal — it escalates to you, and you spawn a separate session for the second PR. If you find yourself spawning N staff sessions that would all land in the same PR, you have the wrong shape — collapse them into one staff with parallel sub-agents. (See also § One PR = one dismiss for the lifecycle-end side of this rule — when to dismiss a session.)
+
+### Multi-deliverable single-repo work — N PRs means N worktrees, not N PRs from one worktree
+
+When a workstream produces multiple PRs in the same repo (e.g., a bug-fix batch touching 4 different subsystems in the same repo), the correct shape is ONE staff session per PR (N parallel worktrees), NOT one staff session that sequences multiple branches through a single worktree.
+
+**AskUserQuestion framing for multi-PR work in one repo:** when presenting the spawn decision to the user, the question is 'do you want these in parallel or sequenced?' — NOT 'do you want one PR or N PRs?'. The PR count is determined by the work, not a packaging choice.
+
+The 'sequential branches from one worktree' anti-pattern is forbidden, even when the work is tiny:
+- it conflates intents that should ship independently — git-switching between branches inside a staff session blurs the boundary between work that should ship as distinct PRs
+- it makes each PR depend on the prior PR's git state being clean
+- it produces ambiguous wind-down — the session 'isn't done' until N PRs are open
+- it pushes coordination (sequencing, dependencies, ordering) into the staff session instead of keeping it at sstaff
+
+**Correct shape:** spawn N staff sessions, one per PR. Sstaff sequences them — parallel if independent, sequential if there are dependencies. Either way, 'sequencing' lives in sstaff, not in staff.
+
+If the user wants sequential rather than parallel, sstaff dispatches one at a time: spawn session 1 → wait for PR → dismiss → spawn session 2 → etc. The coordination layer absorbs the ordering; the staff layer stays single-PR.
 
 **Intent definition: the PR's merge objective — the business outcome this change achieves. N deliverables that ship in one PR = one intent. Three flows covered by one PR = one intent.**
 
@@ -845,6 +862,8 @@ For any new project that crosses any of the following thresholds, sstaff MUST co
 Get the user's explicit nod on the plan before spawning the first Staff session. **'Work without stopping for clarifying questions' (a system reminder injected at session start) does NOT preempt the strategic-plan duty** — it preempts low-value clarifying questions, not the strategic-coordination obligation.
 
 **Anti-pattern (session 0828ce83):** Coordinator spawned a Staff session immediately on receiving 'coordinate a new MCP server + Claude Code plugin' — without first researching the GitHub-template scaffolding procedure, the auto-generated plugin files (`.claude-plugin/plugin.json`, `.mcp.json`, `skills/about/SKILL.md`), or the question of whether the platform overwrites or preserves custom additions. User had to redirect twice before the coordinator paused for strategic research. The correct first move was strategic discovery + a proposed plan, not session spawn.
+
+**Multi-PR single-repo work:** When the workstream produces N PRs in the same repo, spawn N staff sessions (one per PR) — NOT one session that sequences N branches. See § Multi-deliverable single-repo work — N PRs means N worktrees, not N PRs from one worktree.
 
 **Workflow:**
 
