@@ -1229,6 +1229,38 @@ In all other cases, merged → dismissed in the same response. See § Escalation
 
 **Anti-pattern (capture for future avoidance):** Asking "the owning PR shipped, want me to dismiss?" or surfacing dismissal as an AskUserQuestion option. This rule pre-authorizes the dismiss; asking the user is the failure mode.
 
+**The dismiss trigger is the PR merging into main — not earlier states.**
+
+The following states are NOT dismiss triggers. The session is still live and MUST remain alive through all of them:
+
+- /smithers cycle exiting cleanly
+- Auto-merge armed
+- CI green
+- Awaiting review approval
+- PR in GitHub merge queue (still `state=OPEN` from `gh pr view --json state` — not yet `state=MERGED`)
+
+During any of these states the PR is still live — it may need /smithers to re-fire if it receives new bot comments or CI flakes between exit and the actual merge. The session must stay alive until `state=MERGED` fires.
+
+**At /smithers exit: keep alive, not dismiss.**
+
+When a /smithers cycle exits cleanly but the PR has not yet merged, the correct coordinator framing is:
+
+> "/smithers exited cleanly on PR #X. Session is idle. Keeping it alive until the PR lands on main — that's the default. Will dismiss when merge fires."
+
+NOT:
+
+> "/smithers exited cleanly. [showing a default-recommended early-dismiss option]"
+
+If AskUserQuestion is genuinely needed at /smithers exit (e.g., user has explicitly indicated they want to control session disposition), the `(Recommended)` option MUST be `Keep alive until PR merges`. `Dismiss now` is available as a non-recommended choice for pre-merge dismissal only when the user has explicitly signaled that preference.
+
+**Pre-merge dismissal requires explicit user authorization.**
+
+Dismissing a session BEFORE its PR has merged is an exception that requires explicit per-PR user authorization. It is not the default and MUST NOT be offered as the recommended option. The coordinator MUST NOT pre-emptively dismiss a session because the active work (smithers cycle) finished — the lifecycle is bound to the PR, not to the active-work duration.
+
+**AskUserQuestion default-recommendation discipline.**
+
+The `(Recommended)` label in an AskUserQuestion call MUST reflect the user's stated default for that specific decision class — not a coordinator-internal convenience heuristic. When the user has stated a default (e.g., "always wait for merge before dismissing"), that default is the `(Recommended)` option for the relevant question. The coordinator's convenience option is non-recommended. Coordinator convenience and user-stated defaults are not the same thing; the user's stated default wins. This rule is a special case of the general (Recommended)-label discipline in § Decision Questions — the dismiss case is its sharpest test.
+
 **Escalation-path exception:** If a second PR was spawned from this session via coordinator approval — the session is done when its escalation-approved scope is complete, not when just the first PR merges. The dismiss trigger is the session's OWNING intent shipping (which may span 1+ PRs under escalation), not the first PR number merged.
 
 This is the wind-down side of § Hierarchy's structural rule (`one staff = one worktree = one PR`). The hierarchy rule governs spawn; this rule governs dismissal.
@@ -2298,6 +2330,8 @@ When relaying a Staff-session decision to the user via AskUserQuestion, split th
 **In the AskUserQuestion tool call itself:**
 - `question`: short, direct, matches how the user would ask the decision out loud. NOT a paragraph. No context explanation here — the prose above carries that weight.
 - `options`: 2-4 choices, first one labeled `(Recommended)`, each with 1-2 sentence description
+
+The `(Recommended)` label MUST reflect the user's stated default for the specific decision class, not a coordinator-internal convenience heuristic. See § One PR = one dismiss for the dismiss-trigger case study.
 
 **Why this pattern:**
 - **Mobile char cap** — the `question` field is truncated after a certain length on mobile devices. Stuffing context there means the user sees only the options without the framing. Context in prose renders correctly in the normal message body.
