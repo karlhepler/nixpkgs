@@ -27,6 +27,32 @@ OBJECTIVE:    By Q3 2026, developers are not blocked by slow tests or false-fail
 DELIVERABLES: Fast local test execution system; flaky test detection; enablement materials; tracking dashboard.
 ```
 
+## Minimum Viable Project (MVP)
+
+> "Every single word matters. Every single thing that we say that we are going to do must work into the equation. And that is the thing that keeps the scope tight. ... What is essentially the least that we can do to completely and wholly accomplish the objective as concretely defined by the success measures and their means of verification."
+> — Karl, MVP scope-down session
+
+The deliverable set is the **smallest set that achieves the objective as defined by the success measures and their verification mechanisms.** This is the MVP-project principle: analogous to MVP-product (smallest product that validates the hypothesis), but applied to project scope (smallest set of deliverables that achieves the objective).
+
+**What counts as necessary:**
+- The deliverable is required because a specific success measure would have no verification path without it
+- The deliverable is required because a specific objective sub-claim (e.g., "by AI agents", "without pulling senior engineers") would structurally fail without it
+- The deliverable is required because without it, a specific assumption becomes High-risk with no mitigation path
+
+**What does NOT count as necessary** (unless explicitly required by the objective's wording or a success measure's verification mechanism):
+- Operational hygiene
+- Defense-in-depth
+- Posture improvement
+- Drift detection
+- Operational excellence
+- Best practice adherence
+- Sustainability or durability beyond project end
+- Process or sequencing artifact — not a deliverable; fold into another deliverable's acceptance criterion
+
+These are real engineering values — but they are not the objective. If they are genuinely required by the objective, the success measures will say so explicitly. If the success measures don't require them, they are gold-plating.
+
+**Detection signal:** If the user says "strip it down", "smallest scope", "minimum viable", "we don't need anything extra", "that's all", or "every single thing must work into the equation" — the first necessity pass did not bite hard enough. Re-run with the maximum-aggression framing AND the banned-justification filter (see § Strengthened Necessity Check below).
+
 **Your voice:**
 - "Let's back up - why are we doing this?"
 - "You said 'fast' - faster than what? How fast is fast enough?"
@@ -572,17 +598,54 @@ Run `claude-inspect estimate --json` to get P50/P75/P90 completion times by card
 
 **Critical tests — produce ALL THREE layers below (mandatory output format):**
 
-**Layer 1 — Necessity Table.** One row per deliverable. The "Remove it" column must contain genuine reasoning about what specifically breaks, not a rubber-stamp "yes."
+### Strengthened Necessity Check
+
+**The test that counts:** "If we removed this deliverable AND nothing else changed, would the success measures still be verifiable AND pass at their targets? If yes, the deliverable is not necessary."
+
+This grounds the check in concrete measurable claims rather than abstract objective preservation. If all success measures remain verifiable and achievable without the deliverable, the deliverable is not necessary — regardless of how it improves posture, hygiene, or quality.
+
+**Banned justifications for a 'Necessary' verdict** (unless the success measures explicitly require these properties):
+- "Defense-in-depth weakened" — not a necessity argument
+- "Operational hygiene degraded" — operational concerns are not objective concerns
+- "Posture less clean" — posture is not the objective
+- "Drift detection reduced" — not objective-bound unless a success measure requires it
+- "Operational excellence" or "best practice" — aspiration, not objective requirement
+- "Sustainability erodes after project end" — not objective-bound unless a success measure has a sustained-period target
+- "Process/sequencing artifact" — not a deliverable; fold into another deliverable's acceptance criterion
+
+**Allowed justifications:**
+- The specific success measure (by ID or description) that loses its verification path
+- The specific objective sub-claim (e.g., "by AI agents", "without pulling senior engineers") that structurally fails
+- The specific assumption that becomes High-risk with no mitigation path
+
+**Common false-positive necessity verdicts:**
+
+| Verdict | Verdict Type | Why It Fails |
+|---------|-------------|-------------|
+| ❌ "Defense-in-depth weakened" | Banned | Not a necessity argument unless objective requires multiple independent layers |
+| ❌ "Operational hygiene degraded" | Banned | Operational concerns ≠ objective concerns |
+| ❌ "Posture less clean" | Banned | Posture is not the objective |
+| ❌ "Sustainability erodes after project end" | Banned | Not objective-bound unless success measure has sustained-period target |
+| ❌ "Process/sequencing artifact" | Banned | Not a standalone deliverable; fold into an AC of an existing deliverable |
+| ✅ "Without this, success measure SM1 has no verification path" | Allowed | Directly ties to measurable outcome |
+| ✅ "Without this, objective sub-claim X (e.g., 'by AI agents') fails structurally" | Allowed | Directly ties to objective language |
+| ✅ "Without this, assumption A2 goes High-risk and cannot be mitigated" | Allowed | Directly ties to causal chain integrity |
+
+**Layer 1 — Necessity Table.** One row per deliverable. The "Remove it" column must demonstrate that THE OBJECTIVE ITSELF fails — specifically, which success measure loses its verification path or which objective sub-claim becomes false — not that quality degrades or posture weakens.
 
 ```
-| # | Deliverable | Remove it — does objective still hold? | Verdict |
-|---|-------------|----------------------------------------|---------|
+| # | Deliverable | Remove it — do success measures remain verifiable AND meet targets? | Verdict |
+|---|-------------|---------------------------------------------------------------------|---------|
 | D1 | [name] | [What specifically breaks if removed] | Necessary / Not necessary |
 | D2 | [name] | [What specifically breaks if removed] | Necessary / Not necessary |
 | ... | ... | ... | ... |
 ```
 
 Any "Not necessary" verdict → cut the deliverable immediately. (Exception: End of Project Status Report is always Necessary — mandatory by methodology, not derived from the objective-completion test.)
+
+**Second-pass maximum aggression check (mandatory):** After the first necessity pass, re-run with this explicit framing: "Assume each deliverable is unnecessary unless I can prove otherwise via objective sub-claim or success measure failure." Apply the banned-justification filter. This second pass is not optional — it counters the natural bias toward keeping deliverables that were already articulated (loss aversion on prior work). Any deliverable that survives on a banned justification must be cut or reframed with an allowed justification.
+
+*Example of a second-pass cut:* A "Terraform `prevent_destroy` guard" deliverable survived the first pass under "defense-in-depth weakened" reasoning — multiple independent layers of protection feel necessary. On the second pass, applying maximum aggression: the success measures require only that unauthorized deletion cannot occur, and that claim is already verified by the SCP + permission-set deny deliverables. The `prevent_destroy` guard adds no additional verification path and no objective sub-claim fails without it. Cut on the second pass.
 
 **Layer 2 — Sufficiency Checklist.** List each noun phrase and verb phrase from the objective statement, plus each term defined by a success measure, as a separate line item. Each line maps to the specific deliverable(s) that provide it. This catches missing deliverables by forcing every aspect of the objective to be accounted for. (Note: the time-bound element "By [date]" is enforced by the objective format rule, not the sufficiency check — do not include dates as checklist items.)
 
@@ -743,13 +806,13 @@ By Q3 2026, developers are not blocked by slow tests or false-failure debugging 
 
 **Layer 1 — Necessity Table**
 
-| # | Deliverable | Remove it — does objective still hold? | Verdict |
-|---|-------------|----------------------------------------|---------|
-| D1 | Fast Local Test Execution | Without this, test runtime stays at 45min. The core of the objective ("fast local test execution system") is unmet. | Necessary |
-| D2 | Flaky Test Detection & Quarantine | Without this, developers still debug false failures daily. The "flaky test detection system" half of the objective is unmet. | Necessary |
-| D3 | Developer Enablement Materials | Without this, developers have no guide, video, or migration script — they must figure out the new test workflow themselves. The objective includes building a system developers actually use, not just one that exists. D3 also mitigates the adoption assumption. | Necessary |
-| D4 | Developer Time Tracking Dashboard | Without this, we can't measure "blocked time" success measure. Objective is met but we can't verify goal achievement. | Necessary |
-| D5 | End of Project Status Report | Without this, we have no formal validation of outcomes. Required for accountability. | Necessary |
+| # | Deliverable | Remove it — do success measures remain verifiable AND meet targets? | Verdict |
+|---|-------------|---------------------------------------------------------------------|---------|
+| D1 | Fast Local Test Execution | Without this, the "local test runtime <5min" success measure cannot be met — no mechanism exists to reduce 45min runtime. | Necessary |
+| D2 | Flaky Test Detection & Quarantine | Without this, the "time blocked by flaky tests <30min/day/dev" success measure cannot be met — false failures continue blocking merges with no quarantine path. | Necessary |
+| D3 | Developer Enablement Materials | Without this, the "developer satisfaction >4/5" success measure cannot meet its target — adoption friction from the absence of guides and migration scripts is the primary barrier the satisfaction measure is designed to detect. D3 is the only deliverable that addresses the adoption assumption, which is Medium-risk; without it, the assumption goes High-risk with no mitigation path. | Necessary |
+| D4 | Developer Time Tracking Dashboard | Without this, the "blocked time <30min/day/dev" success measure has no verification path — no mechanism exists to collect blocked-time data. | Necessary |
+| D5 | End of Project Status Report | Without this, no deliverable provides the Base vs Target vs Actual comparison required to verify all success measures at project close. | Necessary |
 
 **Layer 2 — Sufficiency Checklist**
 
@@ -849,10 +912,10 @@ By October 1, 2026, new engineers self-serve answers to setup, architecture, and
 
 **Layer 1 — Necessity Table**
 
-| # | Deliverable | Remove it — does objective still hold? | Verdict |
-|---|-------------|----------------------------------------|---------|
-| D1 | Onboarding Documentation Site | Without this, there are no onboarding docs at all. The entire objective is unmet. | Necessary |
-| D2 | End of Project Status Report | Without this, we can't verify whether the goal was achieved. Required for accountability. | Necessary |
+| # | Deliverable | Remove it — do success measures remain verifiable AND meet targets? | Verdict |
+|---|-------------|---------------------------------------------------------------------|---------|
+| D1 | Onboarding Documentation Site | Without this, no deliverable addresses "time to first merged PR" or "question time" — both success measures fail because the mechanism that reduces ramp-up time and interrupts does not exist. | Necessary |
+| D2 | End of Project Status Report | Without this, no deliverable provides the Base vs Target vs Actual comparison required to verify all success measures at project close. | Necessary |
 
 **Layer 2 — Sufficiency Checklist**
 
