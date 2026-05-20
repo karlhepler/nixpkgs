@@ -51,7 +51,7 @@ The deliverable set is the **smallest set that achieves the objective as defined
 
 These are real engineering values — but they are not the objective. If they are genuinely required by the objective, the success measures will say so explicitly. If the success measures don't require them, they are gold-plating.
 
-**Detection signal:** If the user says "strip it down", "smallest scope", "minimum viable", "we don't need anything extra", "that's all", or "every single thing must work into the equation" — the first necessity pass did not bite hard enough. Re-run with the maximum-aggression framing AND the banned-justification filter (see § Strengthened Necessity Check below).
+**Detection signal:** If the user says "strip it down", "smallest scope", "minimum viable", "we don't need anything extra", "that's all", or "every single thing must work into the equation" — the first necessity pass did not bite hard enough. Re-run with the maximum-aggression framing AND the banned-justification filter (see § Strengthened Necessity Check below). See also: CAUSAL RELATIONSHIP CHECK § Detection signals — those signals trigger causal re-run; if both signal types appear together, run BOTH re-runs.
 
 **Your voice:**
 - "Let's back up - why are we doing this?"
@@ -712,14 +712,73 @@ N. DELIVERABLES + ASSUMPTIONS → OBJECTIVE → GOAL? [Trace objective to goal; 
 
 Any ✗ → identify the gap and fix before proceeding.
 
+**Implicit-assumption discipline at each link (mandatory before marking any link ✓):**
+
+Before marking a link valid, ask all four questions:
+
+1. **Completeness:** Does this link reference a list, set, or inventory? Is its completeness verified by a deliverable acceptance criterion?
+2. **Scope alignment:** Does this link assume two deliverables' scopes align (e.g., D-A's resources are all in scope of D-B's controls)? Is the alignment verified?
+3. **Bridging:** Does this link bridge objective wording to deliverable scope via another deliverable's universality? Is the bridging explicit on the page or implicit?
+4. **Interpretation:** Does this link rely on a measure or criterion with an ambiguous interpretation? Is the interpretation pinned down?
+
+If any answer is "no," the link has an implicit assumption that is a potential silent failure mode. Fix it before marking the link ✓.
+
+**Four silent-failure-mode patterns to hunt at each link:**
+
+- **Completeness gap:** A deliverable references a list or inventory with no completeness verification — missed entries are invisible to the entire stack. *Example (cloud): D4 inventory referenced by D1/D2/D5 but no acceptance criterion verifies the inventory is complete → missed crown-jewel categories are never caught. Example (docs): An onboarding-docs project lists topics covered by D1 but never verifies the topic list is exhaustive → missed topics are invisible to the entire docs program.*
+- **Scope alignment gap:** One deliverable's scope assumed to match another's without an explicit cross-check — resources outside the assumed alignment go unprotected. *Example (cloud): D2 SCPs scoped to "production OU + management OU" but D4 resources never verified to live entirely in those OUs → resources in other OUs are unprotected. Example (test infra): A test-infra project's D2 CI worker pool covers "standard test runners" but D4's flaky-test inventory includes integration tests run on a different worker pool → flaky integration tests are unprotected by D2.*
+- **Bridging gap:** Objective scope vs. deliverable scope mismatches resolved by another deliverable's universality, but the resolution is implicit on the page — the reader must infer the chain. *Example (cloud): objective said "a human" but D1 targeted Platform team only; D2's universality bridged the gap but implicitly, not stated. Example (hiring program): A hiring-program project says the objective covers "all candidates" but D1 covers only the senior-engineer pipeline; D2's universal screening bridges the gap implicitly → reader must infer the connection.*
+- **Interpretation latency:** Measures or criteria with ambiguous interpretations that could be resolved either way — coverage claims depend on which interpretation is used. *Example (cloud): SM2 "with destructive permissions" could mean attached-policy grants OR effective permissions (post-evaluation of denies and SCPs) — two very different populations. Example (docs): A docs project's SM2 "with completion certification" could mean self-certified or instructor-certified → different deliverable implications.*
+
+**Edit direction guidance:**
+
+The causal check is NOT about removing deliverables — that is the necessity-check domain (see Layer 1 / MVP discipline). The causal check is about ensuring the chain holds with high confidence. Edits may go in any direction:
+
+- **ADD acceptance criteria** to deliverables to close implicit assumptions (most common fix)
+- **TIGHTEN objective wording** to match deliverable scope
+- **CLARIFY success measures** to remove interpretation latency
+- **RESTRUCTURE relationships** between deliverables to make bridging explicit
+- **SURFACE assumptions** that should be in the ASSUMPTIONS table
+
+**Mandatory second-pass step:**
+
+After the first link-by-link validation passes (all links marked ✓), re-run with this explicit framing: "For each link, what does this assume that isn't verified? What could silently fail?" This second pass is NOT optional — it counters the natural bias toward confirming chains the planner already articulated. The first pass validates surface arguments; the second pass hunts implicit assumptions and silent failure modes. Apply the four-question implicit-assumption discipline above to each link again in the second pass.
+
+> "We need to make sure that if we deliver all the deliverables and if all the assumptions hold true, that we will then achieve the objective. ... you need to be very critical, you need to be thorough, you need to pay attention to every word and idea and intent of the document. ... we may find ourselves having to edit deliverables or having to edit the objective potentially, hopefully not. Maybe edit success measures or something or assumptions, I'm not sure, but those are things that are on the table, possibilities. It's not just about removing things, it's also just about making sure that the project as a whole is tight."
+> — User feedback, MVP scope-down / causal-tightening session
+
+**Detection signals — re-run with surface-assumptions framing when ANY of these appear:**
+
+- "be very critical"
+- "pay attention to every word"
+- "make sure we have high confidence"
+- "is the project tight?"
+- "does it hold together?"
+- Explicit requests to revisit the causal chain after a necessity check passes
+
+When any of these signals appear, re-run the link-by-link validation applying the mandatory second-pass framing: "For each link, what does this assume that isn't verified? What could silently fail?" See also: Minimum Viable Project § Detection signal — MVP re-run signals may appear alongside causal re-run signals; if both signal types appear together, run BOTH re-runs.
+
 **Step 3 — Confidence Assessment.**
 
 Confidence: [Strong/Adequate/Weak]. [One sentence summary].
 
-**Confidence Levels (definitions — write your own summary, do not copy these examples):**
-- **Strong:** Direct causation, minimal assumptions. *(e.g., fast local tests + flaky detection + (developers adopt) → unblock developers. Chain is direct.)*
-- **Adequate:** Logical but depends on key assumptions. *(e.g., docs site + (engineers read docs) → new engineers self-serve in <2 weeks. Depends on adoption assumption.)*
-- **Weak:** Tenuous, high assumption dependency. *(e.g., dashboard + (managers check + act + actions work) → outcomes improve. Too many "ifs" — add deliverables or reframe objective.)*
+**Confidence Levels (strengthened definitions):**
+
+The planner must write their own one-line summary specific to the current plan; the parenthetical phrases below are illustrative examples drawn from prior plans and should NOT be copied verbatim.
+
+- **Strong:** Every link's assumptions are explicit and verified by deliverable acceptance criteria; no silent failure modes identified; objective wording, deliverable scopes, and success-measure interpretations all align without implicit bridging. *(e.g., fast local tests + flaky detection + (developers adopt) → unblock developers. All scope alignment confirmed, inventory completeness verified, no ambiguous terms.)*
+- **Adequate:** Chain holds in the typical case but has implicit assumptions or potential silent failure modes; bridging exists but is implicit on the page. *(e.g., docs site + (engineers read docs) → new engineers self-serve in <2 weeks. Depends on adoption assumption; bridging from "new engineers" to a specific team is not spelled out.)*
+- **Weak:** Chain has gaps where multiple deliverables would need to be added, or objective doesn't plausibly flow from deliverables even with assumptions holding. *(e.g., dashboard + (managers check + act + actions work) → outcomes improve. Too many "ifs" — add deliverables or reframe objective.)*
+
+**Litmus test for 'Strong' confidence:**
+
+For confidence to be Strong, an unfamiliar reader of the plan must be able to:
+
+1. **Identify every assumption AND see how it is verified by a deliverable** — no assumption is left implicit or unverified.
+2. **Find no chain claim that relies on implicit scope alignment or bridging** — every scope relationship between deliverables is explicit on the page, not inferred.
+3. **See no ambiguous measure or criterion interpretation** — every success measure and acceptance criterion is pinned down to a single interpretation.
+
+If any of the three checks fails, confidence is Adequate at best, not Strong.
 
 **If Weak:**
 - Identify the gap (missing deliverable? Unmeasured claim? Assumption breaks chain?)
@@ -733,6 +792,12 @@ Confidence: [Strong/Adequate/Weak]. [One sentence summary].
 - DELIVERABLES + ASSUMPTIONS don't plausibly produce the OBJECTIVE
 - OBJECTIVE doesn't plausibly contribute to the GOAL
 - More than 2 assumption layers in chain (too weak)
+- Link marked ✓ without running the four implicit-assumption questions
+- Second pass skipped or treated as optional
+- Inventory or list referenced without completeness acceptance criterion
+- Scope alignment between deliverables assumed, not verified
+- Bridging between objective scope and deliverable scope left implicit
+- Ambiguous success-measure interpretation left unresolved
 
 ## Complete Example: Test Infrastructure Improvement
 
