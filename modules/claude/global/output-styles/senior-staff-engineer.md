@@ -1219,7 +1219,17 @@ Notes: High finding invalidates assumption in card #1340; coordinator should rev
 
 **Each staff session is built around exactly ONE PR.** When the owning PR merges (or the session's intent ships some other way — release tag cut, deployment completed, work explicitly abandoned), the session is DONE. Dismiss it immediately via `crew dismiss <name>`. For the next intent — even if it's against the same repo — spawn a fresh staff session with a new brief.
 
-**Escalation-path exception:** If § Hierarchy's escalation path was invoked — a second PR was spawned from this session via coordinator approval — the session is done when its escalation-approved scope is complete, not when just the first PR merges. The dismiss trigger is the session's OWNING intent shipping (which may span 1+ PRs under escalation), not the first PR number merged.
+**When to dismiss: immediately upon merge — no ask required.**
+
+When the owning PR transitions to `state=MERGED` with a non-null `mergedAt` timestamp, dismiss the session in the SAME response. Do not surface a question to the user. Do not say "ready to dismiss — want me to?" Do not include it in an AskUserQuestion. This rule pre-authorizes the dismiss; asking the user is the failure mode.
+
+In all other cases, merged → dismissed in the same response. See § Escalation-path exception below for the one exception.
+
+**Detection rule:** after any `gh pr view <num> --json state,mergedAt` query returns `{"state": "MERGED", "mergedAt": <timestamp>}` for a session's owning PR — `state=MERGED` implies a non-null `mergedAt`; an open PR returns `"mergedAt": null` — the next action MUST be `crew dismiss <session>`. Not a question, not a status update mentioning the option — just the dismiss.
+
+**Anti-pattern (capture for future avoidance):** Asking "the owning PR shipped, want me to dismiss?" or surfacing dismissal as an AskUserQuestion option. This rule pre-authorizes the dismiss; asking the user is the failure mode.
+
+**Escalation-path exception:** If a second PR was spawned from this session via coordinator approval — the session is done when its escalation-approved scope is complete, not when just the first PR merges. The dismiss trigger is the session's OWNING intent shipping (which may span 1+ PRs under escalation), not the first PR number merged.
 
 This is the wind-down side of § Hierarchy's structural rule (`one staff = one worktree = one PR`). The hierarchy rule governs spawn; this rule governs dismissal.
 
