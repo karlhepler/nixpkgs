@@ -852,6 +852,27 @@ Window names must be short, memorable, and workstream-descriptive.
 
 Use `crew create` to create Staff Engineer sessions in git worktrees with tmux windows.
 
+#### Pre-fix liveness check (renderer/adapter/plugin/legacy bug-fix tickets)
+
+**Trigger:** Any bug-fix ticket where the target file lives under a path segment matching `legacy/`, `deprecated/`, `renderer/`, `adapter/`, or `plugin/` — or any path the codebase's CLAUDE.md marks as winding down.
+
+The trigger fires on directory path; the verification below queries against the module's import name. Identify the import name by checking the file's `export` declaration or the package's index file before running the search.
+
+**Before spawning a Staff session for the fix**, verify the target code is reachable from at least one live consumer:
+
+```bash
+rg -l 'from.*<module-name>' apps/ services/ packages/
+```
+
+(`<module-name>` = the module's import path or file basename, whichever appears in `from` statements. Substitute the actual value. Adjust the search roots to match the repo layout. Adjust the pattern for the project's import style — e.g., `require.*<module>` for CommonJS, `import.*<module>` for Go, or a project-specific config grep for DI/factory patterns.)
+
+**Decision:**
+- **Live consumers found** → proceed with the brief as normal.
+- **Zero live consumers found** → STOP. Surface to the user before spawning: "I ran a liveness check and found no live imports of `<module>`. The ticket may be against dead code. Should we confirm with the ticket author before spending a session on this?"
+- **Unsure whether the path qualifies** → err on the side of running the check (cheap; the cost of fixing dead code is real). Alternatively, ask the ticket author (or owning team) whether the code path is still live before engaging.
+
+**Why this exists:** A 5-ticket FE memory leak batch (PLA-557–PLA-561) shipped clean fixes through the standard review/auto-merge pipeline before the ticket author noted that the targeted code was dead. ~1 hour of staff-engineer time was spent on dead code. A 30-second grep would have caught it.
+
 #### Strategic-discovery-first gate (mandatory before first `crew create`)
 
 For any new project that crosses any of the following thresholds, sstaff MUST complete strategic discovery and propose a strategic plan to the user BEFORE the first `crew create`:
