@@ -43,10 +43,10 @@ let
     flakeIgnore = [ "E265" "E402" "E501" "F401" "W503" "W504" ];  # E402/F401: shim injects sys.path before imports
   } (claudeToolingPathShim + builtins.readFile ./prr.py);
 
-  # PR Slack Post Python CLI (one-shot Slack notification with dedup marker)
-  prSlackPostScript = pkgs.writers.writePython3Bin "pr-slack-post" {
-    flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # E265: block comment format; E501: long lines for embedded payload/epilog strings; W503/W504: line break before/after binary operator
-  } (builtins.readFile ./pr-slack-post.py);
+  # Smithers Post Python CLI (one-shot Slack notification with Block Kit formatting)
+  smithersPostScript = pkgs.writers.writePython3Bin "smithers-post" {
+    flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # E265: block comment format; E501: long lines for epilog strings; W503/W504: line break before/after binary operator
+  } (builtins.readFile ./smithers-post.py);
 
   # Crew Python CLI (unified tmux window/pane interaction)
   crewScript = pkgs.writers.writePython3Bin "crew" {
@@ -309,11 +309,11 @@ $orphan_warning"
       };
     };
 
-    pr-slack-post = prSlackPostScript // {
+    smithers-post = smithersPostScript // {
       meta = {
-        description = "Post PR completion notification to Slack webhook (one-shot dedup via .scratchpad marker)";
-        mainProgram = "pr-slack-post";
-        homepage = "${builtins.toString ./.}/pr-slack-post.py";
+        description = "Post PR-ready-for-merge Slack notification with Block Kit formatting (Why/What sections, repo footer)";
+        mainProgram = "smithers-post";
+        homepage = "${builtins.toString ./.}/smithers-post.py";
       };
     };
 

@@ -26,7 +26,7 @@ On error (PR not found, no branch tracking): print a clear error message and sto
 
 ## STATE
 
-State lives in conversation history — no state files. Track these values mentally across iterations:
+Most state lives in conversation history. Track these values mentally across iterations:
 
 - `cycle` — iteration counter, starts at 1
 - `fix_count` — number of times you have delegated fix work to a specialist
@@ -35,7 +35,15 @@ State lives in conversation history — no state files. Track these values menta
 - `max_cycles` — 10 (hard limit on total iterations)
 - `max_ralph_invocations` — 4 (hard limit on specialist delegations)
 
-On first invocation these are all at their initial values. On ScheduleWakeup continuations, recall them from the conversation context.
+**`clean_confirmed` — durable flag file (NOT in-memory):** This flag MUST survive the ScheduleWakeup gap, which spawns a fresh agent context where in-memory variables do not persist. It is stored as a file:
+
+- **File path:** `.smithers/clean_confirmed` (relative to the git repo root)
+- **Set:** `touch .smithers/clean_confirmed` (first no-work invocation, Step 7)
+- **Test:** `test -f .smithers/clean_confirmed` (subsequent invocations, Step 7)
+- **Clear:** `rm -f .smithers/clean_confirmed` (after Step 7a completes OR on any abort/error in Step 7a)
+- **Init:** On first invocation, if the file does not exist, treat as false. Do not create `.smithers/` — it is guaranteed to exist in the PR's working directory.
+
+On first invocation all counters are at their initial values. On ScheduleWakeup continuations, recall counter values from the conversation context and test the `clean_confirmed` flag file.
 
 ## LOOP BODY
 
@@ -96,7 +104,7 @@ Run:
 gh pr view <PR> --json mergeable,mergeStateStatus
 ```
 
-On error (non-zero exit): log the error in the cycle narrative, set `has_conflicts = false` (unknown — treat as no conflicts to proceed safely), and continue.
+On error (non-zero exit): log the error in the cycle narrative, then ScheduleWakeup with `delaySeconds: 60`, `reason: "gh pr view merge status failed — skipping cycle to avoid acting on unknown conflict state"`, and `prompt: "Continue /smithers <PR_URL>"`. Do not proceed further in this iteration.
 
 Compute: `has_conflicts = (mergeable == "CONFLICTING" or mergeStateStatus == "DIRTY")`.
 
@@ -127,15 +135,26 @@ Otherwise, if `no_actionable_work` is true (all checks still pending, no bot com
 
 If `NOT work_needed`:
 
-1. Log `"Cycle <N>: no work detected — waiting 60s to verify (checking for cascade workflows)"`.
-2. Run `sleep 60`.
-3. Re-run Steps 2–5 (get fresh checks, bot comments, merge status, recompute work_needed).
-4. If still `NOT work_needed`:
-   - Push any unpushed commits: check `git log @{u}.. --oneline`. If output is non-empty, run `git push`. On push failure: log the error and **stop** (no ScheduleWakeup).
-   - Proceed to **Step 7a: Handle PR ready**.
-5. If `work_needed` is now true after the wait: continue to Step 8.
+- **If `.smithers/clean_confirmed` file exists (`test -f .smithers/clean_confirmed`):** push any unpushed commits (`git log @{u}.. --oneline`; if non-empty, run `git push`; on push failure: log the error and **stop** with no ScheduleWakeup). Then proceed to **Step 7a: Handle PR ready**.
+- **If `.smithers/clean_confirmed` file does NOT exist:**
+  1. Run `touch .smithers/clean_confirmed` to persist the flag across the ScheduleWakeup gap.
+  2. Log `"Cycle <N>: no work detected — scheduling wakeup in 60s to re-verify (checking for cascade workflows)"`.
+  3. ScheduleWakeup with `delaySeconds: 60`, `reason: "No work detected — re-polling after 60s to confirm PR is clean before proceeding to merge"`, and `prompt: "Continue /smithers <PR_URL>"`.
+  4. **Stop** (one iteration per invocation — the next invocation re-runs Steps 1–5 with fresh data; if still no work, the flag file exists and Step 7a runs).
 
 #### Step 7a: Handle PR ready
+
+**CRITICAL — State re-check (FIRST action):** Before any other action, re-verify the PR is still OPEN:
+
+```bash
+gh pr view <PR> --json state --jq '.state'
+```
+
+If the result is anything other than `"OPEN"` (i.e., `"MERGED"` or `"CLOSED"`): run `rm -f .smithers/clean_confirmed` to clear the flag, send a macOS notification:
+```
+osascript -e 'display notification "PR <N> is <state> — smithers stopping" with title "Smithers"'
+```
+Log `"PR <N> is in state <X> (externally merged or closed); stopping"` and **stop** (no ScheduleWakeup). **NEVER proceed with any further action if the PR is not OPEN.**
 
 Run:
 ```
@@ -174,16 +193,17 @@ Generate Why/What summaries in-session (no subprocess). To generate:
   - **Why**: one sentence explaining the intent/problem/background
   - **What**: one sentence explaining the specific implementation approach
 
-Then post to Slack using the **direct curl webhook** (see § Slack Posting below):
+Then post to Slack using the `smithers-post` CLI (see § Slack Posting below).
+
+If the PR is still OPEN, post via:
+
 ```bash
-curl -sS --fail-with-body -X POST "$SMITHERS_SLACK_WEBHOOK_URL" \
-  -H 'Content-Type: application/json' \
-  -d '{"text":"PR <N> ready for merge: <title>\nWhy: <why>\nWhat: <what>\n<URL>"}'
+smithers-post <PR_NUMBER_OR_URL>
 ```
 
-If `SMITHERS_SLACK_WEBHOOK_URL` is not set or is empty, skip the curl call silently — no action needed.
+`smithers-post` reads `SMITHERS_SLACK_WEBHOOK_URL` from the environment internally, constructs the Block Kit payload, and POSTs to the webhook. If `SMITHERS_SLACK_WEBHOOK_URL` is not set, `smithers-post` handles that silently.
 
-After posting (or skip): **stop** (no ScheduleWakeup). The PR is clean and handled.
+After posting: run `rm -f .smithers/clean_confirmed` to clear the flag, then **stop** (no ScheduleWakeup). The PR is clean and handled.
 
 ---
 
@@ -399,32 +419,31 @@ Stop (no ScheduleWakeup) when any of the following occur:
 
 ## SLACK POSTING
 
-Smithers posts to Slack using a **direct curl webhook** — no MCP, no shellapp.
+Smithers posts to Slack using the `smithers-post` CLI — the ONLY supported posting path.
 
-**Mechanism:**
+**ABSOLUTE PROHIBITION — NEVER use any of the following:**
+- **NEVER use any Slack tool provided by an MCP server.** Those tools are for interactive read/search workflows — never use them to post notifications from smithers.
+- **NEVER invoke a Slack-posting skill or wrapper of any kind.**
+- **NEVER construct a curl payload to the webhook directly.** Do not read `SMITHERS_SLACK_WEBHOOK_URL` or call curl yourself.
+- **NEVER use any wrapper, indirection layer, or skill between smithers and Slack posting.**
+
+**The ONLY supported path for Slack posting is the `smithers-post` CLI:**
+
 ```bash
-curl -sS --fail-with-body -X POST "$SMITHERS_SLACK_WEBHOOK_URL" \
-  -H 'Content-Type: application/json' \
-  -d '{"text":"<message>"}'
+smithers-post <PR_NUMBER_OR_URL>
 ```
 
-**Environment variable:** `SMITHERS_SLACK_WEBHOOK_URL` — must be set in the environment. If unset or empty, skip the post silently.
+`smithers-post` fetches PR metadata via `gh pr view` internally, constructs the Block Kit JSON payload, and POSTs to the webhook URL read from `SMITHERS_SLACK_WEBHOOK_URL`. All formatting, env-var management, and HTTP details are handled by the CLI.
 
-**Note on `\n` in JSON payloads:** The `\n` in the JSON payload is a JSON escape sequence — Slack renders it as a newline. Single-quoted bash strings pass `\n` literally; this is correct because Slack interprets it as a JSON-level escape, not a bash-level escape.
+**PR state guard — already enforced at the top of Step 7a.** The state re-check at the start of Step 7a guarantees smithers only reaches this point if the PR is OPEN. Do not add a second guard here.
 
 Smithers posts to Slack only at Step 7a (PR ready). No Slack notification is sent for other stopping conditions (stagnation stop, max cycles, etc.).
-
-**Banned posting mechanisms (do not use):**
-- `mcp__claude_ai_Slack__*` tools are banned for posting from smithers. These tools are read/search-only (e.g., for bug-investigator lookups) — never use them to post.
-- `pr-slack-post` shellapp — this shellapp is used in other PR notification workflows outside smithers but is **not** the smithers Slack posting path. Do not call it.
-
-**Rationale:** Slack MCP tools authenticate via OAuth and are designed for interactive read/search workflows. The webhook URL is the correct mechanism for automated outbound notifications from smithers.
 
 ---
 
 ## NOTES
 
-- The 1-minute ScheduleWakeup is a platform constraint (minimum cadence). The original smithers polled every 30 seconds; 1 minute is acceptable for typical CI pipelines.
-- Do not write state files. All state is in the conversation context.
-- If this session is killed and restarted, the loop restarts from cycle 1 with a fresh `fix_count` and `stagnation_count`. This is acceptable — state loss on restart is known behavior.
-- The curl-based Slack webhook (Step 7a) does not deduplicate across sessions. If the watcher restarts after having already posted, it may post again. This is acceptable — it is rare and harmless.
+- The 1-minute ScheduleWakeup is the platform-minimum cadence; sufficient for typical CI pipelines.
+- Most state is in the conversation context. The one exception is `clean_confirmed`, which uses a flag file (`.smithers/clean_confirmed`) because it must survive the ScheduleWakeup gap.
+- If this session is killed and restarted, the loop restarts from cycle 1 with a fresh `fix_count` and `stagnation_count`. The `clean_confirmed` flag file persists across restarts — if it exists when smithers restarts, smithers will proceed directly to Step 7a on the next no-work cycle. This is intentional and correct behavior.
+- The smithers-post Slack notification (Step 7a) does not deduplicate across sessions. If the watcher restarts after having already posted, it may post again. This is acceptable — it is rare and harmless.
