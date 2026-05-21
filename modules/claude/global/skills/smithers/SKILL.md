@@ -26,7 +26,7 @@ On error (PR not found, no branch tracking): print a clear error message and sto
 
 ## STATE
 
-State lives in conversation history — no state files (except the Slack dedup marker below). Track these values mentally across iterations:
+State lives in conversation history — no state files. Track these values mentally across iterations:
 
 - `cycle` — iteration counter, starts at 1
 - `fix_count` — number of times you have delegated fix work to a specialist
@@ -174,12 +174,14 @@ Generate Why/What summaries in-session (no subprocess). To generate:
   - **Why**: one sentence explaining the intent/problem/background
   - **What**: one sentence explaining the specific implementation approach
 
-Then call:
-```
-pr-slack-post --pr <N> --pr-url <URL> --title "<title>" --repo "<repo>" --why "<why>" --what "<what>"
+Then post to Slack using the **direct curl webhook** (see § Slack Posting below):
+```bash
+curl -sS --fail-with-body -X POST "$SMITHERS_SLACK_WEBHOOK_URL" \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"PR <N> ready for merge: <title>\nWhy: <why>\nWhat: <what>\n<URL>"}'
 ```
 
-If `SMITHERS_SLACK_WEBHOOK_URL` is not set, `pr-slack-post` handles the skip silently — no action needed from you.
+If `SMITHERS_SLACK_WEBHOOK_URL` is not set or is empty, skip the curl call silently — no action needed.
 
 After posting (or skip): **stop** (no ScheduleWakeup). The PR is clean and handled.
 
@@ -395,9 +397,34 @@ Stop (no ScheduleWakeup) when any of the following occur:
 
 ---
 
+## SLACK POSTING
+
+Smithers posts to Slack using a **direct curl webhook** — no MCP, no shellapp.
+
+**Mechanism:**
+```bash
+curl -sS --fail-with-body -X POST "$SMITHERS_SLACK_WEBHOOK_URL" \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"<message>"}'
+```
+
+**Environment variable:** `SMITHERS_SLACK_WEBHOOK_URL` — must be set in the environment. If unset or empty, skip the post silently.
+
+**Note on `\n` in JSON payloads:** The `\n` in the JSON payload is a JSON escape sequence — Slack renders it as a newline. Single-quoted bash strings pass `\n` literally; this is correct because Slack interprets it as a JSON-level escape, not a bash-level escape.
+
+Smithers posts to Slack only at Step 7a (PR ready). No Slack notification is sent for other stopping conditions (stagnation stop, max cycles, etc.).
+
+**Banned posting mechanisms (do not use):**
+- `mcp__claude_ai_Slack__*` tools are banned for posting from smithers. These tools are read/search-only (e.g., for bug-investigator lookups) — never use them to post.
+- `pr-slack-post` shellapp — this shellapp is used in other PR notification workflows outside smithers but is **not** the smithers Slack posting path. Do not call it.
+
+**Rationale:** Slack MCP tools authenticate via OAuth and are designed for interactive read/search workflows. The webhook URL is the correct mechanism for automated outbound notifications from smithers.
+
+---
+
 ## NOTES
 
 - The 1-minute ScheduleWakeup is a platform constraint (minimum cadence). The original smithers polled every 30 seconds; 1 minute is acceptable for typical CI pipelines.
-- Do not write state files. All state is in the conversation context. The ONLY on-disk persistent state is the Slack dedup marker (written by `pr-slack-post`).
+- Do not write state files. All state is in the conversation context.
 - If this session is killed and restarted, the loop restarts from cycle 1 with a fresh `fix_count` and `stagnation_count`. This is acceptable — state loss on restart is known behavior.
-- `pr-slack-post` handles deduplication: it will not post twice for the same PR across sessions.
+- The curl-based Slack webhook (Step 7a) does not deduplicate across sessions. If the watcher restarts after having already posted, it may post again. This is acceptable — it is rare and harmless.
