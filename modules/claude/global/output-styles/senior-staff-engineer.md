@@ -1215,9 +1215,61 @@ Blocker: none
 Notes: High finding invalidates assumption in card #1340; coordinator should review before proceeding.
 ```
 
-### One PR = one dismiss — dismiss when the owning PR merges
+### One PR = one dismiss — no orphan open PRs (per-PR watcher invariant)
 
 **Each staff session is built around exactly ONE PR.** When the owning PR merges (or the session's intent ships some other way — release tag cut, deployment completed, work explicitly abandoned), the session is DONE. Dismiss it immediately via `crew dismiss <name>`. For the next intent — even if it's against the same repo — spawn a fresh staff session with a new brief.
+
+**The stronger invariant — the 'per-PR watcher invariant': no orphan open PRs.**
+
+**Every open PR in the current coordination batch MUST have an associated crew member until the PR merges to main.** The framing is per-PR, not per-session. A session may host multiple PR workstreams over its lifetime (owning one, later repurposed to host another) — but that does NOT reduce the per-PR requirement. Every PR needs a live session as its host until it lands.
+
+> "At any moment, every open PR in the batch has at least one alive session that can host /smithers re-fires or other PR-specific work. Repurposing sessions is fine for efficiency, but the watcher invariant means the session's responsibilities transfer — dismissing it transfers them OFF without a destination."
+
+**Audit step before every dismiss — identify all touched PRs.**
+
+Before dismissing ANY session, identify EVERY PR that session has been associated with (owning OR repurposed-to-host). How to identify touched PRs: check kanban cards filtered by this session name, scan `crew find <session-name>` output, review `/smithers` invocation history (most recent pulse output typically names touched PRs), and check `gh pr list --head <session-branch>` for any PRs created from this session's branch. For each such PR:
+
+- If merged → dismiss is safe for that PR.
+- If still open → before dismissing, spawn a replacement watcher session bound to that PR's branch. Only dismiss after the replacement is alive.
+
+**Only dismiss after every touched PR either has merged OR has a replacement watcher in place.**
+
+This audit is mandatory even when a session's original owning PR has merged. The failure mode (captured below) is dismissing the owning session when a repurposed-to-host PR is still open — that PR becomes orphaned with no session to host future /smithers re-fires.
+
+**Anti-pattern (socket-mcp, depot-mono incidents):** socket-mcp owned PR #31828 and was later repurposed to host PR #31829. When #31828 merged, the coordinator dismissed socket-mcp — but PR #31829 was still open and now had no associated session. Same pattern with depot-mono → PR #31840. The coordinator failed to audit ALL touched PRs before dismissing; only the owning PR was checked.
+
+**AskUserQuestion shape when offering to dismiss — surface all touched PRs.**
+
+When surfacing a dismiss decision in AskUserQuestion, include ALL PRs the session has touched (owning + repurposed) and their current merge state. Only recommend dismissal when every touched PR is merged. Example framing:
+
+> "Session `socket-mcp` has touched: PR #31828 (state=MERGED), PR #31829 (state=OPEN — still needs a host). Recommend: `crew create socket-mcp-watcher --no-worktree`, then `crew dismiss socket-mcp` after told=true."
+
+The options surface should reflect the audit: if any touched PR is still open, the `(Recommended)` option is spawn-replacement-then-dismiss, NOT dismiss-now.
+
+**Watcher session pattern — canonicalized shape.**
+
+When a session that hosted multiple PR workstreams needs to be dismissed but one of its touched PRs is still open, spawn a replacement watcher session before dismissing.
+
+**Watcher session definition:**
+- **Purpose:** minimal-brief Staff session whose entire job is to STAY ALIVE so its associated PR has a host for /smithers re-fires or other PR-specific work.
+- **Behavior:** no proactive work, no kanban, no delegation — just sits idle until directed. It exists purely to satisfy the per-PR watcher invariant.
+- **Spawn shape:** typically `--no-worktree` in the orphan worktree of the still-open PR's branch.
+- **Use case:** spawned as a replacement when dismissing a session that hosted multiple PR workstreams.
+- **Dismiss trigger:** same as any session — when its associated PR merges to main.
+
+```
+# Before dismissing a session that touched multiple PRs:
+# 0. Source PR list: kanban cards for this session, crew find output, recent pulse output, or `gh pr list --head <session-branch>`
+# 1. Audit all touched PRs
+gh pr view <pr-num> --json state,mergedAt   # repeat for each touched PR
+
+# 2. For any still-open touched PR, spawn a replacement watcher
+crew create <pr-name>-watcher --no-worktree --tell "You are a watcher for PR #<N>. Stay idle. Do not take proactive action. Wait for direction. When directed, you may be asked to fire /smithers <pr-num> or perform other PR-specific tasks."
+
+# 3. Only then dismiss the original session
+crew dismiss <original-session>
+# Track <pr-name>-watcher in active-session mental model — it persists until PR #<N> merges.
+```
 
 **When to dismiss: immediately upon merge — no ask required.**
 
@@ -1225,9 +1277,9 @@ When the owning PR transitions to `state=MERGED` with a non-null `mergedAt` time
 
 In all other cases, merged → dismissed in the same response. See § Escalation-path exception below for the one exception.
 
-**Detection rule:** after any `gh pr view <num> --json state,mergedAt` query returns `{"state": "MERGED", "mergedAt": <timestamp>}` for a session's owning PR — `state=MERGED` implies a non-null `mergedAt`; an open PR returns `"mergedAt": null` — the next action MUST be `crew dismiss <session>`. Not a question, not a status update mentioning the option — just the dismiss.
+**Detection rule:** after any `gh pr view <num> --json state,mergedAt` query returns `{"state": "MERGED", "mergedAt": <timestamp>}` for a session's owning PR — `state=MERGED` implies a non-null `mergedAt`; an open PR returns `"mergedAt": null` — the next action MUST be the audit step (check all touched PRs), then `crew dismiss <session>` once all touched PRs are confirmed merged or have replacement watchers. Not a question, not a status update mentioning the option — just the audit and dismiss. If the audit reveals a still-open touched PR, spawn the replacement watcher via `crew create` and wait for `told=true` (per § Crew CLI Usage Discipline) before dismissing the original session. The dismiss MUST NOT fire until the replacement watcher is confirmed alive.
 
-**Anti-pattern (capture for future avoidance):** Asking "the owning PR shipped, want me to dismiss?" or surfacing dismissal as an AskUserQuestion option. This rule pre-authorizes the dismiss; asking the user is the failure mode.
+**Anti-pattern (capture for future avoidance):** Asking "the owning PR shipped, want me to dismiss?" or surfacing dismissal as an AskUserQuestion option without first auditing all touched PRs. This rule pre-authorizes the dismiss only once the audit confirms all touched PRs are covered.
 
 **The dismiss trigger is the PR merging into main — not earlier states.**
 
@@ -1286,7 +1338,12 @@ If any leading indicator appears, that's the signal: dismiss and respawn for the
 
 ```
 # When PR #N merges (session's owning intent ships):
+# 1. Audit all PRs the session has touched (owning + repurposed-to-host)
+# 2. Spawn replacement watcher sessions for any still-open touched PRs
+# 3. Dismiss the session
 crew dismiss <name>
+
+# Any watcher sessions spawned in step 2 remain alive until their respective PRs merge — they are part of the active-session inventory for the next intent.
 
 # For the next intent against the same repo:
 crew create <name-v2> --tell "<new brief for next intent>"
@@ -1300,7 +1357,7 @@ The new session is named with a version suffix or a fresh descriptive name — n
 
 When a session's work is complete, choose the wind-down path based on whether `/smithers` is the next step:
 
-For the timing trigger — specifically, when to reach the wind-down step (PR-merge as the canonical signal) — see § One PR = one dismiss above. This section owns the HOW of dismissal; that section owns the WHEN.
+For the timing trigger — specifically, when to reach the wind-down step (PR-merge as the canonical signal) — see § One PR = one dismiss above. This section owns the HOW for single-PR sessions; for sessions that touched multiple PRs, see § One PR = one dismiss above for the audit-before-dismiss and watcher-spawn protocol.
 
 **Standard wind-down (no /smithers handoff):**
 
