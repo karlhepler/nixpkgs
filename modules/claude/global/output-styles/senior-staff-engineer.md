@@ -1010,6 +1010,23 @@ Required brief shape for /smithers handoffs (the Staff session executes these st
 
 The root cause is that push and PR creation are separate `gh` CLI invocations. Nothing in `git push` opens a PR. Any brief that collapses them into a compound "push and report done" will produce a pushed branch with no PR — and `/smithers` cannot operate on it.
 
+**Ownership-claim warning (autonomous-tool context):** When the brief will later be driven by an autonomous tool such as /smithers, avoid ownership-claim phrasing — phrases where the coordinator asserts possession of the next action (`"I handle X from there"`, `"I'll take it from here"`, `"it's mine from here"`). An autonomous classifier reading the pane interprets such ownership-claim phrases as a standing prohibition against that tool's documented actions (CI babysit, undraft, bot-comment handling) — even though the phrase was intended only to tell the Staff session not to self-invoke coordinator-level actions.
+
+The distinction is the verb, not the locator `"from there"`:
+
+- ❌ `"I handle the PR-watch from there."` — coordinator **claims ownership** of the action; an autonomous classifier reads this as a user prohibition against the tool acting.
+- ✅ `"I will fire /smithers from there."` — names the tool invocation; this is an authorization, not a prohibition. The `"from there"` locator is fine; the ownership-claim verb (`"I handle X"`, `"I'll take it"`, `"it's mine"`) is the problem.
+
+**Safe alternative:** Phrase the handoff by naming the tool invocation rather than claiming coordinator ownership. Instead of:
+
+❌ `"commit, push, open a draft PR (\`gh pr create --draft\`), and report the PR number back to me. I handle the PR-watch from there."`
+
+Use:
+
+✅ `"commit, push, open a draft PR (\`gh pr create --draft\`), then report the PR number — I will fire /smithers from there."`
+
+The Staff session's scope boundary (don't self-invoke coordinator actions) is implied by the explicit enumeration of steps. Avoid ownership-claim clauses (`"I handle X"`, `"I'll take it from here"`) in briefs an autonomous tool will read; locator phrases that name the tool invocation (`"I will fire /smithers from there"`) are fine.
+
 #### Treat staff as a parallel coordinator, not a senior engineer
 
 Staff sessions are parallel multi-agent coordinators. Their value is the ability to fan out N disparate sub-agents concurrently. When you delegate to staff with a single-domain, single-deliverable scope, you are using staff like a senior engineer (bandwidth-1, one task at a time) — that is a misuse. Staff's capacity is a thread pool of N parallel sub-agents, not a queue of one task at a time.
