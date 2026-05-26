@@ -9,9 +9,9 @@ This skill is a voice profile template. Load it when drafting any user-facing co
 
 ## When to Load
 
-This skill defines TWO voice modes: DM/peer 1:1 (short paragraphs, polite-but-direct openers) and Broadcast/channel-post (section headers, no greeting opener). Identify the audience type first; the modes are structurally different.
+This skill defines three voice modes (three registers): DM/peer 1:1 (short paragraphs, polite-but-direct openers), Broadcast/channel-post (section headers, no greeting opener), and Non-technical peer / volunteer-org favor-ask (warm, humble, low-pressure; comma greeting `Hey [Name],`; `~ Karl` sign-off). Identify the audience type first; the modes are structurally different.
 
-Step 0 (before drafting): identify the audience type — DM (peer 1:1), broadcast (channel/team post), reply (in-thread continuation), or cold outreach. The structural template depends on audience type. See § Verbatim Examples for the DM vs broadcast distinction. Note: broadcast voice has sub-shapes (milestone-announcement, progress-update) — see § Broadcast / Channel Post Template for shape selection before looking up examples.
+Step 0 (before drafting): identify the audience type — DM (peer 1:1), broadcast (channel/team post), reply (in-thread continuation), cold outreach (work-peer), or favor ask (non-technical peer / volunteer-org collaborator). The structural template depends on audience type. See § Verbatim Examples for the DM vs broadcast distinction. Note: broadcast voice has sub-shapes (milestone-announcement, progress-update) — see § Broadcast / Channel Post Template for shape selection before looking up examples. Note: fresh outreach to a NON-technical peer or volunteer-org contact (e.g., a club president, nonprofit collaborator) uses the favor-ask register (comma greeting, `~ Karl` sign-off, warm/deferential) — NOT the work-peer dash/no-sign-off form used for engineering cold outreach.
 
 Load this skill whenever drafting:
 - Slack messages or thread replies
@@ -67,7 +67,7 @@ _(The shared list above also applies to broadcast posts — entries below are br
 - Headlined intent framing ('Quick frame first: the Q2 intent was...') — Karl uses parenthetical attached to state-of-project sentence
 - Tabular intent-to-deliverable mappings in broadcast posts
 
-Note: "thread continuation" (existing Slack thread you're replying inside) and "channel reply" (replying in a broadcast thread) are distinct from "new channel post" (top-level broadcast). The Hey-opener avoid applies to all three — only DMs/cold outreach use `Hey -`.
+Note: "thread continuation" (existing Slack thread you're replying inside) and "channel reply" (replying in a broadcast thread) are distinct from "new channel post" (top-level broadcast). The Hey-opener avoid applies to all three — only work-peer DMs/cold outreach use `Hey -`; non-technical-peer favor-ask outreach uses `Hey [Name],` (comma form).
 
 **DM / 1:1 only:**
 
@@ -87,7 +87,8 @@ Specific replacements and formulations the user reaches for:
 
 **Openers (matched to message type):**
 - Replies / thread continuations: `Thanks!` to open a reply when acknowledging something
-- Fresh outreach: `Hey -` (dash after Hey, not comma; only on new threads, not continuations)
+- Fresh outreach (work-peer / engineering Slack): `Hey -` (dash after Hey, NOT comma — this is the work-peer register only; see § Greeting / Sign-Off Conventions for the comma form used in the non-technical-peer / volunteer-org register)
+- Fresh outreach (non-technical peer / volunteer-org collaborator): `Hey [Name],` (COMMA — warmer register)
 - Peer requests: `Would you mind ... when you get a chance please?`
 - Empathetic opener (when correcting a peer's read): "That's what I thought at first" / "Same here at first" / "Yeah I thought that too" — align with the listener before pivoting to the correction
 
@@ -115,6 +116,14 @@ Specific replacements and formulations the user reaches for:
 - `Feel free to take a look`
 - `Curious what you think on [X]`
 - `Let me know what you think`
+
+**Non-technical peer / volunteer-org favor-ask phrasings:**
+- Value-first framing: lead with the concrete upside ("a shot at a $10k per month Google Ads grant"), then the honest caveat ("which would have to be approved after the verification process")
+- Explicit outs: "completely up to you," "if you still want to," "no pressure at all"
+- Jargon gloss: parenthetical plain-language explanation for non-technical readers (e.g., "Goodstack (Google's third party provider for the grants)")
+- Heavier hedging than work-peer default: "should be able to," "should hopefully be able to," "or something," "I think"
+- Transparent reasoning about failed attempts: "which is what I figured would happen, but figured it was worth trying anyway so you didn't have to get involved"
+- Humility close: "I'm sorry I couldn't do more" — acceptable here (opposite of work-peer no-deference rule)
 
 ---
 
@@ -165,14 +174,32 @@ Adjust framing and detail level based on recipient. These are real named stakeho
 - **Project channel broadcast (broader engineering audience):** Factual, evidence-led. Section-header structure (`Project Update` / `Up Next`). Soft invitational pointer to deeper evidence rather than pasting URLs. No `Hey` opener.
   - **Milestone announcement sub-shape:** Evidence-led with Before/After numbers. Use for single-merge-event posts announcing a completed fix or release.
   - **Progress update sub-shape:** Paragraph prose, inline `@`-mentions, no bullet lists, no LogFrame jargon, no PR numbers, hedged future-looking statements, feedback-invitation + emoji close. Use for mid-project multi-deliverable status summaries.
+- **Non-technical peer / volunteer-org collaborator (favor ask)** (e.g., Tim Corbett, Barboursville Bloodhounds president; festival/nonprofit context): Warm, humble, low-pressure. This is the OPPOSITE of the work-peer "no deference" default. Key markers:
+  - Give the recipient explicit outs: "completely up to you," "if you still want to," "no pressure at all"
+  - Soften or omit confidence — heavier hedging is appropriate here ("should be able to," "should hopefully," "or something," "I think")
+  - Lead with the concrete upside before the mechanics (value-first framing), then add an honest caveat
+  - Gloss jargon with plain-language parentheticals for non-technical readers (e.g., "Goodstack (Google's third party provider for the grants)")
+  - Be transparent about reasoning and failed attempts — "which is what I figured would happen, but figured it was worth trying anyway"
+  - A light apology or humility close is acceptable here: "I'm sorry I couldn't do more" fits this register
+  - Greeting: `Hey [Name],` with a COMMA (not the dash form — see § Greeting / Sign-Off Conventions)
+  - Sign-off: `~ Karl` (tilde + first name)
 
 ---
 
 ### Greeting / Sign-Off Conventions
 
-- Greetings: omit in short Slack messages; include in emails
-- Sign-offs: no formal sign-off in Slack; emails close with first name only
-- Thread continuations: skip greeting, jump straight to content
+**Greeting rules are register-dependent** — the form changes based on audience type:
+
+- **Work-peer / engineering Slack (fresh outreach):** `Hey -` (dash after Hey, no comma) — see Preferred Phrasings § Openers
+- **Non-technical peer / volunteer-org collaborator (favor ask):** `Hey [Name],` (COMMA, not dash) — warmer register requires the softer comma form
+- **Thread continuations (any register):** skip greeting entirely, jump straight to content
+- **Short Slack messages (work context):** omit greeting
+
+**Sign-off rules are also register-dependent:**
+
+- **Work-peer Slack:** no sign-off (casual, peer-level)
+- **Non-technical peer / volunteer-org collaborator (favor ask):** `~ Karl` (tilde + first name) — applies to any medium (Slack, email) when the register is favor-ask
+- **Emails (work context):** close with first name only — note: the favor-ask `~ Karl` sign-off takes precedence when the medium is email but the register is non-work-peer / volunteer-org (favor ask)
 
 _Update with user corrections._
 
@@ -195,7 +222,7 @@ Preferred terms and terms to avoid in this user's domain:
 
 Real messages Karl has written. Use these to calibrate voice — not for content, for pattern.
 
-> **Note:** This skill distinguishes two voice modes: **peer DM voice** (Tommy ping example below — short paragraphs, polite-but-direct opener) and **broadcast voice** (Project Update example below — section headers, no greeting). Before drafting, the coordinator MUST identify the audience type and apply the matching structural template.
+> **Note:** This skill distinguishes three voice modes: **peer DM voice** (Tommy ping example below — short paragraphs, polite-but-direct opener), **broadcast voice** (Project Update example below — section headers, no greeting), and **favor-ask voice** (non-technical peer / volunteer-org collaborator — comma greeting, `~ Karl` sign-off, warm/humble/low-pressure). Before drafting, the coordinator MUST identify the audience type and apply the matching structural template.
 
 **Peer DM (Tommy ping — peer review request):**
 
@@ -415,10 +442,10 @@ This is a **living document** — the profile grows from real corrections, not f
 
 Before surfacing any user-facing draft, run a quick self-check:
 
-0. **Audience-type check** — was the right structural template applied for the audience type (DM vs broadcast)? If broadcast, verify section-header shape and no-greeting opener.
-1. **Hard-avoid scan** — does the draft contain any word/phrase from the Hard Avoids section? Rewrite those phrases. (Note: some Hard Avoids are mode-specific — e.g., `Hey -` is valid in DMs but forbidden in broadcast posts. Apply avoids relative to the audience type identified in step 0.)
+0. **Audience-type check** — was the right structural template applied for the audience type (DM vs broadcast vs favor-ask)? Identify which of the three registers applies: work-peer DM/cold outreach, broadcast, or non-technical-peer / volunteer-org favor-ask. If broadcast, verify section-header shape and no-greeting opener. If favor-ask, verify comma greeting and `~ Karl` sign-off.
+1. **Hard-avoid scan** — does the draft contain any word/phrase from the Hard Avoids section? Rewrite those phrases. (Note: some Hard Avoids are mode-specific — e.g., `Hey -` is valid in work-peer DMs but forbidden in broadcast posts and favor-ask outreach. Apply avoids relative to the audience type identified in step 0.)
 2. **Length check** — is the draft proportional to the message type? (Slack: brief; email: structured; PR description: two paragraphs max.)
-3. **Sign-off check** — does the closing match the Greeting / Sign-Off conventions for this message type?
+3. **Sign-off check** — does the closing match the Greeting / Sign-Off conventions for this register? Route by register (see § Greeting / Sign-Off Conventions): work-peer Slack → no sign-off; favor-ask (any medium) → `~ Karl`; work-context email → first name only.
 4. **Framing check** — is customer/user impact mentioned before technical rationale (where applicable)?
 5. **Domain vocabulary scan** — does the draft use any term from the Avoid column of the Domain-Specific Vocabulary table? Substitute with the Preferred column term.
 6. **Broadcast-mode check (if channel/broadcast post):** First, identify which broadcast shape applies (milestone-announcement vs progress-update). Then verify the shape-specific constraints for that shape.
