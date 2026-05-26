@@ -11,7 +11,7 @@ This skill is a voice profile template. Load it when drafting any user-facing co
 
 This skill defines TWO voice modes: DM/peer 1:1 (short paragraphs, polite-but-direct openers) and Broadcast/channel-post (section headers, no greeting opener). Identify the audience type first; the modes are structurally different.
 
-Step 0 (before drafting): identify the audience type — DM (peer 1:1), broadcast (channel/team post), reply (in-thread continuation), or cold outreach. The structural template depends on audience type. See § Verbatim Examples for the DM vs broadcast distinction.
+Step 0 (before drafting): identify the audience type — DM (peer 1:1), broadcast (channel/team post), reply (in-thread continuation), or cold outreach. The structural template depends on audience type. See § Verbatim Examples for the DM vs broadcast distinction. Note: broadcast voice has sub-shapes (milestone-announcement, progress-update) — see § Broadcast / Channel Post Template for shape selection before looking up examples.
 
 Load this skill whenever drafting:
 - Slack messages or thread replies
@@ -57,8 +57,15 @@ Underlying anti-patterns: hedging closers, context-free closings, passive exit s
 
 **Broadcast / channel-post only:**
 
+_(The shared list above also applies to broadcast posts — entries below are broadcast-specific additions.)_
+
 - Opening a channel/broadcast post with `Hey -` (reserved for DMs only)
 - Pasting full URLs with query parameters into channel posts when a soft invitational pointer works (`Take a look in [tool] if you want some more detail` is the pattern)
+- Structured bulleted deliverable lists (e.g., 'Task (done): Description. PR #N merged date.') for status/progress broadcast posts — Karl uses flowing paragraph prose
+- LogFrame internal vocabulary in broadcast prose: 'Success Measure 1', 'friction' as a category label, D-codes (D1, D2, D3...), formal 'deliverable' terminology
+- PR numbers and merge dates in broadcast prose — Karl omits these from project updates
+- Headlined intent framing ('Quick frame first: the Q2 intent was...') — Karl uses parenthetical attached to state-of-project sentence
+- Tabular intent-to-deliverable mappings in broadcast posts
 
 Note: "thread continuation" (existing Slack thread you're replying inside) and "channel reply" (replying in a broadcast thread) are distinct from "new channel post" (top-level broadcast). The Hey-opener avoid applies to all three — only DMs/cold outreach use `Hey -`.
 
@@ -122,6 +129,13 @@ _(See Openers, Action language, Tentative-commitment language, Timeline language
 - `Project Update` / `Up Next` as plain-text section headers in broadcast posts (no markdown — text label only)
 - `Take a look in [tool] if you want some more detail` — soft invitational pointer to discoverable evidence (reader-controlled depth)
 - `(reference)` — parens-reference placeholder for inline link typography; Karl writes `(reference)` in the message and applies the hyperlink to that parenthesized word
+- Inline `@`-mentions of teammates throughout broadcast prose
+- Ellipsis (`...`) for casual pauses and soft hedges in broadcasts
+- 'I might wait...' / "I'm not 100% sure..." / "I'm not sure yet" — open future-uncertainty in updates
+- 'a few things on my radar include...' — tentative-future framing
+- 'some sort of X' / 'possibly X' / 'possibly X, and possibly Y' — tentative scope listings
+- Feedback invitation close with emoji (e.g., "I'm happy to incorporate any thoughts and feedback before or during planning. Just let me know. :smile:")
+- Intent framing in parenthetical attached to the state-of-the-project sentence, NOT as a separate header (see also: § Hard Avoids)
 
 _Add more from user corrections as they occur._
 
@@ -148,7 +162,9 @@ Adjust framing and detail level based on recipient. These are real named stakeho
 - **Agentic Engineering DRI (Petr):** Scope-and-sequencing framing. Collaborative tone, peer level. Focus on what's in flight, what's next, and how pieces fit together.
 - **Q&O DRI (Daniela):** Lead with quality/ops impact (test coverage, reliability, on-call burden); name the operational surface affected; assume domain ownership. <!-- TODO: confirm Q&O expansion — placeholder framing used here -->
 - **Peer backend engineers (Matt, Tommy):** Technical detail with plain-language framing. Casual, direct. Use `would you mind` / `curious if` for requests. No need to justify decisions unless they're non-obvious.
-- **Project channel broadcast (broader engineering audience):** Factual, evidence-led, milestone-focused. Section-header structure (`Project Update` / `Up Next`). Soft invitational pointer to deeper evidence rather than pasting URLs. No `Hey` opener.
+- **Project channel broadcast (broader engineering audience):** Factual, evidence-led. Section-header structure (`Project Update` / `Up Next`). Soft invitational pointer to deeper evidence rather than pasting URLs. No `Hey` opener.
+  - **Milestone announcement sub-shape:** Evidence-led with Before/After numbers. Use for single-merge-event posts announcing a completed fix or release.
+  - **Progress update sub-shape:** Paragraph prose, inline `@`-mentions, no bullet lists, no LogFrame jargon, no PR numbers, hedged future-looking statements, feedback-invitation + emoji close. Use for mid-project multi-deliverable status summaries.
 
 ---
 
@@ -225,6 +241,37 @@ Patterns visible in this example:
 - Soft invitational pointer to evidence tool: `Take a look in [tool] if you want some more detail` (avoids pasting full URLs)
 - Parens-reference typography for inline links: `(reference)` as a placeholder Karl replaces with a hyperlinked word
 - Before/After evidence inline: `Before (window, dates): X% rate, Y% flake rate across N executions.` Dense, factual, NOT a separate `Evidence:` section header
+
+---
+
+**Broadcast / Channel Post (Project Update — engineering channel, progress/status shape):**
+
+> Project Update
+>
+> I'm getting close to the end of the Q2 project (reducing friction so that writing acceptance tests are a natural part of shipping). @ross is actually tackling a portion of it himself by helping to migrate away from lambdas.
+>
+> For my part, I migrated some single-dependency lambdas to services and validated using mirrordx to run tests. So there are now a few acceptance tests that can be run locally. I also fixed a couple of tests that were previously skipped and added some tagging to incident.io (from Aziz's runbook) to help us identify critical flows affected during incidents.
+>
+> One of the last things I'm working on right now is extending /deliver to support acceptance test planning. I parked that after getting some feedback from @Petr... I might wait until the next iteration of this project before I move that through. I'm not sure yet.
+>
+> I'm starting to look into what's next... and although I could technically consider it a Q3 project, I'm going to start looking into it today or tomorrow. I'm not 100% sure what the shape of the project will be, but a few things on my radar include some new acceptance tests for submit order coverage, seeing if there is anything I can contribute to the critical paths that @Daniela Matos de Carvalho is working on, some sort of codegen/scaffolding skill for acceptance tests, possibly isolated acceptance test environments, and possibly a test account pool.
+>
+> I'm happy to incorporate any thoughts and feedback before or during planning. Just let me know. :smile:
+
+Patterns visible in this example:
+- Section header opener (`Project Update`), no greeting
+- Intent framing in parenthetical immediately after the state-of-the-project sentence — NOT headlined
+- Collaborator credit by inline `@`-mention (@ross, @Petr, @Daniela Matos de Carvalho)
+- Flowing paragraph prose summarizing multi-deliverable progress — NOT bulleted
+- Plain-English verbs: 'migrated', 'validated', 'fixed', 'added', 'parked'
+- NO LogFrame jargon (no 'Success Measure 1', no 'friction' as a category label, no D-codes)
+- NO PR numbers or merge dates in prose
+- Sources tools/conventions naturally inline ('validated using mirrordx', 'added some tagging to incident.io (from Aziz's runbook)')
+- Ellipsis (`...`) for casual pauses and soft hedges
+- Open future-uncertainty: 'I might wait until the next iteration', "I'm not 100% sure", 'a few things on my radar include...'
+- Tentative scope listings with 'possibly X, and possibly Y' / 'some sort of X'
+- Feedback invitation close: "I'm happy to incorporate any thoughts and feedback before or during planning."
+- Emoji close (`:smile:`) — friendly, not formal
 
 ---
 
@@ -305,6 +352,18 @@ Broadcast posts come in several shapes. Pick the shape that matches the post's p
 4. Implications (what changes, who's affected)
 5. `Up Next` (next steps, owners)
 
+**Progress / status update shape** (use for mid-project multi-deliverable status posts where the goal is to summarize progress, name what's in flight, and signal forward intent — not announce a single merge):
+
+1. Opening header (text label, e.g., `Project Update`)
+2. State-of-the-project sentence with intent framing in parenthetical (NOT a separate header) — e.g., "I'm getting close to the end of the Q2 project (reducing friction so that writing acceptance tests are a natural part of shipping)."
+3. Collaborator credit inline within the opening paragraph (NOT as a separate paragraph) by `@`-mention — e.g., "@ross is actually tackling a portion of it himself by helping to migrate away from lambdas."
+4. What I did (paragraph prose, plain-English verbs, NO bullets, NO PR numbers, NO merge dates, NO LogFrame jargon)
+5. What I'm working on right now (one short paragraph, casual, may reference collaborators by `@`-mention)
+6. What's next (open hedging — "I might wait", "I'm not 100% sure", "a few things on my radar include...", "possibly X, and possibly Y")
+7. Feedback invitation + emoji close — e.g., "I'm happy to incorporate any thoughts and feedback before or during planning. Just let me know. :smile:"
+
+See also: § Verbatim Examples — Broadcast / Channel Post (Project Update — engineering channel, progress/status shape)
+
 Note: broadcast posts open with the section header itself — not with `Hey`, `Thanks!`, or any greeting. Greetings are reserved for DMs.
 
 ---
@@ -362,6 +421,8 @@ Before surfacing any user-facing draft, run a quick self-check:
 3. **Sign-off check** — does the closing match the Greeting / Sign-Off conventions for this message type?
 4. **Framing check** — is customer/user impact mentioned before technical rationale (where applicable)?
 5. **Domain vocabulary scan** — does the draft use any term from the Avoid column of the Domain-Specific Vocabulary table? Substitute with the Preferred column term.
-6. **Broadcast-mode check (if channel/broadcast post):** Section-header opener present (no greeting)? Soft invitational pointer used (not pasted URL)? Up Next section as its own block (not inline closing)? If any step missed, rewrite to match the broadcast template.
+6. **Broadcast-mode check (if channel/broadcast post):** First, identify which broadcast shape applies (milestone-announcement vs progress-update). Then verify the shape-specific constraints for that shape.
+   - 6a. **Milestone-announcement shape verification:** Section-header opener present (no greeting)? State-change sentence present? Evidence block (Before/After inline numbers + dates)? Soft invitational pointer to evidence tool (not pasted URL)? `Up Next` block as its own section (not inline)? If any element missed, rewrite to match the milestone-announcement template.
+   - 6b. **Progress-update shape verification:** Section-header opener present (no greeting)? Paragraph prose (not bullets)? Inline `@`-mentions for collaborators? Parenthetical intent framing attached to state-of-project sentence (not headlined as separate section)? No LogFrame jargon, no PR numbers, no merge dates? Hedged future-looking statements? Feedback-invitation + emoji close? If any element missed, rewrite to match the progress-update template.
 
 Fix any failures before returning the draft.
