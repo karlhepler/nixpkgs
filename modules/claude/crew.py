@@ -1570,8 +1570,17 @@ def cmd_dismiss(targets_str: str, fmt: str) -> None:
     - Only targets in the CURRENT tmux session are permitted. Targets
       resolving to a different session are rejected with an error before any
       kill is attempted.
-    - The invoking window (the window crew itself is running in) is protected
-      from self-kill and rejected with an error.
+
+    When a target window is currently the active tmux window (e.g. immediately
+    after `crew create` activates the new window), dismiss automatically
+    switches focus to the previously-active window via `tmux select-window -l`
+    before killing the target.  This allows coordinators to dismiss sessions
+    they just created without requiring a manual focus change first.
+
+    When the target is the active window and no previous window exists
+    (single-window session), dismiss aborts with an error rather than killing
+    the terminal.  This prevents orphaning the coordinator's terminal when
+    there is only one window and no last-window to fall back to.
 
     Uses stable tmux window IDs (@N) for kill targeting so that index-shift
     caused by earlier kills in the same loop does not cause later targets to
@@ -1583,7 +1592,7 @@ def cmd_dismiss(targets_str: str, fmt: str) -> None:
     <tell> pattern used by cmd_tell.
     """
     current_session = get_current_session()
-    current_window_id = get_current_window_id()
+    # current_window_id is re-fetched inside the kill loop (F6: stale capture fix).
 
     if current_session is None:
         emit_error(
@@ -1610,14 +1619,7 @@ def cmd_dismiss(targets_str: str, fmt: str) -> None:
                 error_code="WRONG_SESSION",
                 exit_code=1,
             )
-        if current_window_id and window_id == current_window_id:
-            emit_error(
-                f"target '{raw}' is the current window ({window_id}) — "
-                "crew dismiss cannot kill the window it is running in.",
-                fmt,
-                error_code="SELF_KILL",
-                exit_code=1,
-            )
+            break  # guard: emit_error normally exits, but defensive break prevents
 
     if fmt == "xml":
         root = ET.Element("dismiss")
@@ -1632,11 +1634,41 @@ def cmd_dismiss(targets_str: str, fmt: str) -> None:
             subprocess.run(["tmux", "kill-pane", "-t", stable_target], check=False)
             # Pane dismissals don't remove the whole session, so no sentinel cleanup.
         else:
-            # bare window: kill via stable @id — immune to window index renumbering
-            subprocess.run(["tmux", "kill-window", "-t", window_id], check=False)
-            # Clean up the readiness sentinel so it doesn't leak after session exit.
-            # The window name is the raw target itself (no pane suffix for bare windows).
-            _cleanup_sentinel(raw)
+            # bare window: re-fetch current window ID each iteration so the
+            # comparison stays accurate after prior kills shift focus (F6).
+            current_window_id = get_current_window_id()
+            if current_window_id and window_id == current_window_id:
+                # Target is the active window — must switch focus before killing
+                # so the coordinator's terminal is not orphaned.
+                # F1+F2: first verify there is more than one window in the session;
+                # if this is the only window, select-window -l has no valid target
+                # and kill would orphan the terminal.
+                win_list = subprocess.run(
+                    ["tmux", "list-windows", "-F", "#{window_id}"],
+                    capture_output=True, text=True, check=False,
+                )
+                window_count = len(win_list.stdout.strip().splitlines())
+                if window_count <= 1:
+                    emit_error(
+                        f"cannot dismiss '{raw}': only one window in session — "
+                        "killing it would orphan the terminal. "
+                        "Open another window first, then dismiss.",
+                        fmt,
+                        error_code="SINGLE_WINDOW",
+                        exit_code=1,
+                    )
+                    break
+                subprocess.run(["tmux", "select-window", "-l"], check=False)
+            # kill via stable @id — immune to window index renumbering
+            kill_result = subprocess.run(
+                ["tmux", "kill-window", "-t", window_id], check=False
+            )
+            # Clean up the readiness sentinel only when the kill succeeded (F4).
+            # If kill failed (stale @id, window already gone, etc.) the sentinel
+            # must remain so the invariant — running windows always have sentinels —
+            # is not broken.
+            if kill_result.returncode == 0:
+                _cleanup_sentinel(raw)
         if fmt == "xml":
             ET.SubElement(root, "target", crew=label, status="dismissed")
         elif fmt == "json":
