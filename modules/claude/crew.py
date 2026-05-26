@@ -2040,7 +2040,10 @@ def _deliver_tell(
     """Deliver the tell payload via send-keys and verify it appears in the pane.
 
     Returns (success: bool, reason: str).
-    success=True means the tell text was observed in the pane after delivery.
+    success=True means either the tell text was observed literally in the pane
+    after delivery, OR a '[Pasted text #N]' placeholder was observed (the
+    collapsed-paste path for payloads >= ~1.5 KB that Claude Code collapses in
+    the TUI).
     success=False means either send-keys failed or verification timed out.
 
     Note: newlines in the tell payload will fragment the message because
@@ -2054,6 +2057,17 @@ def _deliver_tell(
     tell_excerpt = tell[:40].strip()
     if not tell_excerpt:
         return False, "empty tell: nothing to deliver"
+
+    # Capture a baseline snapshot of the pane BEFORE sending the payload so
+    # that the placeholder check in the polling loop can distinguish new
+    # "[Pasted text #N]" entries from ones that may already be in the 50-line
+    # scrollback window from a prior --tell-file delivery in the same session.
+    baseline = subprocess.run(
+        ["tmux", "capture-pane", "-p", "-t", f"{window_name}.0", "-S", "-50"],
+        capture_output=True, text=True, check=False,
+    )
+    placeholder_prefix = "[Pasted text #"
+    baseline_placeholder_count = baseline.stdout.count(placeholder_prefix)
 
     # Send the message text
     r1 = subprocess.run(
@@ -2074,7 +2088,13 @@ def _deliver_tell(
         return False, f"send-keys Enter failed (exit {r2.returncode})"
 
     # Verify: poll until the tell text appears in the pane (or timeout).
-    # Use a short excerpt to keep the check stable across line wrapping.
+    # Two success signals are accepted:
+    #   1. The literal tell excerpt — normal case for short payloads.
+    #   2. A NEW "[Pasted text #" placeholder — Claude Code collapses pastes
+    #      >= ~1.5 KB into "[Pasted text #N]" in the TUI. The placeholder count
+    #      must exceed the pre-paste baseline to guard against false-positives
+    #      from prior-paste entries lingering in the 50-line scrollback window.
+    # Use a short excerpt to keep the literal-text check stable across line wrapping.
     # tell_excerpt is computed at the top of this function.
     deadline = time.monotonic() + verify_timeout
     while time.monotonic() < deadline:
@@ -2084,9 +2104,14 @@ def _deliver_tell(
         )
         if tell_excerpt in result.stdout:
             return True, "verified"
+        if result.stdout.count(placeholder_prefix) > baseline_placeholder_count:
+            return True, "verified (paste delivered as collapsed placeholder)"
         time.sleep(poll_interval)
 
-    return False, "verification timeout: tell text not observed in pane"
+    return False, (
+        f"paste delivered but submission unverified — "
+        f"try 'crew tell {window_name} --keys Enter' if input is visible at the prompt"
+    )
 
 
 def run_post_switch_hook(source_repo: str, worktree_path: str, branch: str) -> Optional[Tuple[int, str]]:

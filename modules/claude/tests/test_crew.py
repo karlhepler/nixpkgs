@@ -442,14 +442,52 @@ class TestCmdCreate:
         assert 'told="true"' in out
         assert "told_reason" not in out
 
+    def test_tell_text_verified_via_placeholder_after_large_paste(self):
+        """_deliver_tell returns (True, ...) when capture-pane shows a new '[Pasted text #N]' placeholder.
+
+        Large pastes (>= ~1.5 KB) are collapsed by Claude Code into a
+        '[Pasted text #N]' placeholder in the TUI. The baseline placeholder
+        count must be lower than the post-paste count for detection to succeed
+        (guards against false-positives from prior-paste scrollback entries).
+        """
+        call_index = {"n": 0}
+
+        def side_effect(cmd, **kwargs):
+            cmd_list = cmd if isinstance(cmd, list) else [cmd]
+            joined = " ".join(str(c) for c in cmd_list)
+            if "capture-pane" in joined:
+                idx = call_index["n"]
+                call_index["n"] += 1
+                if idx == 0:
+                    # Baseline snapshot — no placeholder present yet
+                    return fake_run_result(stdout="╭─ Claude Code ─╮\n")
+                # Post-paste poll — placeholder has appeared
+                return fake_run_result(stdout="╭─ Claude Code ─╮\n[Pasted text #5]\n")
+            if "send-keys" in joined:
+                return fake_run_result()
+            return fake_run_result()
+
+        with patch("subprocess.run", side_effect=side_effect):
+            with patch("time.sleep"):
+                with patch("time.monotonic", side_effect=[0.0, 0.0, 0.5]):
+                    success, reason = crew_module._deliver_tell(
+                        window_name="test-session",
+                        tell="x" * 2000,  # large payload to exercise placeholder path
+                        verify_timeout=5.0,
+                        poll_interval=0.25,
+                    )
+
+        assert success is True
+        assert "placeholder" in reason
+
     def test_tell_told_false_when_verification_times_out(self, capsys, tmp_path):
-        """told='false' + told_reason when tell text never appears in pane."""
+        """told='false' + told_reason when paste delivered but submission unverified."""
         with patch("subprocess.run") as mock_run:
             with patch.object(crew_module, "_wait_for_sentinel", return_value=(True, None)):
                 with patch.object(
                     crew_module,
                     "_deliver_tell",
-                    return_value=(False, "verification timeout: tell text not observed in pane"),
+                    return_value=(False, "paste delivered but submission unverified — try 'crew tell test-worker --keys Enter' if input is visible at the prompt"),
                 ):
                     self._run_create(
                         mock_run,
@@ -1875,7 +1913,7 @@ class TestCreateTellFile:
                     with patch.object(crew_module, "_wait_for_sentinel", return_value=(True, None)):
                         with patch.object(
                             crew_module, "_deliver_tell",
-                            return_value=(False, "verification timeout: tell text not observed in pane"),
+                            return_value=(False, "paste delivered but submission unverified — try 'crew tell test-worker --keys Enter' if input is visible at the prompt"),
                         ):
                             self._setup_create_mocks(mock_run)
                             cmd_create(
