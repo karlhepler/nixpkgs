@@ -1328,7 +1328,7 @@ Dismissing a session BEFORE its PR has merged is an exception that requires expl
 
 **AskUserQuestion default-recommendation discipline.**
 
-The `(Recommended)` label in an AskUserQuestion call MUST reflect the user's stated default for that specific decision class — not a coordinator-internal convenience heuristic. When the user has stated a default (e.g., "always wait for merge before dismissing"), that default is the `(Recommended)` option for the relevant question. The coordinator's convenience option is non-recommended. Coordinator convenience and user-stated defaults are not the same thing; the user's stated default wins. This rule is a special case of the general (Recommended)-label discipline in § Decision Questions — the dismiss case is its sharpest test.
+The `(Recommended)` label in an AskUserQuestion call MUST reflect the user's stated default for that specific decision class — not a coordinator-internal convenience heuristic. When the user has stated a default (e.g., "always wait for merge before dismissing"), that default is the `(Recommended)` option for the relevant question. The coordinator's convenience option is non-recommended. Coordinator convenience and user-stated defaults are not the same thing; the user's stated default wins. This rule is a special case of the general (Recommended)-label discipline in § Decision Questions — the dismiss case is its sharpest test. The merge-path decision is the second sharpest test: auto-merge is opt-in, never the `(Recommended)` default — see **Invocation rules** under § PR-review workflow.
 
 **Escalation-path exception:** If a second PR was spawned from this session via coordinator approval — the session is done when its escalation-approved scope is complete, not when just the first PR merges. The dismiss trigger is the session's OWNING intent shipping (which may span 1+ PRs under escalation), not the first PR number merged.
 
@@ -1441,7 +1441,7 @@ Monitor the crew member's main pane via `crew status`. Take action ONLY in these
 
   Once the correct answer is known, confirm the main pane is at the Slack-share prompt (picker-aware crew tell protocol applies), then relay via `crew tell <name> "yes"` or `"no"` without asking the user. If the detection signal is ambiguous (mixed output, unclear posting state), fall back to asking the user once.
 - **`/smithers` exhausts its turn budget without resolving CI:** surface to the user with retry options (plain re-run via `crew tell <name> "/smithers <pr_num>"` / re-run with longer turn budget / re-run with other flags). Do NOT auto-retry.
-- **`/smithers` auto-merges the PR successfully AND the associated staff session has also completed its work:** the crew member is done — dismiss the window via `crew dismiss <name>`.
+- **`/smithers` auto-merges the PR successfully (only applicable when the user opted into auto-merge for this PR) AND the associated staff session has also completed its work:** the crew member is done — dismiss the window via `crew dismiss <name>`.
 
 In all other states (`/smithers` working through fixes, running tests, waiting for CI), no action is needed. Do not interrupt `/smithers` or re-send instructions — it is fully autonomous.
 
@@ -1449,6 +1449,9 @@ In all other states (`/smithers` working through fixes, running tests, waiting f
 
 - **sstaff-only.** Staff Engineer sessions MUST NEVER invoke `/smithers` on behalf of sstaff. That is an sstaff primitive only (see staff-engineer.md § Worktree Discipline for the general prohibition on Staff sessions taking sstaff-level coordination actions). A staff engineer MAY invoke `/smithers` in their own main pane when sstaff directs them to — that is a staff-executed action, not a staff-self-initiated coordination action.
 - **User-initiated, never automatic.** Even when a draft PR is detected, do NOT auto-invoke `/smithers` — always surface the option to the user first. The user decides when PR-review automation is appropriate for a given PR.
+- **Auto-merge is opt-in — never the default or `(Recommended)` merge path.** The default merge path is: promote draft→ready, CI-babysit, handle bot comments, then surface the clean PR for the user's manual review and manual merge. Auto-merge is reserved for cases where the user has explicitly opted into it for that PR. When presenting merge-path options via AskUserQuestion, the `(Recommended)` option MUST be "promote to ready + surface for your manual review/merge" — NOT "arm auto-merge." (Consistent with the `(Recommended)`-label discipline in § AskUserQuestion default-recommendation discipline.)
+
+  **Why:** Reviewers frequently receive post-approval comments — bot or human — after an approval has been given. The user's stated default is to inspect those post-approval comments before the change lands. Auto-merge collapses the window between approval and merge, defeating that post-approval inspection step. `/smithers`'s value in this workflow is CI-babysitting and bot-comment handling — NOT its auto-merge terminal step. When the user prefers manual merge, `/smithers` should stop short of arming auto-merge. When `/smithers` completes CI-babysitting and bot-comment handling without arming auto-merge, surface the clean PR to the user for manual review and merge.
 
 **Staff engineers and /smithers.** When a staff engineer needs to do work that precedes `/smithers` action (e.g., rebase + push), tell them ONLY what they own:
 
