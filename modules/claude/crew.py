@@ -461,20 +461,176 @@ def resolve_targets_in_session(
     )
 
 
-def capture_pane(tmux_target: str, lines: Optional[int] = None) -> str:
+# ---------------------------------------------------------------------------
+# Ghost-text stripping
+# ---------------------------------------------------------------------------
+
+# ANSI SGR escape: ESC [ <params> m
+# Ghost-text colors emitted by Claude Code's CLI at the ❯ prompt:
+#   SGR 2  — faint/dim
+#   SGR 90 — bright black (dark grey)
+# The full pattern allows multiple semicolon-separated params (e.g. \x1b[0;2m).
+_ANSI_SGR_RE = re.compile(r"\x1b\[([0-9;]*)m")
+
+# Ghost-color SGR parameter sets that Claude Code uses for autocomplete hints.
+_GHOST_SGR_PARAMS = frozenset(["2", "90"])
+
+# Claude Code prompt marker (the input-line anchor).
+_CLAUDE_PROMPT_MARKER = "❯"
+
+
+def _is_ghost_sgr(params_str: str) -> bool:
+    """Return True if `params` contains SGR code 2 (faint) or 90 (bright black).
+
+    These are Claude Code's ghost-autocomplete rendering colors. Note that
+    SGR 2 is also used by other terminal applications for dimmed text; this
+    function does not filter by context — the caller is responsible for only
+    invoking it in the post-prompt-marker region.
+    """
+    for param in params_str.split(";"):
+        if param in _GHOST_SGR_PARAMS:
+            return True
+    return False
+
+
+def _strip_ghost_text(text: str) -> str:
+    """Strip ghost-autocomplete text from pane content captured with ANSI escapes.
+
+    Ghost text is dim/faint (SGR 2) or bright-black (SGR 90) text that appears
+    after the Claude Code ❯ prompt marker. It represents shell history-based
+    autocomplete suggestions, NOT real queued user input.
+
+    Only text in the input-line region (after the trailing ❯ marker on the last
+    prompt line) is subject to ghost-stripping. Plain text and text outside the
+    prompt region is preserved untouched.
+
+    After ghost-text removal, all remaining ANSI escape sequences are stripped
+    so the returned string is plain text ready for downstream consumption.
+    """
+    lines = text.splitlines(keepends=True)
+    result_lines = []
+
+    for line in lines:
+        # Find the last occurrence of the prompt marker on this line (strip ANSI
+        # from a working copy so the marker search is not confused by escape codes).
+        plain_line = _ANSI_SGR_RE.sub("", line)
+        prompt_pos = plain_line.rfind(_CLAUDE_PROMPT_MARKER)
+
+        if prompt_pos == -1:
+            # No prompt marker on this line — strip ANSI and keep the text.
+            result_lines.append(_ANSI_SGR_RE.sub("", line))
+            continue
+
+        # This line has a ❯ marker. Walk through the raw (ANSI-bearing) line and
+        # track position in the plain-text equivalent so we can find where the
+        # prompt marker lands in the raw stream.
+        plain_pos = 0
+        raw_index = 0
+        prompt_raw_end = None  # raw index just after the ❯ prompt marker
+
+        while raw_index < len(line):
+            m = _ANSI_SGR_RE.match(line, raw_index)
+            if m:
+                raw_index = m.end()
+                continue
+            # Check whether this plain-text position is the prompt marker.
+            marker_len = len(_CLAUDE_PROMPT_MARKER)
+            if plain_line[plain_pos:plain_pos + marker_len] == _CLAUDE_PROMPT_MARKER:
+                # Advance past the marker in both streams.
+                raw_index += 1
+                plain_pos += marker_len
+                prompt_raw_end = raw_index
+                # Keep scanning in case there are multiple ❯ on the line;
+                # we want the last one (rfind above gives us the right plain_pos).
+                # But to keep things simple, break at the first one that corresponds
+                # to the rfind result (prompt_pos in plain_line).
+                if plain_pos - marker_len == prompt_pos:
+                    break
+                continue
+            raw_index += 1
+            plain_pos += 1
+
+        if prompt_raw_end is None:
+            # Could not locate marker in raw stream (encoding edge case) — safe fallback.
+            result_lines.append(_ANSI_SGR_RE.sub("", line))
+            continue
+
+        # Split line into: prefix (up to and including ❯), rest (potential ghost text).
+        prefix_raw = line[:prompt_raw_end]
+        rest_raw = line[prompt_raw_end:]
+
+        # Walk rest_raw: accumulate non-ghost text; skip ghost-colored text.
+        kept_rest = []
+        ghost_active = False
+        ri = 0
+        while ri < len(rest_raw):
+            m = _ANSI_SGR_RE.match(rest_raw, ri)
+            if m:
+                params = m.group(1)
+                param_list = params.split(";")
+                if params == "" or "0" in param_list:
+                    # Reset (bare \x1b[m, \x1b[0m, or compound \x1b[0;2m) — end
+                    # any ghost coloring first, then check remaining params for
+                    # ghost codes so that \x1b[0;2m correctly resets and re-applies.
+                    ghost_active = False
+                    non_zero = [p for p in param_list if p != "0" and p != ""]
+                    if non_zero and _is_ghost_sgr(";".join(non_zero)):
+                        ghost_active = True
+                elif _is_ghost_sgr(params):
+                    ghost_active = True
+                # Do not emit the escape itself (we strip all ANSI at the end).
+                ri = m.end()
+                continue
+            if ghost_active:
+                ri += 1
+            else:
+                kept_rest.append(rest_raw[ri])
+                ri += 1
+
+        # Reconstruct: strip ANSI from prefix, append kept non-ghost rest text.
+        clean_prefix = _ANSI_SGR_RE.sub("", prefix_raw)
+        result_lines.append(clean_prefix + "".join(kept_rest))
+
+    return "".join(result_lines)
+
+
+def capture_pane(
+    tmux_target: str,
+    lines: Optional[int] = None,
+    include_ghost: bool = False,
+) -> str:
     """Capture pane buffer. If lines is set, tail last N lines; else full buffer.
+
+    When include_ghost is False (default), the pane is captured with ANSI escapes
+    (-e flag) so ghost-text colors can be detected, ghost text is stripped from
+    the input-line region, and all remaining ANSI escapes are removed before
+    returning.  Pass include_ghost=True to bypass ghost-stripping; without
+    `-e` tmux does not emit SGR escapes so the output is plain text by
+    default, but other escape sequences (cursor movement, OSC, etc.) may
+    still be present.
 
     Note: tmux capture-pane -S -N pads output with blank lines for unused
     terminal rows. Strip trailing blank lines so the caller gets only real
     content, and the line count does not exceed N.
     """
-    cmd = ["tmux", "capture-pane", "-p", "-t", tmux_target]
-    if lines is not None:
-        cmd += ["-S", f"-{lines}"]
+    if include_ghost:
+        # Legacy path: plain capture, no ghost stripping.
+        cmd = ["tmux", "capture-pane", "-p", "-t", tmux_target]
+        if lines is not None:
+            cmd += ["-S", f"-{lines}"]
+        else:
+            cmd += ["-S", "-"]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        raw = result.stdout
     else:
-        cmd += ["-S", "-"]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
-    raw = result.stdout
+        # ANSI-preserving capture so ghost colors are visible for stripping.
+        cmd = ["tmux", "capture-pane", "-p", "-e", "-t", tmux_target]
+        if lines is not None:
+            cmd += ["-S", f"-{lines}"]
+        else:
+            cmd += ["-S", "-"]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        raw = _strip_ghost_text(result.stdout)
     # Strip trailing blank lines (tmux pads unused terminal rows with empty lines)
     stripped_lines = raw.splitlines()
     while stripped_lines and stripped_lines[-1].strip() == "":
@@ -482,11 +638,23 @@ def capture_pane(tmux_target: str, lines: Optional[int] = None) -> str:
     return "\n".join(stripped_lines) + "\n" if stripped_lines else ""
 
 
-def capture_pane_full(tmux_target: str) -> List[str]:
-    """Capture the full pane buffer and return as a list of lines (no trailing blanks)."""
-    cmd = ["tmux", "capture-pane", "-p", "-t", tmux_target, "-S", "-"]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
-    all_lines = result.stdout.splitlines()
+def capture_pane_full(
+    tmux_target: str,
+    include_ghost: bool = False,
+) -> List[str]:
+    """Capture the full pane buffer and return as a list of lines (no trailing blanks).
+
+    When include_ghost is False (default), ghost-text is stripped via ANSI-preserving
+    capture (-e flag) before returning plain lines.
+    """
+    if include_ghost:
+        cmd = ["tmux", "capture-pane", "-p", "-t", tmux_target, "-S", "-"]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        all_lines = result.stdout.splitlines()
+    else:
+        cmd = ["tmux", "capture-pane", "-p", "-e", "-t", tmux_target, "-S", "-"]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        all_lines = _strip_ghost_text(result.stdout).splitlines()
     # Strip trailing blank lines (tmux pads unused terminal rows with empty lines)
     while all_lines and all_lines[-1].strip() == "":
         all_lines.pop()
@@ -497,6 +665,7 @@ def capture_pane_slice(
     tmux_target: str,
     offset: int,
     lines: Optional[int],
+    include_ghost: bool = False,
 ) -> Tuple[str, int, int, int]:
     """Capture a slice of the pane buffer with position metadata.
 
@@ -506,7 +675,7 @@ def capture_pane_slice(
     offset: 0-based starting line index into the full buffer.
     lines:  number of lines to return (None -> all lines from offset onward).
     """
-    all_lines = capture_pane_full(tmux_target)
+    all_lines = capture_pane_full(tmux_target, include_ghost=include_ghost)
     total = len(all_lines)
 
     start = min(offset, total)
@@ -1287,6 +1456,7 @@ def _read_one(
     offset: Optional[int],
     fmt: str,
     parent: Optional[ET.Element] = None,
+    include_ghost: bool = False,
 ) -> Optional[Dict]:
     """Read a single pane and emit output (xml child or human text) or return dict for JSON.
 
@@ -1299,7 +1469,7 @@ def _read_one(
     """
     if offset is None:
         # Legacy path: tail last N lines, no position metadata.
-        content = capture_pane(tmux_target, lines)
+        content = capture_pane(tmux_target, lines, include_ghost=include_ghost)
         lines_attr = str(lines) if lines is not None else "all"
         if fmt == "xml":
             if parent is not None:
@@ -1316,7 +1486,9 @@ def _read_one(
             print(content, end="")
     else:
         # Paginated path: absolute offset + limit with position metadata.
-        content, first_line, last_line, total = capture_pane_slice(tmux_target, offset, lines)
+        content, first_line, last_line, total = capture_pane_slice(
+            tmux_target, offset, lines, include_ghost=include_ghost
+        )
         position_header = f"lines {first_line}-{last_line} of {total}"
         if fmt == "xml":
             attrs = {
@@ -1346,13 +1518,21 @@ def _read_one(
     return None
 
 
-def cmd_read(targets_str: str, lines: Optional[int], offset: Optional[int], fmt: str) -> None:
+def cmd_read(
+    targets_str: str,
+    lines: Optional[int],
+    offset: Optional[int],
+    fmt: str,
+    include_ghost: bool = False,
+) -> None:
     resolved = resolve_targets(targets_str, fmt=fmt)
 
     if fmt == "json":
         outputs = []
         for tmux_target, label, _window_id in resolved:
-            obj = _read_one(tmux_target, label, lines, offset, fmt)
+            obj = _read_one(
+                tmux_target, label, lines, offset, fmt, include_ghost=include_ghost
+            )
             if obj is not None:
                 outputs.append(obj)
         if len(outputs) == 1:
@@ -1361,16 +1541,20 @@ def cmd_read(targets_str: str, lines: Optional[int], offset: Optional[int], fmt:
             print(json.dumps({"reads": outputs}, indent=2))
     elif len(resolved) == 1:
         tmux_target, label, _window_id = resolved[0]
-        _read_one(tmux_target, label, lines, offset, fmt, parent=None)
+        _read_one(tmux_target, label, lines, offset, fmt, parent=None, include_ghost=include_ghost)
     else:
         if fmt == "xml":
             root = ET.Element("reads")
             for tmux_target, label, _window_id in resolved:
-                _read_one(tmux_target, label, lines, offset, fmt, parent=root)
+                _read_one(
+                    tmux_target, label, lines, offset, fmt, parent=root, include_ghost=include_ghost
+                )
             print(xml_to_string(root))
         else:
             for i, (tmux_target, label, _window_id) in enumerate(resolved):
-                _read_one(tmux_target, label, lines, offset, fmt, parent=None)
+                _read_one(
+                    tmux_target, label, lines, offset, fmt, parent=None, include_ghost=include_ghost
+                )
                 if i < len(resolved) - 1:
                     print()
 
@@ -1470,7 +1654,13 @@ def cmd_dismiss(targets_str: str, fmt: str) -> None:
 # Subcommand: find
 # ---------------------------------------------------------------------------
 
-def cmd_find(pattern: str, targets_str: Optional[str], lines: Optional[int], fmt: str) -> None:  # filter: is_claude_pane + self-exclusion (no-targets path)
+def cmd_find(
+    pattern: str,
+    targets_str: Optional[str],
+    lines: Optional[int],
+    fmt: str,
+    include_ghost: bool = False,
+) -> None:  # filter: is_claude_pane + self-exclusion (no-targets path)
     if targets_str:
         resolved = resolve_targets(targets_str, fmt=fmt)
     else:
@@ -1507,7 +1697,7 @@ def cmd_find(pattern: str, targets_str: Optional[str], lines: Optional[int], fmt
         found_any = False
 
     for tmux_target, label, _window_id in resolved:
-        content = capture_pane(tmux_target, lines)
+        content = capture_pane(tmux_target, lines, include_ghost=include_ghost)
         for lineno, line in enumerate(content.splitlines(), start=1):
             if compiled.search(line):
                 if fmt == "xml":
@@ -1564,7 +1754,12 @@ def _build_status_panes(
     ]
 
 
-def cmd_status(lines: int, fmt: str, show_all: bool = False) -> None:
+def cmd_status(
+    lines: int,
+    fmt: str,
+    show_all: bool = False,
+    include_ghost: bool = False,
+) -> None:
     # Confine to the current tmux session only (P6.1).
     current_session = get_current_session()
     panes = _build_status_panes(show_all=show_all, current_session=current_session)
@@ -1577,7 +1772,7 @@ def cmd_status(lines: int, fmt: str, show_all: bool = False) -> None:
             wkey = f"{session}:{window_index}"
             tmux_target = f"{session}:{window_index}.{pane_index}"
             label = f"{window_name}.{pane_index}"
-            content = capture_pane(tmux_target, lines)
+            content = capture_pane(tmux_target, lines, include_ghost=include_ghost)
             if wkey != current_window_key:
                 current_window_elem = ET.SubElement(root, "window", name=window_name)
                 current_window_key = wkey
@@ -1598,7 +1793,7 @@ def cmd_status(lines: int, fmt: str, show_all: bool = False) -> None:
             wkey = f"{session}:{window_index}"
             tmux_target = f"{session}:{window_index}.{pane_index}"
             label = f"{window_name}.{pane_index}"
-            content = capture_pane(tmux_target, lines)
+            content = capture_pane(tmux_target, lines, include_ghost=include_ghost)
             if wkey != current_window_key_j:
                 current_window_obj = {"name": window_name, "panes": []}
                 windows_out.append(current_window_obj)
@@ -1622,7 +1817,7 @@ def cmd_status(lines: int, fmt: str, show_all: bool = False) -> None:
         for session, window_index, window_name, pane_index, _pane_cmd in panes:
             tmux_target = f"{session}:{window_index}.{pane_index}"
             label = f"{window_name}.{pane_index}"
-            content = capture_pane(tmux_target, lines)
+            content = capture_pane(tmux_target, lines, include_ghost=include_ghost)
             print(f"--- {label} (last {lines} lines) ---")
             print(content, end="")
             print()
@@ -2763,6 +2958,19 @@ def build_parser() -> argparse.ArgumentParser:
             "('lines X-Y of Z') per target."
         )
     )
+    p_read.add_argument(
+        "--include-ghost",
+        action="store_true",
+        default=False,
+        dest="include_ghost",
+        help=(
+            "Include ghost-autocomplete text in output (default: stripped). "
+            "Ghost text is dim/faint (SGR 2) or bright-black (SGR 90) text "
+            "appearing after the Claude Code ❯ prompt marker — it represents "
+            "shell history suggestions, not real queued input. Use this flag "
+            "for debugging to see the raw pane content including ghost text."
+        ),
+    )
 
     # dismiss
     p_dismiss = sub.add_parser("dismiss", help="Kill target pane(s) or window(s)")
@@ -2782,6 +2990,18 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help="Limit search scope to last N lines per pane"
+    )
+    p_find.add_argument(
+        "--include-ghost",
+        action="store_true",
+        default=False,
+        dest="include_ghost",
+        help=(
+            "Include ghost-autocomplete text in search (default: stripped). "
+            "Ghost text is dim/faint (SGR 2) or bright-black (SGR 90) text "
+            "appearing after the Claude Code ❯ prompt marker. Use this flag "
+            "for debugging to search the raw pane content including ghost text."
+        ),
     )
 
     # create
@@ -2894,6 +3114,18 @@ def build_parser() -> argparse.ArgumentParser:
         dest="show_all",
         default=False,
         help="Include all panes regardless of running command (default: Claude panes only)"
+    )
+    p_status.add_argument(
+        "--include-ghost",
+        action="store_true",
+        default=False,
+        dest="include_ghost",
+        help=(
+            "Include ghost-autocomplete text in output (default: stripped). "
+            "Ghost text is dim/faint (SGR 2) or bright-black (SGR 90) text "
+            "appearing after the Claude Code ❯ prompt marker. Use this flag "
+            "for debugging to see the raw pane content including ghost text."
+        ),
     )
 
     # project-path
@@ -3071,13 +3303,13 @@ def main() -> None:
                 tell_file=args.tell_file,
             )
         elif args.command == "read":
-            cmd_read(args.targets, args.lines, args.from_line, fmt)
+            cmd_read(args.targets, args.lines, args.from_line, fmt, include_ghost=args.include_ghost)
         elif args.command == "dismiss":
             cmd_dismiss(args.targets, fmt)
         elif args.command == "find":
-            cmd_find(args.pattern, args.targets, args.lines, fmt)
+            cmd_find(args.pattern, args.targets, args.lines, fmt, include_ghost=args.include_ghost)
         elif args.command == "status":
-            cmd_status(args.lines, fmt, show_all=args.show_all)
+            cmd_status(args.lines, fmt, show_all=args.show_all, include_ghost=args.include_ghost)
         elif args.command == "create":
             cmd_create(args.name, args.repo, args.branch, args.base, fmt,
                        cmd_override=args.cmd_override, tell=args.tell,
