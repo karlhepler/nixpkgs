@@ -1,15 +1,17 @@
 ---
 name: crew-cli
-description: crew CLI full command reference. Auto-load when about to run any crew subcommand and need exact arguments, flag syntax, or error handling. Covers all subcommands: create, list, tell, read, find, status, dismiss, sessions, resume, project-path, smithers. Includes --format flag behavior, exit code table, pane targeting rules (window vs window.pane), multi-target comma syntax, and crew create vs crew tell sequencing discipline. This skill is the canonical source for all crew CLI syntax — no external pointer needed.
+description: crew CLI full command reference. Auto-load when about to run any crew subcommand and need exact arguments, flag syntax, or error handling. Covers all subcommands: list, tell, read, dismiss, find, create, status, project-path, resume, sessions, active. Includes --format flag behavior, exit code table, pane targeting rules (window vs window.pane), multi-target comma syntax, and crew create vs crew tell sequencing discipline. This skill is the canonical source for all crew CLI syntax — no external pointer needed.
 ---
 
 # crew CLI — Full Command Reference
 
 Exhaustive reference for all `crew` subcommands. Senior Staff uses these in production — no `--help` lookups, no permission asks, no syntax mistakes.
 
+> **Drift warning:** This skill can drift from the installed binary. The installed `crew` binary is the source of truth — verify any subcommand exists via `crew --help` before asserting or relying on its behavior. Do not trust this skill's subcommand list blindly; run `crew --help` to confirm.
+
 **Top-level syntax:**
 ```bash
-crew [-h] [--format {xml,json,human}] {list,tell,read,dismiss,find,create,status,sessions,resume,project-path,smithers} ...
+crew [-h] [--format {xml,json,human}] {list,tell,read,dismiss,find,create,status,sessions,resume,project-path,active} ...
 ```
 
 **Global flag:**
@@ -182,8 +184,8 @@ crew read <targets> [--lines N] [--from N]
 ```bash
 crew read pricing.0                              # Full buffer from Claude in pricing
 crew read pricing --lines 200                    # Last 200 lines (pane 0 default)
-crew read pa-service.1                           # Smithers pane in pa-service
-crew read pa-service.0,pa-service.1 --lines 50  # Correlate Claude + smithers
+crew read pricing.1                              # Smithers pane in pricing
+crew read pricing.0,pricing.1 --lines 50        # Correlate Claude + smithers
 crew read pricing.0 --from 500 --lines 100       # Paginated: lines 500-599
 ```
 
@@ -262,7 +264,7 @@ Single-pane window (staff engineer only, no smithers split):
 </status>
 ```
 
-Multi-pane window (staff engineer in pane 0, smithers in pane 1):
+Multi-pane window (typical example — staff engineer in pane 0, smithers in pane 1; pane indices are not guaranteed):
 ```xml
 <status lines="20">
   <window name="pricing">
@@ -447,55 +449,6 @@ crew project-path ~/worktrees/pricing --format json  # JSON output
 
 ---
 
-## crew smithers
-
-Drop a smithers pane into a crew member's tmux window. **sstaff-only** — staff engineers do not invoke this command.
-
-```bash
-crew smithers <name> [--format json|human]
-```
-
-**Arguments:**
-- `name` (required) — Crew member window name (the tmux window where smithers should run).
-
-**Behavior:**
-1. Looks up the window by name.
-2. Checks the window's current pane count:
-   - **No split (pane 0 only):** Creates a 25% bottom split (`split-window -v -l 25%`) matching the `prefix+s` tmux keybinding, sets cwd to pane 0's working directory (the worktree), then runs `smithers` in the new pane. smithers auto-detects the PR from the worktree's current branch — no arguments needed.
-   - **Split exists + smithers running:** Reports `smithers already running in pane <name>.<index>` and returns success (idempotent).
-   - **Split exists but NOT running smithers:** Returns error with `AMBIGUOUS_PANE_STATE` — refuses to overwrite so the user can decide.
-3. Emits structured output on success.
-
-**When to use:** After a staff session creates a draft PR and the user says "run smithers on it". sstaff invokes `crew smithers <name>` to drop smithers into the staff session's window alongside the staff engineer.
-
-**Output (XML default):**
-```xml
-<!-- started -->
-<smithers status="started" window="pricing" pane="1" message="started smithers in pane pricing.1" />
-
-<!-- already running -->
-<smithers status="already-running" window="pricing" pane="1" message="smithers already running in pane pricing.1" />
-```
-
-**Examples:**
-```bash
-crew smithers pricing          # Drop smithers pane into the pricing window
-crew smithers auth             # Drop smithers pane into the auth window
-crew smithers pricing --format json  # JSON output
-```
-
-**Exit codes:**
-- `0` — Success (started or already-running)
-- `1` — Error (window not found, ambiguous pane state, split failed)
-
-**Error codes:**
-- `WINDOW_NOT_FOUND` — No tmux window with the given name exists
-- `AMBIGUOUS_PANE_STATE` — Extra pane(s) exist but none are running smithers
-- `SPLIT_FAILED` — tmux split-window failed
-- `SEND_KEYS_FAILED` — Could not send the smithers command to the new pane
-
----
-
 ## crew active
 
 Classify each pane in the current tmux session as active or idle based on spinner-verb and loop-pattern detection. Reports which windows have at least one active pane.
@@ -556,6 +509,12 @@ crew active --format human           # Human-readable output
 **Common use cases:**
 - Before CronDelete: run `crew active --names-only` to verify all panes are idle before deleting the pulse cron. If any output appears, leave the cron running.
 - Post-dismiss verification: after `crew dismiss <name>`, run `crew active --names-only` to confirm the remaining sessions have no active panes before concluding the workstream is fully idle.
+
+---
+
+## Invoking Smithers
+
+To run smithers on a PR, use the `/smithers` skill: `/smithers <PR>` directly in a session, or `crew tell <crew-member> "/smithers <PR>"` to start it in a crew member's window.
 
 ---
 
