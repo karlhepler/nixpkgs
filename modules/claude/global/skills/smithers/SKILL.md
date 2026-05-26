@@ -158,28 +158,72 @@ Log `"PR <N> is in state <X> (externally merged or closed); stopping"` and **sto
 
 Run:
 ```
-gh pr view <PR> --json isDraft
+gh pr view <PR> --json isDraft,mergeable,mergeStateStatus
 ```
 
 If `isDraft == true`: run `gh pr ready <PR>` to promote from draft.
 
-Run:
-```
-gh pr view <PR> --json isDraft,mergeable,mergeStateStatus
-```
-
 Check if mergeable:
 - `mergeable == "MERGEABLE" AND mergeStateStatus == "CLEAN" AND isDraft == false`
 
-If mergeable: attempt auto-merge:
+**Opt-in note:** Invoking `/smithers` on a PR IS the user's explicit opt-in to auto-merge for that PR. This is consistent with the auto-merge opt-in policy in senior-staff-engineer.md (commit 004651f) — the coordinator's default merge path is manual, but `/smithers` is the mechanism by which the user opts in for a specific PR. Once `/smithers` is invoked, landing the PR via auto-merge is its job.
+
+If mergeable: detect whether the base branch requires a merge queue, then perform the intentional merge action.
+
+**Step 1: Read-only merge-queue detection (no side effects):**
+
+Fetch the PR's base branch name, then query the repo's rulesets to detect a merge-queue requirement:
+```bash
+base_branch=$(gh pr view <PR> --json baseRefName --jq '.baseRefName')
+gh api repos/{owner}/{repo}/rulesets --jq '[.[] | select(.enforcement == "active") | .rules[].type] | any(. == "merge_queue")' 2>/dev/null
+```
+
+If the `gh api` call fails (non-zero) or returns malformed JSON: fall back to branch-protection check:
+```bash
+gh api repos/{owner}/{repo}/branches/$base_branch/protection --jq '.required_pull_request_reviews != null or .restrictions != null' 2>/dev/null
+```
+
+Detection result: `requires_merge_queue` is `true` if the rulesets query returns `true`, `false` otherwise (treat API errors as `false` — proceed with standard path; if the branch truly requires a queue, the merge step will fail safely).
+
+**Step 2: Merge action (intentional, based on detection result):**
+
+**Standard-repo path** (`requires_merge_queue == false`): arm auto-merge via squash:
 ```
 gh pr merge <PR> --squash --auto
 ```
-On squash failure (non-zero exit): fall back:
+On non-zero exit: fall back:
 ```
 gh pr merge <PR> --merge --auto
 ```
-On both failures: log a warning that manual merge may be needed.
+On this failure too: log a warning that manual merge may be needed, run `rm -f .smithers/clean_confirmed`, and proceed to verification.
+
+**Merge-queue path** (`requires_merge_queue == true`): check the review decision:
+```
+gh pr view <PR> --json reviewDecision --jq '.reviewDecision'
+```
+
+- **If `reviewDecision == "APPROVED"`** (approval already present — required checks passed): enqueue immediately:
+  ```
+  gh pr merge <PR>
+  ```
+  (No strategy flag — on merge-queue branches where required checks have passed, `gh pr merge` without a strategy adds the PR to the merge queue. If required checks have NOT yet passed, `gh pr merge` enables auto-merge, which enqueues automatically once checks pass. Either way, no strategy flag is needed.)
+  On non-zero exit: log the error, run `rm -f .smithers/clean_confirmed`, and proceed to verification.
+
+- **If approval is NOT yet present** (`reviewDecision != "APPROVED"`): arm auto-merge so it enqueues automatically once approved:
+  ```
+  gh pr merge <PR> --auto
+  ```
+  On non-zero exit: log the error, run `rm -f .smithers/clean_confirmed`, and proceed to verification.
+
+**Verify before declaring done** — run regardless of which path was taken:
+```
+gh pr view <PR> --json autoMergeRequest,mergeStateStatus,state
+```
+
+- If `state == "MERGED"`: the PR merged immediately — proceed to notification.
+- If `autoMergeRequest != null`: auto-merge is armed (will merge on approval or queue admission) — proceed to notification.
+- If `mergeStateStatus == "QUEUED"`: the PR is in the merge queue — proceed to notification.
+- **Otherwise**: auto-merge is NOT confirmed armed and the PR is not queued or merged. Log a warning: `"Warning: merge action ran but could not confirm auto-merge armed or PR queued. autoMergeRequest=<value> mergeStateStatus=<value>. Manual merge may be required."` Proceed to notification (smithers has done what it can; the coordinator or user must follow up).
 
 Send macOS notification:
 ```
@@ -408,7 +452,7 @@ ScheduleWakeup(
 
 Stop (no ScheduleWakeup) when any of the following occur:
 1. PR is MERGED or CLOSED (Step 1)
-2. PR is clean and auto-merge attempted (Step 7a)
+2. PR is clean and merge armed, enqueued, or manual-merge warning logged after verification (Step 7a)
 3. `fix_count >= max_ralph_invocations` (Step 8)
 4. `cycle >= max_cycles` (Step 8)
 5. `stagnation_count >= 2` (Step 13)
