@@ -124,6 +124,51 @@ _PROMPT_READY_PATTERNS = [
     "auto mode on",  # Bottom status bar — present in all auto-mode Claude Code sessions
 ]
 
+# MCP trust modal detection patterns.
+#
+# When a project's .mcp.json declares a server that Claude Code has not yet
+# trusted, Claude Code shows an interactive modal at startup:
+#
+#   New MCP server found in this project: <name>
+#     1. Use this MCP server
+#     2. Use this and all future MCP servers in this project
+#     3. Continue without using this MCP server
+#
+# This modal blocks the TUI from rendering the "auto mode on" status bar text
+# AND prevents the SessionStart hook from firing (the hook fires only after
+# Claude Code fully boots, which the modal blocks). Both readiness signals in
+# _wait_for_sentinel therefore never appear, causing a 5-minute timeout and
+# silent --tell drop.
+#
+# The patterns below match the modal's unique header text. Checking for
+# "Use this and all future MCP servers" covers the menu option line which is
+# always present when the modal is displayed, even for multi-server cases.
+_MCP_TRUST_MODAL_PATTERNS = [
+    "New MCP server found in this project",
+    "Use this and all future MCP servers in this project",
+]
+
+# Keystroke sequences to dismiss the MCP trust modal, keyed by --mcp-trust value.
+#
+# The modal presents a numbered list. Claude Code processes the selection via
+# arrow keys (Up/Down) or number input followed by Enter.
+#
+#   1. Use this MCP server              → Enter (option 1 is pre-selected)
+#   2. Use this and all future MCP...  → Down, Enter
+#   3. Continue without using          → Down, Down, Enter
+#
+# "all" maps to option 2 (project-wide trust — matches the documented default
+# intent of --mcp-trust all and matches the manual recovery flow the coordinator
+# must perform: 'Down Enter' to select project-wide trust).
+#
+# When multiple MCP servers are untrusted, the modal appears once per server.
+# The auto-answer loop in _wait_for_sentinel repeats until the modal clears.
+_MCP_TRUST_MODAL_KEYS: Dict[str, List[str]] = {
+    "all": ["Down", "Enter"],   # Option 2: trust this and all future servers
+    "this": ["Enter"],           # Option 1: trust only this server (pre-selected)
+    "none": ["Down", "Down", "Enter"],  # Option 3: continue without using
+}
+
 
 def _pane_shows_prompt_ready(tmux_target: str) -> bool:
     """Return True if the pane at tmux_target shows a Claude Code prompt-ready signal.
@@ -141,11 +186,57 @@ def _pane_shows_prompt_ready(tmux_target: str) -> bool:
     return any(pat in content for pat in _PROMPT_READY_PATTERNS)
 
 
+def _pane_shows_mcp_trust_modal(tmux_target: str) -> bool:
+    """Return True if the pane at tmux_target is showing the MCP server trust modal.
+
+    The MCP trust modal appears at Claude Code startup when a project's .mcp.json
+    declares a server that has not yet been approved. It blocks the TUI from
+    rendering the ready status bar and prevents the SessionStart hook from firing.
+
+    Returns False on any subprocess error (fail open — caller will retry).
+    """
+    result = subprocess.run(
+        ["tmux", "capture-pane", "-p", "-t", tmux_target, "-S", "-50"],
+        capture_output=True, text=True, check=False,
+    )
+    if result.returncode != 0:
+        return False
+    content = result.stdout
+    return all(pat in content for pat in _MCP_TRUST_MODAL_PATTERNS)
+
+
+def _auto_answer_mcp_trust_modal(tmux_target: str, mcp_trust: str) -> bool:
+    """Send keystrokes to dismiss the MCP server trust modal at tmux_target.
+
+    Selects the menu option corresponding to mcp_trust:
+      'all'  → Down, Enter  (option 2: trust this and all future servers)
+      'this' → Enter        (option 1: trust only this server, pre-selected)
+      'none' → Down, Down, Enter  (option 3: continue without using)
+
+    Keys are sent in a single tmux send-keys call (same pattern as
+    `crew tell <target> --keys "Down Enter"`). Returns True if the call
+    succeeded, False if send-keys failed.
+    Intended to be called after _pane_shows_mcp_trust_modal returns True.
+    """
+    keys = _MCP_TRUST_MODAL_KEYS.get(mcp_trust, _MCP_TRUST_MODAL_KEYS["all"])
+    try:
+        result = subprocess.run(
+            ["tmux", "send-keys", "-t", tmux_target] + keys,
+            capture_output=True, check=False, timeout=2.0,
+        )
+    except subprocess.TimeoutExpired:
+        # tmux IPC hung; treat as a failed send. The next poll iteration will
+        # re-detect the modal and retry (or the outer ceiling will apply).
+        return False
+    return result.returncode == 0
+
+
 def _wait_for_sentinel(
     name: str,
     ceiling: float = _SENTINEL_WAIT_CEILING_SECONDS,
     poll_interval: float = 0.5,
     prompt_poll_interval: float = 0.2,
+    mcp_trust: str = "all",
 ) -> tuple:  # Tuple[bool, Optional[str]]
     """Wait for Claude Code to signal readiness for the session named <name>.
 
@@ -218,6 +309,10 @@ def _wait_for_sentinel(
     ready_event = threading.Event()
     deadline = time.monotonic() + ceiling
 
+    # Shared flag set by the poll thread when it detects and auto-answers a
+    # MCP trust modal. Used to improve the timeout failure reason message.
+    mcp_modal_detected = threading.Event()
+
     # --- fswatch thread (primary signal) ---
     def _fswatch_thread() -> None:
         """Watch sentinel directory; set ready_event when sentinel appears."""
@@ -240,12 +335,43 @@ def _wait_for_sentinel(
             ready_event.set()
 
     # --- poll thread (fallback signal: capture-pane prompt-box detection) ---
+    # In addition to checking for the "auto mode on" ready signal, this thread
+    # detects the MCP server trust modal (which blocks startup when a project's
+    # .mcp.json declares a server not yet trusted) and auto-answers it using
+    # the keystroke sequence corresponding to mcp_trust. The modal may appear
+    # multiple times when several servers are untrusted; the loop handles each.
     def _poll_thread() -> None:
-        """Poll capture-pane every prompt_poll_interval seconds; set ready_event when prompt visible."""
+        """Poll capture-pane; set ready_event when prompt visible; auto-answer MCP trust modal."""
         while not ready_event.is_set() and time.monotonic() < deadline:
             if _pane_shows_prompt_ready(tmux_target):
                 ready_event.set()
                 return
+            if _pane_shows_mcp_trust_modal(tmux_target):
+                mcp_modal_detected.set()
+                send_ok = _auto_answer_mcp_trust_modal(tmux_target, mcp_trust)
+                if not send_ok:
+                    # send-keys failed (tmux IPC error or timeout); next iteration
+                    # will re-detect and retry — no action needed here.
+                    time.sleep(prompt_poll_interval)
+                    continue
+                # Confirm the modal has cleared before resuming the normal poll.
+                # This prevents a duplicate keystroke send (which would advance the
+                # menu cursor past the intended option) when the pane has not yet
+                # refreshed after the first answer. Poll until cleared or deadline.
+                # NOTE: if a genuinely NEW modal appears later (a second untrusted
+                # server), _pane_shows_mcp_trust_modal will return True again in the
+                # outer loop and the new modal will be answered — only re-sending
+                # against the SAME un-cleared modal is suppressed here.
+                modal_clear_deadline = min(
+                    time.monotonic() + 5.0, deadline
+                )
+                while time.monotonic() < modal_clear_deadline:
+                    if not _pane_shows_mcp_trust_modal(tmux_target):
+                        # Modal is cleared; fall through to the outer loop which
+                        # will either detect the next modal or the ready signal.
+                        break
+                    time.sleep(prompt_poll_interval)
+                continue
             time.sleep(prompt_poll_interval)
 
     fswatch_t = threading.Thread(target=_fswatch_thread, daemon=True)
@@ -265,12 +391,23 @@ def _wait_for_sentinel(
         # Event was set but post-check missed it (race) — trust the event.
         return True, None
 
-    # Both signals timed out.
-    reason = (
-        f"session never reported ready — "
-        f"sentinel file never appeared at {sentinel!r} "
-        f"and pane {tmux_target!r} never showed any of {_PROMPT_READY_PATTERNS!r}"
-    )
+    # Both signals timed out. Include MCP modal context in the reason when the
+    # modal was detected so the caller can surface a specific diagnostic rather
+    # than the generic "sentinel never appeared" message.
+    if mcp_modal_detected.is_set():
+        reason = (
+            f"MCP trust modal detected and auto-answered (--mcp-trust {mcp_trust!r}) "
+            f"but session still did not report ready within the ceiling — "
+            f"sentinel file never appeared at {sentinel!r} "
+            f"and pane {tmux_target!r} never showed {_PROMPT_READY_PATTERNS!r}; "
+            f"check the pane manually with: crew read {name}"
+        )
+    else:
+        reason = (
+            f"session never reported ready — "
+            f"sentinel file never appeared at {sentinel!r} "
+            f"and pane {tmux_target!r} never showed any of {_PROMPT_READY_PATTERNS!r}"
+        )
     return False, reason
 
 
@@ -2538,7 +2675,7 @@ def cmd_create(
     told_reason: Optional[str] = None
 
     if tell is not None:
-        ready, wait_reason = _wait_for_sentinel(name)
+        ready, wait_reason = _wait_for_sentinel(name, mcp_trust=mcp_trust)
         if not ready:
             # Sentinel never appeared within the outer ceiling (5 minutes).
             # wait_reason already contains the appropriate diagnostic string.
