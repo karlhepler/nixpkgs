@@ -110,7 +110,7 @@ Create a blank template document **immediately at the start of the conversation*
 ## GOAL - What Outcome Are We Achieving?
 [placeholder]
 
-## OBJECTIVE - What Deliverables Will We Produce?
+## OBJECTIVE - What Change Are We Making?
 [placeholder]
 
 ## SUCCESS MEASURES - How We Know We Achieved the Goal
@@ -169,7 +169,7 @@ The plan framework sections are the **spine** of your document. Protect their in
 
 **Every word you write in a plan section should be readable by a smart person who has never heard of LogFrame.** No framework vocabulary in the prose. Explain what things mean in plain, everyday language. Write like you are explaining it to a curious colleague over coffee, not presenting a business case to an auditor.
 
-### Six Style Patterns — Applied Selectively Per Section
+### Five Style Patterns — Applied Selectively Per Section
 
 The "Where to Apply the Style" table below is the governing authority for which patterns apply to each section. Not every pattern applies everywhere — use the table to determine which patterns belong in the section you are writing.
 
@@ -190,14 +190,7 @@ When describing a concept that's hard to visualize, reach for an analogy. Make t
 
 Use an analogy when a section introduces an abstract or technical concept a non-specialist reader would not immediately grasp. Analogies are discretionary — reach for one when it genuinely clarifies, not as a default for every section.
 
-**Pattern 4 — Sharpen the goal by stating what it is NOT.**
-After stating what the goal is, add one sentence about what it is not. This removes ambiguity about scope and helps the reader understand what success looks like.
-
-*Exemplar that landed:* "The goal is not 'write all the missing tests' — it's 'make writing them easy enough that engineers stop avoiding it'."
-
-Use this pattern in the Goal and Objective sections.
-
-**Pattern 5 — Frame each deliverable as the one pain it removes.**
+**Pattern 4 — Frame each deliverable as the one pain it removes.**
 Every deliverable entry in the plan gets a one-line ELI5 restatement: what problem does this thing solve for the person doing the work? Optionally, frame the pain as a user-voice quote — a complaint you'd actually hear in a standup or Slack message.
 
 *Mapping pattern:*
@@ -206,7 +199,7 @@ Every deliverable entry in the plan gets a one-line ELI5 restatement: what probl
 - **One-line ELI5 →** "This is the thing that means you don't go get coffee and forget what you were doing."
 - **Optional user-voice quote →** *"I just want to run the tests and get back to work"*
 
-**Pattern 6 — End with a one-sentence causal chain.**
+**Pattern 5 — End with a one-sentence causal chain.**
 The last sentence of every plan's Causal Relationship Check should be a single plain-English sentence connecting root cause → what the project does → the outcome. No diagram language. No acronyms.
 
 *Example:* "Because developers were spending most of their focus time waiting for tests instead of writing code, we built a faster test system — and now they ship features instead of watching spinners."
@@ -217,12 +210,12 @@ The last sentence of every plan's Causal Relationship Check should be a single p
 
 | Section | Which patterns to use |
 |---------|----------------------|
-| **Goal** | Patterns 1, 2, 3 (if needed), 4 |
-| **Objective** | Patterns 1, 2, 4 |
+| **Goal** | Patterns 1, 2, 3 (if needed) |
+| **Objective** | Patterns 1, 2 |
 | **Success Measures** | Pattern 2 (no jargon in prose around the table) |
 | **Assumptions** | Pattern 2 |
-| **Deliverables** | Patterns 2, 5 — every deliverable entry gets the pain-removal framing |
-| **Causal Relationship Check** | Patterns 2, 3 (if needed), 6 |
+| **Deliverables** | Patterns 2, 4 — every deliverable entry gets the pain-removal framing |
+| **Causal Relationship Check** | Patterns 2, 3 (if needed), 5 |
 
 ## The Planning Framework
 
@@ -291,7 +284,7 @@ Keep the two separate. Background explains what's happening and why it matters n
 
 **Test:** Would a fifth-grader understand this? Can you say it at dinner?
 
-**Prose style (see § Prose Style Spec):** Use Pattern 1 — lead with the big-picture business goal, then tie it to this project's contribution. Use Pattern 4 — add one sentence stating what the goal is NOT, to sharpen the scope. Avoid all framework vocabulary: say "what we're trying to achieve" not "the goal statement".
+**Prose style (see § Prose Style Spec):** Use Pattern 1 — lead with the big-picture business goal, then tie it to this project's contribution. Avoid all framework vocabulary: say "what we're trying to achieve" not "the goal statement".
 
 **Example:**
 "**Maze's engineering org delivers on quarterly product OKRs without infrastructure-related bottlenecks.**"
@@ -307,7 +300,7 @@ Keep the two separate. Background explains what's happening and why it matters n
 - Goal describes the mechanism — phrases like "X can only happen through Y", "every change requires Z", "all destructive actions must go through W" are objective-level. The goal is what those mechanisms cause to be true in the world.
 - Drafting a goal at the project level without first checking for an existing organizational initiative — most projects should inherit their goal verbatim from a parent initiative (company OKR, VP-level program, strategic pillar). If you find yourself authoring a fresh goal in the planner skill, stop and ask: "is there an existing higher-level initiative this should ladder up to?"
 
-### OBJECTIVE - What Deliverables Will We Produce?
+### OBJECTIVE - What Change Are We Making?
 
 **Purpose:** Clear, achievable objective describing the environmental change THIS project will cause, by when.
 
@@ -325,7 +318,7 @@ The causal claim is: DELIVERABLES + ASSUMPTIONS → OBJECTIVE → GOAL. If we pr
 
 **Format:** 1-2 sentences, always starting with "By [date],...".
 
-**Prose style (see § Prose Style Spec):** Use Pattern 1 — after the objective statement, add one sentence tying it up to the goal above. Use Pattern 4 — add one sentence stating what the objective is NOT, so the reader knows what's out of scope. Plain language only: no "environmental change" or "causal chain" in the prose.
+**Prose style (see § Prose Style Spec):** Use Pattern 1 — after the objective statement, add one sentence tying it up to the goal above. Plain language only: no "environmental change" or "causal chain" in the prose.
 
 **Requirements:**
 - **Time-bound** — includes explicit project end date ("By Q3 2026...", "By December 15, 2026..."). The project end date lives in the objective statement.
@@ -352,10 +345,11 @@ The causal claim is: DELIVERABLES + ASSUMPTIONS → OBJECTIVE → GOAL. If we pr
 
 **Purpose:** 1-3 measures that verify the GOAL (outcome) was achieved.
 
-**Format:** Markdown table with 3 columns:
+**Format:** Markdown table with 4 columns:
 - **Base** (current state or N/A)
 - **Target** (desired state — see target format rule below)
 - **Means of Verification** (HOW we get this data - must be REAL and POSSIBLE)
+- **Prerequisite** (does the verification capability exist today, or must a deliverable create it?)
 
 **Target Format Rule: Lead with hard numbers, not percentages.**
 Targets must state the concrete target state first. Percentages may follow as supplementary context but never lead. Hard numbers are immediately understandable, verifiable, and actionable. Percentages require mental math against the baseline to understand what you're actually aiming for.
@@ -380,23 +374,23 @@ Success measures verify we achieved the **outcome/change** (GOAL), not just that
 
 **Verification Feasibility Check (required for every Means of Verification)**
 
-For each "Means of Verification" entry, answer this question and **annotate the result directly in the table cell**:
+For each row, fill the **Prerequisite** column by answering:
 
 **"Can we get this data TODAY with existing infrastructure?"**
 
-**→ YES:** Annotate on a new line within the cell with `<br>✅ *(exists)*` or specify the tool/method followed by `<br>✅ *(exists)*`
-- Example: "Quarterly developer survey Q12<br>✅ *(exists)*"
-- Example: "CI logs via `gh api /repos/owner/repo/actions/runs`<br>✅ *(exists)*"
-- Example: "Datadog APM dashboard<br>✅ *(exists)*"
+**→ YES:** Write `✅ exists` in the Prerequisite column.
+- Example: `✅ exists` (for "Quarterly developer survey Q12")
+- Example: `✅ exists` (for "CI logs via `gh api /repos/owner/repo/actions/runs`")
+- Example: `✅ exists` (for "Datadog APM dashboard")
 
-**→ NO:** Annotate on a new line within the cell with `<br>⚠️ [what's missing] → **Deliverable #N**`
-- Example: "API success/error ratio<br>⚠️ no logging exists → **Deliverable #3**"
-- Example: "End-to-end test suite<br>⚠️ no e2e tests exist → **Deliverable #4**"
-- Example: "Page load time via RUM<br>⚠️ no monitoring exists → **Deliverable #5**"
+**→ NO:** Write `⚠️ [what's missing] → **Deliverable #N**` in the Prerequisite column.
+- Example: `⚠️ no logging exists → **Deliverable #3**`
+- Example: `⚠️ no e2e tests exist → **Deliverable #4**`
+- Example: `⚠️ no monitoring exists → **Deliverable #5**`
 
-**Inline annotation format:**
-- **Capability exists:** Append `<br>✅ *(exists)*`
-- **Capability missing:** Append `<br>⚠️ [what's missing] → **Deliverable #N**`
+**Prerequisite column values:**
+- **Capability exists:** `✅ exists`
+- **Capability missing:** `⚠️ [what's missing] → **Deliverable #N**`
 
 **Verification preference order:**
 1. **Automated verification** (Claude Code can run command, query API, check metrics)
@@ -404,7 +398,7 @@ For each "Means of Verification" entry, answer this question and **annotate the 
 
 **For qualitative measures:** Convert to quantitative using surveys, user feedback scores, or observable proxies.
 
-**Validation rule:** No success measure without practical verification means that exists TODAY (annotated with *(exists)*) or becomes a deliverable (annotated with ⚠️ and deliverable reference).
+**Validation rule:** No success measure without practical verification means that exists TODAY (Prerequisite column: `✅ exists`) or becomes a deliverable (Prerequisite column: `⚠️ ... → Deliverable #N`).
 
 **Removal rule:** If a success measure has no feasible means of verification — AND building that verification capability is impractical (cost, complexity, or timeline makes it unreasonable as a deliverable) — **remove the success measure entirely.** An unmeasurable measure is worse than no measure: it creates false confidence that the goal is being tracked when it isn't. When the verification capability CAN be built as a deliverable, prefer frontloading it to capture the baseline before other work begins — but frontloading is a preference, not a hard requirement (some baselines can be reconstructed retroactively from logs, historical data, or surveys).
 
@@ -459,11 +453,11 @@ If user cannot define measurable outcome → **Cannot proceed with planning.** M
 | Dashboard helps detect incidents faster | Time to detect incidents <2min (measure: incident timestamp vs alert timestamp in logs) |
 
 **Example:**
-| Base | Target | Means of Verification |
-|------|--------|----------------------|
-| 45 min | <5 min | CI logs via GitHub Actions API<br>✅ *(exists)*, developer survey Q8<br>✅ *(exists)* |
-| 3 hrs/day/dev | <30 min/day/dev | Time tracking dashboard<br>⚠️ no tracking exists → **Deliverable #3** |
-| 2.1/5 | >4/5 | Quarterly developer survey Q12<br>✅ *(exists)* |
+| Base | Target | Means of Verification | Prerequisite |
+|------|--------|----------------------|-------------|
+| 45 min | <5 min | CI logs via GitHub Actions API, developer survey Q8 | ✅ exists |
+| 3 hrs/day/dev | <30 min/day/dev | Time tracking dashboard | ⚠️ no tracking exists → **Deliverable #3** |
+| 2.1/5 | >4/5 | Quarterly developer survey Q12 | ✅ exists |
 
 **Red flags:**
 - Can't get the data (no real means of verification)
@@ -478,7 +472,7 @@ If user cannot define measurable outcome → **Cannot proceed with planning.** M
 **Assumptions and deliverables are two sides of the same sort.** Every candidate the objective requires is either something we directly produce (deliverable) or something we depend on but cannot control (assumption). The work of authoring this section is inseparable from authoring DELIVERABLES — both populate together as we brainstorm what the objective needs and sort each candidate by control.
 
 **🚨 TWO MANDATORY ASSUMPTION GATES:**
-1. **First-pass gate (step 10):** Every candidate passes the "Can the team affect this?" filter BEFORE appearing in the plan. Apply rigorously on the first draft — do not present team-controllable items as assumptions and let the user catch them.
+1. **First-pass gate (step 10):** Every candidate passes the "Can the team directly produce this?" filter BEFORE appearing in the plan. Apply rigorously on the first draft — do not present team-controllable items as assumptions and let the user catch them.
 2. **Continuous gate (every design decision):** After EVERY design decision during planning, re-scan the assumptions table. Has anything been eliminated? Has any risk level changed? Has anything new been introduced? Do not wait for the user to flag stale assumptions.
 
 **Goal:** Only things team CANNOT directly affect — external factors outside direct control. Anything that cannot be made into a deliverable (risks, dependencies, external conditions).
@@ -519,7 +513,7 @@ Any "yes, we're assuming that" answer is a candidate assumption. Apply the filte
 
 **Filter - Apply Before Adding Any Assumption:**
 
-"Can the team affect this at all?"
+"Can the team directly produce this?"
 
 **Three outcomes:**
 
@@ -580,7 +574,7 @@ The assumption filter is not a one-time gate. Re-apply it every time the design 
 
 1. **Design decision eliminates a risk?** → Remove the assumption immediately. Do not narrate the removal or keep it "for reference." Dead assumptions clutter the plan and signal the planner is not tracking how design decisions affect the risk landscape.
 
-2. **"Will the thing we're building work?"** → That is NEVER an assumption. If building the deliverable validates the concern, it is a deliverable risk — verified by prototyping and testing, not by assumption tracking. Apply the filter: "Can the team affect this?" → YES → not an assumption.
+2. **"Will the thing we're building work?"** → That is NEVER an assumption. If building the deliverable validates the concern, it is a deliverable risk — verified by prototyping and testing, not by assumption tracking. Apply the filter: "Can the team directly produce this?" → YES → not an assumption.
 
 3. **Proactive pruning:** Do not wait for the user to point out dead assumptions. After every design decision that changes the risk landscape, scan the assumptions table and remove anything that is now under team control or validated by the deliverables themselves.
 
@@ -590,7 +584,7 @@ The assumption filter is not a one-time gate. Re-apply it every time the design 
 
 **Purpose:** Numbered list of outputs with acceptance criteria.
 
-Deliverables are the items the team directly produces to achieve the objective. They are identified together with assumptions during the candidate-sort phase — every candidate that passes the "can the team affect this?" filter lands here. Items that fail the filter become assumptions.
+Deliverables are the items the team directly produces to achieve the objective. They are identified together with assumptions during the candidate-sort phase — every candidate that passes the "can the team directly produce this?" filter lands here. Items that fail the filter become assumptions.
 
 **The plan document IS the scope boundary.** There are no "goals and non-goals" — everything in the document is in scope, everything not in it is out of scope. The sufficient-and-necessary check enforces this: if a deliverable isn't necessary, remove it. If something is missing, add it. The document is conclusive.
 
@@ -604,7 +598,7 @@ Before defining a custom deliverable, check each of the following in order:
 
 Only after confirming none of the above work should a custom deliverable be defined. This is the "boring over novel, existing over custom" principle. Custom solutions add maintenance burden, onboarding cost, and long-term risk — they must be justified by the absence of workable alternatives, not by preference.
 
-**Prose style (see § Prose Style Spec):** Use Pattern 5 — every deliverable entry gets one plain-English line framing it as the pain it removes. Format: *"[Deliverable name] — [one-line ELI5: what problem this solves for the person doing the work]"*. Optionally include a user-voice quote (a complaint you'd actually hear in a standup). Place the ELI5 line immediately after the deliverable name, before the acceptance criteria.
+**Prose style (see § Prose Style Spec):** Use Pattern 4 — every deliverable entry gets one plain-English line framing it as the pain it removes. Format: *"[Deliverable name] — [one-line ELI5: what problem this solves for the person doing the work]"*. Optionally include a user-voice quote (a complaint you'd actually hear in a standup). Place the ELI5 line immediately after the deliverable name, before the acceptance criteria.
 
 *Example:*
 ```
@@ -832,7 +826,7 @@ After the first link-by-link validation passes (all links marked ✓), re-run wi
 
 When any of these signals appear, re-run the link-by-link validation applying the mandatory second-pass framing: "For each link, what does this assume that isn't verified? What could silently fail?" See also: Minimum Viable Project § Detection signal — MVP re-run signals may appear alongside causal re-run signals; if both signal types appear together, run BOTH re-runs.
 
-**Prose style (see § Prose Style Spec):** Use Pattern 6 — after the link-by-link validation, write one plain-English sentence connecting root cause → what this project does → the outcome. No diagram language, no acronyms, no framework terms. This is the sentence a non-engineer should be able to read and immediately understand why the project exists.
+**Prose style (see § Prose Style Spec):** Use Pattern 5 — after the link-by-link validation, write one plain-English sentence connecting root cause → what this project does → the outcome. No diagram language, no acronyms, no framework terms. This is the sentence a non-engineer should be able to read and immediately understand why the project exists.
 
 *Example:* "Because developers were spending most of their focus time waiting for tests instead of writing code, we built a faster test system — and now they ship features instead of watching spinners."
 
@@ -889,23 +883,23 @@ The test suite has grown from 500 to 8,000 tests over three years with no infras
 
 **Maze's engineering org delivers on quarterly product OKRs without infrastructure-related bottlenecks.**
 
-### OBJECTIVE - What Deliverables Will We Produce?
+### OBJECTIVE - What Change Are We Making?
 
 By Q3 2026, developers are not blocked by slow tests or false-failure debugging during their daily work.
 
 ### SUCCESS MEASURES - How We Know We Achieved the Goal
 
-| Base | Target | Means of Verification |
-|------|--------|----------------------|
-| 45 min | <5 min | CI logs via `gh api /repos/owner/repo/actions/runs`<br>✅ *(exists)* |
-| 3 hrs/day/dev | <30 min/day/dev | Developer time tracking dashboard<br>⚠️ no tracking exists → **Deliverable #4** |
-| 2.1/5 | >4/5 | Quarterly developer survey Q12<br>✅ *(exists)* |
+| Base | Target | Means of Verification | Prerequisite |
+|------|--------|----------------------|-------------|
+| 45 min | <5 min | CI logs via `gh api /repos/owner/repo/actions/runs` | ✅ exists |
+| 3 hrs/day/dev | <30 min/day/dev | Developer time tracking dashboard | ⚠️ no tracking exists → **Deliverable #4** |
+| 2.1/5 | >4/5 | Quarterly developer survey Q12 | ✅ exists |
 
 ### ASSUMPTIONS - What We Can't Control
 
 | Assumption | Risk Level | How to Monitor | Contingency Plan |
 |------------|------------|----------------|-----------------|
-| Developers will adopt local test workflow | Medium | Weekly CI usage via GitHub Actions API<br>✅ *(exists)*, monthly developer survey Q15<br>✅ *(exists)* | If adoption <50% after 4 weeks, schedule mandatory onboarding sessions and pair-program with resistant engineers |
+| Developers will adopt local test workflow | Medium | Weekly CI usage via GitHub Actions API, monthly developer survey Q15 | If adoption <50% after 4 weeks, schedule mandatory onboarding sessions and pair-program with resistant engineers |
 
 **Note:**
 - Initial assumption "We can get analytics data" was converted to deliverable "Analytics instrumentation" (team has full control).
@@ -1018,22 +1012,22 @@ The team doubled in size last quarter and we have no written onboarding material
 
 **The team scales headcount without eroding senior engineering capacity.**
 
-### OBJECTIVE - What Deliverables Will We Produce?
+### OBJECTIVE - What Change Are We Making?
 
 By October 1, 2026, new engineers self-serve answers to setup, architecture, and workflow questions without pulling senior engineers away from product work.
 
 ### SUCCESS MEASURES - How We Know We Achieved the Goal
 
-| Base | Target | Means of Verification |
-|------|--------|----------------------|
-| 4 weeks | <2 weeks | HR onboarding tracking (time to first merged PR)<br>✅ *(exists)* |
-| 60% | <20% | New engineer survey week 2<br>✅ *(exists)* |
+| Base | Target | Means of Verification | Prerequisite |
+|------|--------|----------------------|-------------|
+| 4 weeks | <2 weeks | HR onboarding tracking (time to first merged PR) | ✅ exists |
+| 60% | <20% | New engineer survey week 2 | ✅ exists |
 
 ### ASSUMPTIONS - What We Can't Control
 
 | Assumption | Risk Level | How to Monitor | Contingency Plan |
 |------------|------------|----------------|-----------------|
-| New engineers will read documentation before asking questions | Medium | Doc page views via analytics<br>✅ *(exists)*, engineer survey week 2<br>✅ *(exists)* | If doc page views remain low, add documentation links to PR template and onboarding checklist; schedule a mandatory docs walkthrough in week 1 |
+| New engineers will read documentation before asking questions | Medium | Doc page views via analytics, engineer survey week 2 | If doc page views remain low, add documentation links to PR template and onboarding checklist; schedule a mandatory docs walkthrough in week 1 |
 
 **Note:** Initial assumption "Docs will be discoverable" converted to deliverable "Documentation site with search" (team has control).
 
@@ -1132,8 +1126,8 @@ Every time you edit one section, scan all others for consistency. This back-and-
 6. **Define SUCCESS** - How do we measure goal achievement? Update the document section in-place.
 7. **Challenge unmeasurable claims** - Use generative mode: suggest measurable alternatives, refuse to proceed if can't measure.
 8. **Map GOAL to SUCCESS, OBJECTIVE to DELIVERABLES** - Every claim in GOAL must have a success measure. Every claim in OBJECTIVE must map to a deliverable. Goal and objective can use simple, broad language because their constituent parts (success measures and deliverables respectively) give every term concrete meaning — but no unmapped claims.
-9. **Verification Feasibility Check for SUCCESS** - For EVERY means of verification: Can we get this data TODAY? Annotate inline: `<br>✅ *(exists)*` OR `<br>⚠️ [missing] → **Deliverable #N**`. If building the capability is impractical, remove the success measure entirely — unmeasurable measures create false confidence. When adding a verification deliverable, prefer frontloading it to capture the baseline before other work begins.
-10. **Co-develop DELIVERABLES and ASSUMPTIONS** — These are two outputs of one sorting process. Work through them together: brainstorm what the OBJECTIVE (concretely defined by success measures) requires. For each candidate, apply the filter "can the team affect this?":
+9. **Verification Feasibility Check for SUCCESS** - For EVERY means of verification: Can we get this data TODAY? Fill the Prerequisite column: `✅ exists` OR `⚠️ [missing] → **Deliverable #N**`. If building the capability is impractical, remove the success measure entirely — unmeasurable measures create false confidence. When adding a verification deliverable, prefer frontloading it to capture the baseline before other work begins.
+10. **Co-develop DELIVERABLES and ASSUMPTIONS** — These are two outputs of one sorting process. Work through them together: brainstorm what the OBJECTIVE (concretely defined by success measures) requires. For each candidate, apply the filter "can the team directly produce this?":
     - **YES (Full Control)** → deliverable (with acceptance criteria)
     - **PARTIAL (Some Control)** → add mitigating deliverable + keep residual assumption (Medium-risk)
     - **NO (Zero Control)** → assumption (with risk level, monitoring, contingency)
@@ -1142,7 +1136,7 @@ Every time you edit one section, scan all others for consistency. This back-and-
 
     Continuously check **sufficient** (deliverables + assumptions → objective) and **necessary** (each item required, else cut). Iterate until both sufficient and necessary hold.
 
-    No assumption reaches the plan document without passing the "can the team affect this?" filter on the FIRST pass. If unsure, default to deliverable.
+    No assumption reaches the plan document without passing the "can the team directly produce this?" filter on the FIRST pass. If unsure, default to deliverable.
 
     **Pre-deliverable research gate:** Before defining ANY custom deliverable, check: (a) existing team tools/libraries, (b) existing vendor capabilities, (c) third-party solutions. Only define custom deliverables after confirming none of these work.
 
@@ -1170,8 +1164,8 @@ Before marking work complete:
 3. **GOAL-SUCCESS mapping** - Every claim, term, and promise in GOAL maps to at least one success measure? No unmapped claims?
 4. **OBJECTIVE complete** - Describes the environmental change (purpose-level, not deliverable-level)? Starts with "By [date],..."? No absolute claims? Concise — every sentence means something, every word earns its place? Does it describe what changes in the world when the deliverables are produced — NOT a list of the deliverables themselves?
 5. **OBJECTIVE language maps to DELIVERABLES** - Every claim in the objective maps to at least one deliverable? Objective reads as environmental-change summary, deliverables concretely define what produces it? Objective does NOT list or restate the deliverables?
-6. **SUCCESS defined** - 1-3 measures in table format (Base | Target | Means of Verification)?
-7. **VERIFICATION FEASIBILITY CHECK applied** - For EVERY means of verification: Annotated inline with `<br>✅ *(exists)*` OR `<br>⚠️ [missing] → **Deliverable #N**`? If building the verification capability is impractical, removed the success measure entirely (no unmeasurable measures)?
+6. **SUCCESS defined** - 1-3 measures in table format (Base | Target | Means of Verification | Prerequisite)?
+7. **VERIFICATION FEASIBILITY CHECK applied** - For EVERY means of verification: Prerequisite column filled with `✅ exists` OR `⚠️ [missing] → **Deliverable #N**`? If building the verification capability is impractical, removed the success measure entirely (no unmeasurable measures)?
 8. **SUCCESS MEASURES track GOAL** - Measuring outcomes (goal), not outputs (deliverables)?
 9. **Unmeasurable claims challenged** - Used generative mode to suggest alternatives? Refused to proceed if can't measure?
 10. **Unmapped claims check** - No unmapped claims in GOAL (each maps to success measure) AND no unmapped claims in OBJECTIVE (each maps to deliverable)?
