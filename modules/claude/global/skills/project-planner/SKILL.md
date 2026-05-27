@@ -163,6 +163,67 @@ The plan framework sections are the **spine** of your document. Protect their in
 
 5. **Edits modify sections in place.** When updating the plan, edit the relevant framework section. Don't add a new "Updated Goal" section — edit the existing Goal. The final plan document in the scratchpad is the artifact.
 
+## Prose Style Spec
+
+> Karl said: *"We need project-planner's plans to be more simplistically written like this... just the wording I mean. The format we have for project planner is fine... I'm just talking about the wording and the eli5 narrative."*
+
+**Every word you write in a plan section should be readable by a smart person who has never heard of LogFrame.** No framework vocabulary in the prose. Explain what things mean in plain, everyday language. Write like you are explaining it to a curious colleague over coffee, not presenting a business case to an auditor.
+
+### Six Style Patterns — Applied Selectively Per Section
+
+The "Where to Apply the Style" table below is the governing authority for which patterns apply to each section. Not every pattern applies everywhere — use the table to determine which patterns belong in the section you are writing.
+
+**Pattern 1 — Nested "why behind the why" framing.**
+Lead with the big-picture goal in plain business or customer terms. Then narrow to the project goal. Then the deliverables. Each level explicitly ties up to the level above — the reader never has to infer the connection.
+
+*Example structure:* "We exist to ship product reliably [big picture]. That requires engineers who aren't stuck fighting the tools [project goal]. So we're going to fix the test infrastructure [deliverables]."
+
+**Pattern 2 — Plain language, zero jargon.**
+This ban applies to the output prose written for the human reader — not to the skill's own internal instruction text and not to the planner's working methodology (e.g. the existing "Recall the LogFrame causal chain" blockquote in the GOAL section instructions stays; the planner still reasons with LogFrame concepts internally). Section headings (GOAL, OBJECTIVE, SUCCESS MEASURES, DELIVERABLES, ASSUMPTIONS, CAUSAL RELATIONSHIP CHECK) remain exactly as-is and are not covered by this ban — the ban applies only to framework vocabulary in the explanatory and narrative prose written inside each section.
+
+In that output prose: never say "Success Measure 1", "the objective", "the causal chain", "LogFrame", or any similar framework term. Say what things mean: "what we're measuring", "the change we want to cause", "how these pieces connect". If you must use a technical term (e.g., "CI/CD"), define it in the same sentence the first time it appears: "CI/CD (the automated system that runs tests when code is committed)".
+
+**Pattern 3 — Use analogies for abstract concepts.**
+When describing a concept that's hard to visualize, reach for an analogy. Make the abstract concrete.
+
+*Exemplar that landed:* "Acceptance tests are smoke alarms for critical user flows — they don't prevent all fires, but they catch the ones that burn the house down. Skipping them is like taking the batteries out because the alarms are annoying to install."
+
+Use an analogy when a section introduces an abstract or technical concept a non-specialist reader would not immediately grasp. Analogies are discretionary — reach for one when it genuinely clarifies, not as a default for every section.
+
+**Pattern 4 — Sharpen the goal by stating what it is NOT.**
+After stating what the goal is, add one sentence about what it is not. This removes ambiguity about scope and helps the reader understand what success looks like.
+
+*Exemplar that landed:* "The goal is not 'write all the missing tests' — it's 'make writing them easy enough that engineers stop avoiding it'."
+
+Use this pattern in the Goal and Objective sections.
+
+**Pattern 5 — Frame each deliverable as the one pain it removes.**
+Every deliverable entry in the plan gets a one-line ELI5 restatement: what problem does this thing solve for the person doing the work? Optionally, frame the pain as a user-voice quote — a complaint you'd actually hear in a standup or Slack message.
+
+*Mapping pattern:*
+- **Deliverable →** Fast Local Test Execution System
+- **Pain it removes →** Developers spending 45 minutes waiting for tests to come back
+- **One-line ELI5 →** "This is the thing that means you don't go get coffee and forget what you were doing."
+- **Optional user-voice quote →** *"I just want to run the tests and get back to work"*
+
+**Pattern 6 — End with a one-sentence causal chain.**
+The last sentence of every plan's Causal Relationship Check should be a single plain-English sentence connecting root cause → what the project does → the outcome. No diagram language. No acronyms.
+
+*Example:* "Because developers were spending most of their focus time waiting for tests instead of writing code, we built a faster test system — and now they ship features instead of watching spinners."
+
+---
+
+### Where to Apply the Style
+
+| Section | Which patterns to use |
+|---------|----------------------|
+| **Goal** | Patterns 1, 2, 3 (if needed), 4 |
+| **Objective** | Patterns 1, 2, 4 |
+| **Success Measures** | Pattern 2 (no jargon in prose around the table) |
+| **Assumptions** | Pattern 2 |
+| **Deliverables** | Patterns 2, 5 — every deliverable entry gets the pain-removal framing |
+| **Causal Relationship Check** | Patterns 2, 3 (if needed), 6 |
+
 ## The Planning Framework
 
 ### BACKGROUND AND CONTEXT - Why Are We Doing This?
@@ -230,6 +291,8 @@ Keep the two separate. Background explains what's happening and why it matters n
 
 **Test:** Would a fifth-grader understand this? Can you say it at dinner?
 
+**Prose style (see § Prose Style Spec):** Use Pattern 1 — lead with the big-picture business goal, then tie it to this project's contribution. Use Pattern 4 — add one sentence stating what the goal is NOT, to sharpen the scope. Avoid all framework vocabulary: say "what we're trying to achieve" not "the goal statement".
+
 **Example:**
 "**Maze's engineering org delivers on quarterly product OKRs without infrastructure-related bottlenecks.**"
 
@@ -261,6 +324,8 @@ The OBJECTIVE describes the change in the environment that comes to fruition whe
 The causal claim is: DELIVERABLES + ASSUMPTIONS → OBJECTIVE → GOAL. If we produce all deliverables and the assumptions hold, the environmental change (objective) occurs. That change contributes — alongside other projects over the longer horizon — to the strategic goal. The objective may not fully achieve the goal on its own — the goal is broader and longer-horizon than a single project.
 
 **Format:** 1-2 sentences, always starting with "By [date],...".
+
+**Prose style (see § Prose Style Spec):** Use Pattern 1 — after the objective statement, add one sentence tying it up to the goal above. Use Pattern 4 — add one sentence stating what the objective is NOT, so the reader knows what's out of scope. Plain language only: no "environmental change" or "causal chain" in the prose.
 
 **Requirements:**
 - **Time-bound** — includes explicit project end date ("By Q3 2026...", "By December 15, 2026..."). The project end date lives in the objective statement.
@@ -539,6 +604,15 @@ Before defining a custom deliverable, check each of the following in order:
 
 Only after confirming none of the above work should a custom deliverable be defined. This is the "boring over novel, existing over custom" principle. Custom solutions add maintenance burden, onboarding cost, and long-term risk — they must be justified by the absence of workable alternatives, not by preference.
 
+**Prose style (see § Prose Style Spec):** Use Pattern 5 — every deliverable entry gets one plain-English line framing it as the pain it removes. Format: *"[Deliverable name] — [one-line ELI5: what problem this solves for the person doing the work]"*. Optionally include a user-voice quote (a complaint you'd actually hear in a standup). Place the ELI5 line immediately after the deliverable name, before the acceptance criteria.
+
+*Example:*
+```
+1. **Fast Local Test Execution System** — So developers don't spend 45 minutes waiting to find out if their code works.
+   - Run full test suite in <5 minutes locally
+   ...
+```
+
 **Format:**
 ```
 1. **Deliverable Name**
@@ -757,6 +831,10 @@ After the first link-by-link validation passes (all links marked ✓), re-run wi
 - Explicit requests to revisit the causal chain after a necessity check passes
 
 When any of these signals appear, re-run the link-by-link validation applying the mandatory second-pass framing: "For each link, what does this assume that isn't verified? What could silently fail?" See also: Minimum Viable Project § Detection signal — MVP re-run signals may appear alongside causal re-run signals; if both signal types appear together, run BOTH re-runs.
+
+**Prose style (see § Prose Style Spec):** Use Pattern 6 — after the link-by-link validation, write one plain-English sentence connecting root cause → what this project does → the outcome. No diagram language, no acronyms, no framework terms. This is the sentence a non-engineer should be able to read and immediately understand why the project exists.
+
+*Example:* "Because developers were spending most of their focus time waiting for tests instead of writing code, we built a faster test system — and now they ship features instead of watching spinners."
 
 **Step 3 — Confidence Assessment.**
 
