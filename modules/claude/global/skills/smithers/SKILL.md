@@ -40,18 +40,18 @@ Most state lives in conversation history. Track these values mentally across ite
 **`clean_confirmed` — durable flag file (NOT in-memory):** This flag MUST survive the ScheduleWakeup gap, which spawns a fresh agent context where in-memory variables do not persist. It is stored as a file:
 
 - **File path:** `.smithers/clean_confirmed` (relative to the git repo root)
-- **Set:** `touch .smithers/clean_confirmed` (first no-work invocation, Step 7)
-- **Test:** `test -f .smithers/clean_confirmed` (subsequent invocations, Step 7)
-- **Clear:** `rm -f .smithers/clean_confirmed` (after Step 7a completes OR on any abort/error in Step 7a)
-- **Init:** On first invocation, if the file does not exist, treat as false. Do not create `.smithers/` — it is guaranteed to exist in the PR's working directory.
+- **Set:** `touch "$(git rev-parse --show-toplevel)/.smithers/clean_confirmed"` (first no-work invocation, Step 7)
+- **Test:** `test -f "$(git rev-parse --show-toplevel)/.smithers/clean_confirmed"` (subsequent invocations, Step 7)
+- **Clear:** `rm -f "$(git rev-parse --show-toplevel)/.smithers/clean_confirmed"` (after Step 7a completes OR on any abort/error in Step 7a)
+- **Init:** On first invocation, if the file does not exist, treat as false. The `.smithers/` directory is auto-created by smithers on first need (see Step 7) if it does not exist — it is a state-only directory holding transient flag files, with no application code or tracked content. Smithers also auto-appends `.smithers/` to `.gitignore` on its first no-work invocation (the first time Step 7's file-NOT-exists branch runs) to prevent accidental commit of these flag files. If smithers has work to do on cycle 1, the gitignore append happens on the first subsequent no-work cycle instead.
 
 On first invocation all counters are at their initial values. On ScheduleWakeup continuations, recall counter values from the conversation context and test the `clean_confirmed` flag file.
 
 **`slack_posted` — durable flag file (NOT in-memory):** This flag prevents duplicate Slack notifications when smithers runs multiple cycles on the same clean PR (e.g., user re-invokes the watcher on a PR that was already posted to Slack). It is stored as a file:
 
 - **File path:** `.smithers/slack_posted` (relative to the git repo root)
-- **Set:** `touch .smithers/slack_posted` (after `smithers-post` returns successfully, in Step 7a)
-- **Test:** `test -f .smithers/slack_posted` (before invoking `smithers-post` in Step 7a)
+- **Set:** `touch "$(git rev-parse --show-toplevel)/.smithers/slack_posted"` (after `smithers-post` returns successfully, in Step 7a)
+- **Test:** `test -f "$(git rev-parse --show-toplevel)/.smithers/slack_posted"` (before invoking `smithers-post` in Step 7a)
 - **Clear:** Not cleared by smithers — persists across watcher runs. The user clears it manually if a re-post is desired.
 
 ## LOOP BODY
@@ -144,14 +144,19 @@ Otherwise, if `no_actionable_work` is true (all checks still pending, no bot com
 
 If `NOT work_needed`:
 
-- **If `.smithers/clean_confirmed` file exists (`test -f .smithers/clean_confirmed`):** push any unpushed commits (`git log @{u}.. --oneline`; if non-empty, run `git push`; on push failure: log the error and **stop** with no ScheduleWakeup). Then proceed to **Step 7a: Handle PR ready**.
+- **If `.smithers/clean_confirmed` file exists (`test -f "$(git rev-parse --show-toplevel)/.smithers/clean_confirmed"`):** push any unpushed commits (`git log @{u}.. --oneline`; if non-empty, run `git push`; on push failure: log the error and **stop** with no ScheduleWakeup). Then proceed to **Step 7a: Handle PR ready**.
 - **If `.smithers/clean_confirmed` file does NOT exist:**
-  1. Run `touch .smithers/clean_confirmed` to persist the flag across the ScheduleWakeup gap.
+  1. Ensure the `.smithers/` state directory exists and is gitignored, then set the flag:
+     - Run `mkdir -p "$(git rev-parse --show-toplevel)/.smithers"` (no-op if the directory already exists). The directory holds only transient flag files for cross-wakeup state; nothing tracked or application-relevant lives there.
+     - Run `grep -qxF '.smithers/' "$(git rev-parse --show-toplevel)/.gitignore" 2>/dev/null || echo '.smithers/' >> "$(git rev-parse --show-toplevel)/.gitignore"` to ensure `.smithers/` is gitignored. This is idempotent — appends only if the entry is not already present, and creates `.gitignore` if it does not exist. (Note: `grep` is intentional here, not `rg`. Smithers runs inside the user's arbitrary git repo, where `rg` is not guaranteed to be installed. `grep` is POSIX-portable. This is a deliberate exception to the project's `rg`-over-`grep` preference and must NOT be "fixed" to `rg`.)
+     - Run `touch "$(git rev-parse --show-toplevel)/.smithers/clean_confirmed"` to persist the flag across the ScheduleWakeup gap.
   2. Log `"Cycle <N>: no work detected — scheduling wakeup in 60s to re-verify (checking for cascade workflows)"`.
   3. ScheduleWakeup with `delaySeconds: 60`, `reason: "No work detected — re-polling after 60s to confirm PR is clean before proceeding to merge"`, and `prompt: "Continue /smithers <PR_URL>"`.
   4. **Stop** (one iteration per invocation — the next invocation re-runs Steps 1–5 with fresh data; if still no work, the flag file exists and Step 7a runs).
 
 #### Step 7a: Handle PR ready
+
+**Directory dependency.** Step 7a writes to `$(git rev-parse --show-toplevel)/.smithers/slack_posted` and reads/clears `$(git rev-parse --show-toplevel)/.smithers/clean_confirmed`. The `.smithers/` directory is guaranteed to exist at this point because the file-exists branch in Step 7 is only reachable after a prior cycle's file-NOT-exists branch ran `mkdir -p "$(git rev-parse --show-toplevel)/.smithers"`. Do NOT add a separate mkdir in Step 7a — the directory is already there.
 
 **CRITICAL — State re-check (FIRST action):** Before any other action, re-verify the PR is still OPEN:
 
@@ -159,7 +164,7 @@ If `NOT work_needed`:
 gh pr view <PR> --json state --jq '.state'
 ```
 
-If the result is anything other than `"OPEN"` (i.e., `"MERGED"` or `"CLOSED"`): run `rm -f .smithers/clean_confirmed` to clear the flag, send a macOS notification:
+If the result is anything other than `"OPEN"` (i.e., `"MERGED"` or `"CLOSED"`): run `rm -f "$(git rev-parse --show-toplevel)/.smithers/clean_confirmed"` to clear the flag, send a macOS notification:
 ```
 osascript -e 'display notification "PR <N> is <state> — smithers stopping" with title "Smithers"'
 ```
@@ -195,12 +200,12 @@ The PR is currently mergeable if ALL of the following hold:
 ```
 gh pr merge --squash <PR>
 ```
-On non-zero exit: log the error, run `rm -f .smithers/clean_confirmed`, and proceed to verification.
+On non-zero exit: log the error, run `rm -f "$(git rev-parse --show-toplevel)/.smithers/clean_confirmed"`, and proceed to verification.
 
 **If NOT currently mergeable** (any condition above is not met): the PR is clean (no failed checks, no conflicts, no actionable bot comments) but cannot be merged yet — typically because review is required. Notify reviewers via Slack, then stop.
 
-1. If `.smithers/slack_posted` does NOT exist: run `smithers-post <PR_NUMBER_OR_URL>`. If it returns 0, run `touch .smithers/slack_posted` to record the post. If `smithers-post` exits non-zero, log `"Warning: smithers-post failed (exit <code>) — Slack notification not delivered; flag not set so a retry on manual re-invocation will attempt again"` and do NOT touch the flag. When delivery succeeds, this signals reviewers that the PR is clean and ready for review.
-2. Run `rm -f .smithers/clean_confirmed`.
+1. If `.smithers/slack_posted` does NOT exist: run `smithers-post <PR_NUMBER_OR_URL>`. If it returns 0, run `touch "$(git rev-parse --show-toplevel)/.smithers/slack_posted"` to record the post. If `smithers-post` exits non-zero, log `"Warning: smithers-post failed (exit <code>) — Slack notification not delivered; flag not set so a retry on manual re-invocation will attempt again"` and do NOT touch the flag. When delivery succeeds, this signals reviewers that the PR is clean and ready for review.
+2. Run `rm -f "$(git rev-parse --show-toplevel)/.smithers/clean_confirmed"`.
 3. Log `"Cycle <N>: PR not currently mergeable (reviewDecision=<value> mergeStateStatus=<value>) — posted to Slack, smithers done"` (or `"... — already posted to Slack, smithers done"` if the slack_posted flag already existed).
 4. **Stop** (no ScheduleWakeup). NEVER arm `autoMergeRequest` as a forward-looking action. The PR is not ready to merge; the human-gated approval workflow takes over from here.
 
@@ -237,13 +242,13 @@ If `.smithers/slack_posted` does NOT exist, post via:
 smithers-post <PR_NUMBER_OR_URL>
 ```
 
-If `smithers-post` returns 0: run `touch .smithers/slack_posted` to record that the post has been made. If `smithers-post` exits non-zero, log `"Warning: smithers-post failed (exit <code>) — Slack notification not delivered; flag not set so a retry on manual re-invocation will attempt again"` and do NOT touch the flag.
+If `smithers-post` returns 0: run `touch "$(git rev-parse --show-toplevel)/.smithers/slack_posted"` to record that the post has been made. If `smithers-post` exits non-zero, log `"Warning: smithers-post failed (exit <code>) — Slack notification not delivered; flag not set so a retry on manual re-invocation will attempt again"` and do NOT touch the flag.
 
 `smithers-post` reads `SMITHERS_SLACK_WEBHOOK_URL` from the environment internally, constructs the Block Kit payload, and POSTs to the webhook. If `SMITHERS_SLACK_WEBHOOK_URL` is not set, `smithers-post` handles that silently.
 
 If `.smithers/slack_posted` already exists, skip the `smithers-post` call (already posted on an earlier cycle).
 
-After posting (or skipping): run `rm -f .smithers/clean_confirmed` to clear the flag, then **stop** (no ScheduleWakeup). The PR is clean and handled.
+After posting (or skipping): run `rm -f "$(git rev-parse --show-toplevel)/.smithers/clean_confirmed"` to clear the flag, then **stop** (no ScheduleWakeup). The PR is clean and handled.
 
 ---
 
@@ -493,3 +498,4 @@ Smithers posts to Slack only at Step 7a (PR ready). No Slack notification is sen
 - Most state is in the conversation context. Two exceptions are `clean_confirmed` and `slack_posted`, which use flag files (`.smithers/clean_confirmed`, `.smithers/slack_posted`) because they must survive the ScheduleWakeup gap and — in the case of `slack_posted` — also survive watcher restarts.
 - If this session is killed and restarted, the loop restarts from cycle 1 with a fresh `fix_count` and `stagnation_count`. The `clean_confirmed` flag file persists across restarts — if it exists when smithers restarts, smithers will proceed directly to Step 7a on the next no-work cycle. This is intentional and correct behavior.
 - The smithers-post Slack notification (Step 7a) deduplicates across sessions via the `.smithers/slack_posted` flag. If the watcher restarts on a PR that already has the flag set, smithers will skip the Slack post. To re-post (e.g., after a status change such as REVIEW_REQUIRED → APPROVED → MERGED that warrants re-notifying reviewers), the user manually removes `.smithers/slack_posted`.
+- On smithers' first no-work cycle, smithers appends `.smithers/` to the repo root `.gitignore` (idempotently — skipping if the entry is already present). This is a small mutation of the host repo's `.gitignore` file but prevents transient flag files from being accidentally committed. The mutation is bounded to a single line; smithers will not append again on subsequent cycles. If the user manages `.gitignore` via a generator or template, they may prefer to add `.smithers/` themselves up front.
