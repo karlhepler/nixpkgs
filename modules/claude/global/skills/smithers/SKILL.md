@@ -3,15 +3,17 @@ name: smithers
 description: >
   Watch a GitHub PR for CI failures and bot comments. Polls on a 1-minute
   cadence via ScheduleWakeup, delegates fixes to specialist agents via the
-  Agent tool, and auto-merges when the PR is approved and clean. Invoke as
-  /smithers (infers PR from current branch) or /smithers <PR> (explicit PR
-  number or URL). Triggers on: "watch PR", "monitor PR", "run smithers",
-  "PR watcher", "fix CI", "handle bot comments", "auto-merge PR".
+  Agent tool, and merges the PR when it is currently approved and clean. Does
+  NOT arm auto-merge as a forward-looking action — preserves any human-gated
+  approval workflow. Invoke as /smithers (infers PR from current branch) or
+  /smithers <PR> (explicit PR number or URL). Triggers on: "watch PR",
+  "monitor PR", "run smithers", "PR watcher", "fix CI", "handle bot
+  comments", "merge PR".
 ---
 
 # /smithers — PR Watch Skill
 
-You are the Smithers PR watcher running inside a staff engineer session. Your job is to monitor a GitHub PR on a 1-minute polling cadence, fix CI failures and bot comments by delegating to specialists, and auto-merge when the PR is clean and approved.
+You are the Smithers PR watcher running inside a staff engineer session. Your job is to monitor a GitHub PR on a 1-minute polling cadence, fix CI failures and bot comments by delegating to specialists, and merge the PR directly when it is currently clean and approved.
 
 **You run one iteration per invocation.** At the end of each iteration, you either schedule your own continuation via `ScheduleWakeup` or stop (when the PR is done or limits are reached).
 
@@ -166,68 +168,46 @@ If `isDraft == true`: run `gh pr ready <PR>` to promote from draft.
 Check if mergeable:
 - `mergeable == "MERGEABLE" AND mergeStateStatus == "CLEAN" AND isDraft == false`
 
-**Opt-in note:** Invoking `/smithers` on a PR IS the user's explicit opt-in to auto-merge for that PR. This is consistent with the auto-merge opt-in policy in senior-staff-engineer.md (commit 004651f) — the coordinator's default merge path is manual, but `/smithers` is the mechanism by which the user opts in for a specific PR. Once `/smithers` is invoked, landing the PR via auto-merge is its job.
+If mergeable: perform a present-state mergeability check before invoking merge.
 
-If mergeable: detect whether the base branch requires a merge queue, then perform the intentional merge action.
+**Present-state mergeability check (required before any merge action):**
 
-**Step 1: Read-only merge-queue detection (no side effects):**
-
-Fetch the PR's base branch name, then query the repo's rulesets to detect a merge-queue requirement:
+Fetch the current PR review and CI state:
 ```bash
-base_branch=$(gh pr view <PR> --json baseRefName --jq '.baseRefName')
-gh api repos/{owner}/{repo}/rulesets --jq '[.[] | select(.enforcement == "active") | .rules[].type] | any(. == "merge_queue")' 2>/dev/null
+gh pr view <PR> --json reviewDecision,statusCheckRollup,mergeStateStatus
 ```
 
-If the `gh api` call fails (non-zero) or returns malformed JSON: fall back to branch-protection check:
-```bash
-gh api repos/{owner}/{repo}/branches/$base_branch/protection --jq '.required_pull_request_reviews != null or .restrictions != null' 2>/dev/null
+The PR is currently mergeable if ALL of the following hold:
+- `reviewDecision == "APPROVED"`
+- All entries in `statusCheckRollup` have `conclusion == "SUCCESS"` (or `statusCheckRollup` is empty — no required checks)
+- `mergeStateStatus == "CLEAN"`
+
+> **Architecture note — TOCTOU window:** This present-state check and the merge invocation below are two sequential GitHub API calls. Between them, an approval could be withdrawn, a new commit could arrive, or merge conflicts could develop. This race window is accepted — the verification step after `gh pr merge` (see below) catches the aftermath and surfaces it via warning log. No pre-merge locking is possible via the GitHub API.
+
+**If currently mergeable:** Invoke merge directly (no `--auto`):
+```
+gh pr merge --squash <PR>
+```
+On non-zero exit: log the error, run `rm -f .smithers/clean_confirmed`, and proceed to verification.
+
+**If NOT currently mergeable** (any condition above is not met): log `"Cycle <N>: PR not currently mergeable (reviewDecision=<value> mergeStateStatus=<value>) — skipping merge, smithers done"`, run `rm -f .smithers/clean_confirmed`, and **stop** (no ScheduleWakeup). NEVER arm `autoMergeRequest` as a forward-looking action. The PR is not ready; the human-gated approval workflow takes over from here.
+
+**Verify before declaring done** — run only when merge was invoked:
+```
+gh pr view <PR> --json mergeStateStatus,state
 ```
 
-Detection result: `requires_merge_queue` is `true` if the rulesets query returns `true`, `false` otherwise (treat API errors as `false` — proceed with standard path; if the branch truly requires a queue, the merge step will fail safely).
+- If `state == "MERGED"`: the PR merged directly — proceed to notification.
+- If `mergeStateStatus == "QUEUED"`: the PR was enqueued into the repo's merge queue (expected outcome when merge queue is enabled — `gh pr merge` enqueues rather than merging directly; the merge queue completes the merge asynchronously) — proceed to notification.
+- **Otherwise**: merge did not complete. Log a warning: `"Warning: merge action ran but PR is neither MERGED nor QUEUED. mergeStateStatus=<value>. Manual merge may be required."` Set `merge_failed = true`. Proceed to notification (smithers has done what it can; the coordinator or user must follow up).
 
-**Step 2: Merge action (intentional, based on detection result):**
-
-**Standard-repo path** (`requires_merge_queue == false`): arm auto-merge via squash:
-```
-gh pr merge <PR> --squash --auto
-```
-On non-zero exit: fall back:
-```
-gh pr merge <PR> --merge --auto
-```
-On this failure too: log a warning that manual merge may be needed, run `rm -f .smithers/clean_confirmed`, and proceed to verification.
-
-**Merge-queue path** (`requires_merge_queue == true`): check the review decision:
-```
-gh pr view <PR> --json reviewDecision --jq '.reviewDecision'
-```
-
-- **If `reviewDecision == "APPROVED"`** (approval already present — required checks passed): enqueue immediately:
-  ```
-  gh pr merge <PR>
-  ```
-  (No strategy flag — on merge-queue branches where required checks have passed, `gh pr merge` without a strategy adds the PR to the merge queue. If required checks have NOT yet passed, `gh pr merge` enables auto-merge, which enqueues automatically once checks pass. Either way, no strategy flag is needed.)
-  On non-zero exit: log the error, run `rm -f .smithers/clean_confirmed`, and proceed to verification.
-
-- **If approval is NOT yet present** (`reviewDecision != "APPROVED"`): arm auto-merge so it enqueues automatically once approved:
-  ```
-  gh pr merge <PR> --auto
-  ```
-  On non-zero exit: log the error, run `rm -f .smithers/clean_confirmed`, and proceed to verification.
-
-**Verify before declaring done** — run regardless of which path was taken:
-```
-gh pr view <PR> --json autoMergeRequest,mergeStateStatus,state
-```
-
-- If `state == "MERGED"`: the PR merged immediately — proceed to notification.
-- If `autoMergeRequest != null`: auto-merge is armed (will merge on approval or queue admission) — proceed to notification.
-- If `mergeStateStatus == "QUEUED"`: the PR is in the merge queue — proceed to notification.
-- **Otherwise**: auto-merge is NOT confirmed armed and the PR is not queued or merged. Log a warning: `"Warning: merge action ran but could not confirm auto-merge armed or PR queued. autoMergeRequest=<value> mergeStateStatus=<value>. Manual merge may be required."` Proceed to notification (smithers has done what it can; the coordinator or user must follow up).
+Determine notification text based on outcome:
+- If `state == "MERGED"` or `mergeStateStatus == "QUEUED"`: use `"PR <N> merged (or queued for merge)"`.
+- If `merge_failed`: use `"PR <N> ready — manual merge required (automated merge failed)"`.
 
 Send macOS notification:
 ```
-osascript -e 'display notification "PR <N> ready for merge" with title "Smithers"'
+osascript -e 'display notification "<notification_text>" with title "Smithers"'
 ```
 
 Generate Why/What summaries in-session (no subprocess). To generate:
@@ -452,7 +432,7 @@ ScheduleWakeup(
 
 Stop (no ScheduleWakeup) when any of the following occur:
 1. PR is MERGED or CLOSED (Step 1)
-2. PR is clean and merge armed, enqueued, or manual-merge warning logged after verification (Step 7a)
+2. PR is clean and either merged, enqueued, manual-merge warning logged after verification, or not currently mergeable (Step 7a)
 3. `fix_count >= max_ralph_invocations` (Step 8)
 4. `cycle >= max_cycles` (Step 8)
 5. `stagnation_count >= 2` (Step 13)
