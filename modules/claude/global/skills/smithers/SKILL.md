@@ -47,6 +47,13 @@ Most state lives in conversation history. Track these values mentally across ite
 
 On first invocation all counters are at their initial values. On ScheduleWakeup continuations, recall counter values from the conversation context and test the `clean_confirmed` flag file.
 
+**`slack_posted` — durable flag file (NOT in-memory):** This flag prevents duplicate Slack notifications when smithers runs multiple cycles on the same clean PR (e.g., user re-invokes the watcher on a PR that was already posted to Slack). It is stored as a file:
+
+- **File path:** `.smithers/slack_posted` (relative to the git repo root)
+- **Set:** `touch .smithers/slack_posted` (after `smithers-post` returns successfully, in Step 7a)
+- **Test:** `test -f .smithers/slack_posted` (before invoking `smithers-post` in Step 7a)
+- **Clear:** Not cleared by smithers — persists across watcher runs. The user clears it manually if a re-post is desired.
+
 ## LOOP BODY
 
 Each iteration executes steps 1–15 in order. Any step may terminate early by scheduling a wakeup or stopping without scheduling.
@@ -190,7 +197,12 @@ gh pr merge --squash <PR>
 ```
 On non-zero exit: log the error, run `rm -f .smithers/clean_confirmed`, and proceed to verification.
 
-**If NOT currently mergeable** (any condition above is not met): log `"Cycle <N>: PR not currently mergeable (reviewDecision=<value> mergeStateStatus=<value>) — skipping merge, smithers done"`, run `rm -f .smithers/clean_confirmed`, and **stop** (no ScheduleWakeup). NEVER arm `autoMergeRequest` as a forward-looking action. The PR is not ready; the human-gated approval workflow takes over from here.
+**If NOT currently mergeable** (any condition above is not met): the PR is clean (no failed checks, no conflicts, no actionable bot comments) but cannot be merged yet — typically because review is required. Notify reviewers via Slack, then stop.
+
+1. If `.smithers/slack_posted` does NOT exist: run `smithers-post <PR_NUMBER_OR_URL>`. If it returns 0, run `touch .smithers/slack_posted` to record the post. If `smithers-post` exits non-zero, log `"Warning: smithers-post failed (exit <code>) — Slack notification not delivered; flag not set so a retry on manual re-invocation will attempt again"` and do NOT touch the flag. When delivery succeeds, this signals reviewers that the PR is clean and ready for review.
+2. Run `rm -f .smithers/clean_confirmed`.
+3. Log `"Cycle <N>: PR not currently mergeable (reviewDecision=<value> mergeStateStatus=<value>) — posted to Slack, smithers done"` (or `"... — already posted to Slack, smithers done"` if the slack_posted flag already existed).
+4. **Stop** (no ScheduleWakeup). NEVER arm `autoMergeRequest` as a forward-looking action. The PR is not ready to merge; the human-gated approval workflow takes over from here.
 
 **Verify before declaring done** — run only when merge was invoked:
 ```
@@ -219,15 +231,19 @@ Generate Why/What summaries in-session (no subprocess). To generate:
 
 Then post to Slack using the `smithers-post` CLI (see § Slack Posting below).
 
-If the PR is still OPEN, post via:
+If `.smithers/slack_posted` does NOT exist, post via:
 
 ```bash
 smithers-post <PR_NUMBER_OR_URL>
 ```
 
+If `smithers-post` returns 0: run `touch .smithers/slack_posted` to record that the post has been made. If `smithers-post` exits non-zero, log `"Warning: smithers-post failed (exit <code>) — Slack notification not delivered; flag not set so a retry on manual re-invocation will attempt again"` and do NOT touch the flag.
+
 `smithers-post` reads `SMITHERS_SLACK_WEBHOOK_URL` from the environment internally, constructs the Block Kit payload, and POSTs to the webhook. If `SMITHERS_SLACK_WEBHOOK_URL` is not set, `smithers-post` handles that silently.
 
-After posting: run `rm -f .smithers/clean_confirmed` to clear the flag, then **stop** (no ScheduleWakeup). The PR is clean and handled.
+If `.smithers/slack_posted` already exists, skip the `smithers-post` call (already posted on an earlier cycle).
+
+After posting (or skipping): run `rm -f .smithers/clean_confirmed` to clear the flag, then **stop** (no ScheduleWakeup). The PR is clean and handled.
 
 ---
 
@@ -474,6 +490,6 @@ Smithers posts to Slack only at Step 7a (PR ready). No Slack notification is sen
 ## NOTES
 
 - The 1-minute ScheduleWakeup is the platform-minimum cadence; sufficient for typical CI pipelines.
-- Most state is in the conversation context. The one exception is `clean_confirmed`, which uses a flag file (`.smithers/clean_confirmed`) because it must survive the ScheduleWakeup gap.
+- Most state is in the conversation context. Two exceptions are `clean_confirmed` and `slack_posted`, which use flag files (`.smithers/clean_confirmed`, `.smithers/slack_posted`) because they must survive the ScheduleWakeup gap and — in the case of `slack_posted` — also survive watcher restarts.
 - If this session is killed and restarted, the loop restarts from cycle 1 with a fresh `fix_count` and `stagnation_count`. The `clean_confirmed` flag file persists across restarts — if it exists when smithers restarts, smithers will proceed directly to Step 7a on the next no-work cycle. This is intentional and correct behavior.
-- The smithers-post Slack notification (Step 7a) does not deduplicate across sessions. If the watcher restarts after having already posted, it may post again. This is acceptable — it is rare and harmless.
+- The smithers-post Slack notification (Step 7a) deduplicates across sessions via the `.smithers/slack_posted` flag. If the watcher restarts on a PR that already has the flag set, smithers will skip the Slack post. To re-post (e.g., after a status change such as REVIEW_REQUIRED → APPROVED → MERGED that warrants re-notifying reviewers), the user manually removes `.smithers/slack_posted`.
