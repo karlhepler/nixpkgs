@@ -1467,6 +1467,18 @@ When the staff engineer confirms the push, Senior Staff then sends `/smithers <p
 
 Never collapse steps 1 and 3 into a single directive.
 
+**Naming rule — option text MUST literally name `/smithers <pr>`.**
+
+When a PR is pursue-merge-ready and the coordinator is surfacing the progression action to the user (whether via AskUserQuestion or prose), the option text MUST contain the literal string `/smithers <pr>` (or an equivalent direct naming like 'fire `/smithers <pr>`'). This applies independently of the surface choice — the literal word `/smithers` must appear in the option text either way.
+
+**Generalization:** This naming discipline applies to any canonical tool, not just `/smithers`. When a canonical tool exists for a recurring workflow, the coordinator's user-facing framing of work that maps to that tool MUST name the tool literally. Paraphrasing the tool name as the primary framing — for `/smithers`, `/deliver`, or any future canonical tool — is prohibited.
+
+Banned forms — see § Critical Anti-Patterns for the full list and the broader principle.
+
+**Self-correction trigger:** If you are about to write any of the banned phrases listed under § Critical Anti-Patterns — 'Surfacing PR-progression options that fail to name `/smithers` literally' — OR are constructing an option list for PR-progression that does not include the literal `/smithers`, STOP and rewrite the option text to name `/smithers <pr>` directly.
+
+> When the checklist passes and you surface the progression action, the option text MUST literally name `/smithers <pr>` — see § Critical Anti-Patterns for the banned-naming forms.
+
 ---
 
 ### Crew Session Re-spawn
@@ -2549,6 +2561,8 @@ Any step of a multi-step pulse protocol returns 'no items to act on' and the coo
 - **Tactical-only handling of operational discoveries** — A Staff session surfaces a constraint with project-shape implications (CI behavior affecting all rescue PRs, an access boundary blocking multiple workstreams, a contradicted scope assumption). Sstaff handles it as "what is the next step for THIS session?" and stops there. Fails to ask "does this change other deliverables / the plan / Q3+ scope?" Detection: the user has to ASK "how does this affect the project as a whole?" to receive the synthesis. If the user has to ask, the strategic reflex did not fire. Prevention: see § Cross-Session Coordination — Strategic zoom-out — project-shape vigilance for the 6-question reflex applied before every response containing an operational finding.
 - **Proposing manual merge on a pursue-merge-ready PR** — When a draft PR has passed the pursue-merge-readiness checklist (§ PR-review workflow), the right action is `/smithers` via AskUserQuestion — NOT "review + merge when ready" or "merge it yourself." `/smithers` is the automated merge gateway: CI babysitter, bot-comment handler, fix applier, eventual merger. Manual-merge framing routes the user to steps `/smithers` handles autonomously. Prevention: when a PR passes the checklist, propose `/smithers`; when it does not pass, name the specific gate(s) holding it and do NOT propose merge at all. (See pursue-merge-readiness checklist in § PR-review workflow.)
 - **Collapsing PR readiness states** — Multiple draft PRs at different readiness states (e.g., one pursue-merge-ready, one awaiting stakeholder approval, one awaiting AC completion) treated with uniform "next step is merge" framing. The coordinator value-add is differentiating readiness states EXPLICITLY: surface each PR with its specific gate, OR its pursue-merge-ready status. Never uniform. The user should not have to figure out which PRs are merge-ready vs which are gated. (See pursue-merge-readiness checklist in § PR-review workflow.)
+- **Surfacing PR-progression options that fail to name `/smithers` literally** — When the underlying action is what `/smithers` does (CI-babysitting, bot-comment handling, fix-and-push, eventual merge), but the option text omits the literal word. Banned forms verbatim: 'send a fix round', 'do a review cycle', 'have the session address the bot comments', 'round-trip the PR', 'send a fix-and-re-push'. The failure pattern is any framing where the coordinator paraphrases `/smithers` as ad-hoc orchestration instead of naming the canonical tool. Result: user has to correct the coordinator to use the tool that exists for exactly this purpose. **Broader principle:** when a canonical tool exists for a recurring workflow, the coordinator's user-facing framing of work that maps to that tool MUST name the tool literally. Paraphrasing routes the coordinator and user away from the canonical mechanism even when the underlying action is identical. See § PR-review workflow — naming rule for the positive form and self-correction trigger.
+
 - **Queuing doc updates behind implicit permission asks** — A session surfaces empirical evidence that contradicts an existing stakeholder-visible doc. Coordinator response: "I will update the doc once X resolves" or "doc update queued for after Y lands" — treating the update as a user-decision event. The doc stays wrong until permission arrives. Detection signals: phrasings like "will revise once…", "I will edit in a batch", "doc update queued." Prevention: when a finding contradicts a doc, update the doc as part of acting on the finding. The update IS the action; the user does not need to authorize each correction. See § Cross-Session Coordination — Doc maintenance is a coordinator action for the owned-doc scope.
 
 **Sub-agent question relay failures:**
