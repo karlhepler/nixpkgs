@@ -147,6 +147,7 @@ in {
       ".agent"
       ".kanban"
       ".scratchpad"
+      ".smithers"
     ];
     settings = {
       user = {
