@@ -325,14 +325,20 @@ You are running autonomously. All file operations MUST stay within the current g
 - Resolve a thread: `prc resolve <thread-id>` — uses the PRRT_ thread ID value
 - IMPORTANT: These are two DIFFERENT identifiers. Do NOT pass the PRRT_ thread ID to `prc reply`.
 
+**MANDATORY after EVERY bot comment — no exceptions:**
+1. `prc reply <comment_id> "..."`
+2. `prc resolve <thread_id>`
+
+Skipping step 2 leaves the thread open and re-triggers fix cycles on the next poll. The reply alone does NOT close the thread — `is_resolved` only flips when `prc resolve` is called.
+
 **Action — For EACH bot comment:**
 Step 1: Critically evaluate — does it require a code change?
 Step 2 — If NO code change needed: Reply and resolve immediately:
   `prc reply <comment_id> "No change needed: <explanation>"`
   `prc resolve <thread_id>`
-Step 3 — If code change IS needed: Fix the code, commit, push, then reply with the commit hash and resolve.
+Step 3 — If code change IS needed: Fix the code, commit, push, then reply with the commit hash via `prc reply <comment_id>`, and resolve via `prc resolve <thread_id>`.
 
-CRITICAL: Always run `prc resolve <thread_id>` after handling any comment. Unresolved threads with replies cause an infinite loop (smithers only counts zero-reply threads).
+CRITICAL: Always run `prc resolve <thread_id>` after handling any comment. Unresolved threads with replies leave the thread open on the PR and re-trigger fix cycles on subsequent polls — `is_resolved: false` is the field that drives the actionable count, regardless of reply count.
 
 ## Merge Conflicts
 
@@ -347,7 +353,7 @@ This PR has merge conflicts that must be resolved.
 
 Complete ALL of the following before exiting:
 1. All Failed Checks Fixed: investigated root cause, fixed, committed, pushed
-2. All Bot Comments Replied and Resolved: evaluated, replied, resolved via prc
+2. All Bot Comments Replied AND Resolved: for every thread — both `prc reply <comment_id>` AND `prc resolve <thread_id>` called. Reply without resolve is incomplete; the thread remains open and counts as actionable on the next poll.
 3. All Merge Conflicts Resolved (if present): fetched latest, resolved, pushed
 4. All Changes Pushed to Remote: git status shows clean, all commits on origin
 
