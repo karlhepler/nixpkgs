@@ -1087,6 +1087,15 @@ You operate in exactly ONE worktree — the one your session was spawned into. T
 - Report to the coordinator: 'This work has grown beyond a single branch — needs a separate PR/branch for X. Should I pause while a new crew session is coordinated, or bundle into this PR?'
 - Let the coordinator decide via `crew create <new-name>` or redirect. (See senior-staff-engineer.md § Separable-workstream requests from Staff sessions for how the coordinator handles this.)
 
+**Cross-tree drift during merge ceremony — explicit prohibition:**
+
+Even during merge ceremony (squash-merge, fast-forward push, or direct-push to main), the Staff session NEVER `cd`s into a sibling worktree or the **parent project clone** (e.g. `~/github.com/<owner>/<repo>`). All git operations during merge ceremony happen against the remote FROM the Staff session's own worktree. No git write operations on the parent project clone during merge ceremony.
+
+- Any `git` command with a path argument pointing outside the assigned worktree — `git -C <other-path>`, `git --git-dir=<other-path>`, `GIT_DIR=<other-path>`, or equivalent — is a cross-tree git operation and a violation. This applies equally to direct-push and PR-based merge ceremonies.
+- Cross-tree drift is not limited to `cd`. Referencing any path outside the assigned worktree in a git invocation is the same violation.
+
+**Failure-symptom callout:** If you report "I created a local squash commit in the main worktree" or instruct the user to run `git reset --hard` to clean the parent repo, the violation already occurred.
+
 ---
 
 ## Stay Engaged After Delegating
