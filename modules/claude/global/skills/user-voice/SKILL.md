@@ -9,9 +9,9 @@ This skill is a voice profile template. Load it when drafting any user-facing co
 
 ## When to Load
 
-This skill defines three voice modes (three registers): DM/peer 1:1 (short paragraphs, polite-but-direct openers), Broadcast/channel-post (section headers, no greeting opener), and Non-technical peer / volunteer-org favor-ask (warm, humble, low-pressure; comma greeting `Hey [Name],`; `~ Karl` sign-off). Identify the audience type first; the modes are structurally different.
+This skill defines four voice modes (four registers): DM/peer 1:1 (short paragraphs, polite-but-direct openers), Broadcast/channel-post (section headers, no greeting opener), Non-technical peer / volunteer-org favor-ask — known collaborator (warm, humble, low-pressure; comma greeting `Hey [Name],`; `~ Karl` sign-off), and Cold outreach to unknown organization / media outlet (warm, confident, grounded; NOT servile). Identify the audience type first; the modes are structurally different.
 
-Step 0 (before drafting): identify the audience type — DM (peer 1:1), broadcast (channel/team post), reply (in-thread continuation), cold outreach (work-peer), or favor ask (non-technical peer / volunteer-org collaborator). The structural template depends on audience type. See § Verbatim Examples for the DM vs broadcast distinction. Note: broadcast voice has sub-shapes (milestone-announcement, progress-update) — see § Broadcast / Channel Post Template for shape selection before looking up examples. Note: fresh outreach to a NON-technical peer or volunteer-org contact (e.g., a club president, nonprofit collaborator) uses the favor-ask register (comma greeting, `~ Karl` sign-off, warm/deferential) — NOT the work-peer dash/no-sign-off form used for engineering cold outreach.
+Step 0 (before drafting): identify the audience type — DM (peer 1:1), broadcast (channel/team post), reply (in-thread continuation), work-peer cold DM (fresh outreach to a known-org colleague you haven't messaged), unknown-organization cold outreach (publication, radio station, festival, or any recipient whose organization you don't have an established relationship with), or favor ask (non-technical peer / volunteer-org — known collaborator). The structural template depends on audience type. Work-peer cold DMs use the peer/DM template (`Hey -` dash opener, no sign-off). Unknown-organization cold outreach routes to the cold-outreach register (confident, warm, grounded, not servile) — a structurally distinct template; see § Audience-Specific Tone Calibration. See § Verbatim Examples for the DM vs broadcast distinction. Note: broadcast voice has sub-shapes (milestone-announcement, progress-update) — see § Broadcast / Channel Post Template for shape selection before looking up examples. Note: fresh outreach to a NON-technical peer or volunteer-org contact (e.g., a club president, nonprofit collaborator) uses the favor-ask register (comma greeting, `~ Karl` sign-off, warm/deferential) ONLY when that contact is a known collaborator. Cold outreach to an unknown-organization cold recipient (e.g., a bluegrass publication, radio station, festival) uses the cold-outreach register — see § Audience-Specific Tone Calibration.
 
 Load this skill whenever drafting:
 - Slack messages or thread replies
@@ -54,6 +54,16 @@ Underlying anti-patterns: hedging closers, context-free closings, passive exit s
 - `in case any of it's useful`
 - `leave it as fuel`
 - `I'll move on with whatever I'm doing in my project` (vague)
+
+**Cold outreach to unknown organization / media outlet only:**
+
+_(The shared list above also applies to cold outreach — entries below are cold-outreach-specific additions.)_
+
+- Stacked servile disclaimers — these read as AI filler and signal that the writer has no standing to make a request (which is false — a request is not an order regardless of who you're writing to): `'no pressure at all'`, `'no obligation at all'`, `'completely up to you'`, `'no worries either way'`, `'I'd be grateful'`
+- Grovel-thanks pattern: `'thanks so much for what you do for the [X] community'` — over-the-top flattery that reads as insincere. Do not grovel at the open of a cold outreach.
+- AI-tell meta-hedge: `'I don't want to assume, so I figured I'd ask directly rather than guessing'` — just ask the question. The meta-hedge signals self-consciousness and reads as AI.
+- Repeating the recipient's name after the greeting (e.g., "Thanks for your time, Darin" in the close — name appears in greeting only).
+- Timid undersell qualifiers (e.g., `'a pretty fun mix'`) — state distinctive value with grounded confidence instead.
 
 **Broadcast / channel-post only:**
 
@@ -117,13 +127,20 @@ Specific replacements and formulations the user reaches for:
 - `Curious what you think on [X]`
 - `Let me know what you think`
 
-**Non-technical peer / volunteer-org favor-ask phrasings:**
+**Non-technical peer / volunteer-org favor-ask phrasings (known collaborator):**
+
+_(These explicit-outs phrasings are favor-ask only — Hard Avoids for cold outreach (see § Hard Avoids → Cold outreach).)_
+
 - Value-first framing: lead with the concrete upside ("a shot at a $10k per month Google Ads grant"), then the honest caveat ("which would have to be approved after the verification process")
 - Explicit outs: "completely up to you," "if you still want to," "no pressure at all"
 - Jargon gloss: parenthetical plain-language explanation for non-technical readers (e.g., "Goodstack (Google's third party provider for the grants)")
 - Heavier hedging than work-peer default: "should be able to," "should hopefully be able to," "or something," "I think"
 - Transparent reasoning about failed attempts: "which is what I figured would happen, but figured it was worth trying anyway so you didn't have to get involved"
 - Humility close: "I'm sorry I couldn't do more" — acceptable here (opposite of work-peer no-deference rule)
+
+**Cold outreach to unknown organization / media outlet phrasings:**
+- Make the request plainly and stop — no stacked disclaimers, no apologies for asking.
+- State distinctive value with grounded confidence rather than timid qualifiers ("a pretty fun mix" → name what's actually distinctive and let it speak for itself).
 
 ---
 
@@ -174,7 +191,7 @@ Adjust framing and detail level based on recipient. These are real named stakeho
 - **Project channel broadcast (broader engineering audience):** Factual, evidence-led. Section-header structure (`Project Update` / `Up Next`). Soft invitational pointer to deeper evidence rather than pasting URLs. No `Hey` opener.
   - **Milestone announcement sub-shape:** Evidence-led with Before/After numbers. Use for single-merge-event posts announcing a completed fix or release.
   - **Progress update sub-shape:** Paragraph prose, inline `@`-mentions, no bullet lists, no LogFrame jargon, no PR numbers, hedged future-looking statements, feedback-invitation + emoji close. Use for mid-project multi-deliverable status summaries.
-- **Non-technical peer / volunteer-org collaborator (favor ask)** (e.g., Tim Corbett, Barboursville Bloodhounds president; festival/nonprofit context): Warm, humble, low-pressure. This is the OPPOSITE of the work-peer "no deference" default. Key markers:
+- **Non-technical peer / volunteer-org collaborator (favor ask — known collaborator)** (e.g., Tim Corbett, Barboursville Bloodhounds president; festival/nonprofit context): Warm, humble, low-pressure. This register is calibrated for a KNOWN collaborator — someone you have an established relationship with. It is NOT the right register for cold outreach to an unknown organization or media outlet (see Cold outreach subsection below). This is the OPPOSITE of the work-peer "no deference" default. Key markers:
   - Give the recipient explicit outs: "completely up to you," "if you still want to," "no pressure at all"
   - Soften or omit confidence — heavier hedging is appropriate here ("should be able to," "should hopefully," "or something," "I think")
   - Lead with the concrete upside before the mechanics (value-first framing), then add an honest caveat
@@ -183,6 +200,13 @@ Adjust framing and detail level based on recipient. These are real named stakeho
   - A light apology or humility close is acceptable here: "I'm sorry I couldn't do more" fits this register
   - Greeting: `Hey [Name],` with a COMMA (not the dash form — see § Greeting / Sign-Off Conventions)
   - Sign-off: `~ Karl` (tilde + first name)
+
+- **Cold outreach to an unknown organization / media outlet** (e.g., publicity emails to bluegrass publications, radio stations, press, festivals, associations — recipients who don't know you): Warm, confident, grounded — humble WITHOUT being servile. This is NOT the favor-ask register; the explicit-outs and humility-close calibrated for a known collaborator (e.g., Tim) produce servile AI-sounding copy when applied to cold outreach. Key markers:
+  - Use the recipient's name ONCE in the greeting only — never repeat it in the body or close (no "Thanks for your time, Darin").
+  - Lead strong: state distinctive value with grounded confidence; put the strongest / most-recognizable content first.
+  - Warm and genuine, but not deferential — write peer-to-peer, not supplicant-to-gatekeeper.
+  - Make the request plainly and stop. No stacked outs, no apologies for asking.
+  - Do NOT offer to route the recipient to a third party unprompted.
 
 ---
 
@@ -200,6 +224,7 @@ Adjust framing and detail level based on recipient. These are real named stakeho
 - **Work-peer Slack:** no sign-off (casual, peer-level)
 - **Non-technical peer / volunteer-org collaborator (favor ask):** `~ Karl` (tilde + first name) — applies to any medium (Slack, email) when the register is favor-ask
 - **Emails (work context):** close with first name only — note: the favor-ask `~ Karl` sign-off takes precedence when the medium is email but the register is non-work-peer / volunteer-org (favor ask)
+- **Cold outreach (email):** greeting `Hi [First],` (comma, no tilde); sign-off: first name only (no `~ Karl` tilde)
 
 _Update with user corrections._
 
@@ -222,7 +247,7 @@ Preferred terms and terms to avoid in this user's domain:
 
 Real messages Karl has written. Use these to calibrate voice — not for content, for pattern.
 
-> **Note:** This skill distinguishes three voice modes: **peer DM voice** (Tommy ping example below — short paragraphs, polite-but-direct opener), **broadcast voice** (Project Update example below — section headers, no greeting), and **favor-ask voice** (non-technical peer / volunteer-org collaborator — comma greeting, `~ Karl` sign-off, warm/humble/low-pressure). Before drafting, the coordinator MUST identify the audience type and apply the matching structural template.
+> **Note:** This skill distinguishes four voice modes: **peer DM voice** (Tommy ping example below — short paragraphs, polite-but-direct opener), **broadcast voice** (Project Update example below — section headers, no greeting), **favor-ask voice** (non-technical peer / volunteer-org — known collaborator — comma greeting, `~ Karl` sign-off, warm/humble/low-pressure), and **cold-outreach voice** (unknown organization/media outlet — confident, warm, grounded, not servile; see § Audience-Specific Tone Calibration). Before drafting, the coordinator MUST identify the audience type and apply the matching structural template.
 
 **Peer DM (Tommy ping — peer review request):**
 
@@ -442,10 +467,10 @@ This is a **living document** — the profile grows from real corrections, not f
 
 Before surfacing any user-facing draft, run a quick self-check:
 
-0. **Audience-type check** — was the right structural template applied for the audience type (DM vs broadcast vs favor-ask)? Identify which of the three registers applies: work-peer DM/cold outreach, broadcast, or non-technical-peer / volunteer-org favor-ask. If broadcast, verify section-header shape and no-greeting opener. If favor-ask, verify comma greeting and `~ Karl` sign-off.
+0. **Audience-type check** — was the right structural template applied for the audience type? Identify which of the four registers applies: work-peer DM/cold outreach, broadcast, non-technical-peer / volunteer-org favor-ask (known collaborator), or cold outreach to an unknown organization / media outlet. If broadcast, verify section-header shape and no-greeting opener. If favor-ask (known collaborator), verify comma greeting and `~ Karl` sign-off. If cold outreach to an unknown org/outlet, verify: confident and grounded tone (not servile), no stacked disclaimers, no grovel-thanks, no meta-hedge, name used in greeting only.
 1. **Hard-avoid scan** — does the draft contain any word/phrase from the Hard Avoids section? Rewrite those phrases. (Note: some Hard Avoids are mode-specific — e.g., `Hey -` is valid in work-peer DMs but forbidden in broadcast posts and favor-ask outreach. Apply avoids relative to the audience type identified in step 0.)
 2. **Length check** — is the draft proportional to the message type? (Slack: brief; email: structured; PR description: two paragraphs max.)
-3. **Sign-off check** — does the closing match the Greeting / Sign-Off conventions for this register? Route by register (see § Greeting / Sign-Off Conventions): work-peer Slack → no sign-off; favor-ask (any medium) → `~ Karl`; work-context email → first name only.
+3. **Sign-off check** — does the closing match the Greeting / Sign-Off conventions for this register? Route by register (see § Greeting / Sign-Off Conventions): work-peer Slack → no sign-off; favor-ask (any medium) → `~ Karl`; work-context email → first name only; cold outreach (any medium) → first name only (no `~ Karl` tilde).
 4. **Framing check** — is customer/user impact mentioned before technical rationale (where applicable)?
 5. **Domain vocabulary scan** — does the draft use any term from the Avoid column of the Domain-Specific Vocabulary table? Substitute with the Preferred column term.
 6. **Broadcast-mode check (if channel/broadcast post):** First, identify which broadcast shape applies (milestone-announcement vs progress-update). Then verify the shape-specific constraints for that shape.
