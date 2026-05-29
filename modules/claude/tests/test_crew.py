@@ -2821,7 +2821,7 @@ class TestCmdCreateMcpTrust:
                                 tell="Hello",
                             )
 
-        mock_sentinel.assert_called_once_with("test-worker")
+        mock_sentinel.assert_called_once_with("test-worker", mcp_trust="all")
 
 
 # ---------------------------------------------------------------------------
