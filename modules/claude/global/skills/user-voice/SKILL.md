@@ -43,7 +43,7 @@ Words, phrases, and idioms the user dislikes and never uses. Add entries over ti
 - `team` (use `folks` instead — see Preferred Phrasings)
 - `guys` (use `folks` instead — see Preferred Phrasings)
 - `Hey` as opener on thread continuations (only for fresh messages, not replies)
-- `genuinely` (overblown emphasis)
+- `genuine` / `genuinely` (overblown emphasis — AI register tell)
 - `that's deliberate` (defensive)
 - "Different angle than I said earlier" (use empathetic opener "That's what I thought at first" instead — see Preferred Phrasings)
 - "the proximate cause" / "the deeper realization:" (too formal for casual Slack — use "BUT..." + "So really," instead)
@@ -64,6 +64,7 @@ _(The shared list above also applies to cold outreach — entries below are cold
 - AI-tell meta-hedge: `'I don't want to assume, so I figured I'd ask directly rather than guessing'` — just ask the question. The meta-hedge signals self-consciousness and reads as AI.
 - Repeating the recipient's name after the greeting (e.g., "Thanks for your time, Darin" in the close — name appears in greeting only).
 - Timid undersell qualifiers (e.g., `'a pretty fun mix'`) — state distinctive value with grounded confidence instead.
+- `unusual` (negative connotation — prefer "unique" / "unlike anything else")
 
 **Broadcast / channel-post only:**
 
@@ -141,6 +142,7 @@ _(These explicit-outs phrasings are favor-ask only — Hard Avoids for cold outr
 **Cold outreach to unknown organization / media outlet phrasings:**
 - Make the request plainly and stop — no stacked disclaimers, no apologies for asking.
 - State distinctive value with grounded confidence rather than timid qualifiers ("a pretty fun mix" → name what's actually distinctive and let it speak for itself).
+- Prefer `unique` / `unlike anything else` over `unusual` (negative connotation).
 
 ---
 
@@ -204,7 +206,7 @@ Adjust framing and detail level based on recipient. These are real named stakeho
 - **Cold outreach to an unknown organization / media outlet** (e.g., publicity emails to bluegrass publications, radio stations, press, festivals, associations — recipients who don't know you): Warm, confident, grounded — humble WITHOUT being servile. This is NOT the favor-ask register; the explicit-outs and humility-close calibrated for a known collaborator (e.g., Tim) produce servile AI-sounding copy when applied to cold outreach. Key markers:
   - Use the recipient's name ONCE in the greeting only — never repeat it in the body or close (no "Thanks for your time, Darin").
   - Lead strong: state distinctive value with grounded confidence; put the strongest / most-recognizable content first.
-  - Warm and genuine, but not deferential — write peer-to-peer, not supplicant-to-gatekeeper.
+  - Warm and grounded, but not deferential — write peer-to-peer, not supplicant-to-gatekeeper.
   - Make the request plainly and stop. No stacked outs, no apologies for asking.
   - Do NOT offer to route the recipient to a third party unprompted.
 
@@ -467,7 +469,7 @@ This is a **living document** — the profile grows from real corrections, not f
 
 Before surfacing any user-facing draft, run a quick self-check:
 
-0. **Audience-type check** — was the right structural template applied for the audience type? Identify which of the four registers applies: work-peer DM/cold outreach, broadcast, non-technical-peer / volunteer-org favor-ask (known collaborator), or cold outreach to an unknown organization / media outlet. If broadcast, verify section-header shape and no-greeting opener. If favor-ask (known collaborator), verify comma greeting and `~ Karl` sign-off. If cold outreach to an unknown org/outlet, verify: confident and grounded tone (not servile), no stacked disclaimers, no grovel-thanks, no meta-hedge, name used in greeting only.
+0. **Audience-type check** — was the right structural template applied for the audience type? Identify which of the four registers applies: work-peer DM/cold outreach, broadcast, non-technical-peer / volunteer-org favor-ask (known collaborator), or cold outreach to an unknown organization / media outlet. If broadcast, verify section-header shape and no-greeting opener. If favor-ask (known collaborator), verify comma greeting and `~ Karl` sign-off. If cold outreach to an unknown org/outlet, verify: confident and grounded tone (not servile), no stacked disclaimers, no grovel-thanks, no meta-hedge, name used in greeting only, no avoided word choices ("unusual", "genuine"/"genuinely").
 1. **Hard-avoid scan** — does the draft contain any word/phrase from the Hard Avoids section? Rewrite those phrases. (Note: some Hard Avoids are mode-specific — e.g., `Hey -` is valid in work-peer DMs but forbidden in broadcast posts and favor-ask outreach. Apply avoids relative to the audience type identified in step 0.)
 2. **Length check** — is the draft proportional to the message type? (Slack: brief; email: structured; PR description: two paragraphs max.)
 3. **Sign-off check** — does the closing match the Greeting / Sign-Off conventions for this register? Route by register (see § Greeting / Sign-Off Conventions): work-peer Slack → no sign-off; favor-ask (any medium) → `~ Karl`; work-context email → first name only; cold outreach (any medium) → first name only (no `~ Karl` tilde).
