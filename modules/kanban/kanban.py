@@ -3612,25 +3612,57 @@ def cmd_report(args) -> None:
         try:
             card = read_card(card_path)
 
-            # Filter by completion date (updated timestamp)
+            # Resolve completion timestamp robustly — try in order:
+            #   (1) card['updated']
+            #   (2) fall back to activity — last entry's timestamp in activity[]
+            #   (3) card['created']
+            # Only skip the card if ALL three are missing or unparseable.
+            updated = None
+
+            # (1) Try 'updated' field first
             updated_str = card.get("updated")
             if updated_str:
                 try:
                     updated = parse_iso(updated_str)
-
-                    # Apply date filters
-                    if from_date and updated < from_date:
-                        continue
-                    if to_date and updated > to_date:
-                        continue
-
-                    done_cards.append((updated, card_number(card_path), card))
                 except ValueError:
-                    # Skip cards with invalid timestamps
-                    continue
-            else:
-                # Skip cards without updated timestamp
+                    pass
+
+            # (2) Fall back to activity — last entry's timestamp in activity[]
+            if updated is None:
+                activity = card.get("activity", [])
+                if isinstance(activity, list) and activity:
+                    last_ts = activity[-1].get("timestamp") if isinstance(activity[-1], dict) else None
+                    if last_ts:
+                        try:
+                            updated = parse_iso(last_ts)
+                        except ValueError:
+                            pass
+
+            # (3) Fall back to 'created' field
+            if updated is None:
+                created_str = card.get("created")
+                if created_str:
+                    try:
+                        updated = parse_iso(created_str)
+                    except ValueError:
+                        pass
+
+            # If all timestamp sources failed, warn loudly and skip
+            if updated is None:
+                print(
+                    f"kanban report: skipping {card_path} — no parseable timestamp in "
+                    "updated, activity[-1].timestamp, or created",
+                    file=sys.stderr,
+                )
                 continue
+
+            # Apply date filters
+            if from_date and updated < from_date:
+                continue
+            if to_date and updated > to_date:
+                continue
+
+            done_cards.append((updated, card_number(card_path), card))
 
         except (json.JSONDecodeError, OSError):
             # Skip malformed cards
