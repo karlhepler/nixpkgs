@@ -124,6 +124,23 @@ In this nixpkgs repo specifically (and any repo that deploys lint/format tools v
 
 **Recurrence indicator:** any card with `editFiles` under `modules/claude/`, `modules/git/`, `modules/kanban/`, etc., that has a standalone lint tool name as the first token of a `mov_commands[].cmd`.
 
+### BSD/macOS vs GNU coreutils flag divergence
+
+The kanban criteria check shell runs under Nix with GNU coreutils on PATH — NOT the host shell's macOS/BSD userland. MoVs that use BSD-specific flag syntax will fail structurally even though the same command works in a macOS terminal.
+
+Key divergences (BSD form → GNU coreutils alternative):
+
+- ❌ `stat -f%z file` (BSD byte-count) → ✅ `wc -c < file` (POSIX) or `stat -c%s file` (GNU form)
+- ❌ `sed -i '' 's/a/b/' file` (BSD in-place with empty extension) → ✅ `sed -i 's/a/b/' file` (GNU form; no empty string arg needed)
+- ❌ `date -r file` (BSD: file mtime) — not portable; use `stat -c%Y file` (GNU: mtime in seconds since epoch) or `stat --format=%Y file`
+- ❌ `date -v+1d` (BSD: date arithmetic) — not portable; use `date -d '+1 day'` (GNU)
+- ❌ `find -E . -regex 'pattern'` (BSD: enable ERE) → ✅ `find . -regex 'pattern'` (GNU ERE default, or use `rg`)
+- ❌ `du -h -d 1` (BSD: depth flag) → ✅ `du -h --max-depth=1` (GNU form)
+
+**Framing:** MoVs must use POSIX-portable forms or assume GNU coreutils — never assume BSD flag syntax. `stat -f%z` is the canonical litmus example: it works on macOS but exits with an error under GNU coreutils. Prefer `wc -c < file` (POSIX, no coreutils assumption) for a byte count.
+
+**Self-reference note:** When authoring a MoV that searches for this banned pattern's literal name in a scratchpad (e.g., to verify a review mentions it), use `bsd-stat`, `bsd.flag`, `stat dash-f`, or `byte-count portability` as synonyms — not `stat -f%z` literally (the lint hook sees the substring and triggers a false positive).
+
 ### Pre-`kanban do --file` lint (mandatory before every CLI invocation)
 
 Before invoking the kanban CLI, scan every `mov_commands[].cmd` field for these banned patterns:
@@ -134,6 +151,7 @@ Before invoking the kanban CLI, scan every `mov_commands[].cmd` field for these 
 - Dash-leading patterns without `--` or `-e` separator
 - Backtick in double-quoted `-c`/`-e` source — backticks expand BEFORE inner language runs
 - Standalone Nix-managed lint tool (`flake8`, `black`, `shellcheck`, `prettier`, `mypy`, `isort`, etc.) in `~/.config/nixpkgs` — exits 127 (NOT in agent's PATH); use `hms` as the lint MoV
+- BSD/macOS-specific flag syntax (`stat -f%z`, `sed -i ''`, `date -r`, `date -v`, `find -E`, `du -h -d`) — the check shell uses GNU coreutils; use POSIX-portable forms instead
 
 The kanban CLI lint hook is the second-line defense. Every catch is an authoring failure.
 
