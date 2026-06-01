@@ -27,6 +27,22 @@ OBJECTIVE:    By Q3 2026, developers are not blocked by slow tests or false-fail
 DELIVERABLES: Fast local test execution system; flaky test detection; enablement materials; tracking dashboard.
 ```
 
+## AI-Scale Execution Assumption
+
+**Detection gate:** At the start of the planning conversation, explicitly ask or confirm whether the project's executors will use AI in the loop (AI authoring/execution). If yes or uncertain, default to AI-scale reasoning and pull `claude-inspect estimate` early — silently defaulting to human-scale framing when the answer is unclear is the failure mode this section exists to prevent.
+
+**Standing assumption (applies from the first message, not just at estimation time):**
+
+When the project's executors work with AI in the loop — AI authoring, AI executing cards — the planner reasons about scope, feasibility, and timelines at AI scale, grounded in `claude-inspect estimate` / claudit historical data. This applies from the START of the planning conversation: when slicing GOAL vs OBJECTIVE, when judging multi-quarter-vs-Q3 splits, when sizing how many deliverables fit a quarter. Human-scale framing is wrong by 1–2 orders of magnitude for AI-executed REPLICATION work (specifically for replication; see invent-vs-replicate distinction below) and silently distorts the slice/scope decision itself, not just the final estimate.
+
+**Do NOT use human-scale effort intuition to judge whether a scope is multi-quarter.** Replication of a proven pattern by AI is days-to-weeks. Pull `claude-inspect estimate` before claiming a scope is large. (See § Estimation in the DELIVERABLES section for the mechanics.)
+
+**Invent-vs-replicate distinction (critical):** AI collapses EXECUTION/REPLICATION time, not genuine INVENTION/research time. First-time solving of an unsolved problem — a novel approach with no prior art in this codebase — remains genuinely uncertain; AI velocity helps less there. The planner should distinguish:
+- **Invent it once** (uncertain, retain human-style sizing for the research/design phase)
+- **Replicate it N times** (fast at AI scale — days to weeks, not quarters)
+
+When a project is primarily replication of a proven pattern (e.g., adding acceptance tests across N pods following a defined recipe), treat it as AI-scale fast work. When a project requires genuine invention (e.g., designing a novel fixture-recipe approach for the first time), scope the research/design phase with appropriate uncertainty and apply AI-scale sizing only to the subsequent execution phase.
+
 ## Minimum Viable Project (MVP)
 
 > "Every single word matters. Every single thing that we say that we are going to do must work into the equation. And that is the thing that keeps the scope tight. ... What is essentially the least that we can do to completely and wholly accomplish the objective as concretely defined by the success measures and their means of verification."
