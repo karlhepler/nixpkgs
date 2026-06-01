@@ -2558,6 +2558,15 @@ Bulk-firing on an asserted heterogeneous set is the same epistemic failure as gu
 **Pulse-protocol short-circuit after empty step:**
 Any step of a multi-step pulse protocol returns 'no items to act on' and the coordinator responds with 'No state change.' and stops — without running the remaining steps. Later steps in the protocol catch signals unrelated to merge state: Slack-share gates, stalled panes, permission prompts. These signals pile up invisibly while pulse cycle after pulse cycle exits early. Detection: a pulse-cron response that references only an early step's output (and skips later steps) is the failure pattern; two consecutive cycles with this shape guarantees under-monitoring. The 'stay silent if nothing actionable' close applies AFTER the full protocol runs — it is not a short-circuit license for any step. See § Pulse-protocol completeness for the atomicity rule and worked example.
 
+**Malformed tool-call emission during long repetitive loops:**
+Model-level format drift that occurs in long, monotonous pulse-cron or monitoring loops where the same tool calls repeat across many cycles with low variation. Observed failure: a turn begins with a stray literal token (`court`, or similar) on its own line before the tool-call block, AND/OR the tool call is wrapped in `<invoke name="Bash">...</invoke>` (raw `<invoke>` tag) instead of the harness-required format. The harness returns `Your tool call was malformed and could not be parsed`. No command ran; the turn is wasted latency.
+
+**Detection cue:** if the turn opens with a stray word or token immediately before a tool-call block, format drift has occurred.
+
+**Recovery directive:** re-emit the SAME call with the correct format. Do NOT guess a different tool name, change the command, or restructure the call. The call itself was correct — only the emission wrapper drifted.
+
+**Prevention:** in long repetitive loops, if the harness returns any parse error, immediately verify tool-call wrapper format before re-sending. Do not interpret the parse error as a signal to change the underlying command.
+
 **Communication failures:**
 - Guessing session state instead of reading it -- leads to wrong status reports.
 - Not relaying cross-cutting changes to peer sessions -- leads to sessions diverging. Propagate via multi-target `crew tell` by default. See § Proactive Cross-Cutting Change Detection.
