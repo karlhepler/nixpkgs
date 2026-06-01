@@ -160,7 +160,7 @@ Anti-pattern observed: 6 spawns reported `told=false`. Sstaff concluded 'same bu
 - ❌ `git commit --no-verify` ("the linter is complaining about unrelated code")
 - ✅ "Pre-push hook failed with a build error. Spinning up /swe-frontend to fix it before we push."
 
-**AskUserQuestion:** Hook-skip flags MUST NOT appear as one of the options — see global CLAUDE.md § Dangerous Operations for the full prohibition.
+**AskUserQuestion:** Hook-skip flags MUST NOT appear as one of the options — see global CLAUDE.md § Dangerous Operations for the full prohibition. PR-author self-approval MUST NOT appear as one of the options — when a PR-author needs review approval (`reviewDecision: REVIEW_REQUIRED`), route to CODEOWNERS peer reviewers; never include "you approve it yourself" as a choice (see § PR-review workflow → Ready-to-land trigger for CODEOWNERS routing guidance).
 
 ### 11. `git X` is a LITERAL Command, Not English
 
@@ -1452,6 +1452,12 @@ In all other states (`/smithers` working through fixes, running tests, waiting f
 - **Auto-merge is opt-in — never the default or `(Recommended)` merge path.** The default merge path is: promote draft→ready, CI-babysit, handle bot comments, then surface the clean PR for the user's manual review and manual merge. Auto-merge is reserved for cases where the user has explicitly opted into it for that PR. When presenting merge-path options via AskUserQuestion, the `(Recommended)` option MUST be "promote to ready + surface for your manual review/merge" — NOT "arm auto-merge." (Consistent with the `(Recommended)`-label discipline in § AskUserQuestion default-recommendation discipline.)
 
   **Why:** Reviewers frequently receive post-approval comments — bot or human — after an approval has been given. The user's stated default is to inspect those post-approval comments before the change lands. Auto-merge collapses the window between approval and merge, defeating that post-approval inspection step. `/smithers`'s value in this workflow is CI-babysitting and bot-comment handling — NOT its auto-merge terminal step. When the user prefers manual merge, `/smithers` should stop short of arming auto-merge. When `/smithers` completes CI-babysitting and bot-comment handling without arming auto-merge, surface the clean PR to the user for manual review and merge.
+
+**Ready-to-land trigger — `/smithers` is the canonical action.**
+
+When a PR reaches CI-green / pre-flight-checks-pass state, the coordinator's DEFAULT next action is to direct the owning crew session (via `crew tell`) to run `/smithers <pr>`. ("DEFAULT" here means the `(Recommended)` option when surfacing the action via AskUserQuestion — the coordinator does NOT auto-invoke `/smithers` without user confirmation, per § Invocation rules above: "User-initiated, never automatic.") Do NOT hand-roll a promote→approve→merge sequence — `/smithers` IS that workflow (CI-babysitting, bot-comment handling, merge-on-approval). Reconstructing those steps manually is the failure mode this rule exists to prevent.
+
+- **REVIEW_REQUIRED on an author-owned PR:** When `reviewDecision: REVIEW_REQUIRED` appears on a PR the requesting user authored, the approval MUST come from a different human. Read CODEOWNERS for the changed path and surface the actual required reviewers to the user. NEVER route approval back to the author — GitHub disallows self-approval, and four-eyes review is required regardless. The correct framing is "route to peer reviewer X/Y (per CODEOWNERS)" — not any variant of "you approve it yourself."
 
 **Standing readiness-gated action rules — apply autonomously each pulse cycle.**
 
