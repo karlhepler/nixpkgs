@@ -578,13 +578,23 @@ then plain-text `crew tell` is PROHIBITED. Plain text sent to a picker's filter-
 
 **Correct escalation path when target is at a picker:**
 
-1. If the user's decision maps to an option number in the picker, attempt `crew tell <target> --keys "<arrow sequence> Enter"` — this is NOT a bypass of the user's decision, it IS the decision. If the auto mode classifier denies `--keys` on these grounds, surface the denial to the real user with the picker state attached and ask them to intervene directly (tmux switch-window or equivalent). Do NOT fall back to plain-text tell.
+1. If the user's decision maps to an option number in the picker, attempt `crew tell <target> --keys "<arrow sequence> Enter"` — this is NOT a bypass of the user's decision, it IS the decision. (Multi-token sequences have observed reliability trade-offs; see `--keys` post-navigation verification below for the verify-after-each-key recommendation.) If the auto mode classifier denies `--keys` on these grounds, surface the denial to the real user with the picker state attached and ask them to intervene directly (tmux switch-window or equivalent). Do NOT fall back to plain-text tell.
 2. If the user's decision does NOT map to a pre-existing option (e.g., "Type something else" was chosen with custom text), first select the appropriate "type-custom" option via `--keys`, wait for the filter-box to open, THEN plain-text tell the custom text. Two-phase sequencing — never plain-text tell directly to the picker.
 3. If `--keys` is unavailable or denied AND the decision is not a pre-existing option, STOP and surface to the real user.
 
 **Never fall back to plain-text tell at a picker.** The silent-failure mode is worse than blocking — the coordinator proceeds with a wrong decision the user never made.
 
 **Mobile/remote-mode corollary:** When the user is on mobile/remote-control, a picker-aware-protocol violation does NOT get caught by the user direct-paneling to fix it — the user CAN'T reach the pane. Phantom signals produced by picker violations in mobile mode propagate as unauthorized work until the coordinator catches its own protocol violation. The picker-aware check is therefore EVEN MORE important in mobile mode. See § Verify scrollback before flagging scope creep → 'Mobile/remote-control mode invalidates the user-direct-pane framing.'
+
+#### `--keys` post-navigation verification
+
+This sub-protocol fires whenever the coordinator drives a TUI picker via `crew tell --keys`. Most common in remote-control / mobile mode when the user cannot direct-pane to the Staff session and the coordinator must navigate the picker on their behalf. Applies to ANY picker-style TUI (AskUserQuestion picker, gum, fzf-style choosers, etc.). In remote-control mode the coordinator's `--keys` navigation IS the only path to answer in-pane pickers; a silent failure means the user's choice is lost and the Staff session executes on a phantom choice the user never made.
+
+**Rule 1 — Mandatory post-navigation verification.** After ANY `crew tell <target> --keys "<navigation>"` aimed at a picker, the coordinator MUST run `crew read <target> --lines 15-25` within 3–10 seconds to confirm the picker registered the navigation and the correct option was selected. Multi-token `--keys` sequences (`"Down Enter"`, `"Down Down Enter"`, `"Tab Enter"`, etc.) have observed timing/parsing issues — individual tokens may not all land. `crew tell` returns `status='sent'` with no error even when tokens are dropped; the verification read is the only signal. The verification read is unconditional, not optional.
+
+**Rule 2 — Correction directive when wrong option was selected.** If the verification read shows the wrong option was selected, the picker has now closed, so plain-text `crew tell` is safe again. Immediately send a correction tell explaining (a) which option was actually chosen, and (b) to discard any work started on the wrong path. The Staff session can re-orient. DO NOT wait — send the correction before the Staff session burns time on the wrong path.
+
+**Rule 3 — Prefer single-key calls for multi-step navigation.** For multi-step picker navigation (e.g., third option down), prefer sending one `--keys "Down"` at a time with a verification read between each, rather than `--keys "Down Down Down Enter"` in a single call. Cost: 3 round-trips instead of 1. Benefit: each step is verifiable; if a Down fails to land, you catch it before pressing Enter.
 
 ### Periodic Crew Status Polling
 
