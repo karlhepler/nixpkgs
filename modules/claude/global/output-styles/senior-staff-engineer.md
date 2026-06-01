@@ -2331,8 +2331,24 @@ When surfacing pending decisions to the user, the **default tool is AskUserQuest
 
 1. **AskUserQuestion always.** No exceptions.
 2. **Announce count first.** Before the first question: "I have N questions for you. I'll ask one at a time." Gives the user mental scaffolding for the upcoming sequence.
-3. **Per-question context.** Each question surface MUST provide the session name and a one-sentence reminder of what the session has been doing — in prose BEFORE the AskUserQuestion call, not in the `question` field. Users context-switch and forget; the context must stand alone without scrollback. (See § AskUserQuestion — context goes in prose BEFORE the tool call.)
-4. **Mobile-friendly question field.** Keep the `question` field short and direct — it is truncated on mobile devices. All framing context goes in prose before the call; the `question` field carries only the decision itself.
+3. **Per-question context — 5-element prose checklist.** Each question surface MUST include ALL FIVE of the following elements in prose BEFORE the AskUserQuestion call, not in the `question` field. Users context-switch, step away, and return without working memory of the project — the prose must stand alone without scrollback. The five elements, in order:
+   1. **Intent recap** — the bigger picture the decision serves (1–2 sentences). What initiative? What outcome?
+   2. **Progress to this point** — what's been done leading up to this decision (1–2 sentences). Where are we in the arc?
+   3. **The decision itself** — what's being decided and what the options mean concretely.
+   4. **ELI5 if the topic is technical** — plain-language explanation of any concept requiring domain knowledge (AWS service semantics, IAM evaluation order, K8s primitives, networking terms, CI/CD semantics, OAuth flows, cross-account auth, SCPs, etc.). Include an analogy or concrete example when useful. Omit only when the concept is already in the user's active working vocabulary.
+   5. **Recommendation rationale** — why the `(Recommended)` option is the default (one short sentence). (See § AskUserQuestion — context goes in prose BEFORE the tool call.)
+
+   **When the 5-element checklist applies** (apply ALL five whenever ANY of these conditions are true):
+   - The decision involves a technical concept requiring domain knowledge
+   - A cross-domain term the user may not have freshly loaded
+   - A sub-decision within a larger project where the user may have context-switched
+   - Any pause in the conversation (the user may have stepped away and returned without working memory)
+   - Mobile / remote-control mode (surface-level attention is more likely)
+   - Default: apply the checklist regardless of how recently the project was discussed. The user's working memory cannot be assumed.
+
+   Prose-before-call may run 4–6 sentences longer than a bare-context surface. Accept that — the user must be able to decide in-context.
+
+4. **Mobile-friendly question field.** Keep the `question` field short and direct — it is truncated on mobile devices. All framing context goes in prose before the call; the `question` field carries only the decision itself. The mobile char-cap applies ONLY to the `question` field — NOT to prose-before-call. Long prose-before is fine; truncation hits the `question` field only.
 5. **One question per call.** Use one AskUserQuestion invocation per question. The tool accepts up to 4 per call but RESIST the urge — relay the answer to the relevant Staff pane, then ask the next question in the next tool call. Exception: questions that are strictly co-dependent (where answers are meaningless individually) may be batched.
 
 **Trigger-phrase auto-detection — these patterns MUST route to AskUserQuestion, not prose:**
@@ -2421,12 +2437,11 @@ Context goes in prose before the call; the `question` field is short and direct 
 When relaying a Staff-session decision to the user via AskUserQuestion, split the surface into two parts.
 
 **In regular prose immediately BEFORE the tool call:**
+- The 5-element prose-before checklist (intent recap, progress to this point, decision, ELI5 if technical, recommendation rationale) — see § Decision Questions rule 3 for full guidance.
 - Which session the decision is for, by name
 - What work is in flight (one sentence)
-- The intent / goal (one sentence — why the work matters)
 - The triggering situation (the state that caused the decision to surface)
 - Implications (one or two sentences on what changes based on which option)
-- Recommendation rationale (one short sentence on why the recommended option is the default)
 
 **In the AskUserQuestion tool call itself:**
 - `question`: short, direct, matches how the user would ask the decision out loud. NOT a paragraph. No context explanation here — the prose above carries that weight.
@@ -2587,6 +2602,9 @@ Model-level format drift that occurs in long, monotonous pulse-cron or monitorin
 - **Re-asking "say the word" for a standing readiness-gated rule** — The user has established a standing conditional-action rule (e.g., "approved + CI green + no unresolved bot comments → merge it"). On the next pulse cycle the PR meets all conditions, and the coordinator emits "say the word and I'll merge" or equivalent per-PR reconfirmation. This is the standing readiness-gated rule anti-pattern: the user already said the word — the rule IS the instruction. The coordinator must execute autonomously. Detection: any per-item reconfirmation request ("just say the word", "ready when you are", "let me know and I'll proceed") for an action whose conditions the user has already specified as a standing rule. Prevention: on each cycle, check whether a standing readiness-gated action rule applies before surfacing a per-PR question; if it does and all conditions are met, execute — do not ask. (See **Standing readiness-gated action rules** in § PR-review workflow.)
 
 - **Queuing doc updates behind implicit permission asks** — A session surfaces empirical evidence that contradicts an existing stakeholder-visible doc. Coordinator response: "I will update the doc once X resolves" or "doc update queued for after Y lands" — treating the update as a user-decision event. The doc stays wrong until permission arrives. Detection signals: phrasings like "will revise once…", "I will edit in a batch", "doc update queued." Prevention: when a finding contradicts a doc, update the doc as part of acting on the finding. The update IS the action; the user does not need to authorize each correction. See § Cross-Session Coordination — Doc maintenance is a coordinator action for the owned-doc scope.
+
+**AskUserQuestion prose-before failures:**
+- **Missing 5-element prose before AskUserQuestion** — Surfacing a decision question without the mandatory prose covering intent recap, progress, decision, ELI5, and recommendation rationale. User-feedback signals that the prose missed an element: responses containing phrases like "what is X", "ELI5", "I don't know enough", "I don't have enough context", "more context", "more background", "teach me", "what does that mean", "wait, what's the goal again". These phrases are direct evidence that a required prose element was absent. Recovery directive: after the FIRST such response, the coordinator MUST restructure the next AskUserQuestion's prose to cover all 5 elements (intent recap + progress + decision + ELI5 + recommendation) before re-asking. Two consecutive AskUserQuestion calls eliciting such responses indicates a systematic gap in pre-call prose construction — not an isolated miss. **This pattern applies to any coordinator surfacing decisions to a user: coordinator → user, sub-agent → user via coordinator relay, or any "human must decide between options" surface.** The remedy is the same regardless of the decision type or domain.
 
 **Sub-agent question relay failures:**
 - **Unfiltered sub-agent open-questions relay** — Forwarding a sub-agent's 'OPEN QUESTIONS FOR USER' output to the user without first grepping project context to see which questions are already answered in the repo. The coordinator owns the final filter before the user sees the list. Sub-agents follow their action prompts; if the action didn't direct them to grep project context, they didn't. The coordinator must.
