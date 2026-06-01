@@ -11,7 +11,7 @@ This skill is a voice profile template. Load it when drafting any user-facing co
 
 This skill defines four voice modes (four registers): DM/peer 1:1 (short paragraphs, polite-but-direct openers), Broadcast/channel-post (section headers, no greeting opener), Non-technical peer / volunteer-org favor-ask — known collaborator (warm, humble, low-pressure; comma greeting `Hey [Name],`; `~ Karl` sign-off), and Cold outreach to unknown organization / media outlet (warm, confident, grounded; NOT servile). Identify the audience type first; the modes are structurally different.
 
-Step 0 (before drafting): identify the audience type — DM (peer 1:1), broadcast (channel/team post), reply (in-thread continuation), work-peer cold DM (fresh outreach to a known-org colleague you haven't messaged), unknown-organization cold outreach (publication, radio station, festival, or any recipient whose organization you don't have an established relationship with), or favor ask (non-technical peer / volunteer-org — known collaborator). The structural template depends on audience type. Work-peer cold DMs use the peer/DM template (`Hey -` dash opener, no sign-off). Unknown-organization cold outreach routes to the cold-outreach register (confident, warm, grounded, not servile) — a structurally distinct template; see § Audience-Specific Tone Calibration. See § Verbatim Examples for the DM vs broadcast distinction. Note: broadcast voice has sub-shapes (milestone-announcement, progress-update) — see § Broadcast / Channel Post Template for shape selection before looking up examples. Note: fresh outreach to a NON-technical peer or volunteer-org contact (e.g., a club president, nonprofit collaborator) uses the favor-ask register (comma greeting, `~ Karl` sign-off, warm/deferential) ONLY when that contact is a known collaborator. Cold outreach to an unknown-organization cold recipient (e.g., a bluegrass publication, radio station, festival) uses the cold-outreach register — see § Audience-Specific Tone Calibration.
+Step 0 (before drafting): identify the audience type — DM (peer 1:1), broadcast (channel/team post), reply (in-thread continuation), investigative-update (work-peer thread, real-time narration of an in-progress investigation), work-peer cold DM (fresh outreach to a known-org colleague you haven't messaged), unknown-organization cold outreach (publication, radio station, festival, or any recipient whose organization you don't have an established relationship with), or favor ask (non-technical peer / volunteer-org — known collaborator). The structural template depends on audience type. Work-peer cold DMs use the peer/DM template (`Hey -` dash opener, no sign-off). Unknown-organization cold outreach routes to the cold-outreach register (confident, warm, grounded, not servile) — a structurally distinct template; see § Audience-Specific Tone Calibration. See § Verbatim Examples for the DM vs broadcast distinction. Note: broadcast voice has sub-shapes (milestone-announcement, progress-update) — see § Broadcast / Channel Post Template for shape selection before looking up examples. Note: fresh outreach to a NON-technical peer or volunteer-org contact (e.g., a club president, nonprofit collaborator) uses the favor-ask register (comma greeting, `~ Karl` sign-off, warm/deferential) ONLY when that contact is a known collaborator. Cold outreach to an unknown-organization cold recipient (e.g., a bluegrass publication, radio station, festival) uses the cold-outreach register — see § Audience-Specific Tone Calibration.
 
 Load this skill whenever drafting:
 - Slack messages or thread replies
@@ -152,6 +152,13 @@ _(These explicit-outs phrasings are favor-ask only — Hard Avoids for cold outr
 - Use `'I'm reaching out'` (full first-person subject) over bare `'Reaching out'` — Karl always leads with the first-person subject.
 - Prefer `'could be a fit'` / `'could be [verb]ed'` over `'might be worth a mention'` / `'or shoutout'` / `'or be worth sharing with your community'` — confident framing over timid hedges.
 
+**Work-peer thread / investigative-update phrasings:**
+- `What I can say is that...` — frames a partial/honest finding when the overall result is inconclusive. Use when the investigation produced a narrow data point but not a conclusion.
+- Plainly-inconclusive admissions: `didn't really help`, `Everything worked either way`, `both versions produced 200s for me locally` — state null/negative results flatly, no spin or qualification softening.
+- Casual failure/risk phrasing: `screws something up`, `try it out for real`, `the only way to really test it out` — preferred over corporate-sanitized variants like 'validate in production', 'introduce regression risk', 'production validation'.
+- Standalone `hmmm` as a real-time thinking-out-loud message — valid as a complete short message in a work-peer thread when narrating an in-progress investigation.
+- Tentative pragmatic next-step phrasing: `So I think the only way to really test it out might be to try it out for real.` — pivots from inconclusive test result to a pragmatic next step without over-claiming confidence.
+
 ---
 
 ### DM / 1:1 phrasings
@@ -166,12 +173,26 @@ _(See Openers, Action language, Tentative-commitment language, Timeline language
 - `Take a look in [tool] if you want some more detail` — soft invitational pointer to discoverable evidence (reader-controlled depth)
 - `(reference)` — parens-reference placeholder for inline link typography; Karl writes `(reference)` in the message and applies the hyperlink to that parenthesized word
 - Inline `@`-mentions of teammates throughout broadcast prose
-- Ellipsis (`...`) for casual pauses and soft hedges in broadcasts
+- Ellipsis (`...`) for casual pauses and soft hedges in broadcasts — also valid in DM/thread context as a real-time thinking pause within incremental thread updates (not broadcast-only)
 - 'I might wait...' / "I'm not 100% sure..." / "I'm not sure yet" — open future-uncertainty in updates
 - 'a few things on my radar include...' — tentative-future framing
 - 'some sort of X' / 'possibly X' / 'possibly X, and possibly Y' — tentative scope listings
 - Feedback invitation close with emoji (e.g., "I'm happy to incorporate any thoughts and feedback before or during planning. Just let me know. :smile:")
 - Intent framing in parenthetical attached to the state-of-the-project sentence, NOT as a separate header (see also: § Hard Avoids)
+
+_Add more from user corrections as they occur._
+
+---
+
+### Thread / Investigative-Update phrasings
+
+Context: work-peer Slack thread, real-time narration of an in-progress investigation (e.g., incident post-mortem, version-upgrade investigation, local repro attempt). Cadence: incremental short messages sent minutes to hours apart — NOT one composed block. Tone: plainly honest about inconclusive/negative results; no spinning. Structural pattern: when an investigation is inconclusive, state that flatly, then pivot to a pragmatic next step. Avoid over-claiming confidence.
+
+- Standalone `hmmm` is a valid complete message — real-time thinking-out-loud message for an in-progress investigation thread.
+- Plainly-inconclusive admissions stated flat: `didn't really help`, `Everything worked either way`, `both versions produced 200s for me locally` — null/negative results get no softening or spin.
+- `What I can say is that...` — frames a partial/honest finding when the overall result is inconclusive; names the narrow data point without claiming a conclusion.
+- Tentative pragmatic pivot: `So I think the only way to really test it out might be to try it out for real.` — after inconclusive local testing, pivots to next pragmatic step without over-claiming confidence.
+- Casual failure/risk phrasing (`screws something up`, `try it out for real`) over corporate variants (`validate in production`, `introduce regression risk`).
 
 _Add more from user corrections as they occur._
 
