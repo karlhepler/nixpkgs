@@ -48,6 +48,8 @@ Words, phrases, and idioms the user dislikes and never uses. Add entries over ti
 - "Different angle than I said earlier" (use empathetic opener "That's what I thought at first" instead — see Preferred Phrasings)
 - "the proximate cause" / "the deeper realization:" (too formal for casual Slack — use "BUT..." + "So really," instead)
 - Closing a casual Slack reply with evidence framing (e.g., "the 10/10 green CI runs confirm...") — close with the upshot or a code-level outcome instead
+- `exactly` as an emphasis intensifier (e.g., 'exactly the kind of thing we need', 'exactly what we need', 'exactly the input I need') — reads forced; drop it and state the point plainly ('the kind of thing we need').
+- `finish out the rest` / `finish out` / `wrap up the rest` / `knock out the rest` (when the remaining work is substantial — frames significant, often multi-quarter work as cleanup; use 'start working through the rest [together]' instead — see Preferred Phrasings → Closing / next-step language).
 
 Underlying anti-patterns: hedging closers, context-free closings, passive exit statements. The one-off entries below are captured examples — avoid the pattern broadly, not just the verbatim phrases.
 
@@ -130,6 +132,7 @@ Specific replacements and formulations the user reaches for:
 - `Feel free to take a look`
 - `Curious what you think on [X]`
 - `Let me know what you think`
+- `start working through the rest [together]` — honest framing of substantial remaining work as work to begin, NOT `finish out the rest` / `wrap up the rest` (which undersell significant or multi-quarter work as cleanup). When handing off or proposing collaboration on a large remaining scope, name it as work to start, not finish.
 
 **Non-technical peer / volunteer-org favor-ask phrasings (known collaborator):**
 
