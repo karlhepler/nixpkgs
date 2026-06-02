@@ -24,8 +24,8 @@ PostToolUse(Bash) behaviour:
   model checks CronList first and only creates if no pulse cron with the
   <<pulse-cron-v1>> sentinel exists).
 - After 'crew dismiss <name>': injects a conditional CronDelete directive —
-  model checks crew list for remaining Staff windows (excluding sstaff's own
-  window, detected dynamically) and deletes the pulse cron only when zero
+  model checks crew status output for remaining Staff windows (excluding sstaff's
+  own window, detected dynamically) and deletes the pulse cron only when zero
   Staff sessions with active work remain.
 
 This replaces the SessionStart-based unconditional CronCreate approach so
@@ -176,17 +176,17 @@ def _build_pulse_cron_command(own_window_index: str) -> str:
     case is a brief cron gap — acceptable.
     Under the new STEP 2 (window-count-based termination), this race is much rarer:
     STEP 2 only attempts CronDelete when zero Staff windows remain, so a simultaneous
-    `crew create` must occur within the narrow window between `crew list` returning
-    zero windows and the CronDelete call.
+    `crew create` must occur within the narrow window between STEP 1's `crew status`
+    returning zero Staff windows and the CronDelete call.
     """
     return (
         f"{_PULSE_CRON_SENTINEL}\n"
         f"STEP 1: Run `crew status --lines 5` once to get the tail of each active Claude pane. The pulse signal is concentrated in the last 3-5 lines of each pane (spinner state, prompt, most-recent-completion line) — heuristic based on observed pulse-cycle samples; tune up if pane layouts evolve. 5 is sufficient for routine pulse; deeper investigation uses `crew read <session> --lines N` explicitly. "
         f"If this command errors, skip this pulse cycle silently. "
-        f"STEP 2 (self-termination check): Run `crew list` once to enumerate windows. "
-        f"If `crew list` errors, leave the cron running and proceed to STEP 3 (do NOT self-terminate). "
+        f"STEP 2 (self-termination check): Using STEP 1's `crew status` output, enumerate the windows it reported. "
+        f"If STEP 1 errored and produced no window enumeration, leave the cron running and proceed to STEP 3 (do NOT self-terminate). "
         f"Count windows whose index is NOT `{own_window_index}` (those are Staff session windows, not sstaff's own window). "
-        f"(`crew list` enumerates Staff session windows managed by crew, not arbitrary tmux windows.) "
+        f"(`crew status` enumerates Staff session windows managed by crew, not arbitrary tmux windows.) "
         f"If ZERO Staff windows exist (all sessions have been formally dismissed via `crew dismiss`), "
         f"call CronList to find the cron whose prompt starts with '{_PULSE_CRON_SENTINEL}', "
         f"then call CronDelete with that cron's ID, then exit silently. "
