@@ -2225,7 +2225,7 @@ def _deliver_tell(
         return False, f"send-keys Enter failed (exit {r2.returncode})"
 
     # Verify: poll until the tell text appears in the pane (or timeout).
-    # Two success signals are accepted:
+    # Two paste-landing signals are accepted:
     #   1. The literal tell excerpt — normal case for short payloads.
     #   2. A NEW "[Pasted text #" placeholder — Claude Code collapses pastes
     #      >= ~1.5 KB into "[Pasted text #N]" in the TUI. The placeholder count
@@ -2233,21 +2233,146 @@ def _deliver_tell(
     #      from prior-paste entries lingering in the 50-line scrollback window.
     # Use a short excerpt to keep the literal-text check stable across line wrapping.
     # tell_excerpt is computed at the top of this function.
+    #
+    # Landing detection (text in pane) is a NECESSARY but not SUFFICIENT condition
+    # for told=true. After the paste lands, _verify_brief_submitted checks whether
+    # the Enter was also processed — catching the paste/submit race at session startup
+    # where the first Enter can be dropped, leaving the brief in the input buffer.
+    placeholder_count_at_paste = baseline_placeholder_count
     deadline = time.monotonic() + verify_timeout
     while time.monotonic() < deadline:
         result = subprocess.run(
             ["tmux", "capture-pane", "-p", "-t", f"{window_name}.0", "-S", "-50"],
             capture_output=True, text=True, check=False,
         )
+        paste_landed = False
         if tell_excerpt in result.stdout:
-            return True, "verified"
-        if result.stdout.count(placeholder_prefix) > baseline_placeholder_count:
-            return True, "verified (paste delivered as collapsed placeholder)"
+            paste_landed = True
+        current_count = result.stdout.count(placeholder_prefix)
+        if current_count > baseline_placeholder_count:
+            placeholder_count_at_paste = current_count
+            paste_landed = True
+        if paste_landed:
+            # Brief landed in input buffer. Now verify it was also submitted
+            # (Enter processed by Claude Code — not left unsubmitted at ❯ prompt).
+            submitted, submit_reason = _verify_brief_submitted(
+                window_name,
+                tell_excerpt,
+                placeholder_count_at_paste,
+                verify_timeout,
+                poll_interval,
+            )
+            if submitted:
+                return True, f"verified ({submit_reason})"
+            # Brief is unsubmitted — downgrade to failure so coordinator can intervene.
+            return False, submit_reason
         time.sleep(poll_interval)
 
     return False, (
         f"paste delivered but submission unverified — "
         f"try 'crew tell {window_name} --keys Enter' if input is visible at the prompt"
+    )
+
+
+def _verify_brief_submitted(
+    window_name: str,
+    tell_excerpt: str,
+    placeholder_count_at_paste: int,
+    verify_timeout: float = 5.0,
+    poll_interval: float = 0.25,
+) -> Tuple[bool, str]:
+    """Verify that a pasted brief was actually submitted (not left unsubmitted in the input buffer).
+
+    After _deliver_tell detects that the brief landed in the pane (via tell_excerpt
+    or paste placeholder), this helper checks whether it was also SUBMITTED — i.e.,
+    the Enter keystroke was processed and Claude Code is now processing the brief.
+
+    An unsubmitted brief looks like:
+        ❯ [Pasted text #N]<brief content>
+    or:
+        ❯ <tell_excerpt>...
+
+    The brief is considered submitted when the ❯ prompt line no longer contains the
+    pasted content — either because Claude is actively processing it (spinner running,
+    no ❯ prompt visible) or because the input buffer was cleared.
+
+    If the brief appears unsubmitted after the initial check, ONE additional Enter
+    is sent via the existing key-send path and verification is retried. This handles
+    the paste/submit race at session startup where the first Enter is dropped.
+
+    Returns (submitted: bool, reason: str):
+      (True, "submitted")          — input buffer cleared; Claude is processing the brief
+      (True, "submitted after retry") — unsubmitted detected; one extra Enter sent; now clear
+      (False, reason)              — brief still appears unsubmitted after retry
+    """
+    placeholder_prefix = "[Pasted text #"
+
+    def _pane_shows_unsubmitted(pane_content: str) -> bool:
+        """Return True if the pane content indicates the brief is unsubmitted.
+
+        Checks whether the most recent ❯ prompt line still contains the pasted brief
+        (tell_excerpt or a paste placeholder count greater than placeholder_count_at_paste).
+        When no ❯ is visible at all, Claude is actively processing — not unsubmitted.
+
+        Each line is ANSI-stripped before the prompt-marker check so that a ❯
+        appearing in ANSI-colored conversation output (code snippets, echoed shell
+        prompts) is not mistaken for the active input prompt.
+        """
+        lines = pane_content.splitlines()
+        # Find the last line whose ANSI-stripped form contains the ❯ prompt marker.
+        prompt_line = None
+        for ln in reversed(lines):
+            plain = _ANSI_SGR_RE.sub("", ln)
+            if _CLAUDE_PROMPT_MARKER in plain:
+                prompt_line = plain
+                break
+        if prompt_line is None:
+            # No ❯ visible — Claude is processing (spinner running). Brief is submitted.
+            return False
+        # ❯ is visible on the active input line (ANSI-stripped); check whether the
+        # brief content is still in the input buffer.
+        if tell_excerpt and tell_excerpt in prompt_line:
+            return True
+        # Check for an unsubmitted paste placeholder: the current placeholder count
+        # in the active prompt line exceeds what was present when the paste landed.
+        # A count equal to placeholder_count_at_paste means this is a prior-turn
+        # placeholder not related to the current brief.
+        current_count = prompt_line.count(placeholder_prefix)
+        if current_count > placeholder_count_at_paste:
+            return True
+        return False
+
+    def _capture() -> str:
+        result = subprocess.run(
+            ["tmux", "capture-pane", "-p", "-t", f"{window_name}.0", "-S", "-50"],
+            capture_output=True, text=True, check=False,
+        )
+        return result.stdout
+
+    # --- Initial check: poll until the brief is submitted or timeout ---
+    deadline = time.monotonic() + verify_timeout
+    while time.monotonic() < deadline:
+        content = _capture()
+        if not _pane_shows_unsubmitted(content):
+            return True, "submitted"
+        time.sleep(poll_interval)
+
+    # Brief still appears unsubmitted. Send one additional Enter and re-verify.
+    subprocess.run(
+        ["tmux", "send-keys", "-t", f"{window_name}.0", "Enter"],
+        capture_output=True, check=False,
+    )
+
+    retry_deadline = time.monotonic() + 2.0
+    while time.monotonic() < retry_deadline:
+        content = _capture()
+        if not _pane_shows_unsubmitted(content):
+            return True, "submitted after retry"
+        time.sleep(poll_interval)
+
+    return False, (
+        "brief pasted but unsubmitted — input buffer still shows brief content at ❯ prompt "
+        f"after retry Enter; coordinator should run: crew tell {window_name} --keys Enter"
     )
 
 
