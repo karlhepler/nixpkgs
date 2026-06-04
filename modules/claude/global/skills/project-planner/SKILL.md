@@ -113,71 +113,125 @@ If you remember only 6 things from this skill:
 
 ## Plan Document Workflow
 
-**The plan lives in a markdown document, not in chat messages.**
+**The plan lives in markdown documents, not in chat messages.**
 
-### When to Create the Document
+### Two-Document Default Structure
 
-Create a blank template document **immediately at the start of the conversation** — before any dialogue, before Five Whys, before anything else. Use the framework section structure as the skeleton:
+**The default deliverable is TWO cross-linked documents, not one long doc:**
 
+- **`<slug>.md` — one-pager proposal:** The primary, stakeholder-facing artifact. This is what gets shared with Karl, his manager, and stakeholders. It is tight, scannable, and ends with a "Full detail →" link to the companion. It contains: Background (3 sentences max), Goal (one sentence), Objective (one sentence), Success Measures (tight table), Assumptions (tight table), Deliverables (short title + brief AC), Confidence line, and the "Full detail →" link.
+
+- **`<slug>-DETAIL.md` — full-detail companion:** Linked from the one-pager. It holds the complete plan with all depth: per-deliverable estimates, the full causal relationship check (necessity table, sufficiency checklist, causal chain diagram, link-by-link validation, second pass). It opens with a pointer back to the one-pager: "Read the one-pager first: [`<slug>.md`](./<slug>.md)." The verbose causal check, per-deliverable estimates, and second-pass live ONLY here — never in the one-pager.
+
+**When published to Linear:** Two cross-linked Linear docs attached to the project — one-pager and full-detail companion.
+
+**The one-pager is the canonical shared proposal.** The full-detail companion is the rigor behind it. Maintenance note: two artifacts must be kept in sync when content changes.
+
+### One-Pager Brevity Constraints (Hard Limits)
+
+These are hard authoring constraints for the one-pager — not suggestions:
+
+| Section | Constraint |
+|---------|-----------|
+| **Background** | 3 sentences max. |
+| **Goal** | ONE sentence, at most a single comma. |
+| **Objective** | ONE sentence, at most a single comma. |
+| **Success Measures** | Tight table (Base / Target / Means of Verification / Prerequisite). No prose around the table. |
+| **Assumptions** | Tight table (Assumption / Risk Level / How to Monitor / Contingency Plan). No prose. |
+| **Deliverables** | Each heading is a SHORT title-like label (3–6 words). AC may stay but kept brief — 1–3 bullets max per deliverable. No per-deliverable estimate (that lives in the companion). |
+| **Confidence** | One line: "Confidence: Strong/Adequate/Weak — [one sentence]." |
+| **Footer** | Ends with: "Full detail → [<slug>-DETAIL.md](./<slug>-DETAIL.md)" |
+
+### Full-Detail Companion Structure
+
+The companion (`<slug>-DETAIL.md`) contains everything trimmed from the one-pager plus any extended analysis:
+
+- Opens with: "Read the one-pager first: [`<slug>.md`](./<slug>.md)"
+- Per-deliverable estimates (from `claude-inspect estimate`)
+- Complete SUFFICIENT AND NECESSARY CHECK (Layer 1 necessity table + Layer 2 sufficiency checklist)
+- Complete CAUSAL RELATIONSHIP CHECK (Layer 3: causal chain diagram, full link-by-link validation, second-pass implicit-assumption scan)
+- Confidence assessment with full reasoning (the one-pager's Confidence line is a one-sentence summary of this full assessment)
+
+### When to Create the Documents
+
+Create both blank templates **immediately at the start of the conversation** — before any dialogue, before Five Whys, before anything else.
+
+**One-pager template (`<slug>.md`):**
 ```
-## BACKGROUND AND CONTEXT - Why Are We Doing This?
+## BACKGROUND AND CONTEXT
 [placeholder]
 
-## GOAL - What Outcome Are We Achieving?
+## GOAL
 [placeholder]
 
-## OBJECTIVE - What Change Are We Making?
+## OBJECTIVE
 [placeholder]
 
-## SUCCESS MEASURES - How We Know We Achieved the Goal
+## SUCCESS MEASURES
 [placeholder]
 
-## ASSUMPTIONS - What We Can't Control
+## ASSUMPTIONS
 [placeholder]
 
-## DELIVERABLES - What We'll Build
+## DELIVERABLES
 [placeholder]
 
-## CAUSAL RELATIONSHIP CHECK
+Confidence: [placeholder]
+
+Full detail → [<slug>-DETAIL.md](./<slug>-DETAIL.md)
+```
+
+**Full-detail companion template (`<slug>-DETAIL.md`):**
+```
+Read the one-pager first: [<slug>.md](./<slug>.md)
+
+## DELIVERABLE ESTIMATES
+[placeholder]
+
+## SUFFICIENT AND NECESSARY CHECK (Layers 1 + 2)
+[placeholder]
+
+## CAUSAL RELATIONSHIP CHECK (Layer 3)
 [placeholder]
 ```
 
-Open it immediately with `open <filepath>` so the user sees it from the first exchange. Update sections in-place as the conversation progresses — replace placeholders with real content as each section crystallizes. The document is a **living artifact from the very first exchange**, not a deliverable produced after dialogue concludes.
+Open both with `open <filepath>` so the user sees them from the first exchange. Update sections in-place as the conversation progresses. Both documents are **living artifacts from the very first exchange**.
 
-### Where to Write It
+### Where to Write Them
 
-**Default location:** `.scratchpad/project-plan-<slug>.md` where `<slug>` is a short kebab-case description derived from the stated request.
+**Default location:** `.scratchpad/<slug>.md` and `.scratchpad/<slug>-DETAIL.md` where `<slug>` is a short kebab-case description derived from the stated request.
 
 **Examples:**
-- "We want to implement Bazel" → `.scratchpad/project-plan-test-infrastructure.md` (slug reflects reframed goal after Five Whys, not the original request)
-- "We need better onboarding docs" → `.scratchpad/project-plan-onboarding-docs.md`
+- "We want to implement Bazel" → `.scratchpad/test-infrastructure.md` + `.scratchpad/test-infrastructure-DETAIL.md` (slug reflects reframed goal after Five Whys, not the original request)
+- "We need better onboarding docs" → `.scratchpad/onboarding-docs.md` + `.scratchpad/onboarding-docs-DETAIL.md`
 
-### How to Open It
+### How to Open Them
 
-As soon as you create the blank template document:
-1. Use `open <filepath>` to open it for the user (their editor auto-refreshes)
-2. Tell the user: "I've created the plan skeleton at `<filepath>` and opened it for you. I'll fill in each section as we work through the details together."
+As soon as you create both blank templates:
+1. Use `open <filepath>` on both files
+2. Tell the user: "I've created the plan skeleton at `<slug>.md` (one-pager) and `<slug>-DETAIL.md` (full-detail companion). I'll fill in each section as we work through the details together."
 
 ### How to Iterate
 
 When the user requests changes:
-- **Edit the document in place** using the Edit tool or Write tool
+- **Edit the appropriate document in place** using the Edit tool or Write tool — one-pager content in `<slug>.md`, depth content in `<slug>-DETAIL.md`
 - **Brief chat message** explaining what changed and why (1-2 sentences)
-- **Don't print the plan in chat** - the document is the source of truth; don't re-output after edits
+- **Don't print the plan in chat** — the documents are the source of truth; don't re-output after edits
+- **Keep both docs in sync** — if you change the objective in the one-pager, verify the companion's causal check still references the correct wording
 
 ### Document Structure Discipline
 
-The plan framework sections are the **spine** of your document. Protect their integrity:
+The plan framework sections are the **spine** of your documents. Protect their integrity:
 
-1. **Framework sections must appear in order:** BACKGROUND AND CONTEXT → GOAL → OBJECTIVE → SUCCESS MEASURES → ASSUMPTIONS → DELIVERABLES → CAUSAL RELATIONSHIP CHECK. These flow in sequence without interruption.
+1. **One-pager framework sections must appear in order:** BACKGROUND AND CONTEXT → GOAL → OBJECTIVE → SUCCESS MEASURES → ASSUMPTIONS → DELIVERABLES → Confidence → "Full detail →" link. These flow in sequence without interruption.
 
 2. **Never prepend content to the top.** No research summaries, context dumps, or notes above the first framework section (BACKGROUND AND CONTEXT).
 
 3. **Never insert ad-hoc sections between framework sections.** No "Updated Objective (revision 2)" or "Additional Notes" sections wedged between the spine sections.
 
-4. **Supplementary content goes at the bottom.** If you need to add research notes, context, appendices, or working notes, place them BELOW the Causal Relationship Check section (the last framework section).
+4. **Supplementary content goes at the bottom of the companion.** If you need to add research notes, context, appendices, or working notes, place them BELOW the Causal Relationship Check section (the last framework section) in `<slug>-DETAIL.md`.
 
-5. **Edits modify sections in place.** When updating the plan, edit the relevant framework section. Don't add a new "Updated Goal" section — edit the existing Goal. The final plan document in the scratchpad is the artifact.
+5. **Edits modify sections in place.** When updating the plan, edit the relevant framework section. Don't add a new "Updated Goal" section — edit the existing Goal. The final documents in the scratchpad are the artifacts.
 
 ## Prose Style Spec
 
@@ -251,7 +305,7 @@ Keep the two separate. Background explains what's happening and why it matters n
 3. Ask: "What prompted this request — was there an incident, a deadline, a pattern?"
 4. Note any relevant history or prior attempts
 
-**Format:** 2-4 sentences. Plain language. No jargon.
+**Format:** 2-3 sentences (matching the one-pager brevity constraint). Plain language. No jargon.
 
 **Test:** Does this explain WHY we're doing this, without describing WHAT we want to achieve? (If it's describing desired outcomes, it belongs in GOAL.)
 
@@ -261,7 +315,7 @@ Keep the two separate. Background explains what's happening and why it matters n
 **Red flags:**
 - Describing desired outcomes (those go in GOAL)
 - Missing the trigger — what prompted this now vs. six months ago?
-- So long it becomes a research document (keep it tight, 2-4 sentences)
+- So long it becomes a research document (keep it tight, 2-3 sentences)
 
 ### GOAL - What Outcome Are We Achieving?
 
@@ -750,7 +804,7 @@ Any gap found → add a deliverable to cover it, then re-run Layer 1 on the new 
 
 **Additionally:** "Is End of Project Status Report included as final deliverable?" (If no → add it)
 
-### CAUSAL RELATIONSHIP CHECK
+### CAUSAL RELATIONSHIP CHECK (Layer 3)
 
 **Purpose:** Validate the three-layer causal claim: DELIVERABLES + ASSUMPTIONS → OBJECTIVE (environmental change in place) → GOAL (strategic outcome). If we produce all deliverables and the assumptions hold, does the environmental change occur? Does that change contribute to the goal?
 
@@ -891,6 +945,8 @@ If any of the three checks fails, confidence is Adequate at best, not Strong.
 
 **Stated request:** "We want to implement Bazel for our build system."
 
+*This example shows the two-document structure. The one-pager portion (`test-infrastructure.md`) comes first; the companion portion (`test-infrastructure-DETAIL.md`) follows.*
+
 ### BACKGROUND AND CONTEXT - Why Are We Doing This?
 
 The test suite has grown from 500 to 8,000 tests over three years with no infrastructure investment. Local runs now take 45 minutes, and three engineers cited slow CI as a top frustration in recent exit interviews. Leadership has prioritized developer tooling ahead of the next hiring cycle.
@@ -927,7 +983,6 @@ By Q3 2026, developers are not blocked by slow tests or false-failure debugging 
    - Run full test suite in <5 minutes locally
    - Automatic test parallelization (run tests in parallel)
    - Intelligent test selection (only run tests affected by changes)
-   - *Estimate: 3 work cards + 1 review (parallel batch) → P90: ~20m wall-clock*
 
 2. **Flaky Test Detection and Quarantine**
    - Auto-detect flaky tests (inconsistent pass/fail on same code)
@@ -951,9 +1006,27 @@ By Q3 2026, developers are not blocked by slow tests or false-failure debugging 
    - Document whether we achieved the goal: "Unblock developers, ship 50% faster"
    - Lessons learned and recommendations
 
+Confidence: Adequate — direct causation once adoption assumption holds (mitigated by D3).
+
+Full detail → [test-infrastructure-DETAIL.md](./test-infrastructure-DETAIL.md)
+
 **Note:**
 - Original request was "implement Bazel" but Five Whys revealed real need was faster tests. Bazel is one solution, but test parallelization achieves same outcome with less risk and complexity (existing tooling, not full build system migration).
 - "Developer Time Tracking Dashboard" was added after Verification Feasibility Check revealed we couldn't collect "blocked time" data without it.
+
+---
+
+**Companion — `test-infrastructure-DETAIL.md`:**
+
+Read the one-pager first: [test-infrastructure.md](./test-infrastructure.md)
+
+### DELIVERABLE ESTIMATES
+
+1. **Fast Local Test Execution System** — *Estimate: 3 work cards + 1 review (parallel batch) → P90: ~20m wall-clock*
+2. **Flaky Test Detection and Quarantine** — *Estimate: 2 work cards + 1 review → P90: ~15m wall-clock*
+3. **Developer Enablement Materials** — *Estimate: 2 work cards → P90: ~10m wall-clock*
+4. **Developer Time Tracking Dashboard** — *Estimate: 2 work cards + 1 review → P90: ~15m wall-clock*
+5. **End of Project Status Report** — *Estimate: 1 work card → P90: ~7m wall-clock*
 
 ### SUFFICIENT AND NECESSARY CHECK (Layers 1 + 2)
 
@@ -1020,6 +1093,8 @@ Confidence: **Strong**. Direct causation — delivering the objective (developer
 
 **Stated request:** "We need better onboarding docs."
 
+*This example shows the two-document structure. The one-pager portion (`onboarding-docs.md`) comes first; the companion portion (`onboarding-docs-DETAIL.md`) follows.*
+
 ### BACKGROUND AND CONTEXT - Why Are We Doing This?
 
 The team doubled in size last quarter and we have no written onboarding materials — everything is passed mouth-to-ear. Senior engineers are losing 30%+ of their week to new-hire questions, and the last two new engineers both asked for better documentation in their 30-day check-ins.
@@ -1060,6 +1135,21 @@ By October 1, 2026, new engineers self-serve answers to setup, architecture, and
    - Table comparing Base | Target | Actual | Status for each measure
    - Document whether we achieved the goal: "New engineers contribute in <2 weeks"
    - Lessons learned
+
+Confidence: Adequate — depends on adoption assumption (Medium risk, monitored).
+
+Full detail → [onboarding-docs-DETAIL.md](./onboarding-docs-DETAIL.md)
+
+---
+
+**Companion — `onboarding-docs-DETAIL.md`:**
+
+Read the one-pager first: [onboarding-docs.md](./onboarding-docs.md)
+
+### DELIVERABLE ESTIMATES
+
+1. **Onboarding Documentation Site** — *Estimate: 3 work cards + 1 review (parallel batch) → P90: ~20m wall-clock*
+2. **End of Project Status Report** — *Estimate: 1 work card → P90: ~7m wall-clock*
 
 ### SUFFICIENT AND NECESSARY CHECK (Layers 1 + 2)
 
@@ -1134,7 +1224,7 @@ Every time you edit one section, scan all others for consistency. This back-and-
 ## Your Workflow
 
 1. **Understand the request** - What's the stated ask?
-2. **CREATE THE PLAN DOCUMENT IMMEDIATELY** - Before any dialogue, write a blank template to `.scratchpad/project-plan-<slug>.md` with placeholder text in each section. Open it with `open <filepath>`. Tell the user it's ready and you'll fill it in as you work together.
+2. **CREATE THE PLAN DOCUMENTS IMMEDIATELY** - Before any dialogue, write blank templates to `.scratchpad/<slug>.md` (one-pager) and `.scratchpad/<slug>-DETAIL.md` (full-detail companion) with placeholder text in each section. Open both with `open <filepath>`. Tell the user both are ready and you'll fill them in as you work together.
 3. **Establish BACKGROUND AND CONTEXT** - What's happening now that makes this important? What prompted this? Update the document section in-place as the dialogue develops.
 3.5. **Identify the parent initiative** - Before running Five Whys for the GOAL, identify the larger strategic initiative this project ladders up to. Ask the user: "What organizational initiative or strategic goal does this project contribute to?" If the user doesn't know offhand, search internal docs (Notion, Linear, Confluence, README.md files, CLAUDE.md) for company-level objectives, OKRs, or named initiatives. Use the *existing language* of the parent initiative as the GOAL of this project — do not re-author it.
 4. **Five Whys for GOAL** - Dig to desired outcome/change (not just problem). Five Whys now operates as VALIDATION: does this project actually contribute to the inherited parent initiative? If after five whys the project's purpose doesn't clearly ladder up to the parent initiative's goal, that's a signal — either you've picked the wrong parent initiative, or this project shouldn't be done. Update the document section in-place.
@@ -1156,14 +1246,14 @@ Every time you edit one section, scan all others for consistency. This back-and-
 
     **Pre-deliverable research gate:** Before defining ANY custom deliverable, check: (a) existing team tools/libraries, (b) existing vendor capabilities, (c) third-party solutions. Only define custom deliverables after confirming none of these work.
 
-    Run `claude-inspect estimate` to ground each deliverable timeline in historical data. Include P90 projection in the plan document.
+    Run `claude-inspect estimate` to ground each deliverable timeline in historical data. Include P90 projection in the companion (`<slug>-DETAIL.md`).
 
     After every design decision: re-scan both sections. Has any assumption become team-controllable via a deliverable just defined? Has any risk level changed? Remove or update immediately.
 
 11. **Monitoring Feasibility Check for ASSUMPTIONS** - For EVERY "How to Monitor": Can we collect this data TODAY? Annotate inline: `<br>✅ *(exists)*` OR `<br>⚠️ [missing] → **Deliverable #N**`. Add contingency plan for each Medium-risk assumption.
 12. **Add End of Project Status Report** - Mandatory final deliverable for accountability (include HOW to verify/monitor instructions)
-13. **Sufficient and necessary test (Layer 1 + Layer 2)** - Produce the necessity table (Layer 1) and sufficiency checklist (Layer 2) from the DELIVERABLES section format. Cut unnecessary deliverables, add missing ones. Update the document if changes needed.
-14. **Validate causal chain (Layer 3)** - Produce the causal chain diagram, link-by-link validation, and confidence assessment. The causal claim: DELIVERABLES + ASSUMPTIONS → OBJECTIVE (environmental change) → GOAL (strategic outcome, verified by success measures). Update the document if changes needed.
+13. **Sufficient and necessary test (Layer 1 + Layer 2)** - Produce the necessity table (Layer 1) and sufficiency checklist (Layer 2) from the DELIVERABLES section format. Write both outputs to the companion (`<slug>-DETAIL.md`). Cut unnecessary deliverables, add missing ones. Update the document if changes needed.
+14. **Validate causal chain (Layer 3)** - Produce the causal chain diagram, link-by-link validation, and confidence assessment. Write all Layer 3 outputs to the companion (`<slug>-DETAIL.md`). The causal claim: DELIVERABLES + ASSUMPTIONS → OBJECTIVE (environmental change) → GOAL (strategic outcome, verified by success measures). Update the document if changes needed.
     - Scan assumptions table: Has any design decision eliminated a risk? Is any assumption now validatable by building a deliverable? Remove dead assumptions.
 15. **Iterate on the document** - When user requests changes, edit the file in place. Brief chat note on what changed. The document is the deliverable. **After every design decision that changes scope or architecture, re-scan the assumptions table — remove eliminated assumptions, note changed risk levels, add any new ones. Assumptions are living; treat them that way throughout iteration.**
 
@@ -1175,7 +1265,7 @@ When your plan requires technical validation or research beyond your scope, surf
 
 Before marking work complete:
 
-1. **BACKGROUND AND CONTEXT complete** - Current state captured? Trigger identified? Kept to 2-4 sentences? No desired outcomes (those belong in GOAL)?
+1. **BACKGROUND AND CONTEXT complete** - Current state captured? Trigger identified? Kept to 2-3 sentences (one-pager brevity limit)? No desired outcomes (those belong in GOAL)?
 2. **GOAL complete** - Desired outcome clear in fifth-grader language? Used Five Whys?
 3. **GOAL-SUCCESS mapping** - Every claim, term, and promise in GOAL maps to at least one success measure? No unmapped claims?
 4. **OBJECTIVE complete** - Describes the environmental change (purpose-level, not deliverable-level)? Starts with "By [date],..."? No absolute claims? Concise — every sentence means something, every word earns its place? Does it describe what changes in the world when the deliverables are produced — NOT a list of the deliverables themselves?
