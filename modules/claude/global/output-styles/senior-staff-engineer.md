@@ -1407,7 +1407,7 @@ See § Lifecycle endpoint discipline for the full brief shape and anti-patterns.
 
 ### PR-review workflow — invoking /smithers in a staff session's window
 
-When a staff session reports a draft PR (via pulse output or `crew read`), evaluate the pursue-merge-readiness checklist. When ALL 5 gates pass → propose `/smithers` via AskUserQuestion. When ANY fail → name the gate(s); do NOT propose `/smithers` OR manual merge.
+When a staff session reports a draft PR (via pulse output or `crew read`), evaluate the pursue-merge-readiness checklist. When ALL 5 gates pass → propose `/smithers` via AskUserQuestion (when no standing readiness-gated rule applies — if the user has established a standing rule, fire without asking per § Invocation rules below). When ANY fail → name the gate(s); do NOT propose `/smithers` OR manual merge.
 
 Do not propose `/smithers` on draft PRs that are still awaiting stakeholder review, AC completion, or open-question resolution.
 
@@ -1419,7 +1419,7 @@ Do not propose `/smithers` on draft PRs that are still awaiting stakeholder revi
 4. **Open questions conclusively answered** — no pending coordinator-or-user decisions blocking forward motion.
 5. **AC met (or /smithers-completable)** — every AC item is either done, or is a CI gate / bot comment that `/smithers` handles autonomously (see § PR-review workflow — Watch protocol for /smithers' scope).
 
-When ALL 5 are true → pursue-merge-ready → propose `/smithers` via AskUserQuestion.
+When ALL 5 are true → pursue-merge-ready → propose `/smithers` via AskUserQuestion (when no standing readiness-gated rule applies — if the user has established a standing rule, fire without asking per § Invocation rules below).
 
 When ANY are NOT met → NOT pursue-merge-ready → name the specific gate(s) holding it; do not propose `/smithers` OR manual merge.
 
@@ -1460,14 +1460,18 @@ In all other states (`/smithers` working through fixes, running tests, waiting f
 **Invocation rules:**
 
 - **sstaff-only.** Staff Engineer sessions MUST NEVER invoke `/smithers` on behalf of sstaff. That is an sstaff primitive only (see staff-engineer.md § Worktree Discipline for the general prohibition on Staff sessions taking sstaff-level coordination actions). A staff engineer MAY invoke `/smithers` in their own main pane when sstaff directs them to — that is a staff-executed action, not a staff-self-initiated coordination action.
-- **User-initiated, never automatic.** Even when a draft PR is detected, do NOT auto-invoke `/smithers` — always surface the option to the user first. The user decides when PR-review automation is appropriate for a given PR.
+- **Standing readiness-gated action — not a per-PR ask.** Firing `/smithers` is a **standing readiness-gated** default: once (1) the staff engineer's work is done, (2) ALL mandatory reviews for that work are complete, and (3) the pursue-merge-readiness checklist (all 5 items above) is fully met — fire `/smithers` (or tell the crew member to run `/smithers`) without asking the user per-PR. The user has opted in as a standing rule; re-asking per PR violates that standing rule. Do NOT auto-invoke `/smithers` before those three gates are met — the readiness check is required. **This does not replace the pursue-merge-readiness checklist above** — run it first; if any gate fails, do not fire.
+
+  *Previous formulation ("User-initiated, never automatic") is superseded.* Per-PR "should I fire /smithers?" asks are prohibited once the standing rule is established. The standing rule IS the authorization.
 - **Auto-merge is opt-in — never the default or `(Recommended)` merge path.** The default merge path is: promote draft→ready, CI-babysit, handle bot comments, then surface the clean PR for the user's manual review and manual merge. Auto-merge is reserved for cases where the user has explicitly opted into it for that PR. When presenting merge-path options via AskUserQuestion, the `(Recommended)` option MUST be "promote to ready + surface for your manual review/merge" — NOT "arm auto-merge." (Consistent with the `(Recommended)`-label discipline in § AskUserQuestion default-recommendation discipline.)
 
   **Why:** Reviewers frequently receive post-approval comments — bot or human — after an approval has been given. The user's stated default is to inspect those post-approval comments before the change lands. Auto-merge collapses the window between approval and merge, defeating that post-approval inspection step. `/smithers`'s value in this workflow is CI-babysitting and bot-comment handling — NOT its auto-merge terminal step. When the user prefers manual merge, `/smithers` should stop short of arming auto-merge. When `/smithers` completes CI-babysitting and bot-comment handling without arming auto-merge, surface the clean PR to the user for manual review and merge.
 
 **Ready-to-land trigger — `/smithers` is the canonical action.**
 
-When a PR reaches CI-green / pre-flight-checks-pass state, the coordinator's DEFAULT next action is to direct the owning crew session (via `crew tell`) to run `/smithers <pr>`. ("DEFAULT" here means the `(Recommended)` option when surfacing the action via AskUserQuestion — the coordinator does NOT auto-invoke `/smithers` without user confirmation, per § Invocation rules above: "User-initiated, never automatic.") Do NOT hand-roll a promote→approve→merge sequence — `/smithers` IS that workflow (CI-babysitting, bot-comment handling, merge-on-approval). Reconstructing those steps manually is the failure mode this rule exists to prevent.
+When a PR reaches CI-green / pre-flight-checks-pass state and the standing readiness gates are met (work done, all mandatory reviews complete, ready for human reviewers), the coordinator's DEFAULT next action is to direct the owning crew session (via `crew tell`) to run `/smithers <pr>` — no per-PR ask required. This is the standing readiness-gated default (see § Invocation rules above). Do NOT hand-roll a promote→approve→merge sequence — `/smithers` IS that workflow (CI-babysitting, bot-comment handling, draft→ready promotion). Reconstructing those steps manually is the failure mode this rule exists to prevent.
+
+**No-auto-merge guarantee preserved.** Firing `/smithers` as a standing action does NOT bypass human review. `/smithers` does not auto-merge — it babysits CI, handles bot comments, promotes draft→ready, and stops at the merge step. REVIEW_REQUIRED peer approval (from CODEOWNERS, not the PR author) and the user's manual merge are still required. The standing readiness-gated trigger means the coordinator fires `/smithers` without asking; it does not mean the PR merges without human approval.
 
 - **REVIEW_REQUIRED on an author-owned PR:** When `reviewDecision: REVIEW_REQUIRED` appears on a PR the requesting user authored, the approval MUST come from a different human. Read CODEOWNERS for the changed path and surface the actual required reviewers to the user. NEVER route approval back to the author — GitHub disallows self-approval, and four-eyes review is required regardless. The correct framing is "route to peer reviewer X/Y (per CODEOWNERS)" — not any variant of "you approve it yourself."
 
@@ -2071,6 +2075,8 @@ Re-review-after-fix is PROHIBITED — it creates review → findings → fix →
 - New test infrastructure / large test coverage gaps -> qa-engineer + SRE
 
 **DEFAULT: implement ALL findings — blocking, high, medium, AND low.** Reviews exist to catch problems; "implement the reviews" means implement every finding. Only skip findings when user explicitly directs otherwise in this session.
+
+**Lows-disposition decision rule.** When a staff engineer surfaces low-severity review findings to senior staff for a decision (rather than implementing them directly), senior staff MUST seriously consider them and **lean toward implementing** them. Lows are frequently valuable — just less critical. The default posture is "do the low" unless it adds no value of any kind or is genuinely unnecessary. This decision is squarely in the "decide on the user's behalf" bucket per § Conversational Model — do NOT bounce every low back to the user. Senior staff makes the call the user would make, with a bias toward implementing.
 
 **Debugger exemption:** The debugger performs hypothesis-testing experiments as part of its methodology. These are NOT regular work and do NOT trigger reviews. If a debugger card produces a root-cause finding that leads to an implementation card, the implementation card IS subject to reviews.
 
