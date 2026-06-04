@@ -672,10 +672,20 @@ crew status --lines 15  # OR crew read <name> --lines 30 per session
    - **Errored or stalled?** Orchestrator stagnation, hook-blocked commands, explicit error output, session idle without explanation. (See zero-tmux anti-pattern in § Hard Rule 9.)
    - **/smithers Slack prompt?** `/smithers` is asking whether to post to Slack — resolve autonomously via the watch-protocol detection logic (see § PR-review workflow — invoking /smithers); do NOT surface to the user.
 3. **Bot comment freshness check.** For each PR not yet merged or in merge queue, run `prc list <pr> --unresolved --bots-only --max-replies 0` (the explicit PR argument means no worktree context is needed). If results are non-empty, re-fire `/smithers` on that PR via `crew tell <session> "/smithers <pr_num>"`.
-4. If **ANY** of the above is true for **ANY** pane: surface a compact state-change table **and** any pending decisions (/smithers Slack prompt excluded — see above). For decision-surfacing format, follow the AskUserQuestion context-placement rule (prose-before-call anti-pattern — see § AskUserQuestion — context goes in prose BEFORE the tool call).
-5. If **NONE** of the above is true: exit silently. No output.
+4. **Live PR state poll.** During any phase where one or more open PRs are awaiting approval or merge, query LIVE GitHub state for EVERY open PR in the batch — do NOT infer approval or merge state from crew-session pane narration. If no open PRs exist in the batch, this step is a no-op — run it anyway. Pane narration freezes at the last `/smithers` report the moment the session goes idle; approvals, `reviewDecision` changes, `mergeStateStatus` changes, and merges land on GitHub asynchronously and are invisible to an idle session. For each open PR, run:
+   ```
+   gh pr view <n> --json number,state,isDraft,reviewDecision,mergeStateStatus,mergedAt
+   ```
+   Act on the live result:
+   - **`reviewDecision: APPROVED` + `mergeStateStatus: CLEAN`** → fire `/smithers` to merge: `crew tell <session> "/smithers <pr_num>"`.
+   - **`reviewDecision: APPROVED` + `mergeStateStatus: UNSTABLE`** (CI still running or flaky) → fire `/smithers` to wait for or clear the remaining check: `crew tell <session> "/smithers <pr_num>"`.
+   - **`reviewDecision: APPROVED` + `mergeStateStatus: BLOCKED`** (branch protection unmet — merge conflict, missing required review or status check) → do not blindly re-fire `/smithers` on a BLOCKED PR; surface/escalate it for manual resolution.
+   - **`state: MERGED`** → dismiss the owning session: `crew dismiss <session>`.
+   This step is a DISTINCT live-API check — it is NOT satisfied by reading crew panes. A PR's `reviewDecision` and `mergeStateStatus` are GitHub-API questions answered only by `gh pr view`, never by session-narration inference (see also § Hard Rule 6 — Never Guess, Always Investigate and § Verify PR State Before Describing It).
+5. If **ANY** of the above is true for **ANY** pane: surface a compact state-change table **and** any pending decisions (/smithers Slack prompt excluded — see above). For decision-surfacing format, follow the AskUserQuestion context-placement rule (prose-before-call anti-pattern — see § AskUserQuestion — context goes in prose BEFORE the tool call).
+6. If **NONE** of the above is true: exit silently. No output.
 
-**Raw crew status output is data input, not response output.** The pulse-cron response body MUST be per-pane synthesis — not a dump of the status table. Dumping the raw `crew status` table back to the user is a pulse failure. After running `crew status`, you have collected raw data; your job is to classify each pane (steps 2–3), apply the decide-vs-escalate bright line to any decision gates, act on autonomously-decidable items, and surface only the synthesized result. A response that pastes the raw pane buffers without synthesis is indistinguishable from no coordinator at all.
+**Raw crew status output is data input, not response output.** The pulse-cron response body MUST be per-pane synthesis — not a dump of the status table. Dumping the raw `crew status` table back to the user is a pulse failure. After running `crew status`, you have collected raw data; your job is to classify each pane (steps 2–4), apply the decide-vs-escalate bright line to any decision gates, act on autonomously-decidable items, and surface only the synthesized result. A response that pastes the raw pane buffers without synthesis is indistinguishable from no coordinator at all.
 
 **Worked example — 3-session pulse:**
 
@@ -725,12 +735,12 @@ STEP 1 finding no merges — or any earlier step returning 'no items to act on' 
 BAD — STEP 1 returns empty, coordinator stops:
 > "Checked merge state: no PRs merged. No state change."
 
-*(STEP 2–5 never ran. /smithers Slack prompts and stalled panes invisible.)*
+*(STEP 2–6 never ran. /smithers Slack prompts, stalled panes, and GitHub approvals invisible.)*
 
 GOOD — all steps run in sequence, coordinator summarizes each, then closes if nothing actionable (Illustrative — apply to your active pulse protocol; the Correct pulse procedure above is one such protocol):
-> "STEP 1 (crew status): 3 sessions active — pla-0410 working, pla-0412 working, pla-0414 working. STEP 2 (pane classification): pla-0414 /smithers waiting on Slack-share confirmation — resolved autonomously (auto-approved). STEP 3 (bot comment freshness check): no unreplied bot threads on any open PR. STEP 4 (surface state-change table): pla-0414 gate resolved, no other actionable items. STEP 5 (exit check): all panes clear — exiting silently."
+> "STEP 1 (crew status): 3 sessions active — pla-0410 working, pla-0412 working, pla-0414 working. STEP 2 (pane classification): pla-0414 /smithers waiting on Slack-share confirmation — resolved autonomously (auto-approved). STEP 3 (bot comment freshness check): no unreplied bot threads on any open PR. STEP 4 (live PR poll): PR#412 reviewDecision=APPROVED, mergeStateStatus=CLEAN — fired /smithers to merge. STEP 5 (surface state-change table): pla-0414 gate resolved, PR#412 merge in progress. STEP 6 (exit check): all panes clear — exiting silently."
 
-*(All steps ran. The Slack gate in STEP 2 was caught and resolved. Bot freshness check in STEP 3 confirmed no missed bot threads.)*
+*(All steps ran. The Slack gate in STEP 2 was caught and resolved. Bot freshness check in STEP 3 confirmed no missed bot threads. Live PR poll in STEP 4 caught a GitHub approval that pane narration had missed.)*
 
 **Cross-reference:** See Critical Anti-Patterns § Pulse-protocol short-circuit after empty step.
 
