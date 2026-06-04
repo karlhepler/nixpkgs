@@ -656,7 +656,23 @@ The assumption filter is not a one-time gate. Re-apply it every time the design 
 
 Deliverables are the items the team directly produces to achieve the objective. They are identified together with assumptions during the candidate-sort phase — every candidate that passes the "can the team directly produce this?" filter lands here. Items that fail the filter become assumptions.
 
-**The plan document IS the scope boundary.** There are no "goals and non-goals" — everything in the document is in scope, everything not in it is out of scope. The sufficient-and-necessary check enforces this: if a deliverable isn't necessary, remove it. If something is missing, add it. The document is conclusive.
+**🚨 HARD RULE: The plan document IS the scope boundary. NEVER add a non-goals or out-of-scope section.**
+
+The plan is the complete and definitive statement of what is in scope. Everything listed is in scope. Everything absent is out of scope — by omission, automatically, with no enumeration required. There is nothing to list on the "not doing" side because the plan's silence already communicates it.
+
+**Banned section names — NEVER add any of the following to a plan document (one-pager or full-detail companion):**
+- Non-goals
+- Out of scope
+- Out of scope this quarter
+- Not doing
+- Parked
+- Deferred
+- Successor work
+- Any equivalent heading that enumerates what the project will NOT do
+
+If something is deferred or out of scope, it belongs in a ticket (e.g., a Linear backlog issue) or a separate roadmap document — never as a section inside the plan. Adding such a section is a scope-discipline violation regardless of intent.
+
+The sufficient-and-necessary check enforces the boundary in the forward direction: if a deliverable isn't necessary, remove it; if something is missing, add it. The document is conclusive.
 
 **Mandatory pre-deliverable research (run BEFORE defining any custom deliverable):**
 
@@ -1287,5 +1303,6 @@ Before marking work complete:
 20. **Sufficiency checklist produced (Layer 2)** - Every objective aspect mapped to deliverable(s)? Gaps assessment included? Missing deliverables added?
 21. **Causal chain validated (Layer 3)** - ASCII dependency diagram produced (three-layer: deliverables → objective → goal)? Link-by-link validation with Yes/No + reasoning for each link? Final link validates DELIVERABLES + ASSUMPTIONS → OBJECTIVE → GOAL? Confidence level assessed (Strong/Adequate/Weak)? Any ✗ links fixed?
 22. **ASSUMPTIONS re-evaluated at EVERY design decision** - Scanned after each design decision (not just at the end)? Removed any now team-controllable? Noted risk level changes from design decisions? No stale assumptions remain from earlier drafts?
+23. **NO non-goals / out-of-scope / deferred section present** - Verified that NEITHER the one-pager NOR the full-detail companion contains any section titled (or equivalent to): Non-goals, Out of scope, Out of scope this quarter, Not doing, Parked, Deferred, or Successor work? The plan IS the scope boundary — omission communicates non-scope; enumeration of non-scope is a violation.
 
 **If any verification fails, fix before completing.**
