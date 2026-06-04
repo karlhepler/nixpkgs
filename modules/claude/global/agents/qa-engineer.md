@@ -139,6 +139,30 @@ Understanding the pyramid is not about ratios — it is about understanding the 
 - Does not replace targeted unit tests — complements them by exploring the input space automatically.
 - Recommended tooling varies by language (Go: built-in `go test -fuzz`, Rust: `cargo-fuzz`, Python: Atheris, JavaScript: jest-fuzz or custom property-based via fast-check).
 
+### Test-Smell Catalogue
+
+Test smells are patterns that make a test pass while providing no real confidence — or worse, actively hiding a defect. Flag these in any test-suite review.
+
+**Mocks the seam under test (broken wiring):**
+
+A test mocks the exact dependency whose wiring is the thing under test. The mock satisfies the assertion, but the real composition has never been verified — so broken wiring in production goes undetected. The test is permanently green regardless of whether the dependency is actually connected.
+
+Example: a feature depends on `restartServiceFn` being injected at the call site. A unit test stubs `restartServiceFn` directly and asserts it was called. If production code never wires `restartServiceFn`, the feature is dead — but the unit test never fails. Two rounds of domain review miss it; only an integration-level check catches the gap.
+
+This is the gap the testing-trophy "mostly integration" philosophy exists to close. A unit test that mocks the seam under test cannot, by construction, catch a broken connection. It is a false-green, not evidence the feature works.
+
+**Remedy:** Add an integration test that exercises the real composition — wire the real dependency and assert on the observable outcome. Alternatively, assert the production wiring directly (e.g., verify the dependency is injected with the correct concrete implementation at the composition root). Do not rely on a unit test that stubs the seam under test to verify integration.
+
+This smell is generalizable across codebases and languages: wherever a test doubles the exact boundary it is supposed to verify is connected, the test provides zero signal on wiring correctness.
+
+**Other test smells to flag:**
+
+- **Trivially-passing assertion:** `assert true`, `assert result is not None` with no further check, or an assertion whose left-hand side is always equal to the right-hand side regardless of behavior.
+- **Spy-only verification:** Test installs a spy, verifies the spy was called, but never asserts on the observable outcome. Proves invocation, not correctness — even when the dependency is correctly wired, spy-only assertions don't verify the feature's behavior.
+- **Implementation-testing:** Asserts on private methods, internal data structures, or internal call sequences with no externally-observable effect that could change during a behavior-preserving refactor. Test the contract, not the mechanism.
+- **Coverage theater:** Tests written to hit a coverage number, not to exercise behavior. High line coverage with trivial assertions that can't fail on a broken implementation.
+- **Sleep-based timing:** `time.sleep(0.5)` or equivalent as a synchronization mechanism. Flaky by construction; replace with event-driven waiting or observable state polling with timeout.
+
 ### Risk-Based Test Strategy
 
 Not all code deserves equal testing effort. Risk-based testing allocates coverage proportional to the cost of failure.
@@ -303,7 +327,7 @@ When designing test strategy:
 
 When reviewing existing test suites:
 1. **Coverage analysis** — red zone identification (high-risk / low-coverage)
-2. **Anti-pattern inventory** — flaky tests, coverage theater, implementation testing
+2. **Anti-pattern inventory** — flaky tests, coverage theater, implementation testing, broken wiring, spy-only verification
 3. **Prioritized remediation** — ordered list of changes with expected confidence improvement
 
 ---

@@ -299,6 +299,8 @@ When all AC are checked, stop. The SubagentStop hook calls `kanban done` automat
 
 For domain-specific focus text to include under **Your Domain Focus ({domain}):** in each specialist's prompt, see [review-domains.md](review-domains.md).
 
+**Injection rule for the Cross-Cutting section:** After the per-domain focus line, append the full **Cross-Cutting: Composition Wiring and Lifecycle** section from `review-domains.md` to EVERY specialist's prompt. This section is in addition to the domain-focus line — not a replacement for it. Every specialist receives both: their one-line domain block AND the full cross-cutting section.
+
 ## Phase 5 — Wait for Specialists and Aggregate
 
 Phase 4 ends when all specialist Task agents have been launched. Phase 5 monitors their completion and aggregates findings.
