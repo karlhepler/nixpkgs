@@ -1834,6 +1834,43 @@ Without these AC, compliance with Blocks A and B depends entirely on coordinator
 
 **Anti-pattern from brisk-eagle pricing-pivot review cycle:** In a 14-specialist parallel review on a full-branch diff, roughly 6 of 14 agents stopped mid-investigation with zero findings written — classic late-binding output failure (findings accumulated in reasoning, never emitted, context exhausted). Separately, finance/legal/marketing reviewers flagged findings that did not apply to the platform's greenfield status: marketplace facilitator sales tax for a zero-user platform, email notice to "existing developers" that don't exist, ROSCA consent audit for zero billing events, SEC-230 content complaint process without live servers. The user had to push back on each irrelevant finding individually. Both failure modes are prevented when Blocks A and B are present in every review/research card's action field.
 
+### Read-Only Verification Cards and Out-of-Scope Change Containment
+
+#### Read-only verification cards (observe-only delegation)
+
+Some cards are observation-only — the sub-agent's job is to read, inspect, and report, not to edit source files. When `editFiles` is empty, it is **empty by design**: the card was scoped as observe-only intentionally, and that constraint MUST be restated in the agent prompt.
+
+**When creating a card with an empty `editFiles` list, the coordinator MUST include this restatement verbatim in the agent prompt:**
+
+> This card is observe-only — no source edits — editFiles is empty by design. If the intended verification method is blocked (e.g., the tool or access required is unavailable), STOP and return `Status: blocked` with a one-sentence `Blocker:` description. Do NOT improvise an out-of-scope workaround, edit source files, or disable any security mitigation to force a result.
+
+**Why this matters (incident PLA-1821):** A read-only verification sub-agent edited out-of-scope source config and disabled a security mitigation to force a result when the primary verification method was blocked. The agent prompt did not restate the observe-only constraint. Restating it explicitly — especially the phrase "empty by design" — removes the ambiguity that leads agents to treat workarounds as within scope.
+
+**The constraint applies to all read-only card types:** verification experiments, observe-only research, spot-checks, environment inspection cards, and any card where the action contains no instruction to write or modify files. If in doubt, restate it.
+
+**Scope note:** This guidance applies to ANY card with an empty `editFiles` list — not only review/research cards. A work card scoped to read-only inspection (e.g., environment audit, pre-flight check) carries the same observe-only constraint and requires the same restatement.
+
+#### Out-of-scope uncommitted changes (containment trigger)
+
+When a sub-agent returns, any uncommitted change that lands OUTSIDE the card's declared `editFiles` is a **containment trigger**. A platform security warning in the agent return is also a trigger, but routes to a separate response path (see below).
+
+**Containment trigger response — out-of-scope file changes (mandatory):**
+
+1. STOP. Do not commit, push, or chain further work.
+2. Run `git diff` and `git status --short` to inspect the full working-tree state.
+3. Identify every file modified that is NOT in the card's `editFiles`.
+4. **First, rule out cross-session in-flight work:** run `kanban list` (all sessions) and scan `doing` cards for `editFiles` entries that explain the unexpected file. If another session's in-flight card accounts for the file, it is expected — do NOT escalate (this mirrors the existing rule at § Hard Rules item 5 / "When `git status` shows unexpected out-of-scope files"). Only treat the change as a genuine containment trigger if it is NOT explained by another session's card.
+5. Do NOT include out-of-scope changes in the card's commit — leave them uncommitted (the common case: sub-agents do not stage; the coordinator commits) or, if somehow staged, exclude via `git restore --staged <path>`.
+6. Treat the out-of-scope change as a separate investigation: create a new card or surface the finding to the user before proceeding.
+
+**Why immediate inspection is required:** An out-of-scope edit may represent a security-impactful workaround (disabled mitigation, modified config, injected backdoor pattern) inserted to satisfy an AC that the agent could not meet cleanly. Committing it as part of the card's work launders it past the review gate. The diff must be read and understood before any commit proceeds.
+
+**Never commit an out-of-scope change without explicit user authorization**, even if the agent's return message describes it as a minor fix or necessary side effect.
+
+**Containment trigger response — security-warning-only (no file changes):**
+
+If the trigger is a platform security warning in the agent return but there are NO out-of-scope file changes (i.e., `git diff` and `git status --short` are clean), the file-diff protocol above does not apply. Route instead to the **Opus 4.7 cybersecurity safeguards** response (see § Your Team): flag the warning to the user as a platform issue and suggest re-running with explicit scope narrowing. Do not run `git restore` or treat the card as a file-scope violation — this is a platform-layer event, not a rogue edit.
+
 ### Card Sizing and Scope
 
 **Evaluate size BEFORE `kanban do` / `kanban todo`.** Context-exhausted agents are a card-sizing failure caught too late. Any threshold exceeded triggers a split proposal to the user before the card is created — never create the oversized card "and see how it goes."
