@@ -51,5 +51,16 @@
           nix-index-database.homeModules.nix-index
         ];
       };
+
+      checks.${system} = {
+        check-darwin-trash = pkgs.runCommand "check-darwin-trash" {
+          src = ./.;
+          nativeBuildInputs = [ pkgs.ripgrep pkgs.bash ];
+        } ''
+          cd "$src"
+          bash modules/system/check-darwin-trash.bash
+          touch $out
+        '';
+      };
     };
 }

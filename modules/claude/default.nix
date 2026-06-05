@@ -1260,6 +1260,11 @@ EOF
       $DRY_RUN_CMD rm -f ~/.claude/commands/review-pr-comments.md
       # Agent renames — stale agents/ files from git mv operations
       $DRY_RUN_CMD rm -f ~/.claude/agents/ux-designer.md
+      # stk tooling removed in commit 7c52619 — orphaned deploy artifacts
+      $DRY_RUN_CMD rm -f ~/.claude/agents/stk-burns.md
+      $DRY_RUN_CMD rm -f ~/.claude/agents/stk-staff.md
+      $DRY_RUN_CMD rm -f ~/.claude/commands/stk-burns.md
+      $DRY_RUN_CMD rm -f ~/.claude/commands/stk-staff.md
 
       # Add generated TOOLS.md (use install to handle read-only destination from previous build)
       $DRY_RUN_CMD install -m 644 ${toolsMarkdown} ~/.claude/TOOLS.md
