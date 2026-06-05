@@ -207,7 +207,8 @@ On non-zero exit: log the error, run `rm -f "$(git rev-parse --show-toplevel)/.s
 1. If `.smithers/slack_posted` does NOT exist: run `smithers-post <PR_NUMBER_OR_URL>`. If it returns 0, run `touch "$(git rev-parse --show-toplevel)/.smithers/slack_posted"` to record the post. If `smithers-post` exits non-zero, log `"Warning: smithers-post failed (exit <code>) — Slack notification not delivered; flag not set so a retry on manual re-invocation will attempt again"` and do NOT touch the flag. When delivery succeeds, this signals reviewers that the PR is clean and ready for review.
 2. Run `rm -f "$(git rev-parse --show-toplevel)/.smithers/clean_confirmed"`.
 3. Log `"Cycle <N>: PR not currently mergeable (reviewDecision=<value> mergeStateStatus=<value>) — posted to Slack, smithers done"` (or `"... — already posted to Slack, smithers done"` if the slack_posted flag already existed).
-4. **Stop** (no ScheduleWakeup). NEVER arm `autoMergeRequest` as a forward-looking action. The PR is not ready to merge; the human-gated approval workflow takes over from here.
+4. Run the pre-stop sweep — sweep `prc list <PR> --unresolved --bots-only` to zero before stopping. Resolve any bot thread carrying a Smithers reply but no resolution.
+5. **Stop** (no ScheduleWakeup). NEVER arm `autoMergeRequest` as a forward-looking action. The PR is not ready to merge; the human-gated approval workflow takes over from here.
 
 **Verify before declaring done** — run only when merge was invoked:
 ```
@@ -248,11 +249,13 @@ If `smithers-post` returns 0: run `touch "$(git rev-parse --show-toplevel)/.smit
 
 If `.smithers/slack_posted` already exists, skip the `smithers-post` call (already posted on an earlier cycle).
 
-After posting (or skipping): run `rm -f "$(git rev-parse --show-toplevel)/.smithers/clean_confirmed"` to clear the flag, then **stop** (no ScheduleWakeup). The PR is clean and handled.
+After posting (or skipping): run `rm -f "$(git rev-parse --show-toplevel)/.smithers/clean_confirmed"` to clear the flag. Run the pre-stop sweep — sweep `prc list <PR> --unresolved --bots-only` to zero before stopping. Then **stop** (no ScheduleWakeup). The PR is clean and handled.
 
 ---
 
 ### Step 8: Check budget limits
+
+If either budget limit is reached (`fix_count >= max_ralph_invocations` OR `cycle >= max_cycles`), execute the pre-stop sweep first: sweep `prc list <PR> --unresolved --bots-only` to zero — resolve any bot thread that carries a Smithers reply but no resolution before stopping. The fix-delegation cap limits CODE-FIX delegations only; it is never a license to leave a replied-to thread open.
 
 If `fix_count >= max_ralph_invocations`: log `"Max specialist delegations (4) reached — stopping"`, send osascript notification, and **stop** (no ScheduleWakeup).
 
@@ -350,7 +353,7 @@ You are running autonomously. All file operations MUST stay within the current g
 1. `prc reply <comment_id> "..."`
 2. `prc resolve <thread_id>`
 
-Skipping step 2 leaves the thread open and re-triggers fix cycles on the next poll. The reply alone does NOT close the thread — `is_resolved` only flips when `prc resolve` is called.
+Reply and resolve are one atomic action. A reply without a resolve is a defect — `is_resolved` only flips when `prc resolve` is called, and an unresolved thread re-triggers fix cycles on every subsequent poll regardless of reply count. This invariant holds including on deferral, cap-stop, and known-limitation paths: the fix-delegation cap limits CODE-FIX delegations only and never licenses leaving a replied-to thread open. When a thread is deferred (e.g., "no fix possible in this pass"), the reply explains the deferral AND `prc resolve <thread_id>` is still called in the same step.
 
 **Action — For EACH bot comment:**
 Step 1: Critically evaluate — does it require a code change?
@@ -359,7 +362,9 @@ Step 2 — If NO code change needed: Reply and resolve immediately:
   `prc resolve <thread_id>`
 Step 3 — If code change IS needed: Fix the code, commit, push, then reply with the commit hash via `prc reply <comment_id>`, and resolve via `prc resolve <thread_id>`.
 
-CRITICAL: Always run `prc resolve <thread_id>` after handling any comment. Unresolved threads with replies leave the thread open on the PR and re-trigger fix cycles on subsequent polls — `is_resolved: false` is the field that drives the actionable count, regardless of reply count.
+**Universal pre-stop bot-thread sweep:** Before ANY smithers stop or exit — including the Step 7a clean-PR stop, the cap-stop (Step 8), max-cycles (Step 8), the stagnation stop (Step 13), and any other terminal path — sweep `prc list <PR> --unresolved --bots-only` to zero. Resolve any bot thread that carries a Smithers reply but no resolution before exiting. No stopping condition is a license to leave a replied-to thread open.
+
+**End-of-pass sweep (mandatory before exiting):** Before declaring the bot-handling pass complete, sweep `prc list <PR> --unresolved --bots-only` to zero — resolve any bot thread carrying a reply but no resolution before exiting. Never exit with a replied-to thread still unresolved.
 
 ## Merge Conflicts
 
@@ -428,7 +433,7 @@ git rev-parse HEAD
 ```
 
 Store as `post_sha`. Compare to `pre_sha`:
-- If `pre_sha == post_sha`: increment `stagnation_count`. If `stagnation_count >= 2`: log `"Stagnation detected — specialist made no commits in 2 consecutive cycles. Stopping."` and **stop** (no ScheduleWakeup).
+- If `pre_sha == post_sha`: increment `stagnation_count`. If `stagnation_count >= 2`: run the pre-stop sweep — sweep `prc list <PR> --unresolved --bots-only` to zero before stopping. Then log `"Stagnation detected — specialist made no commits in 2 consecutive cycles. Stopping."` and **stop** (no ScheduleWakeup).
 - If `pre_sha != post_sha`: reset `stagnation_count = 0`.
 
 ---

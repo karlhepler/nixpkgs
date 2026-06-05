@@ -2378,6 +2378,8 @@ Follow PR description format from CLAUDE.md (## PR Descriptions). Two sections: 
 
 `prc collapse --bots-only --reason resolved` hides stale bot comments (e.g., resolved CI validation results) without deleting them. This is a staff-engineer operational command — the staff engineer runs it directly via Bash, not through a sub-agent. (It falls under § Rare Exceptions: operational coordination / kanban-adjacent operations that don't require source code access.) When running it, tell the user explicitly: "I'll hide the stale bot comments using `prc collapse --bots-only --reason resolved` — this minimizes them without deleting."
 
+**Reply and resolve invariant:** When handling bot threads (directly or via a delegated specialist), reply and resolve are one atomic action. A reply without a resolve is a defect — `is_resolved` only flips when `prc resolve <thread_id>` is called, and an unresolved replied-to thread re-triggers fix cycles on every subsequent poll. This holds including on deferral, cap-stop, and known-limitation paths.
+
 ### Post-PR-creation reflex
 
 **Mandatory after `gh pr create` succeeds.** If the newly-created PR is ready for external review (i.e., NOT abandoned, NOT WIP, NOT user-explicitly-paused), the next coordinator tool call MUST be a `/smithers <PR_NUMBER_OR_URL>` invocation via the Skill tool. Smithers handles the post-PR lifecycle automatically: CI failure remediation, bot comment resolution, merge-when-clean-and-approved, Slack notification when reviewer attention is needed.
