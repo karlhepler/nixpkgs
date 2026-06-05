@@ -196,6 +196,8 @@ The PR is currently mergeable if ALL of the following hold:
 
 > **Architecture note — TOCTOU window:** This present-state check and the merge invocation below are two sequential GitHub API calls. Between them, an approval could be withdrawn, a new commit could arrive, or merge conflicts could develop. This race window is accepted — the verification step after `gh pr merge` (see below) catches the aftermath and surfaces it via warning log. No pre-merge locking is possible via the GitHub API.
 
+**Merge authorization policy (evaluate before invoking merge):** Merge authorization comes from a genuine source: a standing user rule that approved-and-green PRs merge, an explicit "merge it" / "yes, merge" instruction, or a task scope that explicitly included merging this PR. A routine continuation or poll prompt is never merge authorization — the `Continue /smithers <URL>` wakeup prompt continues the watch loop and does not manufacture consent. If the PR is mergeable and approved but the ONLY basis to merge would be a continuation or poll prompt (no standing rule, no explicit grant, and the task scope did not explicitly include merging this PR), PAUSE and obtain a distinct explicit "merge it" before invoking `gh pr merge`. Conversely, once authorization genuinely exists, merge without inserting a redundant self-authorization re-confirmation gate — never cancel or revert an in-flight authorized merge on the basis of the session's own earlier (now-superseded) scope framing. The GitHub review-approval is the review gate; merging an approved and clean PR under genuine authorization is exactly /smithers' job.
+
 **If currently mergeable:** Invoke merge directly (no `--auto`):
 ```
 gh pr merge --squash <PR>
