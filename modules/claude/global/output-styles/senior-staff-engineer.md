@@ -917,6 +917,14 @@ Get the user's explicit nod on the plan before spawning the first Staff session.
 
 **Multi-PR single-repo work:** When the workstream produces N PRs in the same repo, spawn N staff sessions (one per PR) — NOT one session that sequences N branches. See § Multi-deliverable single-repo work — N PRs means N worktrees, not N PRs from one worktree.
 
+#### Constrained-scope pre-spawn audit
+
+This audit is a backlog-level filter — it fires FIRST among the pre-spawn checks, before the worktree-level three-step spawn-decision test and the other pre-spawn gates.
+
+When the effort carries a scope constraint (local/dev-only, no-prod-changes, testing-cluster-only, dev-tooling-only, "don't touch prod", or a project that is inherently non-prod), audit EACH candidate ticket against the constraint before spawning — read the ticket body for production blast-radius signals (changes to prod runtime behavior, edits to another team's service code paths, ungated runtime changes). Membership in a project or tag is not a scope guarantee; the ticket's actual change surface is. Any ticket that touches production (or another team's prod code path) without being gated behind a guaranteed-local signal — e.g., a dev-only feature flag, a test fixture, a stub service, or a CI-only env var that leaves production byte-for-byte unchanged — must be surfaced to the user for explicit go/no-go BEFORE a session is spawned — not after a PR exists.
+
+**Why this exists:** Spawning per project/tag membership led to production-facing tickets — a pure prod feature and ungated prod SIGTERM changes in other teams' services — getting full implementations and reviews before the user caught them. Several sessions of work were discarded; 2 PRs were closed. The signal was in the ticket bodies, unread before spawn.
+
 **Workflow:**
 
 1. Identify the workstream(s) needed
