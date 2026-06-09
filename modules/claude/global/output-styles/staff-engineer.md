@@ -1770,6 +1770,7 @@ RESILIENCE DIRECTIVES (review/research cards):
 - Do NOT spawn `claude` as part of an experiment. Running Claude inside a sub-agent creates a nested session that is tool-use-expensive and hard to interact with non-interactively. If the question requires Claude-specific behavior, use static analysis: `rg` on the installed binary, inspect installed JS, or reason from Node.js defaults.
 - HARD TOOL-USE BUDGET: stay within ~30-35 tool uses total. Some agents have a platform cap of 100 turns (maxTurns frontmatter); ~30-35 leaves generous headroom for retries and verification. If you approach the budget without all findings written, STOP and return "budget exhausted; primary question unanswered within tool-use budget" — better to return partial findings + honest ceiling signal than exhaust context mid-experiment with nothing preserved on disk.
 - For regex/pattern-matching code: trace the pattern against representative input (output of the producer function, real-world examples) before concluding 'pattern correct'. Do not rely on 'the comment describes it accurately' — that's a documentation check, not a correctness check. For Lua/POSIX/PCRE-specific hazards, see § Reviewing regex / pattern-matching code in agent definitions.
+- CLOCK-DISCONTINUITY (time-based state only): applies ONLY when the card's subject involves heartbeat, mtime, freshness window, lease, TTL, timeout, liveness, stale detection — if none of these appear, skip this bullet entirely. When applicable, you MUST explicitly enumerate clock-discontinuity scenarios and trace what each does to every time-gated decision: system sleep/suspend (laptop sleep is a normal-frequency event — laptops sleep nightly, this is the NORMAL case not an edge case), SIGSTOP/wedged event loops, NTP clock jumps, and VM pauses. A review report on time-based logic containing no analysis of sleep/suspend means this directive was missed.
 ```
 
 #### Block B — Platform Status Calibration
@@ -1800,6 +1801,7 @@ PLATFORM STATUS CALIBRATION:
 - [ ] Block B (Platform Status Calibration) present in `action`, with doc paths verified for this project (default paths acceptable if none found)
 - [ ] Standard AC included in `criteria` (see below)
 - [ ] Findings-quality AC programmatic, not semantic — see § Findings-quality AC must be programmatic, not semantic
+- [ ] If the card's `action` mentions heartbeat, mtime, freshness window, lease, TTL, timeout (domain timeouts — not `mov_commands` timeout fields in AC boilerplate), liveness, or stale detection: the `action` field MUST include the clock-discontinuity attack surface ('what happens to this check after system sleep, process suspension, or a clock jump?')
 
 If any are missing, add them before creating the card.
 
@@ -1821,6 +1823,16 @@ If any are missing, add them before creating the card.
    }
    ```
    Enforces Block B's read-first directive.
+
+**Recommended add-on for time-based-state cards** (include in addition to the two standard ACs above when the card's subject involves heartbeat, mtime, freshness window, lease, TTL, timeout, liveness, stale detection):
+3. Clock-discontinuity analysis present in scratchpad:
+   ```json
+   {
+     "text": "Clock-discontinuity analysis present in scratchpad",
+     "mov_commands": [{"cmd": "rg -qi 'sleep|suspend|NTP|SIGSTOP' .scratchpad/<card>-<agent>.md", "timeout": 10}]
+   }
+   ```
+   Enforces Block A's CLOCK-DISCONTINUITY directive for time-based-state cards.
 
 #### Findings-quality AC must be programmatic, not semantic
 
