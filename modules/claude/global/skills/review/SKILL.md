@@ -179,24 +179,52 @@ kanban do '[
     "type": "work",
     "action": "swe-backend review of PR #<number>: <title>",
     "intent": "Identify issues in the backend domain of this PR",
-    "persona": "swe-backend",
     "model": "sonnet",
     "criteria": [
-      "Findings returned in required structured format (FILE/LINE/SEVERITY/COMMENT blocks)",
-      "Verdict assigned (LGTM, concerns, or blocking)",
-      "Backend focus areas checked: N+1 queries, error handling, input validation, race conditions, transaction boundaries"
+      {
+        "text": "Findings written to scratchpad file",
+        "mov_commands": [
+          {"cmd": "test -f .scratchpad/review-<number>-swe-backend.md", "timeout": 10}
+        ]
+      },
+      {
+        "text": "Verdict assigned (LGTM, concerns, or blocking)",
+        "mov_commands": [
+          {"cmd": "rg -q \"Verdict:\" .scratchpad/review-<number>-swe-backend.md", "timeout": 10}
+        ]
+      },
+      {
+        "text": "Scratchpad contains at least one FILE: finding or an LGTM verdict",
+        "mov_commands": [
+          {"cmd": "rg -q \"FILE:|LGTM\" .scratchpad/review-<number>-swe-backend.md", "timeout": 10}
+        ]
+      }
     ]
   },
   {
     "type": "work",
     "action": "swe-security review of PR #<number>: <title>",
     "intent": "Identify security issues in this PR",
-    "persona": "swe-security",
     "model": "sonnet",
     "criteria": [
-      "Findings returned in required structured format (FILE/LINE/SEVERITY/COMMENT blocks)",
-      "Verdict assigned (LGTM, concerns, or blocking)",
-      "Security focus areas checked: auth/authz gaps, injection vectors, PII exposure, OWASP Top 10"
+      {
+        "text": "Findings written to scratchpad file",
+        "mov_commands": [
+          {"cmd": "test -f .scratchpad/review-<number>-swe-security.md", "timeout": 10}
+        ]
+      },
+      {
+        "text": "Verdict assigned (LGTM, concerns, or blocking)",
+        "mov_commands": [
+          {"cmd": "rg -q \"Verdict:\" .scratchpad/review-<number>-swe-security.md", "timeout": 10}
+        ]
+      },
+      {
+        "text": "Scratchpad contains at least one FILE: finding or an LGTM verdict",
+        "mov_commands": [
+          {"cmd": "rg -q \"FILE:|LGTM\" .scratchpad/review-<number>-swe-security.md", "timeout": 10}
+        ]
+      }
     ]
   }
 ]' --session <current-session>
@@ -204,11 +232,13 @@ kanban do '[
 
 Adapt the array to include only detected specialists. Note the card numbers returned.
 
+**Note:** Specialist identity (e.g., `swe-backend`, `swe-security`) is supplied via the Agent tool's `subagent_type` parameter at launch time — it is NOT a card field.
+
 ### Launch All Specialists in Parallel
 
 **Before constructing each specialist prompt:** fully resolve every `{if ...}` conditional block. Evaluate each condition against the actual context values collected in Phase 2. Replace each block with its inner text if the condition is true, or with nothing if false. Never pass an unresolved `{if ...}` marker to a specialist — the specialist receives only clean, literal text.
 
-In a **single message**, make one Task tool call per specialist (all in parallel). Each specialist receives:
+In a **single message**, make one Agent tool call per specialist (all in parallel), setting `subagent_type` to the specialist identity (e.g., `subagent_type: "swe-backend"`, `subagent_type: "swe-security"`). Each specialist receives:
 
 ```
 You are a {domain} specialist reviewing PR #{number}: {title}
