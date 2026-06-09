@@ -3,9 +3,12 @@ name: smithers
 description: >
   Watch a GitHub PR for CI failures and bot comments. Polls on a 1-minute
   cadence via ScheduleWakeup, delegates fixes to specialist agents via the
-  Agent tool, and merges the PR when it is currently approved and clean. Does
-  NOT arm auto-merge as a forward-looking action — preserves any human-gated
-  approval workflow. Invoke as /smithers (infers PR from current branch) or
+  Agent tool, and merges the PR when it is currently approved and clean. After
+  posting to Slack for reviewer attention, switches to a slow approval-watch
+  phase (~10-minute pulse) that detects approval, late bot comments, and late
+  CI failures automatically — merging the PR once approved and clean. Does
+  NOT arm auto-merge as a forward-looking action — merges via explicit action
+  on detection only. Invoke as /smithers (infers PR from current branch) or
   /smithers <PR> (explicit PR number or URL). Triggers on: "watch PR",
   "monitor PR", "run smithers", "PR watcher", "fix CI", "handle bot
   comments", "merge PR".
@@ -36,6 +39,7 @@ Most state lives in conversation history. Track these values mentally across ite
 - `pre_sha` — HEAD commit SHA captured before delegating fix work
 - `max_cycles` — 10 (hard limit on total iterations)
 - `max_ralph_invocations` — 4 (hard limit on specialist delegations)
+- `approval_watch_cycle` — iteration counter within the approval-watch phase, starts at 0 (see § Approval-Watch Phase). **In-memory only**: a session restart resets the expiry clock to 0, extending the effective watch window. A restart resets the expiry window. This is accepted behavior — the 24h bound is a within-session guarantee only.
 
 **`clean_confirmed` — durable flag file (NOT in-memory):** This flag MUST survive the ScheduleWakeup gap, which spawns a fresh agent context where in-memory variables do not persist. It is stored as a file:
 
@@ -54,9 +58,16 @@ On first invocation all counters are at their initial values. On ScheduleWakeup 
 - **Test:** `test -f "$(git rev-parse --show-toplevel)/.smithers/slack_posted"` (before invoking `smithers-post` in Step 7a)
 - **Clear:** Not cleared by smithers — persists across watcher runs. The user clears it manually if a re-post is desired.
 
+**`approval_watch` — durable flag file (NOT in-memory):** This flag marks that smithers has entered the approval-watch phase on a given PR. It must survive the ScheduleWakeup gap so fresh agent contexts know to use the slow-pulse cadence.
+
+- **File path:** `.smithers/approval_watch` (relative to the git repo root)
+- **Set:** `touch "$(git rev-parse --show-toplevel)/.smithers/approval_watch"` (when entering the approval-watch phase after the Slack post, in Step 7a)
+- **Test:** `test -f "$(git rev-parse --show-toplevel)/.smithers/approval_watch"` (Step 7a entry — determines phase)
+- **Clear:** `rm -f "$(git rev-parse --show-toplevel)/.smithers/approval_watch"` (when exiting the approval-watch phase — on merge, CHANGES_REQUESTED surface, external merge/close, expiry, or re-entering the fix cycle)
+
 ## LOOP BODY
 
-Each iteration executes steps 1–15 in order. Any step may terminate early by scheduling a wakeup or stopping without scheduling.
+Each iteration executes steps 1–15 in order. Any step may terminate early by scheduling a wakeup or stopping without scheduling. **Exception — approval-watch invocations:** After Step 1 (PR state check), if the `approval_watch` flag file exists, smithers branches to the approval-watch pulse logic and skips Steps 2–15 entirely (see § Approval-Watch Phase).
 
 ---
 
@@ -204,13 +215,13 @@ gh pr merge --squash <PR>
 ```
 On non-zero exit: log the error, run `rm -f "$(git rev-parse --show-toplevel)/.smithers/clean_confirmed"`, and proceed to verification.
 
-**If NOT currently mergeable** (any condition above is not met): the PR is clean (no failed checks, no conflicts, no actionable bot comments) but cannot be merged yet — typically because review is required. Notify reviewers via Slack, then stop.
+**If NOT currently mergeable** (any condition above is not met): the PR is clean (no failed checks, no conflicts, no actionable bot comments) but cannot be merged yet — typically because review is required. Notify reviewers via Slack, then enter the **approval-watch phase** (slow pulse) rather than stopping.
 
 1. If `.smithers/slack_posted` does NOT exist: run `smithers-post <PR_NUMBER_OR_URL>`. If it returns 0, run `touch "$(git rev-parse --show-toplevel)/.smithers/slack_posted"` to record the post. If `smithers-post` exits non-zero, log `"Warning: smithers-post failed (exit <code>) — Slack notification not delivered; flag not set so a retry on manual re-invocation will attempt again"` and do NOT touch the flag. When delivery succeeds, this signals reviewers that the PR is clean and ready for review.
 2. Run `rm -f "$(git rev-parse --show-toplevel)/.smithers/clean_confirmed"`.
-3. Log `"Cycle <N>: PR not currently mergeable (reviewDecision=<value> mergeStateStatus=<value>) — posted to Slack, smithers done"` (or `"... — already posted to Slack, smithers done"` if the slack_posted flag already existed).
-4. Run the pre-stop sweep — sweep `prc list <PR> --unresolved --bots-only` to zero before stopping. Resolve any bot thread carrying a Smithers reply but no resolution.
-5. **Stop** (no ScheduleWakeup). NEVER arm `autoMergeRequest` as a forward-looking action. The PR is not ready to merge; the human-gated approval workflow takes over from here.
+3. Log `"Cycle <N>: PR not currently mergeable (reviewDecision=<value> mergeStateStatus=<value>) — posted to Slack; entering approval-watch phase"` (or `"... — already posted to Slack; entering approval-watch phase"` if the slack_posted flag already existed).
+4. Run the pre-stop sweep — sweep `prc list <PR> --unresolved --bots-only` to zero. Resolve any bot thread carrying a Smithers reply but no resolution.
+5. **Enter the approval-watch phase** (see § Approval-Watch Phase below). NEVER arm `autoMergeRequest` as a forward-looking action. All merges happen via explicit merge action on detection.
 
 **Verify before declaring done** — run only when merge was invoked:
 ```
@@ -252,6 +263,123 @@ If `smithers-post` returns 0: run `touch "$(git rev-parse --show-toplevel)/.smit
 If `.smithers/slack_posted` already exists, skip the `smithers-post` call (already posted on an earlier cycle).
 
 After posting (or skipping): run `rm -f "$(git rev-parse --show-toplevel)/.smithers/clean_confirmed"` to clear the flag. Run the pre-stop sweep — sweep `prc list <PR> --unresolved --bots-only` to zero before stopping. Then **stop** (no ScheduleWakeup). The PR is clean and handled.
+
+---
+
+## Approval-Watch Phase
+
+When the PR is clean but not yet mergeable (review pending), smithers switches from the 1-minute CI-babysit cadence to a slow pulse of **~10 minutes** via ScheduleWakeup. This phase is named **approval-watch**.
+
+**Entering the phase:** Reached from Step 7a "If NOT currently mergeable" path. Before scheduling the first slow-pulse wakeup:
+
+1. Set the durable flag: `touch "$(git rev-parse --show-toplevel)/.smithers/approval_watch"`.
+2. Recall or initialize `approval_watch_cycle = 0` (in-memory; reset to 0 when the flag is first set; incremented on each slow-pulse invocation).
+3. ScheduleWakeup with `delaySeconds: 600`, `reason: "Entering approval-watch — waiting ~10 minutes before first slow-pulse check (review pending)"`, and `prompt: "Continue /smithers <PR_URL>"`.
+
+**Detecting the phase on wakeup:** At the start of each smithers invocation, after Step 1 (PR state check), test:
+
+```bash
+test -f "$(git rev-parse --show-toplevel)/.smithers/approval_watch"
+```
+
+If the flag file exists, this is an approval-watch pulse. Skip Steps 2–15 of the normal loop body and execute the approval-watch pulse logic below instead.
+
+---
+
+### Approval-Watch Pulse Logic
+
+Each slow-pulse invocation runs these checks in order:
+
+**AW-1: Re-verify PR is still open.**
+
+```bash
+gh pr view <PR> --json state --jq '.state'
+```
+
+- If `state == "MERGED"`: run `rm -f "$(git rev-parse --show-toplevel)/.smithers/approval_watch"`, send macOS notification `"PR <N> merged externally — smithers stopping"`, log `"PR <N> merged externally; exiting approval-watch cleanly"`, and **stop** (no ScheduleWakeup). This is the **merged externally** exit.
+- If `state == "CLOSED"`: run `rm -f "$(git rev-parse --show-toplevel)/.smithers/approval_watch"`, send macOS notification `"PR <N> closed — smithers stopping"`, log `"PR <N> closed externally; exiting approval-watch cleanly"`, and **stop** (no ScheduleWakeup).
+
+**AW-2: Fetch live GitHub state.**
+
+Run:
+
+```bash
+gh pr view <PR> --json reviewDecision,mergeStateStatus,state,mergedAt
+```
+
+Capture `reviewDecision`, `mergeStateStatus`.
+
+**AW-3: Check for late bot comments.**
+
+Run:
+
+```bash
+prc list <PR> --unresolved --bots-only
+```
+
+If new unresolved bot comments are found, exit the approval-watch phase and re-enter the normal fix cycle:
+
+1. Run `rm -f "$(git rev-parse --show-toplevel)/.smithers/approval_watch"`.
+2. Log `"Approval-watch cycle <N>: new bot comments detected — re-entering fix cycle"`.
+3. ScheduleWakeup with `delaySeconds: 60`, `reason: "New bot comments detected during approval-watch — resuming 1-minute CI cycle"`, and `prompt: "Continue /smithers <PR_URL>"`.
+
+(The next invocation will run the normal loop body, pick up the bot comments in Step 3, and handle them. Once the fix cycle completes cleanly again, smithers will re-enter approval-watch from Step 7a.)
+
+**AW-4: Check for late CI failures.**
+
+Run:
+
+```bash
+gh pr checks <PR> --json name,state,bucket,link
+```
+
+Compute `fail_fast` (same as Step 2 of the main loop). If any check has bucket `fail` or a failure-state:
+
+1. Run `rm -f "$(git rev-parse --show-toplevel)/.smithers/approval_watch"`.
+2. Log `"Approval-watch cycle <N>: late CI failure detected — re-entering fix cycle"`.
+3. ScheduleWakeup with `delaySeconds: 60`, `reason: "Late CI failure detected during approval-watch — resuming 1-minute CI cycle"`, and `prompt: "Continue /smithers <PR_URL>"`.
+
+**AW-5: Disposition on review state.**
+
+Evaluate `reviewDecision` and `mergeStateStatus`:
+
+- **`reviewDecision == "APPROVED"` AND `mergeStateStatus == "CLEAN"`:** The PR is approved and clean. Run the post-approval bot-comment inspection gate:
+  1. Run `prc list <PR> --unresolved --bots-only` — if any unresolved bot comments exist, treat as "new bot comments" (AW-3 path above) before merging.
+  2. If zero unresolved bot comments: this is the merge path. Apply the merge authorization policy (same as Step 7a) — if genuine authorization exists (standing rule, explicit grant, or task scope), invoke merge directly:
+     ```bash
+     gh pr merge --squash <PR>
+     ```
+     On non-zero exit: log the error, do NOT clear the `approval_watch` flag, and continue the slow pulse (the next pulse re-evaluates state).
+  3. Run `rm -f "$(git rev-parse --show-toplevel)/.smithers/approval_watch"`. (Note: clearing the flag before the verify call below leaves a narrow orphan window — if the session crashes between here and the verify call, the flag is gone and smithers will re-enter the normal loop body on restart rather than the AW path. Accepted behavior: Step 1's MERGED check is the fallback.)
+  4. Verify and notify per the same verification logic in Step 7a (check `state == "MERGED"` or `mergeStateStatus == "QUEUED"`, send osascript notification, post to Slack via `smithers-post` if `.smithers/slack_posted` does not already exist).
+  5. **Stop** (no ScheduleWakeup).
+
+- **`reviewDecision == "CHANGES_REQUESTED"`:** Surface to the invoking session or coordinator.
+  1. Run `rm -f "$(git rev-parse --show-toplevel)/.smithers/approval_watch"`.
+  2. Send macOS notification: `"PR <N>: changes requested — smithers stopping"`.
+  3. Log `"Approval-watch cycle <N>: reviewDecision=CHANGES_REQUESTED — surfacing to coordinator. PR left in CHANGES_REQUESTED state with <mergeStateStatus> merge status."`.
+  4. Run the pre-stop sweep — sweep `prc list <PR> --unresolved --bots-only` to zero.
+  5. **Stop** (no ScheduleWakeup). The coordinator or user must address the reviewer feedback.
+
+- **Any other `reviewDecision`** (e.g., `REVIEW_REQUIRED`, `null`): Review still pending. Increment `approval_watch_cycle` by 1. Proceed to AW-6.
+
+**AW-6: Check expiry bound.**
+
+The approval-watch phase expires after **144 slow-pulse cycles (~24 hours at the ~10-minute cadence)**. This expiry prevents indefinite watches on stalled PRs.
+
+If `approval_watch_cycle >= 144`:
+
+1. Run `rm -f "$(git rev-parse --show-toplevel)/.smithers/approval_watch"`.
+2. Send macOS notification: `"PR <N>: approval-watch expired after ~24h"`.
+3. Log `"Approval-watch expired after <approval_watch_cycle> cycles (~<hours>h). PR left in state: reviewDecision=<value>, mergeStateStatus=<value>, state=OPEN. Handoff: PR requires human action — either reviewer approval or manual re-invocation of /smithers to resume watching."`.
+4. Run the pre-stop sweep — sweep `prc list <PR> --unresolved --bots-only` to zero.
+5. **Stop** (no ScheduleWakeup).
+
+**AW-7: Schedule next slow-pulse wakeup.**
+
+Log `"Approval-watch cycle <approval_watch_cycle>: review still pending (reviewDecision=<value>) — scheduling next pulse in 10 minutes"`.
+
+ScheduleWakeup with `delaySeconds: 600`, `reason: "Approval-watch cycle <N> — waiting ~10 minutes before next slow-pulse check"`, and `prompt: "Continue /smithers <PR_URL>"`.
 
 ---
 
@@ -465,13 +593,22 @@ ScheduleWakeup(
 ## STOPPING CONDITIONS (summary)
 
 Stop (no ScheduleWakeup) when any of the following occur:
+
+**Fast-cycle stops (Steps 1–15):**
 1. PR is MERGED or CLOSED (Step 1)
-2. PR is clean and either merged, enqueued, manual-merge warning logged after verification, or not currently mergeable (Step 7a)
+2. PR is clean and merged or enqueued after merge action, or manual-merge warning logged (Step 7a)
 3. `fix_count >= max_ralph_invocations` (Step 8)
 4. `cycle >= max_cycles` (Step 8)
 5. `stagnation_count >= 2` (Step 13)
 6. `git push` fails (Steps 7 or 12)
 7. Unrecoverable error on first iteration (argument parsing failure)
+
+**Approval-watch stops (§ Approval-Watch Phase):**
+8. PR merged externally detected during slow pulse (AW-1)
+9. PR closed externally detected during slow pulse (AW-1)
+10. PR approved + clean → merge executed (AW-5)
+11. `reviewDecision == "CHANGES_REQUESTED"` → surfaced to coordinator (AW-5)
+12. Approval-watch expiry after ~24h / 144 cycles with handoff message (AW-6)
 
 ---
 
@@ -495,13 +632,13 @@ smithers-post <PR_NUMBER_OR_URL>
 
 **PR state guard — already enforced at the top of Step 7a.** The state re-check at the start of Step 7a guarantees smithers only reaches this point if the PR is OPEN. Do not add a second guard here.
 
-Smithers posts to Slack only at Step 7a (PR ready). No Slack notification is sent for other stopping conditions (stagnation stop, max cycles, etc.).
+Smithers posts to Slack at Step 7a (PR ready for review) and optionally again at merge time (if `.smithers/slack_posted` is not set). No Slack notification is sent for other stopping conditions (stagnation stop, max cycles, approval-watch expiry, etc.).
 
 ---
 
 ## NOTES
 
-- The 1-minute ScheduleWakeup is the platform-minimum cadence; sufficient for typical CI pipelines.
-- Most state is in the conversation context. Two exceptions are `clean_confirmed` and `slack_posted`, which use flag files (`.smithers/clean_confirmed`, `.smithers/slack_posted`) because they must survive the ScheduleWakeup gap and — in the case of `slack_posted` — also survive watcher restarts.
-- If this session is killed and restarted, the loop restarts from cycle 1 with a fresh `fix_count` and `stagnation_count`. The `clean_confirmed` flag file persists across restarts — if it exists when smithers restarts, smithers will proceed directly to Step 7a on the next no-work cycle. This is intentional and correct behavior.
-- The smithers-post Slack notification (Step 7a) deduplicates across sessions via the `.smithers/slack_posted` flag. If the watcher restarts on a PR that already has the flag set, smithers will skip the Slack post. To re-post (e.g., after a status change such as REVIEW_REQUIRED → APPROVED → MERGED that warrants re-notifying reviewers), the user manually removes `.smithers/slack_posted`.
+- The 1-minute ScheduleWakeup is the platform-minimum cadence for the fast CI cycle. The approval-watch phase uses a ~10-minute cadence — appropriate for human review timescales.
+- Most state is in the conversation context. Three durable exceptions use flag files because they must survive the ScheduleWakeup gap: `clean_confirmed` (`.smithers/clean_confirmed`), `slack_posted` (`.smithers/slack_posted`), and `approval_watch` (`.smithers/approval_watch`). `slack_posted` additionally survives watcher restarts.
+- If this session is killed and restarted, the loop restarts from cycle 1 with a fresh `fix_count` and `stagnation_count`. The `clean_confirmed` flag file persists across restarts — if it exists when smithers restarts, smithers will proceed directly to Step 7a on the next no-work cycle. This is intentional and correct behavior. Similarly, if `.smithers/approval_watch` exists when smithers restarts, smithers will detect the phase on the first invocation and resume the slow-pulse cadence.
+- The smithers-post Slack notification (Step 7a) deduplicates across sessions via the `.smithers/slack_posted` flag. If the watcher restarts on a PR that already has the flag set, smithers will skip the Slack post. To re-post (e.g., to re-notify after a long approval-watch expiry), the user manually removes `.smithers/slack_posted`.
