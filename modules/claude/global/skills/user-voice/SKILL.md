@@ -112,6 +112,8 @@ Specific replacements and formulations the user reaches for:
 - "BUT..." (all-caps + ellipsis) as a one-line bridge from proximate cause to deeper insight — Slack-native, lighter than 'However,' or 'But more importantly,'
 - "So really," to introduce the upshot after stating facts (equivalent to 'the deeper realization:' but lighter)
 - Plain cause→consequence chains without hedges (no 'would', 'could', 'appears to') — state facts directly with concrete identifiers inline (numbers, identifiers, no ceremony)
+- **State the fix in the simplest terms** — e.g. 'the fix was to make it wait', NOT 'a real poll instead of the stub plus proper test isolation'. One plain clause is enough; the reader doesn't need the full technical diff.
+- **Casual trailing-off (infer-the-rest)** — the device `and... well... yeah` (ellipsis + 'well... yeah') trusts the reader to complete the obvious consequence themselves. Use after a causal chain where the outcome is self-evident; it reads as natural spoken cadence rather than spelled-out analysis.
 
 **Action language:**
 - `I went ahead and [did X]` — past action, casual ownership
@@ -231,6 +233,8 @@ Adjust framing and detail level based on recipient. These are real named stakeho
   - A light apology or humility close is acceptable here: "I'm sorry I couldn't do more" fits this register
   - Greeting: `Hey [Name],` with a COMMA (not the dash form — see § Greeting / Sign-Off Conventions)
   - Sign-off: `~ Karl` (tilde + first name)
+
+- **Cross-functional / non-engineer readers (Q&O, PM, ops, leadership):** When the reader is NOT a peer backend engineer, DROP implementation symbol names — specific function names, variable names, class/helper names — and explain the *concept* in plain language instead. Feature and spec names (the name of the test or feature under discussion, e.g. `resultsFiltering`, `customTemplates`) may stay because they name the thing being discussed; what you drop is implementation symbol names. Example: say 'a deprecated helper that kept its state at module level', NOT the symbol name. Contrast with the Tommy/peer-DM examples, which keep inline identifiers BECAUSE the reader is a peer backend engineer who has context for them. **Identifier density is audience-dependent**, not absolute: high-density identifiers are appropriate for technical peers; plain-language concept descriptions are appropriate for cross-functional stakeholders.
 
 - **Cold outreach to an unknown organization / media outlet** (e.g., publicity emails to bluegrass publications, radio stations, press, festivals, associations — recipients who don't know you): Warm, confident, grounded — humble WITHOUT being servile. This is NOT the favor-ask register; the explicit-outs and humility-close calibrated for a known collaborator (e.g., Tim) produce servile AI-sounding copy when applied to cold outreach. Key markers:
   - Use the recipient's name ONCE in the greeting only — never repeat it in the body or close (no "Thanks for your time, Darin").
@@ -389,6 +393,33 @@ Anti-patterns (vs Karl's voice) — what NOT to do:
 
 ---
 
+**Technical explanation to a cross-functional peer (Q&O DRI — Daniela):**
+
+> resultsFiltering was a race condition. The helper, which was meant to wait for results to land in the results-api read model, was a noop. It returned immediately without waiting. So the results page would open before the data propagated and... well... yeah. So basically the fix was to make it wait.
+>
+> customTemplates used a deprecated helper that kept its state at module level and was used in the beforeEach part of the test. Sometimes setup would fail and the test would run anyway against old state. It also clicked into the custom-templates list without waiting for templates... so another instance of not waiting.
+>
+> Our tests are very impatient. I told them to chill out and sniff the flowers.
+
+Patterns visible in this example:
+- **No code-level identifiers** — 'a deprecated helper that kept its state at module level', NOT the symbol name. Identifier density is audience-dependent; Daniela is a Q&O DRI, not a peer backend engineer.
+- **State the fix in the simplest terms**: 'the fix was to make it wait' — one plain clause, not a technical diff description
+- **Casual trailing-off device**: `and... well... yeah` — trusts the reader to complete the obvious consequence without spelling it out
+- **Shared-root-cause closer**: names the unifying theme ('very impatient') with a warm, playful, personifying one-liner ('I told them to chill out and sniff the flowers') — NOT evidence framing
+- Plain causal chain, paragraph-per-issue structure, no bullets
+
+Anti-pattern (coordinator draft — what NOT to do):
+
+> Both resultsFiltering and customTemplates were quarantined due to flaky behavior. The resultsFiltering issue was caused by a polling stub that resolved immediately rather than awaiting the results-api read model, creating a race condition. The customTemplates issue was caused by module-level state in a deprecated helper used in beforeEach, which could leave stale state when setup failed. Both held 10 consecutive green CI runs before I un-quarantined them.
+
+What makes this the wrong voice:
+- Opens the cause explanation with formal label framing ('quarantined due to flaky behavior') rather than plain narrative
+- Uses symbol-density appropriate for a peer engineer, not a cross-functional stakeholder
+- Closes on evidence ('10 consecutive green CI runs') — the hard-avoid pattern; closes on proof rather than the human upshot
+- Clinical, not warm; no personifying closer
+
+---
+
 ### Structural Patterns (Karl)
 
 - **Message length calibration.** Slack: brief (1-3 paragraphs max). Email: structured but compact. PR description: two paragraphs max (see global CLAUDE.md § PR Descriptions).
@@ -398,6 +429,7 @@ Anti-patterns (vs Karl's voice) — what NOT to do:
 - **Conservative timelines.** (See Timeline language under Preferred Phrasings above for examples.)
 - **No closing question when Karl has made the call.** Just state what he's doing. Asking framing is reserved for genuine peer-input requests.
 - **Internal project codes stay internal.** D1, D2, D3 etc. are for internal use. When messaging external stakeholders, use the actual deliverable name + Linear ID, not the internal code.
+- **Shared-root-cause closer: playful and personifying, NOT evidence framing.** When two or more details share a root cause, name the unifying theme and close with a warm, playful, personifying one-liner. This is an extension of the existing hard-avoid against closing a casual Slack reply on evidence framing (e.g., the anti-pattern: 'Both held 10 consecutive green CI runs before I un-quarantined them' — factual, closing on proof, not on the upshot). The correct closer names the character of the problem and humanizes it. Karl's model: 'Our tests are very impatient. I told them to chill out and sniff the flowers.' — personifying the tests as a character, landing on warmth rather than data.
 
 #### Broadcast / Channel Post Template
 
