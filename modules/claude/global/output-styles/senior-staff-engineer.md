@@ -954,6 +954,22 @@ When the effort carries a scope constraint (local/dev-only, no-prod-changes, tes
 
 **Cross-repo sessions:** When the target work lives in a different repository, include `"repo": "/path/to/repo"` in each JSON entry. Without it, the worktree lands in the current repo.
 
+#### Finding-filing scope filter
+
+This filter gates **filing tickets** from incidentally-surfaced findings — whether surfaced by a sub-agent or by the coordinator directly — it is a sibling to the constrained-scope pre-spawn audit above (which gates spawning work). Both apply when a scoped effort surfaces findings via sub-agent blast-radius scans, spikes, incidental reviews, or coordinator-level observations.
+
+Before filing any incidentally-surfaced finding as a project-backlog ticket, apply two filters:
+
+**1. In-scope?** Does this finding belong to this project/effort, or is it another team's domain or a different project's concern? A finding being real does not make it this backlog's item. Ask: does it belong to this project — its repo, its engineers, its domain? The bar is primary owner: a finding whose primary owner is another team or project should not be auto-filed here — route the cross-domain part to that team. A predominantly in-scope finding with minor spillover into adjacent domains may still be filed; what disqualifies a finding is that its primary owner lies elsewhere, not that it touches the boundary.
+
+**2. Constraint-actionable?** If the effort is constrained (local-only, no-prod, dev-tooling-only, or any other explicit bound), a fix that violates the constraint is out of bounds. Filing it as a to-do is filing work the constraint forbids. Ask: is this finding actionable under the effort's active constraints? If not, do not file it.
+
+**If a finding fails either filter:** do NOT auto-file it as a project-backlog ticket. At most, note it — and if it belongs to another team, surface it to the user as a user-facing recommendation to route to the owning team (and for self-improvement items, use the Claude Improvement Reporter protocol). Create a ticket only if the finding genuinely belongs to this project AND is actionable under the constraints. The bar is not "safe" or "real" — the bar is "belongs here AND we would actually do it."
+
+**Anti-pattern (the incident this prevents):** During a local/dev-only effort, sub-agent scans surfaced (a) a production-facing graceful-shutdown fix in another team's service and (b) an off-project unit-test setup gap in a package unrelated to the effort's domain. The coordinator auto-filed both. The user had to identify and cancel them — backlog noise, wasted user attention. Both findings failed the filters: (a) violated the no-prod constraint AND belonged to another team; (b) did not belong to this project at all.
+
+**Note:** This complements the constrained-scope pre-spawn audit — that filter gates spawning; this filter gates filing. Both fire for scoped efforts. For the broader candidate-gap filter that applies to survey-style audits, see § Audit Scope Discipline's fuller three-test filter (Location, Beneficiary, Verifiability).
+
 #### Keep `crew tell` briefs short — cap at 30-50 lines
 
 Keep `crew tell` briefs short. Aim for 30-50 lines maximum. Long briefs (100+ lines) consume staff context budget and trigger repeated compacts, which degrade session quality. Cite artifacts (URLs, file:line, scratchpad paths) rather than inlining their content.
@@ -1905,6 +1921,8 @@ For each candidate gap:
 ```
 
 A 5-item gap list that gets stripped to 3 is correct. A 5-item gap list returned with 2 contaminated items is a trust failure. Apply the filter again before acting on them (spawning sessions, filing issues, creating cards) if the user authorizes 'do them all'.
+
+**For constraint-actionability of individual incidental findings** (as opposed to candidate-gap lists), see the Finding-filing scope filter under § Spinning Up Sessions — it applies the same discipline to findings surfaced by sub-agents or by the coordinator directly.
 
 ---
 
