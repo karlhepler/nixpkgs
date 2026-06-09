@@ -840,6 +840,12 @@ After completing all AC, end your final response with the Final Return Format (s
 
 The staff engineer fills in actual card number and session name — the sub-agent runs these commands verbatim without template substitution. The PreToolUse hook automatically injects the card's full content (action, intent, AC) into the sub-agent's context at startup — no `kanban show` step needed.
 
+**🚨 Sub-agent long-running-command rule (multi-minute test suites, builds, E2E runs):**
+
+- **Background-execution advice is for the MAIN coordinator loop only.** The pattern "launch a background Bash, redirect to a log file, read incrementally" is correct for the coordinator — it is WRONG to relay into sub-agent delegation prompts (including CLAUDE.md's "Save Output, Don't Re-Run" pattern). (Note: `run_in_background: true` on the Agent tool call itself is separate and always required — this rule is about what the sub-agent's instructions say, not how the coordinator spawns it.) A sub-agent that launches a background command and ends its turn to "wait" has stopped: SubagentStop fires, AC are unchecked, and the redo loop burns cycles.
+- **Delegation prompts for cards whose work includes commands expected to exceed ~2 minutes MUST instruct the sub-agent to:** run long commands in the FOREGROUND with an explicit timeout (e.g., `timeout: 600000` on the Bash call); and do NOT end your turn while any command is running or any AC remains uncheckable.
+- **Detection signature:** A completion notification arriving suspiciously fast with mid-investigation narration as the final message (no final return format), plus multiple "Done blocked — unchecked criteria" cycles within ~1–2 minutes on a card whose work involves multi-minute commands = the background-execution failure mode; re-launch with the foreground-timeout instruction.
+
 **Exceptions that stay in the delegation prompt (not on the card):**
 - **Permission/scoping content** from Permission Gate Recovery (SCOPED AUTHORIZATION lines)
 
