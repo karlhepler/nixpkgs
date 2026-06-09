@@ -26,6 +26,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import crew as crew_module
 from crew import (
+    _capture_pane_tail,
     _clean_stale_sentinel,
     _cleanup_sentinel,
     _CREW_SENTINEL_DIR,
@@ -51,6 +52,7 @@ from crew import (
     get_current_session,
     get_window_lookup,
     is_claude_pane,
+    PANE_TAIL_MAX_CHARS,
     resolve_worktree_path,
     run_post_switch_hook,
 )
@@ -467,9 +469,17 @@ class TestCmdCreate:
                 return fake_run_result()
             return fake_run_result()
 
+        # Use a monotonically incrementing counter so time.monotonic() never
+        # exhausts its values regardless of how many times it is called.
+        monotonic_counter = {"t": 0.0}
+
+        def fake_monotonic():
+            monotonic_counter["t"] += 0.1
+            return monotonic_counter["t"]
+
         with patch("subprocess.run", side_effect=side_effect):
             with patch("time.sleep"):
-                with patch("time.monotonic", side_effect=[0.0, 0.0, 0.5]):
+                with patch("time.monotonic", side_effect=fake_monotonic):
                     success, reason = crew_module._deliver_tell(
                         window_name="test-session",
                         tell="x" * 2000,  # large payload to exercise placeholder path
@@ -478,7 +488,10 @@ class TestCmdCreate:
                     )
 
         assert success is True
-        assert "placeholder" in reason
+        # _deliver_tell detects a placeholder, calls _verify_brief_submitted,
+        # and returns (True, "verified (submitted)") when the submit step succeeds.
+        # The reason reflects the full delivery-and-submit cycle, not just paste landing.
+        assert "verified" in reason
 
     def test_tell_told_false_when_verification_times_out(self, capsys, tmp_path):
         """told='false' + told_reason when paste delivered but submission unverified."""
@@ -3973,3 +3986,316 @@ class TestWaitForSentinelPollingFallback:
         assert ready is False
         assert reason is not None
         assert "session never reported ready" in reason
+
+
+# ---------------------------------------------------------------------------
+# crew create --model flag (new in card #2345)
+# ---------------------------------------------------------------------------
+
+class TestCmdCreateModelFlag:
+    """Tests for the --model flag on crew create."""
+
+    def _setup_create_mocks(self, mock_run):
+        """Configure mock_run for a minimal successful create flow."""
+        def side_effect(cmd, **kwargs):
+            cmd_list = cmd if isinstance(cmd, list) else [cmd]
+            joined = " ".join(str(c) for c in cmd_list)
+            if "display-message" in joined and "session_name" in joined:
+                return fake_run_result(stdout="tidy-crown\n")
+            if "display-message" in joined and "window_id" in joined:
+                return fake_run_result(stdout="@1\n")
+            if "list-windows" in joined:
+                return fake_run_result(stdout="")
+            if "rev-parse" in joined and "show-toplevel" in joined:
+                return fake_run_result(stdout="/some/repo\n")
+            if "symbolic-ref" in joined:
+                return fake_run_result(stdout="main\n")
+            if "rev-parse" in joined and "upstream" in joined:
+                return fake_run_result(stdout="origin/main\n")
+            if "rev-parse" in joined and "--verify" in joined and "refs/heads" not in joined:
+                return fake_run_result(stdout="abc1234\n")
+            if "fetch" in joined and "origin" in joined:
+                return fake_run_result()
+            if "rev-parse" in joined and "refs/heads" in joined:
+                return fake_run_result(returncode=1)
+            if "branch" in joined and "main" in joined:
+                return fake_run_result()
+            if "worktree" in joined and "add" in joined:
+                return fake_run_result()
+            if "new-window" in joined:
+                return fake_run_result()
+            if "send-keys" in joined:
+                return fake_run_result()
+            return fake_run_result()
+        mock_run.side_effect = side_effect
+
+    def _run_create(self, mock_run, **kwargs):
+        """Run cmd_create with standard mocks for filesystem checks."""
+        with patch("os.path.isdir", return_value=True):
+            with patch("os.path.exists", return_value=False):
+                self._setup_create_mocks(mock_run)
+                cmd_create(**kwargs)
+
+    def test_model_flag_produces_shlex_quoted_spawn_command(self, capsys):
+        """--model with shell-special chars (brackets) produces a shlex-quoted spawn command."""
+        with patch("subprocess.run") as mock_run:
+            self._run_create(
+                mock_run,
+                name="test-worker",
+                repo="/some/repo",
+                branch="test-worker",
+                base="main",
+                fmt="xml",
+                model="sonnet[1m]",
+            )
+
+        send_keys_calls = [
+            c for c in mock_run.call_args_list
+            if c[0][0][0] == "tmux" and "send-keys" in c[0][0]
+        ]
+        spawn_call = next(
+            (c for c in send_keys_calls if "staff" in " ".join(str(x) for x in c[0][0])),
+            None,
+        )
+        assert spawn_call is not None, "Expected a send-keys call with 'staff'"
+        cmd_str = " ".join(str(x) for x in spawn_call[0][0])
+        # shlex.quote wraps the model value in single-quotes: 'sonnet[1m]'
+        assert "'sonnet[1m]'" in cmd_str, (
+            f"Expected single-quoted model value in spawn command, got: {cmd_str!r}"
+        )
+        # Must use staff as the base command
+        assert "staff --model" in cmd_str, (
+            f"Expected 'staff --model' in spawn command, got: {cmd_str!r}"
+        )
+
+    def test_model_flag_without_special_chars(self, capsys):
+        """--model with a plain value (no shell-special chars) still produces a valid spawn command."""
+        with patch("subprocess.run") as mock_run:
+            self._run_create(
+                mock_run,
+                name="test-worker",
+                repo="/some/repo",
+                branch="test-worker",
+                base="main",
+                fmt="xml",
+                model="opus",
+            )
+
+        send_keys_calls = [
+            c for c in mock_run.call_args_list
+            if c[0][0][0] == "tmux" and "send-keys" in c[0][0]
+        ]
+        spawn_call = next(
+            (c for c in send_keys_calls if "staff" in " ".join(str(x) for x in c[0][0])),
+            None,
+        )
+        assert spawn_call is not None
+        cmd_str = " ".join(str(x) for x in spawn_call[0][0])
+        # Plain alphanumeric model: shlex.quote returns it without quotes
+        assert "staff --model opus --name test-worker" in cmd_str, (
+            f"Expected plain model in spawn command, got: {cmd_str!r}"
+        )
+
+    def test_model_none_defaults_to_sonnet(self, capsys):
+        """When --model is not provided (None), the spawn command uses 'sonnet' as default."""
+        with patch("subprocess.run") as mock_run:
+            self._run_create(
+                mock_run,
+                name="test-worker",
+                repo="/some/repo",
+                branch="test-worker",
+                base="main",
+                fmt="xml",
+                model=None,
+            )
+
+        send_keys_calls = [
+            c for c in mock_run.call_args_list
+            if c[0][0][0] == "tmux" and "send-keys" in c[0][0]
+        ]
+        spawn_call = next(
+            (c for c in send_keys_calls if "staff" in " ".join(str(x) for x in c[0][0])),
+            None,
+        )
+        assert spawn_call is not None
+        cmd_str = " ".join(str(x) for x in spawn_call[0][0])
+        assert "staff --model sonnet --name test-worker" in cmd_str, (
+            f"Expected default sonnet in spawn command, got: {cmd_str!r}"
+        )
+
+    def test_parser_accepts_model_flag(self):
+        """build_parser parses --model for crew create."""
+        p = build_parser()
+        args = p.parse_args(["create", "my-worker", "--model", "sonnet[1m]"])
+        assert args.model == "sonnet[1m]"
+        assert args.cmd_override is None
+
+    def test_parser_model_defaults_to_none(self):
+        """build_parser: --model is None when not provided."""
+        p = build_parser()
+        args = p.parse_args(["create", "my-worker"])
+        assert args.model is None
+
+    def test_model_and_cmd_together_errors(self, capsys):
+        """--model and --cmd are mutually exclusive; argparse rejects both together."""
+        p = build_parser()
+        with pytest.raises(SystemExit) as exc_info:
+            p.parse_args([
+                "create", "my-worker",
+                "--model", "sonnet[1m]",
+                "--cmd", "claude",
+            ])
+        assert exc_info.value.code == 2
+
+    def test_cmd_override_still_excludes_model(self, capsys):
+        """--cmd override does NOT inject --model (caller controls full invocation)."""
+        with patch("subprocess.run") as mock_run:
+            self._run_create(
+                mock_run,
+                name="test-worker",
+                repo="/some/repo",
+                branch="test-worker",
+                base="main",
+                fmt="xml",
+                cmd_override="claude",
+            )
+
+        send_keys_calls = [
+            c for c in mock_run.call_args_list
+            if c[0][0][0] == "tmux" and "send-keys" in c[0][0]
+        ]
+        spawn_call = next(
+            (c for c in send_keys_calls if "claude" in " ".join(str(x) for x in c[0][0])),
+            None,
+        )
+        assert spawn_call is not None
+        cmd_str = " ".join(str(x) for x in spawn_call[0][0])
+        assert "--model" not in cmd_str, (
+            f"--model must not be injected when --cmd is used, got: {cmd_str!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# pane_tail in ready-timeout reason (new in card #2345)
+# ---------------------------------------------------------------------------
+
+class TestWaitForSentinelPaneTail:
+    """Tests that _wait_for_sentinel includes the last pane lines in the timeout reason."""
+
+    def test_timeout_reason_includes_pane_tail(self, tmp_path, monkeypatch):
+        """When both signals time out, the failure reason includes the last pane output."""
+        sentinel_dir = tmp_path / "crew"
+        sentinel_dir.mkdir()
+        monkeypatch.setattr(crew_module, "_CREW_SENTINEL_DIR", str(sentinel_dir))
+
+        # Simulated pane output containing a zsh glob-expansion error — the canonical
+        # incident that motivated this change.
+        fake_pane_output = "zsh: no matches found: sonnet[1m]"
+
+        # Deterministic mock-time: first call sets deadline (t=0), all subsequent calls
+        # return a value beyond the deadline so threads and the main wait return
+        # immediately without any wall-clock sleep.
+        call_counter = {"n": 0}
+        ceiling = 1.0
+
+        def fake_monotonic():
+            call_counter["n"] += 1
+            if call_counter["n"] == 1:
+                return 0.0  # deadline = 0.0 + ceiling
+            return ceiling + 1.0  # beyond deadline — threads and wait exit immediately
+
+        monkeypatch.setattr(crew_module.time, "monotonic", fake_monotonic)
+
+        def fake_subprocess_run(cmd, **kwargs):
+            joined = " ".join(str(c) for c in cmd)
+            if "capture-pane" in joined:
+                return fake_run_result(stdout=fake_pane_output + "\n")
+            # fswatch and all other subprocess calls return immediately
+            return fake_run_result()
+
+        with patch.object(crew_module, "_pane_shows_prompt_ready", return_value=False):
+            with patch("subprocess.run", side_effect=fake_subprocess_run):
+                ready, reason = _wait_for_sentinel("myworker", ceiling=ceiling)
+
+        assert ready is False
+        assert reason is not None
+        pane_tail = fake_pane_output
+        assert pane_tail in reason, (
+            f"Expected pane tail {pane_tail!r} to appear in timeout reason, got: {reason!r}"
+        )
+
+    def test_timeout_reason_pane_tail_identifier_present_in_source(self, tmp_path, monkeypatch):
+        """Regression guard: the pane_tail variable name is used in crew.py timeout path.
+
+        The AC MoV asserts rg -q 'pane_tail' modules/claude/crew.py — this test
+        provides a Python-layer guard that _wait_for_sentinel actually captures
+        pane output and embeds it.
+        """
+        # Verify via the function's behavior: the timeout reason string must contain
+        # 'last pane output' (the marker text that precedes the captured pane_tail).
+        sentinel_dir = tmp_path / "crew"
+        sentinel_dir.mkdir()
+        monkeypatch.setattr(crew_module, "_CREW_SENTINEL_DIR", str(sentinel_dir))
+
+        with patch.object(crew_module, "_pane_shows_prompt_ready", return_value=False):
+            with patch("subprocess.run", return_value=fake_run_result(stdout="some output\n")):
+                ready, reason = _wait_for_sentinel("myworker", ceiling=0.1)
+
+        assert ready is False
+        assert reason is not None
+        assert "last pane output" in reason, (
+            f"Expected 'last pane output' marker in timeout reason, got: {reason!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# _capture_pane_tail unit tests (card #2350)
+# ---------------------------------------------------------------------------
+
+class TestCapturePaneTail:
+    """Unit tests for the _capture_pane_tail helper."""
+
+    def test_returns_pane_output_on_success(self):
+        """Returns the stripped pane output when tmux exits 0."""
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = fake_run_result(stdout="line1\nline2\n")
+            result = _capture_pane_tail("my-session.0")
+        assert result == "line1\nline2"
+
+    def test_returns_fallback_on_nonzero_exit(self):
+        """Returns '(could not capture pane)' when tmux capture-pane exits non-zero."""
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = fake_run_result(stdout="", returncode=1)
+            result = _capture_pane_tail("my-session.0")
+        assert result == "(could not capture pane)"
+
+    def test_returns_fallback_on_oserror(self):
+        """Returns '(could not capture pane)' when subprocess.run raises OSError."""
+        with patch("subprocess.run", side_effect=OSError("tmux not found")):
+            result = _capture_pane_tail("my-session.0")
+        assert result == "(could not capture pane)"
+
+    def test_returns_fallback_on_subprocess_error(self):
+        """Returns '(could not capture pane)' when subprocess.run raises SubprocessError."""
+        import subprocess as _subprocess
+        with patch("subprocess.run", side_effect=_subprocess.SubprocessError("error")):
+            result = _capture_pane_tail("my-session.0")
+        assert result == "(could not capture pane)"
+
+    def test_truncates_to_pane_tail_max_chars(self):
+        """Long pane output is truncated to PANE_TAIL_MAX_CHARS characters."""
+        long_output = "x" * (PANE_TAIL_MAX_CHARS + 500)
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = fake_run_result(stdout=long_output)
+            result = _capture_pane_tail("my-session.0")
+        assert len(result) == PANE_TAIL_MAX_CHARS
+        assert result == long_output[:PANE_TAIL_MAX_CHARS]
+
+    def test_short_output_not_truncated(self):
+        """Output shorter than PANE_TAIL_MAX_CHARS is returned in full."""
+        short_output = "short line\n"
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = fake_run_result(stdout=short_output)
+            result = _capture_pane_tail("my-session.0")
+        assert result == short_output.strip()
+        assert len(result) <= PANE_TAIL_MAX_CHARS

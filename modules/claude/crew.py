@@ -28,6 +28,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import threading
@@ -99,6 +100,11 @@ def _cleanup_sentinel(name: str) -> None:
 # sentinel-detection itself is event-driven via fswatch and not bounded by this
 # ceiling under normal operation.
 _SENTINEL_WAIT_CEILING_SECONDS = 5 * 60.0
+
+# Maximum characters retained from a captured pane tail in timeout diagnostics.
+# Wide-terminal stack dumps can be several KB; truncating here ensures that
+# told_reason / reason strings stay reasonable for display and log purposes.
+PANE_TAIL_MAX_CHARS = 1500
 
 
 # Prompt-box readiness tokens — patterns that indicate Claude Code's input box is
@@ -229,6 +235,31 @@ def _auto_answer_mcp_trust_modal(tmux_target: str, mcp_trust: str) -> bool:
         # re-detect the modal and retry (or the outer ceiling will apply).
         return False
     return result.returncode == 0
+
+
+def _capture_pane_tail(tmux_target: str) -> str:
+    """Capture the last ~10 lines of the pane at tmux_target for diagnostics.
+
+    Returns the captured tail truncated to PANE_TAIL_MAX_CHARS, or the
+    fallback string '(could not capture pane)' when the subprocess call fails
+    (non-zero exit) or raises an OS/subprocess-level exception.
+
+    The truncation prevents wide-terminal stack dumps from bloating
+    told_reason/reason strings to unwieldy sizes.
+    """
+    try:
+        result = subprocess.run(
+            ["tmux", "capture-pane", "-p", "-t", tmux_target, "-S", "-10"],
+            capture_output=True, text=True, check=False,
+        )
+        if result.returncode != 0:
+            return "(could not capture pane)"
+        tail = result.stdout.strip()
+    except OSError:
+        return "(could not capture pane)"
+    except subprocess.SubprocessError:
+        return "(could not capture pane)"
+    return tail[:PANE_TAIL_MAX_CHARS]
 
 
 def _wait_for_sentinel(
@@ -391,22 +422,28 @@ def _wait_for_sentinel(
         # Event was set but post-check missed it (race) — trust the event.
         return True, None
 
-    # Both signals timed out. Include MCP modal context in the reason when the
-    # modal was detected so the caller can surface a specific diagnostic rather
-    # than the generic "sentinel never appeared" message.
+    # Both signals timed out. Capture last ~10 lines of the target pane to surface
+    # shell-level launch failures (e.g. 'zsh: no matches found: sonnet[1m]') in the
+    # failure reason rather than requiring the caller to manually inspect the pane.
+    pane_tail = _capture_pane_tail(tmux_target)
+
+    # Include MCP modal context in the reason when the modal was detected so the
+    # caller can surface a specific diagnostic rather than the generic message.
     if mcp_modal_detected.is_set():
         reason = (
             f"MCP trust modal detected and auto-answered (--mcp-trust {mcp_trust!r}) "
             f"but session still did not report ready within the ceiling — "
             f"sentinel file never appeared at {sentinel!r} "
             f"and pane {tmux_target!r} never showed {_PROMPT_READY_PATTERNS!r}; "
-            f"check the pane manually with: crew read {name}"
+            f"check the pane manually with: crew read {name}; "
+            f"last pane output:\n{pane_tail}"
         )
     else:
         reason = (
             f"session never reported ready — "
             f"sentinel file never appeared at {sentinel!r} "
-            f"and pane {tmux_target!r} never showed any of {_PROMPT_READY_PATTERNS!r}"
+            f"and pane {tmux_target!r} never showed any of {_PROMPT_READY_PATTERNS!r}; "
+            f"last pane output:\n{pane_tail}"
         )
     return False, reason
 
@@ -2450,6 +2487,7 @@ def cmd_create(
     base: Optional[str],
     fmt: str,
     cmd_override: Optional[str] = None,
+    model: Optional[str] = None,
     tell: Optional[str] = None,
     no_worktree: bool = False,
     tell_file: Optional[str] = None,
@@ -2769,6 +2807,9 @@ def cmd_create(
     # engineer session pinned to Sonnet — prevents accidental Opus overspend on
     # crew-spawned sessions). The `--cmd` flag overrides the default entirely;
     # callers that need plain `claude` or a different model can pass `--cmd claude`.
+    # The `--model` flag selects the model for the default `staff` spawn; the model
+    # value is shell-quoted via shlex.quote so characters like `[`, `]`, `*`, `?`
+    # that are special to zsh do not cause glob-expansion failures.
     #
     # Both `staff` and `claude` support -n/--name for display name — this sets the
     # session display name shown in the prompt box, /resume picker, and terminal
@@ -2782,7 +2823,8 @@ def cmd_create(
     _clean_stale_sentinel(name)
     base_cmd = cmd_override if cmd_override is not None else "staff"
     if cmd_override is None:
-        spawn_cmd = f"staff --model sonnet --name {name}"
+        effective_model = shlex.quote(model if model is not None else "sonnet")
+        spawn_cmd = f"staff --model {effective_model} --name {name}"
     else:
         spawn_cmd = f"{cmd_override} --name {name}"
     _tmux_fire_and_forget(
@@ -3356,16 +3398,32 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Base branch to create the new branch from (default: current branch of the repo)",
     )
-    p_create.add_argument(
+    create_spawn_group = p_create.add_mutually_exclusive_group()
+    create_spawn_group.add_argument(
+        "--model",
+        default=None,
+        dest="model",
+        metavar="MODEL",
+        help=(
+            "Model to pass to `staff` when spawning the session "
+            "(e.g. 'sonnet', 'opus', 'sonnet[1m]'). "
+            "The value is shell-quoted via shlex.quote before being typed into the "
+            "pane so shell-special characters like `[`, `]`, `*`, `?` are safe. "
+            "When omitted, the default model is 'sonnet'. "
+            "Mutually exclusive with --cmd."
+        ),
+    )
+    create_spawn_group.add_argument(
         "--cmd",
         default=None,
         dest="cmd_override",
         help=(
-            "Command to spawn in the new window. "
+            "Command to spawn in the new window (escape hatch — full control). "
             "When omitted, the default is 'staff --model sonnet --name <name>'. "
             "When provided, the command is invoked as '<cmd> --name <name>' — "
-            "--model sonnet is NOT injected (caller controls the model). "
-            "Example: --cmd claude  (spawn plain Claude instead of staff engineer)"
+            "--model is NOT injected (caller controls the full invocation). "
+            "Example: --cmd claude  (spawn plain Claude instead of staff engineer). "
+            "Mutually exclusive with --model."
         ),
     )
     create_tell_group = p_create.add_mutually_exclusive_group()
@@ -3631,7 +3689,7 @@ def main() -> None:
             cmd_status(args.lines, fmt, show_all=args.show_all, include_ghost=args.include_ghost)
         elif args.command == "create":
             cmd_create(args.name, args.repo, args.branch, args.base, fmt,
-                       cmd_override=args.cmd_override, tell=args.tell,
+                       cmd_override=args.cmd_override, model=args.model, tell=args.tell,
                        no_worktree=args.no_worktree, tell_file=args.tell_file,
                        mcp_trust=args.mcp_trust)
         elif args.command == "project-path":
