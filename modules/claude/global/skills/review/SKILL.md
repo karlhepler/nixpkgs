@@ -288,11 +288,11 @@ You are on the author's side. Your job is to help confirm that intent is carried
 
 **Tone and Format (applies to all output — inline comments and body-level findings alike):**
 - **1–3 sentences max** per inline finding. Use line breaks to stay readable. If a comment covers multiple distinct points, use bullets instead of one dense paragraph.
-- **Genuinely curious when uncertain** — "did you mean to...?", "is this intentional?", "wondering if this could..." Sound like a friend whose PR you want to help land.
+- **Curious when uncertain** — "did you mean to...?", "is this intentional?", "curious if this could...", "curious if..." Sound like a friend whose PR you want to help land.
 - **No severity label prefixes** in comment text — never write `[blocking]`, `[concern]`, `[nit]`, or any square-bracket qualifier. Severity belongs in the SEVERITY field only.
 - **No chain-of-thought** — state the observation, optionally note why it matters, done. No "I confirmed this by reviewing..." explanations.
 - **No specialist attribution** — comments are posted as a unified review. No `[swe-security]` or similar.
-- **Default to COMMENT severity** — only use blocking for genuinely high-risk issues: regressions, security vulnerabilities, or data loss.
+- **Default to COMMENT severity** — only use blocking for high-risk issues: regressions, security vulnerabilities, or data loss.
 - **When in doubt, leave it out** — if a finding is borderline or minor, cut it entirely.
 
 **Required Output Format:**
@@ -387,6 +387,15 @@ the prose — one bullet per finding, plain language, no severity label prefixes
 
 Write the aggregated review body to `.scratchpad/review-<number>.md` before posting.
 
+### Voice-Conformance Check
+
+Before writing the findings JSON, load `~/.claude/skills/user-voice/SKILL.md` and run a voice-conformance check (use the work-peer register: direct, contractions, curious-direct phrasing — "did you mean to...?", "curious if..." — casual-professional formality, customer/user-impact-first framing, no Hard Avoids from that profile, close on the upshot not evidence framing, short paragraphs, no prologue) on:
+
+1. The aggregated review body
+2. Every inline comment in the `comments` array
+
+Apply light voice-conformance editing to conform phrasing — preserve technical content exactly. Hard Avoids to check at minimum: `leverage`, `genuinely`, `circle back`, hedging closers, evidence-framing closes. Remove any instance of `Genuinely` as an emphasis word. Conform curious phrasing to "did you mean to...?", "curious if...?", "is this intentional?" forms.
+
 ### Write Findings JSON
 
 In addition to the `.md` summary, write `.scratchpad/review-<number>.json` with the structured findings for `prr`:
@@ -405,7 +414,7 @@ Aggregate all specialist FILE/LINE/SEVERITY/COMMENT findings (those with actual 
 **🚨 Never put null-path findings in `comments`.** Entries with `path: null` are silently dropped or mishandled by `prr`. Instead, fold all null-path findings (from specialists' "Overall Observations" sections) directly into the `body` field as bullet points appended after the summary text.
 
 **Comment body rules:**
-- Use the specialist's COMMENT text verbatim — do not prepend severity labels (`[blocking]`, `[concern]`) or specialist attribution (`[swe-security]`)
+- Preserve technical content exactly — do not prepend severity labels (`[blocking]`, `[concern]`) or specialist attribution (`[swe-security]`). Light voice-conformance editing (see voice-conformance step above) supersedes any instruction to use the specialist's COMMENT text verbatim: conform phrasing to the user-voice profile while preserving technical content exactly.
 - The comment body must be plain text only: 1–3 sentences or bullets, developer voice
 
 ## Phase 6 — Post Review
@@ -432,7 +441,7 @@ Override the event explicitly if needed:
 prr submit <pr-number> --findings .scratchpad/review-<pr-number>.json --event REQUEST_CHANGES
 ```
 
-**Note on line numbers:** GitHub's review API requires the line number to be within the diff hunk. If a specialist's line number falls outside the diff, remove that entry from the `comments` array and fold the comment text into the `body` field manually as a bullet point — do not set `path: null` and `line: null`, as null-path entries in `comments` are silently dropped by `prr`.
+**Note on line numbers:** GitHub's review API requires the line number to be within the diff hunk. If a specialist's line number falls outside the diff, remove that entry from the `comments` array and apply the voice-conformance check (per the Voice-Conformance Check step above) before folding the comment text into the `body` field manually as a bullet point — do not set `path: null` and `line: null`, as null-path entries in `comments` are silently dropped by `prr`.
 
 ### Verify and Report
 
