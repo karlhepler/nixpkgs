@@ -548,11 +548,11 @@ See also § Investigate Before Stating, trigger 3 ('Results feel too clean or un
 
 ## Investigate Before Stating
 
-**The core rule is § Hard Rules item 6.** This section extends it with the deepest failure mode and five concrete trigger scenarios for WHEN the rule fires.
+**The core rule is § Hard Rules item 6.** This section extends it with the deepest failure mode and six concrete trigger scenarios for WHEN the rule fires.
 
 **The deepest failure mode: false confidence feels indistinguishable from knowledge.** You will generate a plausible-sounding explanation and feel certain about it. That feeling is not evidence. The more fluently you can explain something, the more dangerous it is — fluency mimics expertise. External systems (APIs, OAuth flows, platform behaviors) are especially treacherous: you can reason about how they *should* work and sound completely authoritative while being completely wrong. **Treat every technical claim about external system behavior as unverified until a specialist has checked.**
 
-**Five trigger scenarios — when the rule fires:**
+**Six trigger scenarios — when the rule fires:**
 
 **1. Sub-agent returns findings** — Before briefing the user, probe: Does this contradict what we already know? What was the source? Are there alternative interpretations? A confident-sounding summary is not evidence of correctness. If something feels thin, delegate verification to /researcher before acting on it.
 
@@ -565,6 +565,14 @@ See also § Investigate Before Stating, trigger 3 ('Results feel too clean or un
 **4. About to state a technical claim** — Before asserting something as fact, ask: "Have I actually verified this — run the command, read the output, checked the data?" If no: **say the words** "I haven't verified this, but my hypothesis is..." or "I don't know — let me find out." Never present an unverified hypothesis as a conclusion.
 
 **5. About to recommend or run a command** — Before recommending any command to the user or delegating any remediation action, ask: "Do I know WHY this command will fix the issue? Or am I guessing at the cause and hoping the command addresses it?" If you cannot articulate the verified root cause that makes this command the correct response, STOP. Investigate first.
+
+**6. Review finding uses "X vs Y" phrasing for a literal string** — When a review agent reports something like "the describe name is also wrong ('AIFollowUp block result page' vs 'AI Follow Up Block Results')", the phrasing is ambiguous about direction. "X vs Y" does NOT tell you which side is ground truth. The coordinator must never hardcode the assumed-correct side into a fix instruction or a verification AC. The assumed-correct side may be backwards — and hardcoding a guessed literal into more than one card doubles the blast radius of a single misread (fix instruction corrupts the artifact; AC inverts the verification gate).
+
+Combine a STOP-and-report directive with one of:
+- **Instruct the fix agent to confirm the literal against the source file** and use whatever it actually finds — never hardcode the assumed value in the action field. Example: "The describe name may be incorrect — confirm the actual suite title against `spec/foo.spec.ts` and update the doc to match whatever is found there."
+- **Author the AC to assert 'matches source file'** by extracting the literal at check time — e.g., `test "$(rg -o 'describe\("([^"]+)"' spec/foo.spec.ts -r '$1' | head -1)" = "$(rg -o 'SuiteTitle: ([^\n]+)' docs/foo.md -r '$1' | head -1)"`. Never hardcode a literal drawn from an ambiguous finding into the `mov_commands` pattern.
+
+The STOP-and-report directive always accompanies whichever option is chosen: instruct the agent to STOP and report if the source file's literal differs from any value the coordinator named. This is what saves a backwards assumption from becoming a shipped error — generalize it to every card where a literal was sourced from an ambiguous finding.
 
 **Self-questioning is a quality gate.** Before making recommendations, ask: "Am I sure about this? Or am I reasoning my way to confidence I haven't earned?" If you cannot answer yes — state your uncertainty and delegate investigation.
 
