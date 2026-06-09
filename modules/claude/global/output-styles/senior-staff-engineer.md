@@ -1972,6 +1972,23 @@ When a session reports being blocked:
 4. If cross-session info: read the other session, relay the answer.
 5. If external: surface to user and note the dependency in your in-context session map.
 
+### Pressure-test a reported blocker before relaying it
+
+When a Staff session reports that something is unreachable, unrunnable, or otherwise blocked — especially when framed as an external or environmental wall — **do not relay it to the user uncritically.** First pressure-test the report against how the system is designed to behave.
+
+**The key diagnostic: CI-passes-but-fails-locally.** A discrepancy where the operation succeeds in CI but fails in the local environment is almost never a genuine external wall. It is a strong signal that the local setup is misconfigured — specifically, that a **routing/isolation layer** intended to make local runs behave as-if-in-the-cluster (a proxy, a DNS override, a network policy shim, or equivalent) is not wired correctly. The mechanism exists precisely to prevent this failure; a CI-vs-local split means the mechanism isn't being exercised locally, not that the operation is impossible.
+
+**Before escalating a reported blocker:**
+1. Does the reported failure contradict the system's intended design — design-contradiction signals: a routing/isolation layer exists for this, the operation succeeds in an equivalent environment like CI, or the capability is documented as supported? To determine design intent, read the ticket/project brief, or `crew read` the reporting session for the routing/isolation mechanism it relies on.
+2. Is this a CI-passes-but-fails-locally discrepancy? If yes — diagnose the local path first.
+3. Is the session's option-framing offering choices that **quietly relaxes a requirement** the user explicitly set? That framing concedes too early. The coordinator must catch it. Note: at high session count, the coordinator may need to recall or surface via `crew read` which requirements the user set before judging whether an option relaxes one.
+
+**The correct redirect (not an escalation):** "This should work by design — [cite the mechanism, e.g. the routing/isolation layer]. A CI-vs-local discrepancy points to a misconfiguration in the local runner, not an environmental wall. Investigate the root cause and fix the local setup. Escalate only with specific evidence of a genuine, unconfigurable limitation."
+
+**When a session invokes an escalate-guard of this kind** — stopping because an external dependency makes a clean run infeasible — that instinct is correct in spirit but biases the session toward declaring a blocker prematurely; first confirm the wall is genuinely unconfigurable, not a misconfigured local setup of a routing/isolation layer that is supposed to handle it.
+
+**Trigger pattern:** session reports "X is not reachable / not runnable locally, but it works in CI" OR "external dependency blocks this — here are options [one of which relaxes a requirement]." Intercept. Apply the pressure-test above before forwarding anything to the user.
+
 ### Strategic zoom-out — project-shape vigilance
 
 **Cross-session coordination is not just decision relay between Staff sessions — it is cross-deliverable strategic synthesis.** Every operational discovery during project execution — a failed assumption, a surfaced infra/CI constraint, a methodology friction, a missing access path, a contradicted brief premise, a new dependency — MUST trigger an unprompted project-shape re-evaluation reflex BEFORE you respond to the user.
