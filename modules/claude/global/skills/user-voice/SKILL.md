@@ -204,7 +204,13 @@ _Add more from user corrections as they occur._
 
 Content type: video scripts, talk outlines, demo narration, spoken async updates. Load this section any time a draft of spoken/scripted content (video scripts, talk outlines, demo narration, spoken async updates) uses 'we' for work Karl did personally, lists deliverables where a narrative introduction is expected, or states a goal before its objective.
 
-**Rule 1 — First-person-singular work attribution.** Work Karl personally did is attributed in first-person singular: 'I built', 'I went after', 'what I learned'. Never use 'we' for work he did. Do not hedge authorship with 'through Claude' / 'with Claude's help' qualifiers, even when Claude did the implementing. Karl's literal correction: "you keep saying we — it's I, it's me. I'm the one who did it, of course through Claude, but we don't have to mention that."
+**Rule 1 — Work-attribution hierarchy.** When attributing work Karl personally did, apply this three-tier hierarchy:
+
+- **PREFERRED — attribution-free outcome statements.** State the outcome with no narrator at all. Examples: 'So now there's a runner.' / 'There's a rule for this now.' / 'These things are now fixed.' Karl's refinement: "Even better than the word I in place of we: reword the sentence so it doesn't attribute to anybody. It just says these things are now fixed. That kind of flavor is even better."
+
+- **ACCEPTABLE — first-person singular.** Use 'I built', 'I went after', 'what I learned' when an attribution-free version would be awkward or ambiguous. This is a valid fallback, not the first choice. Awkward case: 'I've been chasing this flake for two months' — stripping the narrator loses the effort signal. Attribution-free works fine when no effort/time signal is at stake: 'We've added a timeout mechanism.' → 'There's now a timeout.'
+
+- **NEVER — 'we' for solo work or authorship hedging.** Never use 'we' for work Karl did personally. Do not hedge authorship with 'through Claude' / 'with Claude's help' qualifiers, even when Claude did the implementing. Karl's literal correction: "you keep saying we — it's I, it's me. I'm the one who did it, of course through Claude, but we don't have to mention that."
 
 **Rule 2 — Allowed 'we' exceptions.** Two uses of 'we' are permitted and correct:
 - Inclusive speaker + audience: 'we're going to go over', 'let's take a look at' — the 'we' includes the listener.
@@ -221,7 +227,7 @@ Do NOT apply Rule 1 to these cases. The over-correction (replacing all 'we' with
 - What before why — objective then goal: name what you're trying to accomplish before you state why it matters ('objective leads to goal').
 - Preferred term: 'critical flows' — not 'the flows that matter most' or any paraphrase. Karl explicitly rejected the paraphrase.
 
-**Rule 4 — Introductory, not inventory.** When presenting a project to an audience that doesn't know it, narrate phases and missions rather than listing deliverables. Example of the wrong register (inventory/listy): 'Part 1 is the friction work: [deliverable list].' Example of the correct register (narrative): 'In the first phase I went after the friction — the places where writing a test was harder than it needed to be.' Name what you were chasing, not what you shipped.
+**Rule 4 — Introductory, not inventory.** When presenting a project to an audience that doesn't know it, narrate phases and missions rather than listing deliverables. Example of the wrong register (inventory/listy): 'Part 1 is the friction work: [deliverable list].' Example of the correct register (narrative): 'In the first phase I went after the friction — the places where writing a test was harder than it needed to be.' (first-person here is tier-2 acceptable; attribution-free would also work: 'In the first phase, the friction was the target — the places where writing a test was harder than it needed to be.') Name what you were chasing, not what you shipped.
 
 ---
 
@@ -566,6 +572,6 @@ Before surfacing any user-facing draft, run a quick self-check:
 6. **Broadcast-mode check (if channel/broadcast post):** First, identify which broadcast shape applies (milestone-announcement vs progress-update). Then verify the shape-specific constraints for that shape.
    - 6a. **Milestone-announcement shape verification:** Section-header opener present (no greeting)? State-change sentence present? Evidence block (Before/After inline numbers + dates)? Soft invitational pointer to evidence tool (not pasted URL)? `Up Next` block as its own section (not inline)? If any element missed, rewrite to match the milestone-announcement template.
    - 6b. **Progress-update shape verification:** Section-header opener present (no greeting)? Paragraph prose (not bullets)? Inline `@`-mentions for collaborators? Parenthetical intent framing attached to state-of-project sentence (not headlined as separate section)? No LogFrame jargon, no PR numbers, no merge dates? Hedged future-looking statements? Feedback-invitation + emoji close? If any element missed, rewrite to match the progress-update template.
-7. **Spoken/scripted check (if video script, talk outline, demo narration, or spoken async update):** Verify Rule 1 — work Karl personally did is attributed in first-person singular ('I built', 'I went after'), not 'we'; no 'through Claude'/'with Claude's help' hedges. Verify Rule 2 — allowed 'we' exceptions (inclusive audience, company/team Maze) are preserved and not over-corrected to 'I'. Verify Rule 4 — project phases are introduced with narrative framing, not an inventory list of deliverables.
+7. **Spoken/scripted check (if video script, talk outline, demo narration, or spoken async update):** Verify Rule 1 — work attribution follows the hierarchy: attribution-free outcome statements preferred ('So now there's a runner.'), first-person singular ('I built', 'I went after') as fallback when attribution-free would be awkward or ambiguous, never 'we' for solo work, never 'through Claude'/'with Claude's help' hedges. Verify Rule 2 — allowed 'we' exceptions (inclusive audience, company/team Maze) are preserved and not over-corrected to 'I'. Verify Rule 4 — project phases are introduced with narrative framing, not an inventory list of deliverables.
 
 Fix any failures before returning the draft.
