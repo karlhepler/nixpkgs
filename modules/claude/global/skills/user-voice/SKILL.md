@@ -200,6 +200,31 @@ _Add more from user corrections as they occur._
 
 ---
 
+### Spoken / Scripted First-Person Content
+
+Content type: video scripts, talk outlines, demo narration, spoken async updates. Load this section any time a draft of spoken/scripted content (video scripts, talk outlines, demo narration, spoken async updates) uses 'we' for work Karl did personally, lists deliverables where a narrative introduction is expected, or states a goal before its objective.
+
+**Rule 1 — First-person-singular work attribution.** Work Karl personally did is attributed in first-person singular: 'I built', 'I went after', 'what I learned'. Never use 'we' for work he did. Do not hedge authorship with 'through Claude' / 'with Claude's help' qualifiers, even when Claude did the implementing. Karl's literal correction: "you keep saying we — it's I, it's me. I'm the one who did it, of course through Claude, but we don't have to mention that."
+
+**Rule 2 — Allowed 'we' exceptions.** Two uses of 'we' are permitted and correct:
+- Inclusive speaker + audience: 'we're going to go over', 'let's take a look at' — the 'we' includes the listener.
+- Company / team Maze: 'our customers', 'our critical flows', 'we need better tooling' — 'we' as the organization.
+
+Do NOT apply Rule 1 to these cases. The over-correction (replacing all 'we' with 'I') is the mistake to avoid.
+
+**Rule 3 — Demo-video register traits.** Voice reference: Karl's dictated intro for the acceptance-tests demo video. Apply these register traits when writing spoken/scripted content:
+- Plain conversational connectors: 'So...', 'Well...' to open transitions.
+- Rhetorical-question pivots: 'Why do we want to do this? Well...' — state the question, then answer it. (The 'we' here is inclusive audience — Rule 2 exception; do not replace with 'I'.)
+- Direct audience address: 'Are you ready? Let's get started.'
+- Light self-deprecating humor: 'mere humans like ourselves' — warmth without self-mockery.
+- 'Cool.' as a beat-separator between sections (standalone word, period).
+- What before why — objective then goal: name what you're trying to accomplish before you state why it matters ('objective leads to goal').
+- Preferred term: 'critical flows' — not 'the flows that matter most' or any paraphrase. Karl explicitly rejected the paraphrase.
+
+**Rule 4 — Introductory, not inventory.** When presenting a project to an audience that doesn't know it, narrate phases and missions rather than listing deliverables. Example of the wrong register (inventory/listy): 'Part 1 is the friction work: [deliverable list].' Example of the correct register (narrative): 'In the first phase I went after the friction — the places where writing a test was harder than it needed to be.' Name what you were chasing, not what you shipped.
+
+---
+
 ### Tone Register
 
 Mark the user's default register for each dimension. Update from corrections.
@@ -276,6 +301,7 @@ Preferred terms and terms to avoid in this user's domain:
 | postgres (casual Slack) | PostgreSQL (formal/PR/code context only) |
 | redis (casual Slack) | Redis (formal context only) |
 | k8s (casual Slack) | Kubernetes (formal context only) |
+| `critical flows` | 'the flows that matter most' or any paraphrase (Karl explicitly rejected the paraphrase — see § Spoken / Scripted First-Person Content, Rule 3) |
 
 ---
 
@@ -424,7 +450,7 @@ What makes this the wrong voice:
 
 - **Message length calibration.** Slack: brief (1-3 paragraphs max). Email: structured but compact. PR description: two paragraphs max (see global CLAUDE.md § PR Descriptions).
 - **Short paragraphs.** Each does one thing. Karl prefers structure over single-block prose.
-- **First-person ownership.** `I` not `we` for decisions Karl owns.
+- **First-person ownership.** `I` not `we` for decisions Karl owns. See also § Spoken / Scripted First-Person Content, Rule 1 for work-attribution specifics (including Claude-authorship hedging).
 - **No prologue.** The first sentence is the request or the substantive content. Do not open with preamble like "I wanted to reach out to..." or "Just following up to say...".
 - **Conservative timelines.** (See Timeline language under Preferred Phrasings above for examples.)
 - **No closing question when Karl has made the call.** Just state what he's doing. Asking framing is reserved for genuine peer-input requests.
@@ -540,5 +566,6 @@ Before surfacing any user-facing draft, run a quick self-check:
 6. **Broadcast-mode check (if channel/broadcast post):** First, identify which broadcast shape applies (milestone-announcement vs progress-update). Then verify the shape-specific constraints for that shape.
    - 6a. **Milestone-announcement shape verification:** Section-header opener present (no greeting)? State-change sentence present? Evidence block (Before/After inline numbers + dates)? Soft invitational pointer to evidence tool (not pasted URL)? `Up Next` block as its own section (not inline)? If any element missed, rewrite to match the milestone-announcement template.
    - 6b. **Progress-update shape verification:** Section-header opener present (no greeting)? Paragraph prose (not bullets)? Inline `@`-mentions for collaborators? Parenthetical intent framing attached to state-of-project sentence (not headlined as separate section)? No LogFrame jargon, no PR numbers, no merge dates? Hedged future-looking statements? Feedback-invitation + emoji close? If any element missed, rewrite to match the progress-update template.
+7. **Spoken/scripted check (if video script, talk outline, demo narration, or spoken async update):** Verify Rule 1 — work Karl personally did is attributed in first-person singular ('I built', 'I went after'), not 'we'; no 'through Claude'/'with Claude's help' hedges. Verify Rule 2 — allowed 'we' exceptions (inclusive audience, company/team Maze) are preserved and not over-corrected to 'I'. Verify Rule 4 — project phases are introduced with narrative framing, not an inventory list of deliverables.
 
 Fix any failures before returning the draft.
