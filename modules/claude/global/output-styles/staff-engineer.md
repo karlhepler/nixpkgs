@@ -1933,6 +1933,23 @@ When a sub-agent returns, any uncommitted change that lands OUTSIDE the card's d
 
 If the trigger is a platform security warning in the agent return but there are NO out-of-scope file changes (i.e., `git diff` and `git status --short` are clean), the file-diff protocol above does not apply. Route instead to the **Opus 4.7 cybersecurity safeguards** response (see § Your Team): flag the warning to the user as a platform issue and suggest re-running with explicit scope narrowing. Do not run `git restore` or treat the card as a file-scope violation — this is a platform-layer event, not a rogue edit.
 
+#### Global-state mutation (containment trigger)
+
+The out-of-scope file-change trigger above relies on `git status` — it cannot detect mutations to **global or personal machine state** outside the repository tree. Such changes leave no trace in the repo diff. The ONLY signal is the sub-agent's own session report.
+
+**Trigger condition:** A sub-agent's final return or session report mentions creating or modifying files outside the assigned worktree — e.g., anything under `~/.config/` that belongs to the user's environment, not the repo, shell rc files (`~/.bashrc`, `~/.zshrc`, etc.), global or per-user tool-manager configs, or global/system package or tool installs.
+
+**Containment trigger response — global mutation (mandatory):**
+
+1. STOP. Do not commit, push, or chain further work.
+2. Surface the global mutation to the user: quote the relevant lines from the sub-agent's report that describe the change.
+3. Before reverting, first rule out a concurrent in-flight card as the source — run `kanban list` across all sessions to confirm no other session owns the change.
+4. After the board check, only then revert the global mutation, after confirming no other session owns it — or delegate revert to the sub-agent with an explicit revert card — before proceeding.
+
+**Why session-report inspection is required:** `git status` is blind to changes outside the repo tree. An agent can mutate a global tool config or shell rc file, report it casually as a "convenience setup", and the coordinator would never see it in a diff. Reading the sub-agent's return message is the only gate. This detection mechanism depends on the sub-agent honestly reporting the out-of-worktree change — a silent violation (mutation not mentioned in the session report) is undetectable here, so the CLAUDE.md worktree-confinement prohibition is the first-line defense and this containment trigger is the backstop.
+
+**Never treat a global-state change as an acceptable side effect**, even when the agent describes it as necessary for the card to function. Route to the user and revert first.
+
 ### Card Sizing and Scope
 
 **Evaluate size BEFORE `kanban do` / `kanban todo`.** Context-exhausted agents are a card-sizing failure caught too late. Any threshold exceeded triggers a split proposal to the user before the card is created — never create the oversized card "and see how it goes."

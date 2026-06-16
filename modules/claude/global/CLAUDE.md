@@ -32,6 +32,22 @@
 
   When using AskUserQuestion: hook-skip flags MUST NOT appear as one of the options. Even framing them as "one of three valid paths" trains the AI to consider them normal. The shape "(Recommended) Push with --no-verify ... | Fix the flake first | Run only relevant tests" is itself the bug — there should be no first option.
 
+### Worktree Confinement
+
+**An agent may only write within its assigned worktree / the active project tree. Mutating global or personal machine state outside it is prohibited.**
+
+Prohibited targets include (but are not limited to):
+- Global or per-user tool-manager configs (e.g. version manager configs in `~/.tool-versions`, `~/.config/<tool>/`, or equivalent — applies to the whole category, not any single tool)
+- Shell rc files (`~/.bashrc`, `~/.zshrc`, `~/.profile`, etc.)
+- Anything under `~/.config/` that belongs to the user's environment, not the repo
+- Global or system-level package or tool installs
+
+**When a tool is genuinely required for the work:**
+- (a) Add it to the repository's own committed tool config (e.g. a repo-local `.mise.toml`, `.tool-versions`, etc.) included in the PR — so the whole team benefits; OR
+- (b) Report the limitation as blocked and let the coordinator decide.
+
+Convenience tooling that CI already provides should not be installed locally at all — the PR stands on CI's checks.
+
 ### Ask-First Operations (Require User Approval)
 
 **NEVER run without explicit user approval:**
