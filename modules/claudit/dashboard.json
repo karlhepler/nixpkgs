@@ -228,567 +228,13 @@
       }
     },
     {
-      "id": 73,
-      "type": "timeseries",
-      "title": "Done vs Redo Events Over Time",
-      "description": "Daily count of 'done' events vs 'redo' events. A declining redo line alongside a stable or rising done line means quality is improving \u2014 fewer cards are being sent back for rework.",
-      "gridPos": {
-        "x": 12,
-        "y": 7,
-        "w": 12,
-        "h": 8
-      },
-      "datasource": {
-        "type": "frser-sqlite-datasource",
-        "uid": "claudit-sqlite"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(recorded_at)) AS time, SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END) AS done_count, SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS redo_count FROM kanban_card_events WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', recorded_at, 'localtime') ORDER BY time ASC",
-          "queryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(recorded_at)) AS time, SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END) AS done_count, SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS redo_count FROM kanban_card_events WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', recorded_at, 'localtime') ORDER BY time ASC",
-          "queryType": "time series",
-          "timeColumns": [
-            "time"
-          ]
-        }
-      ],
-      "options": {
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        },
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {
-            "mode": "palette-classic"
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 80,
-      "type": "row",
-      "title": "Quality",
-      "collapsed": false,
-      "gridPos": {
-        "x": 0,
-        "y": 14,
-        "w": 24,
-        "h": 1
-      },
-      "datasource": null,
-      "panels": []
-    },
-    {
-      "id": 102,
-      "type": "timeseries",
-      "title": "Rolling Redo Rate Over Time (7-day)",
-      "description": "7-day rolling redo rate (redo_count / done_count * 100). Smooths daily noise. Trending down means quality is improving.",
-      "gridPos": {
-        "x": 0,
-        "y": 15,
-        "w": 12,
-        "h": 8
-      },
-      "datasource": {
-        "type": "frser-sqlite-datasource",
-        "uid": "claudit-sqlite"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "WITH daily AS (SELECT date(recorded_at, 'localtime') AS day, SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS redos, SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END) AS dones FROM kanban_card_events WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY day) SELECT strftime('%Y-%m-%dT00:00:00Z', day) AS time, CAST(SUM(redos) OVER (ORDER BY day ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS REAL) / NULLIF(SUM(dones) OVER (ORDER BY day ROWS BETWEEN 6 PRECEDING AND CURRENT ROW), 0) * 100 AS rolling_redo_pct FROM daily ORDER BY day ASC",
-          "queryText": "WITH daily AS (SELECT date(recorded_at, 'localtime') AS day, SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS redos, SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END) AS dones FROM kanban_card_events WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY day) SELECT strftime('%Y-%m-%dT00:00:00Z', day) AS time, CAST(SUM(redos) OVER (ORDER BY day ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS REAL) / NULLIF(SUM(dones) OVER (ORDER BY day ROWS BETWEEN 6 PRECEDING AND CURRENT ROW), 0) * 100 AS rolling_redo_pct FROM daily ORDER BY day ASC",
-          "queryType": "time series",
-          "timeColumns": [
-            "time"
-          ]
-        }
-      ],
-      "options": {
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        },
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "min": 0,
-          "color": {
-            "mode": "palette-classic"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 10
-              },
-              {
-                "color": "red",
-                "value": 25
-              }
-            ]
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 62,
-      "type": "stat",
-      "title": "Redo Rate (7d)",
-      "description": "Ratio of redo events to done events across all time. A high redo rate signals quality issues \u2014 cards are frequently sent back for rework before acceptance.",
-      "gridPos": {
-        "x": 12,
-        "y": 1,
-        "w": 6,
-        "h": 6
-      },
-      "datasource": {
-        "type": "frser-sqlite-datasource",
-        "uid": "claudit-sqlite"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "SELECT CAST(SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS REAL) / NULLIF(SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END), 0) * 100 AS redo_rate FROM kanban_card_events WHERE recorded_at >= datetime('now', '-7 days')",
-          "queryText": "SELECT CAST(SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS REAL) / NULLIF(SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END), 0) * 100 AS redo_rate FROM kanban_card_events WHERE recorded_at >= datetime('now', '-7 days')",
-          "queryType": "table",
-          "timeColumns": []
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "orientation": "auto",
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "textMode": "auto"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "decimals": 1,
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 20
-              },
-              {
-                "color": "red",
-                "value": 40
-              }
-            ]
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 81,
-      "type": "barchart",
-      "title": "Redo Rate by Card Type (%)",
-      "description": "Percentage of cards sent back for rework, broken down by card type (work, review, research). A high redo rate for a specific card type points to systematic quality gaps \u2014 either the AC criteria are poorly specified for that type or agents struggle with that category of task.",
-      "gridPos": {
-        "x": 0,
-        "y": 23,
-        "w": 12,
-        "h": 8
-      },
-      "datasource": {
-        "type": "frser-sqlite-datasource",
-        "uid": "claudit-sqlite"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "SELECT card_type, CAST(SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS REAL) / NULLIF(SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END), 0) * 100 AS redo_rate, SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS redo_count, SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END) AS done_count FROM kanban_card_events WHERE card_type IS NOT NULL AND card_type != '' AND recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY card_type ORDER BY redo_rate DESC",
-          "queryText": "SELECT card_type, CAST(SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS REAL) / NULLIF(SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END), 0) * 100 AS redo_rate, SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS redo_count, SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END) AS done_count FROM kanban_card_events WHERE card_type IS NOT NULL AND card_type != '' AND recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY card_type ORDER BY redo_rate DESC",
-          "queryType": "table",
-          "timeColumns": []
-        }
-      ],
-      "options": {
-        "xField": "card_type",
-        "orientation": "horizontal",
-        "barWidth": 0.6,
-        "groupWidth": 0.7,
-        "fillOpacity": 80,
-        "legend": {
-          "displayMode": "list",
-          "placement": "right"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "decimals": 1,
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 20
-              },
-              {
-                "color": "red",
-                "value": 40
-              }
-            ]
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 82,
-      "type": "table",
-      "title": "Redo Rate by Agent/Specialist",
-      "description": "Redo rate per agent persona, sorted by redo rate descending. Agents with consistently high redo rates are candidates for prompt improvements, better AC specification, or model upgrades. Compare redo_count against done_count to avoid being misled by low-volume agents.",
-      "gridPos": {
-        "x": 12,
-        "y": 23,
-        "w": 12,
-        "h": 8
-      },
-      "datasource": {
-        "type": "frser-sqlite-datasource",
-        "uid": "claudit-sqlite"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "SELECT persona, CAST(SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS REAL) / NULLIF(SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END), 0) * 100 AS redo_rate, SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS redo_count, SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END) AS done_count FROM kanban_card_events WHERE persona IS NOT NULL AND persona != '' AND recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY persona ORDER BY redo_rate DESC",
-          "queryText": "SELECT persona, CAST(SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS REAL) / NULLIF(SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END), 0) * 100 AS redo_rate, SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS redo_count, SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END) AS done_count FROM kanban_card_events WHERE persona IS NOT NULL AND persona != '' AND recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY persona ORDER BY redo_rate DESC",
-          "queryType": "table",
-          "timeColumns": []
-        }
-      ],
-      "options": {
-        "sortBy": [
-          {
-            "displayName": "redo_rate",
-            "desc": true
-          }
-        ]
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "filterable": true
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "redo_rate"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "percent"
-              },
-              {
-                "id": "decimals",
-                "value": 1
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "id": 104,
-      "type": "timeseries",
-      "title": "Redo Rate by Agent Over Time (weekly)",
-      "description": "Per-agent weekly redo rate. Top 4-5 agents by redo count shown as separate lines.",
-      "gridPos": {
-        "x": 0,
-        "y": 31,
-        "w": 24,
-        "h": 8
-      },
-      "datasource": {
-        "type": "frser-sqlite-datasource",
-        "uid": "claudit-sqlite"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "WITH top_agents AS (SELECT agent FROM kanban_card_events WHERE event_type = 'redo' AND recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY agent ORDER BY COUNT(*) DESC LIMIT 5), weekly AS (SELECT strftime('%Y-W%W', recorded_at, 'localtime') AS week, CASE WHEN agent IN (SELECT agent FROM top_agents) THEN agent ELSE 'other' END AS agent, SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS redos, SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END) AS dones, MIN(recorded_at) AS week_start FROM kanban_card_events WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY week, CASE WHEN agent IN (SELECT agent FROM top_agents) THEN agent ELSE 'other' END) SELECT strftime('%Y-%m-%dT00:00:00Z', date(week_start, 'localtime', 'weekday 0', '-6 days')) AS time, agent, CAST(redos AS REAL) / NULLIF(dones, 0) * 100 AS redo_pct FROM weekly ORDER BY time ASC",
-          "queryText": "WITH top_agents AS (SELECT agent FROM kanban_card_events WHERE event_type = 'redo' AND recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY agent ORDER BY COUNT(*) DESC LIMIT 5), weekly AS (SELECT strftime('%Y-W%W', recorded_at, 'localtime') AS week, CASE WHEN agent IN (SELECT agent FROM top_agents) THEN agent ELSE 'other' END AS agent, SUM(CASE WHEN event_type = 'redo' THEN 1 ELSE 0 END) AS redos, SUM(CASE WHEN event_type = 'done' THEN 1 ELSE 0 END) AS dones, MIN(recorded_at) AS week_start FROM kanban_card_events WHERE recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY week, CASE WHEN agent IN (SELECT agent FROM top_agents) THEN agent ELSE 'other' END) SELECT strftime('%Y-%m-%dT00:00:00Z', date(week_start, 'localtime', 'weekday 0', '-6 days')) AS time, agent, CAST(redos AS REAL) / NULLIF(dones, 0) * 100 AS redo_pct FROM weekly ORDER BY time ASC",
-          "queryType": "time series",
-          "timeColumns": [
-            "time"
-          ]
-        }
-      ],
-      "options": {
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        },
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "min": 0,
-          "color": {
-            "mode": "palette-classic"
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 106,
-      "type": "table",
-      "title": "Agent Quality Table (cost + redo, 7d vs prior-7d)",
-      "description": "Per-agent cost and redo rate side by side. Look for double-penalty cases: high cost + high redo rate.",
-      "gridPos": {
-        "x": 12,
-        "y": 15,
-        "w": 12,
-        "h": 8
-      },
-      "datasource": {
-        "type": "frser-sqlite-datasource",
-        "uid": "claudit-sqlite"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "rawQueryText": "WITH cost_7d AS (SELECT agent, SUM(cost_usd) AS cost FROM agent_metrics WHERE recorded_at >= datetime('now', '-7 days') AND git_repo LIKE '$repo' GROUP BY agent), cost_prior_7d AS (SELECT agent, SUM(cost_usd) AS cost FROM agent_metrics WHERE recorded_at >= datetime('now', '-14 days') AND recorded_at < datetime('now', '-7 days') AND git_repo LIKE '$repo' GROUP BY agent), redo_7d AS (SELECT agent, CAST(SUM(CASE WHEN event_type='redo' THEN 1 ELSE 0 END) AS REAL) / NULLIF(SUM(CASE WHEN event_type='done' THEN 1 ELSE 0 END), 0) * 100 AS redo_pct FROM kanban_card_events WHERE recorded_at >= datetime('now', '-7 days') GROUP BY agent), redo_prior_7d AS (SELECT agent, CAST(SUM(CASE WHEN event_type='redo' THEN 1 ELSE 0 END) AS REAL) / NULLIF(SUM(CASE WHEN event_type='done' THEN 1 ELSE 0 END), 0) * 100 AS redo_pct FROM kanban_card_events WHERE recorded_at >= datetime('now', '-14 days') AND recorded_at < datetime('now', '-7 days') GROUP BY agent) SELECT c.agent, c.cost AS cost_7d, COALESCE(cp.cost, 0) AS cost_prior_7d, ((c.cost - COALESCE(cp.cost, 0)) / NULLIF(cp.cost, 0)) * 100 AS cost_delta_pct, COALESCE(r.redo_pct, 0) AS redo_pct_7d, COALESCE(rp.redo_pct, 0) AS redo_prior_pct, (COALESCE(r.redo_pct, 0) - COALESCE(rp.redo_pct, 0)) AS redo_delta_pp FROM cost_7d c LEFT JOIN cost_prior_7d cp ON c.agent = cp.agent LEFT JOIN redo_7d r ON c.agent = r.agent LEFT JOIN redo_prior_7d rp ON c.agent = rp.agent ORDER BY (c.cost * COALESCE(r.redo_pct, 0)) DESC",
-          "queryText": "WITH cost_7d AS (SELECT agent, SUM(cost_usd) AS cost FROM agent_metrics WHERE recorded_at >= datetime('now', '-7 days') AND git_repo LIKE '$repo' GROUP BY agent), cost_prior_7d AS (SELECT agent, SUM(cost_usd) AS cost FROM agent_metrics WHERE recorded_at >= datetime('now', '-14 days') AND recorded_at < datetime('now', '-7 days') AND git_repo LIKE '$repo' GROUP BY agent), redo_7d AS (SELECT agent, CAST(SUM(CASE WHEN event_type='redo' THEN 1 ELSE 0 END) AS REAL) / NULLIF(SUM(CASE WHEN event_type='done' THEN 1 ELSE 0 END), 0) * 100 AS redo_pct FROM kanban_card_events WHERE recorded_at >= datetime('now', '-7 days') GROUP BY agent), redo_prior_7d AS (SELECT agent, CAST(SUM(CASE WHEN event_type='redo' THEN 1 ELSE 0 END) AS REAL) / NULLIF(SUM(CASE WHEN event_type='done' THEN 1 ELSE 0 END), 0) * 100 AS redo_pct FROM kanban_card_events WHERE recorded_at >= datetime('now', '-14 days') AND recorded_at < datetime('now', '-7 days') GROUP BY agent) SELECT c.agent, c.cost AS cost_7d, COALESCE(cp.cost, 0) AS cost_prior_7d, ((c.cost - COALESCE(cp.cost, 0)) / NULLIF(cp.cost, 0)) * 100 AS cost_delta_pct, COALESCE(r.redo_pct, 0) AS redo_pct_7d, COALESCE(rp.redo_pct, 0) AS redo_prior_pct, (COALESCE(r.redo_pct, 0) - COALESCE(rp.redo_pct, 0)) AS redo_delta_pp FROM cost_7d c LEFT JOIN cost_prior_7d cp ON c.agent = cp.agent LEFT JOIN redo_7d r ON c.agent = r.agent LEFT JOIN redo_prior_7d rp ON c.agent = rp.agent ORDER BY (c.cost * COALESCE(r.redo_pct, 0)) DESC",
-          "queryType": "table",
-          "timeColumns": []
-        }
-      ],
-      "options": {
-        "sortBy": [
-          {
-            "displayName": "cost_7d",
-            "desc": true
-          }
-        ]
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "filterable": true
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "cost_7d"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "currencyUSD"
-              },
-              {
-                "id": "decimals",
-                "value": 4
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "cost_prior_7d"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "currencyUSD"
-              },
-              {
-                "id": "decimals",
-                "value": 4
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "cost_delta_pct"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "percent"
-              },
-              {
-                "id": "decimals",
-                "value": 1
-              },
-              {
-                "id": "custom.displayMode",
-                "value": "color-text"
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "green",
-                      "value": null
-                    },
-                    {
-                      "color": "green",
-                      "value": -999999
-                    },
-                    {
-                      "color": "red",
-                      "value": 0
-                    }
-                  ]
-                }
-              },
-              {
-                "id": "color",
-                "value": {
-                  "mode": "thresholds"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "redo_pct_7d"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "percent"
-              },
-              {
-                "id": "decimals",
-                "value": 1
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "redo_prior_pct"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "percent"
-              },
-              {
-                "id": "decimals",
-                "value": 1
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "redo_delta_pp"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "percent"
-              },
-              {
-                "id": "decimals",
-                "value": 1
-              },
-              {
-                "id": "custom.displayMode",
-                "value": "color-text"
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "green",
-                      "value": null
-                    },
-                    {
-                      "color": "green",
-                      "value": -999999
-                    },
-                    {
-                      "color": "red",
-                      "value": 0
-                    }
-                  ]
-                }
-              },
-              {
-                "id": "color",
-                "value": {
-                  "mode": "thresholds"
-                }
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
       "id": 10,
       "type": "row",
       "title": "Cost",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 46,
+        "y": 21,
         "w": 24,
         "h": 1
       },
@@ -802,7 +248,7 @@
       "description": "Total cost / done cards, 7-day rolling window. Falling = changes are working; rising = quality or efficiency degrading.",
       "gridPos": {
         "x": 0,
-        "y": 47,
+        "y": 22,
         "w": 12,
         "h": 8
       },
@@ -849,7 +295,7 @@
       "description": "Daily cost broken out by top-5 agents by total cost in the visible period; remaining agents aggregated as \"other\".",
       "gridPos": {
         "x": 12,
-        "y": 47,
+        "y": 22,
         "w": 12,
         "h": 8
       },
@@ -896,7 +342,7 @@
       "description": "Week-over-week cost delta per agent role. cost_7d vs cost_prior_7d shows whether an agent is trending up or down in spend. Filter by repo using the Repo variable above.",
       "gridPos": {
         "x": 0,
-        "y": 55,
+        "y": 30,
         "w": 12,
         "h": 8
       },
@@ -1052,7 +498,7 @@
       "description": "Cumulative spend per kanban session name (e.g., swift-falcon). If one session dwarfs the rest, inspect which agents drove the cost.",
       "gridPos": {
         "x": 12,
-        "y": 55,
+        "y": 30,
         "w": 12,
         "h": 8
       },
@@ -1110,7 +556,7 @@
       "description": "Effective cost per 1K tokens (cost_usd / total_tokens * 1000) and cache hit ratio overlaid. Cache improving means effective cost drops.",
       "gridPos": {
         "x": 0,
-        "y": 63,
+        "y": 38,
         "w": 24,
         "h": 8
       },
@@ -1204,7 +650,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 71,
+        "y": 46,
         "w": 24,
         "h": 1
       },
@@ -1218,7 +664,7 @@
       "description": "Daily card completion velocity. A rising trend means more work is flowing through to done; gaps indicate days with no completions.",
       "gridPos": {
         "x": 0,
-        "y": 72,
+        "y": 47,
         "w": 12,
         "h": 8
       },
@@ -1264,7 +710,7 @@
       "description": "Time from first 'doing' event to 'done' event per card. Cards with very long cycle times may indicate tasks that are too large or agents that got stuck.",
       "gridPos": {
         "x": 12,
-        "y": 72,
+        "y": 47,
         "w": 12,
         "h": 8
       },
@@ -1318,7 +764,7 @@
       "description": "Distribution of how many hours cards take from first 'doing' to 'done'. The bulk of the distribution shows the typical card duration; outliers on the right indicate cards that got stuck or were exceptionally complex.",
       "gridPos": {
         "x": 0,
-        "y": 80,
+        "y": 55,
         "w": 12,
         "h": 8
       },
@@ -1361,7 +807,7 @@
       "description": "Week-over-week average lead time delta per agent (milliseconds from card start to done). Green delta_pct means faster. Uses event_type = 'start' as the anchor (the correct kanban CLI event).",
       "gridPos": {
         "x": 12,
-        "y": 80,
+        "y": 55,
         "w": 12,
         "h": 8
       },
@@ -1509,7 +955,7 @@
       "description": "Average lead time per week, in milliseconds displayed as human-readable duration (SQLite has no native MEDIAN; AVG is used as an approximation). Tells you whether throughput is improving or degrading.",
       "gridPos": {
         "x": 0,
-        "y": 88,
+        "y": 63,
         "w": 24,
         "h": 8
       },
@@ -1555,7 +1001,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 96,
+        "y": 71,
         "w": 24,
         "h": 1
       },
@@ -1569,7 +1015,7 @@
       "description": "Input, output, and cache-read token volumes stacked by model family. A small cache-read segment relative to input means context is being invalidated \u2014 check if CLAUDE.md or skill files changed recently.",
       "gridPos": {
         "x": 0,
-        "y": 97,
+        "y": 72,
         "w": 12,
         "h": 8
       },
@@ -1618,7 +1064,7 @@
       "description": "Percentage of input tokens served from cache vs. fresh input, per day. Below 70% means context is being invalidated frequently \u2014 check if CLAUDE.md or skill files changed recently.",
       "gridPos": {
         "x": 12,
-        "y": 97,
+        "y": 72,
         "w": 12,
         "h": 8
       },
@@ -1684,7 +1130,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 105,
+        "y": 80,
         "w": 24,
         "h": 1
       },
@@ -1698,7 +1144,7 @@
       "description": "Daily count of permission denials. Rising denials indicate agents attempting actions outside their allowed scope \u2014 check the Permission Denials by Tool panel to identify which tools are being blocked.",
       "gridPos": {
         "x": 0,
-        "y": 106,
+        "y": 81,
         "w": 12,
         "h": 8
       },
@@ -1744,7 +1190,7 @@
       "description": "Tools that were blocked by the permission system, ranked by denial count. Repeated denials for the same tool indicate an agent is attempting actions it is not authorized for \u2014 either the task prompt needs adjustment or the permission configuration needs updating.",
       "gridPos": {
         "x": 12,
-        "y": 106,
+        "y": 81,
         "w": 12,
         "h": 8
       },
@@ -1789,7 +1235,7 @@
       "description": "Call frequency per tool, broken down by bash command. High call counts for any single tool indicate heavy usage patterns \u2014 cross-reference with Most Denied Tools to see if those same tools are also being blocked.",
       "gridPos": {
         "x": 0,
-        "y": 114,
+        "y": 89,
         "w": 12,
         "h": 8
       },
@@ -1830,7 +1276,7 @@
       "description": "Distribution of agent run durations in minutes (last_seen_at minus first_seen_at). The bulk of the distribution shows typical agent duration; outliers on the right indicate agents working on large or complex tasks.",
       "gridPos": {
         "x": 12,
-        "y": 114,
+        "y": 89,
         "w": 12,
         "h": 8
       },
@@ -1875,7 +1321,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 122,
+        "y": 97,
         "w": 24,
         "h": 1
       },
@@ -1889,7 +1335,7 @@
       "description": "Cross-reference of agent types with model families. Shows call frequency and cost patterns to identify expensive or over-engineered model selections.",
       "gridPos": {
         "x": 0,
-        "y": 123,
+        "y": 98,
         "w": 12,
         "h": 8
       },
@@ -1947,7 +1393,7 @@
       "description": "Week-over-week turn count delta per agent role. turns_7d vs turns_prior_7d shows whether an agent is consuming more or fewer API round-trips. Filter by repo using the Repo variable above.",
       "gridPos": {
         "x": 12,
-        "y": 123,
+        "y": 98,
         "w": 12,
         "h": 8
       },
@@ -2103,7 +1549,7 @@
       "description": "Daily count of agent runs per agent type. A declining trend for a particular agent type may signal that delegation to that specialist is being reduced, intentionally or not.",
       "gridPos": {
         "x": 0,
-        "y": 131,
+        "y": 106,
         "w": 24,
         "h": 8
       },
@@ -2149,7 +1595,7 @@
       "collapsed": true,
       "gridPos": {
         "x": 0,
-        "y": 139,
+        "y": 114,
         "w": 24,
         "h": 1
       },
@@ -2159,7 +1605,7 @@
           "id": 74,
           "type": "table",
           "title": "Card Flow",
-          "description": "Recent cards with their events, showing the flow from creation through to completion. Cards with many redo events before done indicate quality issues or under-specified task definitions.",
+          "description": "Recent cards with their events, showing the flow from creation through to completion. Cards with multiple cycles (todo→doing→done more than once) indicate quality issues or under-specified task definitions.",
           "gridPos": {
             "x": 0,
             "y": 140,
@@ -2204,7 +1650,7 @@
       "title": "Cards Done (7d)",
       "description": "Total cards completed (done events) in the last 7 days. Measures throughput velocity.",
       "gridPos": {
-        "x": 18,
+        "x": 12,
         "y": 1,
         "w": 6,
         "h": 6

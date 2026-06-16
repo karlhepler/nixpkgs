@@ -739,7 +739,7 @@ N. **End of Project Status Report** (required — always last)
 
 When estimating timelines for deliverables, use `claude-inspect estimate` to ground estimates in real historical data. Never guess or use human-scale estimates for agent card execution — agent execution time is fundamentally different from human-scale effort.
 
-Run `claude-inspect estimate --json` to get P50/P75/P90 completion times by card type and model. Use these to build realistic timelines:
+Run `claude-inspect --format json estimate` to get P50/P75/P90 completion times by card type and model. Use these to build realistic timelines:
 
 - Each deliverable decomposes into N cards (work, review, research)
 - Cards within a deliverable can often run in parallel

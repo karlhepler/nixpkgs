@@ -29,7 +29,7 @@ import sqlite3
 import sys
 import xml.etree.ElementTree as ET
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 
 # ---------------------------------------------------------------------------
@@ -1055,26 +1055,6 @@ def cmd_throughput(kanban_session: Optional[str], fmt: str) -> None:
 # Command: criterion-rejections
 # ---------------------------------------------------------------------------
 
-def _truncate(s: str, max_len: int) -> str:
-    """Truncate a string to max_len, appending '...' if truncated."""
-    if len(s) <= max_len:
-        return s
-    return s[: max_len - 3] + "..."
-
-
-def _parse_rejection_reasons(raw: Optional[str]) -> List[Dict[str, str]]:
-    """Parse rejection_reasons JSON array; return empty list on failure."""
-    if not raw:
-        return []
-    try:
-        parsed = json.loads(raw)
-        if isinstance(parsed, list):
-            return parsed
-    except (json.JSONDecodeError, TypeError):
-        pass
-    return []
-
-
 def cmd_criterion_rejections(
     agent: Optional[str],
     card_type: Optional[str],
@@ -1085,168 +1065,12 @@ def cmd_criterion_rejections(
     summary: bool,
     fmt: str,
 ) -> None:
-    """Show redo events with rejection reasons, with optional filters."""
-    conn = connect()
-    try:
-        conditions = [
-            "event_type = 'redo'",
-            "rejection_reasons IS NOT NULL",
-        ]
-        params: list = []
-
-        if agent:
-            conditions.append("agent = ?")
-            params.append(agent)
-        if card_type:
-            conditions.append("card_type = ?")
-            params.append(card_type)
-        if model:
-            conditions.append("model = ?")
-            params.append(model)
-        if session:
-            conditions.append("kanban_session = ?")
-            params.append(session)
-        if since:
-            conditions.append("recorded_at >= ?")
-            params.append(since)
-
-        where = " AND ".join(conditions)
-
-        rows_raw = conn.execute(
-            f"""
-            SELECT
-                card_number,
-                kanban_session,
-                agent,
-                card_type,
-                model,
-                recorded_at,
-                rejection_reasons
-            FROM kanban_card_events
-            WHERE {where}
-            ORDER BY recorded_at DESC
-            """,
-            params,
-        ).fetchall()
-
-        if not rows_raw:
-            emit_error("No criterion rejections found matching the given filters.", fmt, "NOT_FOUND")
-            sys.exit(1)
-
-        if summary:
-            pattern_counts: Dict[Tuple[str, str, str], int] = {}
-            for r in rows_raw:
-                a = fmt_str(r["agent"])
-                ct = fmt_str(r["card_type"])
-                reasons = _parse_rejection_reasons(r["rejection_reasons"])
-                for item in reasons:
-                    criterion = item.get("criterion", "") if isinstance(item, dict) else str(item)
-                    key = (a, ct, criterion)
-                    pattern_counts[key] = pattern_counts.get(key, 0) + 1
-
-            if not pattern_counts:
-                emit_error("No parseable rejection reasons found.", fmt, "NO_DATA")
-                sys.exit(1)
-
-            if fmt != "human":
-                patterns = [
-                    {"agent": a, "card_type": ct, "count": count, "criterion": criterion}
-                    for (a, ct, criterion), count in sorted(pattern_counts.items(), key=lambda x: -x[1])
-                ]
-                result = {
-                    "redo_event_count": len(rows_raw),
-                    "patterns": patterns,
-                }
-                emit_result(result, fmt)
-                return
-
-            print(f"Criterion Rejection Patterns ({len(rows_raw)} redo events)")
-            print()
-
-            headers = ["Agent", "Card Type", "Count", "Criterion (truncated)"]
-            rows_out = []
-            for (a, ct, criterion), count in sorted(
-                pattern_counts.items(), key=lambda x: -x[1]
-            ):
-                rows_out.append([
-                    a,
-                    ct,
-                    str(count),
-                    _truncate(criterion, 60),
-                ])
-            print_table(headers, rows_out)
-
-        else:
-            if fmt != "human":
-                events = []
-                for r in rows_raw:
-                    reasons = _parse_rejection_reasons(r["rejection_reasons"])
-                    events.append({
-                        "card_number": r["card_number"],
-                        "kanban_session": r["kanban_session"],
-                        "agent": r["agent"],
-                        "card_type": r["card_type"],
-                        "model": r["model"],
-                        "recorded_at": r["recorded_at"],
-                        "rejection_reasons": reasons if reasons else r["rejection_reasons"],
-                    })
-                result = {
-                    "redo_event_count": len(rows_raw),
-                    "events": events,
-                }
-                emit_result(result, fmt)
-                return
-
-            print(f"Criterion Rejections ({len(rows_raw)} redo events)")
-            print()
-
-            if verbose:
-                for r in rows_raw:
-                    reasons = _parse_rejection_reasons(r["rejection_reasons"])
-                    print(f"Card #{fmt_str(r['card_number'])}  Session: {fmt_str(r['kanban_session'])}  "
-                          f"Agent: {fmt_str(r['agent'])}  Type: {fmt_str(r['card_type'])}  "
-                          f"Model: {fmt_str(r['model'])}  At: {fmt_str(r['recorded_at'])}")
-                    if reasons:
-                        for item in reasons:
-                            if isinstance(item, dict):
-                                criterion = item.get("criterion", "-")
-                                reason = item.get("reason", "-")
-                                print(f"  Criterion: {criterion}")
-                                print(f"  Reason:    {reason}")
-                            else:
-                                print(f"  {item}")
-                    else:
-                        print(f"  (unparseable: {fmt_str(r['rejection_reasons'])})")
-                    print()
-            else:
-                headers = ["Card", "Session", "Agent", "Type", "Model", "Timestamp", "Rejection Reasons"]
-                rows_out = []
-                for r in rows_raw:
-                    reasons = _parse_rejection_reasons(r["rejection_reasons"])
-                    if reasons:
-                        parts = []
-                        for item in reasons:
-                            if isinstance(item, dict):
-                                c = item.get("criterion", "")
-                                parts.append(c)
-                            else:
-                                parts.append(str(item))
-                        reasons_str = "; ".join(parts)
-                    else:
-                        reasons_str = fmt_str(r["rejection_reasons"])
-                    rows_out.append([
-                        fmt_str(r["card_number"]),
-                        fmt_str(r["kanban_session"]),
-                        fmt_str(r["agent"]),
-                        fmt_str(r["card_type"]),
-                        fmt_str(r["model"]),
-                        fmt_str(r["recorded_at"]),
-                        _truncate(reasons_str, 50),
-                    ])
-                print_table(headers, rows_out)
-
-    finally:
-        conn.close()
+    """Unavailable: the redo event type was retired under the simplified Kanban lifecycle."""
+    print(
+        "criterion-rejections is unavailable: the redo event type was retired on "
+        "2026-04-29 under the simplified Kanban lifecycle. A retry-frequency metric "
+        "will return via the cycles counter in a future release."
+    )
 
 
 # ---------------------------------------------------------------------------
