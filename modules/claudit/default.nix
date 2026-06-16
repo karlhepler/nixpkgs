@@ -4,6 +4,13 @@ let
   # Import shared shellApp helper
   shellApp = import ../lib/shellApp.nix { inherit pkgs lib; moduleDir = ./.; };
 
+  # post-commit hook for the nixpkgs repo — records every commit as a Claudit annotation
+  nixpkgsPostCommitHook = pkgs.writeShellApplication {
+    name = "nixpkgs-post-commit";
+    runtimeInputs = [ pkgs.git clauditAnnotateScript ];
+    text = builtins.readFile ./commit-annotate.bash;
+  };
+
   homeDirectory = config.home.homeDirectory;
 
   # Plugin package
@@ -259,5 +266,14 @@ SQL_EOF
   home.activation.clauditDirectories = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     $DRY_RUN_CMD mkdir -p ${homeDirectory}/.local/share/claudit/data
     $DRY_RUN_CMD mkdir -p ${homeDirectory}/.local/share/claudit/logs
+  '';
+
+  # Install the post-commit hook into the nixpkgs repo so every commit is annotated
+  # on the Claudit timeline. Mirrors the pattern used for nixpkgsPreCommitHook in
+  # modules/git/default.nix.
+  home.activation.nixpkgsPostCommitHook = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    hook_dir="${homeDirectory}/.config/nixpkgs/.git/hooks"
+    $DRY_RUN_CMD mkdir -p "$hook_dir"
+    $DRY_RUN_CMD install -m 755 ${nixpkgsPostCommitHook}/bin/nixpkgs-post-commit "$hook_dir/post-commit"
   '';
 }
