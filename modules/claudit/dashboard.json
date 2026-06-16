@@ -1842,6 +1842,308 @@
           }
         }
       ]
+    },
+    {
+      "id": 500,
+      "type": "row",
+      "title": "Optimization",
+      "collapsed": true,
+      "gridPos": {
+        "x": 0,
+        "y": 134,
+        "w": 24,
+        "h": 1
+      },
+      "datasource": null,
+      "panels": [
+        {
+          "id": 501,
+          "type": "timeseries",
+          "title": "Cost per Completed Card",
+          "description": "Daily cost divided by the number of cards reaching 'done' that day. A falling trend means efficiency improvements are working — less spend per unit of delivered work. Spikes indicate days with high agent cost but few completions.",
+          "gridPos": {
+            "x": 0,
+            "y": 135,
+            "w": 12,
+            "h": 8
+          },
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claudit-sqlite"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "rawQueryText": "WITH daily_cost AS (SELECT date(COALESCE(last_seen_at, recorded_at), 'localtime') AS day, SUM(cost_usd) AS total_cost FROM agent_metrics WHERE COALESCE(last_seen_at, recorded_at) >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND COALESCE(last_seen_at, recorded_at) <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY day), daily_done AS (SELECT date(recorded_at, 'localtime') AS day, COUNT(DISTINCT card_number) AS done_count FROM kanban_card_events WHERE event_type = 'done' AND recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY day) SELECT strftime('%Y-%m-%dT00:00:00Z', dc.day) AS time, CASE WHEN dd.done_count > 0 THEN dc.total_cost / dd.done_count ELSE NULL END AS cost_per_card FROM daily_cost dc LEFT JOIN daily_done dd ON dc.day = dd.day ORDER BY time ASC",
+              "queryText": "WITH daily_cost AS (SELECT date(COALESCE(last_seen_at, recorded_at), 'localtime') AS day, SUM(cost_usd) AS total_cost FROM agent_metrics WHERE COALESCE(last_seen_at, recorded_at) >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND COALESCE(last_seen_at, recorded_at) <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY day), daily_done AS (SELECT date(recorded_at, 'localtime') AS day, COUNT(DISTINCT card_number) AS done_count FROM kanban_card_events WHERE event_type = 'done' AND recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY day) SELECT strftime('%Y-%m-%dT00:00:00Z', dc.day) AS time, CASE WHEN dd.done_count > 0 THEN dc.total_cost / dd.done_count ELSE NULL END AS cost_per_card FROM daily_cost dc LEFT JOIN daily_done dd ON dc.day = dd.day ORDER BY time ASC",
+              "queryType": "time series",
+              "timeColumns": [
+                "time"
+              ]
+            }
+          ],
+          "options": {
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            },
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "currencyUSD",
+              "decimals": 2,
+              "color": {
+                "mode": "palette-classic"
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 502,
+          "type": "timeseries",
+          "title": "Cache Hit Rate",
+          "description": "Daily average cache_hit_ratio across all agent sessions. Values above 0.70 (70%) indicate healthy context reuse and lower effective cost. A drop below 0.50 is actionable — check for CLAUDE.md changes that invalidate the cache prefix.",
+          "gridPos": {
+            "x": 12,
+            "y": 135,
+            "w": 12,
+            "h": 8
+          },
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claudit-sqlite"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "rawQueryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(COALESCE(last_seen_at, recorded_at), 'localtime')) AS time, AVG(cache_hit_ratio) AS cache_hit_rate FROM agent_metrics WHERE COALESCE(last_seen_at, recorded_at) >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND COALESCE(last_seen_at, recorded_at) <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', COALESCE(last_seen_at, recorded_at), 'localtime') ORDER BY time ASC",
+              "queryText": "SELECT strftime('%Y-%m-%dT00:00:00Z', date(COALESCE(last_seen_at, recorded_at), 'localtime')) AS time, AVG(cache_hit_ratio) AS cache_hit_rate FROM agent_metrics WHERE COALESCE(last_seen_at, recorded_at) >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND COALESCE(last_seen_at, recorded_at) <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY strftime('%Y-%m-%d', COALESCE(last_seen_at, recorded_at), 'localtime') ORDER BY time ASC",
+              "queryType": "time series",
+              "timeColumns": [
+                "time"
+              ]
+            }
+          ],
+          "options": {
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            },
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "min": 0,
+              "max": 1,
+              "decimals": 2,
+              "color": {
+                "mode": "palette-classic"
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 503,
+          "type": "table",
+          "title": "Cost by Model",
+          "description": "Total spend, token volume, and cost-per-1M-tokens broken out by model. Use this to compare model cost-efficiency: a model with lower cost-per-1M-tokens delivers more work per dollar. Filter the time range to evaluate a specific period.",
+          "gridPos": {
+            "x": 0,
+            "y": 143,
+            "w": 12,
+            "h": 8
+          },
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claudit-sqlite"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "rawQueryText": "SELECT model, SUM(cost_usd) AS total_cost, SUM(input_tokens + output_tokens + cache_read_tokens + cache_write_tokens) AS total_tokens, CASE WHEN SUM(input_tokens + output_tokens + cache_read_tokens + cache_write_tokens) > 0 THEN ROUND(SUM(cost_usd) / SUM(input_tokens + output_tokens + cache_read_tokens + cache_write_tokens) * 1000000.0, 4) ELSE 0.0 END AS cost_per_1m_tokens FROM agent_metrics WHERE COALESCE(last_seen_at, recorded_at) >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND COALESCE(last_seen_at, recorded_at) <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY model ORDER BY total_cost DESC",
+              "queryText": "SELECT model, SUM(cost_usd) AS total_cost, SUM(input_tokens + output_tokens + cache_read_tokens + cache_write_tokens) AS total_tokens, CASE WHEN SUM(input_tokens + output_tokens + cache_read_tokens + cache_write_tokens) > 0 THEN ROUND(SUM(cost_usd) / SUM(input_tokens + output_tokens + cache_read_tokens + cache_write_tokens) * 1000000.0, 4) ELSE 0.0 END AS cost_per_1m_tokens FROM agent_metrics WHERE COALESCE(last_seen_at, recorded_at) >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND COALESCE(last_seen_at, recorded_at) <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch')) GROUP BY model ORDER BY total_cost DESC",
+              "queryType": "table",
+              "timeColumns": []
+            }
+          ],
+          "options": {
+            "sortBy": [
+              {
+                "displayName": "total_cost",
+                "desc": true
+              }
+            ]
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "filterable": true
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "total_cost"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "currencyUSD"
+                  },
+                  {
+                    "id": "decimals",
+                    "value": 2
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "total_tokens"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "short"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "cost_per_1m_tokens"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "currencyUSD"
+                  },
+                  {
+                    "id": "decimals",
+                    "value": 4
+                  },
+                  {
+                    "id": "displayName",
+                    "value": "cost / 1M tokens"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": 504,
+          "type": "table",
+          "title": "Card Duration Percentiles",
+          "description": "P50/P75/P90 card completion time measured from 'create' event to 'done' event. Computed via row-number window function (SQLite has no native PERCENTILE aggregate). Filtered to the dashboard time window by done event timestamp. Use to detect whether recent changes lengthened or shortened card cycle times.",
+          "gridPos": {
+            "x": 12,
+            "y": 143,
+            "w": 12,
+            "h": 8
+          },
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "claudit-sqlite"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "rawQueryText": "WITH done_events AS (SELECT card_number, card_type, recorded_at AS done_at FROM kanban_card_events WHERE event_type = 'done' AND recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch'))), card_durations AS (SELECT d.card_number, d.card_type, d.done_at, CAST((julianday(d.done_at) - julianday(MAX(c.recorded_at))) * 1440 AS INTEGER) AS duration_minutes FROM done_events d JOIN kanban_card_events c ON c.card_number = d.card_number AND c.event_type = 'create' AND c.recorded_at < d.done_at GROUP BY d.card_number, d.done_at), valid_durations AS (SELECT duration_minutes FROM card_durations WHERE duration_minutes IS NOT NULL AND duration_minutes > 0), count_total AS (SELECT COUNT(*) AS n FROM valid_durations), ranked AS (SELECT vd.duration_minutes, ROW_NUMBER() OVER (ORDER BY vd.duration_minutes) AS rn, ct.n FROM valid_durations vd, count_total ct) SELECT MIN(CASE WHEN rn >= CAST(n * 0.50 AS INTEGER) THEN duration_minutes END) AS p50_minutes, MIN(CASE WHEN rn >= CAST(n * 0.75 AS INTEGER) THEN duration_minutes END) AS p75_minutes, MIN(CASE WHEN rn >= CAST(n * 0.90 AS INTEGER) THEN duration_minutes END) AS p90_minutes, n AS total_cards FROM ranked",
+              "queryText": "WITH done_events AS (SELECT card_number, card_type, recorded_at AS done_at FROM kanban_card_events WHERE event_type = 'done' AND recorded_at >= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__from/1000, 'unixepoch')) AND recorded_at <= strftime('%Y-%m-%dT%H:%M:%SZ', datetime($__to/1000, 'unixepoch'))), card_durations AS (SELECT d.card_number, d.card_type, d.done_at, CAST((julianday(d.done_at) - julianday(MAX(c.recorded_at))) * 1440 AS INTEGER) AS duration_minutes FROM done_events d JOIN kanban_card_events c ON c.card_number = d.card_number AND c.event_type = 'create' AND c.recorded_at < d.done_at GROUP BY d.card_number, d.done_at), valid_durations AS (SELECT duration_minutes FROM card_durations WHERE duration_minutes IS NOT NULL AND duration_minutes > 0), count_total AS (SELECT COUNT(*) AS n FROM valid_durations), ranked AS (SELECT vd.duration_minutes, ROW_NUMBER() OVER (ORDER BY vd.duration_minutes) AS rn, ct.n FROM valid_durations vd, count_total ct) SELECT MIN(CASE WHEN rn >= CAST(n * 0.50 AS INTEGER) THEN duration_minutes END) AS p50_minutes, MIN(CASE WHEN rn >= CAST(n * 0.75 AS INTEGER) THEN duration_minutes END) AS p75_minutes, MIN(CASE WHEN rn >= CAST(n * 0.90 AS INTEGER) THEN duration_minutes END) AS p90_minutes, n AS total_cards FROM ranked",
+              "queryType": "table",
+              "timeColumns": []
+            }
+          ],
+          "options": {
+            "sortBy": []
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "filterable": false
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "p50_minutes"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "m"
+                  },
+                  {
+                    "id": "displayName",
+                    "value": "P50"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "p75_minutes"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "m"
+                  },
+                  {
+                    "id": "displayName",
+                    "value": "P75"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "p90_minutes"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "m"
+                  },
+                  {
+                    "id": "displayName",
+                    "value": "P90"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "total_cards"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "short"
+                  },
+                  {
+                    "id": "displayName",
+                    "value": "Cards (n)"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
     }
   ],
   "templating": {
