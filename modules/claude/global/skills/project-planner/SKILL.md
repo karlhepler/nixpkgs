@@ -827,7 +827,19 @@ Gaps? [Assessment — either "None identified" with reasoning, or identified gap
 
 Any gap found → add a deliverable to cover it, then re-run Layer 1 on the new deliverable.
 
-**Layer 3 — see CAUSAL RELATIONSHIP CHECK section below** (the causal chain diagram and link-by-link validation complete the three-layer check).
+**Measured magnitude requirement (mandatory for every deliverable→success-measure link).**
+
+This requirement operationalizes the Evidence-First prerogative (rule #1 above) for needle-moving claims: a claim that a deliverable moves a success measure is not evidence — it is a hypothesis until the addressable slice is measured. Size it, subtract it, compute the residual vs target. If the irreducible floor already exceeds the target, no execution quality on these levers reaches it — surface that before committing.
+
+For each deliverable proposed to move a success measure, the sufficiency check MUST carry a measured magnitude: decompose the baseline measure's population, attribute it to causes, size the deliverable's addressable slice, subtract, and compute the residual against the target. The chain is: measure baseline population → attribute to causes → size each deliverable's slice → subtract → compute residual vs target → confirm the residual clears the target. A qualitative "attacks a real slice" / "it's the #1 source" / ranking / plausibility is a HYPOTHESIS, not sufficiency evidence.
+
+- **Unit consistency:** State the unit explicitly (e.g. run-level vs job-level vs execution-level) and verify the deliverable levers and the success-measure target are expressed on the same unit.
+- **Inferred-link cap:** Any deliverable→measure link whose magnitude is inferred rather than measured must be labeled "inferred — not measured" and CANNOT be counted toward a Strong confidence rating. Confidence is capped at Adequate until the inferred links are closed with data.
+- **Note:** This decomposition is also the artifact that justifies asking another team to change their code — it shows that team's slice's measured size.
+
+**Worked example (magnitude decomposition):** A test suite runs 10,000 jobs/day (baseline). Profiling attributes: 4,000 jobs fail due to flaky tests, 3,000 due to dependency timeouts, 3,000 due to real defects. Deliverable A (flaky-test quarantine) addresses the 4,000-job flaky slice. Target: reduce failing jobs to ≤2,000/day. After Deliverable A: 10,000 − 4,000 = 6,000 jobs pass → 4,000 still fail (dependency + real defects). Residual (4,000) exceeds target (2,000). The irreducible floor for Deliverable A alone is 4,000 — the target is unreachable with this deliverable alone. Add Deliverable B (dependency-timeout retry) to address the 3,000-job dependency slice, giving a residual of 1,000 — now below target.
+
+**Layer 3 — see CAUSAL RELATIONSHIP CHECK section below** (the causal chain diagram and link-by-link validation complete the three-layer check; the inferred-link cap and unit-consistency requirement in Layer 2 apply when assigning confidence there).
 
 **Additionally:** "Is End of Project Status Report included as final deliverable?" (If no → add it)
 
@@ -946,8 +958,9 @@ For confidence to be Strong, an unfamiliar reader of the plan must be able to:
 1. **Identify every assumption AND see how it is verified by a deliverable** — no assumption is left implicit or unverified.
 2. **Find no chain claim that relies on implicit scope alignment or bridging** — every scope relationship between deliverables is explicit on the page, not inferred.
 3. **See no ambiguous measure or criterion interpretation** — every success measure and acceptance criterion is pinned down to a single interpretation.
+4. **Confirm that every deliverable→success-measure magnitude link is measured** (decomposition + computed residual), not inferred — no link is labeled "inferred — not measured".
 
-If any of the three checks fails, confidence is Adequate at best, not Strong.
+If any of the four checks fails, confidence is Adequate at best, not Strong.
 
 **If Weak:**
 - Identify the gap (missing deliverable? Unmeasured claim? Assumption breaks chain?)
