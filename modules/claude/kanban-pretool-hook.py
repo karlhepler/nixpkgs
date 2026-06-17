@@ -1052,8 +1052,24 @@ def main() -> None:
     if not skill_bypass:
         # Check for missing run_in_background: true — deny foreground launches unless
         # Option C is explicitly authorized via FOREGROUND_AUTHORIZED marker in prompt.
-        run_in_background = tool_input.get("run_in_background")
-        if run_in_background is not True:
+        #
+        # LLM serialization hazard: Claude Code models sometimes emit run_in_background
+        # as the JSON string "true" instead of the boolean true. Both must be accepted.
+        # The canonical form is boolean true; the string "true" is treated as equivalent.
+        # Any other value (False, "false", None, absent) is treated as not-set → denial.
+        #
+        # String comparison: strip() removes leading/trailing whitespace (including
+        # Unicode whitespace) before lowercasing, so "True", "TRUE", " true " all match.
+        # In practice JSON-deserialized strings from Claude Code will be clean ASCII,
+        # but strip() is harmless and handles any edge-case whitespace variation.
+        # `is True` (identity) is used for booleans — not `== True` — so integer 1
+        # and other truthy non-bool scalars are correctly denied.
+        run_in_background_raw = tool_input.get("run_in_background")
+        run_in_background = (
+            run_in_background_raw is True
+            or (isinstance(run_in_background_raw, str) and run_in_background_raw.strip().lower() == "true")
+        )
+        if not run_in_background:
             # Only check the pre-injection portion to prevent card XML from injecting bypass.
             if not _FOREGROUND_AUTHORIZED_RE.search(pre_injection_prompt):
                 reason = (
