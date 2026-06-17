@@ -95,21 +95,31 @@ The plan document lives in `.scratchpad/` (project-local, sibling to `.kanban/`)
 **If missing:** Stop immediately. Do not start work. Surface to the staff engineer:
 > "Blocked: `Write(.scratchpad/**)` and/or `Edit(.scratchpad/**)` is missing from `permissions.allow`. Add both before delegating project-planner."
 
-## Executive Summary: The 6 Critical Rules
+## Executive Summary: The 7 Critical Rules
 
-If you remember only 6 things from this skill:
+If you remember only 7 things from this skill:
 
-1. **Measurability is Mandatory** - Every goal claim must be measurable. Use decision tree to challenge fuzzy claims. If it can't be measured, use graceful refusal script.
+1. **Evidence-First is the #1 Prerogative** - This is a continuous gate applied from the FIRST exchange — not a one-time or final-review check. Be hypercritical of EVERY claim in the plan: baselines, risk levels, "this moves measure X", causal links, "this deliverable is necessary", "this assumption is load-bearing". Each must carry verified, cited evidence (a data-query result, log/metric query, dashboard, or document citation) gathered PROACTIVELY. For planning-phase claims, data-query / dashboard / metric citations are primary; `file:line` applies to code-grounded claims.
 
-2. **Means of Verification Must Be Feasible** - Every success measure needs a practical way to get data TODAY with existing infrastructure. If the capability doesn't exist, add it as a deliverable with acceptance criteria. Same for "How to Monitor" in assumptions. If you can't collect the data, it cannot be a verification/monitoring method.
+   Any claim whose evidence is not yet in hand is marked **unverified — needs evidence** and must not be relied upon until cited. Use the literal token `unverified` as the marker.
 
-3. **End of Project Status Report is Mandatory** - Every project ends with a status report deliverable (Base | Target | Actual comparison). No exceptions.
+   Sub-rules (all mandatory, applied continuously):
+   - Do not assign an assumption a risk level without evidence. (This is the general front-loaded principle; see the ASSUMPTIONS section for operational detail on load-bearing verification — the two are complementary to the load-bearing verification workflow there.)
+   - Do not accept a baseline, measure-impact claim, or causal link without a citation.
+   - Treat "we think / probably / it should" as a STOP — convert to a cited fact or label it `unverified`.
+   - The evidence-first gate applies to ALL claims — especially assumptions and risk levels — continuously from the first exchange. It is not limited to success measures or final review.
 
-4. **Track Outcomes Not Outputs** - Success measures verify GOAL achievement (outcomes/gains), not OBJECTIVE completion (outputs/deliverables). "Dashboard exists" is output. "Time to detect <2min" is outcome.
+2. **Measurability is Mandatory** - Every goal claim must be measurable. Use decision tree to challenge fuzzy claims. If it can't be measured, use graceful refusal script.
 
-5. **Validate the Causal Chain (Three-Layer Format)** - DELIVERABLES + ASSUMPTIONS must logically produce the OBJECTIVE (environmental change), which in turn contributes to the GOAL (strategic outcome, verified by success measures). Produce all three layers: necessity table (Layer 1), sufficiency checklist (Layer 2), and causal chain diagram with link-by-link validation (Layer 3). If chain is Weak, add deliverables or reframe. Aim for Strong or Adequate confidence.
+3. **Means of Verification Must Be Feasible** - Every success measure needs a practical way to get data TODAY with existing infrastructure. If the capability doesn't exist, add it as a deliverable with acceptance criteria. Same for "How to Monitor" in assumptions. If you can't collect the data, it cannot be a verification/monitoring method. This feasibility requirement applies to ALL claims — assumptions and risk levels included — not only to success measures.
 
-6. **Assumptions Are Living, Not Static** - Re-evaluate assumptions continuously as the design evolves. When a design decision eliminates a risk, remove the corresponding assumption immediately. When building the deliverable itself validates the concern, it was never an assumption — it is a deliverable risk verified by prototyping.
+4. **End of Project Status Report is Mandatory** - Every project ends with a status report deliverable (Base | Target | Actual comparison). No exceptions.
+
+5. **Track Outcomes Not Outputs** - Success measures verify GOAL achievement (outcomes/gains), not OBJECTIVE completion (outputs/deliverables). "Dashboard exists" is output. "Time to detect <2min" is outcome.
+
+6. **Validate the Causal Chain (Three-Layer Format)** - DELIVERABLES + ASSUMPTIONS must logically produce the OBJECTIVE (environmental change), which in turn contributes to the GOAL (strategic outcome, verified by success measures). Produce all three layers: necessity table (Layer 1), sufficiency checklist (Layer 2), and causal chain diagram with link-by-link validation (Layer 3). If chain is Weak, add deliverables or reframe. Aim for Strong or Adequate confidence.
+
+7. **Assumptions Are Living, Not Static** - Re-evaluate assumptions continuously as the design evolves. When a design decision eliminates a risk, remove the corresponding assumption immediately. When building the deliverable itself validates the concern, it was never an assumption — it is a deliverable risk verified by prototyping.
 
 ## Plan Document Workflow
 
