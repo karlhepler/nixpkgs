@@ -561,9 +561,10 @@ If user cannot define measurable outcome → **Cannot proceed with planning.** M
 - **Medium:** Might or might not hold — manageable if false but requires monitoring
   - Include with monitoring plan and contingency. These are the normal assumptions to watch during implementation.
 - **High:** Killer assumption — project fails if false. Very likely to be a problem.
-  - These are potential project killers. They must be researched and understood BEFORE any implementation begins.
-  - Reduce to Medium before proceeding (add mitigating deliverables to soften risk)
-  - Do not accept High-risk assumptions without mitigation — if you can't soften a High, the project plan is not ready
+  - These are potential project killers. Resolve **High-risk assumptions FIRST** — before any other planning work proceeds.
+  - Resolution paths: (a) add a deliverable the team controls that eliminates the dependency, OR (b) verify with evidence that the assumption is not load-bearing (i.e., its failure does not move a success measure) and downgrade it.
+  - **Verify load-bearing-ness with evidence before treating a High-risk assumption as a real project risk.** If evidence shows the success measures hold even when the assumption fails (e.g., a High-risk external dependency turns out not to affect any success measure when it fails — common with redundant infrastructure or optional integrations), the assumption is not load-bearing — downgrade or remove it.
+  - Do not accept High-risk assumptions without resolution — if you can neither eliminate nor downgrade a High, the project plan is not ready
 
 **Assumption Dimension Checklist — Scan ALL angles before finalizing**
 
@@ -604,7 +605,7 @@ Assumptions are risks. Reduce risk by adding deliverables:
 
 - **Soften (reduce severity):** Add deliverables that make the risk less severe
   - Example: "Users adopt workflow" (Medium risk) → Add training, documentation, migration tools → Risk stays Medium but impact reduced
-  - High-risk assumptions must be softened to Medium via mitigating deliverables before proceeding
+  - High-risk assumptions must be softened to Medium via mitigating deliverables, or downgrade if evidence shows it is not load-bearing, before proceeding
 
 - **Eliminate (gain control):** Add deliverables that put the assumption under your direct control
   - Example: "Third-party provides API" (High risk) → Add "Build internal API" deliverable → Assumption eliminated (now have full control)
@@ -629,7 +630,7 @@ Apply the same Verification Feasibility Check from the SUCCESS MEASURES section.
 **Red flags:**
 - Team-controllable items (should be deliverables)
 - Assumptions that could be eliminated or softened with deliverables
-- High-risk assumptions without mitigation (must reduce to Medium)
+- High-risk assumptions without mitigation (must reduce to Medium, or downgrade if evidence shows it is not load-bearing)
 - Low-risk assumptions included in table (ignore these, don't track)
 - Missing "How to Monitor" (can't track assumption health without it)
 - "How to Monitor" references non-existent capability without adding it as deliverable
