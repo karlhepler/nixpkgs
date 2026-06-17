@@ -1072,17 +1072,17 @@ def main() -> None:
         if not run_in_background:
             # Only check the pre-injection portion to prevent card XML from injecting bypass.
             if not _FOREGROUND_AUTHORIZED_RE.search(pre_injection_prompt):
-                reason = (
-                    "Agent tool call denied: missing `run_in_background: true`. "
-                    "All Agent tool calls MUST run in the background to keep the "
-                    "coordination loop available. Add `run_in_background: true` to "
-                    "your Agent tool call. Exception: Permission Gate Recovery "
-                    "Option C — place FOREGROUND_AUTHORIZED on its own line "
-                    "in the delegation prompt to allow a foreground launch."
-                )
-                log_info("Agent denied — missing run_in_background: true")
-                print(json.dumps(deny_with_reason(reason)))
-                return
+                # serialization-proof fix-up: Claude Code models non-deterministically
+                # serialize run_in_background as the JSON string "true" instead of boolean
+                # true, and CC drops schema-invalid string values before the PreToolUse hook
+                # stdin — so the hook sees the field ABSENT. Boolean true is never dropped.
+                # Mutate tool_input in-place so the downstream allow_with_updated_prompt
+                # (which snapshots via dict(tool_input)) picks up the fix naturally — giving
+                # full parity with the happy path: run_in_background=True AND card XML injected
+                # AND agent attribution, all in one updatedInput. DO NOT return early here;
+                # fall through to card-reference extraction and the normal card-injection path.
+                tool_input["run_in_background"] = True
+                log_info("Agent run_in_background absent/non-boolean — injecting True (serialization-proof)")
 
         # Extract card number and session from prompt — deny if missing
         extracted = extract_card_and_session(prompt)
