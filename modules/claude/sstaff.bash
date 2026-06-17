@@ -9,7 +9,12 @@ set -euo pipefail
 export KANBAN_AGENT=senior-staff-engineer
 export CLAUDIT_ROLE=senior-staff-engineer
 export CLAUDE_CODE_NO_FLICKER=1
-exec claude --permission-mode auto \
+# Pinned to CC 2.1.178: CC 2.1.179 serializes the Agent tool's run_in_background as a JSON
+# string "true" instead of boolean true; CC strips the type-mismatched value before PreToolUse
+# hooks run, so the kanban Agent-gate hook sees it missing and denies all delegations. 2.1.178
+# emits the boolean correctly. Revert to bare `claude` once Anthropic ships a CC release that
+# fixes this Agent-tool run_in_background regression.
+exec "$HOME/.local/share/claude/versions/2.1.178" --permission-mode auto \
   --settings '{"skipAutoPermissionPrompt": true}' \
   --system-prompt-file ~/.claude/output-styles/senior-staff-engineer.md \
   "$@"
