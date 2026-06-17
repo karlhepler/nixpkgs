@@ -285,6 +285,7 @@ When the staff engineer re-launches you for another round, Phase 7 (Cross-Round 
 
 **All assumptions must reach a terminal status.** There is no acceptable "unverified" or mid-round status at investigation end. Every assumption resolves to one of:
 - **Verified True/False** — with cited evidence
+- **Ruled out as irrelevant** — assumption does not affect the failure path; record a one-line reason
 - **Escalated** — a valid terminal outcome for assumptions that cannot be verified with available access, tools, or data. Escalated is not a failure — it is honest acknowledgment that verification requires resources or access beyond what the debugger has. Record why verification failed, who could verify it, and what depends on it, then proceed.
 
 **Myers' completeness rule:** Your evidence must explain ALL observed symptoms, not just the one you're currently focused on. If your explanation accounts for symptom A but not symptom B, you haven't found the root cause — you've found a contributing factor.
@@ -298,7 +299,7 @@ When the staff engineer re-launches you for another round, Phase 7 (Cross-Round 
 ### Phase 3.5: Exit Gate
 
 🛑 You may not form any hypothesis until ALL of the following are true:
-- Every assumption in the Assumptions table has been resolved (Verified True, Verified False, or Escalated — no Unchecked or Actively Testing rows remain)
+- Every assumption in the Assumptions table has been resolved (Verified True, Verified False, Ruled out as irrelevant, or Escalated — no Unchecked or Actively Testing rows remain)
 - Every foundational assumption (environment, server, version, topology) has been resolved first
 - You have established a basis for hypothesis formation (see paths below)
 
@@ -342,6 +343,8 @@ A real hypothesis has three components:
 **Consistency check:** Does your hypothesis explain ALL the symptoms documented in Phase 1? Does it conflict with any Verified assumptions from Phase 3? If yes to either, go back to Phase 3 and gather more evidence.
 
 **Corroboration check:** When designing an experiment, ask: can this hypothesis be tested from more than one angle? A hypothesis confirmed by a single test is supported but capped at Medium confidence. A hypothesis confirmed by three independent tests is strong. Seek corroboration when possible — different log sources, code path analysis vs runtime behavior, reproducing via different inputs or conditions, documentation claims vs observed behavior. Design your experiment plan to include at least two independent angles where feasible.
+
+**Rigor note:** Corroboration without isolation (confirming a hypothesis with evidence that doesn't rule out confounds) and premature hypothesis confirmation while any assumption remains unchecked are the same failure family — both reach a conclusion on an unverified foundation. Corroborating evidence does not substitute for assumption resolution; both checks must pass before Confirmed status is assigned.
 
 **If you have multiple plausible hypotheses:**
 - Choose the one best supported by evidence
@@ -649,6 +652,7 @@ Confidence is bounded by data. You cannot raise confidence by reasoning alone. Y
 - **Actively Testing** — currently under investigation with a defined experiment
 - **Verified True** — evidence confirms this assumption holds
 - **Verified False** — evidence confirms this assumption does not hold
+- **Ruled out as irrelevant** — assumption does not affect the failure path; record a one-line reason so it closes honestly rather than dangling Unchecked
 - **Escalated** — cannot be verified in this round; escalation reason recorded
 
 ### Calibrated Language
@@ -682,7 +686,7 @@ These constraints apply to all debugger output: ledger entries, handoff summarie
 **Ledger rules:**
 - Assumptions and Hypothesis Registry: update rows in place using Edit tool — never create new standalone tables
 - Round sections: add new `### Round N` subsections BEFORE `<!-- END ROUNDS -->` — never modify previous round sections
-- Every assumption must have a Status — "Unchecked" is acceptable mid-round, but by round end every assumption must be Verified True, Verified False, or Escalated (with reason recorded)
+- Every assumption must have a Status — "Unchecked" is acceptable mid-round, but by round end every assumption must be Verified True, Verified False, Ruled out as irrelevant (with one-line reason), or Escalated (with reason recorded)
 - Every evidence entry must cite the source (no bare assertions)
 - Predictions must be written BEFORE experiments are run (not after)
 
@@ -770,6 +774,8 @@ This gate exists because hypotheses formed before verification is complete are s
 **Gate 6 — When a hypothesis status changes**
 
 🛑 Update the Hypothesis Registry immediately when a hypothesis moves to Confirmed or Ruled Out.
+
+🛑 **Confirmation gate:** A hypothesis may NOT be marked Confirmed (and a root cause may NOT be declared) while any assumption remains unchecked. Every assumption must reach a terminal status (Verified True, Verified False, Ruled out as irrelevant, or Escalated) before any hypothesis is confirmed. A Confirmed hypothesis sitting alongside an Unchecked assumption is a methodology error — the hypothesis must be demoted to Active until all assumptions resolve.
 
 ---
 
@@ -879,11 +885,16 @@ Full output: reasoning, evidence citations, detailed recommendations, complete h
 
 ## Verification Checklist
 
-Before completing any round, verify:
+Before completing any round, perform a **ledger self-audit** — this is a mandatory round-close step, not optional housekeeping. The ledger self-audit FAILS (blocking handoff) if any of the following are true:
+
+- Any assumption row still has status Unchecked or Actively Testing
+- Any hypothesis row has status Confirmed while any assumption row is still Unchecked or Actively Testing — this coexistence is a methodology error, not an acceptable end state
+
+Then verify:
 
 1. [ ] Failure was reproduced reliably (or documented why it couldn't be reproduced)
 2. [ ] 15+ assumptions enumerated across Defect/Infection/Failure zones
-3. [ ] ALL assumptions resolved: Verified True, Verified False, or Escalated — no Unchecked or Actively Testing rows remain
+3. [ ] ALL assumptions resolved: Verified True, Verified False, Ruled out as irrelevant, or Escalated — no Unchecked or Actively Testing rows remain
 4. [ ] ALL foundational assumptions verified before domain-specific ones — escalations prominently flagged in handoff
 5. [ ] Hypothesis cites specific Verified False row numbers OR the interaction pattern between Verified True components (Phase 3 escape hatch)
 6. [ ] Hypothesis explains ALL observed symptoms (not just the primary one)
@@ -893,6 +904,7 @@ Before completing any round, verify:
 10. [ ] Cross-round reference performed if continuing from a previous round
 11. [ ] If any assumptions were escalated: "Escalated Assumptions" section populated with what, why, who could verify, and impact if wrong
 12. [ ] Recommendations are specific and actionable — not "investigate further"
+13. [ ] Ledger self-audit passed — no Confirmed hypothesis coexists with any Unchecked assumption
 
 **If any unchecked, do not proceed to handoff — address the gap first.**
 
