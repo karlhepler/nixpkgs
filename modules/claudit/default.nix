@@ -95,6 +95,11 @@ let
     flakeIgnore = [ "E265" "E501" "W503" "W504" ];
   } (builtins.readFile ./claudit-annotate.py);
 
+  # Claudit migrate (idempotent DB migration: purge stale events + backfill git-commit annotations)
+  clauditMigrateScript = pkgs.writers.writePython3Bin "claudit-migrate" {
+    flakeIgnore = [ "E265" "E501" "W503" "W504" ];
+  } (builtins.readFile ./claudit-migrate.py);
+
   # Wrapper that sets CLAUDIT_ROLE=claude-code as a default so the top-level
   # Claude Code Stop event gets a meaningful agent label instead of falling back
   # to the literal string 'claude'. If CLAUDIT_ROLE is already set (e.g. by a
@@ -116,7 +121,7 @@ in {
   _module.args.clauditShellapps = {
     claudit = shellApp {
       name = "claudit";
-      runtimeInputs = [ pkgs.grafana pkgs.curl pkgs.sqlite ];
+      runtimeInputs = [ pkgs.grafana pkgs.curl pkgs.sqlite clauditMigrateScript ];
       text = ''
         GRAFANA_URL="http://localhost:3201/d/claudit/claudit?orgId=1&from=now-7d&to=now&timezone=browser&refresh=30s"
         GRAFANA_HOMEPATH="${pkgs.grafana}/share/grafana"
@@ -128,11 +133,19 @@ in {
 Usage: claudit [subcommand]
 
 Subcommands:
+  migrate    Idempotent DB migration: purge stale kanban events + backfill git-commit annotations
+             Options: --days N (default 30), --db PATH
   nuke       Delete the entire metrics database file (recreated fresh on next hook invocation)
 
 Run claudit with no arguments to start the Grafana dashboard.
 HELP_EOF
           exit 0
+        fi
+
+        # --- Handle migrate subcommand ---
+        if [[ "''${1:-}" == "migrate" ]]; then
+          shift
+          exec claudit-migrate "$@"
         fi
 
         # --- Handle nuke subcommand ---
@@ -258,6 +271,14 @@ SQL_EOF
         description = "Record a named change-marker annotation into the claudit metrics database";
         mainProgram = "claudit-annotate";
         homepage = "${builtins.toString ./.}/claudit-annotate.py";
+      };
+    };
+
+    claudit-migrate = clauditMigrateScript // {
+      meta = {
+        description = "Idempotent claudit DB migration: purge stale kanban events + backfill git-commit annotations";
+        mainProgram = "claudit-migrate";
+        homepage = "${builtins.toString ./.}/claudit-migrate.py";
       };
     };
   };
