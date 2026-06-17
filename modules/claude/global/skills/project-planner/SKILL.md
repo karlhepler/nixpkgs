@@ -129,7 +129,7 @@ If you remember only 7 things from this skill:
 
 **The default deliverable is TWO cross-linked documents, not one long doc:**
 
-- **`<slug>.md` — one-pager proposal:** The primary, stakeholder-facing artifact. This is what gets shared with Karl, his manager, and stakeholders. It is tight, scannable, and ends with a "Full detail →" link to the companion. It contains: Background (3 sentences max), Goal (one sentence), Objective (one sentence), Success Measures (tight table), Assumptions (tight table), Deliverables (short title + brief AC), Confidence line, and the "Full detail →" link.
+- **`<slug>.md` — one-pager proposal:** The primary, stakeholder-facing artifact. This is what gets shared with Karl, his manager, and stakeholders. It is tight, scannable, and ends with a "Full detail →" link to the companion. It contains: Background (3 sentences max), Goal (one sentence), Objective (one sentence), Success Measures (tight table), Assumptions (tight table), Deliverables (short title + optional one-line description + brief AC), Confidence line, and the "Full detail →" link.
 
 - **`<slug>-DETAIL.md` — full-detail companion:** Linked from the one-pager. It holds the complete plan with all depth: per-deliverable estimates, the full causal relationship check (necessity table, sufficiency checklist, causal chain diagram, link-by-link validation, second pass). It opens with a pointer back to the one-pager: "Read the one-pager first: [`<slug>.md`](./<slug>.md)." The verbose causal check, per-deliverable estimates, and second-pass live ONLY here — never in the one-pager.
 
@@ -148,7 +148,7 @@ These are hard authoring constraints for the one-pager — not suggestions:
 | **Objective** | ONE sentence, at most a single comma. |
 | **Success Measures** | Tight table (Base / Target / Means of Verification / Prerequisite). No prose around the table. |
 | **Assumptions** | Tight table (Assumption / Risk Level / How to Monitor / Contingency Plan). No prose. |
-| **Deliverables** | Each heading is a SHORT title-like label (3–6 words). AC may stay but kept brief — 1–3 bullets max per deliverable. No per-deliverable estimate (that lives in the companion). |
+| **Deliverables** | Each entry is exactly three parts: (1) a **bold short title** (label-like, 3–6 words); (2) an optional one-line description in plain language; (3) AC as tight bullets (1–3 max). Nothing else appears inline. No inline status tags (e.g. `(NEW)`); no necessity notes or necessity-reasoning asides; no data-justification parentheticals (e.g. `(Data: ... fails 5.4%)`); no verbose group-header subtext. All "why" — provenance, what's new vs inherited, necessity reasoning, supporting data — goes to the companion and the necessity/causal section, NOT the one-pager. Grouping deliverables (e.g. by success measure) is acceptable; group headers must be minimal — just the label, with no descriptive subtext. No per-deliverable estimate (that lives in the companion). |
 | **Confidence** | One line: "Confidence: Strong/Adequate/Weak — [one sentence]." |
 | **Footer** | Ends with: "Full detail → [<slug>-DETAIL.md](./<slug>-DETAIL.md)" |
 
@@ -271,7 +271,7 @@ When describing a concept that's hard to visualize, reach for an analogy. Make t
 Use an analogy when a section introduces an abstract or technical concept a non-specialist reader would not immediately grasp. Analogies are discretionary — reach for one when it genuinely clarifies, not as a default for every section.
 
 **Pattern 4 — Frame each deliverable as the one pain it removes.**
-Every deliverable entry in the plan gets a one-line ELI5 restatement: what problem does this thing solve for the person doing the work? Optionally, frame the pain as a user-voice quote — a complaint you'd actually hear in a standup or Slack message.
+Where it adds clarity, include a one-line ELI5 restatement: what problem does this thing solve for the person doing the work? The one-line description is optional — use it when the deliverable's value is not self-evident from the title, skip it when the title is already clear. Optionally, frame the pain as a user-voice quote — a complaint you'd actually hear in a standup or Slack message.
 
 *Mapping pattern:*
 - **Deliverable →** Fast Local Test Execution System
@@ -294,7 +294,7 @@ The last sentence of every plan's Causal Relationship Check should be a single p
 | **Objective** | Patterns 1, 2 |
 | **Success Measures** | Pattern 2 (no jargon in prose around the table) |
 | **Assumptions** | Pattern 2 |
-| **Deliverables** | Patterns 2, 4 — every deliverable entry gets the pain-removal framing |
+| **Deliverables** | Patterns 2, 4 — apply pain-removal framing where it adds clarity (the one-line description is optional) |
 | **Causal Relationship Check** | Patterns 2, 3 (if needed), 5 |
 
 ## The Planning Framework
