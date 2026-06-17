@@ -121,11 +121,10 @@ in {
   _module.args.clauditShellapps = {
     claudit = shellApp {
       name = "claudit";
-      runtimeInputs = [ pkgs.grafana pkgs.curl pkgs.sqlite clauditMigrateScript ];
+      runtimeInputs = [ pkgs.grafana pkgs.curl clauditMigrateScript ];
       text = ''
         GRAFANA_URL="http://localhost:3201/d/claudit/claudit?orgId=1&from=now-7d&to=now&timezone=browser&refresh=30s"
         GRAFANA_HOMEPATH="${pkgs.grafana}/share/grafana"
-        METRICS_DB="''${HOME}/.claude/metrics/claudit.db"
 
         # --- Handle help flags ---
         if [[ "''${1:-}" == "--help" ]] || [[ "''${1:-}" == "-h" ]]; then
@@ -135,7 +134,6 @@ Usage: claudit [subcommand]
 Subcommands:
   migrate    Idempotent DB migration: purge stale kanban events + backfill git-commit annotations
              Options: --days N (default 30), --db PATH
-  nuke       Delete the entire metrics database file (recreated fresh on next hook invocation)
 
 Run claudit with no arguments to start the Grafana dashboard.
 HELP_EOF
@@ -146,84 +144,6 @@ HELP_EOF
         if [[ "''${1:-}" == "migrate" ]]; then
           shift
           exec claudit-migrate "$@"
-        fi
-
-        # --- Handle nuke subcommand ---
-        if [[ "''${1:-}" == "nuke" ]]; then
-          echo "This will permanently delete the entire claudit metrics database."
-          echo "The database will be recreated with the correct schema immediately."
-          printf "Continue? [y/N] "
-          read -r answer
-          if [[ "''${answer}" =~ ^[Yy]$ ]]; then
-            rm -f "''${METRICS_DB}"
-            echo "Database deleted, recreating schema..."
-            mkdir -p "$(dirname "''${METRICS_DB}")"
-            sqlite3 "''${METRICS_DB}" <<'SQL_EOF'
-PRAGMA journal_mode=WAL;
-PRAGMA busy_timeout=5000;
-
-CREATE TABLE IF NOT EXISTS agent_metrics (
-    session_id TEXT NOT NULL,
-    agent_id TEXT NOT NULL DEFAULT "",
-    agent TEXT NOT NULL DEFAULT "unknown",
-    model TEXT NOT NULL DEFAULT "unknown",
-    kanban_session TEXT NOT NULL DEFAULT "unknown",
-    card_number INTEGER,
-    git_repo TEXT NOT NULL DEFAULT "unknown",
-    working_directory TEXT NOT NULL DEFAULT "",
-    first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    input_tokens INTEGER NOT NULL DEFAULT 0,
-    output_tokens INTEGER NOT NULL DEFAULT 0,
-    cache_read_tokens INTEGER NOT NULL DEFAULT 0,
-    cache_write_tokens INTEGER NOT NULL DEFAULT 0,
-    cost_usd REAL NOT NULL DEFAULT 0.0,
-    total_turns INTEGER NOT NULL DEFAULT 0,
-    avg_turn_latency_seconds REAL NOT NULL DEFAULT 0.0,
-    cache_hit_ratio REAL NOT NULL DEFAULT 0.0,
-    PRIMARY KEY (session_id, agent_id)
-);
-
-CREATE TABLE IF NOT EXISTS agent_tool_usage (
-    session_id TEXT NOT NULL,
-    agent_id TEXT NOT NULL DEFAULT "",
-    tool_name TEXT NOT NULL,
-    bash_command TEXT NOT NULL DEFAULT "",
-    bash_subcommand TEXT NOT NULL DEFAULT "",
-    call_count INTEGER NOT NULL DEFAULT 1,
-    PRIMARY KEY (session_id, agent_id, tool_name, bash_command, bash_subcommand)
-);
-
-CREATE TABLE IF NOT EXISTS kanban_card_events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    kanban_session TEXT NOT NULL,
-    card_number INTEGER NOT NULL,
-    event_type TEXT NOT NULL,
-    agent TEXT NOT NULL DEFAULT "",
-    model TEXT NOT NULL DEFAULT "",
-    recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    rejection_reasons TEXT
-);
-
-CREATE INDEX IF NOT EXISTS idx_am_session_id ON agent_metrics (session_id);
-CREATE INDEX IF NOT EXISTS idx_am_kanban_session ON agent_metrics (kanban_session);
-CREATE INDEX IF NOT EXISTS idx_am_recorded_at ON agent_metrics (recorded_at);
-CREATE INDEX IF NOT EXISTS idx_am_last_seen_at ON agent_metrics (last_seen_at);
-CREATE INDEX IF NOT EXISTS idx_am_git_repo ON agent_metrics (git_repo);
-CREATE INDEX IF NOT EXISTS idx_am_agent ON agent_metrics (agent);
-CREATE INDEX IF NOT EXISTS idx_am_model ON agent_metrics (model);
-CREATE INDEX IF NOT EXISTS idx_atu_session_id ON agent_tool_usage (session_id);
-CREATE INDEX IF NOT EXISTS idx_atu_tool_name ON agent_tool_usage (tool_name);
-CREATE INDEX IF NOT EXISTS idx_kce_kanban_session ON kanban_card_events (kanban_session);
-CREATE INDEX IF NOT EXISTS idx_kce_card_number ON kanban_card_events (card_number);
-CREATE INDEX IF NOT EXISTS idx_kce_recorded_at ON kanban_card_events (recorded_at);
-SQL_EOF
-            echo "Database recreated with correct schema."
-          else
-            echo "Aborted."
-          fi
-          exit 0
         fi
 
         # --- Create data and log directories ---

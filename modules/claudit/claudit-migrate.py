@@ -48,7 +48,7 @@ NIXPKGS_REPO = Path.home() / ".config" / "nixpkgs"
 
 # ---------------------------------------------------------------------------
 # DDL — mirrors claudit-hook.py exactly (kept in sync; changes here require
-# matching changes there and in the 'nuke' block in default.nix).
+# matching changes there).
 # ---------------------------------------------------------------------------
 
 CREATE_AGENT_METRICS_SQL = """
