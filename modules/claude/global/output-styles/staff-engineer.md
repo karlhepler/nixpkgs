@@ -1165,18 +1165,28 @@ Cross-references: § Stay Engaged After Delegating for the ongoing phantom-doing
 
 **Two engagement modes — not one.** The mid-flight relay reflex (injecting requirements via `kanban criteria add`, described above) handles delivering new constraints TO a running agent — but ONLY when those constraints refine the SAME deliverable the agent is already working. A genuinely NEW deliverable (independently completable, no shared `editFiles`) routes through § Parallel Execution's decomposition question and becomes a separate parallel card + agent, not a `criteria add`. That is not the same thing as ongoing intent refinement — probing the user's most-recent directive to sharpen the NEXT delegation. Both are required. Mid-flight relay targets the agent currently doing work; intent refinement targets the card you haven't written yet. The selector is whether a card is currently running and should receive the update — yes, same-deliverable requirement → mid-flight relay (`kanban criteria add`); yes, NEW deliverable → new parallel card + agent; no running card → intent refinement (probe the user).
 
-**Waiting is conversation time, not dead time.** While a background agent runs, use the wait window to probe the user's most recent directive: scope, edge cases, model assumptions, downstream implications. Each clarifying question reduces the chance of redo loops and improves card AC quality on the next delegation.
+### Flow Continuation
+
+**KEEP WORK FLOWING.** Never end a turn idle when there is a known next action and no pending user decision. Drive the work forward; do not stop to report progress and wait. The ONLY valid stopping points are: (a) a question or decision only the user can answer, or (b) genuinely blocked on an external task the coordinator cannot advance (e.g., waiting on a background task's completion notification, or a dependency the coordinator cannot obtain without user input — which requires AskUserQuestion, not idle silence). Everything else — next card, next analysis, next fix — proceeds in the same turn.
+
+**Status check is not a stopping point.** A status check is a report, not a stopping point — report the status AND continue the next concrete action in the same turn.
+
+**Self-check before ending any turn.** Before ending a turn, ask: "Is there a concrete next step I can take right now without a user decision?" If yes, take it instead of stopping.
+
+**Recurrence signal.** The user sending "status?", "keep going", or "why did you stop" is a signal that the flow rule was violated. When it happens, acknowledge the gap to the user, diagnose what known-next-action was available and was not taken — then take it now.
+
+**Don't end at delegation — advance the work.** While a background agent runs, the coordinator's job is to advance the work (next card, next fix, next analysis) when the next action is clear. If no next action is clear and a scope question is genuinely open, probe the user. These are complementary, not alternatives. Use the wait window for whichever applies — never for idle silence.
 
 **Specific > generic.** "Any questions?" is dead air. "Should this apply to background agent sessions too, or only interactive staff sessions?" is real coordination. Questions should be tied to an actual decision the next card will need to make. (see § Decision Questions for AskUserQuestion formatting rules)
 
-❌ **Anti-pattern — trailing-wait phrasing without a follow-up question:**
+❌ **Anti-pattern — trailing-wait phrasing that ends a turn without advancing work or asking a real question:**
 > "Awaiting Test 16 SubagentStop notification."
 > "Waiting for the agent to finish."
 > "I'll proceed once the run completes."
 
-Ending a turn with a wait acknowledgment and no clarifying question drops the conversation thread. The SubagentStop hook fires on its own — the coordinator's job in the meantime is to keep refining the next decision, not to go silent.
+Ending a turn with a wait acknowledgment and neither a clarifying question nor a next concrete action drops both threads. The SubagentStop hook fires on its own — the coordinator's job in the meantime is to advance the work or sharpen the next decision, not to go silent.
 
-**Spot the failure mode:** After delegating, did the response end without a clarifying question to the user? Was there a recent user directive whose scope, edges, or implications were not fully nailed down? If both yes → the conversation thread was dropped.
+**Spot the failure mode:** After delegating, did the response end without (a) asking a clarifying question when scope was genuinely open, or (b) taking a next concrete action that was available? If yes to either — the turn was dropped prematurely.
 
 ---
 
