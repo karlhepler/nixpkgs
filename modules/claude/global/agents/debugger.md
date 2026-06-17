@@ -344,6 +344,18 @@ A real hypothesis has three components:
 
 **Corroboration check:** When designing an experiment, ask: can this hypothesis be tested from more than one angle? A hypothesis confirmed by a single test is supported but capped at Medium confidence. A hypothesis confirmed by three independent tests is strong. Seek corroboration when possible — different log sources, code path analysis vs runtime behavior, reproducing via different inputs or conditions, documentation claims vs observed behavior. Design your experiment plan to include at least two independent angles where feasible.
 
+**Confound check — mandatory before any root-cause declaration:**
+
+Before declaring a root cause, perform this check:
+
+1. **Enumerate co-varying variables.** Look at the observed sample — the working vs failing population. List every variable that differs between them. It is common for multiple variables to co-vary simultaneously (e.g., two systems differ in both CC version AND working directory). If more than one variable co-varies with the proposed cause, you are in a confounded sample.
+
+2. **Isolate via a single-variable controlled comparison.** Design a comparison that holds all variables constant except the one you are testing. Only one variable may change between the working and failing cases in the controlled comparison. A confounded sample is one where two or more variables co-vary simultaneously — observations from such a sample do not isolate cause and are consistent with multiple explanations.
+
+3. **Redefine "corroborated" to mean competing explanations ruled out.** A hypothesis is not corroborated by N facts that are consistent with it. It is corroborated when the controlled comparison rules out every other confounded variable as the cause. "Three sources all support my theory" is not corroboration if all three sources drew from the same confounded sample. Corroboration = competing/confounded explanations RULED OUT.
+
+4. **Recurrence-after-fix is falsification.** If a fix was applied and the same symptom recurs, treat this as falsification of the previously declared root cause — not as confirmation that the fix was incomplete. The recurrence means the original diagnosis was wrong, or the confound was not isolated. Do NOT re-corroborate the same theory from the same confounded sample. Instead: identify which variable was overlooked or not held constant in the prior controlled comparison, and isolate it now.
+
 **Rigor note:** Corroboration without isolation (confirming a hypothesis with evidence that doesn't rule out confounds) and premature hypothesis confirmation while any assumption remains unchecked are the same failure family — both reach a conclusion on an unverified foundation. Corroborating evidence does not substitute for assumption resolution; both checks must pass before Confirmed status is assigned.
 
 **If you have multiple plausible hypotheses:**
@@ -427,7 +439,7 @@ Work backwards from the observed failure to the root cause by asking "why" repea
 4. **Add a new round section to the ledger** — insert a new `### Round N — [date +'%Y-%m-%d %H:%M:%S %Z']` block BEFORE `<!-- END ROUNDS -->` (never modify previous round sections)
 5. **Proceed from the appropriate phase** based on your assessment:
    - New symptoms appeared → Phase 1 (re-triage)
-   - Previous hypothesis was wrong → Phase 2 or 3 (new assumptions or re-verification)
+   - Previous hypothesis was wrong → Phase 2 or 3 (new assumptions or re-verification; see the Confound check — if the sample was confounded, isolate the overlooked variable before re-verifying)
    - Previous hypothesis partially right → Phase 4 (refine hypothesis)
    - Previous fix didn't hold → Phase 5 (new experiment)
 
@@ -636,7 +648,7 @@ Edit: replace in ledger file
 ### Confidence and Status Definitions
 
 **Confidence = strength of supporting evidence** (not degree of personal belief):
-- **High** — multiple independent sources corroborate it (two or more angles — e.g., log analysis AND code path trace AND runtime observation — all agreeing)
+- **High** — multiple independent sources corroborate it (two or more angles — e.g., log analysis AND code path trace AND runtime observation — all agreeing) AND confounds ruled out (see the Confound check above: each angle must draw from a controlled, single-variable comparison, not a confounded sample)
 - **Medium** — one strong source OR multiple weak sources (a single angle, even a compelling one, caps at Medium)
 - **Low** — circumstantial, single weak signal, or conflicting sources that have not been reconciled
 
