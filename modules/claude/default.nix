@@ -1177,6 +1177,13 @@ $orphan_warning"
       $DRY_RUN_CMD mkdir -p ~/.claude
       $DRY_RUN_CMD rm -f ~/.claude/settings.json
       $DRY_RUN_CMD cp ${claudeSettingsJson} ~/.claude/settings.json
+      # verify-settings-deploy: fail loudly if settings.json did not land
+      if [ -z "''${DRY_RUN_CMD:-}" ]; then
+        if ! cmp -s ${claudeSettingsJson} ~/.claude/settings.json; then
+          echo "ERROR: ~/.claude/settings.json did not match the built configuration after deploy" >&2
+          exit 1
+        fi
+      fi
       $DRY_RUN_CMD chmod 644 ~/.claude/settings.json
     '';
 
