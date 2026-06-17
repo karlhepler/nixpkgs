@@ -141,6 +141,19 @@ Key divergences (BSD form → GNU coreutils alternative):
 
 **Self-reference note:** When authoring a MoV that searches for this banned pattern's literal name in a scratchpad (e.g., to verify a review mentions it), use `bsd-stat`, `bsd.flag`, `stat dash-f`, or `byte-count portability` as synonyms — not `stat -f%z` literally (the lint hook sees the substring and triggers a false positive).
 
+### Fixed-string (`-F`) anchor containing a code identifier
+
+When a `-F` MoV pattern includes a code identifier (e.g., `updatedInput`, `run_in_background`, `editFiles`) that the agent will naturally render as inline code in Markdown (backtick-wrapped), the MoV forces the agent to strip backtick formatting to satisfy the literal match — forces the agent to strip backtick formatting, creating a formatting inconsistency in the artifact.
+
+- ❌ `rg -qiF 'via updatedInput'` — agent writes `` via `updatedInput` ``; must strip backticks to match
+- ✅ `rg -qiF 'injected via the hook'` — prose-only anchor; backtick formatting irrelevant
+- ✅ `rg -qi 'via \`?updatedInput\`?'` — drop `-F`, regex tolerates optional surrounding backticks
+- ✅ `rg -qiF 'via \`updatedInput\`'` — include backticks in the literal pattern
+
+**Prefer prose-only anchors** (option 1) — they sidestep the formatting-vs-literal tension entirely.
+
+**Worked example (card #2457):** the MoV used `rg -qiF 'via updatedInput'` (plain), while the agent correctly wrote the identifier backtick-wrapped; to pass, the agent stripped the backticks. This is a concrete sub-variant of the 'Agent satisfies broken MoV by corrupting artifact' anti-pattern.
+
 ### Pre-`kanban do --file` lint (mandatory before every CLI invocation)
 
 Before invoking the kanban CLI, scan every `mov_commands[].cmd` field for these banned patterns:
@@ -152,6 +165,7 @@ Before invoking the kanban CLI, scan every `mov_commands[].cmd` field for these 
 - Backtick in double-quoted `-c`/`-e` source — backticks expand BEFORE inner language runs
 - Standalone Nix-managed lint tool (`flake8`, `black`, `shellcheck`, `prettier`, `mypy`, `isort`, etc.) in `~/.config/nixpkgs` — exits 127 (NOT in agent's PATH); use `hms` as the lint MoV
 - BSD/macOS-specific flag syntax (`stat -f%z`, `sed -i ''`, `date -r`, `date -v`, `find -E`, `du -h -d`) — the check shell uses GNU coreutils; use POSIX-portable forms instead
+- `-F` anchor containing a code identifier (e.g., `updatedInput`, `run_in_background`) — forces the agent to strip backtick formatting to satisfy the literal match; anchor on prose-only words instead
 
 The kanban CLI lint hook is the second-line defense. Every catch is an authoring failure.
 
