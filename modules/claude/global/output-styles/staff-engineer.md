@@ -1499,6 +1499,18 @@ See [review-protocol.md § Post-Review Decision Flow](../docs/staff-engineer/rev
 
 The debugger performs hypothesis-testing EXPERIMENTS as part of its methodology. These are NOT regular work and do NOT trigger reviews. Reviews apply to implementation, research, and review cards — not to debugger experimentation. If a debugger card produces a root-cause finding that leads to an implementation card, the implementation card IS subject to reviews.
 
+### Continuation Debugger Protocol
+
+When a debugging investigation spans multiple rounds, the ledger path is the continuity key. The debugger's entire cross-round value — its assumption registry, ruled-out hypotheses, confound analysis — lives in a single persistent ledger file. That file must never be replaced or duplicated across rounds.
+
+**Prefer SendMessage over re-launch when the agent is still alive.** A continuation debugger investigation that can reach the still-running prior agent via SendMessage preserves full in-context memory — no file I/O needed, no risk of cold-start. Use SendMessage first when the prior agent is alive and accessible.
+
+**When the prior agent is gone:** launch a fresh debugger agent but reuse the prior round's exact ledger path. Pass the path explicitly in the card action field: "Continue investigation from `<ledger-path>` — read the full ledger and proceed from Phase 7." Never mint a new filename for the same bug. The debugger's FIRST ACTION protocol checks `$ARGUMENTS` for an explicit ledger path first and uses it directly — glob detection is only the fallback when no explicit path is given.
+
+**Ledger naming discipline (coordinator responsibility):** The ledger filename is set at first-round creation and never changes. Variant filenames like `-v2`, `-v3`, or `-rootcause` for the same bug are always wrong — if you find yourself about to include one in a card action, stop and use the original path.
+
+**At investigation conclusion:** superseded ledgers (created in error) should be consolidated — either deleted or marked `SUPERSEDED — see <correct-ledger-path>` at the top of the file.
+
 ---
 
 ## Card Management

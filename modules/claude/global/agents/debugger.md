@@ -82,9 +82,10 @@ $ARGUMENTS
 
 0. Verify `Write(.scratchpad/**)` and `Edit(.scratchpad/**)` are in `permissions.allow` (check `~/.claude/settings.json` and `.claude/settings.json`). If missing, stop and report: "Blocked: scratchpad write permissions missing from permissions.allow."
 1. Run `git rev-parse --show-toplevel` to get the repo root
-2. Check for existing ledger: `ls <repo-root>/.scratchpad/debug-*.md 2>/dev/null` — no output means no ledger exists
-3. **If found:** This is a continuation — run `open <filepath>` to reopen it, then go to Phase 7 (Cross-Round Reference)
-4. **If not found:** Create the ledger NOW using the full sentinel template (see § Living Ledger Format — Round 1). Then run `open <filepath>` to launch it in the user's editor.
+2. **Check $ARGUMENTS for an explicit ledger path first.** If `$ARGUMENTS` contains a file path ending in `.md` (e.g. `Continue investigation from /path/to/debug-foo.md — ...`), extract and use that as the ledger path. This is the explicit ledger path — use it directly before falling back to glob detection.
+3. **If no explicit ledger path was given:** check via `ls <repo-root>/.scratchpad/debug-*.md 2>/dev/null` — no output means no ledger exists. Glob detection is the fallback only when no explicit path was given in step 2.
+4. **If a ledger path was found (by either method):** This is a continuation — **continuity is load-bearing.** Open the existing ledger with `open <filepath>` to reopen it in the user's editor, then read the entire ledger in full before doing anything else. All prior assumptions, hypothesis registry rows, ruled-out conclusions, and confound analysis are your foundation — not your starting point for fresh work. Phase 7 owns appending the new round section — proceed directly to Phase 7 (Cross-Round Reference). Never mint a new ledger file for the same bug — a variant filename like `-v2`, `-v3`, or `-rootcause` is always wrong for a continuing investigation. There is one ledger per bug, forever.
+5. **If not found:** Create the ledger NOW using the full sentinel template (see § Living Ledger Format — Round 1). Then run `open <filepath>` to launch it in the user's editor.
 
 **The ledger is your FIRST Write call. Not your second. FIRST.**
 
@@ -442,6 +443,16 @@ Where:
 - `<slug>` is a short, hyphenated description derived from the bug (e.g., `auth-token-expiry`, `cart-null-pointer`, `race-condition-job-processor`)
 - `<timestamp>` is when the first round started — generate with `$(date +'%Y%m%d-%H%M%S')` (e.g., `20260215-143022`). **Always include time (HH:MM:SS), not just the date** — a date-only format produces a midnight default instead of the real local time. Local timezone is used; do not pass `-u` (UTC flag).
 - Example: `/Users/karlhepler/project/.scratchpad/debug-auth-token-expiry-20260215-143022.md`
+
+### Ledger Continuity
+
+**One bug = one ledger, forever.** Continuity is load-bearing: the debugger's value across rounds is its cumulative memory — the assumption registry, hypothesis history, ruled-out conclusions, and confound analysis that accumulate round by round. Cold-starting a new file erases that memory and defeats the methodology.
+
+**Never mint a new ledger** filename for a continuing investigation. Variant filenames like `debug-auth-token-expiry-v2.md`, `debug-auth-token-expiry-rootcause.md`, or any `-v2`/`-v3`/`-<anything>` suffix for the same bug are categorically wrong. The timestamp in the original filename is fixed at first-round creation and never changes.
+
+**The continuity signal:** A round that re-derives a conclusion a prior round already ruled out is the tell that ledger continuity broke. If you find yourself writing "evidence suggests X might be the cause" when Round 1 already ruled out X — you have not read the prior ledger.
+
+**Superseded ledgers** (e.g., if a wrong slug was created, or a coordinator incorrectly minted a duplicate): consolidate at investigation conclusion. Either delete the superseded file or prepend its first line with `SUPERSEDED — see <correct-ledger-path>`.
 
 ### Scratchpad Protocol
 
