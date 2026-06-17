@@ -401,6 +401,16 @@ Hooks are configured in `.claude/settings.json` (project) or `~/.claude/settings
 - Long-running hooks block Claude Code execution
 - Use background processes for async operations
 
+**PreToolUse Gate Design — Coercion over Validation:**
+
+When a `PreToolUse` gate enforces a property based on a model-supplied tool parameter that may be serialized inconsistently (e.g., a boolean emitted as the JSON string `"true"`) or transformed/dropped by Claude Code before the hook runs, prefer **coercion over validation**. Validation behaves unpredictably when the value is mangled upstream; coercion guarantees the outcome because it no longer depends on the value arriving correctly at all.
+
+**Mechanism:** coercion over validation — inject the desired value via `updatedInput` (the `updatedInput` key in the hook's stdout JSON response). The gate sets the property to the required value unconditionally — it does not inspect the incoming value at all.
+
+**Worked example:** The Agent tool's `run_in_background` parameter was serialized as the string `"true"` and then dropped by Claude Code before the hook ran, so the hook's accept-the-string branch never fired and delegation was denied. The fix injects `run_in_background: true` via `updatedInput` instead of checking the incoming value.
+
+**The partial-defense false-confidence trap:** A gate that handles only one layer of an unreliable pipeline (e.g., accepting both `bool` and `"true"` at the hook) masks a gap at an earlier layer (the platform dropping the value before the hook sees it). This produces a true-but-irrelevant verification ("the hook accepts the string") that builds false confidence. Always reason about the value's full path from emission to hook stdin — not just the hook's local view. A fix is only real when every layer between emission to hook delivery is accounted for.
+
 ### 5. Skills Architecture
 
 **SKILL.md Format:**
