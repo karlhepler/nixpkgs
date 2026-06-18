@@ -165,6 +165,26 @@ If `NOT work_needed`:
   3. ScheduleWakeup with `delaySeconds: 60`, `reason: "No work detected — re-polling after 60s to confirm PR is clean before proceeding to merge"`, and `prompt: "Continue /smithers <PR_URL>"`.
   4. **Stop** (one iteration per invocation — the next invocation re-runs Steps 1–5 with fresh data; if still no work, the flag file exists and Step 7a runs).
 
+### Merge-consent policy (deterministic)
+
+This rule governs every merge decision in /smithers — both in Step 7a and in AW-5. There is exactly one rule. Apply it without per-run re-interpretation.
+
+DEFAULT: PAUSE for explicit consent before merging. When smithers detects a PR is approved and clean, it surfaces readiness (macOS notification, Slack post) and PAUSES for an explicit "merge it" from the coordinator or user before invoking `gh pr merge`. The `/smithers <PR>` invocation alone does NOT authorize merge.
+
+Merge is authorized only when one of the following is unambiguously true at invocation time:
+
+1. The invoking prompt explicitly granted merge authority (e.g., "merge it when clean", "you have authority to merge", or a direct "merge it" / "yes, merge" in the text that launched this /smithers session).
+2. A standing coordinator rule exists that approved-and-green PRs merge automatically (established by the user prior to this session, not inferred from a wakeup prompt). An explicit grant issued mid-session (e.g., "you can merge approved PRs") also counts as authorization under this source; only routine wakeup/poll/continuation prompts do NOT manufacture consent.
+3. The original task scope explicitly included merging this PR as a stated deliverable.
+
+A routine `Continue /smithers <URL>` wakeup prompt is never merge authorization — it continues the watch loop and does not manufacture consent. Ambiguity defaults to PAUSE: if it is unclear whether any of the three sources above apply, PAUSE and surface readiness rather than merging.
+
+Once authorization genuinely exists under one of the three sources above, invoke merge without re-confirming. The GitHub review-approval is the review gate; merging an approved and clean PR under genuine authorization is exactly /smithers' job. Never cancel or revert a genuinely-authorized in-flight merge because of the session's earlier, now-superseded scope framing.
+
+**Why this rule is deterministic:** The three authorization sources are explicit criteria — not prose requiring per-run weighing. If the invoking prompt contains a merge grant, authorize. If a standing rule exists, authorize. If the task scope stated merge as a deliverable, authorize. Otherwise, PAUSE. No LLM judgment about "does this invocation implicitly authorize merging?" is involved.
+
+---
+
 #### Step 7a: Handle PR ready
 
 **Directory dependency.** Step 7a writes to `$(git rev-parse --show-toplevel)/.smithers/slack_posted` and reads/clears `$(git rev-parse --show-toplevel)/.smithers/clean_confirmed`. The `.smithers/` directory is guaranteed to exist at this point because the file-exists branch in Step 7 is only reachable after a prior cycle's file-NOT-exists branch ran `mkdir -p "$(git rev-parse --show-toplevel)/.smithers"`. Do NOT add a separate mkdir in Step 7a — the directory is already there.
@@ -207,7 +227,7 @@ The PR is currently mergeable if ALL of the following hold:
 
 > **Architecture note — TOCTOU window:** This present-state check and the merge invocation below are two sequential GitHub API calls. Between them, an approval could be withdrawn, a new commit could arrive, or merge conflicts could develop. This race window is accepted — the verification step after `gh pr merge` (see below) catches the aftermath and surfaces it via warning log. No pre-merge locking is possible via the GitHub API.
 
-**Merge authorization policy (evaluate before invoking merge):** Merge authorization comes from a genuine source: a standing user rule that approved-and-green PRs merge, an explicit "merge it" / "yes, merge" instruction, or a task scope that explicitly included merging this PR. A routine continuation or poll prompt is never merge authorization — the `Continue /smithers <URL>` wakeup prompt continues the watch loop and does not manufacture consent. If the PR is mergeable and approved but the ONLY basis to merge would be a continuation or poll prompt (no standing rule, no explicit grant, and the task scope did not explicitly include merging this PR), PAUSE and obtain a distinct explicit "merge it" before invoking `gh pr merge`. Conversely, once authorization genuinely exists, merge without inserting a redundant self-authorization re-confirmation gate — never cancel or revert an in-flight authorized merge on the basis of the session's own earlier (now-superseded) scope framing. The GitHub review-approval is the review gate; merging an approved and clean PR under genuine authorization is exactly /smithers' job.
+**Merge authorization:** Apply § Merge-consent policy (deterministic) as written. Do not restate or paraphrase the rule here — follow it directly.
 
 **If currently mergeable:** Invoke merge directly (no `--auto`):
 ```
@@ -345,7 +365,7 @@ Evaluate `reviewDecision` and `mergeStateStatus`:
 
 - **`reviewDecision == "APPROVED"` AND `mergeStateStatus == "CLEAN"`:** The PR is approved and clean. Run the post-approval bot-comment inspection gate:
   1. Run `prc list <PR> --unresolved --bots-only` — if any unresolved bot comments exist, treat as "new bot comments" (AW-3 path above) before merging.
-  2. If zero unresolved bot comments: this is the merge path. Apply the merge authorization policy (same as Step 7a) — if genuine authorization exists (standing rule, explicit grant, or task scope), invoke merge directly:
+  2. If zero unresolved bot comments: this is the merge path. Apply § Merge-consent policy (deterministic) as written — do not restate or paraphrase the rule here. If authorized, invoke merge directly; otherwise PAUSE and surface readiness (macOS notification) for an explicit "merge it" before proceeding:
      ```bash
      gh pr merge --squash <PR>
      ```
