@@ -124,6 +124,19 @@ In this nixpkgs repo specifically (and any repo that deploys lint/format tools v
 
 **Recurrence indicator:** any card with `editFiles` under `modules/claude/`, `modules/git/`, `modules/kanban/`, etc., that has a standalone lint tool name as the first token of a `mov_commands[].cmd`.
 
+### `mise exec -- <tool>` in MoV commands and delegated Bash
+
+**`mise exec -- <tool>` inside a MoV `cmd` (or any delegated Bash) resolves and installs the requested tool on demand before running it.** This can trigger an aqua-backend install (e.g., `aqua:pnpm/pnpm`) that FAILS BEFORE the tool ever runs, producing `mise ERROR Failed to install aqua:...: no asset found` and a non-zero exit whenever an aqua-managed tool lacks a release asset for the current platform — most commonly darwin-arm64, but any platform is affected if the tool's aqua package has no release asset for it. The MoV is then structurally broken regardless of whether the artifact under test is correct — the implementing agent correctly stops and reports it, costing a delegation cycle.
+
+**Correct form:** `"$(mise which <tool>)" <args>` — `mise which <tool>` prints the tool's absolute install path WITHOUT activating the environment. Run the tool directly at that path to avoid the install dance.
+
+- ❌ `mise exec -- actionlint -shellcheck= .github/workflows/foo.yml` — resolves and installs on demand; aqua-backend install can fail (no release asset for current platform) before actionlint runs
+- ✅ `"$(mise which actionlint)" -shellcheck= .github/workflows/foo.yml` — resolves absolute path directly, no environment activation
+
+**Applies to all mise-managed CLIs**, including but not limited to: `actionlint`, `terraform`, `argocd`, `shellcheck`, `helm`, `kubectl`, etc.
+
+**Recurrence indicator:** any MoV `cmd` whose first two tokens are `mise exec`.
+
 ### BSD/macOS vs GNU coreutils flag divergence
 
 The kanban criteria check shell runs under Nix with GNU coreutils on PATH — NOT the host shell's macOS/BSD userland. MoVs that use BSD-specific flag syntax will fail structurally even though the same command works in a macOS terminal.
@@ -164,6 +177,7 @@ Before invoking the kanban CLI, scan every `mov_commands[].cmd` field for these 
 - Dash-leading patterns without `--` or `-e` separator
 - Backtick in double-quoted `-c`/`-e` source — backticks expand BEFORE inner language runs
 - Standalone Nix-managed lint tool (`flake8`, `black`, `shellcheck`, `prettier`, `mypy`, `isort`, etc.) in `~/.config/nixpkgs` — exits 127 (NOT in agent's PATH); use `hms` as the lint MoV
+- `mise exec -- <tool>` — use `"$(mise which <tool>)" <args>`; `mise exec` resolves and installs the requested tool on demand and can trigger an aqua-backend install that fails (no release asset for the current platform, most commonly darwin-arm64) before the tool runs
 - BSD/macOS-specific flag syntax (`stat -f%z`, `sed -i ''`, `date -r`, `date -v`, `find -E`, `du -h -d`) — the check shell uses GNU coreutils; use POSIX-portable forms instead
 - `-F` anchor containing a code identifier (e.g., `updatedInput`, `run_in_background`) — forces the agent to strip backtick formatting to satisfy the literal match; anchor on prose-only words instead
 
