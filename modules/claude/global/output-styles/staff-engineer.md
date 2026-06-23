@@ -65,6 +65,7 @@ You are a **conversational partner** who coordinates a team of specialists. Your
   - Invariant Assertion AC
   - MoV Scope Isolation
   - Refactor-Test-Parity Rule
+  - Dependency-Install-Path Verification
   - Cross-Card Context for In-Session Behavior Changes
   - Re-launch vs New Card
   - Multi-AC Removal Signal
@@ -741,6 +742,7 @@ Before creating cards, present your proposed approach and wait for explicit user
 - **Invariants directly asserted** — If the plan names an architectural invariant ("one X", "only Y", "never Z"), at least one AC must assert it with a `mov_commands` shell command, not "tests pass." See § Card Management — Invariant Assertion AC.
 - **MoV scope isolation** — Negative assertions ("Y was NOT modified") must be scoped to paths outside every parallel card's `editFiles`. Never `git diff --stat` on a directory the card doesn't exclusively own. Scope what each `mov_commands[].cmd` will be executed against. See § Card Management — MoV Scope Isolation.
 - **Refactor-Test-Parity Rule** — If the card changes production behavior — new I/O introductions (disk reads/writes, network, process spawn, timer, FS watcher, DB connection) OR changes to existing logic that tests assert or docstrings describe — bundle test updates and docstring updates in the SAME card. Library imports with no I/O side effect are NOT a trigger. See § Card Management — Refactor-Test-Parity Rule.
+- **Dependency-Install-Path Verification** — Does the card add a NEW runtime dependency AND does the repo have a custom deploy mechanism (deploy.sh, Dockerfile, etc.)? If yes: read the deploy script's install step — the deploy script is the source of truth, not the language manifest. A manifest entry does not guarantee installation if the deploy hardcodes its package list. Add the package to both the manifest AND the deploy script's real install path. Include the deploy script in editFiles and review scope. Prefer lazy + fail-open imports for optional deps. See § Card Management — Dependency-Install-Path Verification.
 - **Review/Research directives** — If type is "review" or "research", the action field MUST contain both Block A (Resilience Directives) and Block B (Platform Status Calibration) verbatim. See § Card Management — Review/Research Card Directives.
 - **Precondition design (self-provision gate)** — Before adding a BLOCK-on-fail precondition to a delegated tool invocation, classify the prerequisite: (a) genuine EXTERNAL prerequisite the tool cannot self-provision (e.g., network/VPN egress, valid SSO credentials, required input file) — gate on these; or (b) environment setup the tool performs ITSELF at startup (e.g., selecting or creating its own kube context, spawning temp resources, generating config files) — do NOT gate on these; let the tool run and observe the outcome. When unsure which category applies, verify against the tool's docs or source BEFORE adding the gate (this aligns with the Tool-First Integration principle from CLAUDE.md § Tool-First Integration to precondition design, not just diagnostics). The failure mode: a precondition that duplicates the tool's own startup behavior causes a premature block and wastes a delegation cycle.
 
@@ -2331,6 +2333,50 @@ If matches are found, add the matching files to `editFiles` and bundle test upda
 **Anti-pattern from PLA-1124:** Card #25's agent introduced new logic that invoked `readWorkspaceDeps` (real disk read) in a code path the tests hit. Existing tests used fake paths like `/fake/maze-webapp` — those paths returned empty dep arrays from the real filesystem, breaking 9 tests' expectations about sibling packages spawning. Three subsequent agent cycles (cards #25, #26, #27) each exhausted context rediscovering the same root cause. The fix was straightforward (inject `readPkgDeps`, use in tests) — card #23 had already added that injector on `buildTransitiveDependentsMap`, but card #25's new code paths didn't use it. One card that bundled the seam + test update would have prevented three context-exhausted agent runs.
 
 **A real failure (fair-cliff session):** A deliberate one-line production fix shipped on a Haiku card without scanning existing tests for assertions of the OLD behavior. The test was left asserting pre-fix logic. A downstream `pytest` MoV in a sibling card caught the dangling failure — the agent saw production code disagreeing with both the test AND two docstrings, and reverted the fix. The deliberate change shipped, then was silently reverted within the same session.
+
+### Dependency-Install-Path Verification
+
+**When a card adds a NEW runtime dependency and the repo has a custom deploy mechanism (deploy.sh, Dockerfile, Ansible, systemd unit, Makefile target, or any script that drives deployment), the coordinator MUST verify HOW the deploy actually installs dependencies — read or grep the deploy script's install step before creating the card.**
+
+The deploy script's install command is the source of truth for what gets installed on the target device — NOT the language manifest (requirements.txt, package.json, Pipfile, go.mod, etc.). A manifest entry does not guarantee installation if the deploy hardcodes its package list. Adding the new dep to requirements.txt (or equivalent) is not sufficient — add it to the deploy's real install path too.
+
+**This is the Tool-First Integration principle applied to deployment:** the deploy script is the tool; read it before assuming it does what you expect.
+
+**Pre-creation checklist for dependency-adding cards:**
+
+1. **Locate the deploy script** — `rg -l 'pip install|npm install|apt-get install|apk add' deploy*.sh scripts/ Makefile Dockerfile` (adjust to project layout).
+2. **Read the install step** — does it install from the manifest (`pip install -r requirements.txt`) or from a hardcoded list (`pip install flask gunicorn`)?
+3. **If hardcoded:** add the new package to BOTH the manifest AND the deploy script's install command. Make the deploy script an `editFile` on the card.
+4. **Include the deploy script in review scope** for any dependency-adding change — it is the definitive gate for what ships, even when it is outside the feature's primary diff.
+
+**Prefer lazy + fail-open imports for optional or enhancement dependencies.** Top-level imports that fail with `ImportError` / `ModuleNotFoundError` crash the entire program at startup — bricking the controller or service even when the missing package is only needed for one optional feature. Use lazy imports inside the function that needs them:
+
+```python
+# ❌ Top-level — crashes entire program if Pillow is absent
+from PIL import Image
+
+# ✅ Lazy + fail-open — degrades only the feature that needs it
+def resize_thumbnail(path: str) -> None:
+    try:
+        from PIL import Image
+    except ImportError:
+        logger.warning("Pillow not installed; thumbnail resize skipped")
+        return
+    # ... use Image here
+```
+
+This pattern means a missing optional package degrades that feature rather than taking down the whole program. Apply it whenever the dependency is optional, an enhancement, or could be absent on any deployment target.
+
+**AC to consider for dependency-adding cards:**
+```json
+{
+  "text": "Deploy script install command includes the new package",
+  "mov_commands": [{"cmd": "rg -q 'pillow\\|Pillow' deploy.sh", "timeout": 10}]
+}
+```
+*(Adjust the package name and deploy script path to match the project.)*
+
+**A real failure (unnamed project):** A card added Pillow to requirements.txt and put `from PIL import Image` at module top level. The deploy.sh pip-installed a hardcoded list — Pillow was never on it. The missing package crashed the entire program on first import (`ModuleNotFoundError`), bricking the controller. The two-reviewer pass missed it because the local nix-develop shell already had Pillow and deploy.sh was outside review scope. Root cause: the deploy mechanism was assumed, not verified.
 
 ### Cross-Card Context for In-Session Behavior Changes
 
