@@ -242,10 +242,14 @@ Review tiers by artifact type:
 
 #### 7g. Deploy and Verify
 
+**Ordering for NEW files (`git add` BEFORE `hms`):** if this cycle CREATED any new file (a new skill, new agent, or new doc under `modules/claude/global/`), run `git add <new-files>` BEFORE `hms`. This repo is a Nix flake, and flakes only include **git-tracked files** when evaluating the `./global` source tree into the Nix store — an **untracked** new file is invisible to the build, so `hms` copies from a store path that lacks it and the file silently fails to deploy (no error is raised). For MODIFIED already-tracked files, staging order does not matter (the flake sees uncommitted modifications to tracked files). This matches the project CLAUDE.md "git add (if needed) → hms → commit → push" guidance.
+
 Run in sequence:
 ```bash
+# If this cycle CREATED new files, git add them FIRST — flakes ignore untracked files:
+git add <any-new-files>
 hms
-# Stage only the files modified in this cycle (no wildcard staging).
+# Stage the remaining files modified in this cycle (no wildcard staging).
 # The delegating sub-agent should return the list of modified files.
 # If not provided, discover them: git diff --name-only HEAD
 # Never stage: user.nix, overconfig.nix, or any .env* file
@@ -253,6 +257,8 @@ git add <file1> <file2> ...
 git commit -m "claude-improvement: <short title from note>"
 git push origin main
 ```
+
+**Verify new-file deploys:** after `hms`, for any new file expected to deploy to `~/.claude/`, confirm the artifact deployed (e.g. `test -f ~/.claude/<dest>`). A silent no-op leaves no error, so an explicit existence check is the only signal that an untracked-file ordering mistake did not occur.
 
 Each command must succeed before the next. If any fail, go to Step 8 (failure handling).
 
