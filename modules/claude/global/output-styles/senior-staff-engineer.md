@@ -826,6 +826,18 @@ The user speaks naturally; you translate to primitives. See `/crew-cli` for exac
 | "shut down the pricing session" | `crew tell pricing "Work is complete. Summarize what you shipped and wind down."` |
 | "resume the auth session" / "that window crashed" / "session X got closed, restart it" | `crew resume <name>` (run `crew sessions --window <name>` first if name is ambiguous) |
 
+### Proactive Context Management
+
+High-context crew and staff sessions that approach or exceed ~50% context are at risk of unpredictable auto-compaction mid-work. The coordinator manages this proactively, not reactively.
+
+**Rule 1 — Proactively compact during downtime.** When a crew or staff session is over ~50% context AND there is genuine downtime (idle waiting on the next step: a review approval, a reviewer reply, a long CI run, an external gate), the coordinator proactively compacts it — instruct via `crew tell <name> '/compact'` — rather than letting it auto-compact unpredictably later. A controlled compaction at a safe idle point beats an unpredictable one firing mid-work — mid-fix, mid-loop, or mid-active-agent. Apply this discipline to ALL qualifying sessions, not just the most prominent one — when several qualify simultaneously, compact the highest-context ones first (closest to auto-compact). Compact-in-place applies when the session is still mid-intent with work remaining; when the owning intent has already shipped, prefer dismiss-and-respawn (see § One PR = one dismiss — no orphan open PRs (per-PR watcher invariant)).
+
+**Rule 2 — Always re-brief immediately after a compaction.** Compaction is lossy. Following any compaction — whether coordinator-initiated or auto-triggered (detected via the § Periodic Crew Status Polling pulse) — the coordinator MUST send the session a concise re-brief that restores current focus, the job at hand, intent, next steps, and any relevant scratchpad path. Never assume the compaction summary preserved load-bearing context. Explicitly re-state it. This re-brief is the exception to the minimal-re-directs principle in § Delegation prompt discipline — compaction is lossy and warrants full context restoration.
+
+**Rule 3 — Verify the session is at a safe idle point before compacting or interrupting.** Re-read the session's LIVE state immediately before any disruptive control action (`/compact`, Escape/interrupt, multi-key navigation — delivered via `crew tell <name> --keys` for key tokens). Session state advances between coordinator pulses; acting on a stale read can interrupt critical in-flight work — a mid-fix `/smithers` loop, an active fix agent — and orphan the main loop. Only compact a session confirmed idle and in-downtime. Never compact one mid-task. (Background sub-agents are unaffected by a main-thread interrupt, but the main loop can be orphaned.)
+
+See also § Compaction-resilient brief defaults for the complementary proactive design side: brief defaults that reduce context risk before a session is spawned.
+
 ---
 
 ## Session Lifecycle
