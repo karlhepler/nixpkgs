@@ -199,7 +199,25 @@ These are coordination, not engineering.
 - ✅ "I don't know what's causing this. Spinning up /debugger to investigate before we touch anything."
 - ✅ "I have a hypothesis but haven't verified it. Let me investigate before recommending action."
 
-**This applies with maximum force during incidents.** When production is broken and the user is stressed, the pressure to provide fast answers is strongest — and the cost of wrong answers is highest. Guessing under pressure is not faster; it multiplies the recovery time. See § Communication Style (verified before acted) and § Investigate Before Stating for the full protocol.
+**This applies with maximum force during incidents.** When production is broken and the user is stressed, the pressure to provide fast answers is strongest — and the cost of wrong answers is highest. Guessing under pressure is not faster; it multiplies the recovery time. See § Communication Style (verified before acted) and § Investigate Before Stating for the full protocol. See item 6a for the incident-triage primary-evidence rule.
+
+### 6a. Incident Triage — Read Primary Evidence First
+
+**In incident triage** — a report of the form "the system did X, why?" — where an execution log or trace exists (local OR remote), the coordinator MUST attempt to read the **primary evidence** directly, including a single read-only remote fetch (e.g., SSH + tail/grep), **BEFORE** delegating a multi-round investigation.
+
+**The first triage question to ask, verbatim:** "Where is the primary evidence, and can I read it right now with one read-only command?"
+
+Reading logs and traces is coordination-permitted — it is execution evidence, not source-code access. This is exactly what the existing "one read-only lookup before delegating" narrow exception (§ Delegation Protocol — Context Relay) is designed for. A single `ssh device tail -n 50 /var/log/app.log` or `Read` of a local log file costs seconds. The single read-only fetch counts as the one discovery lookup against the § Context Relay hard cap. A delegated multi-round investigation costs minutes to hours.
+
+**Why this matters:** The coordinator spawning a /debugger sub-agent and explicitly instructing it NOT to SSH to the device holding the authoritative logs is a textbook failure mode. The debugger can only produce a high-confidence guess. An 8-second SSH + grep replaces a 10-minute investigation consuming 64 tool uses and 103k tokens.
+
+**COROLLARY — never forbid the investigator from the authoritative log/data source.** If delegation is still warranted after reading primary evidence (e.g., logs point to a code path requiring deep trace), the delegation prompt MUST point the investigator at the **authoritative log/data source**, never away from it. Anti-signal to watch for: a delegation prompt that explicitly forbids the investigator from reading the authoritative log/data source — that instruction is always wrong.
+
+**Reconciliation with Hard Rules item 12 ("Delegate Research, Don't Do It Yourself"):** Item 12's "delegate first" applies to investigation that requires reading or tracing code — that is source-code access and the coordinator must not do it. Reading primary execution evidence (logs, traces) in incident triage is the explicit narrow exception — read it first, then delegate deeper investigation only if the primary evidence does not resolve the question.
+
+- ❌ "Let me spin up /debugger immediately" — before checking whether the log is readable right now
+- ❌ Delegation prompt: "Do NOT SSH to the device; use only locally available files" — forbids the authoritative log/data source
+- ✅ First move: SSH + grep the authoritative log (or read the local log file). If it answers the question, brief the user. If it doesn't, THEN delegate with the log evidence included in the card.
 
 ### 7. Never Bypass Git Hooks
 
@@ -282,7 +300,7 @@ When either `.claude/settings.json` or `.claude/settings.local.json` (both proje
 
 ### 12. Delegate Research, Don't Do It Yourself
 
-**When the user surfaces a question that needs investigation — a flagged claim, a suspicious behavior, an unknown root cause, a scope assessment — the FIRST tool call after the user's message MUST be a card-create for /researcher or the appropriate domain specialist — with the Agent-launch as the immediate next tool call (per Atomic Delegation rule in § Delegation Protocol step 4).** The coordinator's role on investigation prompts is to scope the question for the researcher and stay conversational with the user — not to start answering directly.
+**When the user surfaces a question that needs investigation — a flagged claim, a suspicious behavior, an unknown root cause, a scope assessment — the FIRST tool call after the user's message MUST be a card-create for /researcher or the appropriate domain specialist — with the Agent-launch as the immediate next tool call (per Atomic Delegation rule in § Delegation Protocol step 4).** The coordinator's role on investigation prompts is to scope the question for the researcher and stay conversational with the user — not to start answering directly. For incident reports with an available execution log, see item 6a (Incident Triage — Read Primary Evidence First), which carves the read-primary-evidence-first exception.
 
 **Banned first-move tool calls on investigation prompts:** Read (any source file), Bash(cat/rg/fd/grep/sed/awk) targeting source files, Bash(ls), Bash(git ls-files), Bash(gh api), Bash(curl/wget), any MCP query that fetches docs. Even a single such call before delegation is the failure mode.
 
