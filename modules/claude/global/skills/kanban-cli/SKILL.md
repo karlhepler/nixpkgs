@@ -167,6 +167,15 @@ When a `-F` MoV pattern includes a code identifier (e.g., `updatedInput`, `run_i
 
 **Worked example (card #2457):** the MoV used `rg -qiF 'via updatedInput'` (plain), while the agent correctly wrote the identifier backtick-wrapped; to pass, the agent stripped the backticks. This is a concrete sub-variant of the 'Agent satisfies broken MoV by corrupting artifact' anti-pattern.
 
+### Line-ordering MoVs require UNIQUE anchors
+
+`test $(rg -n PAT_A | head -1 | cut -d: -f1) -lt $(rg -n PAT_B | head -1 | cut -d: -f1)` requires PAT_A and PAT_B to be UNIQUE anchors. `head -1` silently returns the FIRST match; if the anchor phrase also appears in earlier prose (a table of contents, a 'When to Load' / mode-description section, or a cross-reference), `head -1` grabs that earlier occurrence and the comparison fails (or false-passes) despite correct content placement. Anchor each side on a line-start or bold-header-unique substring (for example, a regex anchored at line-start matching the bold header's literal asterisks, or a phrase that is unique to the header such as `media outlet only:`) — never a phrase that recurs in body prose. Before adding such an MoV, run `rg -n 'PAT' FILE` and confirm exactly one match per side.
+
+- ❌ `test $(rg -n 'Cold outreach to unknown' file | head -1 | cut -d: -f1) -lt $(rg -n 'PAT_B' file | head -1 | cut -d: -f1)` — phrase `Cold outreach to unknown` also matches inline prose earlier in the file; `head -1` returns the wrong line even when placement is correct
+- ✅ `test $(rg -n 'media outlet only:' file | head -1 | cut -d: -f1) -lt $(rg -n 'PAT_B' file | head -1 | cut -d: -f1)` — `media outlet only:` is unique to the header; `head -1` returns the correct line
+
+This generalizes the existing 'Call-site vs import collision' entry (which already warns that `head -1` grabs the import line) to section/header ordering checks. Real incident: a relocation MoV used the anchor `Cold outreach to unknown` which also matched inline prose earlier in the file, so `head -1` returned the wrong line and the MoV failed even though placement was correct (fixed by re-anchoring on the header-unique `media outlet only:`).
+
 ### Pre-`kanban do --file` lint (mandatory before every CLI invocation)
 
 Before invoking the kanban CLI, scan every `mov_commands[].cmd` field for these banned patterns:
@@ -180,6 +189,7 @@ Before invoking the kanban CLI, scan every `mov_commands[].cmd` field for these 
 - `mise exec -- <tool>` — use `"$(mise which <tool>)" <args>`; `mise exec` resolves and installs the requested tool on demand and can trigger an aqua-backend install that fails (no release asset for the current platform, most commonly darwin-arm64) before the tool runs
 - BSD/macOS-specific flag syntax (`stat -f%z`, `sed -i ''`, `date -r`, `date -v`, `find -E`, `du -h -d`) — the check shell uses GNU coreutils; use POSIX-portable forms instead
 - `-F` anchor containing a code identifier (e.g., `updatedInput`, `run_in_background`) — forces the agent to strip backtick formatting to satisfy the literal match; anchor on prose-only words instead
+- Line-ordering MoVs (`head -1` line-number comparison) — run `rg -n 'PAT' FILE` and confirm exactly one match per side; anchor on a unique header substring, never a phrase that recurs in body prose. See § Line-ordering MoVs require UNIQUE anchors.
 
 The kanban CLI lint hook is the second-line defense. Every catch is an authoring failure.
 
