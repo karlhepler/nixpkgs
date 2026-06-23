@@ -453,6 +453,104 @@ Report back:
 - Which specialists flagged concerns vs. LGTM
 - The overall review event (`event` from prr output)
 
+## Follow-Through After a Non-Approving Review
+
+**Trigger:** Only when the submitted review event is COMMENT or CHANGES_REQUESTED — a non-approving review. An APPROVE review needs no follow-up.
+
+**Guiding principle:** The intent of review is to HELP the author land their change — be curious and inquisitive, catch genuinely dangerous issues, confirm the code serves the author's stated intent. Do not gate; do not leave teammates hanging. Help our friends get their PRs through. This behavior generalizes to ANY automated PR-review workflow, not just one repo or channel.
+
+### Transition Into the Follow-Up Loop
+
+After posting a COMMENT or CHANGES_REQUESTED review, schedule a follow-up check using `ScheduleWakeup` at a ~5-minute cadence. A foreground skill cannot busy-wait; use ScheduleWakeup to re-fire the follow-up check. One independent loop per PR — do not start a second loop if one is already running for this PR.
+
+**Durable loop-dedup (flag file):** Because ScheduleWakeup spawns a fresh agent context where in-memory state does not persist, use a per-PR flag file to detect whether a follow-up loop is already running. This mirrors the `approval_watch` pattern in smithers.
+
+- **File path:** `.scratchpad/review-<pr-number>-followup-running` (relative to the git repo root)
+- **Check on entry:** `test -f .scratchpad/review-<pr-number>-followup-running` — if the flag exists, a loop is already active; do NOT schedule another wakeup.
+- **Set when starting the loop:** `touch .scratchpad/review-<pr-number>-followup-running`
+- **Clear when a stop condition is reached:** `rm -f .scratchpad/review-<pr-number>-followup-running`
+
+Before scheduling the first wakeup, check for the flag. If it already exists, skip — a loop is in progress.
+
+```bash
+# Guard: skip if a follow-up loop is already running for this PR
+test -f .scratchpad/review-<pr-number>-followup-running && exit 0
+
+# Mark the loop as active (survives the ScheduleWakeup gap)
+touch .scratchpad/review-<pr-number>-followup-running
+```
+
+Then schedule the first follow-up check:
+
+```
+ScheduleWakeup(
+  delaySeconds=300,
+  reason="Follow-up check for PR <pr-number> — waiting ~5 minutes before re-checking reply threads and new commits",
+  prompt="Re-enter the follow-up loop for /review on PR <pr-number>: check unresolved threads, check for new commits, approve if all concerns resolved, or schedule the next wakeup."
+)
+```
+
+### On Each Wake
+
+When the follow-up check fires:
+
+1. **Re-check reply threads.** Pull the current state of all review comment threads on the PR:
+
+   ```bash
+   prc list <pr> --unresolved
+   ```
+
+   For each unresolved thread where a reply has arrived since the last check:
+
+   - **If the author addressed the concern** (a fix was pushed or a satisfactory answer was given): VERIFY it genuinely resolves the issue AND the code still serves the author's stated intent. If both are true, resolve the thread — reply and resolve in two steps:
+     ```bash
+     prc reply <comment_id> '<brief acknowledgment>'
+     prc resolve <thread_id>
+     ```
+     If more is needed, post a friendly, helpful reply explaining what's still outstanding.
+   - **If waiting on the author:** just wait — do not post anything.
+
+2. **Check for new commits.** Pull any new commits the author pushed since the last check:
+
+   ```bash
+   gh pr view <number> --json commits --jq '.commits[-3:]'
+   ```
+
+   If new commits are present, re-read the updated diff and assess whether outstanding concerns have been addressed in code:
+
+   ```bash
+   gh pr diff <number>
+   ```
+
+### Approving When All Concerns Are Resolved
+
+When ALL previously raised concerns are resolved — threads resolved, code verified, no remaining outstanding issues — submit an APPROVE review:
+
+```bash
+prr submit <pr-number> --findings .scratchpad/review-<pr-number>-followup.json --event APPROVE
+```
+
+The follow-up findings JSON should have an empty `comments` array and a brief approval message in `body` (e.g., `"All concerns addressed — looks good to merge."`).
+
+### Stop Conditions
+
+Stop the follow-up loop only when the PR is **approved-by-us, merged, or closed**:
+
+```bash
+# Check current PR state
+gh pr view <number> --json state,reviews --jq '{state: .state, reviews: [.reviews[] | {author: .author.login, state: .state}]}'
+```
+
+- `state` is `MERGED` or `CLOSED` → clear the flag file and stop immediately
+- Our account appears in `reviews` with `state: APPROVED` → clear the flag file and stop immediately
+- Otherwise → schedule the next ScheduleWakeup and continue the loop
+
+When a stop condition is reached, clear the durable flag:
+
+```bash
+rm -f .scratchpad/review-<pr-number>-followup-running
+```
+
 ## Critical Rules
 
 **Worktree handoff is one-way:**
