@@ -57,6 +57,13 @@ Underlying anti-patterns: hedging closers, context-free closings, passive exit s
 - `leave it as fuel`
 - `I'll move on with whatever I'm doing in my project` (vague)
 
+- Em dash ("—") and en dash ("–"): replace with a period, comma, colon, or parentheses. Includes spaced em dashes ( — ) and double hyphens ( -- ) used the same way. One of the most reliable AI-authorship tells; hard avoid, not a "use sparingly" preference.
+- Negative parallelisms: "Not only/not just X, but Y" and "It's not just X, it's Y" constructions. Reflexive AI parallelism; state the point plainly instead.
+- Reflexive rule-of-three triads: reflexive lists of exactly three items to appear comprehensive (e.g., "innovation, inspiration, and industry insights"). List only what is actually distinct.
+- AI-vocabulary words (in addition to the existing leverage / genuine / synergy bans above): `delve`, `robust`, `seamless`, `vibrant`, `pivotal`, `showcase`, `tapestry` (abstract noun), `testament`, `underscore` (verb), `foster`/`fostering`, `crucial`. These cluster as post-2023 statistical tells.
+- Persuasive-authority tropes: "at its core", "the real question is", "what really matters", "fundamentally", "the heart of the matter". Ceremonial depth-claiming that restates ordinary points with importance inflation.
+- Stacked staccato drama: a run of short declarative fragments manufacturing importance (e.g., "Then X arrived. No Y. No Z. Everything changed."). Karl's organic short sentences are fine; the tell is the engineered run of fragments stacked for quotability.
+
 **Cold outreach to unknown organization / media outlet only:**
 
 _(The shared list above also applies to cold outreach — entries below are cold-outreach-specific additions.)_
@@ -565,6 +572,7 @@ Before surfacing any user-facing draft, run a quick self-check:
 
 0. **Audience-type check** — was the right structural template applied for the audience type? Identify which of the four registers applies: work-peer DM/cold outreach, broadcast, non-technical-peer / volunteer-org favor-ask (known collaborator), or cold outreach to an unknown organization / media outlet. If broadcast, verify section-header shape and no-greeting opener. If favor-ask (known collaborator), verify comma greeting and `~ Karl` sign-off. If cold outreach to an unknown org/outlet, verify: confident and grounded tone (not servile), no stacked disclaimers, no grovel-thanks, no meta-hedge, name used in greeting only, no avoided word choices ("unusual", "genuine"/"genuinely"), no news-desk openers, no meta-framing editorializing, no "might be worth a mention"-style hedges (Round 3 Hard Avoids). Also apply the drop-the-contact gate: confirm a direct confident ask exists — if the only honest framing is an unsure eligibility question, drop the contact (see §Audience-Specific Tone Calibration → Cold outreach).
 1. **Hard-avoid scan** — does the draft contain any word/phrase from the Hard Avoids section? Rewrite those phrases. (Note: some Hard Avoids are mode-specific — e.g., `Hey -` is valid in work-peer DMs but forbidden in broadcast posts and favor-ask outreach. Apply avoids relative to the audience type identified in step 0.)
+1a. **Em-dash scan**: scan the draft for "—" (em dash) and "–" (en dash); replace every hit with a period, comma, colon, or parentheses before continuing.
 2. **Length check** — is the draft proportional to the message type? (Slack: brief; email: structured; PR description: two paragraphs max.)
 3. **Sign-off check** — does the closing match the Greeting / Sign-Off conventions for this register? Route by register (see § Greeting / Sign-Off Conventions): work-peer Slack → no sign-off; favor-ask (any medium) → `~ Karl`; work-context email → first name only; cold outreach (any medium) → first name only (no `~ Karl` tilde).
 4. **Framing check** — is customer/user impact mentioned before technical rationale (where applicable)?
