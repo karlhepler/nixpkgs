@@ -293,7 +293,9 @@ You are on the author's side. Your job is to help confirm that intent is carried
 - **No chain-of-thought** — state the observation, optionally note why it matters, done. No "I confirmed this by reviewing..." explanations.
 - **No specialist attribution** — comments are posted as a unified review. No `[swe-security]` or similar.
 - **Default to COMMENT severity** — only use blocking for high-risk issues: regressions, security vulnerabilities, or data loss.
-- **When in doubt, leave it out** — if a finding is borderline or minor, cut it entirely.
+- **When in doubt, leave it out** — if a finding is borderline or minor, cut it entirely. No nits — drop them hard; bots already review the PR and surface style/nit-level observations.
+- **Confirm intent before flagging** — a deviation that looks wrong may be the intentional design. Before treating it as a defect, ask: "is this intentional?" If the code could plausibly serve the author's stated intent, verify intent first rather than flagging it outright. Use curious phrasing ("did you mean to...?", "is this intentional?") to surface the question instead.
+- **Bias toward APPROVE** — when a change is safe (no blocking issue: security / data-loss / regression / correctness) AND serves the author's stated intent, approve. Non-blocking suggestions become optional 'follow-up to consider' notes folded inside the approval, not a withheld verdict. Reserve COMMENT / CHANGES_REQUESTED for genuinely blocking issues only.
 - **Tentative phrasing for suggestions** — for non-blocking findings and suggestions, use tentative, collaborative language. Preferred phrasings: "probably worth ...", "might be worth ...", "could be worth considering ...", "one option might be ...", "no strong opinion, but ...". These pair naturally with the curious framing above ("curious if...", "did you mean to...?"). Reserve firmer, more direct wording only for genuinely blocking issues (security, data-loss, regression) — and even then stay respectful.
   - **Anti-patterns for non-blocking suggestions:** "worth doing X", "you should X", and bare imperatives — they land as directives even when meant as suggestions.
 
@@ -368,6 +370,10 @@ If a card ends up `canceled` (exhausted retries), proceed without that specialis
 ```
 
 ### Assemble Aggregated Review Body
+
+**Minimal-footprint output:** This PR is also reviewed by automated bots — bots already review for style, nits, and surface-level observations. At aggregation, drop nits and non-important findings hard. High-effort review process (keep all specialists, collect their full guidance) — minimal-footprint posted output. When in doubt about whether to include a finding, leave it out. No nits.
+
+**Verdict bias:** bias toward APPROVE when the change is safe (no blocking issue: security / data-loss / regression / correctness) and serves the author's stated intent. Non-blocking suggestions fold inside the approval as optional follow-up notes — they do not withhold the verdict.
 
 The review body must read as if one developer wrote it — no headers, no specialist attribution, no tooling metadata.
 
@@ -577,10 +583,13 @@ rm -f .scratchpad/review-<pr-number>-followup-running
 - No `*Specialist team review via Claude Code*` footer
 - The posted review must read as if one developer wrote it
 
-**No nits:**
-- If a finding is borderline or minor, cut it entirely
+**No nits — minimal-footprint output:**
+- Bots already review the PR — do not duplicate what bots already surface
+- If a finding is borderline or minor, cut it entirely; no nits
 - Only include findings worth surfacing to the author
 - When in doubt, leave it out
+- **Bias toward APPROVE**: safe changes that serve the author's stated intent get approved; non-blocking suggestions go inside the approval as optional follow-up notes, not a withheld verdict
+- Confirm intent before flagging a deviation as a defect — it may be the intentional design
 
 **Preserve specificity:**
 - Keep file:line pairs from specialist output intact in the inline comments array
