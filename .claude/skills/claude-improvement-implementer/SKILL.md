@@ -185,6 +185,7 @@ If the note proposes changes to THIS skill file (`.claude/skills/claude-improvem
 - Add a flag to the cycle summary: `"Self-modification occurred — review this commit with extra attention."`
 - Treat self-modification like any other prompt-file change: run the full Tier 1 `ai-expert` review before committing.
 - The change takes effect on the NEXT self-scheduled firing (the skill file is re-read per invocation). Do NOT attempt to hot-reload mid-cycle.
+- **`.claude/` WRITE constraint:** background sub-agents CANNOT write `.claude/` files — they run in dontAsk mode and auto-deny the interactive confirmation `.claude/` edits require (staff-engineer.md § Rare Exceptions item 4). So do NOT delegate the WRITE to a background `ai-expert` (it will stall requesting authorization). The coordinator makes the edit DIRECTLY after confirming with the user (Rare Exception item 4). The coordinator MAY still delegate the read-only AC verification — a sub-agent running `kanban criteria check` only READS the file (reading `.claude/` is permitted; only writing is gated) — so the card still completes via the normal hook flow.
 
 #### 7d. Implement the Fix
 
