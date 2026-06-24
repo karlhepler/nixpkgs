@@ -437,7 +437,7 @@ Post a **single unified GitHub review** via `prr`.
 Re-fetch the PR state at the last possible moment:
 
 ```bash
-gh pr view <pr> --repo <org>/<repo> --json state,mergedAt,reviewDecision,reviews,latestReviews
+gh pr view <pr> --repo <org>/<repo> --json author,state,mergedAt,reviewDecision,reviews,latestReviews
 ```
 
 **ABORT the post (emit "superseded — not posting" and exit cleanly, posting NOTHING) if ANY of the following are true:**
@@ -449,6 +449,8 @@ gh pr view <pr> --repo <org>/<repo> --json state,mergedAt,reviewDecision,reviews
   Note: `gh pr view --json` exposes NO `mergeQueueEntry` field. `reviewDecision == APPROVED` already covers the merge-queue case — a PR cannot enter the merge queue without being approved.
 
 - Any review in `reviews` or `latestReviews` by a **real human** (not a bot) who is not the PR author AND whose `state` is one of `{APPROVED, COMMENTED, CHANGES_REQUESTED}`.
+
+  **The PR author's own self-review / self-comment does NOT count as an independent review — authors routinely self-comment to explain their change.** Only count a review if the reviewer is (a) NOT the PR author and (b) a real human (not a bot).
 
   **Bot detection rules (all three must hold to treat a reviewer as a real human):**
   1. Login does NOT end in `[bot]` (e.g., `dependabot[bot]`, `github-actions[bot]`)
