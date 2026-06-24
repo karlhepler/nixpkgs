@@ -1,5 +1,5 @@
 ---
-name: review
+name: pr-review
 description: Orchestrate a specialist team review of a GitHub PR. Auto-detects which domain experts to involve based on the diff and aggregates their findings into a structured PR review comment. Invoke when user says "review PR", "code review PR #N", "run a review on this PR", "get specialist review", or "review pull request".
 model: sonnet
 argument-hint: "[pr-number or url] [--repo owner/repo]"
@@ -61,7 +61,7 @@ Due to a known Claude Code bug ([GitHub #5140](https://github.com/anthropics/cla
 This skill fetches PR diffs, posts unified GitHub reviews via `prr`, runs kanban operations for specialist cards, verifies inline comments via `prc`, and creates git worktrees via `crew` to give specialists full repository access. Without these permissions, operations silently fail in `dontAsk` mode.
 
 **If any are missing:** Stop immediately. Do not start work. Surface to the user:
-> "Blocked: One or more required permissions are missing from `permissions.allow`. Add `Bash(gh pr *)`, `Bash(gh api *)`, `Bash(kanban *)`, `Bash(prc *)`, `Bash(prr *)`, `Bash(git branch *)`, `Bash(git rev-parse *)`, `Bash(crew *)`, and `Bash(workout *)` before running /review."
+> "Blocked: One or more required permissions are missing from `permissions.allow`. Add `Bash(gh pr *)`, `Bash(gh api *)`, `Bash(kanban *)`, `Bash(prc *)`, `Bash(prr *)`, `Bash(git branch *)`, `Bash(git rev-parse *)`, `Bash(crew *)`, and `Bash(workout *)` before running /pr-review."
 
 ## Phase 1 — Worktree Setup + One-Way Handoff
 
@@ -76,7 +76,7 @@ This skill fetches PR diffs, posts unified GitHub reviews via `prr`, runs kanban
 
 **→ Skip Phase 1 entirely. Proceed directly to Phase 2.**
 
-The startup instruction is the authoritative override. A previous `/review` invocation already performed the handoff — this session IS the worktree session. Branch name string comparison is irrelevant; running worktree logic again would create an infinite handoff loop.
+The startup instruction is the authoritative override. A previous `/pr-review` invocation already performed the handoff — this session IS the worktree session. Branch name string comparison is irrelevant; running worktree logic again would create an infinite handoff loop.
 
 ### Determine Review Mode
 
@@ -525,7 +525,7 @@ Then schedule the first follow-up check:
 ScheduleWakeup(
   delaySeconds=300,
   reason="Follow-up check for PR <pr-number> — waiting ~5 minutes before re-checking reply threads and new commits",
-  prompt="Re-enter the follow-up loop for /review on PR <pr-number>: check unresolved threads, check for new commits, approve if all concerns resolved, or schedule the next wakeup."
+  prompt="Re-enter the follow-up loop for /pr-review on PR <pr-number>: check unresolved threads, check for new commits, approve if all concerns resolved, or schedule the next wakeup."
 )
 ```
 

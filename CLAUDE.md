@@ -99,7 +99,7 @@ Some capabilities intentionally have no agent definition because they run differ
 
 - **Exception skills** (project-planner) — Run via Skill tool directly, not delegated as background sub-agents. These are specialized capabilities invoked for specific use cases, not general-purpose team members.
 - **Workflow skills** (manage-pr-comments, review-pr-comments) — Live at `skills/<name>/SKILL.md`. Run via Skill tool with specific CLI tooling integration. These coordinate external processes and don't fit the standard team member pattern.
-- **Multi-file skills** (review) — Live in `skills/<name>/SKILL.md` instead of `agents/<name>.md` because they have supporting files (e.g., `skills/review/review-citation-guide.md`, `skills/review/review-domains.md`). Deployed via `default.nix` skill copy rules. Invoked via Skill tool directly.
+- **Multi-file skills** (pr-review) — Live in `skills/<name>/SKILL.md` instead of `agents/<name>.md` because they have supporting files (e.g., `skills/pr-review/review-citation-guide.md`, `skills/pr-review/review-domains.md`). Deployed via `default.nix` skill copy rules. Invoked via Skill tool directly.
 
 **Important:** The "Adding a team member" process (agent definition) applies to standard delegatable team members only, not these exceptions. When updating or adding capabilities, distinguish between delegatable agents and exception/workflow skills.
 

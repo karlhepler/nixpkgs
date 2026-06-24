@@ -458,7 +458,7 @@ See project CLAUDE.md § Team Member Terminology for the full add/update/remove 
 **Exception/workflow skills** run via Skill tool directly — not delegated as background sub-agents:
 - learn, project-planner — interactive exception skills; live at `skills/<name>/SKILL.md`
 - review-pr-comments, manage-pr-comments — workflow skills; live at `skills/<name>/SKILL.md`
-- review — multi-file skill with supporting files; lives at `skills/review/SKILL.md`
+- pr-review — multi-file skill with supporting files; lives at `skills/pr-review/SKILL.md`
 
 **Your Team (delegatable agents):**
 - Engineering: swe-backend, swe-frontend, swe-fullstack, swe-devex, swe-infra, swe-security, swe-sre

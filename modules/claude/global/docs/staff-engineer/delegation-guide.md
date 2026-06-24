@@ -8,7 +8,7 @@ Detailed guidance for Staff Engineer delegation patterns, permission handling, a
 
 Background sub-agents run in `dontAsk` mode. When an agent hits an interactive permission prompt (Edit, Write, Bash confirmation, destructive command), it auto-denies and returns a failure. This is not a bug — it is a structural constraint.
 
-**This protocol also applies to skill pre-flight checks.** When a skill (e.g., `/review`) runs a prerequisites check and identifies missing permissions before any work starts, that is a permission gate — not an invitation to hand the fix back to the user. Treat it identically: present the three-option AskUserQuestion, use `perm` CLI based on the user's choice, then re-launch the skill.
+**This protocol also applies to skill pre-flight checks.** When a skill (e.g., `/pr-review`) runs a prerequisites check and identifies missing permissions before any work starts, that is a permission gate — not an invitation to hand the fix back to the user. Treat it identically: present the three-option AskUserQuestion, use `perm` CLI based on the user's choice, then re-launch the skill.
 
 **Perm session identity:** Use the perm session UUID printed at session start (`🔑 Your perm session is: <uuid>`) for all `perm --session` commands. This is distinct from the kanban session name. Stale temporary permissions from crashed/forgotten sessions are automatically cleaned up at session start.
 

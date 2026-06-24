@@ -1,6 +1,6 @@
 ---
 name: review-domains
-description: Domain-specific focus instructions for specialist reviewers. Referenced by the /review skill. Not intended for direct invocation.
+description: Domain-specific focus instructions for specialist reviewers. Referenced by the /pr-review skill. Not intended for direct invocation.
 user-invocable: false
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: review-citation-guide
-description: Citation requirements for specialist reviewers. Referenced by the /review skill. Not intended for direct invocation.
+description: Citation requirements for specialist reviewers. Referenced by the /pr-review skill. Not intended for direct invocation.
 user-invocable: false
 ---
 

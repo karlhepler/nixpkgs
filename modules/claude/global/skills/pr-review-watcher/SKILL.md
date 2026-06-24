@@ -1,11 +1,11 @@
 ---
 name: pr-review-watcher
 description: >
-  Watch a Slack review-request channel and run /review on PRs that genuinely need review,
+  Watch a Slack review-request channel and run /pr-review on PRs that genuinely need review,
   then follow through to resolution and approval. Requires a Slack channel as a mandatory
   launch argument (channel ID, name, or archive URL). Auto-detects operator identity
   (Slack self-user-id, GitHub login). Runs a recurring in-session cron (~5-minute pulse)
-  via CronCreate. Spawns /review sessions per PR via crew, deduplicates by skipping PRs
+  via CronCreate. Spawns /pr-review sessions per PR via crew, deduplicates by skipping PRs
   already reviewed by an independent human, never reviews the operator's own PRs, and
   follows through with a follow-up loop until PRs are approved or closed. Uses ScheduleWakeup
   for follow-up self-pulses with the watcher cron as backstop. Requires the Slack MCP server
@@ -18,7 +18,7 @@ argument-hint: "<channel-id | #channel-name | channel-name | slack-archive-url> 
 
 # PR Review Watcher
 
-**Purpose:** Watch a Slack review-request channel on a recurring ~5-minute cron pulse. For each new post containing a GitHub PR link that genuinely needs review (open, not the operator's own, not already reviewed by an independent human), spawn a `/review` session via `crew create`, add reactions to the Slack post to signal status, and follow through — watching for replies to comments, resolving threads, and approving once concerns are addressed. Never "comment and leave."
+**Purpose:** Watch a Slack review-request channel on a recurring ~5-minute cron pulse. For each new post containing a GitHub PR link that genuinely needs review (open, not the operator's own, not already reviewed by an independent human), spawn a `/pr-review` session via `crew create`, add reactions to the Slack post to signal status, and follow through — watching for replies to comments, resolving threads, and approving once concerns are addressed. Never "comment and leave."
 
 **The intent:** Help teammates land their PRs, not gate them. Be curious and inquisitive, catch genuinely dangerous issues, confirm the code serves the author's stated intent. When a review is non-approving, follow through until the PR is approved, merged, or closed.
 
@@ -53,7 +53,7 @@ argument-hint: "<channel-id | #channel-name | channel-name | slack-archive-url> 
 
 **CLIs:** `gh`, `crew`, `prc`, `prr`, `git`.
 
-**Skills invoked by spawned sessions:** `/review` (specialist team review), `review-pr-comments` / `manage-pr-comments` (PR-comment reply/resolve workflow).
+**Skills invoked by spawned sessions:** `/pr-review` (specialist team review), `review-pr-comments` / `manage-pr-comments` (PR-comment reply/resolve workflow).
 
 ## Operator Identity (Auto-Detected — Never Args)
 
@@ -229,13 +229,13 @@ For each PR that needs review:
 
 Single-line form (no literal newlines):
 
-`Review PR <pr> (<repo>). Step 1: run \`gh pr checkout <pr>\` (lands the worktree on the PR's exact branch). Step 2: BEFORE reviewing, run \`gh pr view <pr> --json author,reviews\` — if ANY review author is neither the PR author nor a known bot (<bot_logins_csv>), print \`SKIPPED-<pr>-already-reviewed\` and STOP (do not run /review). Step 3: otherwise run \`/review <pr>\`. The /review skill performs a FINAL PRE-POST CHECK before posting — if the PR is superseded (state!=OPEN, mergedAt non-null, reviewDecision==APPROVED, autoMergeRequest non-null, or reviewed by another real human), it aborts the post and you must print \`SUPERSEDED-<pr>\` and stop. When the review is POSTED, print \`REVIEW-POSTED-<pr>\` and stop. Review-only — no commit/push/branch.`
+`Review PR <pr> (<repo>). Step 1: run \`gh pr checkout <pr>\` (lands the worktree on the PR's exact branch). Step 2: BEFORE reviewing, run \`gh pr view <pr> --json author,reviews\` — if ANY review author is neither the PR author nor a known bot (<bot_logins_csv>), print \`SKIPPED-<pr>-already-reviewed\` and STOP (do not run /pr-review). Step 3: otherwise run \`/pr-review <pr>\`. The /pr-review skill performs a FINAL PRE-POST CHECK before posting — if the PR is superseded (state!=OPEN, mergedAt non-null, reviewDecision==APPROVED, autoMergeRequest non-null, or reviewed by another real human), it aborts the post and you must print \`SUPERSEDED-<pr>\` and stop. When the review is POSTED, print \`REVIEW-POSTED-<pr>\` and stop. Review-only — no commit/push/branch.`
 
 Where `<bot_logins_csv>` is the comma-separated list from `bot_logins` (e.g., `claude-maze`), or `none` if the list is empty.
 
 **Guarded review brief (fork PR variant):** (use when `isCrossRepository == true` — omit `gh pr checkout` since the fork's head is not directly checkout-able the same way)
 
-`Review PR <pr> (<repo>) [FORK/CROSS-REPO — no direct checkout]. Step 1: BEFORE reviewing, run \`gh pr view <pr> --json author,reviews\` — if ANY review author is neither the PR author nor a known bot (<bot_logins_csv>), print \`SKIPPED-<pr>-already-reviewed\` and STOP (do not run /review). Step 2: otherwise run \`/review <pr>\`. The /review skill performs a FINAL PRE-POST CHECK before posting — if the PR is superseded (state!=OPEN, mergedAt non-null, reviewDecision==APPROVED, autoMergeRequest non-null, or reviewed by another real human), it aborts the post and you must print \`SUPERSEDED-<pr>\` and stop. When the review is POSTED, print \`REVIEW-POSTED-<pr>\` and stop. Review-only — no commit/push/branch.`
+`Review PR <pr> (<repo>) [FORK/CROSS-REPO — no direct checkout]. Step 1: BEFORE reviewing, run \`gh pr view <pr> --json author,reviews\` — if ANY review author is neither the PR author nor a known bot (<bot_logins_csv>), print \`SKIPPED-<pr>-already-reviewed\` and STOP (do not run /pr-review). Step 2: otherwise run \`/pr-review <pr>\`. The /pr-review skill performs a FINAL PRE-POST CHECK before posting — if the PR is superseded (state!=OPEN, mergedAt non-null, reviewDecision==APPROVED, autoMergeRequest non-null, or reviewed by another real human), it aborts the post and you must print \`SUPERSEDED-<pr>\` and stop. When the review is POSTED, print \`REVIEW-POSTED-<pr>\` and stop. Review-only — no commit/push/branch.`
 
 ---
 
@@ -259,7 +259,7 @@ Single-line form (no literal newlines):
 
 Teammates often approve faster than we can spin up. Re-check reviewers in BOTH:
 1. **Dedup step (§ C)** — before spawning.
-2. **Inside the guarded brief** — right before `/review` runs (human approvals frequently land during the bootstrap window).
+2. **Inside the guarded brief** — right before `/pr-review` runs (human approvals frequently land during the bootstrap window).
 
 This is what prevents wasted/duplicate reviews. The two-layer check is intentional — not redundant.
 
@@ -287,9 +287,9 @@ All `crew create` calls use `run_in_background=true`. A blocking spawn can take 
 
 Add the entry to `active` with `status: "spawning"` and persist the state file BEFORE calling `crew create`. This prevents the next tick from double-spawning the same PR before the crew window appears.
 
-### `/review` Integration
+### `/pr-review` Integration
 
-`/review` posts via `prr` as a real GitHub review (detectable via `gh pr view --json reviews`). It short-circuits its worktree-setup phase when already inside a worktree (the guarded brief's `gh pr checkout` sets this up). The sentinel strings `REVIEW-POSTED-<pr>` and `SKIPPED-<pr>-already-reviewed` are what the watcher reads via `crew read`.
+`/pr-review` posts via `prr` as a real GitHub review (detectable via `gh pr view --json reviews`). It short-circuits its worktree-setup phase when already inside a worktree (the guarded brief's `gh pr checkout` sets this up). The sentinel strings `REVIEW-POSTED-<pr>` and `SKIPPED-<pr>-already-reviewed` are what the watcher reads via `crew read`.
 
 ### Worktree Cruft
 
