@@ -146,6 +146,7 @@ For each entry in `active`:
 
 Evaluate:
 
+- **Pane shows buffered/unsubmitted brief** (pane content contains the spawn brief text or a paste placeholder like `[Pasted text #1]`, NO spinner, no tool activity, session never started — this is the PASTED-not-SUBMITTED state): a `crew create --tell` spawn signals `told=true` when the brief is PASTED into the worker's input buffer, NOT when it is SUBMITTED. The brief can sit unsubmitted indefinitely. Recovery: `crew tell <crew> --keys "Enter"` to submit it, then leave the entry active (status: reviewing). This self-healing is expected on normal spawns, not only after trust/MCP modals.
 - **Pane shows `SKIPPED-<pr>`** (guard caught a human review mid-bootstrap) → `crew dismiss <crew-name>` + move active→done(`skipped-human-reviewed`). No reaction change.
 - **Pane shows `SUPERSEDED-<pr>`** (pre-post check aborted the post — PR was superseded during review) → `crew dismiss <crew-name>` + move active→done(`superseded-race`). Leave any 👀 reaction in place. Do NOT add ✅.
 - **Pane shows `REVIEW-POSTED-<pr>` AND our review appears in `gh pr view --json reviews`** → check the review state:
@@ -337,6 +338,7 @@ CYCLE START:
   A) for each active entry:
        get pr state + reviews (gh pr view)
        get pane output (crew read)
+       → buffered/unsubmitted brief (PASTED not SUBMITTED): crew tell <crew> --keys "Enter" + leave active
        → SKIPPED sentinel: dismiss + done(skipped)
        → SUPERSEDED sentinel: dismiss + done(superseded-race), leave 👀, no ✅
        → REVIEW-POSTED + review visible in gh:
