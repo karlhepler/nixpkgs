@@ -182,7 +182,17 @@ Parse `repo` (as `owner/repo`) and `pr` (integer). Handle both common formats:
 - Terse: `"Review please: <link>"`
 - Structured: `"Review Request … :github: PR — <link>"`
 
-Skip if `pr` already in `active`, `followup`, `queue`, or `done`.
+**Re-review detection (check BEFORE the skip-if-in-done path):** If the parsed `pr` is in `done` AND the post body contains re-review language — any of: `re-review`, `re review`, `addressed`, `resolved your comments`, `resolved all comments`, `resolved the comments`, `fixed the comments`, `updated since last review`, `updated since your review` — route to the **straight-approval flow** instead of the normal candidate path:
+
+1. Re-fetch PR state: `gh pr view <pr> --repo <repo> --json author,state,mergedAt,reviewDecision,reviews,latestReviews`.
+2. **If `state != OPEN` or `mergedAt` non-null** → nothing to do; skip silently.
+3. **If `reviewDecision == APPROVED`** → our approval (or another) already stands; acknowledge with a ✅ reaction on the Slack post and stop. Do NOT post a duplicate approval.
+4. **If any non-author, non-bot, non-operator login in `reviews` has `state == CHANGES_REQUESTED`** → genuinely blocked by a peer; leave it; skip silently.
+5. **Otherwise** (our prior approval was dismissed by a new push, or we previously only COMMENTED / CHANGES_REQUESTED and the PR still needs our approval) → post a **straight approval**: `prr submit <pr> --repo <repo> --event APPROVE` with a brief friendly body (`"Thanks for addressing the comments — looks good."`). No new findings. No new inline comments. No re-litigating. Add ✅ reaction to the Slack post. Update the `done` entry reason to `straight-approved-re-review`.
+
+Skip if `pr` already in `active`, `followup`, or `queue` (not yet processed).
+
+For posts that contain a PR link but no re-review language and the PR is already in `done` → skip (normal behavior).
 
 Otherwise: candidate for review.
 
@@ -360,7 +370,9 @@ CYCLE START:
   B) slack_read_channel(limit=15)
        for each msg ts > watermark, author != self_user_id, contains github PR link:
          parse repo + pr
-         skip if in active/followup/queue/done
+         if pr in done AND post has re-review language → straight-approval flow (see § B) New Posts)
+         skip if in active/followup/queue
+         if pr in done (no re-review language) → skip
          → candidate
        update watermark_ts
 

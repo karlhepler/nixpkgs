@@ -63,6 +63,25 @@ This skill fetches PR diffs, posts unified GitHub reviews via `prr`, runs kanban
 **If any are missing:** Stop immediately. Do not start work. Surface to the user:
 > "Blocked: One or more required permissions are missing from `permissions.allow`. Add `Bash(gh pr *)`, `Bash(gh api *)`, `Bash(kanban *)`, `Bash(prc *)`, `Bash(prr *)`, `Bash(git branch *)`, `Bash(git rev-parse *)`, `Bash(crew *)`, and `Bash(workout *)` before running /pr-review."
 
+## Re-Review / Straight-Approval Mode
+
+**Trigger:** When `/pr-review` is invoked explicitly in re-review mode — i.e., the invocation context, the watcher brief, or `$ARGUMENTS` contains the word `re-review` or `straight-approval` (greppable signal from the caller).
+
+**In this mode, skip the full specialist review pass entirely.** The author has addressed prior feedback; the job is to confirm and help them land it, not to re-scrutinize the diff or surface a new round of findings. Opening a closed review loop with new findings is the failure mode to avoid.
+
+**Re-review flow:**
+
+1. Parse the PR number from `$ARGUMENTS` as normal.
+2. Run the safety re-check: `gh pr view <pr> [--repo owner/repo] --json author,state,mergedAt,reviewDecision,reviews,latestReviews`.
+3. **Abort conditions** (deliberate subset — a peer's COMMENTED does NOT block the straight approval; only CHANGES_REQUESTED by a non-author, non-bot human does):
+   - `state != OPEN` or `mergedAt` non-null → nothing to do; exit cleanly.
+   - `reviewDecision == APPROVED` → already straight-approved; exit cleanly (do NOT post a duplicate).
+   - Any non-author, non-bot human has `state == CHANGES_REQUESTED` in `reviews` → genuinely blocked by a peer; exit cleanly.
+4. **If none of the abort conditions are true:** post a **straight approval** via `prr submit <pr> --event APPROVE` (add `--repo owner/repo` if cross-repo) with a brief, friendly body: `"Thanks for addressing the comments — looks good."`. No new findings. No new inline comments. No specialist delegation. No re-litigating.
+5. Report the approval posted and exit. The follow-through loop is not needed — an APPROVE event is a terminal state.
+
+**Do NOT:** run Phase 1–5. Do NOT spawn specialists. Do NOT generate findings. Do NOT write a `.scratchpad/review-<number>.json` with inline comments. The straight approval is the entire output.
+
 ## Phase 1 — Worktree Setup + One-Way Handoff
 
 **This is the first thing that happens.** The goal is to give specialists full branch context by running the review inside a dedicated worktree. The current session creates that environment and steps back.
