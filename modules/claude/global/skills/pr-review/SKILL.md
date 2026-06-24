@@ -437,7 +437,7 @@ Post a **single unified GitHub review** via `prr`.
 Re-fetch the PR state at the last possible moment:
 
 ```bash
-gh pr view <pr> --repo <org>/<repo> --json state,mergedAt,reviewDecision,reviews,latestReviews,autoMergeRequest
+gh pr view <pr> --repo <org>/<repo> --json state,mergedAt,reviewDecision,reviews,latestReviews
 ```
 
 **ABORT the post (emit "superseded — not posting" and exit cleanly, posting NOTHING) if ANY of the following are true:**
@@ -445,9 +445,8 @@ gh pr view <pr> --repo <org>/<repo> --json state,mergedAt,reviewDecision,reviews
 - `state` != `OPEN` (merged or closed)
 - `mergedAt` is non-null
 - `reviewDecision` == `APPROVED` — another approval already satisfied requirements; also covers merge-queue entry since approval is a prerequisite for the queue
-- `autoMergeRequest` is non-null — auto-merge is armed or the PR is in the merge queue
 
-  Note: `gh pr view --json` exposes NO `mergeQueueEntry` field. Use `reviewDecision == APPROVED` + `autoMergeRequest` as the merge-queue proxy.
+  Note: `gh pr view --json` exposes NO `mergeQueueEntry` field. `reviewDecision == APPROVED` already covers the merge-queue case — a PR cannot enter the merge queue without being approved.
 
 - Any review in `reviews` or `latestReviews` by a **real human** (not a bot) who is not the PR author AND whose `state` is one of `{APPROVED, COMMENTED, CHANGES_REQUESTED}`.
 
