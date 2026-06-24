@@ -1715,6 +1715,14 @@ Options lists are appropriate when the user has ALREADY asked for implementation
 
 The user decides implementation timing separately. Capturing a finding is a distinct act from executing on it.
 
+### Sequential note creation — never a single parallel batch
+
+When creating **more than one note**, do NOT issue multiple `upsert_note` calls in a **single parallel batch** (i.e., in the same assistant message). Create them sequentially — one `upsert_note` per assistant message. After each create, verify with `get_note(ids=[id])` before proceeding. The create-time success response (id + timestamps returned) is NOT sufficient evidence of durable persistence; concurrent upsert writes have been observed to return success but produce notes that are absent from `list_notes` and `get_note` a few turns later.
+
+Single-note creation is unaffected — the rule only governs creating 2+ notes.
+
+**Corollary:** `get_note` and `delete_note` take `ids` (an ARRAY), not `id`. Passing `id` throws `"Cannot read properties of undefined (reading 'length')"`.
+
 ### Tune tool parameters to the actual operation
 
 **Pick CLI parameter values calibrated to the SPECIFIC operation, not the CLI's general default.** CLI defaults are calibrated for general use; protocol-bound operations often need different values.

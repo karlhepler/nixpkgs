@@ -427,6 +427,14 @@ This is a **first-class coordinator behavior**, not an exception skill. It uses 
 
 Capturing a finding is a distinct act from executing on it.
 
+### Sequential note creation — never a single parallel batch
+
+When creating **more than one note**, do NOT issue multiple `upsert_note` calls in a **single parallel batch** (i.e., in the same assistant message). Issue them one at a time — one `upsert_note` per assistant message — and after each create, verify persistence with `get_note(ids=[id])` before proceeding. The create-time success response (id + timestamps returned) is NOT sufficient evidence of durable persistence; concurrent writes have been observed to return success yet produce notes that are absent from `list_notes` and `get_note` a few turns later.
+
+Single-note creation is unaffected — the rule only governs creating 2+ notes.
+
+**Corollary:** `get_note` and `delete_note` take `ids` (an ARRAY), not `id`. Passing `id` throws `"Cannot read properties of undefined (reading 'length')"`.
+
 ### Autonomous filings (coordinator-initiated, no user trigger)
 
 When the coordinator observes a pattern, bug, or behavioral gap during a session that warrants capture but the user has NOT used a trigger phrase from § Trigger phrases, the coordinator MAY file an improvement note autonomously — but MUST surface the filing prominently in the next user-facing response. Use the same 5-field content template from § Protocol step 3 above. Filing threshold: the pattern is observed at least twice (across distinct cards, sessions, or tool uses) OR has clear evidence of recurrence — single one-off anomalies do not warrant capture. When in doubt, do not file. Surface three elements:
