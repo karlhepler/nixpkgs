@@ -50,6 +50,7 @@ Words, phrases, and idioms the user dislikes and never uses. Add entries over ti
 - Closing a casual Slack reply with evidence framing (e.g., "the 10/10 green CI runs confirm...") — close with the upshot or a code-level outcome instead
 - `exactly` as an emphasis intensifier (e.g., 'exactly the kind of thing we need', 'exactly what we need', 'exactly the input I need') — reads forced; drop it and state the point plainly ('the kind of thing we need').
 - `finish out the rest` / `finish out` / `wrap up the rest` / `knock out the rest` (when the remaining work is substantial — frames significant, often multi-quarter work as cleanup; use 'start working through the rest [together]' instead — see Preferred Phrasings → Closing / next-step language).
+- `levers` / `native levers` (Karl: 'I would never say levers. I don't use the word levers.' Use `options`, name the actual things, or 'the [X] stuff' instead.)
 
 Underlying anti-patterns: hedging closers, context-free closings, passive exit statements. The one-off entries below are captured examples — avoid the pattern broadly, not just the verbatim phrases.
 
@@ -202,6 +203,19 @@ Context: work-peer Slack thread, real-time narration of an in-progress investiga
 - `What I can say is that...` — frames a partial/honest finding when the overall result is inconclusive; names the narrow data point without claiming a conclusion.
 - Tentative pragmatic pivot: `So I think the only way to really test it out might be to try it out for real.` — after inconclusive local testing, pivots to next pragmatic step without over-claiming confidence.
 - Casual failure/risk phrasing (`screws something up`, `try it out for real`) over corporate variants (`validate in production`, `introduce regression risk`).
+
+**Casual agreement / decision replies (understated iterative-step pattern):**
+
+When replying to a decision or agreeing with a course of action in a casual Slack context, use an understated, iterative-step tone — not formal analysis. Key markers Karl actually uses:
+
+- `looked it up` (NOT 'did my research', NOT 'reviewed the documentation')
+- `probably just [X]` — low-stakes, iterative framing rather than confident declaration
+- `see how it goes` / `see what happens` — signals iterative intent, not definitive commitment
+- Treat the decision as a low-key iterative step ('it's like an iterative step') rather than a significant resolved conclusion
+
+**Omit the success metric / goal in casual replies.** Do not explicitly reference the success metric or target in casual Slack agreement messages — leave it implicit. Karl: 'if it lets me hit the metrics target. And I don't mention that either.' The success metric is background context, not something to name in the reply itself.
+
+**Length: keep it brief (1-3 lines).** Casual agreement replies should be short. Do NOT expand into formal analysis, evidence summaries, or structured breakdowns — that reads as 'too long and overblown' for this register.
 
 _Add more from user corrections as they occur._
 
