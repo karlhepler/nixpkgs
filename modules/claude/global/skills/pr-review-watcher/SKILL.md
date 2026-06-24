@@ -147,6 +147,7 @@ For each entry in `active`:
 Evaluate:
 
 - **Pane shows `SKIPPED-<pr>`** (guard caught a human review mid-bootstrap) → `crew dismiss <crew-name>` + move active→done(`skipped-human-reviewed`). No reaction change.
+- **Pane shows `SUPERSEDED-<pr>`** (pre-post check aborted the post — PR was superseded during review) → `crew dismiss <crew-name>` + move active→done(`superseded-race`). Leave any 👀 reaction in place. Do NOT add ✅.
 - **Pane shows `REVIEW-POSTED-<pr>` AND our review appears in `gh pr view --json reviews`** → check the review state:
   - `APPROVED` → add ✅ reaction + `crew dismiss <crew-name>` + active→done(`reviewed-approved`).
   - `COMMENTED` or `CHANGES_REQUESTED` → leave 👀 + `crew dismiss <crew-name>` + spawn follow-up session (see § Follow-Up Brief) + move entry active→followup (crew=`fu-<pr>`, our_review=`<state>`). **A non-approving review NEVER just ends.**
@@ -159,9 +160,11 @@ Evaluate:
 For each entry in `followup`:
 
 1. Run `gh pr view <pr> --repo <repo> --json state,reviews`
+2. Run `crew read <crew-name>` to get pane output
 
 Evaluate:
 
+- **Pane shows `SUPERSEDED-<pr>`** (pre-post check aborted an approval — PR was superseded during follow-up) → `crew dismiss fu-<pr>` + followup→done(`superseded-race`). Leave any 👀 reaction in place. Do NOT add ✅.
 - **Our LATEST review is `APPROVED`** → add ✅ reaction + `crew dismiss fu-<pr>` + followup→done(`approved-after-followup`).
 - **`state != OPEN`** (merged or closed) → `crew dismiss fu-<pr>` + followup→done(`merged` or `closed`).
 - **Otherwise** → leave it. The follow-up session self-pulses via ScheduleWakeup (the watcher cron is the backstop that detects completion).
@@ -226,13 +229,13 @@ For each PR that needs review:
 
 Single-line form (no literal newlines):
 
-`Review PR <pr> (<repo>). Step 1: run \`gh pr checkout <pr>\` (lands the worktree on the PR's exact branch). Step 2: BEFORE reviewing, run \`gh pr view <pr> --json author,reviews\` — if ANY review author is neither the PR author nor a known bot (<bot_logins_csv>), print \`SKIPPED-<pr>-already-reviewed\` and STOP (do not run /review). Step 3: otherwise run \`/review <pr>\`. When the review is POSTED, print \`REVIEW-POSTED-<pr>\` and stop. Review-only — no commit/push/branch.`
+`Review PR <pr> (<repo>). Step 1: run \`gh pr checkout <pr>\` (lands the worktree on the PR's exact branch). Step 2: BEFORE reviewing, run \`gh pr view <pr> --json author,reviews\` — if ANY review author is neither the PR author nor a known bot (<bot_logins_csv>), print \`SKIPPED-<pr>-already-reviewed\` and STOP (do not run /review). Step 3: otherwise run \`/review <pr>\`. The /review skill performs a FINAL PRE-POST CHECK before posting — if the PR is superseded (state!=OPEN, mergedAt non-null, reviewDecision==APPROVED, autoMergeRequest non-null, or reviewed by another real human), it aborts the post and you must print \`SUPERSEDED-<pr>\` and stop. When the review is POSTED, print \`REVIEW-POSTED-<pr>\` and stop. Review-only — no commit/push/branch.`
 
 Where `<bot_logins_csv>` is the comma-separated list from `bot_logins` (e.g., `claude-maze`), or `none` if the list is empty.
 
 **Guarded review brief (fork PR variant):** (use when `isCrossRepository == true` — omit `gh pr checkout` since the fork's head is not directly checkout-able the same way)
 
-`Review PR <pr> (<repo>) [FORK/CROSS-REPO — no direct checkout]. Step 1: BEFORE reviewing, run \`gh pr view <pr> --json author,reviews\` — if ANY review author is neither the PR author nor a known bot (<bot_logins_csv>), print \`SKIPPED-<pr>-already-reviewed\` and STOP (do not run /review). Step 2: otherwise run \`/review <pr>\`. When the review is POSTED, print \`REVIEW-POSTED-<pr>\` and stop. Review-only — no commit/push/branch.`
+`Review PR <pr> (<repo>) [FORK/CROSS-REPO — no direct checkout]. Step 1: BEFORE reviewing, run \`gh pr view <pr> --json author,reviews\` — if ANY review author is neither the PR author nor a known bot (<bot_logins_csv>), print \`SKIPPED-<pr>-already-reviewed\` and STOP (do not run /review). Step 2: otherwise run \`/review <pr>\`. The /review skill performs a FINAL PRE-POST CHECK before posting — if the PR is superseded (state!=OPEN, mergedAt non-null, reviewDecision==APPROVED, autoMergeRequest non-null, or reviewed by another real human), it aborts the post and you must print \`SUPERSEDED-<pr>\` and stop. When the review is POSTED, print \`REVIEW-POSTED-<pr>\` and stop. Review-only — no commit/push/branch.`
 
 ---
 
@@ -240,7 +243,7 @@ Where `<bot_logins_csv>` is the comma-separated list from `bot_logins` (e.g., `c
 
 Single-line form (no literal newlines):
 
-`REVIEW FOLLOW-THROUGH for PR <pr> (<repo>). We already posted a non-approving review. Goal: help the author land this PR. Bias toward APPROVE — if the change is safe (no blocking issue: security / data-loss / regression / correctness) and serves the author's stated intent, approve; no nits; bots already review. Confirm intent before flagging a deviation as a defect. Setup once: \`gh pr checkout <pr>\`, then \`prc list <pr> --author <github_login>\` to see our comments. Then self-pulse ~every 5 min via \`ScheduleWakeup\`(270s): (1) \`git pull\`; (2) check replies to our comments via \`prc list <pr>\` + unresolved threads; (3) per reply — if the author addressed it, verify the fix truly resolves it and serves the author's intent, then resolve the thread via \`prc reply <comment_id> '<ack>'\` + \`prc resolve <thread_id>\`; if more is needed, research and post a friendly reply using tentative phrasing (e.g. 'might be worth ...' / 'could be worth considering ...', not 'you should ...'); if waiting, leave it; (4) when ALL concerns are resolved and the change is safe, APPROVE (\`prr submit <pr> --event APPROVE\` or \`gh pr review <pr> --approve\`) then print \`FOLLOWUP-APPROVED-<pr>\` and stop; (5) if merged/closed, print \`FOLLOWUP-DONE-<pr>\` and stop; (6) else schedule the next pulse and end. Do NOT modify PR code. Be curious; catch dangerous things.`
+`REVIEW FOLLOW-THROUGH for PR <pr> (<repo>). We already posted a non-approving review. Goal: help the author land this PR. Bias toward APPROVE — if the change is safe (no blocking issue: security / data-loss / regression / correctness) and serves the author's stated intent, approve; no nits; bots already review. Confirm intent before flagging a deviation as a defect. Setup once: \`gh pr checkout <pr>\`, then \`prc list <pr> --author <github_login>\` to see our comments. Then self-pulse ~every 5 min via \`ScheduleWakeup\`(270s): (1) \`git pull\`; (2) check replies to our comments via \`prc list <pr>\` + unresolved threads; (3) per reply — if the author addressed it, verify the fix truly resolves it and serves the author's intent, then resolve the thread via \`prc reply <comment_id> '<ack>'\` + \`prc resolve <thread_id>\`; if more is needed, research and post a friendly reply using tentative phrasing (e.g. 'might be worth ...' / 'could be worth considering ...', not 'you should ...'); if waiting, leave it; (4) when ALL concerns are resolved and the change is safe, run FINAL PRE-POST CHECK: \`gh pr view <pr> --json state,mergedAt,reviewDecision,reviews,latestReviews,autoMergeRequest\` — if state!=OPEN, mergedAt non-null, reviewDecision==APPROVED, autoMergeRequest non-null, or any real human (non-bot: login not ending in [bot], type==User) has reviewed, print \`SUPERSEDED-<pr>\` and stop; otherwise APPROVE (\`prr submit <pr> --event APPROVE\` or \`gh pr review <pr> --approve\`) then print \`FOLLOWUP-APPROVED-<pr>\` and stop; (5) if merged/closed, print \`FOLLOWUP-DONE-<pr>\` and stop; (6) else schedule the next pulse and end. Do NOT modify PR code. Be curious; catch dangerous things.`
 
 ## Worktree / Branch Mechanism (Hard-Won — Get This Right)
 
@@ -335,6 +338,7 @@ CYCLE START:
        get pr state + reviews (gh pr view)
        get pane output (crew read)
        → SKIPPED sentinel: dismiss + done(skipped)
+       → SUPERSEDED sentinel: dismiss + done(superseded-race), leave 👀, no ✅
        → REVIEW-POSTED + review visible in gh:
            APPROVED: add ✅ + dismiss + done(reviewed-approved)
            COMMENTED/CHANGES_REQUESTED: dismiss + spawn follow-up + move to followup
@@ -343,6 +347,8 @@ CYCLE START:
 
   A2) for each followup entry:
        get pr state + reviews (gh pr view)
+       get pane output (crew read)
+       → SUPERSEDED sentinel: dismiss + done(superseded-race), leave 👀, no ✅
        → APPROVED: add ✅ + dismiss + done(approved-after-followup)
        → state != OPEN: dismiss + done(merged/closed)
        → otherwise: leave it (self-pulses via ScheduleWakeup)

@@ -430,6 +430,36 @@ Aggregate all specialist FILE/LINE/SEVERITY/COMMENT findings (those with actual 
 
 Post a **single unified GitHub review** via `prr`.
 
+### FINAL PRE-POST CHECK
+
+**Run this check immediately before `prr submit` — after all aggregation, voice-conformance, and JSON-writing are complete.** The race window is the entire review duration; stale/redundant output is discarded silently rather than posted.
+
+Re-fetch the PR state at the last possible moment:
+
+```bash
+gh pr view <pr> --repo <org>/<repo> --json state,mergedAt,reviewDecision,reviews,latestReviews,autoMergeRequest
+```
+
+**ABORT the post (emit "superseded — not posting" and exit cleanly, posting NOTHING) if ANY of the following are true:**
+
+- `state` != `OPEN` (merged or closed)
+- `mergedAt` is non-null
+- `reviewDecision` == `APPROVED` — another approval already satisfied requirements; also covers merge-queue entry since approval is a prerequisite for the queue
+- `autoMergeRequest` is non-null — auto-merge is armed or the PR is in the merge queue
+
+  Note: `gh pr view --json` exposes NO `mergeQueueEntry` field. Use `reviewDecision == APPROVED` + `autoMergeRequest` as the merge-queue proxy.
+
+- Any review in `reviews` or `latestReviews` by a **real human** (not a bot) who is not the PR author AND whose `state` is one of `{APPROVED, COMMENTED, CHANGES_REQUESTED}`.
+
+  **Bot detection rules (all three must hold to treat a reviewer as a real human):**
+  1. Login does NOT end in `[bot]` (e.g., `dependabot[bot]`, `github-actions[bot]`)
+  2. `gh api users/<login>` returns HTTP 200 (login exists — not a phantom or deleted account)
+  3. `type == "User"` in the GitHub API user response (not `"Bot"` or `"Organization"`)
+
+**Rationale:** "We already did the work" is NOT a reason to post. Stale, duplicate, or superseded output is discarded silently. The check runs at the LAST possible moment before the write because the race window IS the entire review duration.
+
+If the check passes (none of the abort conditions are true), proceed immediately to `prr submit` below.
+
 ### Submit via prr
 
 ```bash
