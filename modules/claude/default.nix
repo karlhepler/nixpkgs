@@ -1234,6 +1234,7 @@ EOF
       $DRY_RUN_CMD rm -f ~/.claude/commands/review.md
       $DRY_RUN_CMD rm -f ~/.claude/commands/review-domains.md
       $DRY_RUN_CMD rm -f ~/.claude/commands/review-citation-guide.md
+      $DRY_RUN_CMD rm -rf ~/.claude/skills/review
 
       # F1 migration stale-file cleanup
       # Delegatable team member commands (17) — commands/ files deleted in F1 Phase 4
