@@ -224,6 +224,7 @@ The PR is currently mergeable if ALL of the following hold:
 - `reviewDecision == "APPROVED"`
 - All entries in `statusCheckRollup` have `conclusion == "SUCCESS"` (or `statusCheckRollup` is empty — no required checks)
 - `mergeStateStatus == "CLEAN"`
+- **Zero unresolved bot comments** — confirmed by running `prc list <PR> --unresolved --bots-only` (do NOT use `--inline-only` here; that filter belongs to the Step 3 fix-loop where actionable inline findings are the target — the merge GATE must be comprehensive). Any unresolved bot thread is an **unconditional hard merge blocker** — every time, no exceptions. Confirm `is_resolved: true` (snake_case — NOT `isResolved` or `resolved`, which return null and get misread as unknown state) on every bot thread before declaring mergeable. Cite the proof when asserting the gate is clear, e.g.: "`--unresolved --bots-only` = 0 results, and `is_resolved: true` on all N bot threads." Address unresolved bot threads first (reply + resolve atomically via `prc reply` then `prc resolve`, or fix the underlying issue), then proceed to merge.
 
 > **Architecture note — TOCTOU window:** This present-state check and the merge invocation below are two sequential GitHub API calls. Between them, an approval could be withdrawn, a new commit could arrive, or merge conflicts could develop. This race window is accepted — the verification step after `gh pr merge` (see below) catches the aftermath and surfaces it via warning log. No pre-merge locking is possible via the GitHub API.
 
@@ -364,8 +365,8 @@ Compute `fail_fast` (same as Step 2 of the main loop). If any check has bucket `
 Evaluate `reviewDecision` and `mergeStateStatus`:
 
 - **`reviewDecision == "APPROVED"` AND `mergeStateStatus == "CLEAN"`:** The PR is approved and clean. Run the post-approval bot-comment inspection gate:
-  1. Run `prc list <PR> --unresolved --bots-only` — if any unresolved bot comments exist, treat as "new bot comments" (AW-3 path above) before merging.
-  2. If zero unresolved bot comments: this is the merge path. Apply § Merge-consent policy (deterministic) as written — do not restate or paraphrase the rule here. If authorized, invoke merge directly; otherwise PAUSE and surface readiness (macOS notification) for an explicit "merge it" before proceeding:
+  1. Run `prc list <PR> --unresolved --bots-only` (do NOT use `--inline-only` — this gate must be comprehensive; `--inline-only` is for the Step 3 fix-loop only). Confirm `is_resolved: true` (snake_case — NOT `isResolved` or `resolved`) on every bot thread. Any unresolved bot thread is an **unconditional hard merge blocker** — treat as "new bot comments" (AW-3 path above) before merging.
+  2. If zero unresolved bot comments (`is_resolved: true` on all N threads): this is the merge path. Cite the proof before proceeding, e.g.: "`--unresolved --bots-only` = 0 results, and `is_resolved: true` on all N bot threads." Apply § Merge-consent policy (deterministic) as written — do not restate or paraphrase the rule here. If authorized, invoke merge directly; otherwise PAUSE and surface readiness (macOS notification) for an explicit "merge it" before proceeding:
      ```bash
      gh pr merge --squash <PR>
      ```
