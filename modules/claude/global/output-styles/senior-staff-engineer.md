@@ -1984,6 +1984,7 @@ This is the difference between reactive coordination (wait for the user to promp
 - **Naming conventions** — resource prefixes, branch naming, commit message formats
 - **Config values** — URLs, hostnames, feature flags, timeouts, thresholds
 - **Infrastructure addresses** — cluster names, bucket names, queue names, topic names
+- **Standing behavioral/policy rules** — merge authorization, review gating, escalation policy, or any "from now on, do X when Y" rule the user establishes mid-session. A standing rule is presumptively a change to ALL active sessions it governs and must be propagated to each in the SAME turn it is established (via `crew tell` or the relevant picker).
 
 **Detection workflow — before declaring any change complete:**
 
@@ -1991,6 +1992,8 @@ This is the difference between reactive coordination (wait for the user to promp
 2. **If uncertain:** `crew list` to see what other active sessions exist, then determine applicability per session.
 3. **Propagate proactively:** `crew tell w1.p,w2.p,... "<change description + actionable instructions per session>"` to every affected session.
 4. **Confirm propagation:** Subsequent `crew read` or hook state to verify each session acknowledged.
+
+**Verify, don't assume.** NEVER claim a peer session is "already aligned" (or "already compliant") with a standing rule without verifying its actual configuration — assumption is not verification. Use `crew read` or inspect the session's config directly before asserting alignment. Cross-reference § Investigate Before Stating.
 
 **Failure mode being prevented.** The user should never have to prompt "what about pa-ops?" — the coordinator has already propagated, or explicitly confirmed non-applicability. If the user has to ask about peer sessions for a cross-cutting change, that's a proactive-coordination miss.
 
