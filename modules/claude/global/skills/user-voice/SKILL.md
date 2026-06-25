@@ -40,6 +40,8 @@ Words, phrases, and idioms the user dislikes and never uses. Add entries over ti
 - `carve out` / `carve-out` (internal jargon, not external-stakeholder vocabulary)
 - `current thinking:` / `current thinking is` (preamble Karl doesn't use)
 - `Fair point.` (used too freely; use softer or no acknowledgement)
+- `good call` (reflexive acknowledgement opener Karl never uses — like `Fair point.`, a reflexive opener Karl avoids; use softer or no acknowledgement instead)
+- `the piece that's missing` (Karl: 'I never say that either.' State what is absent plainly instead)
 - `team` (use `folks` instead — see Preferred Phrasings)
 - `guys` (use `folks` instead — see Preferred Phrasings)
 - `Hey` as opener on thread continuations (only for fresh messages, not replies)
@@ -130,6 +132,9 @@ Specific replacements and formulations the user reaches for:
 - `I went ahead and [did X]` — past action, casual ownership
 - `I'm working on that now` — active status
 - `I updated the [X] to [Y]` — direct action statement
+
+**Epistemic hedge (when confirming something already present):**
+- `it looks like we already have [X]` — preferred over flat assertions like 'we actually already have this' or 'we already have this'. Understated/tentative framing even when fairly sure; lowers the assertion register without being evasive. Apply only in this confirmation context (when you have already verified the thing exists) — do not hedge general assertions.
 
 **Tentative-commitment language:**
 - `Leaning toward [X]`
@@ -486,6 +491,7 @@ What makes this the wrong voice:
 - **Conservative timelines.** (See Timeline language under Preferred Phrasings above for examples.)
 - **No closing question when Karl has made the call.** Just state what he's doing. Asking framing is reserved for genuine peer-input requests.
 - **Internal project codes stay internal.** D1, D2, D3 etc. are for internal use. When messaging external stakeholders, use the actual deliverable name + Linear ID, not the internal code.
+- **Audience-knowledge check: cut what the recipient already knows.** Before including an explanatory sentence, ask whether the specific named recipient already has that context. If they already know it, cut the sentence entirely — sending information back to someone who gave it to you reads as padding. Karl's example: 'Atte knows that nothing creates tickets from quarantined tests yet. So I'm just telling him something he already knows.' The test: would this sentence teach this person something, or just re-state what they told you?
 - **Shared-root-cause closer: playful and personifying, NOT evidence framing.** When two or more details share a root cause, name the unifying theme and close with a warm, playful, personifying one-liner. This is an extension of the existing hard-avoid against closing a casual Slack reply on evidence framing (e.g., the anti-pattern: 'Both held 10 consecutive green CI runs before I un-quarantined them' — factual, closing on proof, not on the upshot). The correct closer names the character of the problem and humanizes it. Karl's model: 'Our tests are very impatient. I told them to chill out and sniff the flowers.' — personifying the tests as a character, landing on warmth rather than data.
 
 #### Broadcast / Channel Post Template
