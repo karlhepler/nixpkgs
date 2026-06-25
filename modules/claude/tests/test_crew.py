@@ -26,7 +26,9 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import crew as crew_module
 from crew import (
+    _BACKGROUND_AGENT_WAIT_RE,
     _capture_pane_tail,
+    _classify_pane_activity,
     _clean_stale_sentinel,
     _cleanup_sentinel,
     _CREW_SENTINEL_DIR,
@@ -4299,3 +4301,134 @@ class TestCapturePaneTail:
             result = _capture_pane_tail("my-session.0")
         assert result == short_output.strip()
         assert len(result) <= PANE_TAIL_MAX_CHARS
+
+
+# ---------------------------------------------------------------------------
+# _classify_pane_activity — background agent wait state (card #2561)
+# ---------------------------------------------------------------------------
+
+class TestClassifyPaneActivityBackgroundAgentWait:
+    """Verify _classify_pane_activity classifies the main-loop-waiting-on-
+    background-agent(s) pane state as ACTIVE (not idle).
+
+    When a Staff session's main loop is blocked waiting on background
+    sub-agents launched via the Agent tool, the main pane shows a
+    'Waiting for N background agent(s) to finish' message with NO spinner
+    or loop activity.  Without a dedicated check the classifier returns
+    'idle', causing crew-lifecycle-hook to prematurely tear down the pulse
+    cron.  The _BACKGROUND_AGENT_WAIT_RE pattern and the handler in
+    _classify_pane_activity fix this false-idle signal.
+    """
+
+    def _make_pane_result(self, pane_text: str) -> MagicMock:
+        """Return a fake subprocess.run result whose stdout is pane_text."""
+        return fake_run_result(stdout=pane_text)
+
+    def _classify(self, pane_text: str):
+        """Run _classify_pane_activity against a mock tmux capture-pane."""
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = self._make_pane_result(pane_text)
+            return _classify_pane_activity("my-session:0.0")
+
+    # --- canonical phrase -----------------------------------------------
+
+    def test_waiting_for_1_background_agent_is_active(self):
+        """'Waiting for 1 background agent to finish' classifies as active."""
+        pane_text = "Waiting for 1 background agent to finish\n"
+        state, activity, detail = self._classify(pane_text)
+        assert state == "active"
+        assert activity == "background-agents-wait"
+        assert "background agent" in detail.lower()
+
+    def test_waiting_for_n_background_agents_plural_is_active(self):
+        """'Waiting for 3 background agents to finish' classifies as active."""
+        pane_text = "Waiting for 3 background agents to finish\n"
+        state, activity, _ = self._classify(pane_text)
+        assert state == "active"
+        assert activity == "background-agents-wait"
+
+    # --- tolerance checks -----------------------------------------------
+
+    def test_lowercase_waiting_is_active(self):
+        """Pattern is case-insensitive — lowercase 'waiting for' is matched."""
+        pane_text = "waiting for 2 background agents to finish\n"
+        state, activity, _ = self._classify(pane_text)
+        assert state == "active"
+        assert activity == "background-agents-wait"
+
+    def test_phrase_embedded_in_context_is_active(self):
+        """Phrase embedded in surrounding TUI chrome is still detected."""
+        pane_text = (
+            "\n"
+            " ╭─ Claude Code ─────────────────────────────────────────────╮\n"
+            " │ Waiting for 2 background agents to finish                 │\n"
+            " ╰───────────────────────────────────────────────────────────╯\n"
+        )
+        state, activity, _ = self._classify(pane_text)
+        assert state == "active"
+        assert activity == "background-agents-wait"
+
+    # --- negative: unrelated idle states remain idle --------------------
+
+    def test_idle_empty_prompt_is_not_background_agent_wait(self):
+        """Empty Claude prompt ❯ does NOT match background-agent-wait."""
+        pane_text = "❯\n"
+        state, activity, _ = self._classify(pane_text)
+        assert state == "idle"
+        assert activity != "background-agents-wait"
+
+    def test_shell_prompt_is_not_background_agent_wait(self):
+        """Shell prompt $ does NOT match background-agent-wait."""
+        pane_text = "user@host $ \n"
+        state, activity, _ = self._classify(pane_text)
+        assert state == "idle"
+        assert activity != "background-agents-wait"
+
+    # --- _BACKGROUND_AGENT_WAIT_RE pattern tests ------------------------
+
+    def test_background_agent_wait_re_matches_canonical(self):
+        """_BACKGROUND_AGENT_WAIT_RE matches the canonical phrase."""
+        assert _BACKGROUND_AGENT_WAIT_RE.search("Waiting for 1 background agent to finish")
+
+    def test_background_agent_wait_re_matches_plural(self):
+        """_BACKGROUND_AGENT_WAIT_RE matches plural 'background agents'."""
+        assert _BACKGROUND_AGENT_WAIT_RE.search("Waiting for 5 background agents to finish")
+
+    def test_background_agent_wait_re_case_insensitive(self):
+        """_BACKGROUND_AGENT_WAIT_RE is case-insensitive."""
+        assert _BACKGROUND_AGENT_WAIT_RE.search("WAITING FOR 1 BACKGROUND AGENT TO FINISH")
+
+    def test_background_agent_wait_re_no_match_on_unrelated(self):
+        """_BACKGROUND_AGENT_WAIT_RE does not match unrelated idle text."""
+        assert not _BACKGROUND_AGENT_WAIT_RE.search("❯")
+        assert not _BACKGROUND_AGENT_WAIT_RE.search("$ ")
+        assert not _BACKGROUND_AGENT_WAIT_RE.search("✻ Baked for 13m 13s")
+
+    # --- scrollback exclusion -------------------------------------------
+
+    def test_wait_phrase_in_scrollback_beyond_active_scan_window_is_idle(self):
+        """Wait phrase in old scrollback (beyond _ACTIVE_SCAN_LINES) does not
+        produce a false-active classification.
+
+        The classifier only scans the last _ACTIVE_SCAN_LINES (2) lines for
+        active-work indicators.  This test places the 'waiting for background
+        agent' phrase in an older scrollback line, with the two most-recent
+        lines showing a bare ❯ prompt — verifying that stale scrollback wait-
+        phrases do not produce a false 'background-agents-wait' active state.
+        """
+        # Three older scrollback lines followed by two recent idle-prompt lines.
+        # The wait phrase is only in the first (oldest) line, well outside the
+        # _ACTIVE_SCAN_LINES=2 window.
+        pane_text = (
+            "Waiting for 2 background agents to finish\n"
+            "\n"
+            "\n"
+            "❯\n"
+            "\n"
+        )
+        state, activity, _ = self._classify(pane_text)
+        assert state == "idle", (
+            f"Expected idle but got '{state}' — stale scrollback wait-phrase "
+            "should not trigger background-agents-wait active classification."
+        )
+        assert activity != "background-agents-wait"

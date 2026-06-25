@@ -2974,6 +2974,16 @@ _LOOP_ACTIVE_RE = re.compile(
     r"|ITERATION\s+\d+"          # 'ITERATION N'
 )
 
+# Regex to detect the Claude Code TUI state shown when the main loop is
+# parked waiting on background sub-agents (launched via the Agent tool).
+# In this state there is NO spinner or loop activity on the main pane, yet
+# the session is actively running background work. The pattern matches
+# 'Waiting for N background agent(s) to finish' (case-insensitive, tolerant
+# of singular/plural and minor phrasing drift).
+_BACKGROUND_AGENT_WAIT_RE = re.compile(
+    r"waiting for.*background agent", re.IGNORECASE
+)
+
 # Number of recent visible lines to examine for active-work indicators.
 # 2 lines captures the spinner line and any companion line; avoids matching
 # historical scrollback completions (e.g. '✻ Baked for 13m 13s').
@@ -2998,8 +3008,9 @@ def _classify_pane_activity(
       detail   — extra context string (e.g. matched verb, cycle info)
 
     Active subtypes:
-      'claude-thinking'  — Claude spinner verb + spinner glyph visible on recent line
-      'loop'             — Loop-control output on recent line
+      'claude-thinking'       — Claude spinner verb + spinner glyph visible on recent line
+      'loop'                  — Loop-control output on recent line
+      'background-agents-wait' — Main loop parked waiting on background agent(s)
 
     Idle subtypes:
       'claude-empty'     — Claude pane at empty prompt (❯ with no following content)
@@ -3037,6 +3048,14 @@ def _classify_pane_activity(
         if _LOOP_ACTIVE_RE.search(line):
             m = _LOOP_ACTIVE_RE.search(line)
             return "active", "loop", m.group(0) if m else ""
+
+        # Check for the background-agent-wait state: the main loop is parked
+        # waiting on background agent(s) with no spinner activity. This state
+        # produces no spinner verb or loop pattern on the main pane, so without
+        # this check the classifier would incorrectly return 'idle'.
+        if _BACKGROUND_AGENT_WAIT_RE.search(line):
+            m = _BACKGROUND_AGENT_WAIT_RE.search(line)
+            return "active", "background-agents-wait", m.group(0) if m else ""
 
         # Check for Claude spinner: a SPINNER_VERB token plus a spinner glyph on
         # the same line. Both must be present to avoid matching plain output that
