@@ -234,7 +234,10 @@ The PR is currently mergeable if ALL of the following hold:
 ```
 gh pr merge --squash <PR>
 ```
-On non-zero exit: log the error, run `rm -f "$(git rev-parse --show-toplevel)/.smithers/clean_confirmed"`, and proceed to verification.
+
+> **Merge queue note:** If the base branch uses a GitHub merge queue, `gh pr merge --squash <PR>` prints `! The merge strategy for <branch> is set by the merge queue` and may return a non-zero exit code — but the PR IS enqueued. Treat this warning as **success-with-enqueue**, not a failure. To avoid the warning entirely, bare `gh pr merge <PR>` may be used in merge-queue repos (the queue supplies the strategy); however, do NOT mandate dropping the strategy flag globally — non-merge-queue repos need an explicit strategy flag, and bare `gh pr merge` there blocks on an interactive strategy prompt.
+
+On non-zero exit (excluding the merge-queue strategy warning above): log the error, run `rm -f "$(git rev-parse --show-toplevel)/.smithers/clean_confirmed"`, and proceed to verification. To detect the benign merge-queue case at runtime: if the output contains "set by the merge queue", treat as success-with-enqueue; otherwise apply the error handling above.
 
 **If NOT currently mergeable** (any condition above is not met): the PR is clean (no failed checks, no conflicts, no actionable bot comments) but cannot be merged yet — typically because review is required. Notify reviewers via Slack, then enter the **approval-watch phase** (slow pulse) rather than stopping.
 
@@ -246,15 +249,17 @@ On non-zero exit: log the error, run `rm -f "$(git rev-parse --show-toplevel)/.s
 
 **Verify before declaring done** — run only when merge was invoked:
 ```
-gh pr view <PR> --json mergeStateStatus,state
+gh pr view <PR> --json state,mergedAt
 ```
 
-- If `state == "MERGED"`: the PR merged directly — proceed to notification.
-- If `mergeStateStatus == "QUEUED"`: the PR was enqueued into the repo's merge queue (expected outcome when merge queue is enabled — `gh pr merge` enqueues rather than merging directly; the merge queue completes the merge asynchronously) — proceed to notification.
-- **Otherwise**: merge did not complete. Log a warning: `"Warning: merge action ran but PR is neither MERGED nor QUEUED. mergeStateStatus=<value>. Manual merge may be required."` Set `merge_failed = true`. Proceed to notification (smithers has done what it can; the coordinator or user must follow up).
+Determine merge outcome:
+- If `state == "MERGED"` or `mergedAt` is non-null: the PR merged directly — proceed to notification.
+- If neither: the PR may be queued in the repo's merge queue. Run `gh pr merge <PR>` (bare, no strategy flag). If it returns `already queued to merge`: the PR is successfully enqueued — the merge queue will complete the merge asynchronously — proceed to notification.
+- **Caution — `mergeStateStatus`:** Do NOT treat `state=OPEN` / `mergeStateStatus=CLEAN` as "merge did not complete". These values persist while a PR is queued in a merge queue — they are NOT failure signals. `mergeStateStatus` does not reliably flip to `QUEUED` when a PR is enqueued (observed: it stays `CLEAN`). **Do not attempt to read merge-queue membership via `--json mergeQueueEntry` — that is not a valid `gh pr view --json` field and errors.**
+- If the re-run of `gh pr merge <PR>` does NOT return `already queued to merge` AND `state != "MERGED"`: merge did not complete. Log a warning: `"Warning: merge action ran but PR is neither MERGED nor confirmed as queued. state=<value> mergeStateStatus=<value>. Manual merge may be required."` Set `merge_failed = true`. Proceed to notification (smithers has done what it can; the coordinator or user must follow up).
 
 Determine notification text based on outcome:
-- If `state == "MERGED"` or `mergeStateStatus == "QUEUED"`: use `"PR <N> merged (or queued for merge)"`.
+- If `state == "MERGED"`, `mergedAt` non-null, or confirmed as enqueued (`already queued to merge`): use `"PR <N> merged (or queued for merge)"`.
 - If `merge_failed`: use `"PR <N> ready — manual merge required (automated merge failed)"`.
 
 Send macOS notification:
@@ -370,9 +375,11 @@ Evaluate `reviewDecision` and `mergeStateStatus`:
      ```bash
      gh pr merge --squash <PR>
      ```
-     On non-zero exit: log the error, do NOT clear the `approval_watch` flag, and continue the slow pulse (the next pulse re-evaluates state).
+     > **Merge queue note:** If the base branch uses a GitHub merge queue, `gh pr merge --squash <PR>` prints `! The merge strategy for <branch> is set by the merge queue` and may return a non-zero exit code — but the PR IS enqueued. Treat this warning as **success-with-enqueue**, not a failure. To avoid the warning, bare `gh pr merge <PR>` may be used in merge-queue repos; do NOT mandate dropping the strategy flag globally (non-merge-queue repos need an explicit strategy).
+
+     On non-zero exit (excluding the merge-queue strategy warning above): log the error, do NOT clear the `approval_watch` flag, and continue the slow pulse (the next pulse re-evaluates state). To detect the benign merge-queue case at runtime: if the output contains "set by the merge queue", treat as success-with-enqueue; otherwise apply the error handling above.
   3. Run `rm -f "$(git rev-parse --show-toplevel)/.smithers/approval_watch"`. (Note: clearing the flag before the verify call below leaves a narrow orphan window — if the session crashes between here and the verify call, the flag is gone and smithers will re-enter the normal loop body on restart rather than the AW path. Accepted behavior: Step 1's MERGED check is the fallback.)
-  4. Verify and notify per the same verification logic in Step 7a (check `state == "MERGED"` or `mergeStateStatus == "QUEUED"`, send osascript notification, post to Slack via `smithers-post` if `.smithers/slack_posted` does not already exist).
+  4. Verify and notify using the same verification logic as Step 7a: check `state == "MERGED"` or `mergedAt` non-null; if neither, run bare `gh pr merge <PR>` and treat `already queued to merge` as confirmed enqueue. Do NOT treat `state=OPEN` / `mergeStateStatus=CLEAN` as merge failure — those values persist while a PR is queued. Do not attempt `--json mergeQueueEntry` — it is not a valid field and errors. Send osascript notification, post to Slack via `smithers-post` if `.smithers/slack_posted` does not already exist.
   5. **Stop** (no ScheduleWakeup).
 
 - **`reviewDecision == "CHANGES_REQUESTED"`:** Surface to the invoking session or coordinator.
