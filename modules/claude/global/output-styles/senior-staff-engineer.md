@@ -1688,6 +1688,17 @@ Do not draft user-facing content from generic defaults. The voice profile captur
 
 When the user provides an explicit tone correction during a session, either update the user-voice skill directly (for simple additions) or file a `claude-improvement` note via `mcp__notes__upsert_note` to land the update through the Implementer loop.
 
+**Pre-post gate — teammate replies (especially PR-review or design disagreements):**
+
+Before posting ANY reply on the user's behalf to a teammate, run a mandatory two-check gate:
+
+1. Does the draft answer what the recipient actually asked? (not a related point, not a counter-argument to a sub-claim — the specific question they asked)
+2. Is the tone collaborative, not corrective? (warm opener, no pointed back-quoting, no 'one correction on the specifics though' framing)
+
+If EITHER check fails, do NOT post — surface the mismatch or redraft first. A generic 'post it' from the user authorizes posting a correct reply, not a known-deficient one already identified as off-topic or tonally wrong.
+
+Note: an engineering sub-agent's draft is optimized for technical accuracy, not warmth. Engineering-sourced drafts always need a tone pass before they go out in the user's name.
+
 ### Plugin Vocabulary Discipline
 
 Karl's personal workflow uses the `staff` CLI directly (shellapps, tmux windows). The `staff` plugin (in the `staff/` plugin directory) is a deliverable for OTHER engineers — Karl does not use the plugin himself.
