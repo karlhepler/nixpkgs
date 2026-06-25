@@ -3,15 +3,15 @@ name: smithers
 description: >
   Watch a GitHub PR for CI failures and bot comments. Polls on a 1-minute
   cadence via ScheduleWakeup, delegates fixes to specialist agents via the
-  Agent tool, and merges the PR when it is currently approved and clean. After
-  posting to Slack for reviewer attention, switches to a slow approval-watch
-  phase (~10-minute pulse) that detects approval, late bot comments, and late
-  CI failures automatically — merging the PR once approved and clean. Does
-  NOT arm auto-merge as a forward-looking action — merges via explicit action
-  on detection only. Invoke as /smithers (infers PR from current branch) or
-  /smithers <PR> (explicit PR number or URL). Triggers on: "watch PR",
-  "monitor PR", "run smithers", "PR watcher", "fix CI", "handle bot
-  comments", "merge PR".
+  Agent tool, and merges on full satisfaction — approved, green, no unresolved
+  comments. After posting to Slack for reviewer attention, switches to a slow
+  approval-watch phase (~10-minute pulse) that detects approval, late bot
+  comments, and late CI failures automatically — merging the PR once full
+  satisfaction is reached. Does NOT arm auto-merge as a forward-looking action
+  — merges via explicit action on detection only. Invoke as /smithers (infers
+  PR from current branch) or /smithers <PR> (explicit PR number or URL).
+  Triggers on: "watch PR", "monitor PR", "run smithers", "PR watcher",
+  "fix CI", "handle bot comments", "merge PR".
 ---
 
 # /smithers — PR Watch Skill
@@ -169,19 +169,27 @@ If `NOT work_needed`:
 
 This rule governs every merge decision in /smithers — both in Step 7a and in AW-5. There is exactly one rule. Apply it without per-run re-interpretation.
 
-DEFAULT: PAUSE for explicit consent before merging. When smithers detects a PR is approved and clean, it surfaces readiness (macOS notification, Slack post) and PAUSES for an explicit "merge it" from the coordinator or user before invoking `gh pr merge`. The `/smithers <PR>` invocation alone does NOT authorize merge.
+DEFAULT: merge or queue on full satisfaction. When smithers detects a PR has reached **full satisfaction**, it merges directly (or adds the PR to the merge queue when branch protection requires queueing) without waiting for a manual "merge it." Full satisfaction means ALL THREE of the following hold:
 
-Merge is authorized only when one of the following is unambiguously true at invocation time:
+1. **Human approval:** `reviewDecision == "APPROVED"`, satisfied by a real, non-author human (REVIEW_REQUIRED, four-eyes, per GitHub's no-self-approval rule). Bot or auto-approval alone does NOT count.
+2. **CI all green:** no failed or pending required checks.
+3. **No unresolved bot OR human comments**, verified comprehensively (per the merge-gate rule in Step 7a — NOT an `--inline-only` count).
+
+Full satisfaction is itself sufficient authorization to merge or queue — `/smithers <PR>` does not need a separate merge grant.
+
+The opt-OUT is the only reason to PAUSE instead: an explicit user statement to merge this PR manually (e.g., "don't merge, I'll do it myself", "I'll merge manually"). Treat that as a durable preference for this PR — surface readiness (macOS notification, Slack post) and stop short of merging.
+
+These triggers are ALSO sufficient authorization (they are no longer REQUIRED, since full satisfaction already authorizes):
 
 1. The invoking prompt explicitly granted merge authority (e.g., "merge it when clean", "you have authority to merge", or a direct "merge it" / "yes, merge" in the text that launched this /smithers session).
-2. A standing coordinator rule exists that approved-and-green PRs merge automatically (established by the user prior to this session, not inferred from a wakeup prompt). An explicit grant issued mid-session (e.g., "you can merge approved PRs") also counts as authorization under this source; only routine wakeup/poll/continuation prompts do NOT manufacture consent.
+2. A standing coordinator rule exists that approved-and-green PRs merge automatically.
 3. The original task scope explicitly included merging this PR as a stated deliverable.
 
-A routine `Continue /smithers <URL>` wakeup prompt is never merge authorization — it continues the watch loop and does not manufacture consent. Ambiguity defaults to PAUSE: if it is unclear whether any of the three sources above apply, PAUSE and surface readiness rather than merging.
+These explicit grants still ride on the Step 7a / AW-5 gate — an explicit grant does NOT bypass the requirement for reviewDecision==APPROVED, CI green, and no unresolved comments. The grants resolve the authorization question; the gate independently verifies the PR state before any merge action.
 
-Once authorization genuinely exists under one of the three sources above, invoke merge without re-confirming. The GitHub review-approval is the review gate; merging an approved and clean PR under genuine authorization is exactly /smithers' job. Never cancel or revert a genuinely-authorized in-flight merge because of the session's earlier, now-superseded scope framing.
+Once full satisfaction holds (or one of the explicit grants above applies), merge or queue without re-confirming. The GitHub review-approval is the review gate; merging a fully-satisfied PR is exactly /smithers' job. Never cancel or revert a genuinely-authorized in-flight merge because of the session's earlier, now-superseded scope framing.
 
-**Why this rule is deterministic:** The three authorization sources are explicit criteria — not prose requiring per-run weighing. If the invoking prompt contains a merge grant, authorize. If a standing rule exists, authorize. If the task scope stated merge as a deliverable, authorize. Otherwise, PAUSE. No LLM judgment about "does this invocation implicitly authorize merging?" is involved.
+**Why this rule is deterministic:** Full satisfaction is three explicit boolean conditions — not prose requiring per-run weighing. If all three hold, merge or queue. If the user has opted out for manual merge on this PR, PAUSE. No LLM judgment about "does this invocation implicitly authorize merging?" is involved.
 
 ---
 
@@ -224,7 +232,9 @@ The PR is currently mergeable if ALL of the following hold:
 - `reviewDecision == "APPROVED"`
 - All entries in `statusCheckRollup` have `conclusion == "SUCCESS"` (or `statusCheckRollup` is empty — no required checks)
 - `mergeStateStatus == "CLEAN"`
-- **Zero unresolved bot comments** — confirmed by running `prc list <PR> --unresolved --bots-only` (do NOT use `--inline-only` here; that filter belongs to the Step 3 fix-loop where actionable inline findings are the target — the merge GATE must be comprehensive). Any unresolved bot thread is an **unconditional hard merge blocker** — every time, no exceptions. Confirm `is_resolved: true` (snake_case — NOT `isResolved` or `resolved`, which return null and get misread as unknown state) on every bot thread before declaring mergeable. Cite the proof when asserting the gate is clear, e.g.: "`--unresolved --bots-only` = 0 results, and `is_resolved: true` on all N bot threads." Address unresolved bot threads first (reply + resolve atomically via `prc reply` then `prc resolve`, or fix the underlying issue), then proceed to merge.
+- **Comprehensive unresolved-comment gate (bot + human) — zero unresolved threads of any kind:**
+  1. **Bot threads:** Run `prc list <PR> --unresolved --bots-only` (do NOT use `--inline-only` here; that filter belongs to the Step 3 fix-loop where actionable inline findings are the target — the merge GATE must be comprehensive). Any unresolved bot thread is an **unconditional hard merge blocker** — every time, no exceptions. Confirm `is_resolved: true` (snake_case — NOT `isResolved` or `resolved`, which return null and get misread as unknown state) on every bot thread before declaring mergeable. Cite the proof when asserting the gate is clear, e.g.: "`--unresolved --bots-only` = 0 results, and `is_resolved: true` on all N bot threads." Address unresolved bot threads first (reply + resolve atomically via `prc reply` then `prc resolve`, or fix the underlying issue), then proceed.
+  2. **Human threads:** Run `prc list <PR> --unresolved` (without `--bots-only`) to check for unresolved human comments. If any unresolved human comment exists, this is an **unconditional hard merge blocker** — do NOT merge. Surface the blocker via macOS notification (`osascript -e 'display notification "PR <N>: unresolved human comment — merge blocked" with title "Smithers"'`) and the standard notify path. Do NOT attempt to resolve a human's thread unilaterally; human review threads require human resolution. Log: `"Merge blocked: unresolved human comment on PR <N>. Human resolution required before merge."` This check is part of full satisfaction — it is NOT the opt-out pause.
 
 > **Architecture note — TOCTOU window:** This present-state check and the merge invocation below are two sequential GitHub API calls. Between them, an approval could be withdrawn, a new commit could arrive, or merge conflicts could develop. This race window is accepted — the verification step after `gh pr merge` (see below) catches the aftermath and surfaces it via warning log. No pre-merge locking is possible via the GitHub API.
 
@@ -369,9 +379,10 @@ Compute `fail_fast` (same as Step 2 of the main loop). If any check has bucket `
 
 Evaluate `reviewDecision` and `mergeStateStatus`:
 
-- **`reviewDecision == "APPROVED"` AND `mergeStateStatus == "CLEAN"`:** The PR is approved and clean. Run the post-approval bot-comment inspection gate:
-  1. Run `prc list <PR> --unresolved --bots-only` (do NOT use `--inline-only` — this gate must be comprehensive; `--inline-only` is for the Step 3 fix-loop only). Confirm `is_resolved: true` (snake_case — NOT `isResolved` or `resolved`) on every bot thread. Any unresolved bot thread is an **unconditional hard merge blocker** — treat as "new bot comments" (AW-3 path above) before merging.
-  2. If zero unresolved bot comments (`is_resolved: true` on all N threads): this is the merge path. Cite the proof before proceeding, e.g.: "`--unresolved --bots-only` = 0 results, and `is_resolved: true` on all N bot threads." Apply § Merge-consent policy (deterministic) as written — do not restate or paraphrase the rule here. If authorized, invoke merge directly; otherwise PAUSE and surface readiness (macOS notification) for an explicit "merge it" before proceeding:
+- **`reviewDecision == "APPROVED"` AND `mergeStateStatus == "CLEAN"`:** The PR is approved and clean. Run the comprehensive unresolved-comment gate (bot + human) before merging:
+  1. **Bot threads:** Run `prc list <PR> --unresolved --bots-only` (do NOT use `--inline-only` — this gate must be comprehensive; `--inline-only` is for the Step 3 fix-loop only). Confirm `is_resolved: true` (snake_case — NOT `isResolved` or `resolved`) on every bot thread. Any unresolved bot thread is an **unconditional hard merge blocker** — treat as "new bot comments" (AW-3 path above) before merging.
+     **Human threads:** Run `prc list <PR> --unresolved` (without `--bots-only`) to check for unresolved human comments. If any unresolved human comment exists, this is an **unconditional hard merge blocker** — do NOT merge. Surface via macOS notification (`osascript -e 'display notification "PR <N>: unresolved human comment — merge blocked" with title "Smithers"'`) and log: `"Merge blocked: unresolved human comment on PR <N>. Human resolution required before merge."` Do NOT attempt to resolve a human's thread unilaterally. This check is part of full satisfaction — it is NOT the opt-out pause.
+  2. If zero unresolved comments of any kind (bot gate clear + no unresolved human comment): this is the merge path. Cite the proof before proceeding, e.g.: "`--unresolved --bots-only` = 0 results, `is_resolved: true` on all N bot threads, and `--unresolved` = 0 human threads." Apply § Merge-consent policy (deterministic) as written — do not restate or paraphrase the rule here.
      ```bash
      gh pr merge --squash <PR>
      ```
