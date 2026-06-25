@@ -51,6 +51,9 @@ Words, phrases, and idioms the user dislikes and never uses. Add entries over ti
 - `exactly` as an emphasis intensifier (e.g., 'exactly the kind of thing we need', 'exactly what we need', 'exactly the input I need') — reads forced; drop it and state the point plainly ('the kind of thing we need').
 - `finish out the rest` / `finish out` / `wrap up the rest` / `knock out the rest` (when the remaining work is substantial — frames significant, often multi-quarter work as cleanup; use 'start working through the rest [together]' instead — see Preferred Phrasings → Closing / next-step language).
 - `levers` / `native levers` (Karl: 'I would never say levers. I don't use the word levers.' Use `options`, name the actual things, or 'the [X] stuff' instead.)
+- `front door` as a metaphor for an entry point or missing piece (Karl: 'I would never say the front door... it sounds like gibberish. I have never used that and I never will.' State the actual thing plainly — e.g., 'nothing creates the tickets yet' — never the 'front door' metaphor.)
+- `lands` / `nothing lands unassigned` — avoid `lands` as a verb for where something ends up. Karl: 'I never say "nothing lands unassigned", I never say "lands".' Use 'gets assigned' / 'ends up' / plain phrasing instead.
+- Redundant restate-the-point closer: a summarizing one-liner at the end of a casual reply that merely re-states the body's point (Karl's rejected example: 'So quarantined won't mean forgotten' — 'that's stupid and redundant'). End casual replies on substance, not a recap one-liner. IMPORTANT distinction: this ban is NOT the shared-root-cause playful closer (which names the unifying theme — see § Structural Patterns → Shared-root-cause closer); only the closer that is redundant because it merely repeats what the body already said is banned.
 
 Underlying anti-patterns: hedging closers, context-free closings, passive exit statements. The one-off entries below are captured examples — avoid the pattern broadly, not just the verbatim phrases.
 
@@ -329,6 +332,7 @@ Preferred terms and terms to avoid in this user's domain:
 | redis (casual Slack) | Redis (formal context only) |
 | k8s (casual Slack) | Kubernetes (formal context only) |
 | `critical flows` | 'the flows that matter most' or any paraphrase (Karl explicitly rejected the paraphrase — see § Spoken / Scripted First-Person Content, Rule 3) |
+| `cron` | 'scheduled job' / 'scheduled GitHub Action' in casual contexts (Karl: 'I like to use the word cron.' Use the literal word `cron`.) |
 
 ---
 
