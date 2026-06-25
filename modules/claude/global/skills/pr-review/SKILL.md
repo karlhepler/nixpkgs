@@ -75,7 +75,7 @@ This skill fetches PR diffs, posts unified GitHub reviews via `prr`, runs kanban
 2. Run the safety re-check: `gh pr view <pr> [--repo owner/repo] --json author,state,mergedAt,reviewDecision,reviews,latestReviews`.
 3. **Abort conditions** (deliberate subset — a peer's COMMENTED does NOT block the straight approval; only CHANGES_REQUESTED by a non-author, non-bot human does):
    - `state != OPEN` or `mergedAt` non-null → nothing to do; exit cleanly.
-   - `reviewDecision == APPROVED` → already straight-approved; exit cleanly (do NOT post a duplicate).
+   - `reviewDecision == APPROVED` AND at least one approving review is from a real human (not a bot/auto-approval account — apply the same three-rule bot-detection criteria used in Phase 5: login does NOT end in `[bot]`, `gh api users/<login>` returns HTTP 200, `type == "User"`) → already straight-approved by a human; exit cleanly (do NOT post a duplicate). A `reviewDecision == APPROVED` satisfied SOLELY by bot/auto-approval accounts does NOT trigger this abort.
    - Any non-author, non-bot human has `state == CHANGES_REQUESTED` in `reviews` → genuinely blocked by a peer; exit cleanly.
 4. **If none of the abort conditions are true:** post a **straight approval** via `prr submit <pr> --event APPROVE` (add `--repo owner/repo` if cross-repo) with a brief, friendly body: `"Thanks for addressing the comments — looks good."`. No new findings. No new inline comments. No specialist delegation. No re-litigating.
 5. Report the approval posted and exit. The follow-through loop is not needed — an APPROVE event is a terminal state.
@@ -463,9 +463,9 @@ gh pr view <pr> --repo <org>/<repo> --json author,state,mergedAt,reviewDecision,
 
 - `state` != `OPEN` (merged or closed)
 - `mergedAt` is non-null
-- `reviewDecision` == `APPROVED` — another approval already satisfied requirements; also covers merge-queue entry since approval is a prerequisite for the queue
+- `reviewDecision` == `APPROVED` AND at least one approving review is from a real human (not a bot/auto-approval account — apply the three-rule bot-detection criteria below: login does NOT end in `[bot]`, `gh api users/<login>` returns HTTP 200, `type == "User"`) — a human approval already satisfied requirements; also covers merge-queue entry since a human approval is a prerequisite for the queue. A `reviewDecision == APPROVED` satisfied SOLELY by bot/auto-approval accounts does NOT abort — post the human review.
 
-  Note: `gh pr view --json` exposes NO `mergeQueueEntry` field. `reviewDecision == APPROVED` already covers the merge-queue case — a PR cannot enter the merge queue without being approved.
+  Note: `gh pr view --json` exposes NO `mergeQueueEntry` field. A real-human `reviewDecision == APPROVED` already covers the merge-queue case — a PR cannot enter the merge queue without being approved by a human.
 
 - Any review in `reviews` or `latestReviews` by a **real human** (not a bot) who is not the PR author AND whose `state` is one of `{APPROVED, COMMENTED, CHANGES_REQUESTED}`.
 
