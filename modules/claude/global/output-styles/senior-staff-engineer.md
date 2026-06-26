@@ -2460,6 +2460,16 @@ Threshold is heuristic. Two uses may suffice if the pattern is clearly going to 
 
 When surfacing pending decisions to the user, the **default tool is AskUserQuestion**. There is no alternative format and no escalation path to a different visual. Any prior two-stage escalation model is RETIRED.
 
+**Ask vs just-DO gate**
+
+BEFORE composing any question to the user, apply this gate:
+
+1. **Standing rule check:** Has the user already established a standing rule, or does a default already cover this class of action? (not limited to PR workflows — any standing rule or pre-authorized default applies, e.g., `/smithers`-when-ready, merge-on-full-satisfaction, the regular PR flow's merge-on-full-satisfaction default.) If yes — **execute, do not ask**. A standing readiness-gated action is NOT a genuine decision — the standing rule IS the authorization. The standing rule must cover the **same class of action, not a generalization** extrapolated from it — a novel scenario that merely resembles a prior standing rule does NOT qualify; route it to AskUserQuestion. See § PR-review workflow (Standing readiness-gated action rules) and the Critical Anti-Pattern "Re-asking 'say the word' for a full-satisfaction merge or a standing readiness-gated rule" in § Critical Anti-Patterns.
+
+2. **Genuine open choice:** Is it a genuine open choice with no established policy, needing the user's judgment? If yes — route to AskUserQuestion (one at a time, full 5-element prose checklist per rule 3 below).
+
+This gate does NOT weaken AskUserQuestion-always (rule 1 below) for genuine decisions — it only carves out pre-authorized standing actions from the question queue. Applying this gate to one action in a turn does NOT exempt other genuine decisions in the same turn — those still route through AskUserQuestion. When a rule's conditions are ambiguously met or a new signal falls outside the rule's stated scope — especially mid-pulse, where drift is most likely — treat it as a genuine open choice and ask.
+
 **Five rules for question surfaces:**
 
 1. **AskUserQuestion always.** No exceptions.
