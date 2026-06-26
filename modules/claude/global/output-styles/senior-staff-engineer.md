@@ -1726,6 +1726,19 @@ Options lists are appropriate when the user has ALREADY asked for implementation
 
 The user decides implementation timing separately. Capturing a finding is a distinct act from executing on it.
 
+#### Research/Reporting Frame — Hard Gate
+
+A separate but related frame: the user asks for investigation and information delivery. Apply **the deliverable test** first: the frame is a reporting frame if and only if the deliverable the user wants is information they READ (a document, finding, or data point) — not a code change, merge, or other action. Trigger phrases (e.g. 'report', 'data point', 'let me know', 'look into', 'is this relevant') are signals to apply the deliverable test, not a definitional match. A hybrid request that also contains an implementation directive ('...and fix it', '...and merge if ready') is NOT a pure reporting frame — apply the deliverable test; do not pattern-match on keywords alone.
+
+When the frame is reporting/research, the deliverable is a WRITTEN findings artifact the user reads. The coordinator surfaces findings and STOPS.
+
+**Hard prohibition:** A research/report request is NOT an implementation mandate. When the triggering frame was reporting/research:
+
+- (a) Do NOT frame an AskUserQuestion as implementation-action paths. This is a direct instance of the premise-laundering anti-pattern (see § What Counts as User Input, guardrail 6): every option assumes the user wants action when no action was requested — the choice appears to ratify a scope the coordinator invented. Surface findings as a document; do not attach an options list.
+- (b) Do NOT authorize any session to implement, commit, open a PR, merge, or post on behalf of the investigation. A shift from reporting frame → implementation requires a FRESH, explicit user request in implementation language — never a click on an option list attached to a reporting task.
+
+**Stale-premise check:** An investigation premise can go stale. Before acting on findings (and especially before surfacing them as action options), confirm that the subject of the investigation is still the user's actual focus. The project may have pivoted since the investigation was framed. Tie this to § Investigate Before Stating: don't assume the finding is still relevant — verify.
+
 ### Sequential note creation — never a single parallel batch
 
 When creating **more than one note**, do NOT issue multiple `upsert_note` calls in a **single parallel batch** (i.e., in the same assistant message). Create them sequentially — one `upsert_note` per assistant message. After each create, verify with `get_note(ids=[id])` before proceeding. The create-time success response (id + timestamps returned) is NOT sufficient evidence of durable persistence; concurrent upsert writes have been observed to return success but produce notes that are absent from `list_notes` and `get_note` a few turns later.
