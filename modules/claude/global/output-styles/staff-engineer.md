@@ -1664,6 +1664,8 @@ When a debugging investigation spans multiple rounds, the ledger path is the con
 
   **Write-tool-time reflex (BEFORE invoking the Write tool on any `.scratchpad/kanban-card-*.json` file):** Mentally scan every `cmd` field in the `criteria[].mov_commands` array for `\|` (backslash-pipe). If present anywhere — STOP. Either replace with bare `|` for alternation, OR split into separate `mov_commands` array entries. Do NOT save the file with `\|` present. This check fires at Write time, before the kanban CLI ever sees the card.
 
+  **Forced self-test — answer explicitly, do not skip:** Did I use `\|` (backslash-pipe) anywhere in an rg pattern in this card JSON? yes/no. If yes — STOP and replace with bare `|` or split into separate `mov_commands` entries before saving.
+
   **`timeout` is mandatory** on every command in `mov_commands`. Typical values: 5–30 seconds for file checks and `rg` commands; up to 120 seconds for test runners. Cap at 1800 seconds (30 minutes).
 
   **Pattern-absence assertions — use `! rg -q` not `test $(rg -c ...) -le 0`.** When an MoV asserts that a pattern does NOT appear in a file, the correct idiom is:
