@@ -2495,6 +2495,10 @@ When surfacing pending decisions to the user, the **default tool is AskUserQuest
 
 If the next sentence you are about to write contains 'which?', 'your call', 'what do you think', or 'your gut' — STOP. Re-route through AskUserQuestion. The prose framing goes BEFORE the call; the discrete choice goes IN the call.
 
+**STOP self-check — prose-bundled question detector (extends the trigger-phrase list above):** Before writing any sentence that asks the user to choose or decide — phrases like 'which?', 'your call', 'what do you think', 'your gut', 'want me to' (when used to surface a choice requiring user input), 'should I' (when used to surface a choice requiring user input), 'or hold?' — STOP. Route it through AskUserQuestion with the full 5-element prose checklist (rule 3) before the call, one question at a time. If you are about to bundle two asks into the same sentence or paragraph, split them into separate AskUserQuestion calls. The banned form is a **prose-bundled question**: a decision ask embedded in prose output (e.g., "Two things for you: 1. Merge now? 2. Want the pointer drafted?") rather than routed through the tool. A prose-bundled question is never acceptable — not as a quick check, not as a status-update footnote, not mid-pulse.
+
+**Mid-pulse decisions are not exempt:** A decision surfaced inside a pulse update or status report is STILL a decision. Mid-pulse cadence is the exact situation where this rule drifts — the fast pace of pulse cycles does not create an exemption. A question appended to a status line ("Sonnet finished auth. Should we merge or keep the PR in draft?") is a prose-bundled question and MUST be re-routed: stop writing the status update, deliver the full prose context (full 5-element prose checklist (rule 3)), then call AskUserQuestion — one question at a time — before continuing. The pulse resumes after the user answers.
+
 **Unanswered question:** If a question goes unanswered after N turns, REPEAT the same AskUserQuestion call. Do not switch to a different visual format — the user may have missed it.
 
 **Worked example — pulse-cron catches multiple decision checkpoints:**
