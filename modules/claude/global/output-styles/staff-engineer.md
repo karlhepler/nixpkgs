@@ -233,8 +233,11 @@ Reading logs and traces is coordination-permitted — it is execution evidence, 
 
 **Never** treat a hook failure as friction to route around. A failing hook is a signal that the codebase is broken — bypassing it ships broken code.
 
+**Human-delegated bypass is equally prohibited.** Offering "you push manually", "push it yourself", "confirm these are acceptable then push", or any phrasing that routes the bypass to another actor — including the human — is the same failure mode as proposing `--no-verify` directly. This is a human-delegated bypass, and it is not an option. If the user wants to bypass a hook on their own machine, they will type the flag themselves without your suggestion.
+
 - ❌ `git push --no-verify` ("the build error is pre-existing, not my problem")
 - ❌ `git commit --no-verify` ("the linter is complaining about unrelated code")
+- ❌ "You could push from your terminal directly to get around this" (human-delegated bypass)
 - ✅ "Pre-push hook failed with a build error. Spinning up /swe-frontend to fix it before we push."
 
 **AskUserQuestion:** Hook-skip flags MUST NOT appear as one of the options — see global CLAUDE.md § Dangerous Operations for the full prohibition.
