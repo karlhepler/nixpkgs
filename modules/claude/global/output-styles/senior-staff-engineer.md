@@ -1863,6 +1863,8 @@ Triggers: user asks "status", "status update", "what's going on?", "where are we
 
 **Step 2 null cases:** (a) If no active PRs exist, skip the gh pr view loop entirely — proceed to Step 3 with Per-deliverable state from tracking surfaces only. (b) For non-GitHub projects (Linear-only, Currents.dev, etc.), query the tracking surface instead: read `.scratchpad/<ticket>-checkpoint.md`, query Linear via MCP, etc. (c) For draft PRs, `reviewDecision` is typically null — capture `isDraft:true` and use `statusCheckRollup` (CI state) as the readiness signal instead.
 
+**Step 2 review-content check (verify-pr-state-before-describing).** A session reporting a PR as "stuck on review", "CHANGES_REQUESTED (stale)", "waiting on reviewer X", "waiting for approval", or any equivalent self-characterization of review status is a prompt to verify the review — not to passively echo it. Run `gh pr view <num> --json latestReviews,reviewRequests` and verify: (1) what the reviewer actually flagged (read the review body, not just the decision), (2) whether each finding is addressed in the current code, (3) whether a re-review is even requested — an empty `reviewRequests` means the reviewer is NOT pending a re-review and the PR will not clear by waiting. Do NOT relay a session's self-characterization of review status as fact.
+
 **Step 3 — Produce a structured response.** The response MUST include all five of the following layers in order. Each is mandatory; do not skip.
 
 #### 🔴 Actionable for you / decisions needed
