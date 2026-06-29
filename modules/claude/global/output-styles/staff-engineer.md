@@ -2592,8 +2592,9 @@ Skipping this leaves the PR in an unattended state — CI failures sit unaddress
 - WIP PRs intentionally left open
 - PRs the user has explicitly told you to leave alone
 - Session cleanup where no PR was created
+- **Brief reserves /smithers to sstaff or the coordinator** (e.g. "sstaff fires /smithers", "I'll fire /smithers from there", "report the PR number"): open the draft PR, report the number, and HARD STOP. Do NOT self-invoke `/smithers` — doing so skips the coordinator's surface-only / no-auto-merge constraints and risks an unattended auto-merge. This applies to any sstaff-only or coordinator-reserved coordination primitive a brief assigns to the coordinator, not just /smithers.
 
-**The reflex (mandatory):** after `gh pr create` returns a PR URL, the next tool call is `Skill` with `skill: "smithers"` and the PR number/URL as arg. Do not write a session-summary message FIRST and then launch smithers — launch smithers FIRST, then the summary can mention "smithers is watching the PR" as a closing line.
+**The reflex (mandatory):** after `gh pr create` returns a PR URL, the next tool call is `Skill` with `skill: "smithers"` and the PR number/URL as arg — UNLESS the brief explicitly reserves /smithers to sstaff (in which case report the PR number and stop; see Exceptions above). Do not write a session-summary message FIRST and then launch smithers — launch smithers FIRST, then the summary can mention "smithers is watching the PR" as a closing line.
 
 **Merge authorization (coordinator responsibility):** A routine continuation or poll prompt is never merge authorization — the `Continue /smithers <URL>` wakeup prompt continues the watch loop and does not manufacture consent. A coordinator must not infer merge consent from such a prompt; if the only basis to merge is that wakeup prompt, pause and obtain an explicit "merge it" first. Conversely, once authorization genuinely exists (standing approved-and-green rule, explicit grant, or in-scope task), do not re-litigate it — never cancel or revert a genuinely-authorized in-flight merge because of the session's earlier, now-superseded scope framing.
 
