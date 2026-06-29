@@ -24,9 +24,11 @@ PostToolUse(Bash) behaviour:
   model checks CronList first and only creates if no pulse cron with the
   <<pulse-cron-v1>> sentinel exists).
 - After 'crew dismiss <name>': injects a conditional CronDelete directive —
-  model checks crew status output for remaining Staff windows (excluding sstaff's
+  model checks crew list output for remaining Staff windows (excluding sstaff's
   own window, detected dynamically) and deletes the pulse cron only when zero
-  Staff sessions with active work remain.
+  Staff windows remain (all formally dismissed). idle-but-alive is NOT a
+  cron-termination trigger — sessions waiting on CI or a human reviewer still
+  need monitoring until formally dismissed via `crew dismiss`.
 
 This replaces the SessionStart-based unconditional CronCreate approach so
 that no tokens are spent when no Staff sessions are active.
@@ -296,12 +298,14 @@ def _on_crew_create() -> None:
 
 
 def _on_crew_dismiss() -> None:
-    """Emit CronDelete directive (conditional: only if no Staff windows with active work remain).
+    """Emit CronDelete directive (conditional: only when zero Staff windows remain).
 
-    Uses crew active --names-only to determine whether any remaining Staff windows
-    have active panes (Claude spinner or loop activity running). This replaces
-    the prior hand-crafted regex approach (activity-indicator regexes + crew find) with
-    a structured primitive that classifies pane state directly.
+    The SOLE cron-deletion trigger is zero Staff windows remaining after the
+    dismissed session is removed — meaning all Staff sessions have been formally
+    dismissed via `crew dismiss`. idle-but-alive is NOT a cron-termination trigger:
+    a session that is alive but idle at its prompt may be waiting on external state
+    (CI runs, human reviewer re-review, Currents.dev updates) and still needs
+    monitoring. Only the zero Staff windows condition warrants CronDelete.
     """
     own_window_index = _detect_own_window_index()
 
@@ -326,15 +330,13 @@ def _on_crew_dismiss() -> None:
         f"If any `crew` command errors, leave the cron running. "
         f"Otherwise, call `crew list` now. "
         f"Count windows whose index is NOT {own_window_index} (those are Staff session windows, not sstaff's own window). "
-        f"If zero such windows remain, call CronList to find the cron whose prompt starts with '{_PULSE_CRON_SENTINEL}', "
-        f"then call CronDelete with that cron's ID. "
-        f"If one or more Staff windows remain, run `crew active --names-only` to check for active panes. "
-        f"If `crew active --names-only` errors (non-zero exit), leave the cron running. "
-        f"`crew active --names-only` outputs one window name per line for each window where a Claude spinner or loop activity is currently running; it produces no output when all panes are idle. "
-        f"If `crew active --names-only` produces no output across all remaining Staff windows, all sessions are idle — "
+        f"If zero Staff windows remain (all Staff sessions have been formally dismissed via `crew dismiss`), "
         f"call CronList to find the cron whose prompt starts with '{_PULSE_CRON_SENTINEL}', "
         f"then call CronDelete with that cron's ID. "
-        f"If `crew active --names-only` produced at least one window name, leave the cron running."
+        f"If one or more Staff windows remain, leave the cron running — "
+        f"idle-but-alive is NOT a cron-termination trigger. "
+        f"A remaining session may be waiting on external state (CI, human reviewer re-review, approval feedback); "
+        f"only formal dismissal via `crew dismiss` and the resulting zero Staff windows condition triggers CronDelete."
     )
     print(_additional_context(msg))
 
@@ -372,8 +374,9 @@ def show_help() -> None:
     print()
     print("CRON DELETE (crew dismiss):")
     print("  Uses detected window index to identify Staff windows vs sstaff's own.")
-    print("  Checks both presence AND activity before deleting — idle Staff windows")
-    print("  do not keep the cron alive. Activity detected via `crew active --names-only`.")
+    print("  CronDelete fires ONLY when zero Staff windows remain (all formally dismissed).")
+    print("  idle-but-alive is NOT a cron-termination trigger — a session waiting on")
+    print("  a human reviewer or CI still needs monitoring until formally dismissed.")
     print("  Fallback: if window detection fails, leaves cron running (fail open).")
     print()
     print("PULSE CRON (self-terminating):")
