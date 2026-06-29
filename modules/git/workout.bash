@@ -948,6 +948,10 @@ if [ -n "$existing_worktree" ]; then
     echo "Creating worktree at $worktree_path..." >&2
     git worktree add "$worktree_path" "$branch_name" >&2
 
+    # Trigger auto-clean fire-and-forget: trash stale worktrees >=90 days old.
+    # The just-created worktree is protected by the 90-day birth-time threshold.
+    workout-autoclean >/dev/null 2>&1 & disown
+
     # Pop stash in worktree if we stashed
     if [ "$has_changes" = true ]; then
       echo "Restoring uncommitted changes in worktree..." >&2
@@ -997,6 +1001,10 @@ if [ "$create_new" = true ]; then
 else
   git worktree add "$worktree_path" "$branch_name" >&2
 fi
+
+# Trigger auto-clean fire-and-forget: trash stale worktrees >=90 days old.
+# The just-created worktree is protected by the 90-day birth-time threshold.
+workout-autoclean >/dev/null 2>&1 & disown
 
 # Output the cd command to stdout for the wrapper function to eval
 echo "cd '$worktree_path'"

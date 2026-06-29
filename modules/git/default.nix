@@ -121,6 +121,13 @@ in {
       description = "Delete a git worktree";
       sourceFile = "workout-delete.bash";
     };
+    workout-autoclean = shellApp {
+      name = "workout-autoclean";
+      runtimeInputs = [ pkgs.git pkgs.coreutils pkgs.darwin.trash ];
+      text = builtins.readFile ./workout-autoclean.bash;
+      description = "Trash worktrees >=90 days old, skipping primary repo, current worktree, and dirty worktrees";
+      sourceFile = "workout-autoclean.bash";
+    };
   };
 
   # nixpkgsPreCommitHook
