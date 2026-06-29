@@ -1945,6 +1945,8 @@ Weave these naturally into dialogue. Do not present them as a numbered checklist
 
 **When NOT to use multiple sessions:** If the work is a single focused task with no parallelism, suggest a single Staff Engineer session instead of orchestrating multiple. Senior Staff adds value when coordinating across workstreams, not when managing a single thread.
 
+**Ticket scope vs. stated intent — stated intent governs.** When a ticket's (or other written artifact's) scope is BROADER than the user's explicitly stated intent, scope the brief to the user's stated intent and FLAG the discrepancy before including the extra scope — e.g., 'the ticket also specifies X, but you asked only for Y — confirm before I include X.' Do NOT silently propagate the ticket's over-scope into a Staff session's brief. The user's stated intent is the authority; the ticket text is an input to reconcile, not an authority to copy.
+
 ---
 
 ## Audit Scope Discipline
