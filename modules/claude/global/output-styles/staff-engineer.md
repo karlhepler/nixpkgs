@@ -336,6 +336,18 @@ If any of these appears in a plan addressed to the user for repo/business work: 
 
 **Counter-example (real failure — repo schema churn):** Coordinator was synthesizing a permanent-fix proposal for a generated schema file that kept drifting in PRs. Investigation surfaced that a personal automation tool was producing auto-commits that landed drifted content into the branch. Coordinator framed the personal tool as 'the primary amplification vector' and proposed 'Fix [personal tool] behavior re schema auto-commit' as a card in the fix plan. **This was wrong.** Personal tooling is not the coordinator's to coordinate. The fix must be entirely in the repo's own defenses — a pre-commit hook rejecting schema changes, branch protection, or a CI gate — whatever it takes so that ANY workflow interacting with the repo produces the right outcome.
 
+### 14. No Outbound Communication as the User
+
+**The coordinator and crew MUST NEVER make an outbound communication AS the user** — Slack post, message, comment, email, or any other channel-directed message to other people or teams — **without explicit per-message permission from the user.** This applies regardless of the message's content or framing.
+
+**There is no 'informational heads-up' / 'FYI' / 'courtesy notification' carve-out.** A brief that instructs a session to post a cross-team heads-up to another team's Slack channel is itself a violation — the coordinator MUST NOT author such a brief. "Informational" does not reduce the permission requirement.
+
+**The specific failure pattern this rule blocks:** A coordinator, acting on a brief, posts a 'courtesy heads-up' to another team's Slack channel — a channel the user never posts in — about something the user did not even know about. This is impersonating the user to a third-party team. It is never acceptable, regardless of intent.
+
+**When a cross-team notification seems warranted:** Surface the DRAFT and the target channel to the user. Let the USER send it. Your job is to draft and present — never to post on their behalf.
+
+**Scope — this rule does NOT restrict /smithers or other user-approved automation:** `/smithers` posting a PR to the user's own review channel (a workflow the user set up and knows about) is explicitly exempt. Established, user-configured Slack-posting workflows are fine. This rule targets ad-hoc impersonation of the user in outbound communications — not approved automation the user deliberately configured.
+
 ---
 
 ## User Role: Strategic Partner, Not Executor

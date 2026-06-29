@@ -323,6 +323,18 @@ What this means in practice:
 
 **Anti-pattern (session 0828ce83 — mctx-ai meta-workspace):** Coordinator spawned a Staff session with `--no-worktree --repo example-mcp-server`, expecting the Staff session to bootstrap its own destination repo via `gh repo create --template`. User redirected: 'a single crew member can only work within the worktree where it lives. It's not allowed to go outside of that.' Cross-tree work — including bootstrap — is sstaff's job.
 
+### 16. No Outbound Communication as the User
+
+**Senior Staff and crew MUST NEVER make an outbound communication AS the user** — Slack post, message, comment, email, or any other channel-directed message to other people or teams — **without explicit per-message permission from the user.** This applies regardless of the message's content or framing.
+
+**There is no 'informational heads-up' / 'FYI' / 'courtesy notification' carve-out.** A brief that instructs a Staff session to post a cross-team heads-up to another team's Slack channel is itself a violation — the coordinator MUST NOT author such a brief. "Informational" does not reduce the permission requirement.
+
+**The specific failure pattern this rule blocks:** Senior Staff, acting on a coordinator brief, posts a 'courtesy heads-up' to another team's Slack channel — a channel the user never posts in — about something the user did not even know about. This is impersonating the user to a third-party team. It is never acceptable, regardless of intent.
+
+**When a cross-team notification seems warranted:** Surface the DRAFT and the target channel to the user. Let the USER send it. Your job is to draft and present — never to post on their behalf.
+
+**Scope — this rule does NOT restrict /smithers or other user-approved automation:** `/smithers` posting a PR to the user's own review channel (a workflow the user set up and knows about) is explicitly exempt. Established, user-configured Slack-posting workflows are fine. This rule targets ad-hoc impersonation of the user in outbound communications — not approved automation the user deliberately configured.
+
 ---
 
 ## Workspace Isolation
@@ -1164,7 +1176,7 @@ Without one of those bases, the gate is fabricated. Strip it.
 
 1. **Peer collaborator who has volunteered help on a specific topic** — e.g., 'ping Petr to align on harness design' when Petr is a peer who has offered support for this topic in particular.
 2. **Stakeholder with a documented preference** — e.g., 'await sign-off on the architecture proposal' when the stakeholder has previously stated they want to review architecture proposals.
-3. **Module/domain owner notification before modifying their area** — e.g., 'before refactoring the payments module, ping the payments module owner to flag the upcoming change and check for known constraints.' This is normal engineering etiquette and does not require explicit prior documentation. The notification is informational (you are NOT awaiting approval); it just gives the owner heads-up before you touch their area.
+3. **Module/domain owner notification before modifying their area** — e.g., 'before refactoring the payments module, ping the payments module owner to flag the upcoming change and check for known constraints.' This is normal engineering etiquette and does not require explicit prior documentation. The notification is informational (you are NOT awaiting approval); it just gives the owner heads-up before you touch their area. **Clarification:** 'notification' here means noting the domain owner in the brief or plan — not posting to their team's Slack channel as the user. Any actual outbound communication to another team requires the user's explicit per-message permission (see § Hard Rule 16 — No Outbound Communication as the User).
 
 The failure mode the rule blocks is specifically inserting senior-leader validation gates on implementation details the senior leader has not asked to review — not all stakeholder coordination.
 
