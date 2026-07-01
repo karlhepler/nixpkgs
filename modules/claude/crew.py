@@ -2069,6 +2069,67 @@ def _branch_exists(repo: str, branch: str) -> bool:
     return result.returncode == 0
 
 
+def _remote_branch_exists(repo: str, branch: str) -> bool:
+    """Return True if branch exists on the 'origin' remote-tracking refs.
+
+    Relies on existing remote-tracking refs (refs/remotes/origin/<branch>)
+    rather than performing a network fetch — matches _branch_exists' style
+    of a plain rev-parse check with no side effects.
+    """
+    result = subprocess.run(
+        ["git", "rev-parse", "--verify", f"refs/remotes/origin/{branch}"],
+        capture_output=True, text=True, check=False, cwd=repo
+    )
+    return result.returncode == 0
+
+
+def _plan_branch_worktree(
+    branch: str,
+    effective_base: str,
+    branch_exists_locally: bool,
+    branch_exists_on_remote: bool,
+) -> Tuple[Optional[List[str]], List[str]]:
+    """Decide how to create the branch (if needed) and the git worktree add argv.
+
+    Pure decision function — no subprocess calls — so the three-case branch
+    resolution can be unit tested without a real git repo or tmux session.
+
+    Three cases:
+    (a) branch exists locally           -> no branch-create step; worktree add
+                                            checks out the existing local branch.
+    (b) branch missing locally, exists
+        on origin (origin/<branch>)     -> no local `git branch` create step;
+                                            worktree add uses `--track -b <branch>
+                                            origin/<branch>` to check out the
+                                            EXISTING remote branch at its real tip,
+                                            with tracking established.
+    (c) branch missing everywhere       -> `git branch --no-track <branch>
+                                            <effective_base>` creates a new local
+                                            branch from base; worktree add checks
+                                            out that new branch.
+
+    Returns:
+        (branch_create_argv, worktree_add_argv_suffix)
+        - branch_create_argv is None when no `git branch` create step is needed
+          (cases a and b), else the full ["git", "branch", "--no-track", ...] argv
+          (case c).
+        - worktree_add_argv_suffix is the list of args to append after
+          ["git", "worktree", "add", <worktree_path>] to complete the command.
+    """
+    if branch_exists_locally:
+        # Case (a): existing behavior — check out the existing local branch.
+        return None, [branch]
+
+    if branch_exists_on_remote:
+        # Case (b): check out the EXISTING remote branch at its real tip,
+        # establishing tracking — do NOT create a new branch from base.
+        return None, ["--track", "-b", branch, f"origin/{branch}"]
+
+    # Case (c): branch exists neither locally nor on origin — create new from base.
+    branch_create_argv = ["git", "branch", "--no-track", branch, effective_base]
+    return branch_create_argv, [branch]
+
+
 # Regex to extract org/repo from git remote URLs.
 # Handles both SSH (git@github.com:org/repo.git) and HTTPS (https://host/org/repo.git).
 # Source of truth: modules/git/workout.bash — sed -E 's#.*[:/]([^/]+/[^/]+)\.git$#\1#'
@@ -2192,6 +2253,36 @@ def _fetch_base_if_tracked(repo: str, base: str) -> str:
         return base  # fallback: use local branch ref
 
     return f"origin/{base}"  # use remote-tracking ref for branch creation
+
+
+def _fetch_branch_if_remote(repo: str, branch: str) -> None:
+    """Best-effort targeted fetch of origin/<branch> to populate the
+    remote-tracking ref before checking whether it exists.
+
+    Unlike _fetch_base_if_tracked, this does NOT require <branch> to already
+    have local upstream-tracking config — <branch> is often absent locally
+    entirely (that's the whole point: detecting an existing-but-never-fetched
+    remote branch). So this always attempts the fetch rather than gating on
+    an `@{upstream}` check first.
+
+    Non-fatal by design: if origin/<branch> doesn't exist on the remote, or
+    the network is unavailable, `git fetch origin <branch>` exits non-zero.
+    That failure is swallowed here — it simply means the branch isn't on
+    origin, and callers should fall through to creating a new branch from
+    base (case c), exactly as before this fetch existed.
+    """
+    print(f"Fetching origin/{branch}...", file=sys.stderr)
+    fetch_result = subprocess.run(
+        ["git", "fetch", "origin", branch],
+        capture_output=True, text=True, check=False, cwd=repo
+    )
+
+    if fetch_result.returncode != 0:
+        print(
+            f"warning: fetch origin/{branch} failed (branch may not exist on "
+            f"origin): {fetch_result.stderr.strip()}",
+            file=sys.stderr,
+        )
 
 
 def _tmux_window_exists(name: str) -> bool:
@@ -2692,16 +2783,39 @@ def cmd_create(
                 exit_code=2,
             )
 
-        # --- 8. Create branch if it doesn't exist ---
+        # --- 8. Create branch if it doesn't exist locally or on origin ---
+        # Three cases (see _plan_branch_worktree docstring):
+        #   (a) branch exists locally           -> check out existing local branch
+        #   (b) missing locally, exists on
+        #       origin/<branch>                 -> check out EXISTING remote branch
+        #                                           at its real tip (tracking) — do
+        #                                           NOT create a new branch from base
+        #   (c) missing everywhere               -> create new branch from base
         branch_was_new = False
-        if not _branch_exists(repo, branch):
+        branch_exists_locally = _branch_exists(repo, branch)
+        if not branch_exists_locally and branch != base:
+            # Best-effort targeted fetch so a remote branch that has never
+            # been fetched into this local clone is still detected below —
+            # without this, origin/<branch> would appear absent purely
+            # because no fetch has ever populated its remote-tracking ref,
+            # and execution would silently fall through to case (c).
+            # Skipped when branch == base since _fetch_base_if_tracked above
+            # already fetched that ref — avoids a redundant fetch.
+            _fetch_branch_if_remote(repo, branch)
+        branch_create_argv, worktree_add_suffix = _plan_branch_worktree(
+            branch=branch,
+            effective_base=effective_base,
+            branch_exists_locally=branch_exists_locally,
+            branch_exists_on_remote=_remote_branch_exists(repo, branch),
+        )
+        if branch_create_argv is not None:
             result = subprocess.run(
                 # --no-track prevents the new branch from inheriting <base>'s upstream
                 # tracking config. Without it, if <base> tracks origin/main, the new
                 # branch also tracks origin/main — meaning a bare `git push` would ship
                 # feature work directly to main instead of requiring `git push -u origin
                 # <branch>` to establish the correct remote tracking relationship first.
-                ["git", "branch", "--no-track", branch, effective_base],
+                branch_create_argv,
                 capture_output=True, text=True, check=False, cwd=repo
             )
             if result.returncode != 0:
@@ -2716,7 +2830,7 @@ def cmd_create(
 
         # --- 9. Create git worktree ---
         result = subprocess.run(
-            ["git", "worktree", "add", worktree_path, branch],
+            ["git", "worktree", "add", worktree_path] + worktree_add_suffix,
             capture_output=True, text=True, check=False, cwd=repo
         )
         if result.returncode != 0:

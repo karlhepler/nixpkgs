@@ -27,15 +27,19 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import crew as crew_module
 from crew import (
     _BACKGROUND_AGENT_WAIT_RE,
+    _branch_exists,
     _capture_pane_tail,
     _classify_pane_activity,
     _clean_stale_sentinel,
     _cleanup_sentinel,
     _CREW_SENTINEL_DIR,
     _extract_org_repo_from_remote,
+    _fetch_branch_if_remote,
     _looks_like_message_not_target,
     _mangle_path_to_project_key,
     _pane_shows_prompt_ready,
+    _plan_branch_worktree,
+    _remote_branch_exists,
     _resolve_targets_with_lookup,
     _sentinel_path,
     _tmux_fire_and_forget,
@@ -70,6 +74,32 @@ def fake_run_result(stdout: str = "", returncode: int = 0) -> MagicMock:
     m.stderr = ""
     m.returncode = returncode
     return m
+
+
+@pytest.fixture(autouse=True)
+def _mock_workout_autoclean_popen():
+    """Prevent cmd_create's fire-and-forget `subprocess.Popen(["workout-autoclean"])`
+    call (crew.py step 9b-pre) from spawning a real process during tests.
+
+    Tests throughout this file patch subprocess.run but not the Popen call used
+    specifically for the workout-autoclean trigger; without this fixture, any
+    cmd_create() call with a fictional repo path (e.g. "/some/repo") raises
+    FileNotFoundError because Popen's cwd argument doesn't exist.
+
+    Only intercepts calls whose argv is exactly ["workout-autoclean"] — all
+    other Popen usage (subprocess.run's internals, run_post_switch_hook,
+    _wait_for_sentinel's fswatch, etc.) passes through to the real
+    subprocess.Popen untouched, so unrelated tests are unaffected.
+    """
+    real_popen = subprocess.Popen
+
+    def selective_popen(args, *pargs, **kwargs):
+        if args == ["workout-autoclean"]:
+            return MagicMock()
+        return real_popen(args, *pargs, **kwargs)
+
+    with patch("subprocess.Popen", side_effect=selective_popen) as mock_popen:
+        yield mock_popen
 
 
 # ---------------------------------------------------------------------------
@@ -211,6 +241,9 @@ class TestCmdCreate:
             if "rev-parse" in joined and "upstream" in joined:
                 # Default: branch tracks origin
                 return fake_run_result(stdout="origin/main\n")
+            if "rev-parse" in joined and "--verify" in joined and "refs/remotes" in joined:
+                # Remote-branch existence check: branch does not exist on origin
+                return fake_run_result(returncode=1)
             if "rev-parse" in joined and "--verify" in joined and "refs/heads" not in joined:
                 # Base existence check: base ref resolves
                 return fake_run_result(stdout="abc1234\n")
@@ -583,12 +616,21 @@ class TestCmdCreate:
         assert len(worktree_cmds) == 1, "worktree add must still be called after fetch failure"
 
     def test_local_only_base_skips_fetch(self, capsys, tmp_path):
-        """When base has no upstream tracking ref, fetch is skipped entirely."""
+        """When base has no upstream tracking ref, the BASE fetch (git fetch
+        origin <base>) is skipped entirely. This is orthogonal to the
+        separate best-effort BRANCH fetch (_fetch_branch_if_remote) that
+        always runs to detect a never-fetched origin/<branch> — so a fetch
+        for 'test-worker' (the branch) is expected here, but a fetch for
+        'local-feature' (the base) must never happen.
+        """
         def side_effect_no_upstream(cmd, **kwargs):
             cmd_list = cmd if isinstance(cmd, list) else [cmd]
             joined = " ".join(str(c) for c in cmd_list)
-            if "fetch" in joined:
+            if "fetch" in joined and "local-feature" in joined:
                 raise AssertionError("fetch must NOT be called for local-only base")
+            if "fetch" in joined and "test-worker" in joined:
+                # Best-effort branch fetch — branch doesn't exist on origin.
+                return fake_run_result(returncode=1)
             if "display-message" in joined and "session_name" in joined:
                 return fake_run_result(stdout="tidy-crown\n")
             if "display-message" in joined and "window_id" in joined:
@@ -840,6 +882,499 @@ class TestCmdCreateIntegration:
             ["git", "worktree", "remove", "--force", worktree_dest],
             capture_output=True, check=False, cwd=local_dir,
         )
+
+
+# ---------------------------------------------------------------------------
+# Regression: crew create <name> --branch <branch> where <branch> exists on
+# origin but not locally must check out origin/<branch> at its real tip
+# (tracking), not silently create a new local branch from base.
+# ---------------------------------------------------------------------------
+
+class TestPlanBranchWorktree:
+    """Unit tests for the pure _plan_branch_worktree decision helper."""
+
+    def test_existing_remote_branch_tracks_origin_not_base(self):
+        """Case (b): branch missing locally but exists on origin -> worktree add
+        must use --track -b <branch> origin/<branch>, and NOT create a new local
+        branch from base."""
+        branch_create_argv, worktree_add_suffix = _plan_branch_worktree(
+            branch="feat-remote-only",
+            effective_base="origin/main",
+            branch_exists_locally=False,
+            branch_exists_on_remote=True,
+        )
+
+        assert branch_create_argv is None, (
+            "No local 'git branch' create step should run when the branch "
+            "already exists on origin — it must be checked out directly."
+        )
+        assert worktree_add_suffix == ["--track", "-b", "feat-remote-only", "origin/feat-remote-only"], (
+            f"Expected worktree add to track origin/<branch> at its real tip, "
+            f"got suffix: {worktree_add_suffix!r}"
+        )
+
+    def test_local_branch_exists_checks_out_local(self):
+        """Case (a): branch exists locally -> unchanged existing behavior."""
+        branch_create_argv, worktree_add_suffix = _plan_branch_worktree(
+            branch="local-feature",
+            effective_base="origin/main",
+            branch_exists_locally=True,
+            branch_exists_on_remote=False,
+        )
+        assert branch_create_argv is None
+        assert worktree_add_suffix == ["local-feature"]
+
+    def test_branch_missing_everywhere_creates_from_base(self):
+        """Case (c): branch missing locally and on origin -> new branch from base,
+        preserving the existing --no-track behavior."""
+        branch_create_argv, worktree_add_suffix = _plan_branch_worktree(
+            branch="brand-new-branch",
+            effective_base="origin/main",
+            branch_exists_locally=False,
+            branch_exists_on_remote=False,
+        )
+        assert branch_create_argv == ["git", "branch", "--no-track", "brand-new-branch", "origin/main"]
+        assert worktree_add_suffix == ["brand-new-branch"]
+
+
+class TestRemoteBranchExists:
+    """Unit tests for _remote_branch_exists against a real git repo fixture."""
+
+    def _make_repo_with_remote_only_branch(self, tmp_path):
+        """Return local_dir where origin/feature-on-remote exists (with a distinct
+        commit) but 'feature-on-remote' does NOT exist as a local branch."""
+        remote_dir = str(tmp_path / "remote.git")
+        local_dir = str(tmp_path / "local")
+        other_clone_dir = str(tmp_path / "other-clone")
+
+        subprocess.run(["git", "init", "--bare", remote_dir], capture_output=True, check=True)
+        subprocess.run(["git", "clone", remote_dir, local_dir], capture_output=True, check=True)
+        for cwd in (local_dir,):
+            subprocess.run(["git", "config", "user.email", "test@test.com"], capture_output=True, check=True, cwd=cwd)
+            subprocess.run(["git", "config", "user.name", "Test"], capture_output=True, check=True, cwd=cwd)
+
+        init_file = os.path.join(local_dir, "init.txt")
+        with open(init_file, "w") as fh:
+            fh.write("init\n")
+        subprocess.run(["git", "add", "init.txt"], capture_output=True, check=True, cwd=local_dir)
+        subprocess.run(["git", "commit", "-m", "init"], capture_output=True, check=True, cwd=local_dir)
+        subprocess.run(["git", "push", "-u", "origin", "main"], capture_output=True, check=True, cwd=local_dir)
+
+        # Create the remote-only branch from a SEPARATE clone, so it never
+        # touches local_dir's local refs — only its remote-tracking refs
+        # (after a fetch) will know about it.
+        subprocess.run(["git", "clone", remote_dir, other_clone_dir], capture_output=True, check=True)
+        subprocess.run(["git", "config", "user.email", "test@test.com"], capture_output=True, check=True, cwd=other_clone_dir)
+        subprocess.run(["git", "config", "user.name", "Test"], capture_output=True, check=True, cwd=other_clone_dir)
+        subprocess.run(["git", "checkout", "-b", "feature-on-remote"], capture_output=True, check=True, cwd=other_clone_dir)
+        distinct_file = os.path.join(other_clone_dir, "remote-only.txt")
+        with open(distinct_file, "w") as fh:
+            fh.write("distinct commit content\n")
+        subprocess.run(["git", "add", "remote-only.txt"], capture_output=True, check=True, cwd=other_clone_dir)
+        subprocess.run(["git", "commit", "-m", "remote-only work"], capture_output=True, check=True, cwd=other_clone_dir)
+        subprocess.run(["git", "push", "origin", "feature-on-remote"], capture_output=True, check=True, cwd=other_clone_dir)
+
+        # Bring local_dir's remote-tracking refs up to date without creating a
+        # local branch — mirrors a fresh clone that hasn't checked out the branch.
+        subprocess.run(["git", "fetch", "origin"], capture_output=True, check=True, cwd=local_dir)
+
+        return local_dir
+
+    def test_existing_remote_branch_detected_when_absent_locally(self, tmp_path):
+        local_dir = self._make_repo_with_remote_only_branch(tmp_path)
+
+        assert _remote_branch_exists(local_dir, "feature-on-remote") is True
+        # Precondition/contrast: confirms this is genuinely a remote-only branch.
+        assert _branch_exists(local_dir, "feature-on-remote") is False
+
+    def test_nonexistent_branch_returns_false(self, tmp_path):
+        local_dir = self._make_repo_with_remote_only_branch(tmp_path)
+        assert _remote_branch_exists(local_dir, "totally-made-up-branch") is False
+
+
+class TestCmdCreateExistingRemoteBranchIntegration(TestCmdCreateIntegration):
+    """Integration test: crew create --branch <branch> where <branch> exists on
+    origin but not locally must check out origin/<branch> at its REAL TIP with
+    tracking established — not silently create a new local branch from base.
+
+    Reuses _make_real_repo / _tmux_side_effect from TestCmdCreateIntegration.
+    """
+
+    def test_create_with_existing_remote_branch_checks_out_real_tip(self, capsys, tmp_path):
+        _remote_dir, local_dir = self._make_real_repo(tmp_path)
+
+        # Simulate the branch existing on origin (pushed from a separate clone)
+        # but NOT locally in local_dir — the exact scenario from the bug report.
+        other_clone_dir = str(tmp_path / "other-clone")
+        subprocess.run(
+            ["git", "clone", _remote_dir, other_clone_dir], capture_output=True, check=True
+        )
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"],
+            capture_output=True, check=True, cwd=other_clone_dir,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"],
+            capture_output=True, check=True, cwd=other_clone_dir,
+        )
+        branch = "existing-remote-feature"
+        subprocess.run(
+            ["git", "checkout", "-b", branch], capture_output=True, check=True, cwd=other_clone_dir
+        )
+        real_commit_file = os.path.join(other_clone_dir, "real-work.txt")
+        with open(real_commit_file, "w") as fh:
+            fh.write("real commits that must not be discarded\n")
+        subprocess.run(
+            ["git", "add", "real-work.txt"], capture_output=True, check=True, cwd=other_clone_dir
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "real work on the branch"],
+            capture_output=True, check=True, cwd=other_clone_dir,
+        )
+        subprocess.run(
+            ["git", "push", "origin", branch], capture_output=True, check=True, cwd=other_clone_dir
+        )
+        expected_tip = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True, text=True, check=True, cwd=other_clone_dir,
+        ).stdout.strip()
+
+        # Bring local_dir's remote-tracking refs up to date (origin/<branch> now
+        # exists there) without creating a local branch for it.
+        subprocess.run(["git", "fetch", "origin"], capture_output=True, check=True, cwd=local_dir)
+
+        # Precondition: branch must NOT exist locally in local_dir yet.
+        precondition = subprocess.run(
+            ["git", "rev-parse", "--verify", f"refs/heads/{branch}"],
+            capture_output=True, text=True, check=False, cwd=local_dir,
+        )
+        assert precondition.returncode != 0, "Precondition: branch must not exist locally"
+
+        worktree_dest = str(tmp_path / "worktrees" / branch)
+        real_run = subprocess.run
+
+        with patch("subprocess.run", side_effect=self._tmux_side_effect(real_run)):
+            with patch.object(
+                crew_module, "resolve_worktree_path", return_value=(worktree_dest, True)
+            ):
+                cmd_create(
+                    name="remote-branch-worker",
+                    repo=local_dir,
+                    branch=branch,
+                    base="main",
+                    fmt="xml",
+                )
+
+        # The new local branch must be anchored at origin/<branch>'s REAL TIP —
+        # not at base (main) — proving the real commits were not discarded.
+        actual_tip = subprocess.run(
+            ["git", "rev-parse", branch],
+            capture_output=True, text=True, check=True, cwd=local_dir,
+        ).stdout.strip()
+        assert actual_tip == expected_tip, (
+            f"New local branch '{branch}' must be checked out at origin/{branch}'s "
+            f"real tip ({expected_tip}), not recreated from base. Got: {actual_tip}"
+        )
+
+        base_tip = subprocess.run(
+            ["git", "rev-parse", "main"],
+            capture_output=True, text=True, check=True, cwd=local_dir,
+        ).stdout.strip()
+        assert actual_tip != base_tip, (
+            "Regression: branch landed at base's tip instead of origin/<branch>'s "
+            "real tip — this is the bug being fixed."
+        )
+
+        # Tracking must be established against origin/<branch>.
+        upstream = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", f"{branch}@{{upstream}}"],
+            capture_output=True, text=True, check=False, cwd=local_dir,
+        ).stdout.strip()
+        assert upstream == f"origin/{branch}", (
+            f"Expected '{branch}' to track origin/{branch}, got upstream: {upstream!r}"
+        )
+
+        # Clean up: remove the worktree so the test repo stays in a good state.
+        subprocess.run(
+            ["git", "worktree", "remove", "--force", worktree_dest],
+            capture_output=True, check=False, cwd=local_dir,
+        )
+
+
+# ---------------------------------------------------------------------------
+# HIGH finding (card #2633): _remote_branch_exists never fetches on its own,
+# so an origin/<branch> that exists but was never fetched into the local
+# clone is invisible to it. crew create must perform its own best-effort
+# targeted fetch (_fetch_branch_if_remote) before the existence check so the
+# primary use case — a coordinator spawning sessions onto existing remote PR
+# branches that have never touched this local clone — is handled correctly.
+# ---------------------------------------------------------------------------
+
+class TestCmdCreateNeverFetchedRemoteBranchIntegration(TestCmdCreateIntegration):
+    """Integration tests: crew create --branch <branch> where the local clone
+    has NEVER fetched origin/<branch> at all (no pre-fetch step, unlike
+    TestCmdCreateExistingRemoteBranchIntegration which fetches before calling
+    cmd_create). crew create's own targeted fetch must discover the branch.
+
+    Reuses _make_real_repo / _tmux_side_effect from TestCmdCreateIntegration.
+    """
+
+    def test_never_fetched_remote_branch_checks_out_real_tip(self, capsys, tmp_path):
+        """(a) origin/<branch> exists on the bare remote but local_dir has
+        NEVER fetched it (no `git fetch origin` at all since the branch was
+        pushed) -> cmd_create's own fetch must detect it and the worktree
+        must land on origin/<branch>'s real tip with tracking established.
+        """
+        remote_dir, local_dir = self._make_real_repo(tmp_path)
+
+        # Push the branch from a SEPARATE clone so local_dir's remote-tracking
+        # refs never learn about it via any fetch performed during repo setup.
+        other_clone_dir = str(tmp_path / "other-clone")
+        subprocess.run(
+            ["git", "clone", remote_dir, other_clone_dir], capture_output=True, check=True
+        )
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"],
+            capture_output=True, check=True, cwd=other_clone_dir,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"],
+            capture_output=True, check=True, cwd=other_clone_dir,
+        )
+        branch = "never-fetched-feature"
+        subprocess.run(
+            ["git", "checkout", "-b", branch], capture_output=True, check=True, cwd=other_clone_dir
+        )
+        real_commit_file = os.path.join(other_clone_dir, "real-work.txt")
+        with open(real_commit_file, "w") as fh:
+            fh.write("real commits that must not be discarded\n")
+        subprocess.run(
+            ["git", "add", "real-work.txt"], capture_output=True, check=True, cwd=other_clone_dir
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "real work on the branch"],
+            capture_output=True, check=True, cwd=other_clone_dir,
+        )
+        subprocess.run(
+            ["git", "push", "origin", branch], capture_output=True, check=True, cwd=other_clone_dir
+        )
+        expected_tip = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True, text=True, check=True, cwd=other_clone_dir,
+        ).stdout.strip()
+
+        # Deliberately NO fetch in local_dir here — this is the "never
+        # fetched" precondition that distinguishes this test from
+        # TestCmdCreateExistingRemoteBranchIntegration.
+        precondition = subprocess.run(
+            ["git", "rev-parse", "--verify", f"refs/remotes/origin/{branch}"],
+            capture_output=True, text=True, check=False, cwd=local_dir,
+        )
+        assert precondition.returncode != 0, (
+            "Precondition: origin/<branch> must NOT be present in local_dir's "
+            "remote-tracking refs yet — this test exercises the case where "
+            "crew create itself must fetch to discover the branch."
+        )
+
+        worktree_dest = str(tmp_path / "worktrees" / branch)
+        real_run = subprocess.run
+
+        with patch("subprocess.run", side_effect=self._tmux_side_effect(real_run)):
+            with patch.object(
+                crew_module, "resolve_worktree_path", return_value=(worktree_dest, True)
+            ):
+                cmd_create(
+                    name="never-fetched-worker",
+                    repo=local_dir,
+                    branch=branch,
+                    base="main",
+                    fmt="xml",
+                )
+
+        # The new local branch must be anchored at origin/<branch>'s REAL TIP
+        # — proving crew create's own fetch discovered the never-fetched
+        # remote branch instead of silently falling through to case (c).
+        actual_tip = subprocess.run(
+            ["git", "rev-parse", branch],
+            capture_output=True, text=True, check=True, cwd=local_dir,
+        ).stdout.strip()
+        assert actual_tip == expected_tip, (
+            f"New local branch '{branch}' must be checked out at "
+            f"origin/{branch}'s real tip ({expected_tip}) — discovered via "
+            f"crew create's own targeted fetch — not recreated from base. "
+            f"Got: {actual_tip}"
+        )
+
+        base_tip = subprocess.run(
+            ["git", "rev-parse", "main"],
+            capture_output=True, text=True, check=True, cwd=local_dir,
+        ).stdout.strip()
+        assert actual_tip != base_tip, (
+            "Regression: branch landed at base's tip instead of "
+            "origin/<branch>'s real tip — this is the never-fetched gap "
+            "the fix must close."
+        )
+
+        upstream = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", f"{branch}@{{upstream}}"],
+            capture_output=True, text=True, check=False, cwd=local_dir,
+        ).stdout.strip()
+        assert upstream == f"origin/{branch}", (
+            f"Expected '{branch}' to track origin/{branch}, got upstream: {upstream!r}"
+        )
+
+        # Clean up: remove the worktree so the test repo stays in a good state.
+        subprocess.run(
+            ["git", "worktree", "remove", "--force", worktree_dest],
+            capture_output=True, check=False, cwd=local_dir,
+        )
+
+    def test_never_fetched_branch_absent_on_origin_falls_through_to_new_branch(
+        self, capsys, tmp_path
+    ):
+        """(b) <branch> does NOT exist on origin at all (and was, by
+        definition, never fetched) -> the best-effort targeted fetch fails
+        harmlessly and cmd_create falls through to case (c): a new local
+        branch created from base, without crashing.
+        """
+        _remote_dir, local_dir = self._make_real_repo(tmp_path)
+
+        branch = "totally-nonexistent-branch"
+        worktree_dest = str(tmp_path / "worktrees" / branch)
+        real_run = subprocess.run
+
+        # Precondition: branch must not exist locally or as a remote-tracking ref.
+        local_precondition = subprocess.run(
+            ["git", "rev-parse", "--verify", f"refs/heads/{branch}"],
+            capture_output=True, text=True, check=False, cwd=local_dir,
+        )
+        assert local_precondition.returncode != 0
+        remote_precondition = subprocess.run(
+            ["git", "rev-parse", "--verify", f"refs/remotes/origin/{branch}"],
+            capture_output=True, text=True, check=False, cwd=local_dir,
+        )
+        assert remote_precondition.returncode != 0
+
+        with patch("subprocess.run", side_effect=self._tmux_side_effect(real_run)):
+            with patch.object(
+                crew_module, "resolve_worktree_path", return_value=(worktree_dest, True)
+            ):
+                # Must not raise despite the best-effort fetch failing because
+                # the branch doesn't exist on origin.
+                cmd_create(
+                    name="fallback-worker",
+                    repo=local_dir,
+                    branch=branch,
+                    base="main",
+                    fmt="xml",
+                )
+
+        # Case (c): a new local branch must have been created from base.
+        actual_tip = subprocess.run(
+            ["git", "rev-parse", branch],
+            capture_output=True, text=True, check=True, cwd=local_dir,
+        ).stdout.strip()
+        base_tip = subprocess.run(
+            ["git", "rev-parse", "main"],
+            capture_output=True, text=True, check=True, cwd=local_dir,
+        ).stdout.strip()
+        assert actual_tip == base_tip, (
+            "Expected new branch to be created from base when the branch "
+            "doesn't exist on origin (case c fallback after a harmless "
+            "failed best-effort fetch)."
+        )
+
+        # No upstream tracking should be set (matches --no-track case-(c) behavior).
+        merge_ref = subprocess.run(
+            ["git", "config", "--get", f"branch.{branch}.merge"],
+            capture_output=True, text=True, check=False, cwd=local_dir,
+        )
+        assert merge_ref.stdout.strip() == "", (
+            "New branch created via case (c) fallback must not inherit "
+            "upstream tracking (--no-track)."
+        )
+
+        # Clean up: remove the worktree so the test repo stays in a good state.
+        subprocess.run(
+            ["git", "worktree", "remove", "--force", worktree_dest],
+            capture_output=True, check=False, cwd=local_dir,
+        )
+
+
+class TestFetchBranchIfRemoteUnit:
+    """Direct unit tests for _fetch_branch_if_remote against a real git repo
+    fixture (no cmd_create involved) — confirms the helper itself is
+    non-fatal on failure and populates the remote-tracking ref on success.
+    """
+
+    def test_never_fetched_branch_populates_remote_tracking_ref(self, tmp_path):
+        remote_dir = str(tmp_path / "remote.git")
+        local_dir = str(tmp_path / "local")
+        other_clone_dir = str(tmp_path / "other-clone")
+
+        subprocess.run(["git", "init", "--bare", remote_dir], capture_output=True, check=True)
+        subprocess.run(["git", "clone", remote_dir, local_dir], capture_output=True, check=True)
+        subprocess.run(["git", "config", "user.email", "test@test.com"], capture_output=True, check=True, cwd=local_dir)
+        subprocess.run(["git", "config", "user.name", "Test"], capture_output=True, check=True, cwd=local_dir)
+        init_file = os.path.join(local_dir, "init.txt")
+        with open(init_file, "w") as fh:
+            fh.write("init\n")
+        subprocess.run(["git", "add", "init.txt"], capture_output=True, check=True, cwd=local_dir)
+        subprocess.run(["git", "commit", "-m", "init"], capture_output=True, check=True, cwd=local_dir)
+        subprocess.run(["git", "push", "-u", "origin", "main"], capture_output=True, check=True, cwd=local_dir)
+
+        subprocess.run(["git", "clone", remote_dir, other_clone_dir], capture_output=True, check=True)
+        subprocess.run(["git", "config", "user.email", "test@test.com"], capture_output=True, check=True, cwd=other_clone_dir)
+        subprocess.run(["git", "config", "user.name", "Test"], capture_output=True, check=True, cwd=other_clone_dir)
+        subprocess.run(["git", "checkout", "-b", "never-fetched-unit"], capture_output=True, check=True, cwd=other_clone_dir)
+        distinct_file = os.path.join(other_clone_dir, "remote-only.txt")
+        with open(distinct_file, "w") as fh:
+            fh.write("distinct commit content\n")
+        subprocess.run(["git", "add", "remote-only.txt"], capture_output=True, check=True, cwd=other_clone_dir)
+        subprocess.run(["git", "commit", "-m", "remote-only work"], capture_output=True, check=True, cwd=other_clone_dir)
+        subprocess.run(["git", "push", "origin", "never-fetched-unit"], capture_output=True, check=True, cwd=other_clone_dir)
+
+        # Deliberately no fetch performed in local_dir before calling the helper.
+        precondition = subprocess.run(
+            ["git", "rev-parse", "--verify", "refs/remotes/origin/never-fetched-unit"],
+            capture_output=True, text=True, check=False, cwd=local_dir,
+        )
+        assert precondition.returncode != 0
+
+        _fetch_branch_if_remote(local_dir, "never-fetched-unit")
+
+        postcondition = subprocess.run(
+            ["git", "rev-parse", "--verify", "refs/remotes/origin/never-fetched-unit"],
+            capture_output=True, text=True, check=False, cwd=local_dir,
+        )
+        assert postcondition.returncode == 0, (
+            "_fetch_branch_if_remote must populate refs/remotes/origin/<branch> "
+            "for a branch that exists on origin but was never fetched."
+        )
+
+    def test_nonexistent_branch_fetch_fails_harmlessly(self, tmp_path):
+        remote_dir = str(tmp_path / "remote.git")
+        local_dir = str(tmp_path / "local")
+
+        subprocess.run(["git", "init", "--bare", remote_dir], capture_output=True, check=True)
+        subprocess.run(["git", "clone", remote_dir, local_dir], capture_output=True, check=True)
+        subprocess.run(["git", "config", "user.email", "test@test.com"], capture_output=True, check=True, cwd=local_dir)
+        subprocess.run(["git", "config", "user.name", "Test"], capture_output=True, check=True, cwd=local_dir)
+        init_file = os.path.join(local_dir, "init.txt")
+        with open(init_file, "w") as fh:
+            fh.write("init\n")
+        subprocess.run(["git", "add", "init.txt"], capture_output=True, check=True, cwd=local_dir)
+        subprocess.run(["git", "commit", "-m", "init"], capture_output=True, check=True, cwd=local_dir)
+        subprocess.run(["git", "push", "-u", "origin", "main"], capture_output=True, check=True, cwd=local_dir)
+
+        # Must not raise even though "totally-made-up-branch" doesn't exist on origin.
+        _fetch_branch_if_remote(local_dir, "totally-made-up-branch")
+
+        postcondition = subprocess.run(
+            ["git", "rev-parse", "--verify", "refs/remotes/origin/totally-made-up-branch"],
+            capture_output=True, text=True, check=False, cwd=local_dir,
+        )
+        assert postcondition.returncode != 0
 
 
 # ---------------------------------------------------------------------------
