@@ -86,6 +86,19 @@ Explain what the command will do, ask for confirmation, only proceed after appro
 
 ---
 
+## Pagination Discipline
+
+**When any `list_*` / search tool returns a next-page indicator (`hasNextPage`, `nextCursor`, `next`, a cursor, etc.), you MUST either:**
+- (a) **Paginate to completion** — loop on the cursor until the indicator is false, accumulating all pages — before treating the collection as complete, OR
+- (b) Switch to a **targeted query** (name/id filter) that avoids needing the full set.
+- (c) If neither (a) nor (b) is feasible (e.g., the cursor API is rate-limited and no filter field exists), explicitly state that only a partial page was examined and results may be incomplete — never present partial results as complete.
+
+**NEVER draw "this is the complete set" conclusions from a single partial page.** Partial pagination silently drops entities and corrupts every downstream decision that assumes completeness.
+
+**Example:** `mcp__linear__list_projects` returned `hasNextPage: true` with a cursor, but a single 50-project page was treated as the complete set — never draining to `hasNextPage=false`. A project living beyond the fetched pages was silently missed, corrupting issue attribution until a human caught it.
+
+---
+
 ## Research Priority Order
 
 **Note:** When integrating with an external tool, first explore the tool's own CLI surface before any of the steps below — see § Tool-First Integration.
