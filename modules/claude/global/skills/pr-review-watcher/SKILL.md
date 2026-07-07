@@ -290,6 +290,18 @@ Newlines in `--tell` cause the shell to submit the command early — the brief i
 
 Stagger ~6 seconds between parallel `crew create` calls to avoid git-worktree lock collisions when multiple PRs are picked up in the same cycle.
 
+### Serialize Worktree ADD/REMOVE (review→follow-up transition)
+
+**Never run `git worktree remove` on a repo while a `crew create` (git worktree add) on the SAME repo is in-flight.** Concurrent add/remove operations contend on the repo's `.git/worktrees` administrative lock, which can stall the `crew create` for minutes. Symptom: the spawn task is still running, fetches have printed, but no `<created ...>` line appears and `crew status` shows no new window — this looks like a hang but is lock contention, not a crash.
+
+This is distinct from § Stagger Parallel Spawns above, which covers ADD/ADD collisions between two parallel `crew create` calls. This rule covers ADD/REMOVE: one `crew create` (add) racing a `git worktree remove` on the same repo.
+
+Serialize one of two ways:
+- **(a) Add-then-remove (preferred for the review→follow-up transition):** spawn `fu-<pr>` via `crew create`, WAIT for its `<created ...>` line (spawn-task completion) — this keeps a Staff window alive for pulse-cron stability, per § A) Monitor Active Reviews — THEN dismiss the review session and run `git worktree remove` on its worktree (see § Worktree Cruft for cleanup mechanics).
+- **(b) Remove-then-add (fully serial):** remove the old worktree first, then spawn the new session.
+
+For the review→follow-up transition specifically: spawning `fu-<pr>` before dismissing the review session is correct and must be preserved — but the review-worktree removal MUST wait until the fu spawn's `<created ...>` line is observed, never fired concurrently with it.
+
 ### Background Everything
 
 All `crew create` calls use `run_in_background=true`. A blocking spawn can take minutes (pnpm bootstrap, large repo setup). Blocking the cron tick causes queued firings to pile up. Background everything — keep cron ticks short.
