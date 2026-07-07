@@ -82,6 +82,49 @@ This skill fetches PR diffs, posts unified GitHub reviews via `prr`, runs kanban
 
 **Do NOT:** run Phase 1–5. Do NOT spawn specialists. Do NOT generate findings. Do NOT write a `.scratchpad/review-<number>.json` with inline comments. The straight approval is the entire output.
 
+## Restricted-Output Review Mode
+
+**Trigger:** When `/pr-review` is invoked with the `--restricted-output` flag, or the invocation context / watcher brief explicitly states the review must run in restricted-output mode (greppable signal from the caller — see § Caller Contract below).
+
+**What does NOT change in this mode:** Run the FULL normal internal review exactly as usual — Phase 1 through Phase 5 (worktree setup, PR context fetch, domain detection, parallel specialist delegation, aggregation) execute unchanged. Do not skip any specialist, do not shorten analysis, do not lower scrutiny. The only thing this mode restricts is what happens at the POST step (Phase 6).
+
+**What changes — the POST step (Phase 6) is replaced entirely by this decision:**
+
+After aggregation completes (end of Phase 5) and the FINAL PRE-POST CHECK (§ Phase 6) passes with no abort condition triggered, evaluate the aggregated verdict:
+
+1. **CLEAN APPROVE** — every specialist returned LGTM (no blocking, no concern, no comment-level findings at all): submit an APPROVE review with an **empty body and zero inline comments**. This is the only case where anything gets written to GitHub in this mode:
+   ```bash
+   prr submit <pr-number> --event APPROVE --body ""
+   ```
+   Approve silently — no summary text, no "looks good" note, no follow-up notes folded in. Empty body, zero comments, APPROVE event only.
+
+2. **NOT a clean approve** — any specialist returned a concern, a comment-level finding, or a blocking issue (anything that would normally produce an inline comment or a non-empty review body): **post NOTHING to the PR.** Do not call `prr submit`. Do not call `gh pr comment`. Do not write anything to GitHub. Instead, emit the verdict and a short summary back to the caller (see § Caller Contract) so the operator can handle it manually.
+
+**HARD CONSTRAINT — the only permitted GitHub write in this mode is an empty APPROVE:**
+- NEVER post inline comments in this mode, under any circumstance.
+- NEVER post a COMMENTED or CHANGES_REQUESTED review in this mode, under any circumstance.
+- If the aggregated findings contain anything beyond all-LGTM, the correct action is silence-plus-escalation, never a partial or watered-down post.
+
+**No follow-up loop in this mode:** § Follow-Through After a Non-Approving Review does not apply — restricted-output mode never produces a non-approving GitHub review, so there are no comment threads to follow through on. A clean approve is terminal (same as any APPROVE). A non-clean escalation is also terminal from `/pr-review`'s perspective — the operator takes it from there.
+
+### Caller Contract
+
+**How the mode is triggered:** The caller (typically `pr-review-watcher`, but any caller may do this) signals restricted-output mode by either:
+- Passing `--restricted-output` as a flag in `$ARGUMENTS` (e.g., `/pr-review 456 --restricted-output`), or
+- Including the literal phrase "restricted-output mode" or "RESTRICTED-OUTPUT MODE" in the invocation brief text.
+
+Either signal is sufficient and greppable — check for the flag or the phrase before Phase 1 begins, and set a mode flag for use at Phase 6.
+
+**How `/pr-review` emits the escalation verdict/summary back to the caller:** When the case-2 (not-clean) path is taken, `/pr-review` reports its result to standard output in this exact format, then stops:
+
+```
+ESCALATE-<pr-number>: <verdict — LGTM/Concerns/Blocking counts> — <one-line summary of what was found>
+```
+
+Example: `ESCALATE-456: 1 concern, 1 blocking — swe-security flagged a missing auth check on the new endpoint; swe-backend flagged an N+1 query.`
+
+When run under a `crew`-spawned session (the normal `pr-review-watcher` path), this printed line is what the caller reads via `crew read` to detect the escalation and route it to the operator. When the clean-approve case is taken, `/pr-review` prints `REVIEW-POSTED-<pr-number>` exactly as it does in normal mode — the caller's existing `REVIEW-POSTED-<pr>` detection logic (§ /pr-review Integration in `pr-review-watcher`) requires no change to recognize a silent approve.
+
 ## Phase 1 — Worktree Setup + One-Way Handoff
 
 **This is the first thing that happens.** The goal is to give specialists full branch context by running the review inside a dedicated worktree. The current session creates that environment and steps back.
@@ -448,6 +491,8 @@ Aggregate all specialist FILE/LINE/SEVERITY/COMMENT findings (those with actual 
 ## Phase 6 — Post Review
 
 Post a **single unified GitHub review** via `prr`.
+
+**Restricted-output mode override:** If restricted-output mode was signaled (§ Restricted-Output Review Mode / § Caller Contract), after the FINAL PRE-POST CHECK runs at the post step below, skip the normal posting logic and apply the restricted-output decision instead: clean-approve → empty-body APPROVE only; anything else → post nothing, emit `ESCALATE-<pr-number>: ...` and stop. Abort conditions (superseded PR, already human-reviewed, etc.) are checked identically in both paths.
 
 ### FINAL PRE-POST CHECK
 

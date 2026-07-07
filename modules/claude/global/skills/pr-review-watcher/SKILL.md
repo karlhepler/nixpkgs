@@ -38,6 +38,7 @@ argument-hint: "<channel-id | #channel-name | channel-name | slack-archive-url> 
 - `--lookback N` (default 5): how many of the most-recent posts to consider on the FIRST run only.
 - `--interval <minutes>` (default 5): integer number of minutes for the cron pulse cadence (used for `CronCreate` expression `*/N * * * *`).
 - `--bot-logins login1,login2,...` (default: empty list — **empty by design** for generalization; operators should pass their org's review-bot login(s) here, e.g., `claude-maze`, so bot reviews are not counted as independent human reviews): GitHub logins treated as bots and excluded from the "already reviewed by a human" check.
+- `--restricted-output-authors login1,login2,...` (default: empty list — **empty by design** for generalization, same convention as `--bot-logins` above; operators supply their own author logins here): GitHub logins whose PRs are routed into **Restricted-Output Review Mode** (see § Restricted-Output Review Mode) instead of the normal review path. The actual login(s) are operator configuration — never hardcode a specific login in this skill file.
 - `--model` (default `'sonnet[1m]'`): model for spawned review and follow-up sessions. Single-quote the value when passing to `crew create` — zsh globs `[1m]` without quotes.
 
 ## Requirements (declare and verify on launch)
@@ -107,11 +108,12 @@ Read at the START of every cycle. Persist at the END of every cycle. If the file
   "spawn_model": "sonnet[1m]",
   "concurrency_cap": null,
   "bot_logins": [],
+  "restricted_output_review_authors": [],
   "watermark_ts": "<newest processed slack message ts>",
   "active":   [{"pr": 123, "repo": "owner/repo", "message_ts": "...", "crew": "review-123", "status": "spawning|reviewing"}],
   "followup": [{"pr": 123, "repo": "owner/repo", "message_ts": "...", "crew": "fu-123", "our_review": "COMMENTED"}],
   "queue":    [],
-  "done":     [{"pr": 123, "reason": "reviewed-approved | skipped-human-reviewed | skipped-own-pr | skipped-closed | approved-after-followup | merged | error"}]
+  "done":     [{"pr": 123, "reason": "reviewed-approved | skipped-human-reviewed | skipped-own-pr | skipped-closed | approved-after-followup | merged | error | escalated-to-operator"}]
 }
 ```
 
@@ -211,9 +213,11 @@ Run `gh pr view <pr> --repo <repo> --json state,author,reviews,isCrossRepository
 
 Only if NONE of the above hold → the PR genuinely needs review.
 
+**Restricted-output routing check (run immediately after the above SKIP checks pass):** If `author.login` is in `restricted_output_review_authors`, this candidate does NOT follow the normal spawn path in § D below — route it into **Restricted-Output Review Mode** instead (see § Restricted-Output Review Mode). Normal dedup (own-PR, closed, already-reviewed-by-operator, already-independently-reviewed) still applies identically before this check; restricted routing only changes what happens AFTER dedup passes.
+
 ### D) Spawn Reviews (Maximum Parallelism — No Concurrency Cap)
 
-For each PR that needs review:
+For each PR that needs review AND whose author is NOT in `restricted_output_review_authors`:
 
 1. Add 👀 reaction to the Slack message (`slack_add_reaction(channel=<channel_id>, timestamp=<message_ts>, reaction="eyes")`).
 2. Add to `active` with `status: "spawning"` BEFORE spawning (prevents next-tick double-spawn).
@@ -227,6 +231,39 @@ For each PR that needs review:
    **Fork PR** (`isCrossRepository == true`) → omit the `gh pr checkout` step from the brief; pass `--cross-repo` note instead.
    **Worktree-name collision** → append `b` to the crew name (e.g., `review-123b`).
 7. Update `active` entry `status` to `"reviewing"`. Persist state.
+
+## Restricted-Output Review Mode
+
+**Trigger:** A candidate PR (post-dedup, § C) whose `author.login` is in `restricted_output_review_authors`.
+
+**Intent:** Run the exact same full specialist review as normal — no shortcuts on analysis — but constrain what gets written back to GitHub to a single safe outcome: silent approval when clean, or nothing-plus-escalation when not. This mode exists for authors where the operator wants eyes-on-everything internally but does not want automated review comments landing on their PRs unless the operator has personally triaged them.
+
+**Routing (instead of § D normal spawn):**
+
+1. Add 👀 reaction to the Slack message, same as normal spawn.
+2. Add to `active` with `status: "spawning"` BEFORE spawning, same as normal spawn.
+3. Persist state file.
+4. Determine `repo_path`, same convention as § D.
+5. Stagger ~6 seconds between parallel spawns, same as § D.
+6. Run (with `run_in_background=true`):
+   ```
+   crew create review-<pr> --repo <repo_path> --base main --model 'sonnet[1m]' --tell "<restricted-output review brief — SINGLE LINE, no newlines — see below>"
+   ```
+7. Update `active` entry `status` to `"reviewing"`. Persist state.
+
+**Restricted-output review brief (pass to `crew create review-<pr>`):**
+
+Single-line form (no literal newlines), otherwise identical setup to the Guarded Review Brief (checkout, independent-review pre-check, sentinel printing):
+
+`Review PR <pr> (<repo>) [RESTRICTED-OUTPUT MODE]. Step 1: run \`gh pr checkout <pr>\` (lands the worktree on the PR's exact branch). Step 2: BEFORE reviewing, run \`gh pr view <pr> --json author,reviews\` — extract author.login, then check if any review whose author.login is NEITHER the PR author NOR a known bot (<bot_logins_csv>) exists; the PR author's own self-review / self-comment does NOT count as an independent review — if such an independent review exists, print \`SKIPPED-<pr>-already-reviewed\` and STOP (do not run /pr-review). Step 3: otherwise run \`/pr-review <pr> --restricted-output\` — this tells /pr-review to run its full internal specialist review as normal, but restrict the GitHub write to exactly one of: (a) a clean APPROVE with empty body and zero inline comments, posted silently, or (b) nothing posted at all, with the verdict and a short summary reported back to you instead. Step 4: if /pr-review reports back a non-clean verdict (case b), print \`ESCALATE-<pr>: <verdict + one-line summary>\` and stop — do NOT post anything to the PR yourself. Step 5: if /pr-review silently approved (case a), print \`REVIEW-POSTED-<pr>\` and stop. The /pr-review skill's FINAL PRE-POST CHECK still applies before any write — if the PR is superseded, print \`SUPERSEDED-<pr>\` and stop. Review-only — no commit/push/branch.`
+
+Where `<bot_logins_csv>` is the comma-separated list from `bot_logins`, or `none` if empty.
+
+**Follow-up loop disabled:** Restricted-output mode never posts a COMMENT or CHANGES_REQUESTED review — the only possible outputs are a silent APPROVE or nothing-plus-escalation. There is no comment thread to follow through on, so these PRs never enter `followup`. When the spawned session prints `REVIEW-POSTED-<pr>` (silent approve case), handle it exactly like § A) Monitor Active Reviews' `APPROVED` branch: add ✅ + dismiss + `active`→`done(reviewed-approved)`.
+
+**Escalation handling:** When the spawned session prints `ESCALATE-<pr>: <verdict + summary>`, dismiss the crew session and move the entry `active`→`done(reason: "escalated-to-operator")`. Surface the verdict + summary to the operator per § Report Discipline — do NOT post anything to the PR. Leave 👀 in place; do NOT add ✅.
+
+**Normal dedup still applies:** Skip if the PR is closed, is the operator's own PR, has already been independently human-reviewed, or is already `APPROVED` by a human-only review — exactly the same § C checks that apply to normal candidates, run BEFORE the restricted-output routing check.
 
 ## The Two Briefs (Spawned Sessions)
 
@@ -349,6 +386,7 @@ This skill is fully generalized:
 - **Operator identity** (Slack user ID, GitHub login) is auto-detected at runtime — not hardcoded.
 - **Repo paths** are derived from the PR links (e.g., `~/github.com/<org>/<repo>`). Adjust the path convention to match the local checkout structure if it differs.
 - The **bot-exclusion list** is a configurable argument with an empty default — pass your org review bot's GitHub login via `--bot-logins`.
+- The **restricted-output-authors list** is a configurable argument with an empty default (`restricted_output_review_authors`), following the same convention as the bot-exclusion list — pass author logins that should get Restricted-Output Review Mode via `--restricted-output-authors`. No specific login is hardcoded anywhere in this skill.
 
 The Maze-specific examples in the original spec (`C0AET46NL30`, `claude-maze`, `maze-monorepo`, `~/github.com/mazedesignhq/<repo>`) are illustrative only. Do not hardcode them. This skill works for any team's Slack review-request channel and GitHub repos.
 
@@ -391,7 +429,12 @@ CYCLE START:
   C+D) for each candidate:
        gh pr view --json state,author,reviews,isCrossRepository
        skip if: own PR | closed | already reviewed by operator | independent human reviewed
-       → needs review:
+       → needs review AND author in restricted_output_review_authors:
+           add 👀 reaction, add to active (status: spawning), persist state
+           crew create review-<pr> ... --tell "<restricted-output brief>" (background, stagger 6s)
+           update status: reviewing, persist state
+           (see § Restricted-Output Review Mode — silent APPROVE or escalate-to-operator only)
+       → needs review (author NOT restricted):
            add 👀 reaction
            add to active (status: spawning)
            persist state
