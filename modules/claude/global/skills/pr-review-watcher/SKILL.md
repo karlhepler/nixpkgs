@@ -148,7 +148,7 @@ For each entry in `active`:
 
 Evaluate:
 
-- **Pane shows buffered/unsubmitted brief** (pane content contains the spawn brief text or a paste placeholder like `[Pasted text #1]`, NO spinner, no tool activity, session never started — this is the PASTED-not-SUBMITTED state): a `crew create --tell` spawn signals `told=true` when the brief is PASTED into the worker's input buffer, NOT when it is SUBMITTED. The brief can sit unsubmitted indefinitely. Recovery: `crew tell <crew> --keys "Enter"` to submit it, then leave the entry active (status: reviewing). This self-healing is expected on normal spawns, not only after trust/MCP modals.
+- **Pane shows buffered/unsubmitted brief** (pane content contains the spawn brief text or a paste placeholder like `[Pasted text #1]`, NO spinner, no tool activity, session never started — this is the PASTED-not-SUBMITTED state): a `crew create --tell` spawn signals `told=true` when the brief is PASTED into the worker's input buffer, NOT when it is SUBMITTED. The brief can sit unsubmitted indefinitely. Recovery: `crew tell <crew> --keys "Enter"` to submit it, then leave the entry active (status: reviewing). This self-healing is expected on normal spawns, not only after trust/MCP modals (the same paste-then-submit semantics apply to `--tell-file` spawns — the file content is delivered through the identical paste/Enter mechanism).
 - **Pane shows `SKIPPED-<pr>`** (guard caught a human review mid-bootstrap) → `crew dismiss <crew-name>` + move active→done(`skipped-human-reviewed`). No reaction change.
 - **Pane shows `SUPERSEDED-<pr>`** (pre-post check aborted the post — PR was superseded during review) → `crew dismiss <crew-name>` + move active→done(`superseded-race`). Leave any 👀 reaction in place. Do NOT add ✅.
 - **Pane shows `REVIEW-POSTED-<pr>` AND our review appears in `gh pr view --json reviews`** → check the review state:
@@ -224,13 +224,14 @@ For each PR that needs review AND whose author is NOT in `restricted_output_revi
 3. Persist state file.
 4. Determine `repo_path`: derive from the org/repo in the PR link → `~/github.com/<org>/<repo>` (generalized convention; adjust to the actual local checkout path if known from the PR link).
 5. Stagger ~6 seconds between parallel spawns to avoid git-worktree lock collisions.
-6. Run (with `run_in_background=true`):
+6. Compose the guarded review brief (see § Guarded Review Brief) as a single line with all `<pr>`/`<repo>`/`<bot_logins_csv>` substitutions filled, and write it to `.scratchpad/<pr>-guarded-review-brief.md`.
+7. Run (with `run_in_background=true`):
    ```
-   crew create review-<pr> --repo <repo_path> --base main --model 'sonnet[1m]' --tell "<guarded review brief — SINGLE LINE, no newlines>"
+   crew create review-<pr> --repo <repo_path> --base main --model 'sonnet[1m]' --tell-file .scratchpad/<pr>-guarded-review-brief.md
    ```
    **Fork PR** (`isCrossRepository == true`) → omit the `gh pr checkout` step from the brief; pass `--cross-repo` note instead.
    **Worktree-name collision** → append `b` to the crew name (e.g., `review-123b`).
-7. Update `active` entry `status` to `"reviewing"`. Persist state.
+8. Update `active` entry `status` to `"reviewing"`. Persist state.
 
 ## Restricted-Output Review Mode
 
@@ -245,15 +246,16 @@ For each PR that needs review AND whose author is NOT in `restricted_output_revi
 3. Persist state file.
 4. Determine `repo_path`, same convention as § D.
 5. Stagger ~6 seconds between parallel spawns, same as § D.
-6. Run (with `run_in_background=true`):
+6. Compose the restricted-output review brief (see below) as a single line with all `<pr>`/`<repo>`/`<bot_logins_csv>` substitutions filled, and write it to `.scratchpad/<pr>-restricted-review-brief.md`.
+7. Run (with `run_in_background=true`):
    ```
-   crew create review-<pr> --repo <repo_path> --base main --model 'sonnet[1m]' --tell "<restricted-output review brief — SINGLE LINE, no newlines — see below>"
+   crew create review-<pr> --repo <repo_path> --base main --model 'sonnet[1m]' --tell-file .scratchpad/<pr>-restricted-review-brief.md
    ```
-7. Update `active` entry `status` to `"reviewing"`. Persist state.
+8. Update `active` entry `status` to `"reviewing"`. Persist state.
 
-**Restricted-output review brief (pass to `crew create review-<pr>`):**
+**Restricted-output review brief (deliver via `crew create review-<pr> ... --tell-file <path>`):**
 
-Single-line form (no literal newlines), otherwise identical setup to the Guarded Review Brief (checkout, independent-review pre-check, sentinel printing):
+Compose as a single line (no literal newlines), write it to `.scratchpad/<pr>-restricted-review-brief.md`, then pass that path via `--tell-file` (never inline `--tell`) — otherwise identical setup to the Guarded Review Brief (checkout, independent-review pre-check, sentinel printing). Restricted-output briefs are also long, so they use `--tell-file` — see § Single-Line `--tell` and Length-Based Truncation:
 
 `Review PR <pr> (<repo>) [RESTRICTED-OUTPUT MODE]. Step 1: run \`gh pr checkout <pr>\` (lands the worktree on the PR's exact branch). Step 2: BEFORE reviewing, run \`gh pr view <pr> --json author,reviews\` — extract author.login, then check if any review whose author.login is NEITHER the PR author NOR a known bot (<bot_logins_csv>) exists; the PR author's own self-review / self-comment does NOT count as an independent review — if such an independent review exists, print \`SKIPPED-<pr>-already-reviewed\` and STOP (do not run /pr-review). Step 3: otherwise run \`/pr-review <pr> --restricted-output\` — this tells /pr-review to run its full internal specialist review as normal, but restrict the GitHub write to exactly one of: (a) a clean APPROVE with empty body and zero inline comments, posted silently, or (b) nothing posted at all, with the verdict and a short summary reported back to you instead. Step 4: if /pr-review reports back a non-clean verdict (case b), print \`ESCALATE-<pr>: <verdict + one-line summary>\` and stop — do NOT post anything to the PR yourself. Step 5: if /pr-review silently approved (case a), print \`REVIEW-POSTED-<pr>\` and stop. The /pr-review skill's FINAL PRE-POST CHECK still applies before any write — if the PR is superseded, print \`SUPERSEDED-<pr>\` and stop. Review-only — no commit/push/branch.`
 
@@ -267,29 +269,31 @@ Where `<bot_logins_csv>` is the comma-separated list from `bot_logins`, or `none
 
 ## The Two Briefs (Spawned Sessions)
 
-**CRITICAL: Both briefs MUST be SINGLE-LINE when passed to `--tell`. Newlines in `--tell` cause early submission — the brief is truncated. Compose as a single line with no literal newlines.**
+**CRITICAL: Both briefs MUST be composed as SINGLE-LINE text (no literal newlines) and delivered via `crew create --tell-file <path>` — NEVER inline `--tell`. Newlines in `--tell` cause early submission, and raw length above ~800-1000 chars (truncation observed near 1KB) causes silent length-based truncation (a mid-word cut, no special character required) even without newlines. Write each composed brief to a `.scratchpad/` file first, then pass the path via `--tell-file`.**
 
 **Single-quote `sonnet[1m]` in the `crew create` command** — zsh globs `[1m]` without quotes and the model arg is silently mangled.
 
 ---
 
-### Guarded Review Brief (pass to `crew create review-<pr>`)
+### Guarded Review Brief (deliver via `crew create review-<pr> ... --tell-file <path>`)
 
-Single-line form (no literal newlines):
+Compose as a single line (no literal newlines), write it to `.scratchpad/<pr>-guarded-review-brief.md`, then pass that path via `--tell-file` (never inline `--tell` — see § The Two Briefs and § Single-Line `--tell` and Length-Based Truncation):
 
 `Review PR <pr> (<repo>). Step 1: run \`gh pr checkout <pr>\` (lands the worktree on the PR's exact branch). Step 2: BEFORE reviewing, run \`gh pr view <pr> --json author,reviews\` — extract author.login, then check if any review whose author.login is NEITHER the PR author NOR a known bot (<bot_logins_csv>) exists; the PR author's own self-review / self-comment does NOT count as an independent review (authors routinely self-comment to explain their change) — if such an independent review exists, print \`SKIPPED-<pr>-already-reviewed\` and STOP (do not run /pr-review). Step 3: otherwise run \`/pr-review <pr>\`. The /pr-review skill performs a FINAL PRE-POST CHECK before posting — if the PR is superseded (state!=OPEN, mergedAt non-null, reviewDecision==APPROVED by a real-human reviewer (not a bot or auto-approval account), or reviewed by another real human), it aborts the post and you must print \`SUPERSEDED-<pr>\` and stop. When the review is POSTED, print \`REVIEW-POSTED-<pr>\` and stop. Review-only — no commit/push/branch.`
 
 Where `<bot_logins_csv>` is the comma-separated list from `bot_logins` (e.g., `claude-maze`), or `none` if the list is empty.
 
-**Guarded review brief (fork PR variant):** (use when `isCrossRepository == true` — omit `gh pr checkout` since the fork's head is not directly checkout-able the same way)
+**Guarded review brief (fork PR variant):** (use when `isCrossRepository == true` — omit `gh pr checkout` since the fork's head is not directly checkout-able the same way; write this text to the same `.scratchpad/<pr>-guarded-review-brief.md` file instead of the base form)
 
 `Review PR <pr> (<repo>) [FORK/CROSS-REPO — no direct checkout]. Step 1: BEFORE reviewing, run \`gh pr view <pr> --json author,reviews\` — extract author.login, then check if any review whose author.login is NEITHER the PR author NOR a known bot (<bot_logins_csv>) exists; the PR author's own self-review / self-comment does NOT count as an independent review (authors routinely self-comment to explain their change) — if such an independent review exists, print \`SKIPPED-<pr>-already-reviewed\` and STOP (do not run /pr-review). Step 2: otherwise run \`/pr-review <pr>\`. The /pr-review skill performs a FINAL PRE-POST CHECK before posting — if the PR is superseded (state!=OPEN, mergedAt non-null, reviewDecision==APPROVED by a real-human reviewer (not a bot or auto-approval account), or reviewed by another real human), it aborts the post and you must print \`SUPERSEDED-<pr>\` and stop. When the review is POSTED, print \`REVIEW-POSTED-<pr>\` and stop. Review-only — no commit/push/branch.`
 
 ---
 
-### Follow-Up Brief (pass to `crew create fu-<pr>`)
+### Follow-Up Brief (deliver via `crew create fu-<pr> ... --tell-file <path>`)
 
-Single-line form (no literal newlines):
+**Converted to `--tell-file` delivery:** this brief is ~1965 characters — well above the ~800-1000 char threshold in § Single-Line `--tell` and Length-Based Truncation — so it is delivered the same way as the Guarded and Restricted-Output briefs, never inline `--tell`.
+
+Compose as a single line (no literal newlines), write it to `.scratchpad/<pr>-followup-brief.md`, then pass that path via `crew create fu-<pr> ... --tell-file .scratchpad/<pr>-followup-brief.md`:
 
 `REVIEW FOLLOW-THROUGH for PR <pr> (<repo>). We already posted a non-approving review. Goal: help the author land this PR. Bias toward APPROVE — if the change is safe (no blocking issue: security / data-loss / regression / correctness) and serves the author's stated intent, approve; no nits; bots already review. Confirm intent before flagging a deviation as a defect. Setup once: \`gh pr checkout <pr>\`, then \`prc list <pr> --author <github_login>\` to see our comments. Then self-pulse ~every 5 min via \`ScheduleWakeup\`(270s): (1) \`git pull\`; (2) check replies to our comments via \`prc list <pr>\` + unresolved threads; (3) per reply — if the author addressed it, verify the fix truly resolves it and serves the author's intent, then resolve the thread via \`prc reply <comment_id> '<ack>'\` + \`prc resolve <thread_id>\`; if more is needed, research and post a friendly reply using tentative phrasing (e.g. 'might be worth ...' / 'could be worth considering ...', not 'you should ...'); if waiting, leave it; (4) when ALL concerns are resolved and the change is safe, run FINAL PRE-POST CHECK: \`gh pr view <pr> --json author,state,mergedAt,reviewDecision,reviews,latestReviews\` — if state!=OPEN, mergedAt non-null, reviewDecision==APPROVED by a real-human reviewer (not a bot or auto-approval account; login not ending in [bot], \`gh api users/<login>\` returns HTTP 200, type==User), or any real human who is NOT the PR author (the PR author's own self-review / self-comment does NOT count — authors routinely self-comment to explain their change) and not a bot (login not ending in [bot], type==User) has reviewed, print \`SUPERSEDED-<pr>\` and stop; otherwise APPROVE (\`prr submit <pr> --event APPROVE\` or \`gh pr review <pr> --approve\`) then print \`FOLLOWUP-APPROVED-<pr>\` and stop; (5) if merged/closed, print \`FOLLOWUP-DONE-<pr>\` and stop; (6) else schedule the next pulse and end. Do NOT modify PR code. Be curious; catch dangerous things.`
 
@@ -319,9 +323,14 @@ If `author.login == github_login`, skip unconditionally. Record in `done` with `
 
 The watcher cron MUST persist even when there are zero active reviews — it has to catch new posts. If a `pulse-cron-lifecycle` style hook tries to self-terminate "when zero crew windows remain," this watcher cron must be **exempt**. It is not a crew-monitoring pulse cron.
 
-### Single-Line `--tell`
+### Single-Line `--tell` and Length-Based Truncation
 
-Newlines in `--tell` cause the shell to submit the command early — the brief is truncated. Compose briefs as a single line. No literal `\n` or multi-line heredoc.
+Inline `--tell` has TWO independent truncation failure modes — guard against both:
+
+- **Newline-triggered:** newlines in `--tell` cause the shell to submit the command early — the brief is truncated mid-line. Compose briefs as a single line. No literal `\n` or multi-line heredoc.
+- **Length-based truncation:** even a newline-free, single-line brief above ~800-1000 characters can be silently truncated on delivery — no special character required, raw length alone triggers it (observed: a ~1900-char single-line brief was cut mid-word around ~1KB, leaving the spawned session blocked on a malformed brief and costing a full cron cycle).
+
+**Rule:** long briefs (above ~800-1000 chars (truncation observed near 1KB)) MUST be delivered via `crew create --tell-file <path>` — write the composed brief to a `.scratchpad/` file first, then pass the path. Reserve inline `--tell` for short briefs and short pointers only. All three spawned-session briefs in this skill (Guarded, Restricted-Output, Follow-Up — see § The Two Briefs) exceed this threshold and are delivered via `--tell-file`.
 
 ### Stagger Parallel Spawns
 
@@ -431,14 +440,16 @@ CYCLE START:
        skip if: own PR | closed | already reviewed by operator | independent human reviewed
        → needs review AND author in restricted_output_review_authors:
            add 👀 reaction, add to active (status: spawning), persist state
-           crew create review-<pr> ... --tell "<restricted-output brief>" (background, stagger 6s)
+           write restricted-output brief to .scratchpad/<pr>-restricted-review-brief.md
+           crew create review-<pr> ... --tell-file .scratchpad/<pr>-restricted-review-brief.md (background, stagger 6s)
            update status: reviewing, persist state
            (see § Restricted-Output Review Mode — silent APPROVE or escalate-to-operator only)
        → needs review (author NOT restricted):
            add 👀 reaction
            add to active (status: spawning)
            persist state
-           crew create review-<pr> ... --tell "<guarded brief>" (background, stagger 6s)
+           write guarded brief to .scratchpad/<pr>-guarded-review-brief.md
+           crew create review-<pr> ... --tell-file .scratchpad/<pr>-guarded-review-brief.md (background, stagger 6s)
            update status: reviewing
            persist state
 
