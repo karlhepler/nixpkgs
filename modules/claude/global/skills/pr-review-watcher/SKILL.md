@@ -112,8 +112,9 @@ Read at the START of every cycle. Persist at the END of every cycle. If the file
   "watermark_ts": "<newest processed slack message ts>",
   "active":   [{"pr": 123, "repo": "owner/repo", "message_ts": "...", "crew": "review-123", "status": "spawning|reviewing"}],
   "followup": [{"pr": 123, "repo": "owner/repo", "message_ts": "...", "crew": "fu-123", "our_review": "COMMENTED"}],
+  "awaiting_decision": [{"pr": 123, "repo": "owner/repo", "message_ts": "...", "crew": "review-123", "verdict": "CHANGES_REQUESTED | COMMENT | ...", "summary": "<one-line escalated summary>"}],
   "queue":    [],
-  "done":     [{"pr": 123, "reason": "reviewed-approved | skipped-human-reviewed | skipped-own-pr | skipped-closed | approved-after-followup | merged | error | escalated-to-operator"}]
+  "done":     [{"pr": 123, "reason": "reviewed-approved | skipped-human-reviewed | skipped-own-pr | skipped-closed | approved-after-followup | merged | error | operator-dropped"}]
 }
 ```
 
@@ -122,6 +123,8 @@ Read at the START of every cycle. Persist at the END of every cycle. If the file
 **`active`:** PRs currently being reviewed by a spawned `crew` session.
 
 **`followup`:** PRs where we posted a non-approving review and are now following through. Each entry has a `crew` window (`fu-<pr>`) that self-pulses via ScheduleWakeup.
+
+**`awaiting_decision`:** Review sessions that reached a verdict requiring an operator decision (e.g., a restricted-output review that escalated with `ESCALATE-<pr>`) but are being HELD ALIVE (idle) — NOT dismissed — pending that decision. Each entry records the crew window name and the escalated `verdict` + `summary` so the decision can be relayed to the still-live session via `crew tell`. Entries leave this bucket only after the operator decides AND the same still-alive session executes that decision; then the session is dismissed and the entry moves to `done`.
 
 **`done`:** Terminal entries. Never re-process a PR found in `done`.
 
@@ -172,6 +175,20 @@ Evaluate:
 - **`state != OPEN`** (merged or closed) → `crew dismiss fu-<pr>` + followup→done(`merged` or `closed`).
 - **Otherwise** → leave it. The follow-up session self-pulses via ScheduleWakeup (the watcher cron is the backstop that detects completion).
 
+### A3) Monitor Awaiting-Decision Reviews
+
+For each entry in `awaiting_decision` (review sessions escalated to the operator and HELD ALIVE per § Restricted-Output Review Mode → Escalation handling):
+
+- **No operator decision yet** → the entry stays held. Do NOT dismiss the crew session and do NOT add ✅ — keep the session alive (idle) so it retains its full review context. Re-surface the pending verdict + summary to the operator per § Report Discipline (stay silent unless something changed — no per-tick heartbeat noise).
+- **Operator has decided AND the decision has been relayed to and executed BY THE SAME still-alive session** (via `crew tell <crew>`) → branch by what was actually executed:
+  - **Executed decision = APPROVE** → add ✅ + `crew dismiss <crew>` + move `awaiting_decision`→`done` (reason: `reviewed-approved`).
+  - **Executed decision = operator says drop it (nothing posted)** → `crew dismiss <crew>` + move `awaiting_decision`→`done` (reason: `operator-dropped`).
+  - **Executed decision = a real COMMENTED or CHANGES_REQUESTED review was posted** → move the entry `awaiting_decision`→`followup` (`our_review=<state>`), keeping the same still-alive session as the follow-up host, and follow through via § A2 / the Follow-Up loop exactly as the normal `active`→`followup` branch does at § A) Monitor Active Reviews. Do NOT dismiss-to-done in this case. **A posted non-approving review NEVER just ends.** This routes to followup exactly as the normal review path does.
+
+  Never dismiss-then-respawn a fresh session to execute the decision.
+
+Entries in `awaiting_decision` are still visible to the normal dedup/skip check in § B — a PR held here is NOT re-spawned as a new candidate (only § B checks bucket membership against `active`/`followup`/`awaiting_decision`/`queue`).
+
 ### B) New Posts
 
 Run `slack_read_channel(channel=<channel_id>, limit=15)`.
@@ -192,7 +209,7 @@ Parse `repo` (as `owner/repo`) and `pr` (integer). Handle both common formats:
 4. **If any non-author, non-bot, non-operator login in `reviews` has `state == CHANGES_REQUESTED`** → genuinely blocked by a peer; leave it; skip silently.
 5. **Otherwise** (our prior approval was dismissed by a new push, or we previously only COMMENTED / CHANGES_REQUESTED and the PR still needs our approval) → post a **straight approval**: `prr submit <pr> --repo <repo> --event APPROVE` with a brief friendly body (`"Thanks for addressing the comments — looks good."`). No new findings. No new inline comments. No re-litigating. Add ✅ reaction to the Slack post. Update the `done` entry reason to `straight-approved-re-review`.
 
-Skip if `pr` already in `active`, `followup`, or `queue` (not yet processed).
+Skip if `pr` already in `active`, `followup`, `awaiting_decision`, or `queue` (not yet processed).
 
 For posts that contain a PR link but no re-review language and the PR is already in `done` → skip (normal behavior).
 
@@ -263,7 +280,14 @@ Where `<bot_logins_csv>` is the comma-separated list from `bot_logins`, or `none
 
 **Follow-up loop disabled:** Restricted-output mode never posts a COMMENT or CHANGES_REQUESTED review — the only possible outputs are a silent APPROVE or nothing-plus-escalation. There is no comment thread to follow through on, so these PRs never enter `followup`. When the spawned session prints `REVIEW-POSTED-<pr>` (silent approve case), handle it exactly like § A) Monitor Active Reviews' `APPROVED` branch: add ✅ + dismiss + `active`→`done(reviewed-approved)`.
 
-**Escalation handling:** When the spawned session prints `ESCALATE-<pr>: <verdict + summary>`, dismiss the crew session and move the entry `active`→`done(reason: "escalated-to-operator")`. Surface the verdict + summary to the operator per § Report Discipline — do NOT post anything to the PR. Leave 👀 in place; do NOT add ✅.
+**Escalation handling:** When the spawned session prints `ESCALATE-<pr>: <verdict + summary>`, do NOT dismiss the crew session. Instead, **keep the review session alive** (idle) and move the entry `active`→`awaiting_decision`, recording the crew window name and the escalated `verdict` + `summary`. Surface the verdict + summary to the operator per § Report Discipline — do NOT post anything to the PR. Leave 👀 in place; do NOT add ✅.
+
+Only after the operator decides AND that decision is executed BY THE SAME still-alive session do you act — branch by what was actually executed:
+- **Executed decision = APPROVE** → add ✅ + `crew dismiss <crew>` + move `awaiting_decision`→`done` (reason: `reviewed-approved`).
+- **Executed decision = operator says drop it (nothing posted)** → `crew dismiss <crew>` + move `awaiting_decision`→`done` (reason: `operator-dropped`).
+- **Executed decision = a real COMMENTED or CHANGES_REQUESTED review was posted** → move `awaiting_decision`→`followup` (`our_review=<state>`), keeping the same still-alive session as the follow-up host, and follow through via § A2 / the Follow-Up loop exactly as the normal review path does. Do NOT dismiss-to-done in this case. **A posted non-approving review NEVER just ends.**
+
+Relay the operator's decision to the live session via `crew tell <crew>` (e.g., submit the approval / post the agreed comments / request changes / drop it) — the session still holds the full review context and is best positioned to execute the decided action. Never dismiss-then-respawn a fresh session just to execute the operator's decision.
 
 **Normal dedup still applies:** Skip if the PR is closed, is the operator's own PR, has already been independently human-reviewed, or is already `APPROVED` by a human-only review — exactly the same § C checks that apply to normal candidates, run BEFORE the restricted-output routing check.
 
@@ -426,11 +450,20 @@ CYCLE START:
        → state != OPEN: dismiss + done(merged/closed)
        → otherwise: leave it (self-pulses via ScheduleWakeup)
 
+  A3) for each awaiting_decision entry:
+       → no operator decision yet: HELD ALIVE — do NOT dismiss, keep session idle (retains review context)
+       → operator decided AND decision relayed to + executed by the SAME still-alive session (crew tell):
+           executed = APPROVE: add ✅ + dismiss + done(reviewed-approved)
+           executed = drop it (nothing posted): dismiss + done(operator-dropped)
+           executed = COMMENTED/CHANGES_REQUESTED posted: move to followup (our_review=<state>) —
+             exactly as the normal review path does; a posted non-approving review NEVER just ends
+       (never dismiss-then-respawn a fresh session to execute the decision)
+
   B) slack_read_channel(limit=15)
        for each msg ts > watermark, author != self_user_id, contains github PR link:
          parse repo + pr
          if pr in done AND post has re-review language → straight-approval flow (see § B) New Posts)
-         skip if in active/followup/queue
+         skip if in active/followup/awaiting_decision/queue
          if pr in done (no re-review language) → skip
          → candidate
        update watermark_ts
