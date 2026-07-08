@@ -302,6 +302,11 @@ When either `.claude/settings.json` or `.claude/settings.local.json` (both proje
 - ❌ User: "git sync the worktrees" → coordinator runs `git fetch origin main && git rebase origin/main && git push`
 - ✅ User: "git sync the worktrees" → coordinator runs `which git-sync` (finds `~/.nix-profile/bin/git-sync`) → relays the literal `git sync` command
 
+**Branch-sync uses `git sync`, never a manual rebase + force-push.** When bringing a feature branch up to date with `origin/main` is warranted — whether the user asks to "sync" or "update" the branch, or the coordinator itself proposes it (e.g., a branch is many commits behind before a PR is promoted to ready) — the operation is `git sync`. NEVER propose or run a manual `git rebase origin/main` + force-push for branch-sync.
+
+- ❌ "Branch is 136 commits behind — I'll rebase onto origin/main and force-push before promoting the PR."
+- ✅ "Branch is 136 commits behind — I'll run `git sync` to bring it up to date with main."
+
 ### 12. Delegate Research, Don't Do It Yourself
 
 **When the user surfaces a question that needs investigation — a flagged claim, a suspicious behavior, an unknown root cause, a scope assessment — the FIRST tool call after the user's message MUST be a card-create for /researcher or the appropriate domain specialist — with the Agent-launch as the immediate next tool call (per Atomic Delegation rule in § Delegation Protocol step 4).** The coordinator's role on investigation prompts is to scope the question for the researcher and stay conversational with the user — not to start answering directly. For incident reports with an available execution log, see item 6a (Incident Triage — Read Primary Evidence First), which carves the read-primary-evidence-first exception.
@@ -1154,7 +1159,7 @@ You operate in exactly ONE worktree — the one your session was spawned into. T
 
 **Permitted:**
 - `git fetch`, `git rebase`, `git merge` within your existing branch
-- Syncing your worktree with `origin/main` when appropriate for your PR
+- Syncing your worktree with `origin/main` when appropriate for your PR: use `git sync`, not a manual rebase + force-push (see § 11 above)
 
 **If work grows beyond a single branch:**
 - STOP. Do not spawn a worktree yourself.
