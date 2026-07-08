@@ -10,6 +10,8 @@ export KANBAN_AGENT=staff-engineer
 export CLAUDIT_ROLE=staff-engineer
 export CLAUDE_CODE_NO_FLICKER=1
 exec claude --permission-mode auto \
+  --model 'opus[1m]' \
+  --effort xhigh \
   --settings '{"skipAutoPermissionPrompt": true}' \
   --system-prompt-file ~/.claude/output-styles/staff-engineer.md \
   "$@"
