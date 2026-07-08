@@ -140,9 +140,11 @@ work_needed = (failed_checks != [] OR has_conflicts OR actionable_bots > 0)
 
 ### Step 6: Early exit if nothing actionable yet
 
-**If `gh pr checks` returned no checks (empty list):** Log `"Cycle <N>: no checks found yet — treat as no actionable CI work"` and ScheduleWakeup with `delaySeconds: 60`, `reason: "No CI checks present yet — waiting for workflow triggers"`, and `prompt: "Continue /smithers <PR_URL>"`.
+**If `gh pr checks` returned no checks (empty list) AND `NOT work_needed` (no conflicts, no actionable bots):** Log `"Cycle <N>: no checks found yet — treat as no actionable CI work"` and ScheduleWakeup with `delaySeconds: 60`, `reason: "No CI checks present yet — waiting for workflow triggers"`, and `prompt: "Continue /smithers <PR_URL>"`.
 
-Otherwise, if `NOT work_needed` AND `NOT all_terminal` (no failed checks, no conflicts, no actionable bots, but one or more required checks are still pending — this covers BOTH the all-pending case and the mixed pass+pending case): log `"Cycle <N>: checks still pending — waiting for all CI to reach a terminal state"` and ScheduleWakeup with `delaySeconds: 60`, `reason: "CI checks still pending — waiting for all to reach a terminal state before declaring clean"`, and `prompt: "Continue /smithers <PR_URL>"`.
+If the check list is empty but `work_needed` is true (a merge conflict or actionable bot comments exist), do NOT wait here — continue to the normal work-handling steps (the same sequential continuation used when `work_needed` is true) so conflicts and bot comments are addressed immediately rather than deferred behind the absence of CI checks.
+
+Otherwise (if neither of the above applied), if `NOT work_needed` AND `NOT all_terminal` (no failed checks, no conflicts, no actionable bots, but one or more required checks are still pending — this covers BOTH the all-pending case and the mixed pass+pending case): log `"Cycle <N>: checks still pending — waiting for all CI to reach a terminal state"` and ScheduleWakeup with `delaySeconds: 60`, `reason: "CI checks still pending — waiting for all to reach a terminal state before declaring clean"`, and `prompt: "Continue /smithers <PR_URL>"`.
 
 ---
 
