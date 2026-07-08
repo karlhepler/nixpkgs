@@ -136,24 +136,19 @@ Compute: `has_conflicts = (mergeable == "CONFLICTING" or mergeStateStatus == "DI
 work_needed = (failed_checks != [] OR has_conflicts OR actionable_bots > 0)
 ```
 
-Also compute:
-```
-no_actionable_work = (all checks pending AND actionable_bots == 0 AND NOT has_conflicts)
-```
-
 ---
 
 ### Step 6: Early exit if nothing actionable yet
 
 **If `gh pr checks` returned no checks (empty list):** Log `"Cycle <N>: no checks found yet — treat as no actionable CI work"` and ScheduleWakeup with `delaySeconds: 60`, `reason: "No CI checks present yet — waiting for workflow triggers"`, and `prompt: "Continue /smithers <PR_URL>"`.
 
-Otherwise, if `no_actionable_work` is true (all checks still pending, no bot comments, no conflicts): log `"Cycle <N>: no actionable work yet — checks still pending"` and ScheduleWakeup with `delaySeconds: 60`, `reason: "All CI checks still pending — waiting for results"`, and `prompt: "Continue /smithers <PR_URL>"`.
+Otherwise, if `NOT work_needed` AND `NOT all_terminal` (no failed checks, no conflicts, no actionable bots, but one or more required checks are still pending — this covers BOTH the all-pending case and the mixed pass+pending case): log `"Cycle <N>: checks still pending — waiting for all CI to reach a terminal state"` and ScheduleWakeup with `delaySeconds: 60`, `reason: "CI checks still pending — waiting for all to reach a terminal state before declaring clean"`, and `prompt: "Continue /smithers <PR_URL>"`.
 
 ---
 
 ### Step 7: No-work path (PR may be clean)
 
-If `NOT work_needed`:
+If `NOT work_needed` AND `all_terminal` (no failed checks, no conflicts, no actionable bots, and every check has reached a terminal bucket — no pending):
 
 - **If `.smithers/clean_confirmed` file exists (`test -f "$(git rev-parse --show-toplevel)/.smithers/clean_confirmed"`):** push any unpushed commits (`git log @{u}.. --oneline`; if non-empty, run `git push`; on push failure: log the error and **stop** with no ScheduleWakeup). Then proceed to **Step 7a: Handle PR ready**.
 - **If `.smithers/clean_confirmed` file does NOT exist:**
