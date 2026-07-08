@@ -22,6 +22,8 @@ argument-hint: "<channel-id | #channel-name | channel-name | slack-archive-url> 
 
 **The intent:** Help teammates land their PRs, not gate them. Be curious and inquisitive, catch genuinely dangerous issues, confirm the code serves the author's stated intent. When a review is non-approving, follow through until the PR is approved, merged, or closed.
 
+**The authority model — findings-first is the DEFAULT for EVERY review, ALL authors (no configured subset):** The watcher NEVER editorializes onto a PR autonomously. Every review, regardless of author, is findings-first. If a PR is cleanly approvable, it gets a silent empty APPROVE with no human round-trip. If it is NOT clean, the coordinator is NOT authorized to post any comment (inline or body) or a change-request on its own — instead the spawned review session RETURNS its structured findings (an enumerable list of candidate comments) and is HELD ALIVE (idle) while the coordinator walks the operator through each candidate ONE AT A TIME via `AskUserQuestion`. Each candidate is surfaced with an ELI5 of any technical concept plus enough PR background/context for the operator to decide, and the operator says per-finding whether a comment should be posted and what it should say. Autonomous write authority for a review is limited to exactly one outcome: a clean empty APPROVE. Everything else — any comment, any change-request — requires per-finding human confirmation. The reviewer is a findings-generator plus an operator-directed comment-poster; it always comes to the operator first, one issue at a time.
+
 ## Launch Arguments
 
 `$ARGUMENTS`
@@ -38,7 +40,7 @@ argument-hint: "<channel-id | #channel-name | channel-name | slack-archive-url> 
 - `--lookback N` (default 5): how many of the most-recent posts to consider on the FIRST run only.
 - `--interval <minutes>` (default 5): integer number of minutes for the cron pulse cadence (used for `CronCreate` expression `*/N * * * *`).
 - `--bot-logins login1,login2,...` (default: empty list — **empty by design** for generalization; operators should pass their org's review-bot login(s) here, e.g., `claude-maze`, so bot reviews are not counted as independent human reviews): GitHub logins treated as bots and excluded from the "already reviewed by a human" check.
-- `--restricted-output-authors login1,login2,...` (default: empty list — **empty by design** for generalization, same convention as `--bot-logins` above; operators supply their own author logins here): GitHub logins whose PRs are routed into **Restricted-Output Review Mode** (see § Restricted-Output Review Mode) instead of the normal review path. The actual login(s) are operator configuration — never hardcode a specific login in this skill file.
+- `--restricted-output-authors login1,login2,...` (**DEPRECATED / no-op — retained only for backward-compatible arg parsing**): findings-first review is now the DEFAULT for every review and every author (see § Findings-First Review Model), so this argument no longer gates anything — it does not change routing for any author. It is still accepted silently so existing launch commands do not break, but it selects nothing: all authors already get findings-first behavior. Do not rely on it; it will be removed once no launch commands pass it.
 - `--model` (default `'sonnet[1m]'`): model for spawned review and follow-up sessions. Single-quote the value when passing to `crew create` — zsh globs `[1m]` without quotes.
 
 ## Requirements (declare and verify on launch)
@@ -112,7 +114,7 @@ Read at the START of every cycle. Persist at the END of every cycle. If the file
   "watermark_ts": "<newest processed slack message ts>",
   "active":   [{"pr": 123, "repo": "owner/repo", "message_ts": "...", "crew": "review-123", "status": "spawning|reviewing"}],
   "followup": [{"pr": 123, "repo": "owner/repo", "message_ts": "...", "crew": "fu-123", "our_review": "COMMENTED"}],
-  "awaiting_decision": [{"pr": 123, "repo": "owner/repo", "message_ts": "...", "crew": "review-123", "verdict": "CHANGES_REQUESTED | COMMENT | ...", "summary": "<one-line escalated summary>"}],
+  "awaiting_decision": [{"pr": 123, "repo": "owner/repo", "message_ts": "...", "crew": "review-123", "verdict": "CHANGES_REQUESTED | COMMENT | ...", "summary": "<one-line escalated summary>", "findings": [{"idx": 1, "file": "src/x.go", "line": 42, "severity": "concern", "comment": "<candidate comment text>"}], "walkthrough_idx": 0}],
   "queue":    [],
   "done":     [{"pr": 123, "reason": "reviewed-approved | skipped-human-reviewed | skipped-own-pr | skipped-closed | approved-after-followup | merged | error | operator-dropped"}]
 }
@@ -124,9 +126,11 @@ Read at the START of every cycle. Persist at the END of every cycle. If the file
 
 **`followup`:** PRs where we posted a non-approving review and are now following through. Each entry has a `crew` window (`fu-<pr>`) that self-pulses via ScheduleWakeup.
 
-**`awaiting_decision`:** Review sessions that reached a verdict requiring an operator decision (e.g., a restricted-output review that escalated with `ESCALATE-<pr>`) but are being HELD ALIVE (idle) — NOT dismissed — pending that decision. Each entry records the crew window name and the escalated `verdict` + `summary` so the decision can be relayed to the still-live session via `crew tell`. Entries leave this bucket only after the operator decides AND the same still-alive session executes that decision; then the session is dismissed and the entry moves to `done`.
+**`awaiting_decision`:** Non-clean review sessions (the review found something that would call for a comment or change-request) that are being HELD ALIVE (idle) — NOT dismissed — pending the per-finding operator walkthrough (see § Findings-First Review Model → Per-Finding Walkthrough). Each entry records the crew window name, the escalated `verdict` + `summary`, the enumerable `findings` list (the candidate comments the coordinator walks the operator through, one at a time), and `walkthrough_idx` (the index of the next candidate to surface). The still-alive session retains full review context; it ACCUMULATES the operator-approved comments relayed via `crew tell` and, at walkthrough end, submits ONE unified review — executing the operator's decision. Entries leave this bucket only after the walkthrough is complete AND the still-alive session has submitted the resulting review. On a clean APPROVE / operator-drop the session is dismissed and the entry moves to `done`. On a posted non-approving review a **fresh `fu-<pr>` is spawned with the Follow-Up Brief** and the review session is then dismissed (§ Worktree Cruft (a) add-then-remove — spawn `fu-<pr>`, wait for its `<created ...>` line, THEN dismiss the review session), and the entry moves to `followup`. The review session is never reused as the follow-up host; the fresh `fu-<pr>` runs the § A2 Follow-Up loop.
 
 **`done`:** Terminal entries. Never re-process a PR found in `done`.
+
+**`restricted_output_review_authors`:** Retained in the schema for backward-compatible parsing ONLY — it no longer gates anything and selects nothing (findings-first is the default for every review and every author; see § Findings-First Review Model). A future reader should NOT think it still routes reviews; it does not gate or route anything.
 
 ## Reaction Scheme (Add-Only)
 
@@ -154,9 +158,8 @@ Evaluate:
 - **Pane shows buffered/unsubmitted brief** (pane content contains the spawn brief text or a paste placeholder like `[Pasted text #1]`, NO spinner, no tool activity, session never started — this is the PASTED-not-SUBMITTED state): a `crew create --tell` spawn signals `told=true` when the brief is PASTED into the worker's input buffer, NOT when it is SUBMITTED. The brief can sit unsubmitted indefinitely. Recovery: `crew tell <crew> --keys "Enter"` to submit it, then leave the entry active (status: reviewing). This self-healing is expected on normal spawns, not only after trust/MCP modals (the same paste-then-submit semantics apply to `--tell-file` spawns — the file content is delivered through the identical paste/Enter mechanism).
 - **Pane shows `SKIPPED-<pr>`** (guard caught a human review mid-bootstrap) → `crew dismiss <crew-name>` + move active→done(`skipped-human-reviewed`). No reaction change.
 - **Pane shows `SUPERSEDED-<pr>`** (pre-post check aborted the post — PR was superseded during review) → `crew dismiss <crew-name>` + move active→done(`superseded-race`). Leave any 👀 reaction in place. Do NOT add ✅.
-- **Pane shows `REVIEW-POSTED-<pr>` AND our review appears in `gh pr view --json reviews`** → check the review state:
-  - `APPROVED` → add ✅ reaction + `crew dismiss <crew-name>` + active→done(`reviewed-approved`).
-  - `COMMENTED` or `CHANGES_REQUESTED` → leave 👀 + `crew dismiss <crew-name>` + spawn follow-up session (see § Follow-Up Brief) + move entry active→followup (crew=`fu-<pr>`, our_review=`<state>`). **A non-approving review NEVER just ends.**
+- **Pane shows `ESCALATE-<pr>: <verdict + summary>` followed by the enumerated candidate-findings list** (non-clean review — findings-first, the common non-approve case) → do NOT dismiss the crew session; **keep it alive (idle)** and move the entry active→`awaiting_decision`, recording the crew window name, `verdict` + `summary`, the parsed `findings` list, and `walkthrough_idx: 0`. Leave 👀 in place; do NOT add ✅; do NOT post anything to the PR. The per-finding operator walkthrough runs from § A3). See § Findings-First Review Model → Escalation handling.
+- **Pane shows `REVIEW-POSTED-<pr>` AND our review appears in `gh pr view --json reviews`** → in findings-first mode the only autonomous write is a clean empty APPROVE, so `REVIEW-POSTED` accompanies an `APPROVED` review: add ✅ reaction + `crew dismiss <crew-name>` + active→done(`reviewed-approved`). (A non-approving review is NEVER posted autonomously — that path escalates via `ESCALATE-<pr>` above. If a `COMMENTED`/`CHANGES_REQUESTED` review nonetheless appears — e.g., posted by the still-alive session under operator direction after a walkthrough that started here — transition to follow-up exactly as § A3) does: spawn a fresh `fu-<pr>` with the Follow-Up Brief (§ Worktree Cruft (a) add-then-remove), WAIT for its `<created ...>` line, THEN `crew dismiss` the review session, and move active→followup; the `fu-<pr>` session runs the § A2 Follow-Up loop. A posted non-approving review NEVER just ends.)
 - **Pane shows `REVIEW-POSTED-<pr>` but gh not yet showing our review** → wait one tick (leave in active, do nothing).
 - **Pane shows stalled / error / context-exhausted / no output for >2 cycles** → surface to user ("review session for PR <pr> appears stalled — manual check needed"). Do NOT auto-dismiss. Leave in active.
 - **Otherwise** (still working) → leave in active, do nothing.
@@ -175,17 +178,21 @@ Evaluate:
 - **`state != OPEN`** (merged or closed) → `crew dismiss fu-<pr>` + followup→done(`merged` or `closed`).
 - **Otherwise** → leave it. The follow-up session self-pulses via ScheduleWakeup (the watcher cron is the backstop that detects completion).
 
-### A3) Monitor Awaiting-Decision Reviews
+### A3) Monitor Awaiting-Decision Reviews (drive the per-finding walkthrough)
 
-For each entry in `awaiting_decision` (review sessions escalated to the operator and HELD ALIVE per § Restricted-Output Review Mode → Escalation handling):
+For each entry in `awaiting_decision` (non-clean review sessions HELD ALIVE per § Findings-First Review Model → Escalation handling): the review session stays alive (idle) and retains its full review context. Never dismiss it while the walkthrough is unfinished; never add ✅. Never dismiss-then-respawn a fresh session to execute a decision — the still-alive session is the actor.
 
-- **No operator decision yet** → the entry stays held. Do NOT dismiss the crew session and do NOT add ✅ — keep the session alive (idle) so it retains its full review context. Re-surface the pending verdict + summary to the operator per § Report Discipline (stay silent unless something changed — no per-tick heartbeat noise).
-- **Operator has decided AND the decision has been relayed to and executed BY THE SAME still-alive session** (via `crew tell <crew>`) → branch by what was actually executed:
-  - **Executed decision = APPROVE** → add ✅ + `crew dismiss <crew>` + move `awaiting_decision`→`done` (reason: `reviewed-approved`).
-  - **Executed decision = operator says drop it (nothing posted)** → `crew dismiss <crew>` + move `awaiting_decision`→`done` (reason: `operator-dropped`).
-  - **Executed decision = a real COMMENTED or CHANGES_REQUESTED review was posted** → move the entry `awaiting_decision`→`followup` (`our_review=<state>`), keeping the same still-alive session as the follow-up host, and follow through via § A2 / the Follow-Up loop exactly as the normal `active`→`followup` branch does at § A) Monitor Active Reviews. Do NOT dismiss-to-done in this case. **A posted non-approving review NEVER just ends.** This routes to followup exactly as the normal review path does.
+**Walkthrough not yet complete** (`walkthrough_idx < len(findings)`) → surface the NEXT single candidate finding to the operator per § Findings-First Review Model → Per-Finding Walkthrough: exactly ONE `AskUserQuestion` for the candidate at `walkthrough_idx`, preceded by an ELI5 prose preamble (intent recap + the finding + an ELI5 of any technical concept + enough PR background/context to decide). One `AskUserQuestion` per candidate comment — never batch findings. On the operator's answer:
+- **Post a comment (operator supplied / edited the text)** → relay it to the still-alive session via `crew tell <crew>`, which RECORDS that comment into the accumulated review set (nothing is submitted to GitHub yet); then increment `walkthrough_idx` and persist.
+- **Skip this finding (no comment)** → increment `walkthrough_idx` and persist; move to the next candidate on the next turn.
 
-  Never dismiss-then-respawn a fresh session to execute the decision.
+On the "post a comment" answer, the approved comment text is relayed to the still-alive session via `crew tell <crew>`, which RECORDS it into the accumulated review set (nothing is submitted to GitHub yet — a single unified review is submitted once at walkthrough end).
+
+Advance the walkthrough only one candidate per turn (one `AskUserQuestion` per turn — consistent with the one-at-a-time discipline in § AskUserQuestion Discipline). Stay silent between turns per § Report Discipline — no per-tick heartbeat noise.
+
+**Walkthrough complete** (`walkthrough_idx >= len(findings)`, every candidate decided) → submit exactly ONE review (matching `/pr-review`'s single-unified-review model — never one review per comment) and finalize by how many comments the operator approved:
+- **Zero comments approved** (operator skipped every finding, or directed a clean APPROVE) → if the operator directed an APPROVE, tell the still-alive session to submit the empty APPROVE, then add ✅ + `crew dismiss <crew>` + move `awaiting_decision`→`done` (reason: `reviewed-approved`); if the operator dropped everything with no post, `crew dismiss <crew>` + move `awaiting_decision`→`done` (reason: `operator-dropped`). No `fu-<pr>` is spawned in either sub-case.
+- **One or more comments approved** → first decide the **review event** with the operator via one final `AskUserQuestion` (see § Per-Finding Walkthrough → Choosing the review event): COMMENT (non-blocking → GitHub `COMMENTED`) or REQUEST_CHANGES (blocking → GitHub `CHANGES_REQUESTED`). Then tell the still-alive session to submit ONE unified non-approving review via a single `prr submit --findings <json>` carrying every accumulated operator-approved comment with the chosen event — the still-alive session EXECUTES this decision (it is NOT dismissed-then-respawned to post). Once that review is posted, transition to follow-up via § Worktree Cruft (a) add-then-remove: **spawn a fresh `fu-<pr>` with the Follow-Up Brief** (`crew create fu-<pr> ... --tell-file`), WAIT for its `<created ...>` line, THEN `crew dismiss <crew>` the review session. Move the entry `awaiting_decision`→`followup` with `our_review` set to the actual event submitted (`COMMENTED` or `CHANGES_REQUESTED`); the fresh `fu-<pr>` session runs the § A2 Follow-Up loop. Do NOT dismiss-to-done in this case. **A posted non-approving review NEVER just ends.**
 
 Entries in `awaiting_decision` are still visible to the normal dedup/skip check in § B — a PR held here is NOT re-spawned as a new candidate (only § B checks bucket membership against `active`/`followup`/`awaiting_decision`/`queue`).
 
@@ -230,66 +237,61 @@ Run `gh pr view <pr> --repo <repo> --json state,author,reviews,isCrossRepository
 
 Only if NONE of the above hold → the PR genuinely needs review.
 
-**Restricted-output routing check (run immediately after the above SKIP checks pass):** If `author.login` is in `restricted_output_review_authors`, this candidate does NOT follow the normal spawn path in § D below — route it into **Restricted-Output Review Mode** instead (see § Restricted-Output Review Mode). Normal dedup (own-PR, closed, already-reviewed-by-operator, already-independently-reviewed) still applies identically before this check; restricted routing only changes what happens AFTER dedup passes.
+**No author-based routing branch:** every candidate that passes the SKIP checks above follows the SINGLE findings-first spawn path in § D below — regardless of author. There is no longer a subset of authors routed differently; `restricted_output_review_authors` no longer gates anything (see § Launch Arguments). Findings-first is the default for all reviews.
 
 ### D) Spawn Reviews (Maximum Parallelism — No Concurrency Cap)
 
-For each PR that needs review AND whose author is NOT in `restricted_output_review_authors`:
+For **every** PR that needs review (all authors — there is no per-author routing branch):
 
 1. Add 👀 reaction to the Slack message (`slack_add_reaction(channel=<channel_id>, timestamp=<message_ts>, reaction="eyes")`).
 2. Add to `active` with `status: "spawning"` BEFORE spawning (prevents next-tick double-spawn).
 3. Persist state file.
 4. Determine `repo_path`: derive from the org/repo in the PR link → `~/github.com/<org>/<repo>` (generalized convention; adjust to the actual local checkout path if known from the PR link).
 5. Stagger ~6 seconds between parallel spawns to avoid git-worktree lock collisions.
-6. Compose the guarded review brief (see § Guarded Review Brief) as a single line with all `<pr>`/`<repo>`/`<bot_logins_csv>` substitutions filled, and write it to `.scratchpad/<pr>-guarded-review-brief.md`.
+6. Compose the findings-first review brief (see § Findings-First Review Brief) as a single line with all `<pr>`/`<repo>`/`<bot_logins_csv>` substitutions filled, and write it to `.scratchpad/<pr>-review-brief.md`.
 7. Run (with `run_in_background=true`):
    ```
-   crew create review-<pr> --repo <repo_path> --base main --model 'sonnet[1m]' --tell-file .scratchpad/<pr>-guarded-review-brief.md
+   crew create review-<pr> --repo <repo_path> --base main --model 'sonnet[1m]' --tell-file .scratchpad/<pr>-review-brief.md
    ```
-   **Fork PR** (`isCrossRepository == true`) → omit the `gh pr checkout` step from the brief; pass `--cross-repo` note instead.
+   **Fork PR** (`isCrossRepository == true`) → use the fork variant of the findings-first review brief (omits `gh pr checkout` since the fork head is not directly checkout-able).
    **Worktree-name collision** → append `b` to the crew name (e.g., `review-123b`).
 8. Update `active` entry `status` to `"reviewing"`. Persist state.
 
-## Restricted-Output Review Mode
+## Findings-First Review Model
 
-**Trigger:** A candidate PR (post-dedup, § C) whose `author.login` is in `restricted_output_review_authors`.
+**This is the single review model for every PR and every author.** There is no separate autonomous-post path — the watcher never posts a comment or a change-request without per-finding operator confirmation.
 
-**Intent:** Run the exact same full specialist review as normal — no shortcuts on analysis — but constrain what gets written back to GitHub to a single safe outcome: silent approval when clean, or nothing-plus-escalation when not. This mode exists for authors where the operator wants eyes-on-everything internally but does not want automated review comments landing on their PRs unless the operator has personally triaged them.
+**Intent:** Run the exact same full specialist review as always — no shortcuts on analysis — but constrain what the watcher writes back to GitHub. The only outcome the watcher may post autonomously is a clean empty APPROVE. Anything else routes each candidate comment through the operator, one at a time, before a single character lands on the PR.
 
-**Routing (instead of § D normal spawn):**
+**The two outcomes of a review:**
 
-1. Add 👀 reaction to the Slack message, same as normal spawn.
-2. Add to `active` with `status: "spawning"` BEFORE spawning, same as normal spawn.
-3. Persist state file.
-4. Determine `repo_path`, same convention as § D.
-5. Stagger ~6 seconds between parallel spawns, same as § D.
-6. Compose the restricted-output review brief (see below) as a single line with all `<pr>`/`<repo>`/`<bot_logins_csv>` substitutions filled, and write it to `.scratchpad/<pr>-restricted-review-brief.md`.
-7. Run (with `run_in_background=true`):
-   ```
-   crew create review-<pr> --repo <repo_path> --base main --model 'sonnet[1m]' --tell-file .scratchpad/<pr>-restricted-review-brief.md
-   ```
-8. Update `active` entry `status` to `"reviewing"`. Persist state.
+1. **CLEAN case — silent empty APPROVE (no human round-trip):** if the review is cleanly approvable (zero findings that call for a change or a comment), the spawned session posts an APPROVE with an empty body and zero comments, silently. This clean-approve fast path is the ONLY autonomous GitHub write the watcher is authorized to make. When the spawned session prints `REVIEW-POSTED-<pr>` (silent approve case), handle it exactly like § A) Monitor Active Reviews' `APPROVED` branch: add ✅ + dismiss + `active`→`done(reviewed-approved)`.
 
-**Restricted-output review brief (deliver via `crew create review-<pr> ... --tell-file <path>`):**
+2. **NON-CLEAN case — return findings, hold alive, walk the operator through:** the coordinator is NOT authorized to post any comment (inline or body) or a change-request autonomously. The spawned session instead RETURNS its structured findings (an enumerable list of candidate comments) to the coordinator and STAYS ALIVE (idle) in `awaiting_decision`. The coordinator then walks the operator through each candidate ONE AT A TIME (see § Per-Finding Walkthrough).
 
-Compose as a single line (no literal newlines), write it to `.scratchpad/<pr>-restricted-review-brief.md`, then pass that path via `--tell-file` (never inline `--tell`) — otherwise identical setup to the Guarded Review Brief (checkout, independent-review pre-check, sentinel printing). Restricted-output briefs are also long, so they use `--tell-file` — see § Single-Line `--tell` and Length-Based Truncation:
+**Escalation handling:** When the spawned session prints `ESCALATE-<pr>: <verdict + summary>` followed by its enumerated candidate-findings list, do NOT dismiss the crew session. Instead, **keep the review session alive** (idle) and move the entry `active`→`awaiting_decision`, recording the crew window name, the escalated `verdict` + `summary`, the parsed `findings` list, and `walkthrough_idx: 0`. Leave 👀 in place; do NOT add ✅; do NOT post anything to the PR. The still-alive session retains full review context and is the actor that will post any operator-approved comment. Never dismiss-then-respawn a fresh session just to execute a decision.
 
-`Review PR <pr> (<repo>) [RESTRICTED-OUTPUT MODE]. Step 1: run \`gh pr checkout <pr>\` (lands the worktree on the PR's exact branch). Step 2: BEFORE reviewing, run \`gh pr view <pr> --json author,reviews\` — extract author.login, then check if any review whose author.login is NEITHER the PR author NOR a known bot (<bot_logins_csv>) exists; the PR author's own self-review / self-comment does NOT count as an independent review — if such an independent review exists, print \`SKIPPED-<pr>-already-reviewed\` and STOP (do not run /pr-review). Step 3: otherwise run \`/pr-review <pr> --restricted-output\` — this tells /pr-review to run its full internal specialist review as normal, but restrict the GitHub write to exactly one of: (a) a clean APPROVE with empty body and zero inline comments, posted silently, or (b) nothing posted at all, with the verdict and a short summary reported back to you instead. Step 4: if /pr-review reports back a non-clean verdict (case b), print \`ESCALATE-<pr>: <verdict + one-line summary>\` and stop — do NOT post anything to the PR yourself. Step 5: if /pr-review silently approved (case a), print \`REVIEW-POSTED-<pr>\` and stop. The /pr-review skill's FINAL PRE-POST CHECK still applies before any write — if the PR is superseded, print \`SUPERSEDED-<pr>\` and stop. Review-only — no commit/push/branch.`
+### Per-Finding Walkthrough
 
-Where `<bot_logins_csv>` is the comma-separated list from `bot_logins`, or `none` if empty.
+Driven from § A3) on each cycle. For a held `awaiting_decision` entry, surface its candidate comments to the operator **one at a time** — one `AskUserQuestion` per candidate comment, never batched. For the candidate at `walkthrough_idx`, follow § AskUserQuestion Discipline:
 
-**Follow-up loop disabled:** Restricted-output mode never posts a COMMENT or CHANGES_REQUESTED review — the only possible outputs are a silent APPROVE or nothing-plus-escalation. There is no comment thread to follow through on, so these PRs never enter `followup`. When the spawned session prints `REVIEW-POSTED-<pr>` (silent approve case), handle it exactly like § A) Monitor Active Reviews' `APPROVED` branch: add ✅ + dismiss + `active`→`done(reviewed-approved)`.
+1. Write an **ELI5 prose preamble BEFORE the `AskUserQuestion` call** containing: an intent recap (what this PR is trying to do, one sentence), the candidate finding (file:line + what the reviewer noticed), an **ELI5** of any technical concept the finding depends on (plain language, analogy or concrete example when useful), and enough PR background/context that the operator can decide without reconstructing state from scrollback. This is where the operator can talk about the PR and confirm the author's intent is right instead of a comment being added automatically.
+2. Fire exactly ONE `AskUserQuestion` for this one candidate: the decision is "post a comment here, or skip?" — meaning "record this comment into the accumulated review set, or skip it" (the single review is submitted once at walkthrough end, not per comment) — with a `(Recommended)` first option, the candidate comment text as an editable option, and the free-form escape hatch (the operator can reword the comment or say something the coordinator turns into the recorded text).
+3. On the answer:
+   - **Post** → relay the exact operator-approved comment text to the still-alive session via `crew tell <crew>`, which RECORDS it into the accumulated review set (nothing is submitted to GitHub yet); then increment `walkthrough_idx`, persist.
+   - **Skip** → increment `walkthrough_idx`, persist; next candidate on the next turn.
+4. Advance one candidate per turn. Repeat next, next, next until `walkthrough_idx >= len(findings)` — the hard part of the review is exhausted. Each approved comment is ACCUMULATED into the review set as it is confirmed; nothing lands on the PR mid-walkthrough.
+5. **At walkthrough end, submit exactly ONE review** (matching `/pr-review`'s single-unified-review model — never one review per comment): if zero comments were accumulated, the outcome is a clean empty APPROVE (or an operator-drop with nothing posted); if one or more comments were accumulated, choose the review event (below), then tell the still-alive session to submit ONE unified non-approving review via a single `prr submit --findings <json>` carrying all accumulated comments with the chosen event.
 
-**Escalation handling:** When the spawned session prints `ESCALATE-<pr>: <verdict + summary>`, do NOT dismiss the crew session. Instead, **keep the review session alive** (idle) and move the entry `active`→`awaiting_decision`, recording the crew window name and the escalated `verdict` + `summary`. Surface the verdict + summary to the operator per § Report Discipline — do NOT post anything to the PR. Leave 👀 in place; do NOT add ✅.
+**Choosing the review event (only when ≥1 comment was accumulated):** fire one final `AskUserQuestion` (same ELI5-preamble + one-question-per-turn discipline in § AskUserQuestion Discipline) presenting the accumulated comment set as context and asking the operator to choose the GitHub **review event**: **COMMENT** (non-blocking → posted as `COMMENTED`) vs **REQUEST_CHANGES** (blocking → posted as `CHANGES_REQUESTED`). The finalize branch in § A3) is wired to the event actually submitted (`our_review` = `COMMENTED` or `CHANGES_REQUESTED`), so the follow-up state matches what the walkthrough produced.
 
-Only after the operator decides AND that decision is executed BY THE SAME still-alive session do you act — branch by what was actually executed:
-- **Executed decision = APPROVE** → add ✅ + `crew dismiss <crew>` + move `awaiting_decision`→`done` (reason: `reviewed-approved`).
-- **Executed decision = operator says drop it (nothing posted)** → `crew dismiss <crew>` + move `awaiting_decision`→`done` (reason: `operator-dropped`).
-- **Executed decision = a real COMMENTED or CHANGES_REQUESTED review was posted** → move `awaiting_decision`→`followup` (`our_review=<state>`), keeping the same still-alive session as the follow-up host, and follow through via § A2 / the Follow-Up loop exactly as the normal review path does. Do NOT dismiss-to-done in this case. **A posted non-approving review NEVER just ends.**
+When the walkthrough completes, finalize per § A3) (Walkthrough complete): zero comments accumulated → clean APPROVE or operator-drop → `done` (no `fu-<pr>` spawned); one or more comments accumulated → decide the review event, tell the still-alive session to submit ONE unified non-approving review, THEN spawn a fresh `fu-<pr>` with the Follow-Up Brief and dismiss the review session (§ Worktree Cruft (a) add-then-remove) → `followup` (a posted non-approving review NEVER just ends). Relay each per-finding decision to the live session via `crew tell <crew>` — that session holds the full review context, accumulates the approved comments, and submits the single review. Never dismiss-then-respawn a fresh session to EXECUTE the review-posting decision; the fresh `fu-<pr>` handles only the distinct, long-running follow-up-watching phase (replying, resolving threads, re-approving), not the posting of the review itself.
 
-Relay the operator's decision to the live session via `crew tell <crew>` (e.g., submit the approval / post the agreed comments / request changes / drop it) — the session still holds the full review context and is best positioned to execute the decided action. Never dismiss-then-respawn a fresh session just to execute the operator's decision.
+### AskUserQuestion Discipline
 
-**Normal dedup still applies:** Skip if the PR is closed, is the operator's own PR, has already been independently human-reviewed, or is already `APPROVED` by a human-only review — exactly the same § C checks that apply to normal candidates, run BEFORE the restricted-output routing check.
+The per-finding walkthrough uses the SAME one-at-a-time `AskUserQuestion` discipline already defined for coordinators in the Staff / Senior Staff output styles (`~/.claude/output-styles/staff-engineer.md` and `senior-staff-engineer.md`, § Decision Questions): ELI5 prose preamble BEFORE the call, one question per turn, typed options with a `(Recommended)` first option and a rationale, plus the free-form "Other" escape hatch, and never a bare question in prose. Announce the count first ("I have N findings to walk through — one at a time.") so the operator has scaffolding. Do not restate that discipline in full here — follow it.
+
+**Normal dedup still applies:** Skip if the PR is closed, is the operator's own PR, has already been independently human-reviewed, or is already `APPROVED` by a human-only review — the same § C checks that apply to every candidate, run BEFORE spawning.
 
 ## The Two Briefs (Spawned Sessions)
 
@@ -297,25 +299,29 @@ Relay the operator's decision to the live session via `crew tell <crew>` (e.g., 
 
 **Single-quote `sonnet[1m]` in the `crew create` command** — zsh globs `[1m]` without quotes and the model arg is silently mangled.
 
+The two briefs are the **Findings-First Review Brief** (the single review brief for every PR and every author) and the **Follow-Up Brief**.
+
 ---
 
-### Guarded Review Brief (deliver via `crew create review-<pr> ... --tell-file <path>`)
+### Findings-First Review Brief (deliver via `crew create review-<pr> ... --tell-file <path>`)
 
-Compose as a single line (no literal newlines), write it to `.scratchpad/<pr>-guarded-review-brief.md`, then pass that path via `--tell-file` (never inline `--tell` — see § The Two Briefs and § Single-Line `--tell` and Length-Based Truncation):
+This is the ONLY review brief — used for every author. It runs the full internal review via `/pr-review <pr> --restricted-output`, which restricts the GitHub write to exactly one of: (a) a clean empty APPROVE posted silently, or (b) nothing posted, with the verdict/summary reported back. On the non-clean case the session ALSO relays its enumerated candidate findings back and stays alive so the coordinator can walk the operator through them — the session never posts a comment or change-request on its own.
 
-`Review PR <pr> (<repo>). Step 1: run \`gh pr checkout <pr>\` (lands the worktree on the PR's exact branch). Step 2: BEFORE reviewing, run \`gh pr view <pr> --json author,reviews\` — extract author.login, then check if any review whose author.login is NEITHER the PR author NOR a known bot (<bot_logins_csv>) exists; the PR author's own self-review / self-comment does NOT count as an independent review (authors routinely self-comment to explain their change) — if such an independent review exists, print \`SKIPPED-<pr>-already-reviewed\` and STOP (do not run /pr-review). Step 3: otherwise run \`/pr-review <pr>\`. The /pr-review skill performs a FINAL PRE-POST CHECK before posting — if the PR is superseded (state!=OPEN, mergedAt non-null, reviewDecision==APPROVED by a real-human reviewer (not a bot or auto-approval account), or reviewed by another real human), it aborts the post and you must print \`SUPERSEDED-<pr>\` and stop. When the review is POSTED, print \`REVIEW-POSTED-<pr>\` and stop. Review-only — no commit/push/branch.`
+Compose as a single line (no literal newlines), write it to `.scratchpad/<pr>-review-brief.md`, then pass that path via `--tell-file` (never inline `--tell` — see § The Two Briefs and § Single-Line `--tell` and Length-Based Truncation):
+
+`Review PR <pr> (<repo>) [FINDINGS-FIRST]. Step 1: run \`gh pr checkout <pr>\` (lands the worktree on the PR's exact branch). Step 2: BEFORE reviewing, run \`gh pr view <pr> --json author,reviews\` — extract author.login, then check if any review whose author.login is NEITHER the PR author NOR a known bot (<bot_logins_csv>) exists; the PR author's own self-review / self-comment does NOT count as an independent review (authors routinely self-comment to explain their change) — if such an independent review exists, print \`SKIPPED-<pr>-already-reviewed\` and STOP (do not run /pr-review). Step 3: otherwise run \`/pr-review <pr> --restricted-output\` — this runs the FULL internal specialist review as normal but restricts the GitHub write to exactly one of: (a) a clean APPROVE with empty body and zero inline comments, posted silently, or (b) nothing posted at all. The /pr-review skill's FINAL PRE-POST CHECK still applies before any write — if the PR is superseded, print \`SUPERSEDED-<pr>\` and stop. Step 4 (clean case a): if /pr-review silently approved, print \`REVIEW-POSTED-<pr>\` and stop. Step 5 (non-clean case b): print \`ESCALATE-<pr>: <verdict + one-line summary>\`, THEN on the following lines print an enumerated candidate-comments list read from the findings /pr-review already wrote to \`.scratchpad/review-<pr>.json\` (one numbered line per candidate: index, file:line, severity, and the comment text) plus any body-level observations from \`.scratchpad/review-<pr>.md\` — this is what the coordinator walks the operator through. Then DO NOT post anything to the PR yourself and DO NOT dismiss yourself: stay idle and await instructions from the coordinator via crew tell. As the coordinator relays each operator-approved comment, RECORD it into an accumulated review set — do NOT post per comment. When the coordinator says the walkthrough is complete and gives the chosen review event (COMMENT or REQUEST_CHANGES), submit ONE unified review via a single \`prr submit --findings <json>\` carrying exactly the accumulated operator-approved comments with that event — never add a comment on your own initiative. Review-only — no commit/push/branch.`
 
 Where `<bot_logins_csv>` is the comma-separated list from `bot_logins` (e.g., `claude-maze`), or `none` if the list is empty.
 
-**Guarded review brief (fork PR variant):** (use when `isCrossRepository == true` — omit `gh pr checkout` since the fork's head is not directly checkout-able the same way; write this text to the same `.scratchpad/<pr>-guarded-review-brief.md` file instead of the base form)
+**Findings-first review brief (fork PR variant):** (use when `isCrossRepository == true` — omit `gh pr checkout` since the fork's head is not directly checkout-able the same way; write this text to the same `.scratchpad/<pr>-review-brief.md` file instead of the base form)
 
-`Review PR <pr> (<repo>) [FORK/CROSS-REPO — no direct checkout]. Step 1: BEFORE reviewing, run \`gh pr view <pr> --json author,reviews\` — extract author.login, then check if any review whose author.login is NEITHER the PR author NOR a known bot (<bot_logins_csv>) exists; the PR author's own self-review / self-comment does NOT count as an independent review (authors routinely self-comment to explain their change) — if such an independent review exists, print \`SKIPPED-<pr>-already-reviewed\` and STOP (do not run /pr-review). Step 2: otherwise run \`/pr-review <pr>\`. The /pr-review skill performs a FINAL PRE-POST CHECK before posting — if the PR is superseded (state!=OPEN, mergedAt non-null, reviewDecision==APPROVED by a real-human reviewer (not a bot or auto-approval account), or reviewed by another real human), it aborts the post and you must print \`SUPERSEDED-<pr>\` and stop. When the review is POSTED, print \`REVIEW-POSTED-<pr>\` and stop. Review-only — no commit/push/branch.`
+`Review PR <pr> (<repo>) [FINDINGS-FIRST — FORK/CROSS-REPO, no direct checkout]. Step 1: BEFORE reviewing, run \`gh pr view <pr> --json author,reviews\` — extract author.login, then check if any review whose author.login is NEITHER the PR author NOR a known bot (<bot_logins_csv>) exists; the PR author's own self-review / self-comment does NOT count as an independent review (authors routinely self-comment to explain their change) — if such an independent review exists, print \`SKIPPED-<pr>-already-reviewed\` and STOP (do not run /pr-review). Step 2: otherwise run \`/pr-review <pr> --restricted-output\` — full internal review as normal, GitHub write restricted to exactly one of: (a) a clean empty APPROVE posted silently, or (b) nothing posted. The /pr-review FINAL PRE-POST CHECK still applies — if the PR is superseded, print \`SUPERSEDED-<pr>\` and stop. Step 3 (clean case a): if /pr-review silently approved, print \`REVIEW-POSTED-<pr>\` and stop. Step 4 (non-clean case b): print \`ESCALATE-<pr>: <verdict + one-line summary>\`, THEN on the following lines print an enumerated candidate-comments list read from \`.scratchpad/review-<pr>.json\` (one numbered line per candidate: index, file:line, severity, comment text) plus any body-level observations from \`.scratchpad/review-<pr>.md\`. Then DO NOT post anything yourself and DO NOT dismiss yourself: stay idle and await coordinator instructions via crew tell; as the coordinator relays each operator-approved comment, RECORD it into an accumulated review set (do NOT post per comment), and when the coordinator gives the completed walkthrough's chosen review event (COMMENT or REQUEST_CHANGES), submit ONE unified review via a single \`prr submit --findings <json>\` carrying exactly those accumulated comments with that event — never on your own initiative. Review-only — no commit/push/branch.`
 
 ---
 
 ### Follow-Up Brief (deliver via `crew create fu-<pr> ... --tell-file <path>`)
 
-**Converted to `--tell-file` delivery:** this brief is ~1965 characters — well above the ~800-1000 char threshold in § Single-Line `--tell` and Length-Based Truncation — so it is delivered the same way as the Guarded and Restricted-Output briefs, never inline `--tell`.
+**Converted to `--tell-file` delivery:** this brief is ~1965 characters — well above the ~800-1000 char threshold in § Single-Line `--tell` and Length-Based Truncation — so it is delivered the same way as the Findings-First Review brief, never inline `--tell`.
 
 Compose as a single line (no literal newlines), write it to `.scratchpad/<pr>-followup-brief.md`, then pass that path via `crew create fu-<pr> ... --tell-file .scratchpad/<pr>-followup-brief.md`:
 
@@ -335,7 +341,7 @@ Compose as a single line (no literal newlines), write it to `.scratchpad/<pr>-fo
 
 Teammates often approve faster than we can spin up. Re-check reviewers in BOTH:
 1. **Dedup step (§ C)** — before spawning.
-2. **Inside the guarded brief** — right before `/pr-review` runs (human approvals frequently land during the bootstrap window).
+2. **Inside the findings-first review brief** — right before `/pr-review` runs (human approvals frequently land during the bootstrap window).
 
 This is what prevents wasted/duplicate reviews. The two-layer check is intentional — not redundant.
 
@@ -354,7 +360,7 @@ Inline `--tell` has TWO independent truncation failure modes — guard against b
 - **Newline-triggered:** newlines in `--tell` cause the shell to submit the command early — the brief is truncated mid-line. Compose briefs as a single line. No literal `\n` or multi-line heredoc.
 - **Length-based truncation:** even a newline-free, single-line brief above ~800-1000 characters can be silently truncated on delivery — no special character required, raw length alone triggers it (observed: a ~1900-char single-line brief was cut mid-word around ~1KB, leaving the spawned session blocked on a malformed brief and costing a full cron cycle).
 
-**Rule:** long briefs (above ~800-1000 chars (truncation observed near 1KB)) MUST be delivered via `crew create --tell-file <path>` — write the composed brief to a `.scratchpad/` file first, then pass the path. Reserve inline `--tell` for short briefs and short pointers only. All three spawned-session briefs in this skill (Guarded, Restricted-Output, Follow-Up — see § The Two Briefs) exceed this threshold and are delivered via `--tell-file`.
+**Rule:** long briefs (above ~800-1000 chars (truncation observed near 1KB)) MUST be delivered via `crew create --tell-file <path>` — write the composed brief to a `.scratchpad/` file first, then pass the path. Reserve inline `--tell` for short briefs and short pointers only. Both spawned-session briefs in this skill (Findings-First Review, Follow-Up — see § The Two Briefs) exceed this threshold and are delivered via `--tell-file`.
 
 ### Stagger Parallel Spawns
 
@@ -382,7 +388,7 @@ Add the entry to `active` with `status: "spawning"` and persist the state file B
 
 ### `/pr-review` Integration
 
-`/pr-review` posts via `prr` as a real GitHub review (detectable via `gh pr view --json reviews`). It short-circuits its worktree-setup phase when already inside a worktree (the guarded brief's `gh pr checkout` sets this up). The sentinel strings `REVIEW-POSTED-<pr>` and `SKIPPED-<pr>-already-reviewed` are what the watcher reads via `crew read`.
+The watcher always invokes `/pr-review <pr> --restricted-output` (§ Findings-First Review Brief). In `--restricted-output` mode, `/pr-review` runs its full internal specialist review (Phases 1–5 unchanged) and restricts the GitHub write at Phase 6 to exactly one outcome: a clean empty APPROVE posted silently (`prr` — detectable via `gh pr view --json reviews`), or nothing posted plus an `ESCALATE-<pr>: ...` line emitted back to the caller. `/pr-review` short-circuits its worktree-setup phase when already inside a worktree (the review brief's `gh pr checkout` sets this up). Crucially, `/pr-review` still writes its aggregated structured findings to `.scratchpad/review-<pr>.json` (and `.scratchpad/review-<pr>.md`) during Phase 5 even in restricted-output mode — so the spawned session can read that file and relay an enumerated candidate-comments list after the `ESCALATE-<pr>` line without any change to `/pr-review`. The sentinel strings the watcher reads via `crew read` are `REVIEW-POSTED-<pr>` (silent clean approve), `ESCALATE-<pr>: ...` (non-clean → hold alive + per-finding walkthrough), `SKIPPED-<pr>-already-reviewed`, and `SUPERSEDED-<pr>`.
 
 ### Worktree Cruft
 
@@ -419,7 +425,7 @@ This skill is fully generalized:
 - **Operator identity** (Slack user ID, GitHub login) is auto-detected at runtime — not hardcoded.
 - **Repo paths** are derived from the PR links (e.g., `~/github.com/<org>/<repo>`). Adjust the path convention to match the local checkout structure if it differs.
 - The **bot-exclusion list** is a configurable argument with an empty default — pass your org review bot's GitHub login via `--bot-logins`.
-- The **restricted-output-authors list** is a configurable argument with an empty default (`restricted_output_review_authors`), following the same convention as the bot-exclusion list — pass author logins that should get Restricted-Output Review Mode via `--restricted-output-authors`. No specific login is hardcoded anywhere in this skill.
+- The **restricted-output-authors list** (`restricted_output_review_authors`) is DEPRECATED and no longer gates anything — findings-first review is the default for every review and every author (§ Findings-First Review Model). The `--restricted-output-authors` argument is still parsed for backward compatibility but selects nothing. No specific login is hardcoded anywhere in this skill.
 
 The Maze-specific examples in the original spec (`C0AET46NL30`, `claude-maze`, `maze-monorepo`, `~/github.com/mazedesignhq/<repo>`) are illustrative only. Do not hardcode them. This skill works for any team's Slack review-request channel and GitHub repos.
 
@@ -436,9 +442,10 @@ CYCLE START:
        → buffered/unsubmitted brief (PASTED not SUBMITTED): crew tell <crew> --keys "Enter" + leave active
        → SKIPPED sentinel: dismiss + done(skipped)
        → SUPERSEDED sentinel: dismiss + done(superseded-race), leave 👀, no ✅
-       → REVIEW-POSTED + review visible in gh:
+       → ESCALATE sentinel + enumerated findings (non-clean, findings-first): HELD ALIVE — do NOT dismiss;
+           move to awaiting_decision (record crew, verdict, summary, findings, walkthrough_idx:0), leave 👀, no ✅
+       → REVIEW-POSTED + review visible in gh (clean empty APPROVE — the only autonomous write):
            APPROVED: add ✅ + dismiss + done(reviewed-approved)
-           COMMENTED/CHANGES_REQUESTED: dismiss + spawn follow-up + move to followup
        → REVIEW-POSTED but not yet in gh: wait tick
        → stalled/error: surface to user, leave in active
 
@@ -450,14 +457,21 @@ CYCLE START:
        → state != OPEN: dismiss + done(merged/closed)
        → otherwise: leave it (self-pulses via ScheduleWakeup)
 
-  A3) for each awaiting_decision entry:
-       → no operator decision yet: HELD ALIVE — do NOT dismiss, keep session idle (retains review context)
-       → operator decided AND decision relayed to + executed by the SAME still-alive session (crew tell):
-           executed = APPROVE: add ✅ + dismiss + done(reviewed-approved)
-           executed = drop it (nothing posted): dismiss + done(operator-dropped)
-           executed = COMMENTED/CHANGES_REQUESTED posted: move to followup (our_review=<state>) —
-             exactly as the normal review path does; a posted non-approving review NEVER just ends
-       (never dismiss-then-respawn a fresh session to execute the decision)
+  A3) for each awaiting_decision entry (HELD ALIVE — never dismiss mid-walkthrough, session stays idle + retains context):
+       → walkthrough not complete (walkthrough_idx < len(findings)):
+           surface ONE candidate (findings[walkthrough_idx]) via AskUserQuestion —
+             ELI5 prose preamble first (intent recap + finding + ELI5 of any concept + PR context),
+             one AskUserQuestion per candidate comment, (Recommended) first option + free-form
+           post → crew tell <crew> the operator-approved comment text; increment walkthrough_idx; persist
+           skip → increment walkthrough_idx; persist
+           (advance one candidate per turn — one AskUserQuestion per turn)
+       → walkthrough complete (all candidates decided; approved comments ACCUMULATED by the still-alive session):
+           zero comments accumulated: (tell session to submit clean APPROVE if directed) add ✅/dismiss + done(reviewed-approved | operator-dropped) — no fu-<pr>
+           ≥1 comment accumulated: choose review event via one AskUserQuestion (COMMENT→COMMENTED | REQUEST_CHANGES→CHANGES_REQUESTED);
+             tell the still-alive session to submit ONE unified non-approving review (prr submit --findings <json>, chosen event);
+             THEN spawn fresh fu-<pr> with Follow-Up Brief (add-then-remove: wait for <created>, then dismiss the review session);
+             move to followup (our_review=<actual event submitted>); fu-<pr> runs § A2 loop; a posted non-approving review NEVER just ends
+       (the still-alive session EXECUTES the review-posting decision; the fresh fu-<pr> handles only the follow-up-watching phase — never dismiss-then-respawn to execute the posting decision)
 
   B) slack_read_channel(limit=15)
        for each msg ts > watermark, author != self_user_id, contains github PR link:
@@ -468,23 +482,19 @@ CYCLE START:
          → candidate
        update watermark_ts
 
-  C+D) for each candidate:
+  C+D) for each candidate (SINGLE findings-first path — all authors, no routing branch):
        gh pr view --json state,author,reviews,isCrossRepository
        skip if: own PR | closed | already reviewed by operator | independent human reviewed
-       → needs review AND author in restricted_output_review_authors:
-           add 👀 reaction, add to active (status: spawning), persist state
-           write restricted-output brief to .scratchpad/<pr>-restricted-review-brief.md
-           crew create review-<pr> ... --tell-file .scratchpad/<pr>-restricted-review-brief.md (background, stagger 6s)
-           update status: reviewing, persist state
-           (see § Restricted-Output Review Mode — silent APPROVE or escalate-to-operator only)
-       → needs review (author NOT restricted):
+       → needs review:
            add 👀 reaction
            add to active (status: spawning)
            persist state
-           write guarded brief to .scratchpad/<pr>-guarded-review-brief.md
-           crew create review-<pr> ... --tell-file .scratchpad/<pr>-guarded-review-brief.md (background, stagger 6s)
+           write findings-first review brief to .scratchpad/<pr>-review-brief.md (fork variant if isCrossRepository)
+           crew create review-<pr> ... --tell-file .scratchpad/<pr>-review-brief.md (background, stagger 6s)
            update status: reviewing
            persist state
+           (see § Findings-First Review Model — silent clean APPROVE, or ESCALATE + return findings + hold alive
+            for the per-finding operator walkthrough; never post a comment/change-request autonomously)
 
   persist final state
 CYCLE END
