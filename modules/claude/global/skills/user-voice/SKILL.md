@@ -31,7 +31,7 @@ Load this skill whenever drafting:
 
 ### Hard Avoids
 
-Words, phrases, and idioms the user dislikes and never uses. Add entries over time from explicit corrections.
+Words, phrases, and idioms the user dislikes and never uses. Add entries over time from explicit corrections. These bans apply to content drafted in the user's voice; a banned word may still appear in this skill file's own descriptive prose about tone qualities (e.g. describing a register as "plainly honest") — that is meta-documentation, not drafted output.
 
 - `leverage` (use "use" or "apply" instead)
 - `synergy` / `synergize` (avoid entirely)
@@ -46,6 +46,7 @@ Words, phrases, and idioms the user dislikes and never uses. Add entries over ti
 - `guys` (use `folks` instead — see Preferred Phrasings)
 - `Hey` as opener on thread continuations (only for fresh messages, not replies)
 - `genuine` / `genuinely` (overblown emphasis — AI register tell)
+- `honest` / `honestly` / `honesty` (Karl: 'I NEVER SAY "HONEST"! I HATE IT!' — reads as defensive/self-justifying, the opposite of his register. Convey the idea with plain declaratives instead: "here's where we actually are", "the real result", never the word.)
 - `that's deliberate` (defensive)
 - "Different angle than I said earlier" (use empathetic opener "That's what I thought at first" instead — see Preferred Phrasings)
 - "the proximate cause" / "the deeper realization:" (too formal for casual Slack — use "BUT..." + "So really," instead)
