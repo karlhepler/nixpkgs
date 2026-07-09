@@ -190,6 +190,62 @@ Once full satisfaction holds (or one of the explicit grants above applies), merg
 
 ---
 
+### Land action (explicit — lands or errors, never arms forward-looking auto-merge)
+
+This is the ONLY sanctioned way for smithers to land a PR. It is invoked from Step 7a and from AW-5, and ONLY after the § Present-state mergeability check has confirmed the PR is mergeable RIGHT NOW (approved, CI green, `mergeStateStatus == "CLEAN"`, zero unresolved comments). Full-satisfaction merge is a SINGLE EXPLICIT action taken at detection time — never a forward-looking "merge when ready" arm.
+
+**🚨 PROHIBITED — never use bare `gh pr merge` as the land action.** A bare `gh pr merge [--merge|--squash|--rebase] <PR>` (i.e. without the L2 arm-guard below) does NOT reliably merge-or-fail. On a PR that is not immediately mergeable — `mergeStateStatus` BLOCKED/BEHIND, base branch locked or frozen, or required checks not yet passed — `gh pr merge` **silently ARMS forward-looking auto-merge ("merge when ready") and exits 0**. This is the tool's documented behavior: `gh pr merge --help` states "If required checks have not yet passed, auto-merge will be enabled." An armed auto-merge then fires the instant the PR unblocks, which **bypasses any deliberate merge-hold or branch freeze** and is invisible to normal state polling (`state`, `mergeStateStatus`) — it surfaces ONLY in the `autoMergeRequest` field. Smithers NEVER arms auto-merge as a forward-looking action; it lands deterministically at detection time or returns the real blocking reason.
+
+**L1 — Land explicitly (choose by base-branch type).** First resolve `{owner}/{repo}` as elsewhere in this skill (e.g. `gh repo view --json owner,name`), then detect whether the base branch uses a merge queue:
+
+```bash
+gh api graphql -f query='{repository(owner:"<owner>",name:"<repo>"){pullRequest(number:<N>){mergeQueue{id}}}}' --jq '.data.repository.pullRequest.mergeQueue'
+```
+
+- **Merge-queue base branch (non-null `mergeQueue`):** enqueue deterministically via the `enqueuePullRequest` GraphQL mutation. It enqueues the PR or returns the real blocking reason as a GraphQL error, and NEVER arms forward-looking auto-merge:
+  ```bash
+  PR_ID=$(gh pr view <PR> --json id --jq .id)
+  gh api graphql -f query='mutation($id:ID!){enqueuePullRequest(input:{pullRequestId:$id}){mergeQueueEntry{state position}}}' -f id="$PR_ID"
+  ```
+  A non-null `mergeQueueEntry` in the response confirms enqueue (success-with-enqueue). A GraphQL error (non-zero exit) means the PR could not be enqueued — the error text IS the real blocking reason; log it, set `merge_failed = true`, and surface to the coordinator/user. Do NOT fall back to bare `gh pr merge` (that would arm auto-merge). `enqueuePullRequest` never touches autoMergeRequest, so the mandatory L2 arm-guard below runs as defense-in-depth on this branch — it will always find `autoMergeRequest == null` here, confirming nothing was armed.
+
+- **Non-merge-queue base branch (null `mergeQueue`):** immediate merge. Because the present-state check just confirmed `mergeStateStatus == "CLEAN"`, this lands now:
+  ```bash
+  gh pr merge --squash <PR>
+  ```
+  A non-arming failure here (e.g., a conflict developing in the TOCTOU window between the present-state check and this call) leaves `autoMergeRequest` null — L2 below routes it to the merge/enqueue verification (Step 7a / AW-5), which sets `merge_failed = true` when the merge is unconfirmed.
+
+**L2 — Auto-merge arm guard (MANDATORY after EVERY land attempt, both branches).** Immediately re-read the auto-merge state:
+
+```bash
+gh pr view <PR> --json autoMergeRequest --jq '.autoMergeRequest'
+```
+
+- **`autoMergeRequest` is `null`** → nothing was armed. Proceed to the merge/enqueue verification (the Step 7a / AW-5 verify logic).
+- **`autoMergeRequest` is NON-null** → the land attempt SILENTLY ARMED forward-looking auto-merge instead of landing — the PR was not immediately mergeable (a TOCTOU flip to BLOCKED/behind, or a base-branch freeze slipped in between the present-state check and the land call). This is the footgun. DISARM it immediately and treat the land as failed — never leave auto-merge armed:
+  ```bash
+  gh pr merge --disable-auto <PR>
+  ```
+  Then read the real blocking reason (`gh pr view <PR> --json mergeStateStatus`), log `"Land aborted: gh armed forward-looking auto-merge on PR <N> (mergeStateStatus=<value>) — disarmed via --disable-auto. PR was not immediately mergeable; not landed."`, send an osascript notification, set `merge_failed = true`, and surface to the coordinator/user. Do NOT retry in a loop.
+
+The L1+L2 pair is precisely "an immediate-merge that errors rather than arming": it lands when the PR is genuinely mergeable, and if `gh` tries to arm auto-merge instead, L2 disarms it and returns the real blocking reason. **`merge_failed` is set exactly as the existing verification logic expects** — Step 7a / AW-5 then notify with the manual-merge warning text.
+
+### Hold / freeze / stop — disarm any armed auto-merge
+
+Any path where smithers holds, freezes, or stops WITHOUT landing — a coordinator merge-hold or branch freeze, the manual-merge opt-out, the approval-watch entry/expiry, external merge/close detection, `CHANGES_REQUESTED`, or any budget/stagnation stop — MUST first check for an armed forward-looking auto-merge and disarm it. An armed auto-merge is a **separate forward-looking state from the merge queue**: dequeuing alone is NOT sufficient — a dequeued PR whose auto-merge is still armed will re-enqueue and merge the instant it unblocks, defeating the hold/freeze. It is visible ONLY via `autoMergeRequest`, so a normal `state`/`mergeStateStatus` poll will not reveal it.
+
+```bash
+if [ "$(gh pr view <PR> --json autoMergeRequest --jq '.autoMergeRequest')" != "null" ]; then
+  gh pr merge --disable-auto <PR>
+fi
+```
+
+Run this disarm check as an explicit step of every hold/freeze/stop path before exiting. Smithers itself never arms auto-merge (see § Land action), so a non-null `autoMergeRequest` here means it was armed accidentally (the footgun) or externally — either way, a hold or freeze requires it disarmed.
+
+**Boundary — this disarm does not rescind an already-enqueued merge-queue entry.** `--disable-auto` clears a forward-looking `autoMergeRequest` arm; it cannot rescind a merge-queue entry that smithers already committed via `enqueuePullRequest` (§ Land action, L1). If a coordinator hold/freeze arrives AFTER a full-satisfaction enqueue has already succeeded, the queued PR will still merge on the queue's own schedule — this disarm step does not cover that case. Treat this as a documented boundary of hold/freeze coverage, not a defect in the disarm step itself.
+
+---
+
 #### Step 7a: Handle PR ready
 
 **Directory dependency.** Step 7a writes to `$(git rev-parse --show-toplevel)/.smithers/slack_posted` and reads/clears `$(git rev-parse --show-toplevel)/.smithers/clean_confirmed`. The `.smithers/` directory is guaranteed to exist at this point because the file-exists branch in Step 7 is only reachable after a prior cycle's file-NOT-exists branch ran `mkdir -p "$(git rev-parse --show-toplevel)/.smithers"`. Do NOT add a separate mkdir in Step 7a — the directory is already there.
@@ -256,14 +312,9 @@ The PR is currently mergeable if ALL of the following hold:
 
 **Merge authorization:** Apply § Merge-consent policy (deterministic) as written. Do not restate or paraphrase the rule here — follow it directly.
 
-**If currently mergeable:** Invoke merge directly (no `--auto`):
-```
-gh pr merge --squash <PR>
-```
+**If currently mergeable:** land via **§ Land action (explicit — lands or errors, never arms forward-looking auto-merge)** above — run L1 (enqueue via `enqueuePullRequest` for a merge-queue base, or immediate `gh pr merge --squash` for a direct-merge base) then the mandatory L2 auto-merge arm guard. Do NOT invoke a bare `gh pr merge` here.
 
-> **Merge queue note:** If the base branch uses a GitHub merge queue, `gh pr merge --squash <PR>` prints `! The merge strategy for <branch> is set by the merge queue` and may return a non-zero exit code — but the PR IS enqueued. Treat this warning as **success-with-enqueue**, not a failure. To avoid the warning entirely, bare `gh pr merge <PR>` may be used in merge-queue repos (the queue supplies the strategy); however, do NOT mandate dropping the strategy flag globally — non-merge-queue repos need an explicit strategy flag, and bare `gh pr merge` there blocks on an interactive strategy prompt.
-
-On non-zero exit (excluding the merge-queue strategy warning above): log the error, run `rm -f "$(git rev-parse --show-toplevel)/.smithers/clean_confirmed"`, and proceed to verification. To detect the benign merge-queue case at runtime: if the output contains "set by the merge queue", treat as success-with-enqueue; otherwise apply the error handling above.
+On any land failure (L1 GraphQL error, or L2 detecting/disarming an armed auto-merge — both set `merge_failed = true`): log the error, run `rm -f "$(git rev-parse --show-toplevel)/.smithers/clean_confirmed"`, and proceed to verification.
 
 **If NOT currently mergeable** (any condition above is not met): the PR is clean (no failed checks, no conflicts, no actionable bot comments) but cannot be merged yet — typically because review is required. Notify reviewers via Slack, then enter the **approval-watch phase** (slow pulse) rather than stopping.
 
@@ -271,7 +322,8 @@ On non-zero exit (excluding the merge-queue strategy warning above): log the err
 2. Run `rm -f "$(git rev-parse --show-toplevel)/.smithers/clean_confirmed"`.
 3. Log `"Cycle <N>: PR not currently mergeable (reviewDecision=<value> mergeStateStatus=<value>) — posted to Slack; entering approval-watch phase"` (or `"... — already posted to Slack; entering approval-watch phase"` if the slack_posted flag already existed).
 4. Run the pre-stop sweep — sweep `prc list <PR> --unresolved --bots-only` to zero. Resolve any bot thread carrying a Smithers reply but no resolution.
-5. **Enter the approval-watch phase** (see § Approval-Watch Phase below). NEVER arm `autoMergeRequest` as a forward-looking action. All merges happen via explicit merge action on detection.
+5. **Disarm any armed auto-merge** per **§ Hold / freeze / stop — disarm any armed auto-merge** (check `autoMergeRequest`; if non-null, `gh pr merge --disable-auto <PR>`). Entering approval-watch is a not-landing-this-cycle transition — a forward-looking auto-merge armed accidentally or externally would fire on unblock and bypass the watch, so it must be disarmed here.
+6. **Enter the approval-watch phase** (see § Approval-Watch Phase below). NEVER arm `autoMergeRequest` as a forward-looking action. All merges happen via explicit merge action on detection.
 
 **Verify before declaring done** — run only when merge was invoked:
 ```
@@ -319,7 +371,7 @@ If `smithers-post` returns 0: run `touch "$(git rev-parse --show-toplevel)/.smit
 
 If `.smithers/slack_posted` already exists, skip the `smithers-post` call (already posted on an earlier cycle).
 
-After posting (or skipping): run `rm -f "$(git rev-parse --show-toplevel)/.smithers/clean_confirmed"` to clear the flag. Run the pre-stop sweep — sweep `prc list <PR> --unresolved --bots-only` to zero before stopping. Then **stop** (no ScheduleWakeup). The PR is clean and handled.
+After posting (or skipping): run `rm -f "$(git rev-parse --show-toplevel)/.smithers/clean_confirmed"` to clear the flag. Run the pre-stop sweep — sweep `prc list <PR> --unresolved --bots-only` to zero before stopping. Then, before exiting, **disarm any armed auto-merge** per **§ Hold / freeze / stop — disarm any armed auto-merge** (check `autoMergeRequest`; if non-null, `gh pr merge --disable-auto <PR>`) as a hard step. Then **stop** (no ScheduleWakeup). The PR is clean and handled.
 
 ---
 
@@ -403,13 +455,9 @@ Evaluate `reviewDecision` and `mergeStateStatus`:
 - **`reviewDecision == "APPROVED"` AND `mergeStateStatus == "CLEAN"`:** The PR is approved and clean. Before running any further checks, verify the approval is not stale (hard pre-merge gate, repo-policy-aware): apply § Repo Approval Policy Check (above) to determine whether the commit-time-vs-approval-time comparison applies. If the check says SKIP, treat this sub-check as satisfied and proceed directly to the comprehensive unresolved-comment gate below. If the check says APPLY (including the fail-safe "cannot be determined" case), run `gh pr view <PR> --json commits,latestReviews` and compare `commits[-1].committedDate` to the newest `latestReviews[] | select(.state=="APPROVED") | .submittedAt`. If the last commit's `committedDate` is newer than the newest APPROVED `submittedAt`, this is a **stale approval** — the current HEAD is unreviewed regardless of `reviewDecision: APPROVED`. Do NOT merge. Send macOS notification (`osascript -e 'display notification "PR <N>: stale approval — unreviewed commits present" with title "Smithers"'`), log `"Merge blocked: stale approval on PR <N>. Last commit committedDate=<X> is newer than newest APPROVED submittedAt=<Y>. Fresh approval required."`, and continue the slow pulse (the next pulse re-evaluates state after a reviewer approves current HEAD). Only when the approval is current (approval `submittedAt` newer than last commit `committedDate`, or the check said SKIP): run the comprehensive unresolved-comment gate (bot + human) before merging:
   1. **Bot threads:** Run `prc list <PR> --unresolved --bots-only` (do NOT use `--inline-only` — this gate must be comprehensive; `--inline-only` is for the Step 3 fix-loop only). Confirm `is_resolved: true` (snake_case — NOT `isResolved` or `resolved`) on every bot thread. Any unresolved bot thread is an **unconditional hard merge blocker** — treat as "new bot comments" (AW-3 path above) before merging.
      **Human threads:** Run `prc list <PR> --unresolved` (without `--bots-only`) to check for unresolved human comments. If any unresolved human comment exists, this is an **unconditional hard merge blocker** — do NOT merge. Surface via macOS notification (`osascript -e 'display notification "PR <N>: unresolved human comment — merge blocked" with title "Smithers"'`) and log: `"Merge blocked: unresolved human comment on PR <N>. Human resolution required before merge."` Do NOT attempt to resolve a human's thread unilaterally. This check is part of full satisfaction — it is NOT the opt-out pause.
-  2. If zero unresolved comments of any kind (bot gate clear + no unresolved human comment): this is the merge path. Cite the proof before proceeding, e.g.: "`--unresolved --bots-only` = 0 results, `is_resolved: true` on all N bot threads, and `--unresolved` = 0 human threads." Apply § Merge-consent policy (deterministic) as written — do not restate or paraphrase the rule here.
-     ```bash
-     gh pr merge --squash <PR>
-     ```
-     > **Merge queue note:** If the base branch uses a GitHub merge queue, `gh pr merge --squash <PR>` prints `! The merge strategy for <branch> is set by the merge queue` and may return a non-zero exit code — but the PR IS enqueued. Treat this warning as **success-with-enqueue**, not a failure. To avoid the warning, bare `gh pr merge <PR>` may be used in merge-queue repos; do NOT mandate dropping the strategy flag globally (non-merge-queue repos need an explicit strategy).
+  2. If zero unresolved comments of any kind (bot gate clear + no unresolved human comment): this is the merge path. Cite the proof before proceeding, e.g.: "`--unresolved --bots-only` = 0 results, `is_resolved: true` on all N bot threads, and `--unresolved` = 0 human threads." Apply § Merge-consent policy (deterministic) as written — do not restate or paraphrase the rule here. Then land via **§ Land action (explicit — lands or errors, never arms forward-looking auto-merge)** above — run L1 (enqueue via `enqueuePullRequest` for a merge-queue base, or immediate `gh pr merge --squash` for a direct-merge base) then the mandatory L2 auto-merge arm guard. Do NOT invoke a bare `gh pr merge` here.
 
-     On non-zero exit (excluding the merge-queue strategy warning above): log the error, do NOT clear the `approval_watch` flag, and continue the slow pulse (the next pulse re-evaluates state). To detect the benign merge-queue case at runtime: if the output contains "set by the merge queue", treat as success-with-enqueue; otherwise apply the error handling above.
+     On any land failure (L1 GraphQL error, or L2 detecting/disarming an armed auto-merge — both set `merge_failed = true`): log the error, do NOT clear the `approval_watch` flag, and continue the slow pulse (the next pulse re-evaluates state).
   3. Run `rm -f "$(git rev-parse --show-toplevel)/.smithers/approval_watch"`. (Note: clearing the flag before the verify call below leaves a narrow orphan window — if the session crashes between here and the verify call, the flag is gone and smithers will re-enter the normal loop body on restart rather than the AW path. Accepted behavior: Step 1's MERGED check is the fallback.)
   4. Verify and notify using the same verification logic as Step 7a: check `state == "MERGED"` or `mergedAt` non-null. If neither, do NOT infer queued-ness from `state`/`mergeStateStatus` and do NOT trust a `gh pr merge <PR>` re-run's `already queued to merge` message as proof (it can be stale). Instead verify via GraphQL: resolve `{owner}/{repo}` (e.g. `gh repo view --json owner,name`) and run `gh api graphql -f query='{repository(owner:"<owner>",name:"<repo>"){pullRequest(number:<N>){mergeQueueEntry{state position}}}}'`. Non-null `mergeQueueEntry` = confirmed enqueue. Null `mergeQueueEntry` = NOT queued — treat as merge-not-confirmed, log a warning, and set `merge_failed = true` rather than assuming queued. Do NOT treat `state=OPEN` / `mergeStateStatus=CLEAN` as merge failure — those values persist while a PR is queued — but also do NOT treat that combination as positive evidence of queued-ness (identical for idle and queued PRs). `mergeQueueEntry` is NOT available via `gh pr view --json` (REST) — it errors if requested there — but IS available and is the reliable signal via `gh api graphql` as above. If `mergeQueueEntry` was previously confirmed non-null and later bounces back to null before `mergedAt` is set, this is a **merge-queue candidate** CI failure (the queued build failed a required check) — capture the failing check via `gh pr checks <PR> --json name,state,bucket,link` and surface to the coordinator/user rather than silently re-enqueuing in a loop. Send osascript notification, post to Slack via `smithers-post` if `.smithers/slack_posted` does not already exist.
   5. **Stop** (no ScheduleWakeup).
@@ -418,7 +466,7 @@ Evaluate `reviewDecision` and `mergeStateStatus`:
   1. Run `rm -f "$(git rev-parse --show-toplevel)/.smithers/approval_watch"`.
   2. Send macOS notification: `"PR <N>: changes requested — smithers stopping"`.
   3. Log `"Approval-watch cycle <N>: reviewDecision=CHANGES_REQUESTED — surfacing to coordinator. PR left in CHANGES_REQUESTED state with <mergeStateStatus> merge status."`.
-  4. Run the pre-stop sweep — sweep `prc list <PR> --unresolved --bots-only` to zero.
+  4. Run the pre-stop sweep — sweep `prc list <PR> --unresolved --bots-only` to zero. Then, before exiting, **disarm any armed auto-merge** per **§ Hold / freeze / stop — disarm any armed auto-merge** (check `autoMergeRequest`; if non-null, `gh pr merge --disable-auto <PR>`) as a hard step.
   5. **Stop** (no ScheduleWakeup). The coordinator or user must address the reviewer feedback.
 
 - **Any other `reviewDecision`** (e.g., `REVIEW_REQUIRED`, `null`): Review still pending. Increment `approval_watch_cycle` by 1. Proceed to AW-6.
@@ -432,7 +480,7 @@ If `approval_watch_cycle >= 144`:
 1. Run `rm -f "$(git rev-parse --show-toplevel)/.smithers/approval_watch"`.
 2. Send macOS notification: `"PR <N>: approval-watch expired after ~24h"`.
 3. Log `"Approval-watch expired after <approval_watch_cycle> cycles (~<hours>h). PR left in state: reviewDecision=<value>, mergeStateStatus=<value>, state=OPEN. Handoff: PR requires human action — either reviewer approval or manual re-invocation of /smithers to resume watching."`.
-4. Run the pre-stop sweep — sweep `prc list <PR> --unresolved --bots-only` to zero.
+4. Run the pre-stop sweep — sweep `prc list <PR> --unresolved --bots-only` to zero. Then, before exiting, **disarm any armed auto-merge** per **§ Hold / freeze / stop — disarm any armed auto-merge** (check `autoMergeRequest`; if non-null, `gh pr merge --disable-auto <PR>`) as a hard step.
 5. **Stop** (no ScheduleWakeup).
 
 **AW-7: Schedule next slow-pulse wakeup.**
@@ -445,7 +493,7 @@ ScheduleWakeup with `delaySeconds: 600`, `reason: "Approval-watch cycle <N> — 
 
 ### Step 8: Check budget limits
 
-If either budget limit is reached (`fix_count >= max_ralph_invocations` OR `cycle >= max_cycles`), execute the pre-stop sweep first: sweep `prc list <PR> --unresolved --bots-only` to zero — resolve any bot thread that carries a Smithers reply but no resolution before stopping. The fix-delegation cap limits CODE-FIX delegations only; it is never a license to leave a replied-to thread open.
+If either budget limit is reached (`fix_count >= max_ralph_invocations` OR `cycle >= max_cycles`), execute the pre-stop sweep first: sweep `prc list <PR> --unresolved --bots-only` to zero — resolve any bot thread that carries a Smithers reply but no resolution before stopping. The fix-delegation cap limits CODE-FIX delegations only; it is never a license to leave a replied-to thread open. Then, before either budget stop below, **disarm any armed auto-merge** per **§ Hold / freeze / stop — disarm any armed auto-merge** (check `autoMergeRequest`; if non-null, `gh pr merge --disable-auto <PR>`) as a hard step.
 
 If `fix_count >= max_ralph_invocations`: log `"Max specialist delegations (4) reached — stopping"`, send osascript notification, and **stop** (no ScheduleWakeup).
 
@@ -623,7 +671,7 @@ git rev-parse HEAD
 ```
 
 Store as `post_sha`. Compare to `pre_sha`:
-- If `pre_sha == post_sha`: increment `stagnation_count`. If `stagnation_count >= 2`: run the pre-stop sweep — sweep `prc list <PR> --unresolved --bots-only` to zero before stopping. Then log `"Stagnation detected — specialist made no commits in 2 consecutive cycles. Stopping."` and **stop** (no ScheduleWakeup).
+- If `pre_sha == post_sha`: increment `stagnation_count`. If `stagnation_count >= 2`: run the pre-stop sweep — sweep `prc list <PR> --unresolved --bots-only` to zero before stopping. Then, before exiting, **disarm any armed auto-merge** per **§ Hold / freeze / stop — disarm any armed auto-merge** (check `autoMergeRequest`; if non-null, `gh pr merge --disable-auto <PR>`) as a hard step. Then log `"Stagnation detected — specialist made no commits in 2 consecutive cycles. Stopping."` and **stop** (no ScheduleWakeup).
 - If `pre_sha != post_sha`: reset `stagnation_count = 0`.
 
 ---
