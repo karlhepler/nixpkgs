@@ -63,6 +63,34 @@ Explain what the command will do, ask for confirmation, only proceed after appro
 
 ---
 
+## AWS Credentials (SSO Assume-Role Chains)
+
+**When running IaC/CLI tooling locally against an SSO-based cloud org, understand the credential-assumption chain before overriding a profile env var — NEVER blind-set `AWS_PROFILE`.** Worked example below: AWS + Terraform.
+
+**Detection heuristic (check BEFORE suggesting `AWS_PROFILE=...`):**
+- The target profile in `~/.aws/config` has `role_arn` + `source_profile` (an assume-role chain)
+- The `source_profile` chain resolves to an `sso_session`-based profile (modern SSO config — not the legacy flat `sso_start_url`/`sso_region` fields)
+
+**Why blind-setting fails:** `AWS_PROFILE` cannot bypass the SSO `source_profile` dependency — the SDK resolves the source chain first and errors on the SSO root profile (commonly `default`), even though the exported profile itself is correctly configured.
+
+**The robust fix — use whenever the detection heuristic matches, on ANY Terraform/provider version:** let AWS CLI v2 (which understands `sso_session`) resolve the chain and hand Terraform pre-assumed static creds:
+
+```bash
+aws sso login --profile <sso-root-profile>            # e.g. default
+unset AWS_PROFILE                                     # so it can't shadow the exported creds — the hashicorp/aws provider (v4.x+) gives a configured profile PRECEDENCE over AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY, inverting the AWS SDK's textbook order (hashicorp/terraform-provider-aws#25596)
+eval "$(aws configure export-credentials --profile <target-profile> --format env)"
+terraform init
+terraform apply ...
+```
+
+Run each line as a separate Bash tool call — do not chain `terraform init`/`terraform apply` with `&&` (see § Bash/Shell Guidelines → One Command Per Call).
+
+**Two independent version gates — do not conflate them:** Terraform **core** < 1.6 lacks `sso_session` support in its S3 state-backend credential resolver (backend-auth path). The `hashicorp/aws` **provider** < v4.0 (~May 2022) lacks `sso_session` support in its own resource/provider-auth path — independent of the Terraform core version. Either gate alone can cause the failure, so gating the workaround solely on `terraform -version` will misdiagnose a stale provider pin. The export-credentials fix above is safe and correct regardless of core/provider version — default to it whenever the detection heuristic matches.
+
+**Self-Check:** About to `export AWS_PROFILE=<profile>` for local Terraform/IaC? First check `~/.aws/config` for a `role_arn`/`source_profile` chain rooted in an `sso_session` profile — if found, use `aws configure export-credentials` instead of blind-setting `AWS_PROFILE` (works on any Terraform core / `aws` provider version).
+
+---
+
 ## Tool-First Integration
 
 **When integrating with any external tool (CLI, API, framework), enumerate the tool's own capabilities FIRST — before docs, before web searches, before any indirect investigation.**
