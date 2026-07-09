@@ -73,6 +73,14 @@ Concrete examples of what NOT to do:
 Loop counter: if you've made 3 attempts at a single failing MoV and each
 returned the same structural error, you are looping. STOP.
 
+## Hard Rule: Secret-Safe Environment Inspection
+
+**Secret-safe environment inspection:** When inspecting a pod/container/cluster environment (`kubectl exec ... env`, `mirrord exec`, `docker inspect`, etc.), NEVER write raw env output to disk — it can contain secret VALUES (tokens, PEM private keys, passwords).
+
+**NAME-only extraction — never use a line-based filter.** `env` prints `NAME=value` and does not escape embedded newlines. A multi-line value (e.g. a PEM private key, which spans several physical lines with only the first line containing `=`) defeats any per-line filter: `cut -d= -f1`, `rg -o '^[^=]*'`, `awk -F= '{print $1}'`, and similar tools treat every continuation line (no `=` present) as "the whole line is the field before `=`" and pass it through verbatim — leaking the secret body. To answer "which variables exist," capture NAMES only via a language runtime that reads the parsed environment mapping directly, e.g. `python3 -c 'import os; print(chr(10).join(os.environ))'` — this never line-splits a value, so it cannot leak one. For an existence-only check with no output at all, `printenv NAME >/dev/null 2>&1` (exit code only) is also safe.
+
+If a specific value must be examined, do it ephemerally in-memory — never persist raw env output to disk, and never quote a secret value into a report or scratchpad.
+
 ## Your Task
 
 $ARGUMENTS
