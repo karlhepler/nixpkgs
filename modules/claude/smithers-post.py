@@ -10,6 +10,7 @@ Usage:
     smithers-post <pr-url>         # Post using full PR URL
     smithers-post                  # Infer PR from current branch
     smithers-post --no-summaries 123  # Skip Why/What generation, use PR body directly
+    smithers-post --webhook-url <url> 123  # Override destination webhook for this call only
 """
 
 import argparse
@@ -343,9 +344,18 @@ def main() -> None:
             "  smithers-post 123                  # Post PR #123\n"
             "  smithers-post https://github.com/org/repo/pull/123\n"
             "  smithers-post                      # Infer PR from current branch\n"
-            "  smithers-post --no-summaries 123   # Skip haiku agent, use PR body\n\n"
+            "  smithers-post --no-summaries 123   # Skip haiku agent, use PR body\n"
+            "  smithers-post --webhook-url https://hooks.slack.com/services/... 123\n"
+            "                                      # Override destination for this call only\n\n"
+            "The webhook URL can be supplied two ways (either is sufficient to post):\n"
+            "  --webhook-url URL           Takes precedence for this invocation only.\n"
+            "                               Carries a secret — prefer passing it from a\n"
+            "                               script/env var rather than typing it\n"
+            "                               interactively, to avoid it landing in shell history.\n"
+            "  SMITHERS_SLACK_WEBHOOK_URL  Default source when --webhook-url is omitted.\n\n"
             "Environment:\n"
-            "  SMITHERS_SLACK_WEBHOOK_URL  Slack incoming webhook URL (required to post)\n\n"
+            "  SMITHERS_SLACK_WEBHOOK_URL  Slack incoming webhook URL "
+            "(default source; not required if --webhook-url is passed)\n\n"
             "Exit codes:\n"
             "  0  Posted successfully, or SMITHERS_SLACK_WEBHOOK_URL not set (graceful skip)\n"
             "  1  Post failed (network error, HTTP error, or unexpected exception)\n"
@@ -368,11 +378,26 @@ def main() -> None:
             "otherwise falls back to a minimal notification."
         ),
     )
+    parser.add_argument(
+        "--webhook-url",
+        metavar="URL",
+        default=None,
+        help=(
+            "Slack incoming webhook URL to post to for this invocation only. "
+            "Takes precedence over SMITHERS_SLACK_WEBHOOK_URL. "
+            "When omitted, behavior is unchanged: SMITHERS_SLACK_WEBHOOK_URL is used."
+        ),
+    )
 
     args = parser.parse_args()
 
-    # Validate SMITHERS_SLACK_WEBHOOK_URL before doing any work
-    webhook_url = os.environ.get("SMITHERS_SLACK_WEBHOOK_URL")
+    # Validate the webhook URL before doing any work.
+    # --webhook-url, when given, takes precedence over SMITHERS_SLACK_WEBHOOK_URL
+    # for this invocation only; the env var is otherwise unchanged.
+    # Note: --webhook-url '' (empty string) is falsy in Python, so it intentionally
+    # falls through to the env var below — consistent with the `x or default` idiom
+    # used elsewhere in this file (e.g. `why = why or ""`).
+    webhook_url = args.webhook_url or os.environ.get("SMITHERS_SLACK_WEBHOOK_URL")
     if not webhook_url:
         print(
             "Warning: SMITHERS_SLACK_WEBHOOK_URL not set — skipping Slack post",
@@ -382,7 +407,8 @@ def main() -> None:
 
     if not webhook_url.startswith("https://hooks.slack.com/"):
         print(
-            "Error: SMITHERS_SLACK_WEBHOOK_URL must start with https://hooks.slack.com/",
+            "Error: webhook URL must start with https://hooks.slack.com/ "
+            "(from --webhook-url or SMITHERS_SLACK_WEBHOOK_URL)",
             file=sys.stderr,
         )
         sys.exit(1)

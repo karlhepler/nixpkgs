@@ -26,6 +26,7 @@ Parse `$ARGUMENTS` on first call:
 - Empty → infer PR via `gh pr view --json url --jq .url`
 - Numeric string (e.g. `123`) → fetch URL via `gh pr view 123 --json url --jq .url`
 - URL string → use directly
+- Optional `webhook=<url>` token — a full Slack incoming-webhook URL, may appear alongside the PR argument in either order (e.g. `123 webhook=https://hooks.slack.com/services/...` or `webhook=https://hooks.slack.com/services/... 123`). Strip this token before parsing the PR argument itself. When present, store it as `webhook_override` for this invocation (see § Slack Webhook Override, part of § SLACK POSTING). When absent, `webhook_override` is unset and behavior is unchanged from before this feature existed.
 
 On error (PR not found, no branch tracking): print a clear error message and stop (do not schedule wakeup).
 
@@ -65,6 +66,8 @@ On first invocation all counters are at their initial values. On ScheduleWakeup 
 - **Test:** `test -f "$(git rev-parse --show-toplevel)/.smithers/approval_watch"` (Step 7a entry — determines phase)
 - **Clear:** `rm -f "$(git rev-parse --show-toplevel)/.smithers/approval_watch"` (when exiting the approval-watch phase — on merge, CHANGES_REQUESTED surface, external merge/close, expiry, or re-entering the fix cycle)
 
+**`webhook_override` — per-invocation override, NOT a durable flag file:** Set only when the `webhook=<url>` token is present in `$ARGUMENTS` (see § ARGUMENT PARSING). Unlike `clean_confirmed`/`slack_posted`/`approval_watch`, this is never written to a file — it is carried the same way the PR argument itself is carried: re-supplied as literal text in every `ScheduleWakeup` `prompt` field, and re-parsed by ARGUMENT PARSING on the fresh invocation that follows the wakeup. Every `prompt: "Continue /smithers <PR_URL>"` (or `"Continue /smithers <PR_URL> webhook=<url>"` if `webhook_override` is active for this PR — see § Slack Webhook Override) in this skill becomes `prompt: "Continue /smithers <PR_URL> webhook=<url>"` when `webhook_override` is active for the current PR — this is mandatory on EVERY wakeup in the session (the initial fast cycle, approval-watch entry, and every approval-watch pulse), not just the first one, or the override silently drops on the next wakeup. See § Slack Webhook Override (part of § SLACK POSTING) for the full passthrough contract.
+
 ## LOOP BODY
 
 Each iteration executes steps 1–15 in order. Any step may terminate early by scheduling a wakeup or stopping without scheduling. **Exception — approval-watch invocations:** After Step 1 (PR state check), if the `approval_watch` flag file exists, smithers branches to the approval-watch pulse logic and skips Steps 2–15 entirely (see § Approval-Watch Phase).
@@ -89,7 +92,7 @@ Run:
 gh pr checks <PR> --json name,state,bucket,link
 ```
 
-On error (non-zero exit): log a warning (`Warning: gh pr checks failed — skipping cycle`). Update cycle tally in the conversation narrative (e.g., `Cycle <N> of <max_cycles> — gh API error; will retry on next wakeup.`) before scheduling. ScheduleWakeup with `delaySeconds: 60`, `reason: "gh pr checks API error — retrying after 1 minute"`, and `prompt: "Continue /smithers <PR_URL>"`.
+On error (non-zero exit): log a warning (`Warning: gh pr checks failed — skipping cycle`). Update cycle tally in the conversation narrative (e.g., `Cycle <N> of <max_cycles> — gh API error; will retry on next wakeup.`) before scheduling. ScheduleWakeup with `delaySeconds: 60`, `reason: "gh pr checks API error — retrying after 1 minute"`, and `prompt: "Continue /smithers <PR_URL>"` (or `"Continue /smithers <PR_URL> webhook=<url>"` if `webhook_override` is active for this PR — see § Slack Webhook Override).
 
 Parse the JSON array. Each check has: `name`, `state`, `bucket`, `link`.
 
@@ -124,7 +127,7 @@ Run:
 gh pr view <PR> --json mergeable,mergeStateStatus
 ```
 
-On error (non-zero exit): log the error in the cycle narrative, then ScheduleWakeup with `delaySeconds: 60`, `reason: "gh pr view merge status failed — skipping cycle to avoid acting on unknown conflict state"`, and `prompt: "Continue /smithers <PR_URL>"`. Do not proceed further in this iteration.
+On error (non-zero exit): log the error in the cycle narrative, then ScheduleWakeup with `delaySeconds: 60`, `reason: "gh pr view merge status failed — skipping cycle to avoid acting on unknown conflict state"`, and `prompt: "Continue /smithers <PR_URL>"` (or `"Continue /smithers <PR_URL> webhook=<url>"` if `webhook_override` is active for this PR — see § Slack Webhook Override). Do not proceed further in this iteration.
 
 Compute: `has_conflicts = (mergeable == "CONFLICTING" or mergeStateStatus == "DIRTY")`.
 
@@ -140,11 +143,11 @@ work_needed = (failed_checks != [] OR has_conflicts OR actionable_bots > 0)
 
 ### Step 6: Early exit if nothing actionable yet
 
-**If `gh pr checks` returned no checks (empty list) AND `NOT work_needed` (no conflicts, no actionable bots):** Log `"Cycle <N>: no checks found yet — treat as no actionable CI work"` and ScheduleWakeup with `delaySeconds: 60`, `reason: "No CI checks present yet — waiting for workflow triggers"`, and `prompt: "Continue /smithers <PR_URL>"`.
+**If `gh pr checks` returned no checks (empty list) AND `NOT work_needed` (no conflicts, no actionable bots):** Log `"Cycle <N>: no checks found yet — treat as no actionable CI work"` and ScheduleWakeup with `delaySeconds: 60`, `reason: "No CI checks present yet — waiting for workflow triggers"`, and `prompt: "Continue /smithers <PR_URL>"` (or `"Continue /smithers <PR_URL> webhook=<url>"` if `webhook_override` is active for this PR — see § Slack Webhook Override).
 
 If the check list is empty but `work_needed` is true (a merge conflict or actionable bot comments exist), do NOT wait here — continue to the normal work-handling steps (the same sequential continuation used when `work_needed` is true) so conflicts and bot comments are addressed immediately rather than deferred behind the absence of CI checks.
 
-Otherwise (if neither of the above applied), if `NOT work_needed` AND `NOT all_terminal` (no failed checks, no conflicts, no actionable bots, but one or more required checks are still pending — this covers BOTH the all-pending case and the mixed pass+pending case): log `"Cycle <N>: checks still pending — waiting for all CI to reach a terminal state"` and ScheduleWakeup with `delaySeconds: 60`, `reason: "CI checks still pending — waiting for all to reach a terminal state before declaring clean"`, and `prompt: "Continue /smithers <PR_URL>"`.
+Otherwise (if neither of the above applied), if `NOT work_needed` AND `NOT all_terminal` (no failed checks, no conflicts, no actionable bots, but one or more required checks are still pending — this covers BOTH the all-pending case and the mixed pass+pending case): log `"Cycle <N>: checks still pending — waiting for all CI to reach a terminal state"` and ScheduleWakeup with `delaySeconds: 60`, `reason: "CI checks still pending — waiting for all to reach a terminal state before declaring clean"`, and `prompt: "Continue /smithers <PR_URL>"` (or `"Continue /smithers <PR_URL> webhook=<url>"` if `webhook_override` is active for this PR — see § Slack Webhook Override).
 
 ---
 
@@ -159,7 +162,7 @@ If `NOT work_needed` AND `all_terminal` (no failed checks, no conflicts, no acti
      - Run `touch "$(git rev-parse --show-toplevel)/.smithers/clean_confirmed"` to persist the flag across the ScheduleWakeup gap.
      - Smithers does NOT touch the host repo's `.gitignore`. If `.smithers/` is not ignored globally on the host machine, the directory will show up as untracked in `git status`. This is the user's setup concern — see the STATE section's Init bullet for the one-time setup instructions. For users of the nixpkgs configuration in this repo, running `hms` deploys the global ignore automatically.
   2. Log `"Cycle <N>: no work detected — scheduling wakeup in 60s to re-verify (checking for cascade workflows)"`.
-  3. ScheduleWakeup with `delaySeconds: 60`, `reason: "No work detected — re-polling after 60s to confirm PR is clean before proceeding to merge"`, and `prompt: "Continue /smithers <PR_URL>"`.
+  3. ScheduleWakeup with `delaySeconds: 60`, `reason: "No work detected — re-polling after 60s to confirm PR is clean before proceeding to merge"`, and `prompt: "Continue /smithers <PR_URL>"` (or `"Continue /smithers <PR_URL> webhook=<url>"` if `webhook_override` is active for this PR — see § Slack Webhook Override).
   4. **Stop** (one iteration per invocation — the next invocation re-runs Steps 1–5 with fresh data; if still no work, the flag file exists and Step 7a runs).
 
 ### Merge-consent policy (deterministic)
@@ -318,7 +321,7 @@ On any land failure (L1 GraphQL error, or L2 detecting/disarming an armed auto-m
 
 **If NOT currently mergeable** (any condition above is not met): the PR is clean (no failed checks, no conflicts, no actionable bot comments) but cannot be merged yet — typically because review is required. Notify reviewers via Slack, then enter the **approval-watch phase** (slow pulse) rather than stopping.
 
-1. If `.smithers/slack_posted` does NOT exist: run `smithers-post <PR_NUMBER_OR_URL>`. If it returns 0, run `touch "$(git rev-parse --show-toplevel)/.smithers/slack_posted"` to record the post. If `smithers-post` exits non-zero, log `"Warning: smithers-post failed (exit <code>) — Slack notification not delivered; flag not set so a retry on manual re-invocation will attempt again"` and do NOT touch the flag. When delivery succeeds, this signals reviewers that the PR is clean and ready for review.
+1. If `.smithers/slack_posted` does NOT exist: run `smithers-post <PR_NUMBER_OR_URL>` — append `--webhook-url "<url>"` if `webhook_override` is set for this PR (see § Slack Webhook Override), otherwise omit the flag. If it returns 0, run `touch "$(git rev-parse --show-toplevel)/.smithers/slack_posted"` to record the post. If `smithers-post` exits non-zero, log `"Warning: smithers-post failed (exit <code>) — Slack notification not delivered; flag not set so a retry on manual re-invocation will attempt again"` and do NOT touch the flag. When delivery succeeds, this signals reviewers that the PR is clean and ready for review.
 2. Run `rm -f "$(git rev-parse --show-toplevel)/.smithers/clean_confirmed"`.
 3. Log `"Cycle <N>: PR not currently mergeable (reviewDecision=<value> mergeStateStatus=<value>) — posted to Slack; entering approval-watch phase"` (or `"... — already posted to Slack; entering approval-watch phase"` if the slack_posted flag already existed).
 4. Run the pre-stop sweep — sweep `prc list <PR> --unresolved --bots-only` to zero. Resolve any bot thread carrying a Smithers reply but no resolution.
@@ -365,9 +368,11 @@ If `.smithers/slack_posted` does NOT exist, post via:
 smithers-post <PR_NUMBER_OR_URL>
 ```
 
+Append `--webhook-url "<url>"` to the command above if `webhook_override` is set for this PR (see § Slack Webhook Override); otherwise omit the flag and let `smithers-post` use its default.
+
 If `smithers-post` returns 0: run `touch "$(git rev-parse --show-toplevel)/.smithers/slack_posted"` to record that the post has been made. If `smithers-post` exits non-zero, log `"Warning: smithers-post failed (exit <code>) — Slack notification not delivered; flag not set so a retry on manual re-invocation will attempt again"` and do NOT touch the flag.
 
-`smithers-post` reads `SMITHERS_SLACK_WEBHOOK_URL` from the environment internally, constructs the Block Kit payload, and POSTs to the webhook. If `SMITHERS_SLACK_WEBHOOK_URL` is not set, `smithers-post` handles that silently.
+`smithers-post` reads `SMITHERS_SLACK_WEBHOOK_URL` from the environment internally, constructs the Block Kit payload, and POSTs to the webhook — unless `--webhook-url <url>` was passed, in which case that URL is used instead for this call. If neither is available (no override and `SMITHERS_SLACK_WEBHOOK_URL` not set), `smithers-post` handles that silently.
 
 If `.smithers/slack_posted` already exists, skip the `smithers-post` call (already posted on an earlier cycle).
 
@@ -383,7 +388,7 @@ When the PR is clean but not yet mergeable (review pending), smithers switches f
 
 1. Set the durable flag: `touch "$(git rev-parse --show-toplevel)/.smithers/approval_watch"`.
 2. Recall or initialize `approval_watch_cycle = 0` (in-memory; reset to 0 when the flag is first set; incremented on each slow-pulse invocation).
-3. ScheduleWakeup with `delaySeconds: 600`, `reason: "Entering approval-watch — waiting ~10 minutes before first slow-pulse check (review pending)"`, and `prompt: "Continue /smithers <PR_URL>"`.
+3. ScheduleWakeup with `delaySeconds: 600`, `reason: "Entering approval-watch — waiting ~10 minutes before first slow-pulse check (review pending)"`, and `prompt: "Continue /smithers <PR_URL>"` (or `"Continue /smithers <PR_URL> webhook=<url>"` if `webhook_override` is active for this PR — see § Slack Webhook Override).
 
 **Detecting the phase on wakeup:** At the start of each smithers invocation, after Step 1 (PR state check), test:
 
@@ -430,7 +435,7 @@ If new unresolved bot comments are found, exit the approval-watch phase and re-e
 
 1. Run `rm -f "$(git rev-parse --show-toplevel)/.smithers/approval_watch"`.
 2. Log `"Approval-watch cycle <N>: new bot comments detected — re-entering fix cycle"`.
-3. ScheduleWakeup with `delaySeconds: 60`, `reason: "New bot comments detected during approval-watch — resuming 1-minute CI cycle"`, and `prompt: "Continue /smithers <PR_URL>"`.
+3. ScheduleWakeup with `delaySeconds: 60`, `reason: "New bot comments detected during approval-watch — resuming 1-minute CI cycle"`, and `prompt: "Continue /smithers <PR_URL>"` (or `"Continue /smithers <PR_URL> webhook=<url>"` if `webhook_override` is active for this PR — see § Slack Webhook Override).
 
 (The next invocation will run the normal loop body, pick up the bot comments in Step 3, and handle them. Once the fix cycle completes cleanly again, smithers will re-enter approval-watch from Step 7a.)
 
@@ -446,7 +451,7 @@ Compute `fail_fast` (same as Step 2 of the main loop). If any check has bucket `
 
 1. Run `rm -f "$(git rev-parse --show-toplevel)/.smithers/approval_watch"`.
 2. Log `"Approval-watch cycle <N>: late CI failure detected — re-entering fix cycle"`.
-3. ScheduleWakeup with `delaySeconds: 60`, `reason: "Late CI failure detected during approval-watch — resuming 1-minute CI cycle"`, and `prompt: "Continue /smithers <PR_URL>"`.
+3. ScheduleWakeup with `delaySeconds: 60`, `reason: "Late CI failure detected during approval-watch — resuming 1-minute CI cycle"`, and `prompt: "Continue /smithers <PR_URL>"` (or `"Continue /smithers <PR_URL> webhook=<url>"` if `webhook_override` is active for this PR — see § Slack Webhook Override).
 
 **AW-5: Disposition on review state.**
 
@@ -459,7 +464,7 @@ Evaluate `reviewDecision` and `mergeStateStatus`:
 
      On any land failure (L1 GraphQL error, or L2 detecting/disarming an armed auto-merge — both set `merge_failed = true`): log the error, do NOT clear the `approval_watch` flag, and continue the slow pulse (the next pulse re-evaluates state).
   3. Run `rm -f "$(git rev-parse --show-toplevel)/.smithers/approval_watch"`. (Note: clearing the flag before the verify call below leaves a narrow orphan window — if the session crashes between here and the verify call, the flag is gone and smithers will re-enter the normal loop body on restart rather than the AW path. Accepted behavior: Step 1's MERGED check is the fallback.)
-  4. Verify and notify using the same verification logic as Step 7a: check `state == "MERGED"` or `mergedAt` non-null. If neither, do NOT infer queued-ness from `state`/`mergeStateStatus` and do NOT trust a `gh pr merge <PR>` re-run's `already queued to merge` message as proof (it can be stale). Instead verify via GraphQL: resolve `{owner}/{repo}` (e.g. `gh repo view --json owner,name`) and run `gh api graphql -f query='{repository(owner:"<owner>",name:"<repo>"){pullRequest(number:<N>){mergeQueueEntry{state position}}}}'`. Non-null `mergeQueueEntry` = confirmed enqueue. Null `mergeQueueEntry` = NOT queued — treat as merge-not-confirmed, log a warning, and set `merge_failed = true` rather than assuming queued. Do NOT treat `state=OPEN` / `mergeStateStatus=CLEAN` as merge failure — those values persist while a PR is queued — but also do NOT treat that combination as positive evidence of queued-ness (identical for idle and queued PRs). `mergeQueueEntry` is NOT available via `gh pr view --json` (REST) — it errors if requested there — but IS available and is the reliable signal via `gh api graphql` as above. If `mergeQueueEntry` was previously confirmed non-null and later bounces back to null before `mergedAt` is set, this is a **merge-queue candidate** CI failure (the queued build failed a required check) — capture the failing check via `gh pr checks <PR> --json name,state,bucket,link` and surface to the coordinator/user rather than silently re-enqueuing in a loop. Send osascript notification, post to Slack via `smithers-post` if `.smithers/slack_posted` does not already exist.
+  4. Verify and notify using the same verification logic as Step 7a: check `state == "MERGED"` or `mergedAt` non-null. If neither, do NOT infer queued-ness from `state`/`mergeStateStatus` and do NOT trust a `gh pr merge <PR>` re-run's `already queued to merge` message as proof (it can be stale). Instead verify via GraphQL: resolve `{owner}/{repo}` (e.g. `gh repo view --json owner,name`) and run `gh api graphql -f query='{repository(owner:"<owner>",name:"<repo>"){pullRequest(number:<N>){mergeQueueEntry{state position}}}}'`. Non-null `mergeQueueEntry` = confirmed enqueue. Null `mergeQueueEntry` = NOT queued — treat as merge-not-confirmed, log a warning, and set `merge_failed = true` rather than assuming queued. Do NOT treat `state=OPEN` / `mergeStateStatus=CLEAN` as merge failure — those values persist while a PR is queued — but also do NOT treat that combination as positive evidence of queued-ness (identical for idle and queued PRs). `mergeQueueEntry` is NOT available via `gh pr view --json` (REST) — it errors if requested there — but IS available and is the reliable signal via `gh api graphql` as above. If `mergeQueueEntry` was previously confirmed non-null and later bounces back to null before `mergedAt` is set, this is a **merge-queue candidate** CI failure (the queued build failed a required check) — capture the failing check via `gh pr checks <PR> --json name,state,bucket,link` and surface to the coordinator/user rather than silently re-enqueuing in a loop. Send osascript notification, post to Slack via `smithers-post` if `.smithers/slack_posted` does not already exist (append `--webhook-url "<url>"` if `webhook_override` is set for this PR — see § Slack Webhook Override).
   5. **Stop** (no ScheduleWakeup).
 
 - **`reviewDecision == "CHANGES_REQUESTED"`:** Surface to the invoking session or coordinator.
@@ -487,7 +492,7 @@ If `approval_watch_cycle >= 144`:
 
 Log `"Approval-watch cycle <approval_watch_cycle>: review still pending (reviewDecision=<value>) — scheduling next pulse in 10 minutes"`.
 
-ScheduleWakeup with `delaySeconds: 600`, `reason: "Approval-watch cycle <N> — waiting ~10 minutes before next slow-pulse check"`, and `prompt: "Continue /smithers <PR_URL>"`.
+ScheduleWakeup with `delaySeconds: 600`, `reason: "Approval-watch cycle <N> — waiting ~10 minutes before next slow-pulse check"`, and `prompt: "Continue /smithers <PR_URL>"` (or `"Continue /smithers <PR_URL> webhook=<url>"` if `webhook_override` is active for this PR — see § Slack Webhook Override).
 
 ---
 
@@ -692,7 +697,7 @@ ScheduleWakeup in 1 minute, continuing with the same PR:
 ScheduleWakeup(
   delaySeconds=60,
   reason="Waiting 1 minute before next smithers polling cycle for PR <N>",
-  prompt="Continue /smithers <PR_URL>"
+  prompt="Continue /smithers <PR_URL>"  # append " webhook=<url>" if webhook_override is active — see § Slack Webhook Override
 )
 ```
 
@@ -730,13 +735,28 @@ Smithers posts to Slack using the `smithers-post` CLI — the ONLY supported pos
 - **NEVER construct a curl payload to the webhook directly.** Do not read `SMITHERS_SLACK_WEBHOOK_URL` or call curl yourself.
 - **NEVER use any wrapper, indirection layer, or skill between smithers and Slack posting.**
 
+This prohibition is absolute regardless of the per-invocation webhook override described below — the override changes only the destination URL argument passed to `smithers-post`; it never opens curl, an MCP Slack tool, or any other posting path.
+
 **The ONLY supported path for Slack posting is the `smithers-post` CLI:**
 
 ```bash
 smithers-post <PR_NUMBER_OR_URL>
 ```
 
-`smithers-post` fetches PR metadata via `gh pr view` internally, constructs the Block Kit JSON payload, and POSTs to the webhook URL read from `SMITHERS_SLACK_WEBHOOK_URL`. All formatting, env-var management, and HTTP details are handled by the CLI.
+`smithers-post` fetches PR metadata via `gh pr view` internally, constructs the Block Kit JSON payload, and POSTs to the webhook URL read from `SMITHERS_SLACK_WEBHOOK_URL` — unless a per-invocation override is active (see § Slack Webhook Override immediately below). All formatting, env-var management, and HTTP details are handled by the CLI.
+
+### Slack Webhook Override
+
+`/smithers <PR> webhook=<url>` lets a single invocation route that PR's Slack notifications to a different incoming-webhook URL than `SMITHERS_SLACK_WEBHOOK_URL` — e.g. routing one incident PR's reviewer-attention post to an incident channel instead of the default channel.
+
+- **Parsing:** the `webhook=<url>` token is parsed in § ARGUMENT PARSING and stored as `webhook_override` (see § STATE) for the remainder of the session on this PR.
+- **Passthrough:** every `smithers-post <PR>` invocation this skill makes for that PR — the initial "PR ready for review" post in Step 7a, the merge-time post in Step 7a, and any post triggered from AW-5 — appends `--webhook-url <url>`:
+  ```bash
+  smithers-post <PR_NUMBER_OR_URL> --webhook-url "<url>"
+  ```
+- **Wakeup threading:** because `webhook_override` is conversation-context state, it does NOT survive the fresh agent context spawned after a `ScheduleWakeup` gap on its own. It is carried the same way the PR argument itself is carried — embedded as literal text in the `prompt` field of every `ScheduleWakeup` call in this skill: `prompt: "Continue /smithers <PR_URL> webhook=<url>"` instead of the bare `"Continue /smithers <PR_URL>"`. This applies on every wakeup in the session — the initial fast cycle, entering approval-watch, and every approval-watch pulse — not just the first one. Omitting it on any single wakeup silently drops the override for the rest of the run.
+- **Default unchanged:** when no `webhook=<url>` token is given, `webhook_override` is never set, `--webhook-url` is never passed to `smithers-post`, and `smithers-post` reads `SMITHERS_SLACK_WEBHOOK_URL` exactly as it did before this feature existed. Every normal `/smithers <PR>` invocation is unaffected.
+- **Security note:** the override URL is a live-posting credential — it persists in plaintext in the wakeup `prompt` text and the session transcript for the life of the watch (potentially up to ~144 approval-watch pulses over ~24h, per AW-6). Prefer this override only for genuinely temporary/incident routing, not long-lived secrets, and rotate the webhook in Slack if it may have been exposed.
 
 **PR state guard — already enforced at the top of Step 7a.** The state re-check at the start of Step 7a guarantees smithers only reaches this point if the PR is OPEN. Do not add a second guard here.
 
@@ -750,3 +770,4 @@ Smithers posts to Slack at Step 7a (PR ready for review) and optionally again at
 - Most state is in the conversation context. Three durable exceptions use flag files because they must survive the ScheduleWakeup gap: `clean_confirmed` (`.smithers/clean_confirmed`), `slack_posted` (`.smithers/slack_posted`), and `approval_watch` (`.smithers/approval_watch`). `slack_posted` additionally survives watcher restarts.
 - If this session is killed and restarted, the loop restarts from cycle 1 with a fresh `fix_count` and `stagnation_count`. The `clean_confirmed` flag file persists across restarts — if it exists when smithers restarts, smithers will proceed directly to Step 7a on the next no-work cycle. This is intentional and correct behavior. Similarly, if `.smithers/approval_watch` exists when smithers restarts, smithers will detect the phase on the first invocation and resume the slow-pulse cadence.
 - The smithers-post Slack notification (Step 7a) deduplicates across sessions via the `.smithers/slack_posted` flag. If the watcher restarts on a PR that already has the flag set, smithers will skip the Slack post. To re-post (e.g., to re-notify after a long approval-watch expiry), the user manually removes `.smithers/slack_posted`.
+- `webhook_override` (see § Slack Webhook Override) is never written to a file — unlike the three durable flags above, it is pure conversation-context state. A session kill/restart silently loses it: Slack posts revert to the default `SMITHERS_SLACK_WEBHOOK_URL` channel unless the operator re-supplies `webhook=<url>` on manual re-invocation.
