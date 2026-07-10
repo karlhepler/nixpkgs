@@ -283,6 +283,119 @@ def extract_agent_output(transcript_path: str) -> str:
     return last_assistant_content
 
 
+def _find_card_match_in_texts(text_to_search: list[str]) -> tuple[str, str] | None:
+    """Find the first card match within a single entry's extracted text strings.
+
+    Checks each text string in order; for a given string, pattern priority is
+    XML > header > CLI (the most specific/authoritative pattern wins). Returns
+    as soon as any pattern matches any string. Returns None if nothing matches.
+    """
+    for text in text_to_search:
+        # Try XML card pattern first (most specific from pretool hook)
+        m = _CARD_XML_PATTERN.search(text)
+        if m:
+            return (m.group(1), m.group(2))
+
+        # Try KANBAN CARD header pattern
+        m = _CARD_HEADER_PATTERN.search(text)
+        if m:
+            return (m.group(1), m.group(2))
+
+        # Try kanban CLI command pattern
+        m = _KANBAN_CMD_PATTERN.search(text)
+        if m:
+            return (m.group(1), m.group(2))
+    return None
+
+
+def _entry_has_anchor_pattern(text_to_search: list[str]) -> bool:
+    """True if any text contains a hook-injected anchor pattern (XML or header).
+
+    These two patterns are the only ones the PreToolUse hook itself injects
+    into the prompt — they are trusted, non-agent-controlled content. The CLI
+    pattern is deliberately excluded: it also matches commands the agent
+    chooses to run (or quote in its own prose), which is agent-controlled.
+    """
+    for text in text_to_search:
+        if _CARD_XML_PATTERN.search(text) or _CARD_HEADER_PATTERN.search(text):
+            return True
+    return False
+
+
+def _extract_trustworthy_texts_from_entry(entry) -> list[str]:
+    """Extract text values from a transcript entry, excluding assistant free-text/prose.
+
+    Used only for entries STRICTLY AFTER the last hook-injected anchor (see
+    extract_card_from_transcript's trust-anchor resolution). Assistant
+    "text"-type content blocks and plain-string assistant content represent
+    the agent's own narrative output — the exact untrusted surface described
+    by the trust-boundary finding (an agent's final return commonly echoes
+    command examples it ran, or references an unrelated card, in prose).
+    tool_use input fields (real command invocations the agent issued) and all
+    non-assistant-role content (hook-injected prompts, tool results) remain
+    eligible to override the anchor.
+    """
+    if not isinstance(entry, dict):
+        return _extract_text_from_entry(entry)
+
+    if entry.get("role", "") != "assistant":
+        return _extract_text_from_entry(entry)
+
+    content = entry.get("content", "")
+    if isinstance(content, str):
+        return []  # plain assistant string content is untrusted prose
+
+    texts: list[str] = []
+    if isinstance(content, list):
+        for blk in content:
+            if not isinstance(blk, dict):
+                continue  # bare string list items are untrusted prose fragments
+            if blk.get("type") == "tool_use":
+                texts.extend(_extract_text_from_entry(blk.get("input", {})))
+            # "text"-type blocks (and any other block type) are excluded here —
+            # conservatively treated as agent narrative, not a real invocation.
+    return texts
+
+
+def _resolve_card_from_entries_info(
+    entries_info: list[tuple[bool, tuple[str, str] | None, tuple[str, str] | None]],
+) -> tuple[str, str] | None:
+    """Resolve the final (card_number, session) from per-entry scan results.
+
+    entries_info[i] = (is_anchor, match_all, match_trustworthy) for the i-th
+    JSONL entry, in file order. See extract_card_from_transcript for the
+    trust-anchor resolution algorithm this implements.
+    """
+    last_anchor_idx: int | None = None
+    for i in range(len(entries_info) - 1, -1, -1):
+        if entries_info[i][0]:
+            last_anchor_idx = i
+            break
+
+    if last_anchor_idx is None:
+        # No hook-injected anchor anywhere in the (scanned-so-far) transcript —
+        # fall back to latest-match-overall, unfiltered (the original
+        # latest-match-wins behavior, used when there's nothing trusted to
+        # anchor to, e.g. an un-injected SendMessage continuation).
+        found: tuple[str, str] | None = None
+        for _, match_all, _ in entries_info:
+            if match_all:
+                found = match_all
+        return found
+
+    # Anchor found: start from its own (inherently trustworthy) match, then
+    # only allow trustworthy matches STRICTLY AFTER it to override — this lets
+    # a continued agent's later, legitimate `kanban criteria check <newCard>`
+    # invocation win, while preventing the agent's own final-return prose from
+    # redirecting resolution to an unrelated card it merely mentions.
+    found = entries_info[last_anchor_idx][1]
+    for i in range(last_anchor_idx + 1, len(entries_info)):
+        _, _, match_trustworthy = entries_info[i]
+        if match_trustworthy:
+            found = match_trustworthy
+    return found
+
+
 def extract_card_from_transcript(transcript_path: str) -> tuple[str, str] | None:
     """
     Parse the agent's transcript (JSONL) line by line to find the card number
@@ -293,8 +406,35 @@ def extract_card_from_transcript(transcript_path: str) -> tuple[str, str] | None
     2. KANBAN CARD #N | Session: session-name header
     3. kanban CLI calls with card number and --session flag
 
-    Returns (card_number_str, session_id) or None if not found.
+    Trust-anchor resolution: patterns 1 and 2 (XML/header) are hook-injected,
+    non-agent-controlled content — the trusted anchor. Resolution finds the
+    LAST anchor entry in the transcript, then returns the LATEST match AT OR
+    AFTER that anchor — but for entries STRICTLY AFTER the anchor, only
+    "trustworthy" text is eligible to override (tool_use input fields and any
+    non-assistant-role content; assistant free-text/prose is excluded — see
+    _extract_trustworthy_texts_from_entry). This keeps a continued agent's
+    later, legitimate `kanban criteria check <newCard> ...` invocation able to
+    override a stale anchor, while preventing the agent's own final-return
+    prose from redirecting resolution to an unrelated card it merely mentions.
+
+    If NO hook-injected anchor exists anywhere in the transcript (e.g. an
+    un-injected SendMessage continuation), falls back to the latest match
+    found ANYWHERE in the file, unfiltered (the original latest-match-wins
+    behavior). Pattern priority (XML > header > CLI) is preserved within a
+    single line/entry via _find_card_match_in_texts() in both cases.
+
+    Returns (card_number_str, session_id), or None if no card reference is
+    found anywhere in the transcript.
     """
+    # Size guard: skip for very large transcripts (consistent with sibling
+    # transcript-scanning functions extract_agent_output/detect_criteria_gaming).
+    try:
+        if Path(transcript_path).stat().st_size > _TRANSCRIPT_MAX_BYTES:
+            return None
+    except OSError:
+        pass
+
+    entries_info: list[tuple[bool, tuple[str, str] | None, tuple[str, str] | None]] = []
     try:
         with open(transcript_path, "r", encoding="utf-8") as fh:
             for line in fh:
@@ -306,28 +446,21 @@ def extract_card_from_transcript(transcript_path: str) -> tuple[str, str] | None
                 except json.JSONDecodeError:
                     continue
 
-                # Search through all string values in the entry for patterns
+                # Search through all string values in the entry for patterns.
                 text_to_search = _extract_text_from_entry(entry)
-                for text in text_to_search:
-                    # Try XML card pattern first (most specific from pretool hook)
-                    m = _CARD_XML_PATTERN.search(text)
-                    if m:
-                        return (m.group(1), m.group(2))
-
-                    # Try KANBAN CARD header pattern
-                    m = _CARD_HEADER_PATTERN.search(text)
-                    if m:
-                        return (m.group(1), m.group(2))
-
-                    # Try kanban CLI command pattern
-                    m = _KANBAN_CMD_PATTERN.search(text)
-                    if m:
-                        return (m.group(1), m.group(2))
+                match_all = _find_card_match_in_texts(text_to_search)
+                is_anchor = _entry_has_anchor_pattern(text_to_search)
+                match_trustworthy = _find_card_match_in_texts(
+                    _extract_trustworthy_texts_from_entry(entry)
+                )
+                entries_info.append((is_anchor, match_all, match_trustworthy))
     except (OSError, IOError) as exc:
         log_error(f"Failed to read transcript at {transcript_path}: {exc}")
-        return None
+        # A match already accumulated before the read error survives —
+        # resolve from whatever was scanned so far rather than discarding it.
+        return _resolve_card_from_entries_info(entries_info)
 
-    return None
+    return _resolve_card_from_entries_info(entries_info)
 
 
 def detect_permission_stall(transcript_path: str) -> list[str]:

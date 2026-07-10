@@ -751,6 +751,130 @@ class TestTranscriptParsing:
         result = hook.extract_card_from_transcript(transcript)
         assert result is None
 
+    def test_extract_card_from_transcript_returns_latest_card(self, hook, tmp_transcript):
+        """Regression: a continued agent's transcript spans multiple cards — the
+        ORIGINAL card's injected XML header appears EARLY, and a NEWER card is
+        referenced LATER via a `kanban criteria check` CLI call. The function
+        must return the NEWER card, not the first (stale) match.
+        """
+        entries = [
+            # Round 1: original card injected via PreToolUse XML header (early).
+            {
+                "role": "user",
+                "content": '<card num="100" session="multi-session" status="doing" type="work">',
+            },
+            {"role": "assistant", "content": "Working on card 100..."},
+            # Round 2 (continuation): agent is re-tasked with a new card and runs
+            # a kanban CLI command against it — this appears LATER in the file.
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "Bash",
+                        "input": {
+                            "command": "kanban criteria check 200 1 --session multi-session",
+                        },
+                    }
+                ],
+            },
+        ]
+        transcript = tmp_transcript(entries)
+        result = hook.extract_card_from_transcript(transcript)
+        assert result == ("200", "multi-session"), (
+            f"Expected the LATEST card (200) to win over the stale original card "
+            f"(100). Got: {result}"
+        )
+
+    def test_extract_card_from_transcript_repeated_same_card_unaffected(self, hook, tmp_transcript):
+        """Edge case: a transcript that references the SAME card repeatedly (e.g.
+        retries across cycles) is unaffected by the latest-match change — the
+        same card number is returned either way.
+        """
+        entries = [
+            make_card_header_entry("77", "retry-session"),
+            make_kanban_criteria_bash_entry("77", "retry-session", n=1),
+            make_kanban_criteria_bash_entry("77", "retry-session", n=2),
+        ]
+        transcript = tmp_transcript(entries)
+        result = hook.extract_card_from_transcript(transcript)
+        assert result == ("77", "retry-session")
+
+    def test_extract_card_from_transcript_header_anchor_beats_trailing_prose(self, hook, tmp_transcript):
+        """Trust-boundary regression: a hook-injected header for card X appears
+        early, and LATER the agent's own free-text prose (its final-return-style
+        narrative, not a real tool invocation) echoes a quoted `kanban` command
+        example referencing a DIFFERENT card Y. Resolution must stay anchored to
+        X — the hook-injected content — not be redirected by agent-controlled
+        prose to Y.
+        """
+        entries = [
+            # Hook-injected XML anchor for card X (trusted).
+            {
+                "role": "user",
+                "content": '<card num="300" session="anchor-session" status="doing" type="work">',
+            },
+            {"role": "assistant", "content": "Working on card 300..."},
+            # Agent's own final-return PROSE (plain string content, no tool_use)
+            # quotes an unrelated command example — this is the exact untrusted
+            # surface the trust-anchor fix closes.
+            {
+                "role": "assistant",
+                "content": (
+                    "For reference, here's an example invocation you could use: "
+                    "kanban criteria check 999 1 --session other-session"
+                ),
+            },
+        ]
+        transcript = tmp_transcript(entries)
+        result = hook.extract_card_from_transcript(transcript)
+        assert result == ("300", "anchor-session"), (
+            f"Expected the hook-injected anchor (300) to win over agent-authored "
+            f"prose quoting an unrelated card (999). Got: {result}"
+        )
+
+    def test_extract_card_from_transcript_header_anchor_newer_round_wins(self, hook, tmp_transcript):
+        """Trust-boundary regression: when a LEGITIMATE later hook-injected
+        header exists for a new round, the newer card wins over the earlier
+        anchor — the anchor is always the LAST hook-injected header, not the
+        first.
+        """
+        entries = [
+            {
+                "role": "user",
+                "content": '<card num="400" session="anchor-session" status="doing" type="work">',
+            },
+            {"role": "assistant", "content": "Working on card 400..."},
+            # A fresh round re-injects a new card header (legitimate hook re-injection).
+            make_card_header_entry("500", "anchor-session"),
+        ]
+        transcript = tmp_transcript(entries)
+        result = hook.extract_card_from_transcript(transcript)
+        assert result == ("500", "anchor-session"), (
+            f"Expected the newer hook-injected header (500) to win over the "
+            f"earlier anchor (400). Got: {result}"
+        )
+
+    def test_extract_card_from_transcript_empty_transcript_returns_none(self, hook, tmp_transcript):
+        """Edge case: an empty transcript has no entries to scan — returns None."""
+        transcript = tmp_transcript([])
+        result = hook.extract_card_from_transcript(transcript)
+        assert result is None
+
+    def test_extract_card_from_transcript_corrupt_jsonl_line_skipped(self, hook, tmp_path):
+        """Edge case: a corrupt (non-JSON) line is skipped without crashing, and
+        a valid match on a surrounding line is still found.
+        """
+        transcript = tmp_path / "transcript.jsonl"
+        lines = [
+            json.dumps(make_card_header_entry("66", "corrupt-session")),
+            "{not valid json!!",
+            json.dumps({"role": "assistant", "content": "All done."}),
+        ]
+        transcript.write_text("\n".join(lines) + "\n")
+        result = hook.extract_card_from_transcript(str(transcript))
+        assert result == ("66", "corrupt-session")
+
 
 # ---------------------------------------------------------------------------
 # detect_criteria_gaming unit tests
