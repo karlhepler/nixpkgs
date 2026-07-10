@@ -217,19 +217,37 @@ _FOLDER_TRUST_PROMPT_KEYS: Dict[str, List[str]] = {
 }
 
 
+def _capture_pane_text(tmux_target: str, lines: int = 50) -> str:
+    """Capture the last <lines> lines of the pane at tmux_target via tmux capture-pane.
+
+    Returns the captured stdout text, or an empty string on any subprocess
+    failure — non-zero exit code, or an OS/subprocess-level exception raised
+    by subprocess.run itself. Callers perform substring checks against the
+    returned text (`pat in content`, `any(...)`, `all(...)`); an empty string
+    naturally makes those checks False, preserving the fail-open-on-error
+    semantics of the original per-function inlined subprocess calls exactly.
+    """
+    try:
+        result = subprocess.run(
+            ["tmux", "capture-pane", "-p", "-t", tmux_target, "-S", f"-{lines}"],
+            capture_output=True, text=True, check=False,
+        )
+    except OSError:
+        return ""
+    except subprocess.SubprocessError:
+        return ""
+    if result.returncode != 0:
+        return ""
+    return result.stdout
+
+
 def _pane_shows_prompt_ready(tmux_target: str) -> bool:
     """Return True if the pane at tmux_target shows a Claude Code prompt-ready signal.
 
     Runs tmux capture-pane and checks the output against _PROMPT_READY_PATTERNS.
     Returns False on any subprocess error (fail open — polling loop will retry).
     """
-    result = subprocess.run(
-        ["tmux", "capture-pane", "-p", "-t", tmux_target, "-S", "-50"],
-        capture_output=True, text=True, check=False,
-    )
-    if result.returncode != 0:
-        return False
-    content = result.stdout
+    content = _capture_pane_text(tmux_target)
     return any(pat in content for pat in _PROMPT_READY_PATTERNS)
 
 
@@ -242,13 +260,7 @@ def _pane_shows_mcp_trust_modal(tmux_target: str) -> bool:
 
     Returns False on any subprocess error (fail open — caller will retry).
     """
-    result = subprocess.run(
-        ["tmux", "capture-pane", "-p", "-t", tmux_target, "-S", "-50"],
-        capture_output=True, text=True, check=False,
-    )
-    if result.returncode != 0:
-        return False
-    content = result.stdout
+    content = _capture_pane_text(tmux_target)
     return all(pat in content for pat in _MCP_TRUST_MODAL_PATTERNS)
 
 
@@ -289,13 +301,7 @@ def _pane_shows_folder_trust_prompt(tmux_target: str) -> bool:
 
     Returns False on any subprocess error (fail open — caller will retry).
     """
-    result = subprocess.run(
-        ["tmux", "capture-pane", "-p", "-t", tmux_target, "-S", "-50"],
-        capture_output=True, text=True, check=False,
-    )
-    if result.returncode != 0:
-        return False
-    content = result.stdout
+    content = _capture_pane_text(tmux_target)
     return all(pat in content for pat in _FOLDER_TRUST_PROMPT_PATTERNS)
 
 

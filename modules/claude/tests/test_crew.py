@@ -29,6 +29,7 @@ from crew import (
     _BACKGROUND_AGENT_WAIT_RE,
     _branch_exists,
     _capture_pane_tail,
+    _capture_pane_text,
     _classify_pane_activity,
     _clean_stale_sentinel,
     _cleanup_sentinel,
@@ -5041,6 +5042,61 @@ class TestWaitForSentinelPaneTail:
         assert "last pane output" in reason, (
             f"Expected 'last pane output' marker in timeout reason, got: {reason!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# _capture_pane_text unit tests (card #2728 — DRY extraction shared by
+# _pane_shows_prompt_ready, _pane_shows_mcp_trust_modal, and
+# _pane_shows_folder_trust_prompt)
+# ---------------------------------------------------------------------------
+
+class TestCapturePaneText:
+    """Unit tests for the _capture_pane_text helper."""
+
+    def test_returns_pane_output_on_success(self):
+        """Returns the raw stdout text when tmux exits 0."""
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = fake_run_result(stdout="line1\nline2\n")
+            result = _capture_pane_text("my-session.0")
+        assert result == "line1\nline2\n"
+
+    def test_returns_empty_string_on_nonzero_exit(self):
+        """Returns '' (fail open) when tmux capture-pane exits non-zero."""
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = fake_run_result(stdout="", returncode=1)
+            result = _capture_pane_text("my-session.0")
+        assert result == ""
+
+    def test_returns_empty_string_on_oserror(self):
+        """Returns '' (fail open) when subprocess.run raises OSError."""
+        with patch("subprocess.run", side_effect=OSError("tmux not found")):
+            result = _capture_pane_text("my-session.0")
+        assert result == ""
+
+    def test_returns_empty_string_on_subprocess_error(self):
+        """Returns '' (fail open) when subprocess.run raises SubprocessError."""
+        import subprocess as _subprocess
+        with patch("subprocess.run", side_effect=_subprocess.SubprocessError("error")):
+            result = _capture_pane_text("my-session.0")
+        assert result == ""
+
+    def test_uses_capture_pane_command_with_default_lines(self):
+        """Invokes tmux capture-pane -p -t <target> -S -50 by default."""
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = fake_run_result(stdout="")
+            _capture_pane_text("my-window.0")
+        called_cmd = mock_run.call_args[0][0]
+        assert "capture-pane" in " ".join(str(x) for x in called_cmd)
+        assert "my-window.0" in called_cmd
+        assert "-50" in called_cmd
+
+    def test_respects_custom_lines_argument(self):
+        """Passes -S -<lines> when a non-default lines value is given."""
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = fake_run_result(stdout="")
+            _capture_pane_text("my-window.0", lines=10)
+        called_cmd = mock_run.call_args[0][0]
+        assert "-10" in called_cmd
 
 
 # ---------------------------------------------------------------------------
