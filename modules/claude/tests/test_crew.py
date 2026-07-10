@@ -36,7 +36,10 @@ from crew import (
     _extract_org_repo_from_remote,
     _fetch_branch_if_remote,
     _looks_like_message_not_target,
+    _auto_answer_folder_trust_prompt,
     _mangle_path_to_project_key,
+    _pane_shows_folder_trust_prompt,
+    _pane_shows_mcp_trust_modal,
     _pane_shows_prompt_ready,
     _plan_branch_worktree,
     _remote_branch_exists,
@@ -3286,6 +3289,39 @@ class TestMcpTrustParserFlag:
 
 
 # ---------------------------------------------------------------------------
+# --trust-folder parser tests (card #2722, mirrors --mcp-trust)
+# ---------------------------------------------------------------------------
+
+class TestTrustFolderParserFlag:
+    """Tests for --trust-folder flag on crew create."""
+
+    def test_trust_folder_defaults_to_yes(self):
+        """--trust-folder defaults to 'yes' when not provided (mirrors --mcp-trust's 'all' default)."""
+        p = build_parser()
+        args = p.parse_args(["create", "my-worker"])
+        assert args.trust_folder == "yes"
+
+    def test_trust_folder_yes_accepted(self):
+        """--trust-folder yes is accepted."""
+        p = build_parser()
+        args = p.parse_args(["create", "my-worker", "--trust-folder", "yes"])
+        assert args.trust_folder == "yes"
+
+    def test_trust_folder_no_accepted(self):
+        """--trust-folder no is accepted."""
+        p = build_parser()
+        args = p.parse_args(["create", "my-worker", "--trust-folder", "no"])
+        assert args.trust_folder == "no"
+
+    def test_trust_folder_invalid_rejected(self):
+        """--trust-folder with invalid value is rejected by argparse."""
+        p = build_parser()
+        with pytest.raises(SystemExit) as exc_info:
+            p.parse_args(["create", "my-worker", "--trust-folder", "maybe"])
+        assert exc_info.value.code == 2
+
+
+# ---------------------------------------------------------------------------
 # cmd_create mcp_trust integration — mcp_trust is still accepted by cmd_create
 # (passed to the spawned staff command).
 # ---------------------------------------------------------------------------
@@ -3371,7 +3407,7 @@ class TestCmdCreateMcpTrust:
                                 tell="Hello",
                             )
 
-        mock_sentinel.assert_called_once_with("test-worker", mcp_trust="all")
+        mock_sentinel.assert_called_once_with("test-worker", mcp_trust="all", trust_folder="yes")
 
 
 # ---------------------------------------------------------------------------
@@ -4436,6 +4472,145 @@ class TestPaneShowsPromptReady:
 
 
 # ---------------------------------------------------------------------------
+# _pane_shows_folder_trust_prompt — first-time folder-trust prompt detection
+# (card #2722 — mirrors TestPaneShowsPromptReady's MCP-trust-modal-adjacent
+# pattern for the analogous folder-trust startup prompt)
+# ---------------------------------------------------------------------------
+
+class TestPaneShowsFolderTrustPrompt:
+    """Tests for _pane_shows_folder_trust_prompt: first-time folder-trust prompt detection."""
+
+    def test_returns_true_when_folder_trust_prompt_present(self):
+        """Returns True when the folder-trust safety-check prompt is showing.
+
+        Reproduces the real incident (card #2722): `crew create` against a
+        freshly cloned/never-opened repo hits this one-time prompt before
+        Claude Code renders anything else.
+        """
+        pane_content = (
+            "Quick safety check: Is this a project you created or one you trust?\n"
+            "\n"
+            "  1. Yes, I trust this folder\n"
+            "  2. No, exit\n"
+        )
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout=pane_content)
+            result = _pane_shows_folder_trust_prompt("test-worker.0")
+        assert result is True
+
+    def test_returns_false_when_no_folder_trust_tokens(self):
+        """Returns False when pane output contains no folder-trust prompt tokens."""
+        pane_content = "  ⏵⏵ auto mode on (shift+tab to cycle)                                         \n"
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout=pane_content)
+            result = _pane_shows_folder_trust_prompt("test-worker.0")
+        assert result is False
+
+    def test_returns_false_for_mcp_trust_modal_content(self):
+        """Returns False on MCP-trust-modal-only content — no false-positive cross-match.
+
+        The folder-trust prompt and MCP trust modal are distinct startup prompts
+        with distinct patterns; detecting one must never fire on the other's text.
+        """
+        mcp_modal_content = (
+            "New MCP server found in this project: linear\n"
+            "  1. Use this MCP server\n"
+            "  2. Use this and all future MCP servers in this project\n"
+            "  3. Continue without using this MCP server\n"
+        )
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout=mcp_modal_content)
+            result = _pane_shows_folder_trust_prompt("test-worker.0")
+        assert result is False, (
+            "MCP trust modal content must not be mistaken for the folder-trust prompt"
+        )
+
+    def test_returns_false_when_capture_pane_fails(self):
+        """Returns False (fail open) when tmux capture-pane returns non-zero exit code."""
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=1, stdout="")
+            result = _pane_shows_folder_trust_prompt("test-worker.0")
+        assert result is False
+
+    def test_uses_capture_pane_command(self):
+        """Invokes tmux capture-pane -p -t <target> when called."""
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="")
+            _pane_shows_folder_trust_prompt("my-window.0")
+        called_cmd = mock_run.call_args[0][0]
+        assert "capture-pane" in " ".join(str(x) for x in called_cmd)
+        assert "my-window.0" in called_cmd
+
+
+# ---------------------------------------------------------------------------
+# _pane_shows_mcp_trust_modal — reciprocal cross-match check
+# (review finding on card #2726 — TestPaneShowsFolderTrustPrompt already
+# proves _pane_shows_folder_trust_prompt does NOT fire on MCP-modal content
+# via test_returns_false_for_mcp_trust_modal_content above; this proves the
+# other direction so neither detector can be fooled by the other's prompt)
+# ---------------------------------------------------------------------------
+
+class TestPaneShowsMcpTrustModal:
+    """Tests for _pane_shows_mcp_trust_modal: MCP server trust modal detection."""
+
+    def test_returns_false_for_folder_trust_content(self):
+        """Returns False on folder-trust-prompt-only content — no false-positive cross-match.
+
+        The MCP trust modal and folder-trust prompt are distinct startup prompts
+        with distinct patterns; detecting one must never fire on the other's text.
+        """
+        folder_trust_content = (
+            "Quick safety check: Is this a project you created or one you trust?\n"
+            "\n"
+            "  1. Yes, I trust this folder\n"
+            "  2. No, exit\n"
+        )
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout=folder_trust_content)
+            result = _pane_shows_mcp_trust_modal("test-worker.0")
+        assert result is False, (
+            "Folder-trust prompt content must not be mistaken for the MCP trust modal"
+        )
+
+
+# ---------------------------------------------------------------------------
+# _auto_answer_folder_trust_prompt — keystroke-mapping direct unit test
+# (review finding on card #2726 — TestWaitForSentinelFolderTrustAutoDismiss
+# below monkeypatches this function away entirely, so a swapped/typo'd keys
+# mapping in _FOLDER_TRUST_PROMPT_KEYS would go uncaught; these tests assert
+# the actual tmux send-keys argv for each trust_folder value)
+# ---------------------------------------------------------------------------
+
+class TestAutoAnswerFolderTrustPrompt:
+    """Tests for _auto_answer_folder_trust_prompt: keystroke-mapping to tmux send-keys."""
+
+    def test_sends_enter_only_for_trust_folder_yes(self):
+        """trust_folder='yes' selects option 1 (pre-selected) via a single Enter."""
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            result = _auto_answer_folder_trust_prompt("test-worker.0", "yes")
+        called_cmd = mock_run.call_args[0][0]
+        assert called_cmd == ["tmux", "send-keys", "-t", "test-worker.0", "Enter"]
+        assert result is True
+
+    def test_sends_down_then_enter_for_trust_folder_no(self):
+        """trust_folder='no' selects option 2 (decline/exit) via Down, Enter."""
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            result = _auto_answer_folder_trust_prompt("test-worker.0", "no")
+        called_cmd = mock_run.call_args[0][0]
+        assert called_cmd == ["tmux", "send-keys", "-t", "test-worker.0", "Down", "Enter"]
+        assert result is True
+
+    def test_returns_false_when_send_keys_fails(self):
+        """Returns False when tmux send-keys returns a non-zero exit code."""
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=1)
+            result = _auto_answer_folder_trust_prompt("test-worker.0", "yes")
+        assert result is False
+
+
+# ---------------------------------------------------------------------------
 # _wait_for_sentinel — polling fallback fires when sentinel is absent
 # ---------------------------------------------------------------------------
 
@@ -4523,6 +4698,89 @@ class TestWaitForSentinelPollingFallback:
         assert ready is False
         assert reason is not None
         assert "session never reported ready" in reason
+
+
+# ---------------------------------------------------------------------------
+# _wait_for_sentinel — folder-trust prompt auto-dismiss (card #2722, mirrors
+# the MCP-trust-modal auto-answer machinery for the analogous first-time
+# folder-trust prompt)
+# ---------------------------------------------------------------------------
+
+class TestWaitForSentinelFolderTrustAutoDismiss:
+    """Tests that _wait_for_sentinel detects and auto-answers the folder-trust
+    prompt en route to ready, so it does not block --tell delivery the way it
+    did in the real incident (card #2722)."""
+
+    def test_folder_trust_prompt_is_auto_answered_and_ready_is_reached(self, tmp_path, monkeypatch):
+        """The poll thread detects the folder-trust prompt, dismisses it via
+        _auto_answer_folder_trust_prompt, and readiness is still reached
+        afterward — the prompt does not block the wait indefinitely."""
+        sentinel_dir = tmp_path / "crew"
+        sentinel_dir.mkdir()
+        monkeypatch.setattr(crew_module, "_CREW_SENTINEL_DIR", str(sentinel_dir))
+
+        state = {"prompt_calls": 0, "answered": []}
+
+        def fake_folder_trust_prompt(target):
+            state["prompt_calls"] += 1
+            # Only the very first check detects the prompt; every subsequent
+            # check (including the "confirm cleared" re-check right after
+            # auto-answering) reports it as dismissed.
+            return state["prompt_calls"] == 1
+
+        def fake_auto_answer(target, trust_folder):
+            state["answered"].append(trust_folder)
+            return True
+
+        def fake_prompt_ready(target):
+            # Becomes ready only once the folder-trust prompt has been answered —
+            # proves the auto-dismiss happened before readiness was reached.
+            return len(state["answered"]) >= 1
+
+        monkeypatch.setattr(crew_module, "_pane_shows_folder_trust_prompt", fake_folder_trust_prompt)
+        monkeypatch.setattr(crew_module, "_auto_answer_folder_trust_prompt", fake_auto_answer)
+        monkeypatch.setattr(crew_module, "_pane_shows_prompt_ready", fake_prompt_ready)
+        monkeypatch.setattr(crew_module, "_pane_shows_mcp_trust_modal", lambda target: False)
+
+        start = time.monotonic()
+        ready, reason = _wait_for_sentinel(
+            "myworker",
+            ceiling=5.0,
+            prompt_poll_interval=0.05,
+            trust_folder="yes",
+        )
+        elapsed = time.monotonic() - start
+
+        assert ready is True, (
+            f"Expected ready=True after folder-trust auto-dismiss, got reason={reason!r}"
+        )
+        assert reason is None
+        assert state["answered"] == ["yes"], (
+            "Expected _auto_answer_folder_trust_prompt to be called exactly once with "
+            f"trust_folder='yes', got {state['answered']!r}"
+        )
+        assert elapsed < 3.0, (
+            f"Elapsed {elapsed:.3f}s is too close to ceiling — folder-trust auto-dismiss may be broken"
+        )
+
+    def test_folder_trust_context_included_in_timeout_reason(self, tmp_path, monkeypatch):
+        """When the folder-trust prompt is detected but readiness never follows,
+        the timeout reason names the folder-trust prompt (not the generic message)."""
+        sentinel_dir = tmp_path / "crew"
+        sentinel_dir.mkdir()
+        monkeypatch.setattr(crew_module, "_CREW_SENTINEL_DIR", str(sentinel_dir))
+
+        monkeypatch.setattr(crew_module, "_pane_shows_prompt_ready", lambda target: False)
+        monkeypatch.setattr(crew_module, "_pane_shows_mcp_trust_modal", lambda target: False)
+        monkeypatch.setattr(crew_module, "_pane_shows_folder_trust_prompt", lambda target: True)
+        monkeypatch.setattr(crew_module, "_auto_answer_folder_trust_prompt", lambda target, trust_folder: True)
+
+        ready, reason = _wait_for_sentinel("myworker", ceiling=0.3, prompt_poll_interval=0.05)
+
+        assert ready is False
+        assert reason is not None
+        assert "folder-trust prompt detected and auto-answered" in reason
+        assert "--trust-folder" in reason
 
 
 # ---------------------------------------------------------------------------

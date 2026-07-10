@@ -175,6 +175,47 @@ _MCP_TRUST_MODAL_KEYS: Dict[str, List[str]] = {
     "none": ["Down", "Down", "Enter"],  # Option 3: continue without using
 }
 
+# Folder-trust prompt detection patterns.
+#
+# The FIRST time Claude Code is opened against a given project directory
+# (e.g. a freshly cloned repo that has never been opened before), it shows a
+# one-time interactive safety check before anything else renders:
+#
+#   Quick safety check: Is this a project you created or one you trust?
+#     1. Yes, I trust this folder
+#     2. No, exit
+#
+# BACKGROUND (real incident, 2026-07-10): `crew create --repo <freshly-cloned-repo>
+# --tell "<brief>"` hit this prompt. Like the MCP trust modal, it blocks the TUI
+# from rendering the "auto mode on" status bar AND prevents the SessionStart hook
+# from firing (the hook fires only after Claude Code fully boots, which the
+# prompt blocks). Both readiness signals in _wait_for_sentinel therefore never
+# appear, causing a 5-minute timeout and silent --tell drop.
+#
+# The patterns below match the prompt's unique header and menu-option text.
+_FOLDER_TRUST_PROMPT_PATTERNS = [
+    "Is this a project you created or one you trust",
+    "Yes, I trust this folder",
+]
+
+# Keystroke sequences to dismiss the folder-trust prompt, keyed by --trust-folder value.
+#
+# The prompt presents a 2-option numbered list; Claude Code processes the
+# selection via arrow keys (Up/Down) or number input followed by Enter.
+#
+#   1. Yes, I trust this folder   → Enter (option 1 is pre-selected)
+#   2. No, exit                    → Down, Enter
+#
+# "yes" is the default — mirrors --mcp-trust's "all" default: crew create
+# auto-dismisses without requiring an explicit flag. "no" is an explicit
+# escape hatch, not the default — auto-selecting it would auto-exit Claude
+# Code on every freshly-created worktree, which is never the desired outcome
+# of `crew create`.
+_FOLDER_TRUST_PROMPT_KEYS: Dict[str, List[str]] = {
+    "yes": ["Enter"],          # Option 1: trust this folder (pre-selected)
+    "no": ["Down", "Enter"],   # Option 2: no, exit
+}
+
 
 def _pane_shows_prompt_ready(tmux_target: str) -> bool:
     """Return True if the pane at tmux_target shows a Claude Code prompt-ready signal.
@@ -237,6 +278,52 @@ def _auto_answer_mcp_trust_modal(tmux_target: str, mcp_trust: str) -> bool:
     return result.returncode == 0
 
 
+def _pane_shows_folder_trust_prompt(tmux_target: str) -> bool:
+    """Return True if the pane at tmux_target is showing Claude Code's first-time
+    folder-trust prompt ('Is this a project you created or one you trust?').
+
+    This one-time safety check appears the first time Claude Code is opened
+    against a given project directory (e.g. a freshly cloned repo). It blocks
+    the TUI from rendering the ready status bar and prevents the SessionStart
+    hook from firing, exactly like the MCP server trust modal.
+
+    Returns False on any subprocess error (fail open — caller will retry).
+    """
+    result = subprocess.run(
+        ["tmux", "capture-pane", "-p", "-t", tmux_target, "-S", "-50"],
+        capture_output=True, text=True, check=False,
+    )
+    if result.returncode != 0:
+        return False
+    content = result.stdout
+    return all(pat in content for pat in _FOLDER_TRUST_PROMPT_PATTERNS)
+
+
+def _auto_answer_folder_trust_prompt(tmux_target: str, trust_folder: str) -> bool:
+    """Send keystrokes to dismiss the folder-trust prompt at tmux_target.
+
+    Selects the menu option corresponding to trust_folder:
+      'yes' → Enter        (option 1: trust this folder, pre-selected)
+      'no'  → Down, Enter  (option 2: no, exit)
+
+    Keys are sent in a single tmux send-keys call (same pattern as
+    `crew tell <target> --keys "Down Enter"`). Returns True if the call
+    succeeded, False if send-keys failed.
+    Intended to be called after _pane_shows_folder_trust_prompt returns True.
+    """
+    keys = _FOLDER_TRUST_PROMPT_KEYS.get(trust_folder, _FOLDER_TRUST_PROMPT_KEYS["yes"])
+    try:
+        result = subprocess.run(
+            ["tmux", "send-keys", "-t", tmux_target] + keys,
+            capture_output=True, check=False, timeout=2.0,
+        )
+    except subprocess.TimeoutExpired:
+        # tmux IPC hung; treat as a failed send. The next poll iteration will
+        # re-detect the prompt and retry (or the outer ceiling will apply).
+        return False
+    return result.returncode == 0
+
+
 def _capture_pane_tail(tmux_target: str) -> str:
     """Capture the last ~10 lines of the pane at tmux_target for diagnostics.
 
@@ -268,6 +355,7 @@ def _wait_for_sentinel(
     poll_interval: float = 0.5,
     prompt_poll_interval: float = 0.2,
     mcp_trust: str = "all",
+    trust_folder: str = "yes",
 ) -> tuple:  # Tuple[bool, Optional[str]]
     """Wait for Claude Code to signal readiness for the session named <name>.
 
@@ -344,6 +432,11 @@ def _wait_for_sentinel(
     # MCP trust modal. Used to improve the timeout failure reason message.
     mcp_modal_detected = threading.Event()
 
+    # Shared flag set by the poll thread when it detects and auto-answers the
+    # first-time folder-trust prompt. Used to improve the timeout failure
+    # reason message. See _FOLDER_TRUST_PROMPT_PATTERNS for details.
+    folder_trust_detected = threading.Event()
+
     # --- fswatch thread (primary signal) ---
     def _fswatch_thread() -> None:
         """Watch sentinel directory; set ready_event when sentinel appears."""
@@ -367,16 +460,43 @@ def _wait_for_sentinel(
 
     # --- poll thread (fallback signal: capture-pane prompt-box detection) ---
     # In addition to checking for the "auto mode on" ready signal, this thread
-    # detects the MCP server trust modal (which blocks startup when a project's
-    # .mcp.json declares a server not yet trusted) and auto-answers it using
-    # the keystroke sequence corresponding to mcp_trust. The modal may appear
-    # multiple times when several servers are untrusted; the loop handles each.
+    # detects two categories of startup-blocking prompts and auto-answers them:
+    #   1. The first-time folder-trust prompt (checked first — it is the
+    #      EARLIEST prompt Claude Code can show, gating everything else,
+    #      including whether .mcp.json is even read) using the keystroke
+    #      sequence corresponding to trust_folder.
+    #   2. The MCP server trust modal (which blocks startup when a project's
+    #      .mcp.json declares a server not yet trusted) using the keystroke
+    #      sequence corresponding to mcp_trust. The modal may appear multiple
+    #      times when several servers are untrusted; the loop handles each.
     def _poll_thread() -> None:
-        """Poll capture-pane; set ready_event when prompt visible; auto-answer MCP trust modal."""
+        """Poll capture-pane; set ready_event when prompt visible; auto-answer folder-trust and MCP-trust prompts."""
         while not ready_event.is_set() and time.monotonic() < deadline:
             if _pane_shows_prompt_ready(tmux_target):
                 ready_event.set()
                 return
+            if _pane_shows_folder_trust_prompt(tmux_target):
+                folder_trust_detected.set()
+                send_ok = _auto_answer_folder_trust_prompt(tmux_target, trust_folder)
+                if not send_ok:
+                    # send-keys failed (tmux IPC error or timeout); next iteration
+                    # will re-detect and retry — no action needed here.
+                    time.sleep(prompt_poll_interval)
+                    continue
+                # Confirm the prompt has cleared before resuming the normal poll.
+                # This prevents a duplicate keystroke send (which would advance the
+                # menu cursor past the intended option) when the pane has not yet
+                # refreshed after the first answer. Poll until cleared or deadline.
+                prompt_clear_deadline = min(
+                    time.monotonic() + 5.0, deadline
+                )
+                while time.monotonic() < prompt_clear_deadline:
+                    if not _pane_shows_folder_trust_prompt(tmux_target):
+                        # Prompt is cleared; fall through to the outer loop which
+                        # will either detect the MCP trust modal or the ready signal.
+                        break
+                    time.sleep(prompt_poll_interval)
+                continue
             if _pane_shows_mcp_trust_modal(tmux_target):
                 mcp_modal_detected.set()
                 send_ok = _auto_answer_mcp_trust_modal(tmux_target, mcp_trust)
@@ -427,9 +547,29 @@ def _wait_for_sentinel(
     # failure reason rather than requiring the caller to manually inspect the pane.
     pane_tail = _capture_pane_tail(tmux_target)
 
-    # Include MCP modal context in the reason when the modal was detected so the
-    # caller can surface a specific diagnostic rather than the generic message.
-    if mcp_modal_detected.is_set():
+    # Include folder-trust / MCP modal context in the reason when either was
+    # detected so the caller can surface a specific diagnostic rather than the
+    # generic message.
+    if folder_trust_detected.is_set() and mcp_modal_detected.is_set():
+        reason = (
+            f"folder-trust prompt detected and auto-answered (--trust-folder {trust_folder!r}), "
+            f"then MCP trust modal detected and auto-answered (--mcp-trust {mcp_trust!r}) "
+            f"but session still did not report ready within the ceiling — "
+            f"sentinel file never appeared at {sentinel!r} "
+            f"and pane {tmux_target!r} never showed {_PROMPT_READY_PATTERNS!r}; "
+            f"check the pane manually with: crew read {name}; "
+            f"last pane output:\n{pane_tail}"
+        )
+    elif folder_trust_detected.is_set():
+        reason = (
+            f"folder-trust prompt detected and auto-answered (--trust-folder {trust_folder!r}) "
+            f"but session still did not report ready within the ceiling — "
+            f"sentinel file never appeared at {sentinel!r} "
+            f"and pane {tmux_target!r} never showed {_PROMPT_READY_PATTERNS!r}; "
+            f"check the pane manually with: crew read {name}; "
+            f"last pane output:\n{pane_tail}"
+        )
+    elif mcp_modal_detected.is_set():
         reason = (
             f"MCP trust modal detected and auto-answered (--mcp-trust {mcp_trust!r}) "
             f"but session still did not report ready within the ceiling — "
@@ -2583,6 +2723,7 @@ def cmd_create(
     no_worktree: bool = False,
     tell_file: Optional[str] = None,
     mcp_trust: str = "all",
+    trust_folder: str = "yes",
 ) -> None:
     """Create a git worktree, tmux window, and staff session end-to-end.
 
@@ -2963,7 +3104,7 @@ def cmd_create(
     told_reason: Optional[str] = None
 
     if tell is not None:
-        ready, wait_reason = _wait_for_sentinel(name, mcp_trust=mcp_trust)
+        ready, wait_reason = _wait_for_sentinel(name, mcp_trust=mcp_trust, trust_folder=trust_folder)
         if not ready:
             # Sentinel never appeared within the outer ceiling (5 minutes).
             # wait_reason already contains the appropriate diagnostic string.
@@ -3610,7 +3751,24 @@ def build_parser() -> argparse.ArgumentParser:
             "'all' (default) — trust this and all future MCP servers in this project. "
             "'this' — trust only this MCP server. "
             "'none' — continue without using this MCP server. "
-            "Only applies to MCP trust modals; workspace-trust is always auto-accepted."
+            "Only applies to MCP trust modals — see --trust-folder for the "
+            "separate first-time folder-trust prompt."
+        ),
+    )
+    p_create.add_argument(
+        "--trust-folder",
+        default="yes",
+        dest="trust_folder",
+        choices=["yes", "no"],
+        help=(
+            "How to answer Claude Code's first-time folder-trust prompt ('Is this a "
+            "project you created or one you trust?') when it appears during startup — "
+            "shown once per never-before-opened project directory (e.g. a freshly "
+            "cloned repo). "
+            "'yes' (default) — trust this folder and proceed. "
+            "'no' — decline and exit (Claude Code will not start). "
+            "Only applies to the folder-trust prompt; see --mcp-trust for the "
+            "separate MCP server trust modal."
         ),
     )
 
@@ -3831,7 +3989,7 @@ def main() -> None:
             cmd_create(args.name, args.repo, args.branch, args.base, fmt,
                        cmd_override=args.cmd_override, model=args.model, tell=args.tell,
                        no_worktree=args.no_worktree, tell_file=args.tell_file,
-                       mcp_trust=args.mcp_trust)
+                       mcp_trust=args.mcp_trust, trust_folder=args.trust_folder)
         elif args.command == "project-path":
             send = _ProjectPathSend(fmt)
             cmd_project_path(args.worktree, fmt, send)

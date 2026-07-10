@@ -20,12 +20,12 @@ crew [-h] [--format {xml,json,human}] {list,tell,read,dismiss,find,create,status
 ---
 
 ## `crew create`
-`crew create <name> [--repo <path>] [--branch <branch>] [--base <base-branch>] [--tell "<message>" | --tell-file PATH] [--no-worktree] [--mcp-trust {all|this|none}]`
+`crew create <name> [--repo <path>] [--branch <branch>] [--base <base-branch>] [--tell "<message>" | --tell-file PATH] [--no-worktree] [--mcp-trust {all|this|none}] [--trust-folder {yes|no}]`
 
 End-to-end staff session creation — worktree, tmux window, and Claude instance in one command.
 
 ```bash
-crew create <name> [--repo <path>] [--branch <branch>] [--base <base-branch>] [--tell "<message>" | --tell-file PATH] [--no-worktree] [--mcp-trust {all|this|none}]
+crew create <name> [--repo <path>] [--branch <branch>] [--base <base-branch>] [--tell "<message>" | --tell-file PATH] [--no-worktree] [--mcp-trust {all|this|none}] [--trust-folder {yes|no}]
 ```
 
 **Arguments:**
@@ -38,10 +38,14 @@ crew create <name> [--repo <path>] [--branch <branch>] [--base <base-branch>] [-
 - `--no-worktree` — Spawn a staff session directly in `<repo>` without creating a new worktree or branch. Use for "work directly on main" or existing-branch workflows. Incompatible with `--branch` and `--base`.
 - `--cmd <command>` — Override the spawn command. Default: `staff --name <name>`. Use when the target session should run something other than `staff`.
 - `--mcp-trust {all|this|none}` — How to respond to MCP server trust modals that appear during startup (default: `all`):
-  - `all` — trust this and all future MCP servers in this project (option 1)
-  - `this` — trust only this MCP server (option 2)
+  - `all` — trust this and all future MCP servers in this project (option 2)
+  - `this` — trust only this MCP server (option 1, pre-selected)
   - `none` — continue without using this MCP server (option 3)
-  - Does NOT affect workspace-trust handling (always auto-accepted as 'Yes').
+  - Separate from `--trust-folder` below — these are two distinct startup prompts.
+- `--trust-folder {yes|no}` — How to respond to Claude Code's one-time first-run folder-trust prompt (`Is this a project you created or one you trust?`) that appears the first time a project directory is ever opened — e.g. a freshly cloned repo (default: `yes`):
+  - `yes` — trust this folder and proceed (option 1, pre-selected). The worktree was just created by `crew create`; trust is implicit.
+  - `no` — decline and exit (Claude Code will not start). Escape hatch only — never use this as a default, it would auto-exit every freshly-created worktree.
+  - **Caveat:** the default `yes` posture assumes the target repo path has already been vetted by the caller — `crew` has no clone/network path and only ever operates on a local path already on disk, but auto-trusting that path is only as safe as the caller's vetting of it.
 
 **Behavior:**
 - Default spawn command is `staff --name <name>`, NOT `claude --name <name>`. The created window is a Staff Engineer session.
@@ -50,10 +54,17 @@ crew create <name> [--repo <path>] [--branch <branch>] [--base <base-branch>] [-
 - Use `--cmd <other>` to override the spawn command when not using `staff`.
 
 **Modal auto-handling (startup modals):**
-When `--tell` or `--tell-file` is used, `crew create` must wait for Claude Code to become ready before delivering the brief. During this wait, two categories of startup modals are automatically dismissed so they do not block delivery:
-- **Workspace-trust modal** (`Accessing workspace: ... Yes, I trust this folder`) — always answered with `1` (Yes, trust). The worktree was just created by `crew create`; trust is implicit.
-- **MCP server trust modal** (`New MCP server found in .mcp.json: ...`) — answered per `--mcp-trust` flag (`all`→1, `this`→2, `none`→3). Multiple MCP modals chain correctly — each is answered in sequence.
+When `--tell` or `--tell-file` is used, `crew create` must wait for Claude Code to become ready before delivering the brief. During this wait, two categories of startup prompts are automatically dismissed so they do not block delivery:
+- **Folder-trust prompt** (`Quick safety check: Is this a project you created or one you trust? 1. Yes, I trust this folder / 2. No, exit`) — this is Claude Code's ONE-TIME first-run check for a never-before-opened project directory (e.g. a freshly cloned repo). Answered per `--trust-folder` flag (`yes`→1/Enter, `no`→2/Down+Enter). Checked FIRST in the poll loop — it is the earliest prompt Claude Code can show, gating everything else including whether `.mcp.json` is even read.
+- **MCP server trust modal** (`New MCP server found in .mcp.json: ...`) — answered per `--mcp-trust` flag (`all`→2/Down+Enter, `this`→1/Enter, `none`→3/Down+Down+Enter). Multiple MCP modals chain correctly — each is answered in sequence.
 - **Unknown modals** — if a numbered-choice + `Enter to confirm` prompt appears but does not match either known signature, it is NOT auto-dismissed. A warning is emitted to stderr and the wait loop continues; the `--tell` delivery will time out and report `told="false"` if the modal is not manually cleared.
+
+**Recovery when `told="false"` and the folder-trust prompt is the blocker:**
+This prompt can silently drop a `--tell` brief — the session never reaches the `auto mode on` ready sentinel. Once the poll thread detects the folder-trust prompt, `folder_trust_detected` is set unconditionally and the auto-answer attempt always fires — `--trust-folder` only selects which keystroke sequence is sent (`yes` vs `no`), not whether the attempt happens. So `told_reason` reads `folder-trust prompt detected and auto-answered (--trust-folder 'no')` (or `'yes'`) whenever the prompt was seen at all, including when `--trust-folder no` was passed. The generic `session never reported ready` reason only occurs when the folder-trust prompt was never detected before the wait ceiling — a fast race where the deadline is exceeded before the poll thread ever checks. To recover manually:
+1. `crew read <name>` — confirm the pane shows the folder-trust prompt (`Is this a project you created or one you trust?`).
+2. `crew tell <name> --keys "Enter"` — accept option 1 (Yes, I trust this folder).
+3. Wait for the `auto mode on` status bar (poll with `crew read <name> --lines 5` or `crew active`).
+4. Re-deliver the brief with a standalone `crew tell <name> "<brief>"` — the original `--tell` payload was dropped, not queued, so it must be resent.
 
 **Post-switch hook:**
 After `git worktree add` and before launching the staff session, `crew create` automatically runs the repository's `.git/workout-hooks/post-switch` script if it exists and is executable. This mirrors the legacy `workout` CLI behavior so spawned worktrees are fully initialized (e.g., `mise trust`, `pnpm bootstrap`) before Staff starts work.
@@ -75,6 +86,7 @@ crew create hotfix --no-worktree                                        # Work d
 crew create pricing --tell "Build auth" --mcp-trust all                 # Trust all future MCPs (default)
 crew create pricing --tell "Build auth" --mcp-trust this                # Trust only the prompting MCP
 crew create pricing --tell "Build auth" --mcp-trust none                # Skip MCP server usage
+crew create newrepo --repo ~/worktrees/never-opened --tell "Start"     # Freshly cloned repo: folder-trust prompt auto-dismissed (--trust-folder yes is the default)
 ```
 
 **Error handling:**
