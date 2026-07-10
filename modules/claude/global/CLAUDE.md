@@ -191,6 +191,12 @@ Skip for simple commands ("Read file", "Run tests").
 
 ---
 
+## Initialisms
+
+Applies to any text the user will read — messages an agent sends directly to the user, and content drafted in the user's voice. Expand obtuse or domain-specific initialisms to their full form the first time they appear in a given message or document; the bare initialism is fine after that. Common, widely-recognized acronyms (pronounced as words, or universally understood — e.g. `CI`, `PR`, `API`, `URL`) are exempt and stay as-is.
+
+---
+
 ## Model Selection
 
 | Model | When to Use | Examples |
