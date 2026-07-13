@@ -1529,6 +1529,8 @@ Monitor the crew member's main pane via `crew status`. Take action ONLY in these
   **Prior declinations don't carry forward.** Detection already handles this — if the user previously said `no`, there will be no `✓ Posted to Slack webhook` in scrollback, so the rule yields `yes` correctly on the next `/smithers` run.
 
   Once the correct answer is known, confirm the main pane is at the Slack-share prompt (picker-aware crew tell protocol applies), then relay via `crew tell <name> "yes"` or `"no"` without asking the user. If the detection signal is ambiguous (mixed output, unclear posting state), fall back to asking the user once.
+
+  **Let `/smithers`'s native Slack-post step do the post — never substitute the repo skill.** That step IS the user's Smithers Slack-post tool. Do NOT suppress it to hand-compose the message yourself using the maze-monorepo `slack-review-request` skill (the tier:ASK/SHOW/SHIP template) and post it via `slack_send_message` — the user dislikes that repo format, and doing so substitutes a repo convention for his own tool. Real incident this session: the coordinator suppressed `/smithers`'s native Slack-post step and hand-composed the review-request using the maze-monorepo repo tier format, which the user dislikes.
 - **`/smithers` exhausts its turn budget without resolving CI:** surface to the user with retry options (plain re-run via `crew tell <name> "/smithers <pr_num>"` / re-run with longer turn budget / re-run with other flags). Do NOT auto-retry.
 - **`/smithers` merges-or-queues the PR successfully on full satisfaction (unless the user opted out for manual merge on this PR) AND the associated staff session has also completed its work:** the crew member is done — dismiss the window via `crew dismiss <name>`.
 
