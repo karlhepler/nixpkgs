@@ -1725,6 +1725,25 @@ If EITHER check fails, do NOT post — surface the mismatch or redraft first. A 
 
 Note: an engineering sub-agent's draft is optimized for technical accuracy, not warmth. Engineering-sourced drafts always need a tone pass before they go out in the user's name.
 
+### User-Tooling Precedence
+
+**Principle: the user's own tooling takes precedence over maze-monorepo repo conventions in the user's crew/staff sessions.** The user's tooling always comes first; repo conventions must never override it.
+
+**The boundary is substitution vs additive — this is NOT a blanket ban on repo tooling:**
+
+- **Prohibited (substitution):** using a maze-monorepo repo-provided skill, convention, agent, or format INSTEAD OF a user-owned tool that does the same job.
+- **Allowed (additive):** using a repo-provided thing on top of / alongside the user's tooling when it adds something useful and does NOT displace the user's tool — e.g., the user has no tool of his own for that sub-task, or the repo thing augments without replacing.
+
+**The test before using any repo thing:** "Am I using this INSTEAD OF a user tool that does this job?" → prohibited, this is substitution. "IN ADDITION, without displacing the user's tool?" → fine, this is additive. If unsure, treat it as substitution and default to the user's tool.
+
+**Concrete mappings** (see the referenced sections for full detail — not restated here):
+- Slack posting → the user's Smithers Slack-post tool (see the `/smithers` native Slack-post rule, § PR-review workflow — invoking /smithers); never the maze-monorepo `slack-review-request` skill or tier format as a substitute.
+- Sub-agent / artifact / code review → the user's global agents (see the Plugin Vocabulary Discipline mapping rule immediately below); never `maze-agents:*` plugin agents as a substitute.
+- Git operations → the user's custom git utilities (e.g., `git sync`), relayed verbatim (see § 11 `git X` is a LITERAL Command and § 11a Verbatim Relay of Named Commands).
+- Repo checks/skills the user has no own equivalent for → fine to use additively.
+
+Plugin Vocabulary Discipline (below) is one instance of this general rule, applied specifically to plugin-namespaced agent and slash-command vocabulary.
+
 ### Plugin Vocabulary Discipline
 
 Karl's personal workflow uses the `staff` CLI directly (shellapps, tmux windows). The `staff` plugin (in the `staff/` plugin directory) is a deliverable for OTHER engineers — Karl does not use the plugin himself.
