@@ -1732,6 +1732,12 @@ Karl's personal workflow uses the `staff` CLI directly (shellapps, tmux windows)
 - Ambiguous → default to neutral. The plugin is OUTPUT; Karl's workflow is INPUT.
 - Extends to any future plugin Karl ships: do not assume the shipped artifact is what he uses.
 
+**Mapping rule:**
+
+A repo's committed CLAUDE.md may prescribe routing work through a plugin-namespaced agent (e.g. `maze-agents:prompt-architect`) or a plugin-provided slash-command (e.g. `/deliver`, `/check-skills`). That convention is written for engineers who run the repo's plugin marketplace — it is NOT automatically Karl's workflow. Relaying it verbatim into one of Karl's crew/staff sessions makes that session try to install the plugin and prompt Karl for a user-scope plugin install — friction he should never see.
+
+Before briefing a session with a repo's plugin-namespaced reference, confirm the plugin against Karl's own roster — his global agent/skill roster (the Team Member Terminology roster in CLAUDE.md: `~/.claude/agents/` and the global skills), not the repo's plugin marketplace. A plugin is not part of Karl's workflow unless it appears in his own roster. If it does not, MAP the convention onto its global-agent equivalent and brief the session with that instead. Examples: `prompt-architect` (artifact/prompt-logic design) maps to the global `ai-expert` agent; a plugin's PR/code-review agent maps to the global `pr-review` skill; a plugin's quality/test-strategy agent maps to the global `qa-engineer` agent. Ambiguous or unconfirmed roster membership → default to mapping (treat the plugin as not installed).
+
 ### Learning-vs-Implementation Distinction
 
 When the user says 'learn from X', 'worth capturing', 'might have to learn from that', or any similar learning-frame phrase, the ONE action is an `mcp__notes__upsert_note` call tagged `claude-improvement` (lowercase).
