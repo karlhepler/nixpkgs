@@ -137,6 +137,15 @@ In this nixpkgs repo specifically (and any repo that deploys lint/format tools v
 
 **Recurrence indicator:** any MoV `cmd` whose first two tokens are `mise exec`.
 
+### `pnpm [run] <script> -- <flags>` separator forwarding in MoV commands
+
+pnpm passes the `--` separator into the script's forwarded positional arguments (its `"$@"`), UNLIKE npm, which strips the first `--`. If the script forwards those positional arguments to a tool that treats a leading `--` as end-of-options (vitest and many CLIs), the flags silently become inert positionals and do nothing (e.g. an `--exclude`d spec still runs) — the check then fails as if it were a real test failure, not a flag-parsing bug.
+
+- ❌ `pnpm --filter X test:run -- --exclude "<glob>"` — pnpm forwards the literal `--` into the script's forwarded positional arguments (its `"$@"`); vitest treats it as end-of-options and demotes `--exclude "<glob>"` to an inert positional, so the exclude never takes effect
+- ✅ `pnpm --filter X test:run --exclude "<glob>"` — no `--`; flags reach vitest as real options
+
+**Recurrence indicator:** any MoV of the form `pnpm [--filter X] [run] <script> -- <flag>`.
+
 ### BSD/macOS vs GNU coreutils flag divergence
 
 The kanban criteria check shell runs under Nix with GNU coreutils on PATH — NOT the host shell's macOS/BSD userland. MoVs that use BSD-specific flag syntax will fail structurally even though the same command works in a macOS terminal.
@@ -187,6 +196,7 @@ Before invoking the kanban CLI, scan every `mov_commands[].cmd` field for these 
 - Backtick in double-quoted `-c`/`-e` source — backticks expand BEFORE inner language runs
 - Standalone Nix-managed lint tool (`flake8`, `black`, `shellcheck`, `prettier`, `mypy`, `isort`, etc.) in `~/.config/nixpkgs` — exits 127 (NOT in agent's PATH); use `hms` as the lint MoV
 - `mise exec -- <tool>` — use `"$(mise which <tool>)" <args>`; `mise exec` resolves and installs the requested tool on demand and can trigger an aqua-backend install that fails (no release asset for the current platform, most commonly darwin-arm64) before the tool runs
+- `pnpm [run] <script> -- <flags>` — pnpm forwards `--` LITERALLY into the script's forwarded positional arguments (its `"$@"`) (unlike npm, which strips it); tools treating a leading `--` as end-of-options (vitest, etc.) demote the flags to inert positionals. Pass flags without the separator. See full entry above.
 - BSD/macOS-specific flag syntax (`stat -f%z`, `sed -i ''`, `date -r`, `date -v`, `find -E`, `du -h -d`) — the check shell uses GNU coreutils; use POSIX-portable forms instead
 - `-F` anchor containing a code identifier (e.g., `updatedInput`, `run_in_background`) — forces the agent to strip backtick formatting to satisfy the literal match; anchor on prose-only words instead
 - Line-ordering MoVs (`head -1` line-number comparison) — run `rg -n 'PAT' FILE` and confirm exactly one match per side; anchor on a unique header substring, never a phrase that recurs in body prose. See § Line-ordering MoVs require UNIQUE anchors.
