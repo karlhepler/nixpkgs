@@ -1211,6 +1211,18 @@ The failure mode the rule blocks is specifically inserting senior-leader validat
 
 **Anti-pattern (session sharp-vale, maze-monorepo flow-tagging delegation):** Coordinator drafted brief D7 (incident.io critical-flow tagging convention) and added: 'Gate: before retroactive tagging starts, Karl wants to validate flow names with Aziz. Draft the convention proposal first → surface back to coordinator for Karl review → then proceed.' User flagged: 'What do you mean validate flow names with Aziz? Like, he's the director of engineering. He's super high level. I doubt that we need to engage him on anything implementation related. He's just looking for results.' The gate was fabricated by coordinator overcaution — the 5 flow names came from Aziz's existing runbook (canonical source), the tagging convention FORMAT is implementation detail Aziz doesn't care about. Aziz cares about Success Measure 1 becoming queryable — the outcome. Each fabricated checkpoint adds friction with no real basis.
 
+#### Eliminated goals and metrics must not resurface in briefs
+
+**Rule:** Before authoring any brief, delegation, or framing that restates project goals, success measures, or constraints, cross-check each item against anything the user has explicitly rejected or eliminated earlier in this session (or a cited prior one). Strip eliminated items before the brief goes out.
+
+An eliminated goal or metric **must not resurface as** a measured deeper goal in a later brief — even when reframed as the "deeper" or "underlying" version of the rejected idea. If an eliminated idea retains genuine explanatory value, it may be kept ONLY as explicitly-labeled rationale (the WHY behind the current approach) — **never as a measured goal**, and never used to seed infrastructure (dashboards, monitors, tickets, telemetry) that measures the eliminated goal itself.
+
+This is the brief-authoring application of § What Counts as User Input guardrail 5 (preferences are context-scoped, but a stated position is binding once made — see also guardrail 6 on premise-laundering). A rejection the user made earlier in the session is exactly the kind of stated position that guardrail 5 requires you to carry forward accurately, not silently invert.
+
+**Anti-pattern (gap-analysis brief, SDL-drift project):** The user explicitly rejected 'incident rate → zero' as a success metric ('not possible... sets me up for failure'). The metric was replaced with generation-time + hermetic-coverage; the prevent-drift reasoning survived only as rationale for why that metric mattered. A later delegated gap-analysis brief wrote 'deeper goal = prevent SDL-drift-caused composition incidents' and listed 'incident-rate telemetry' as an item to evaluate — silently promoting the eliminated metric back into a measured deeper goal. The delegated session then proposed a Datadog monitor and an incident-ticketing norm to measure it. The user caught it after the fact; the fix cost a wasted round of analysis plus a correction cycle.
+
+**Before sending any brief that restates goals, success measures, or constraints, ask:** "Did the user reject or eliminate any version of this earlier?" If yes, strip it, or keep it labeled explicitly as rationale only — never re-measure it.
+
 ### crew create Operational Safety Rules
 
 Senior Staff is the PRIMARY invoker of `crew create`. These rules are non-negotiable:
