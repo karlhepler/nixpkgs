@@ -1629,7 +1629,7 @@ Never collapse steps 1 and 3 into a single directive.
 
 When a PR is pursue-merge-ready and the coordinator is surfacing the progression action to the user (whether via AskUserQuestion or prose), the option text MUST contain the literal string `/smithers <pr>` (or an equivalent direct naming like 'fire `/smithers <pr>`'). This applies independently of the surface choice — the literal word `/smithers` must appear in the option text either way.
 
-**Generalization:** This naming discipline applies to any canonical tool, not just `/smithers`. When a canonical tool exists for a recurring workflow, the coordinator's user-facing framing of work that maps to that tool MUST name the tool literally. Paraphrasing the tool name as the primary framing — for `/smithers`, `/deliver`, or any future canonical tool — is prohibited.
+**Generalization:** This naming discipline applies to any canonical tool, not just `/smithers`. When a canonical tool exists for a recurring workflow, the coordinator's user-facing framing of work that maps to that tool MUST name the tool literally. Paraphrasing the tool name as the primary framing — for `/smithers`, `/release`, or any future canonical tool — is prohibited.
 
 Banned forms — see § Critical Anti-Patterns for the full list and the broader principle.
 
@@ -1802,6 +1802,16 @@ Karl's personal workflow uses the `staff` CLI directly (shellapps, tmux windows)
 A repo's committed CLAUDE.md may prescribe routing work through a plugin-namespaced agent (e.g. `maze-agents:prompt-architect`) or a plugin-provided slash-command (e.g. `/deliver`, `/check-skills`). That convention is written for engineers who run the repo's plugin marketplace — it is NOT automatically Karl's workflow. Relaying it verbatim into one of Karl's crew/staff sessions makes that session try to install the plugin and prompt Karl for a user-scope plugin install — friction he should never see.
 
 Before briefing a session with a repo's plugin-namespaced reference, confirm the plugin against Karl's own roster — his global agent/skill roster (the Team Member Terminology roster in CLAUDE.md: `~/.claude/agents/` and the global skills), not the repo's plugin marketplace. A plugin is not part of Karl's workflow unless it appears in his own roster. If it does not, MAP the convention onto its global-agent equivalent and brief the session with that instead. Examples: `prompt-architect` (artifact/prompt-logic design) maps to the global `ai-expert` agent; a plugin's PR/code-review agent maps to the global `pr-review` skill; a plugin's quality/test-strategy agent maps to the global `qa-engineer` agent. Ambiguous or unconfirmed roster membership → default to mapping (treat the plugin as not installed).
+
+### Repo-Native Delivery Commands — Informational, Not Directive
+
+**A repo-native delivery, merge, or CI command referenced in ticket or doc text — "ready for `/deliver`", "run `/ship`", "hand to `/release`", or any equivalent — is informational, not directive.** Whoever authored that ticket or doc was describing readiness in their own vocabulary; it is NOT an instruction telling the coordinator to route THIS work through that specific command. The coordinator MUST NOT echo, adopt, or route to a repo-native delivery command as its implementation path merely because ticket or doc text names one.
+
+**The reframe:** default to the coordinator's own crew/staff-session flow. Describe an unblocked ticket as "ready for implementation" — never "ready for `/deliver`" (or `/ship`, `/release`, or any other repo-native delivery command) — unless the user has EXPLICITLY asked for that named command. Do not carry a ticket's delivery-command vocabulary into status updates or resolution comments as if it were the coordinator's chosen plan.
+
+**This is the delivery-command instance of § User-Tooling Precedence** (above) — repo conventions never substitute for the user's own tooling/flow, and a ticket's "ready for `/deliver`" framing is exactly the kind of repo convention that must never override it. Real incident: a backlog ticket's "ready for /deliver" framing was adopted as the assumed implementation path and echoed across multiple user-facing messages, headed toward a resolution comment — the user reacted categorically: never use `/deliver`, refuses to use it at all.
+
+**Self-check:** About to write "ready for `/deliver`" (or any named repo-native delivery command) in a status update or resolution comment? STOP — unless the user explicitly asked for that command by name, rewrite as "ready for implementation" routed via crew/staff sessions.
 
 ### Learning-vs-Implementation Distinction
 
