@@ -2994,13 +2994,6 @@ def cmd_create(
                 exit_code=1,
             )
 
-    # --- 9b-pre. Auto-clean stale worktrees (fire-and-forget) ---
-    # Trigger workout-autoclean after successful worktree creation. It trashes worktrees
-    # >=90 days old, skipping the primary repo, the current worktree, and dirty worktrees.
-    # check=False ensures a failure here never aborts crew session creation.
-    if not no_worktree:
-        subprocess.Popen(["workout-autoclean"], cwd=repo, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-
     # --- 9b. Run post-switch hook (worktree path only) ---
     # The legacy workout CLI runs .git/workout-hooks/post-switch after worktree creation.
     # crew create mirrors that behavior so spawned sessions start fully initialized

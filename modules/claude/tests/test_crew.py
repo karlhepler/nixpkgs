@@ -80,32 +80,6 @@ def fake_run_result(stdout: str = "", returncode: int = 0) -> MagicMock:
     return m
 
 
-@pytest.fixture(autouse=True)
-def _mock_workout_autoclean_popen():
-    """Prevent cmd_create's fire-and-forget `subprocess.Popen(["workout-autoclean"])`
-    call (crew.py step 9b-pre) from spawning a real process during tests.
-
-    Tests throughout this file patch subprocess.run but not the Popen call used
-    specifically for the workout-autoclean trigger; without this fixture, any
-    cmd_create() call with a fictional repo path (e.g. "/some/repo") raises
-    FileNotFoundError because Popen's cwd argument doesn't exist.
-
-    Only intercepts calls whose argv is exactly ["workout-autoclean"] — all
-    other Popen usage (subprocess.run's internals, run_post_switch_hook,
-    _wait_for_sentinel's fswatch, etc.) passes through to the real
-    subprocess.Popen untouched, so unrelated tests are unaffected.
-    """
-    real_popen = subprocess.Popen
-
-    def selective_popen(args, *pargs, **kwargs):
-        if args == ["workout-autoclean"]:
-            return MagicMock()
-        return real_popen(args, *pargs, **kwargs)
-
-    with patch("subprocess.Popen", side_effect=selective_popen) as mock_popen:
-        yield mock_popen
-
-
 # ---------------------------------------------------------------------------
 # P6.1 — get_current_session
 # ---------------------------------------------------------------------------

@@ -11,14 +11,10 @@ let
     text = builtins.readFile ./pre-commit.bash;
   };
 
-in {
-  # ============================================================================
-  # Git Configuration & Shell Applications
-  # ============================================================================
-  # Everything git-related: program config + 11 git shellapp definitions
-  # ============================================================================
-
-  _module.args.gitShellapps = rec {
+  # Bound in `let` (rather than only inline under `_module.args`) so this same
+  # module can also reference the `workout-autoclean` derivation directly when
+  # wiring the launchd agent below, without going through `config._module.args`.
+  gitShellapps = rec {
     commit = shellApp {
       name = "commit";
       runtimeInputs = [ pkgs.git ];
@@ -125,8 +121,42 @@ in {
       name = "workout-autoclean";
       runtimeInputs = [ pkgs.git pkgs.coreutils pkgs.darwin.trash ];
       text = builtins.readFile ./workout-autoclean.bash;
-      description = "Trash worktrees >=90 days old, skipping primary repo, current worktree, and dirty worktrees";
+      description = "Daily global reaper: trash worktrees under ~/worktrees >=30 days old (by birth time), skipping primary repos and dirty worktrees";
       sourceFile = "workout-autoclean.bash";
+    };
+  };
+
+in {
+  # ============================================================================
+  # Git Configuration & Shell Applications
+  # ============================================================================
+  # Everything git-related: program config + git shellapp definitions
+  # ============================================================================
+
+  _module.args.gitShellapps = gitShellapps;
+
+  # ============================================================================
+  # Daily worktree reaper (launchd agent)
+  # ============================================================================
+  # Runs `workout-autoclean` once a day at 5:00pm, unconditionally sweeping
+  # every git worktree under ~/worktrees for the 30-day age-based reap. This
+  # is the ONLY trigger for workout-autoclean — the opportunistic
+  # after-`workout`-command invocation has been removed (see workout.bash).
+  launchd.agents.workout-autoclean = {
+    enable = true;
+    config = {
+      ProgramArguments = [ "${gitShellapps.workout-autoclean}/bin/workout-autoclean" ];
+      StartCalendarInterval = { Hour = 17; Minute = 0; };
+      # launchd does not source the interactive shell, so a customized
+      # WORKTREE_ROOT would otherwise be silently ignored — set it explicitly
+      # to match the tool's documented default.
+      EnvironmentVariables = {
+        WORKTREE_ROOT = "${config.home.homeDirectory}/worktrees";
+      };
+      # launchd discards stdout/stderr by default, so diagnostic output (skip
+      # reasons, trash/prune failures) would otherwise be lost with no record.
+      StandardOutPath = "${config.home.homeDirectory}/.local/state/workout-autoclean.launchd.out.log";
+      StandardErrorPath = "${config.home.homeDirectory}/.local/state/workout-autoclean.launchd.err.log";
     };
   };
 
