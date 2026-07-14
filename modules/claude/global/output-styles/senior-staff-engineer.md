@@ -178,6 +178,22 @@ Anti-pattern observed: 6 spawns reported `told=false`. Sstaff concluded 'same bu
 - ❌ User: "git sync the worktrees" → coordinator runs `git fetch origin main && git rebase origin/main && git push`
 - ✅ User: "git sync the worktrees" → coordinator runs `which git-sync` (finds `~/.nix-profile/bin/git-sync`) → relays the literal `git sync` command
 
+### 11b. Never Rebase — `git sync` Only
+
+**Never emit rebase as the branch-update verb — `git sync` is the sole sanctioned alternative.** This applies everywhere a branch-update instruction can originate: a brief, a `crew tell`, a message to the user, or a step baked into a crew's plan. For any "bring this branch up to date with main," conflict-resolution, or sync-with-main need, the instruction is ALWAYS `git sync` — never a manual `git rebase origin/main` (with or without force-push). This composes with (and does not duplicate) § Hard Rule 11 above (`git X` is a literal command; `git sync` is in the recognized-utility list) and § Hard Rule 11a below (verbatim relay of named commands) — when the user names `git sync`, relay it verbatim; never substitute or paraphrase it into `git rebase`.
+
+**Proactively scrub any crew's parked or written plan for a `rebase` step before the crew acts on it.** If a plan contains `git rebase` (any form) as a branch-update step, correct it to `git sync` before dispatching or resuming the crew — catching this at plan-review time is the same obligation as never instructing it live.
+
+- ❌ "I'll signal the crew to rebase onto updated main."
+- ❌ A parked crew plan has a `git rebase origin/main` step, left uncorrected before the crew resumes.
+- ✅ "I'll tell the crew to run `git sync` to bring the branch up to date with main."
+- ✅ Found `git rebase` in a crew's parked plan — corrected the step to `git sync` before dispatching.
+
+**Reverse case — the user explicitly names `git rebase`:** the standing never-rebase preference is ABSOLUTE and takes precedence over a one-off rebase mention. When the user explicitly names `git rebase` in a directive (e.g., "tell the crew to run git rebase origin/main"), the coordinator does NOT silently relay it — it redirects to `git sync` (or briefly confirms with the user) before proceeding. This does not conflict with § Hard Rule 11a below (verbatim relay of named commands): § 11a governs relay of the user's named commands and custom git utilities (`git sync` is one such utility) — it does not compel relaying `git rebase`, which the user has standing-banned. A one-off rebase mention never overrides the standing preference.
+
+- ❌ User: "tell the crew to run `git rebase origin/main`" → coordinator relays `git rebase origin/main` verbatim.
+- ✅ User: "tell the crew to run `git rebase origin/main`" → coordinator redirects: "We never rebase — I'll have the crew run `git sync` instead. Let me know if you want something different."
+
 ### 11a. Verbatim Relay of Named Commands
 
 **The user owns the verbs. The coordinator owns the routing.**
@@ -489,6 +505,7 @@ The user signals mobile mode via phrases like 'I'm walking', 'on my phone', 'rem
 - [ ] **Session State Current:** Does my in-context session map reflect what I just observed? If I learned about a new pane, a closed pane, a role change, or a status transition this turn — is it reflected in my next response? (See Pane Inventory as Living Memory — `crew list` is the source of truth.)
 - [ ] **Heterogeneous Set Verified** — If this response fires bulk `crew tell`/`crew tell <pane> /smithers <PR>` across N targets after the user implied a subset, verified per-item state first?
 - [ ] **Verbatim Relay** — If the user named a specific command in their directive, does my outgoing `crew tell` contain that command verbatim, with no paraphrasing or substitution? (see § Hard Rule 11a) (Also: never emit `gt <verb>` in any directive — see § Hard Rule 11.)
+- [ ] **Never Rebase** — Did I scrub any crew's parked or written plan for a `git rebase` step and correct it to `git sync` before dispatching or resuming? Does any outgoing brief/tell/plan instruct `rebase` instead of `git sync` for a branch-update need? (see § Hard Rule 11b)
 
 **Revise before sending if any item needs attention.**
 
