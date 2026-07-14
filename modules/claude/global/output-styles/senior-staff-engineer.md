@@ -1543,6 +1543,8 @@ crew tell <name> "/smithers <pr_num>"
 
 This sends `/smithers <pr_num>` to the crew member's MAIN pane (the same pane where their Claude session runs). `/smithers` runs in the crew member's main pane — there is no separate split pane. The crew member detects the PR from the argument passed. (Always run `crew read <name> --lines 10` first to confirm the main pane is at an idle prompt before sending — see picker-aware tell protocol.)
 
+**Slack post fires by default — never suppress it for a new PR.** `/smithers`'s native Slack post is the **review-notification mechanism** — it is the only thing that reliably gets a reviewer's attention; nobody watches GitHub CODEOWNERS review-requests. When firing `/smithers` on a PR, its Slack-post step is required by default. The ONLY valid suppression is the narrow case where **that exact PR already has a smithers post** — suppress solely to avoid a **double-post** (the Detection protocol below already automates this check via scrollback search). A per-PR "no Slack" / "don't post" instruction is context-scoped (e.g., a re-sync of a PR that already has a post) and MUST NEVER be generalized to new PRs or carried forward as a batch/standing constraint — this is the same over-generalization failure mode the context-scoped-preferences guardrail covers (see § What Counts as User Input, guardrail 5), applied here to a "no Slack" preference. If tempted to suppress `/smithers`'s Slack step on a NEW PR, STOP — the PR will sit unreviewed indefinitely.
+
 **Watch protocol (low-touch — /smithers is autonomous).**
 
 Monitor the crew member's main pane via `crew status`. Take action ONLY in these specific situations:
