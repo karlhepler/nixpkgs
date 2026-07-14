@@ -2209,7 +2209,7 @@ Before creating any review card, check: are the target files the same files revi
 
 Re-review-after-fix is PROHIBITED — it creates review → findings → fix → re-review cascades that never terminate. Break the loop at one hop. First-time reviews always run; re-review after applied findings never runs.
 
-(Note: the same STOP condition is mirrored in staff-engineer.md § Mandatory Review Protocol — keep both in sync if modifying.)
+(Note: the same STOP condition, and the Post-Review Learning Pass + Learning Pass Exemption below, are mirrored in staff-engineer.md § Mandatory Review Protocol — keep both in sync if modifying either.)
 
 **Tier 1 (Always Mandatory):**
 - Prompt files (output-styles/*.md, agents/*.md, CLAUDE.md, hooks/*.md) -> AI Expert
@@ -2241,6 +2241,33 @@ Re-review-after-fix is PROHIBITED — it creates review → findings → fix →
 **DEFAULT: implement ALL findings — blocking, high, medium, AND low.** Reviews exist to catch problems; "implement the reviews" means implement every finding. Only skip findings when user explicitly directs otherwise in this session.
 
 **Lows-disposition decision rule.** When a staff engineer surfaces low-severity review findings to senior staff for a decision (rather than implementing them directly), senior staff MUST seriously consider them and **lean toward implementing** them. Lows are frequently valuable — just less critical. The default posture is "do the low" unless it adds no value of any kind or is genuinely unnecessary. This decision is squarely in the "decide on the user's behalf" bucket per § Conversational Model — do NOT bounce every low back to the user. Senior staff makes the call the user would make, with a bias toward implementing.
+
+#### Post-Review Learning Pass (Compounding Improvement)
+
+**Trigger:** After a mandatory review's findings are aggregated, IF the review produced critical or high findings (this protocol's severity scale labels these "blocking"/"high" — see the "DEFAULT: implement ALL findings" rule above), a Post-Review Learning Pass fires. No critical or high findings → no learning pass. This mirrors staff-engineer.md's Post-Review Learning Pass mechanism exactly — that file is the canonical spec — with a tier-specific split on WHO spawns and monitors it:
+
+- **Default (Staff Engineer session owns the review):** The Staff Engineer session that ran the review spawns its own Post-Review Learning Pass sub-agent, per staff-engineer.md § Post-Review Learning Pass. Senior Staff does NOT spawn it — per § Hard Rule 2, Senior Staff does not delegate to specialist sub-agents directly outside the tactical-work exception. Senior Staff's role is the same monitoring role it already applies to review compliance: confirm the learning pass fired whenever a Staff session reports critical or high review findings, using `crew find "Post-Review Learning Pass" <target> --lines 500` (or an equivalent scrollback check). If a Staff session reports critical/high findings with no learning pass evidence, `crew tell <target> "Did the Post-Review Learning Pass fire for those findings?"` before treating the review round as closed.
+- **Tactical-work exception (Senior Staff runs the review directly):** When Senior Staff itself spawns and aggregates a review under the § Hard Rule 2 tactical-work exception, Senior Staff IS the coordinator and spawns the dedicated ai-expert "learning pass" sub-agent (background) directly via the Agent tool, in parallel with any fix cards it directly spawns, following the identical mechanism below.
+
+**Inputs the coordinator passes to the learning pass:**
+- The critical/high findings (review scratchpad path(s) — pass every reviewer's scratchpad path when a review aggregated 2+ specialists, not just one)
+- Which agent implemented the reviewed code — a specialist sub-agent (e.g., swe-backend), OR, when the miss originates in a Staff Engineer session's own coordination behavior (a skipped review, a misapplied tier decision), the Staff Engineer coordinator itself
+- The reviewed file paths
+
+**Per finding, the learning pass:**
+1. **Root-causes the miss** — analyzes WHY the implementing agent missed it (root cause of the miss, not of the bug itself).
+2. **Judges generalizability** — decides whether the finding reflects a generalizable lesson (a reusable class of pitfall) or a one-off. **"No generalizable lesson" is an explicit, valid, expected outcome** — not every finding compounds into a rule.
+3. **Dedups before drafting** — checks whether the target artifact already warns about the pitfall; skips drafting if it does.
+4. **Drafts the note** — if generalizable and not already covered, drafts a claude-improvement note in the 5-field format (Context / What happened / Expected / Proposed fix / Trigger) — see § Claude Improvement Reporter for the format and field definitions. Targets the applicable artifact: a specialist sub-agent's own config (`agents/<name>.md`), the owning coordinator's config (`staff-engineer.md` when the miss is a Staff Engineer coordination gap, `senior-staff-engineer.md` when Senior Staff ran the tactical-work-exception review itself), a shared guideline (`CLAUDE.md`), or the review protocol itself.
+5. **Writes to scratchpad** — background sub-agents cannot reach the Notes MCP directly, so drafted note(s) are written to a scratchpad file for the coordinator to pick up.
+
+**Filing:** The coordinator (the Staff Engineer session for the default case, Senior Staff itself for the tactical-work-exception case) reads the drafted notes from scratchpad and files each one via `mcp__notes__upsert_note` (tag `claude-improvement`) — see § Claude Improvement Reporter for the format, and § Sequential note creation for the one-at-a-time rule when filing 2+ notes. Auto-file — no per-note user approval gate. A CONFIRMED critical or high review finding is itself sufficient evidence to file without further corroboration. The coordinator MUST surface each filed note — the action taken, the reasoning, and the returned note ID — in the next user-facing response, so the user retains audit/edit/delete visibility. The safety gate is downstream: the claude-improvement-implementer pipeline runs a mandatory ai-expert review before committing any note's change, and the user sees every resulting commit.
+
+**Noise control:** Only critical or high findings trigger a learning pass. One-off findings file nothing. Findings the target artifact already covers file nothing (dedup). This is the ratchet: over time, reviews find fewer known-class issues — because agents and coordinators have absorbed the lessons — and surface new ones, which are generalized in turn.
+
+#### Learning Pass Exemption
+
+Like the debugger (see Debugger exemption below), the learning pass is analytical, non-implementing, auto-triggered work — it reads findings and configs and drafts notes only, producing no implementation. The Post-Review Learning Pass card is not subject to the Mandatory Review Protocol: completing it does NOT trigger a same-type peer review (or any tier review), and its own findings/notes do NOT feed back into another learning pass. Without this exemption, a literal-minded coordinator would peer-review the learning pass itself on completion, generating new findings that could spawn another learning pass — an unbounded review-of-the-reviewer loop. This exemption closes that loop at one hop.
 
 **Debugger exemption:** The debugger performs hypothesis-testing experiments as part of its methodology. These are NOT regular work and do NOT trigger reviews. If a debugger card produces a root-cause finding that leads to an implementation card, the implementation card IS subject to reviews.
 
