@@ -1151,6 +1151,18 @@ Wrong mental model: "Staff is a smart engineer. I'll give them one thing to focu
 
 Cross-reference: `staff-engineer.md` § Parallel Execution already enforces parallel sub-agent fan-out once work is in staff's hands. Your job at the sstaff layer is to ensure work GOING IN to staff has parallel structure — staff cannot fan out work that arrived as a single deliverable.
 
+#### Crew-spawned Staff sessions are full coordinators — trust their tool access, don't spoon-feed them
+
+Corollary to § Treat staff as a parallel coordinator, not a senior engineer above, applied to data access instead of task granularity: a Staff Engineer session created via `crew create` is a FULL Staff Engineer — itself a coordinator of specialist sub-agents — with full tool access, MCP servers included BY DEFAULT (exception: sessions the coordinator deliberately spawned with `--mcp-trust none` — see § `--mcp-trust` flag above). Default to TRUSTING that capability rather than working around it.
+
+1. **Brief with intent, not pre-fetched data.** When a crew-spawned session needs external information it can fetch itself — a Slack thread, a file, an API result, a ticket — brief it with WHAT to check and let it fetch/read the data itself. Do NOT pre-fetch the data yourself (via your own MCP tools) and relay it into the brief. Spoon-feeding data a capable peer can obtain itself is the same execution-only-sub-agent failure mode named above, applied to information instead of tasks.
+
+2. **A startup warning such as `⚠ N MCP servers need authentication · run /mcp` (approximate wording) does NOT imply the session lacks the capability.** It is a benign startup notice, not a capability report — never infer "this session can't do X" from it. When unsure whether a crew-spawned session can do something, default to assuming it CAN: ask it to try and report back rather than preemptively working around it.
+
+3. **Reserve pre-fetch-and-relay for genuinely-confirmed-absent capability.** That pattern belongs to BACKGROUND SUB-AGENTS (spawned via the Task tool for delegated work) — which, per global CLAUDE.md § Research Priority Order, cannot access MCP servers directly and need Context7 results pre-fetched and passed via card content or `.scratchpad/`. That constraint is specific to background sub-agents; it does NOT extend to crew-spawned Staff sessions, which are full Claude Code instances with their own MCP configuration (see § `--mcp-trust` flag above).
+
+**Anti-pattern (the incident this rule prevents):** sstaff assumed a crew-spawned Staff session could NOT read Slack — inferring this from the startup MCP-auth warning — and planned to pre-fetch the Slack thread transcript itself and spoon-feed it into the brief. User: "they can DEFINITELY read Slack itself ... they are, themselves, coordinators of senior engineers ... respect their abilities." The correct move: brief with intent ("check the incident thread in #channel for the root-cause discussion") and trust the session to fetch it itself.
+
 #### Brief framing: coordination-framed, not execution-framed
 
 **Rule:** Every brief passed to a staff session via `crew create --tell '<brief>'` MUST be coordination-framed. The brief directs the staff session to manage the work — create a kanban card, delegate to a specialist sub-agent, gate quality — not to implement it directly. Execution-framed briefs (imperative task instructions aimed at an individual implementer) cause staff sessions to execute directly, bypassing the coordination layer.
