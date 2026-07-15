@@ -504,13 +504,10 @@ $orphan_warning"
             "Task(subagent_type=explore)"
 
             # /tmp directory - Auto-approve all file operations (safe scratch space)
-            "Write(//tmp/**)"
             "Edit(//tmp/**)"
-            "Write(//private/tmp/**)"
             "Edit(//private/tmp/**)"
 
             # Project-local scratchpad - required for debugger ledger and project plan persistence across rounds
-            "Write(.scratchpad/**)"
             "Edit(.scratchpad/**)"
 
             # Context7 MCP - Auto-approve all documentation queries
