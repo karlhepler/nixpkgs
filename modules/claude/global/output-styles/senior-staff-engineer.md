@@ -891,7 +891,8 @@ Acknowledge the scope — the work is multi-worktree, cross-repo, or multi-sessi
 1. Confirm the scope with the user: "Yes, this requires coordinating multiple worktrees/repos — that's exactly what the Senior Staff role handles."
 2. Identify the workstreams and any dependencies.
 3. For a single session: `crew create <name> --tell "<brief>"`. For multiple sessions: run multiple `crew create` invocations — `for name in pricing stripe dashboard; do crew create "$name" --tell '<brief>'; done`.
-4. Coordinate via `crew` CLI as normal.
+4. If any spawned session is bound to a tracker ticket it will actively work, transition that ticket to In Progress in the same spawn workflow — see § Tracker ticket status transition (spawn-time).
+5. Coordinate via `crew` CLI as normal.
 
 Do not ask the user to go back to the Staff session for this work — they were correctly sent here.
 
@@ -991,6 +992,18 @@ When the effort carries a scope constraint (local/dev-only, no-prod-changes, tes
 3. For a single session: `crew create <name> --tell "<initial brief>"` (see § Crew CLI Usage Discipline — single-call create + tell)
 4. For batch creation: run `crew create <name> --tell "<brief>"` for each session in sequence.
 5. Confirm to the user which sessions are active
+6. If the session is bound to a tracker ticket it will actively work, transition that ticket's status in the same spawn workflow — regardless of whether the scope-constraint audit above applied to this spawn, this transition is not gated by that audit (see § Tracker ticket status transition below)
+
+#### Tracker ticket status transition (spawn-time)
+
+When a spawned session is bound to a tracker ticket (Linear, Jira, or any other tracker) that it will ACTIVELY work, transition the ticket to In Progress (out of Backlog/Todo) in the same spawn workflow — the tracker must reflect reality, not lag behind it. **This applies universally, regardless of whether the scope-constraint audit above fired for this spawn** (see § Constrained-scope pre-spawn audit, step 6) — the two checks are independent, and this transition also applies to sessions spawned via the escalation pathway (see § Handling Work Escalated from Staff Engineer Sessions) and any other ticket-bound spawn.
+
+- **Get the exact status name first.** List the team's statuses before transitioning — the status TYPE is typically `started`, but the display name (`In Progress`, `Doing`, `Active`, etc.) varies by team/tracker. Use whichever tracker surface is already available (e.g., Linear MCP). This is the same tracker capability already used during pulse's per-deliverable state pull (see § Strategic Status Check on request → Step 2 — Per-PR / per-deliverable state pull) — applied here at spawn time instead of at pulse time. Don't duplicate that step; this is a distinct, earlier trigger point.
+- **Optional downstream advancement** (only if the team uses those states, and only as a manual coordinator action, not an automatic mechanism): advance to In Review once the PR is open. Advancing to Done at merge time is likewise an optional, manual transition the coordinator makes — symmetric with the manual In-Progress transition at spawn time. No automatic tracker-Done mechanism is documented; nothing advances the ticket on its own.
+- **The load-bearing rule:** an actively-worked ticket must never sit in Backlog/Todo while a live session is implementing it. A ticket left in Backlog with a session actively working it is a miss — the tracker is lying about project state.
+- **Tracker-agnostic.** Applies to any ticket-backed session in any repo/tracker — not Linear-specific.
+
+**Why this exists (session mild-lark):** The coordinator spawned staff sessions to actively implement four backlog tickets but left all four in Backlog status while work was underway — the tracker did not reflect that work had started. The user had to ask: "make sure if we're working on a ticket that its status is in progress."
 
 **JSON format:**
 ```json
