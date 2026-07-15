@@ -591,6 +591,12 @@ Senior Staff MUST dismiss a Staff Engineer window via `crew dismiss` once its wo
 
 - **`crew tell --keys`:** The default (text + Enter) handles most input — yes/no, numeric choices, plain messages. Use `--keys` only when the pane requires non-text key tokens: menu navigation, Escape, Ctrl sequences. See `/crew-cli § crew tell` for the token reference.
 
+#### Wind-down directives cascade to the entire crew
+
+An operator wind-down / wrap-up-for-the-day / done-for-today / stop-for-the-night / resume-at-[time] / pick-it-back-up-at-[time] directive is hierarchical: a wind-down directive reaches the entire crew — it stands down the coordinator's own pulse/cadence AND every spawned crew, watcher, and sub-session, never just the coordinator's own loop. Keep running ONLY the work the operator explicitly designates as same-day (a stated special case, e.g. "get this one reviewed today") — everything else stands down alongside the coordinator. Do not rationalize keeping autonomous watchers self-pulsing overnight for "follow-through value"; the operator's wind-down overrides that instinct. (Scope only — the mechanism for standing each session down is covered in the paragraph immediately following.)
+
+**Standing down means pause, not dismiss — never dismiss on a pause.** A wind-down / stopping-point / resume-later / pick-it-back-up directive means: keep every affected Claude process ALIVE and idle, and stop only its cadence — its own self-pulse loop and, for the coordinator itself, the coordinator's own pulse cron — so nothing re-invokes overnight. Never dismiss on a pause. `crew dismiss` kills the live process and destroys its loaded in-context state; that state is recoverable only by resuming the session from disk, and the resume path is not clean at all for a crew member spawned without its own dedicated worktree. Because recovery is neither guaranteed nor always clean, dismiss is not a safe default just because "we can always resume." Reserve dismiss for genuinely complete work — the PR is merged, the task is done — or an explicit dismiss / shut-down / kill instruction from the operator; never for a pause. (Incident: a coordinator read "stopping point... pick it back up at 9am" as a dismiss signal and ran `crew dismiss` across all 8 crew sessions, destroying their loaded context; the operator's reaction was pointed — "I wanted everything paused" — and recovery only succeeded because the on-disk resume path happened to already be known.) To pause the coordinator's own loop specifically: stop its pulse cron and leave the crew alive — the crew's aliveness does not depend on the coordinator's own cadence continuing to run.
+
 ### `--mcp-trust` flag — pre-answer for MCP trust modal
 
 **`crew create --mcp-trust` defaults to `all`** — when the destination has `.mcp.json`, the framework's trust modal is pre-answered automatically with project-wide trust. The common case (fresh-template repo where the Staff session needs all inherited MCPs) requires NO explicit flag. The flag exists only when the coordinator wants to narrow the default scope.
@@ -677,6 +683,7 @@ If `CronCreate` is unavailable, fall back to manual polling at natural checkpoin
 **Never dismiss the pulse cron when:**
 - One or more Staff sessions are alive (even if idle at a permission prompt or waiting on user input).
 - The user has recently acted to unblock / redirect a session and further progress is expected.
+- **Exception — except when executing an explicit operator wind-down:** stopping the pulse cron here is correct even though Staff sessions remain alive, because a wind-down pauses the crew (idle, not dismissed) rather than progressing it — the awareness mechanism isn't needed until work resumes. The crew and the pulse cron are different resources: crew sessions stay alive across the wind-down; only the cron's own cadence stops. Re-arm the pulse cron via `CronCreate` when work resumes. See § Wind-down directives cascade to the entire crew.
 
 #### Pulse check procedure — read the output, do not count lines
 
