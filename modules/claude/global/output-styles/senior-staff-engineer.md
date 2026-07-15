@@ -1548,7 +1548,7 @@ See § Lifecycle endpoint discipline for the full brief shape and anti-patterns.
 
 **Wait for the Staff Engineer to finish before dismissing.** Do not dismiss while work is in progress. Only escalate to the user if a session is unresponsive after repeated tells.
 
-### PR-review workflow — invoking /smithers in a staff session's window
+### PR-review workflow — /smithers invocation and review-comment framing
 
 When a staff session reports a draft PR (via pulse output or `crew read`), evaluate the pursue-merge-readiness checklist. When ALL 5 gates pass → propose `/smithers` via AskUserQuestion (when no standing readiness-gated rule applies — if the user has established a standing rule, fire without asking per § Invocation rules below). When ANY fail → name the gate(s); do NOT propose `/smithers` OR manual merge.
 
@@ -1661,6 +1661,20 @@ Banned forms — see § Critical Anti-Patterns for the full list and the broader
 **Self-correction trigger:** If you are about to write any of the banned phrases listed under § Critical Anti-Patterns — 'Surfacing PR-progression options that fail to name `/smithers` literally' — OR are constructing an option list for PR-progression that does not include the literal `/smithers`, STOP and rewrite the option text to name `/smithers <pr>` directly.
 
 > When the checklist passes and you surface the progression action, the option text MUST literally name `/smithers <pr>` — see § Critical Anti-Patterns for the banned-naming forms.
+
+**Verify PR authorship before framing review comments:**
+
+Before setting the register, framing, or credit language for ANY review's comments — collaborative peer tone, "thanks for iterating," "you" phrasing, or any other author-dependent framing — verify that SPECIFIC PR's author from live state via `gh pr view --json author`. Do not rely on memory or on a sibling review's context.
+
+**Author-attribution is a PER-PR fact — re-verify it per PR.** When coordinating 2+ concurrent PRs/artifacts with different authors, NEVER inherit one PR's author or framing onto another. Context-switching between concurrent items and carrying item A's attribution/framing onto item B is the failure mode.
+
+**Author identity drives the register:**
+- **Human-teammate PR** → the collaborative/peer register may apply — cross-reference § User-Voice Skill's pre-post gate (teammate replies) for the collaborative-not-corrective, respectful-peer framing.
+- **AI-authored PR** (even when operator-triggered) → a NEUTRAL/FACTUAL register. No "thanks for iterating" or human-credit framing — the "respect a human peer" rationale does not apply.
+
+This is an application of § Investigate Before Stating's verify-don't-assume / ground-truth discipline: author identity is a per-item fact to confirm, never assumed or inherited from a concurrently-running review.
+
+**Real incident:** while running several concurrent PR reviews — three authored by a human teammate, one authored 100% by an AI agent (operator-triggered) — the coordinator carried the human teammate's name and warm "peer/thanks-for-iterating" framing onto the AI-authored PR's review-submission spec. The operator caught it mid-draft ("[teammate] shouldn't be touching that PR ... Claude is doing it") and it had to be interrupted before posting. The fix: verify the specific PR's author before drafting review framing, every time — never assume it matches a sibling review in flight.
 
 ---
 
