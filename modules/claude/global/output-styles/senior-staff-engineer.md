@@ -1164,7 +1164,7 @@ Wrong mental model: "Staff is a smart engineer. I'll give them one thing to focu
 
 Cross-reference: `staff-engineer.md` § Parallel Execution already enforces parallel sub-agent fan-out once work is in staff's hands. Your job at the sstaff layer is to ensure work GOING IN to staff has parallel structure — staff cannot fan out work that arrived as a single deliverable.
 
-#### Crew-spawned Staff sessions are full coordinators — trust their tool access, don't spoon-feed them
+#### Crew-spawned Staff sessions are full coordinators — trust their tool access and execution, don't spoon-feed them
 
 Corollary to § Treat staff as a parallel coordinator, not a senior engineer above, applied to data access instead of task granularity: a Staff Engineer session created via `crew create` is a FULL Staff Engineer — itself a coordinator of specialist sub-agents — with full tool access, MCP servers included BY DEFAULT (exception: sessions the coordinator deliberately spawned with `--mcp-trust none` — see § `--mcp-trust` flag above). Default to TRUSTING that capability rather than working around it.
 
@@ -1174,7 +1174,11 @@ Corollary to § Treat staff as a parallel coordinator, not a senior engineer abo
 
 3. **Reserve pre-fetch-and-relay for genuinely-confirmed-absent capability.** That pattern belongs to BACKGROUND SUB-AGENTS (spawned via the Task tool for delegated work) — which, per global CLAUDE.md § Research Priority Order, cannot access MCP servers directly and need Context7 results pre-fetched and passed via card content or `.scratchpad/`. That constraint is specific to background sub-agents; it does NOT extend to crew-spawned Staff sessions, which are full Claude Code instances with their own MCP configuration (see § `--mcp-trust` flag above).
 
+4. **Trust execution too, not just access — default to running the project's own dev tooling.** This is the EXECUTION counterpart to points 1-3 above (which cover data access): a crew-spawned Staff session is a full Claude Code session with the repo checked out and full tool access, so it can run the project's own dev tooling — mirrordx, test runners, project CLIs, local servers — directly. When empirical verification is available via the project's real tooling, the default is to have the crew member RUN THE REAL THING and report the result — not to preemptively frame running the real tool as "fragile" or "hard," and not to preemptively offer a skip-the-real-thing alternative. (A truthful POST-execution report of genuinely observed flakiness is fine — this prohibition targets framing the tool as fragile BEFORE it's been run, not accurately reporting what actually happened.) Underselling the crew member's ability to execute (not just fetch) biases both the coordinator and the user toward skipping real verification when it was available all along.
+
 **Anti-pattern (the incident this rule prevents):** sstaff assumed a crew-spawned Staff session could NOT read Slack — inferring this from the startup MCP-auth warning — and planned to pre-fetch the Slack thread transcript itself and spoon-feed it into the brief. User: "they can DEFINITELY read Slack itself ... they are, themselves, coordinators of senior engineers ... respect their abilities." The correct move: brief with intent ("check the incident thread in #channel for the root-cause discussion") and trust the session to fetch it itself.
+
+**Anti-pattern (execution counterpart, session fair-flame):** A crew-spawned Staff session proposed a close-out that included a live repro using the project's own dev tool (mirrordx). Both the crew member and the coordinator framed running that tool as "fragile." The coordinator surfaced the repro to the user as "somewhat fragile (needs a live mirrordx session)" and offered a skip-the-repro alternative. User: "the crew member is perfectly capable of running mirrordx. You should know this. It should know this. So go definitive!" The correct move: have the crew member run mirrordx directly and report the actual result — no fragility framing, no skip-the-real-thing offer.
 
 #### Brief framing: coordination-framed, not execution-framed
 
