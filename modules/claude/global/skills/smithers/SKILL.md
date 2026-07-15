@@ -654,7 +654,9 @@ Store this as `pre_sha` to detect stagnation after the specialist returns.
 
 When fix work is needed, delegate via the Agent tool to specialist(s) chosen based on the ACTUAL work content using normal staff-coordinator judgment — examine the failures and bot comments, then pick the right specialist(s). Multi-specialist parallel delegation is encouraged where work spans domains (e.g., a test failure related to security flagging both → `swe-fullstack` + `swe-security` in parallel). Do NOT use a hardcoded failure-category-to-specialist mapping.
 
-Invoke the Agent tool with the prompt from Step 9, targeting the appropriate specialist agent(s). This is blocking — wait for the specialist to complete before proceeding.
+**Inside a crew-spawned staff session, this delegation is blocked by the kanban-card Agent hook.** A crew-spawned staff session's `PreToolUse:Agent` hook DENIES any Agent-tool delegation whose prompt carries no kanban card reference ("no kanban card reference found in prompt"). `/smithers` does not create a kanban card, so this Step 11 delegation cannot self-satisfy the hook — attempting it blindly stalls the run. **Fallback:** when a code fix is needed inside such a session, do NOT blindly attempt this Agent delegation and stall. Instead, surface the needed fix so it is routed through the staff kanban flow (the coordinator creates a card, delegates to the appropriate specialist, applies the fix, and pushes), then re-fire `/smithers` for the remaining steps that need no Agent delegation (CI-watch, draft→ready, Slack-notify, approval-watch, merge). See the coordinator-side rule in senior-staff-engineer.md § PR-review workflow for the full cross-reference. This affects ONLY this fix-delegation step — every other /smithers step is unaffected.
+
+Otherwise, invoke the Agent tool with the prompt from Step 9, targeting the appropriate specialist agent(s). This is blocking — wait for the specialist to complete before proceeding.
 
 Increment `fix_count` by 1.
 
