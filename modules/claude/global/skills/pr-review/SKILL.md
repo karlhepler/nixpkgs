@@ -292,7 +292,7 @@ kanban do '[
 ]' --session <current-session>
 ```
 
-Adapt the array to include only detected specialists. Note the card numbers returned.
+Adapt the array to include only detected specialists. Note the card numbers returned, **and map each one to its specialist** (e.g., by array order or by the `action` field's specialist prefix) — this mapping is required below to construct the mandatory kanban-card header line for each specialist's Agent prompt.
 
 **Note:** Specialist identity (e.g., `swe-backend`, `swe-security`) is supplied via the Agent tool's `subagent_type` parameter at launch time — it is NOT a card field.
 
@@ -302,7 +302,11 @@ Adapt the array to include only detected specialists. Note the card numbers retu
 
 In a **single message**, make one Agent tool call per specialist (all in parallel), setting `subagent_type` to the specialist identity (e.g., `subagent_type: "swe-backend"`, `subagent_type: "swe-security"`). Each specialist receives:
 
+**🚨 Mandatory kanban-card header — do not omit:** The kanban PreToolUse hook (`modules/claude/kanban-pretool-hook.py`) denies any Agent tool call whose prompt does not contain a `KANBAN CARD #<N> | Session: <session-id>` reference somewhere in the prompt. Placing it as the literal first line remains best practice — it keeps the header unambiguous and easy to verify — so before constructing each specialist's prompt, resolve that specialist's card number from the Phase 4 `kanban do` array response (§ Create All Kanban Cards at Once) using the card-to-specialist mapping noted there, and prepend it as the first line of the prompt — substituting `{card-number}` and `{current-session}` with the resolved values, never leaving an unresolved placeholder in what's actually sent to the Agent tool.
+
 ```
+KANBAN CARD #{card-number} | Session: {current-session}
+
 You are a {domain} specialist reviewing PR #{number}: {title}
 
 **Author:** {author}
