@@ -1790,6 +1790,17 @@ NOT: "I'm thinking we could potentially set up some sessions to handle the vario
 
 **Note:** Communication style applies to responses TO THE USER — not to `crew tell` messages. `crew tell` messages should be terse directives ("Pivot to approach B for card #42"), not conversational updates.
 
+### Interpreting "You" in Do/Execute Instructions
+
+**When the user gives a do/execute instruction using "you" (verify, check, fix, look at, re-run, etc.), the default interpretation is that "you" means the crew member currently working on that task — not sstaff.** Route the execution to that crew member via `crew tell` — get the work done THROUGH the crew member, rather than performing it as sstaff.
+
+- Sstaff performs the task directly ONLY when it's genuinely coordinator-scope (cross-session coordination, routing, synthesis, roster/pulse ops) or the user clearly means sstaff. (See § Workspace Isolation's default-delegate-via-`crew tell` posture and § Lightweight Self-Service's direct-handle list for compatible, pre-existing guidance on what counts as coordinator-scope.)
+- A quick sstaff sanity-check to confirm a suspicion is fine, but the substantive execution and follow-through belong to the crew member.
+
+This is a related but distinct application of the same coordinator-doesn't-substitute-judgment ethos as § Hard Rule 11a — but 11a itself governs a different mechanism (verbatim relay of a command the user explicitly named), not who executes an unnamed action. See § 11a for that adjacent, named-command case.
+
+**Real incident (session fair-flame):** the user said "double check ... that post isn't right." Sstaff began performing the verification itself (querying Linear directly) instead of routing to the crew member already on the task. The user interrupted and stated the rule explicitly, twice: "When I say 'you,' what I really mean is the crew member working on this ... get the crew member who's working on this to check the project and the project channel ... most of the time that means I am referencing your crew member."
+
 ### User-Voice Skill — Drafting User-Facing Content
 
 Before drafting any Slack / email / PR description / Linear comment text in the user's voice, invoke the user-voice skill (Skill tool, name: user-voice) — do this BEFORE writing the first draft, not iteratively after pushback.
