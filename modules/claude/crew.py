@@ -1084,17 +1084,27 @@ def _mangle_path_to_project_key(path: str) -> str:
     """Convert an absolute filesystem path to a Claude Code project directory key.
 
     Claude Code stores per-project session files under ~/.claude/projects/<key>/,
-    where <key> is derived from the project path by replacing every '/' with '-'
-    and prepending a leading '-'.
+    where <key> is derived from the project path by replacing every '/' AND
+    every '.' with '-' (dots are mangled too — e.g. a cwd rooted at a
+    'github.com' directory segment becomes 'github-com', not 'github.com').
 
     Example:
         /Users/karlhepler/worktrees/mazedesignhq/maze-monorepo
         → -Users-karlhepler-worktrees-mazedesignhq-maze-monorepo
 
-    Rule is derived from observed ~/.claude/projects/ layout; may need updating
-    on Claude Code upgrades.
+        /Users/karlhepler/github.com/mazedesignhq/maze-monorepo
+        → -Users-karlhepler-github-com-mazedesignhq-maze-monorepo
+
+    Verified: '/' and '.' are mangled to '-', confirmed against the real
+    ~/.claude/projects/ directory names in this environment (including
+    github.com-rooted checkouts).
+
+    Open question: not verified for other characters (e.g. '_', spaces).
+    Claude Code's real encoding may or may not mangle those too — if it does,
+    they must be added here. This docstring does not claim the encoding
+    below is complete, only that '/' and '.' handling is correct.
     """
-    return path.replace("/", "-")
+    return path.replace("/", "-").replace(".", "-")
 
 
 # ---------------------------------------------------------------------------
@@ -1383,7 +1393,8 @@ def _resolve_worktree_for_name(name: str) -> Optional[str]:
     Strategy:
     1. Check active tmux windows: if a window named <name> exists, return its pane's
        current working directory.
-    2. Fall back to scanning ~/worktrees/ for a directory matching the name.
+    2. Fall back to scanning ~/worktrees/ for a directory matching the name, trying
+       (in order) the nested, <user>/<branch>, and flat layouts described below.
 
     Returns the resolved path string, or None if not found.
     """
@@ -1407,7 +1418,8 @@ def _resolve_worktree_for_name(name: str) -> Optional[str]:
     # Strategy 2: scan ~/worktrees/ for a matching directory.
     # New worktrees use the nested layout ~/worktrees/<org>/<repo>/<branch>.
     # Pre-existing flat-layout worktrees use ~/worktrees/<name>.
-    # We check the nested layout first (preferred), then fall back to flat.
+    # We check the nested layout first (preferred), then the <user>/<branch>
+    # layout, then fall back to flat.
     worktree_root = os.environ.get("WORKTREE_ROOT") or os.path.expanduser("~/worktrees")
     worktree_root_path = Path(worktree_root)
 
@@ -1422,6 +1434,20 @@ def _resolve_worktree_for_name(name: str) -> Optional[str]:
             nested_candidate = repo_dir / name
             if nested_candidate.is_dir():
                 return str(nested_candidate)
+
+            # <org>/<repo>/<user>/<branch> layout: branch names carry a
+            # mandatory "<user>/" prefix (see CLAUDE.md § Git Branch Naming),
+            # which `git worktree add` materializes as an extra directory
+            # level between <repo> and <branch> — see resolve_worktree_path()
+            # / _plan_branch_worktree(), where the branch string (containing
+            # the "/") is joined directly into the path rather than a
+            # hardcoded username. Scan one level deeper to match that.
+            for user_dir in sorted(repo_dir.iterdir()):
+                if not user_dir.is_dir():
+                    continue
+                user_branch_candidate = user_dir / name
+                if user_branch_candidate.is_dir():
+                    return str(user_branch_candidate)
 
     # Flat layout: ~/worktrees/<name> (pre-existing worktrees, pre-fix)
     flat_candidate = worktree_root_path / name

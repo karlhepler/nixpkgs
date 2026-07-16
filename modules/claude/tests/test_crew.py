@@ -45,6 +45,7 @@ from crew import (
     _plan_branch_worktree,
     _remote_branch_exists,
     _resolve_targets_with_lookup,
+    _resolve_worktree_for_name,
     _sentinel_path,
     _tmux_fire_and_forget,
     _wait_for_sentinel,
@@ -1542,11 +1543,21 @@ class TestManglePathToProjectKey:
         """Root path '/' maps to a single '-'."""
         assert _mangle_path_to_project_key("/") == "-"
 
-    def test_path_with_dot_preserved(self):
-        """Dots in directory names are preserved unchanged."""
+    def test_path_with_dot_mangled_to_dash(self):
+        """Dots in directory names are mangled to '-', matching Claude Code's
+        actual ~/.claude/projects/ encoding (both '/' and '.' become '-')."""
         path = "/Users/user/my.project/sub.dir"
-        expected = "-Users-user-my.project-sub.dir"
+        expected = "-Users-user-my-project-sub-dir"
         assert _mangle_path_to_project_key(path) == expected
+
+    def test_crew_resume_paths_mangle_dot(self):
+        """github.com-rooted cwd mangles the dot, matching the real Claude Code
+        project directory name observed under ~/.claude/projects/ (e.g.
+        -Users-karlhepler-github-com-mazedesignhq-maze-monorepo)."""
+        path = "/Users/karlhepler/github.com/owner/repo"
+        result = _mangle_path_to_project_key(path)
+        assert "github-com" in result
+        assert "." not in result
 
 
 # ---------------------------------------------------------------------------
@@ -1778,6 +1789,37 @@ class _ResumeSpySend:
 
     def failure(self, error_code: str, message: str) -> None:
         self.failure_calls.append((error_code, message))
+
+
+# ---------------------------------------------------------------------------
+# _resolve_worktree_for_name — Strategy 2 directory-scanning fallback
+# ---------------------------------------------------------------------------
+
+class TestResolveWorktreeForName:
+    """Unit tests for _resolve_worktree_for_name's ~/worktrees/ scanning fallback."""
+
+    def test_crew_resume_paths_worktree_user_branch(self, monkeypatch, tmp_path):
+        """<org>/<repo>/<user>/<branch> layout resolves without an explicit
+        --worktree flag.
+
+        Branch names carry a mandatory "<user>/" prefix (CLAUDE.md § Git Branch
+        Naming), which `git worktree add` materializes as an extra directory
+        level between <repo> and <branch> — the same 4-level path shape
+        TestResolveWorktreePath.test_https_remote_produces_nested_path
+        demonstrates arising from a branch string containing a "/".
+        """
+        worktree_root = tmp_path / "worktrees"
+        nested = worktree_root / "mazedesignhq" / "maze-monorepo" / "karlhepler" / "my-feature"
+        nested.mkdir(parents=True)
+
+        monkeypatch.setenv("WORKTREE_ROOT", str(worktree_root))
+        with patch("subprocess.run") as mock_run:
+            # No active tmux window named "my-feature" — Strategy 1 misses,
+            # falls through to the Strategy 2 directory scan.
+            mock_run.return_value = fake_run_result(stdout="")
+            resolved = _resolve_worktree_for_name("my-feature")
+
+        assert resolved == str(nested)
 
 
 class TestCmdResume:
