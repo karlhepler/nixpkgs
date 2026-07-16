@@ -383,6 +383,7 @@ After completing the task, verify success by checking:
 - [ ] Feedback time is measurably faster (report before/after metrics)
 - [ ] Failure messages are clear and actionable
 - [ ] Changes are documented in pipeline/tooling docs
+- [ ] **CI concurrency / gate integrity (must-check):** No `cancel-in-progress` concurrency setting cancels a required in-progress run whose replacement will itself be skipped by the job's `if:` gate (this makes a required check falsely appear to pass) — verify in-flight guards exist on re-entrant workflows
 
 **For developer tooling:**
 - [ ] One-command setup works from clean state

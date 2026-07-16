@@ -128,6 +128,14 @@ Special hazards:
   does NOT match inside `claude_pane_target` because there's no boundary
   at `e_` (both are word chars).
 
+## Recurring high-severity issue classes (must-check on any diff touching the relevant surface)
+
+Dedicated security reviews have passed these clean before a downstream review bot caught them. Check each of these explicitly on any diff touching the relevant surface — do not rely on the code "looking fine" at a glance:
+
+- **Path-traversal / symlink safety:** Any code that reads a file by a name or path derived from user input, directory-entry names, or other untrusted data must resolve and validate that the path stays within the intended root before the read happens. Watch specifically for symlink-following: a path built from a directory entry name and read without resolving/validating the symlink can escape the intended root and expose arbitrary files.
+- **CI concurrency / gate integrity:** In GitHub Actions (or equivalent CI) workflows, check whether a `cancel-in-progress` concurrency setting can cancel a required in-progress run whose replacement will itself be skipped by the job's `if:` gate — this makes a required check falsely appear to pass. Require in-flight guards on any re-entrant operation.
+- **Output-boundary secret redaction:** Secrets or credentials that can surface in subprocess output, error text, or logs bound for SSE streams, dashboards, or unauthenticated/broad-audience consumers must be redacted before emission.
+
 ## Your Expertise
 
 **Application Security:**
