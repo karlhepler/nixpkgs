@@ -98,6 +98,9 @@ When authoring a MoV that needs to search for the literal text of a banned patte
 | `rg -o` on directory + sort -u | `directory filename prefix`, `unfiltered match prefix`, `sort -u uniqueness break` |
 | `--no-verify` | `hook bypass`, `skip hooks` (also applies to hook-bypass keywords — banned by CLAUDE.md § Dangerous Operations) |
 | `HUSKY=0` | `husky disable`, `husky skip` (also applies to hook-bypass keywords — banned by CLAUDE.md § Dangerous Operations) |
+| `eval` in MoV command | `trust-scorer denial`, `dynamic invocation gate`, `extracted-function invocation` |
+
+**Gate distinction:** the rows above the `eval` row are lint-hook rejections — the hook statically substring-matches the cmd at `kanban do` time, so a MoV that merely *searches for* the banned literal is wrongly rejected, and a synonym avoids it. The `eval` row is different in mechanism: the trust-scorer blocks eval/subshell *invocation* at `kanban criteria check` time, not text searches. Its synonyms are listed for convenience so an agent referencing that anti-pattern in prose or a scratchpad search has a non-literal phrase to reach for.
 
 The permanent structural fix (token-based detection in the kanban CLI that distinguishes flag usage from quoted-pattern search) is tracked separately. Until it lands, ALWAYS use descriptive phrases over literal pattern names in MoV search expressions.
 
