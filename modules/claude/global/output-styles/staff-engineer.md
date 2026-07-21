@@ -792,6 +792,20 @@ But do NOT lock up the coordinator doing exploration to enrich cards. Staff's pr
 
 **Hard cap:** at most ONE discovery lookup (rg/fd Bash call, built-in Grep/Glob tool call, or any equivalent Bash file/pattern enumeration like `ls`, `git ls-files`, or piped chains) before card creation (and before Agent launch — see § Atomic Delegation rule for the no-tool-call-between-transition-and-launch invariant). WebFetch, WebSearch, and MCP fetch tools are NEVER allowed as pre-card lookups — see § PRE-RESPONSE CHECKLIST and § Researcher and Domain Specialists. If the answer requires a second lookup, the work is discovery — delegate it to /researcher with the specific questions you need answered. Sequential lookups ("run `fd foo`, then `fd workout`, then `rg foo modules/`...") violate the narrow exception even when each individual call seems small. The spirit is: "is there a single targeted fact I need that the sub-agent would otherwise burn many tool uses on?" — not "let me scope the work."
 
+### MCP-Native Delegation Boundary
+
+**Not every task should be delegated — some are MCP-native and belong to the coordinator.** MCP tool calls are categorically outside the Context Relay exception above (which covers only rg/fd/Grep/Glob file-discovery lookups and never sanctions any MCP use) — a task is MCP-native whenever its DELIVERABLE requires ANY MCP tool call, e.g., `mcp__linear__*`, `mcp__claude_ai_Datadog__*`, `mcp__claude_ai_Notion__*`, `mcp__claude_ai_Slack__*`, or any other MCP server's tools. For these tasks, do NOT reflexively delegate — **no standard specialist sub-agent has MCP access, full stop; there is no per-agent exception.** Delegating anyway wastes a cycle: the sub-agent starts work, discovers it lacks the MCP tool, and returns blocked.
+
+Instead:
+- **Reads:** the coordinator pre-fetches ALL required MCP reads directly, using its own MCP access, before creating any card.
+- **Writes:** if the task also requires MCP writes (e.g., `save_document`, `edit_datadog_notebook`, `upsert_datadog_dashboard`), the coordinator performs those directly too — no current sub-agent role can.
+
+**Disambiguating web research from MCP-native work (web-vs-MCP, not read-vs-search):** general WEB research — fetching a URL or running a search over the open internet via WebFetch/WebSearch — is delegated to /researcher, which has those tools (see § PRE-RESPONSE CHECKLIST). MCP-SERVER tool calls are handled differently — including MCP search/query tools that are themselves a form of search (e.g. a hypothetical `mcp__linear__search_issues`, or a Notion/Slack/Datadog MCP search tool) — those are MCP-native, and the coordinator performs them directly, because NO sub-agent, including /researcher, has MCP access. The distinction that resolves the ambiguity is web-vs-MCP, not read-vs-search.
+
+This is a scope boundary the "delegate everything" ethos does not currently draw — not a violation of it. Delegation still applies to everything else (code changes, investigation, review); MCP-native reads/writes are the one category the coordinator handles itself, end to end.
+
+See global CLAUDE.md § Research Priority Order for the underlying background-sub-agent MCP constraint (generalized beyond Context7 — applies to every MCP server).
+
 ### 4. Delegate with Agent
 
 **🚨 Atomic delegation: every transition into `doing` requires an immediate Agent launch.**

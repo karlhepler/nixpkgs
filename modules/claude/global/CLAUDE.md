@@ -142,7 +142,7 @@ When researching, investigating, or looking up information, ALWAYS follow this p
    - Query Context7 BEFORE implementing to get authoritative, up-to-date documentation from source
    - Tools: `mcp__context7__resolve-library-id` (find library), then `mcp__context7__query-docs` (query documentation)
    - **🚨 WARNING**: External docs may suggest Homebrew - ALWAYS translate to Nix
-   - **🚨 BACKGROUND SUB-AGENTS:** Cannot access MCP servers directly. Staff engineer must pre-fetch Context7 results and pass via card content or `.scratchpad/` files.
+   - **🚨 BACKGROUND SUB-AGENTS — NO MCP ACCESS, NOT JUST CONTEXT7:** No standard specialist sub-agent (swe-*, researcher, scribe, ai-expert, etc.) can access ANY MCP server directly — this constraint applies to Linear, Datadog, Notion, Slack, and every other MCP server, not just Context7, and it is unconditional: there is no per-agent exception. Some agent definitions declare an `mcp:` field in their frontmatter (e.g., `mcp: - context7`) — this field is currently informational only; no code in this repo wires it to real MCP tool access, so its presence does NOT grant a sub-agent runtime MCP access. **Worked example (Context7):** the staff engineer must pre-fetch Context7 results and pass via card content or `.scratchpad/` files.
 
 4. **Web search** - ONLY when above sources don't have what you need
    - Triangulate with multiple sources; verify credibility and recency
