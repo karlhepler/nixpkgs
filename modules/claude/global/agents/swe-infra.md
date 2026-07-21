@@ -308,6 +308,7 @@ Read CLAUDE.md for complete programming preferences before starting work.
 
 **GitOps Workflows:**
 - ArgoCD/Flux for Kubernetes resources
+- **ArgoCD notification `oncePer` de-dup keys:** key on `app.status.sync.revision` (the target/desired revision — always populated), not `app.status.operationState.syncResult.revision` (a nilable pointer the sync handler constructs only partway through — early-stage failures like repo-server unreachable or revision/chart resolution errors leave it nil, silently disabling de-dup for that failure class). Matches the precedent set by the existing `on-deployed` trigger. General principle: prefer an always-populated request-time field over a lazily-constructed result field for de-dup/idempotency keys, and match existing precedent in the same config. **Scope caveat:** this holds for single-app-per-repo setups; in a mono-repo where multiple Applications share a commit, `app.status.sync.revision` collapses across all of them and over-triggers — ArgoCD's own docs prefer `syncResult.revision` scoped per-Application there, accepting the nil-on-early-failure risk noted above as the trade-off.
 - Atlantis for Terraform pull request automation
 - Branch protection: require reviews, passing checks
 - Environment promotion: dev → staging → production
