@@ -2712,6 +2712,41 @@ def run_post_switch_hook(source_repo: str, worktree_path: str, branch: str) -> O
     return result.returncode, tail_output
 
 
+def _cleanup_orphaned_worktree(repo: str, worktree_path: str, branch: str, branch_was_new: bool) -> bool:
+    """Best-effort removal of a half-built worktree (and its freshly-created branch).
+
+    Used on hard-abort paths in cmd_create that occur AFTER `git worktree add`
+    succeeds but BEFORE any tmux window/Claude session exists (e.g. `tmux
+    new-window` itself failing). Without this, a fatal error at that point
+    leaves an orphaned worktree on disk with no session attached to clean it up.
+
+    Failure to remove is surfaced to stderr but never raised — this runs
+    immediately before an emit_error() call that will sys.exit() anyway, so
+    raising here would only replace one error message with a more confusing one.
+
+    Returns True when the worktree was actually removed, False when the
+    `git worktree remove` call itself failed — callers use this to decide
+    whether it's safe to tell the operator the worktree is gone.
+    """
+    result = subprocess.run(
+        ["git", "worktree", "remove", "--force", worktree_path],
+        capture_output=True, text=True, check=False, cwd=repo,
+    )
+    if result.returncode != 0:
+        print(
+            f"[crew create] warning: failed to auto-clean orphaned worktree "
+            f"'{worktree_path}': {result.stderr.strip()}",
+            file=sys.stderr,
+        )
+        return False
+    if branch_was_new:
+        subprocess.run(
+            ["git", "branch", "-D", branch],
+            capture_output=True, check=False, cwd=repo,
+        )
+    return True
+
+
 # ---------------------------------------------------------------------------
 # tmux fire-and-forget helper
 # ---------------------------------------------------------------------------
@@ -2756,6 +2791,7 @@ def cmd_create(
     tell_file: Optional[str] = None,
     mcp_trust: str = "all",
     trust_folder: str = "yes",
+    skip_bootstrap: bool = False,
 ) -> None:
     """Create a git worktree, tmux window, and staff session end-to-end.
 
@@ -2771,8 +2807,12 @@ def cmd_create(
     7. Check for existing worktree at that path.
     8. Create branch if it doesn't exist.
     9. Create git worktree.
-    9b. Run .git/workout-hooks/post-switch if present (silent no-op if absent).
-    10. Create tmux window.
+    9b. Run .git/workout-hooks/post-switch if present and --skip-bootstrap was not
+        given (silent no-op if absent). A failing hook is a non-fatal warning, not
+        an abort — see run_post_switch_hook call site below.
+    10. Create tmux window. A failure here is a genuine hard-abort BEFORE any
+        session exists, so the half-built worktree (and freshly-created branch,
+        if any) is automatically cleaned up rather than left orphaned on disk.
     11. If --tell: clean stale sentinel for <name>, then start staff in the new window.
     12. If --tell: wait for readiness sentinel (dropped by SessionStart lifecycle hook),
         then deliver the initial message. Outer ceiling is 5 minutes; failure reason
@@ -2782,6 +2822,10 @@ def cmd_create(
 
     When no_worktree=True, steps 4-9 are skipped and the repo directory itself is
     used as the tmux window cwd. Incompatible with --branch and --base.
+
+    When skip_bootstrap=True, step 9b never runs — useful for text/prompt/config-only
+    sessions that need zero node_modules and want to skip the hook's runtime cost
+    entirely rather than merely tolerate its failure.
     """
 
     # --- 1. Validate name ---
@@ -3024,19 +3068,34 @@ def cmd_create(
     # The legacy workout CLI runs .git/workout-hooks/post-switch after worktree creation.
     # crew create mirrors that behavior so spawned sessions start fully initialized
     # (mise trust, pnpm install, etc.). Absent hook = silent no-op.
+    #
+    # A failing hook is NON-FATAL by default: it used to hard-abort the entire spawn
+    # (no tmux window, no Claude session) while leaving the worktree it had already
+    # created orphaned on disk — e.g. a private-package 404 during `pnpm install`
+    # blocked the operator entirely, even for text/prompt/config-only tasks that
+    # never needed node_modules. The worktree, tmux window, and Claude session all
+    # proceed; the operator can bootstrap manually later.
+    #
+    # --skip-bootstrap (alias --no-bootstrap) skips running the hook entirely.
     if not no_worktree:
         assert branch is not None
-        hook_result = run_post_switch_hook(repo, worktree_path, branch)
-        if hook_result is not None:
-            hook_rc, hook_tail = hook_result
-            if hook_rc != 0:
-                emit_error(
-                    f"post-switch hook exited {hook_rc} — worktree setup incomplete. "
-                    f"Last output:\n{hook_tail}",
-                    fmt,
-                    error_code="POST_SWITCH_HOOK_FAILED",
-                    exit_code=1,
-                )
+        if skip_bootstrap:
+            print(
+                f"[crew create] --skip-bootstrap: not running post-switch hook for '{worktree_path}'",
+                file=sys.stderr,
+            )
+        else:
+            hook_result = run_post_switch_hook(repo, worktree_path, branch)
+            if hook_result is not None:
+                hook_rc, hook_tail = hook_result
+                if hook_rc != 0:
+                    print(
+                        f"[crew create] warning: bootstrap hook failed (exit {hook_rc}) for "
+                        f"'{worktree_path}' — worktree setup may be incomplete. The worktree, "
+                        "tmux window, and Claude session are still created; bootstrap manually "
+                        f"if needed. Last output:\n{hook_tail}",
+                        file=sys.stderr,
+                    )
 
     # --- 10. Create tmux window ---
     result = subprocess.run(
@@ -3044,8 +3103,10 @@ def cmd_create(
         capture_output=True, text=True, check=False
     )
     if result.returncode != 0:
-        # Worktree exists but window creation failed — report partial state, do NOT
-        # auto-remove the worktree (user may have other uses for it).
+        # This is a genuine hard-abort BEFORE any tmux window/Claude session exists.
+        # For the worktree path, auto-clean the half-built worktree (and freshly
+        # created branch, if any) rather than orphaning it on disk — there is no
+        # session left to clean it up later.
         if no_worktree:
             partial_state_msg = (
                 f"No worktree was created (--no-worktree mode). "
@@ -3053,11 +3114,16 @@ def cmd_create(
                 f"tmux new-window -n {name} -c {worktree_path}"
             )
         else:
-            partial_state_msg = (
-                f"Worktree was created at '{worktree_path}' but no tmux window was opened. "
-                f"You can manually open the window with: "
-                f"tmux new-window -n {name} -c {worktree_path}"
-            )
+            cleanup_succeeded = _cleanup_orphaned_worktree(repo, worktree_path, branch, branch_was_new)
+            if cleanup_succeeded:
+                partial_state_msg = (
+                    f"The half-built worktree at '{worktree_path}' was automatically removed."
+                )
+            else:
+                partial_state_msg = (
+                    f"The half-built worktree at '{worktree_path}' could not be automatically removed; "
+                    f"remove it manually with: git worktree remove --force {worktree_path}"
+                )
         emit_error(
             f"tmux new-window failed: {result.stderr.strip()}. {partial_state_msg}",
             fmt,
@@ -3767,6 +3833,20 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p_create.add_argument(
+        "--skip-bootstrap", "--no-bootstrap",
+        action="store_true",
+        default=False,
+        dest="skip_bootstrap",
+        help=(
+            "Skip running the .git/workout-hooks/post-switch bootstrap hook entirely "
+            "after creating the worktree. Use this for text/prompt/config-only tasks "
+            "that need zero node_modules. Even without this flag, a failing bootstrap "
+            "hook is non-fatal — the worktree, tmux window, and Claude session are "
+            "still created; this flag skips running the hook in the first place. "
+            "No effect with --no-worktree (which never runs the hook)."
+        ),
+    )
+    p_create.add_argument(
         "--mcp-trust",
         default="all",
         dest="mcp_trust",
@@ -4014,7 +4094,8 @@ def main() -> None:
             cmd_create(args.name, args.repo, args.branch, args.base, fmt,
                        cmd_override=args.cmd_override, model=args.model, tell=args.tell,
                        no_worktree=args.no_worktree, tell_file=args.tell_file,
-                       mcp_trust=args.mcp_trust, trust_folder=args.trust_folder)
+                       mcp_trust=args.mcp_trust, trust_folder=args.trust_folder,
+                       skip_bootstrap=args.skip_bootstrap)
         elif args.command == "project-path":
             send = _ProjectPathSend(fmt)
             cmd_project_path(args.worktree, fmt, send)

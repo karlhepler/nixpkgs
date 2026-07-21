@@ -2840,8 +2840,14 @@ class TestCmdCreatePostSwitchHook:
         ]
         assert len(send_keys_calls) >= 1
 
-    def test_hook_present_exits_nonzero_staff_not_launched(self, capsys):
-        """Hook exits non-zero → POST_SWITCH_HOOK_FAILED error, staff NOT launched."""
+    def test_hook_present_exits_nonzero_staff_still_launched(self, capsys):
+        """Hook exits non-zero → non-fatal warning, worktree/window/session all survive.
+
+        A failing bootstrap hook used to hard-abort the entire spawn
+        (POST_SWITCH_HOOK_FAILED, no tmux window, no Claude session) and orphan
+        the worktree it had already created. It is now a non-fatal warning —
+        the operator can bootstrap manually later.
+        """
         with patch("subprocess.run") as mock_run:
             with patch("os.path.isdir", return_value=True):
                 with patch("os.path.exists", return_value=False):
@@ -2851,26 +2857,33 @@ class TestCmdCreatePostSwitchHook:
                         return_value=(1, "pnpm: command not found"),
                     ):
                         self._setup_create_mocks(mock_run)
-                        with pytest.raises(SystemExit) as exc_info:
-                            cmd_create(
-                                name="test-worker",
-                                repo="/some/repo",
-                                branch="test-worker",
-                                base="main",
-                                fmt="xml",
-                            )
+                        cmd_create(
+                            name="test-worker",
+                            repo="/some/repo",
+                            branch="test-worker",
+                            base="main",
+                            fmt="xml",
+                        )
 
-        assert exc_info.value.code == 1
         captured = capsys.readouterr()
-        assert "POST_SWITCH_HOOK_FAILED" in captured.out
-        assert "exited 1" in captured.out  # hook's exit code present in error message body
+        assert "bootstrap hook failed" in captured.err
+        assert "exit 1" in captured.err  # hook's exit code present in the warning body
 
-        # Staff must NOT have been launched
+        # Staff must still have been launched — session/worktree survive rather
+        # than the flow aborting.
         send_keys_calls = [
             c for c in mock_run.call_args_list
             if c[0][0][0] == "tmux" and "send-keys" in c[0][0]
         ]
-        assert len(send_keys_calls) == 0
+        assert len(send_keys_calls) >= 1
+
+        # No worktree cleanup should occur on a mere bootstrap-hook failure —
+        # the worktree stays, only the bootstrap step itself is skipped/warned.
+        remove_calls = [
+            c for c in mock_run.call_args_list
+            if c[0][0][0] == "git" and "worktree" in c[0][0] and "remove" in c[0][0]
+        ]
+        assert len(remove_calls) == 0
 
     def test_hook_absent_staff_launched_normally(self, capsys):
         """Hook absent (returns None) → no-op, staff launched as before."""
@@ -2918,6 +2931,185 @@ class TestCmdCreatePostSwitchHook:
                         )
 
         mock_hook.assert_not_called()
+
+    def test_skip_bootstrap_flag_prevents_hook_from_running(self, capsys):
+        """--skip-bootstrap skips the post-switch hook entirely, staff still launched."""
+        with patch("subprocess.run") as mock_run:
+            with patch("os.path.isdir", return_value=True):
+                with patch("os.path.exists", return_value=False):
+                    with patch.object(
+                        crew_module,
+                        "run_post_switch_hook",
+                    ) as mock_hook:
+                        self._setup_create_mocks(mock_run)
+                        cmd_create(
+                            name="test-worker",
+                            repo="/some/repo",
+                            branch="test-worker",
+                            base="main",
+                            fmt="xml",
+                            skip_bootstrap=True,
+                        )
+
+        mock_hook.assert_not_called()
+        captured = capsys.readouterr()
+        assert "--skip-bootstrap" in captured.err
+        send_keys_calls = [
+            c for c in mock_run.call_args_list
+            if c[0][0][0] == "tmux" and "send-keys" in c[0][0]
+        ]
+        assert len(send_keys_calls) >= 1
+
+
+class TestSkipBootstrapFlagParsing:
+    """Parser-level tests for crew create --skip-bootstrap / --no-bootstrap."""
+
+    def test_parser_accepts_skip_bootstrap_flag(self):
+        p = build_parser()
+        args = p.parse_args(["create", "my-worker", "--skip-bootstrap"])
+        assert args.skip_bootstrap is True
+
+    def test_parser_accepts_no_bootstrap_alias(self):
+        p = build_parser()
+        args = p.parse_args(["create", "my-worker", "--no-bootstrap"])
+        assert args.skip_bootstrap is True
+
+    def test_parser_skip_bootstrap_defaults_to_false(self):
+        p = build_parser()
+        args = p.parse_args(["create", "my-worker"])
+        assert args.skip_bootstrap is False
+
+
+# ---------------------------------------------------------------------------
+# tmux new-window failure — cmd_create auto-cleans the half-built worktree
+# ---------------------------------------------------------------------------
+
+class TestCmdCreateTmuxWindowFailureCleanup:
+    """cmd_create must auto-clean a half-built worktree when tmux new-window fails.
+
+    This is the remaining hard-abort path once a failing bootstrap hook was made
+    non-fatal — tmux new-window failure still occurs BEFORE any tmux window/Claude
+    session exists, so the newly-created worktree (and freshly created branch, if
+    any) must not be orphaned on disk.
+    """
+
+    def _setup_mocks(self, mock_run):
+        def side_effect(cmd, **kwargs):
+            cmd_list = cmd if isinstance(cmd, list) else [cmd]
+            joined = " ".join(str(c) for c in cmd_list)
+            if "rev-parse" in joined and "show-toplevel" in joined:
+                return fake_run_result(stdout="/some/repo\n")
+            if "symbolic-ref" in joined:
+                return fake_run_result(stdout="main\n")
+            if "rev-parse" in joined and "upstream" in joined:
+                return fake_run_result(stdout="origin/main\n")
+            if "rev-parse" in joined and "--verify" in joined and "refs/heads" not in joined:
+                return fake_run_result(stdout="abc1234\n")
+            if "fetch" in joined and "origin" in joined:
+                return fake_run_result()
+            if "rev-parse" in joined and "refs/heads" in joined:
+                return fake_run_result(returncode=1)  # branch missing locally -> new branch
+            if "branch" in joined and "-D" in joined:
+                return fake_run_result()
+            if "branch" in joined and "main" in joined:
+                return fake_run_result()  # branch create from base
+            if "worktree" in joined and "add" in joined:
+                return fake_run_result()
+            if "worktree" in joined and "remove" in joined:
+                return fake_run_result()
+            if "new-window" in joined:
+                return fake_run_result(returncode=1)
+            return fake_run_result()
+        mock_run.side_effect = side_effect
+
+    def test_tmux_new_window_failure_removes_orphaned_worktree(self, capsys):
+        with patch("subprocess.run") as mock_run:
+            with patch("os.path.isdir", return_value=True):
+                with patch("os.path.exists", return_value=False):
+                    with patch.object(
+                        crew_module,
+                        "run_post_switch_hook",
+                        return_value=None,
+                    ):
+                        self._setup_mocks(mock_run)
+                        with pytest.raises(SystemExit) as exc_info:
+                            cmd_create(
+                                name="test-worker",
+                                repo="/some/repo",
+                                branch="test-worker",
+                                base="main",
+                                fmt="xml",
+                            )
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "TMUX_WINDOW_FAILED" in captured.out
+        assert "automatically removed" in captured.out
+
+        remove_calls = [
+            c for c in mock_run.call_args_list
+            if c[0][0][0] == "git" and "worktree" in c[0][0] and "remove" in c[0][0]
+        ]
+        assert len(remove_calls) == 1
+        assert "--force" in remove_calls[0][0][0]
+
+    def test_tmux_new_window_failure_cleanup_failure_emits_manual_removal_message(self, capsys):
+        """When `git worktree remove --force` itself fails, cmd_create must NOT
+        claim the worktree 'was automatically removed' — it must tell the
+        operator it could not be removed and how to remove it manually.
+        """
+        def side_effect(cmd, **kwargs):
+            cmd_list = cmd if isinstance(cmd, list) else [cmd]
+            joined = " ".join(str(c) for c in cmd_list)
+            if "rev-parse" in joined and "show-toplevel" in joined:
+                return fake_run_result(stdout="/some/repo\n")
+            if "symbolic-ref" in joined:
+                return fake_run_result(stdout="main\n")
+            if "rev-parse" in joined and "upstream" in joined:
+                return fake_run_result(stdout="origin/main\n")
+            if "rev-parse" in joined and "--verify" in joined and "refs/heads" not in joined:
+                return fake_run_result(stdout="abc1234\n")
+            if "fetch" in joined and "origin" in joined:
+                return fake_run_result()
+            if "rev-parse" in joined and "refs/heads" in joined:
+                return fake_run_result(returncode=1)  # branch missing locally -> new branch
+            if "branch" in joined and "-D" in joined:
+                return fake_run_result()
+            if "branch" in joined and "main" in joined:
+                return fake_run_result()  # branch create from base
+            if "worktree" in joined and "add" in joined:
+                return fake_run_result()
+            if "worktree" in joined and "remove" in joined:
+                result = fake_run_result(returncode=1)
+                result.stderr = "fatal: could not remove worktree\n"
+                return result
+            if "new-window" in joined:
+                return fake_run_result(returncode=1)
+            return fake_run_result()
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = side_effect
+            with patch("os.path.isdir", return_value=True):
+                with patch("os.path.exists", return_value=False):
+                    with patch.object(
+                        crew_module,
+                        "run_post_switch_hook",
+                        return_value=None,
+                    ):
+                        with pytest.raises(SystemExit) as exc_info:
+                            cmd_create(
+                                name="test-worker",
+                                repo="/some/repo",
+                                branch="test-worker",
+                                base="main",
+                                fmt="xml",
+                            )
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "TMUX_WINDOW_FAILED" in captured.out
+        assert "could not be automatically removed" in captured.out
+        assert "was automatically removed" not in captured.out
 
 
 # ---------------------------------------------------------------------------
