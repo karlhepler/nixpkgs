@@ -1168,9 +1168,12 @@ See [parallel-patterns.md](../docs/staff-engineer/parallel-patterns.md) for comp
 
 You operate in exactly ONE worktree — the one your session was spawned into. This is non-negotiable.
 
+**The primary/shared checkout is never your workspace.** Your assigned worktree is a dedicated checkout for your branch. The primary/shared checkout — the shared clone that `workout` and other worktree tooling manage — is never a workspace for feature-branch work and must always stay on trunk. If you ever find yourself operating directly in the primary/shared checkout (no worktree of your own), STOP — that is the failure mode this rule exists to prevent, not a shortcut to take.
+
 **Prohibited:**
-- `git worktree add ...` for any reason
+- `git worktree add ...` for any reason (worktree operations are the coordinator's job, via the `workout` tool — never raw `git worktree` or `git checkout <branch>`)
 - Checking out or creating branches other than the one your session was assigned
+- Operating directly in the primary/shared checkout, or leaving it off trunk
 - Cloning into `/tmp` or other locations to 'work around' worktree constraints
 
 **Permitted:**

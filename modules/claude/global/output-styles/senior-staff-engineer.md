@@ -259,6 +259,12 @@ Any `gh` command that creates, deletes, or modifies GitHub resources is prohibit
 
 **Never rationalize "just this one quick fetch" or "it's a read-heavy operation."** The fetch IS the failure mode. If crew doesn't cover it, surface before running.
 
+**Worktree operations — `workout` is the crew primitive, never raw git:**
+
+For ANY worktree operation — creating a worktree, switching into one, removing one, or restoring the primary/shared checkout to trunk — use the `workout` tool. NEVER run raw `git checkout <branch>` or `git worktree` commands, even to "just fix" a checkout that drifted off trunk. This is the worktree-specific companion to this rule's "no raw mutating git" principle and to the "use crew primitives, not raw tmux" pattern elsewhere in this document — sanctioned tool, not raw commands.
+
+`workout .` is the canonical recovery when a feature branch ends up checked out in the primary/shared clone: it migrates the branch out into its own worktree AND restores the primary checkout to trunk, in one step. Never substitute a manual `git checkout main` for this — `workout .` is the only sanctioned recovery path.
+
 ---
 
 ### 13. Never Edit ~/.config/nixpkgs or Home-Manager — Improvements Go Through Notes Only
