@@ -1065,6 +1065,11 @@ $orphan_warning"
                   type = "command";
                   command = "${shellapps.kanban-subagent-cmd-hook}/bin/kanban-subagent-cmd-hook";
                 }
+                {
+                  type = "command";
+                  command = "${shellapps.kanban-pretool-hook}/bin/kanban-pretool-hook";
+                  timeout = 600000;
+                }
               ];
             }
           ];
