@@ -1732,7 +1732,47 @@ def cmd_tell(targets_str: str, message: Optional[str], fmt: str, use_keys: bool 
         else:
             file_path_to_delete = tell_file
 
-    resolved = resolve_targets(targets_str, fmt=fmt)
+    # Safety constraints (mirrors cmd_dismiss):
+    # - Targets are resolved strictly within the CURRENT tmux session, so a
+    #   same-named window in another session can never satisfy the lookup
+    #   (closes the cross-session leak — a bare resolve_targets() call would
+    #   search the whole tmux server and first-match-win on window name).
+    # - A target resolving to the sender's own window is rejected outright
+    #   (SELF_TARGET) rather than delivered — tell has no legitimate reason
+    #   to message its own invoking window.
+    current_session = get_current_session()
+    if current_session is None:
+        emit_error(
+            "crew tell must be run inside a tmux session",
+            fmt,
+            error_code="NOT_IN_TMUX",
+            exit_code=1,
+        )
+
+    raw_tokens = [t.strip() for t in targets_str.split(",") if t.strip()]
+    resolved = resolve_targets_in_session(targets_str, current_session, fmt=fmt)
+
+    current_window_id = get_current_window_id()
+    if not current_window_id:
+        emit_error(
+            "crew tell could not determine its own window id — refusing to "
+            "send (cannot verify no target resolves to the sender's own window)",
+            fmt,
+            error_code="WINDOW_ID_UNDETERMINABLE",
+            exit_code=1,
+        )
+
+    for raw, (_tmux_target, _label, window_id) in zip(raw_tokens, resolved):
+        if window_id == current_window_id:
+            emit_error(
+                f"target '{raw}' resolves to the sender's own window — "
+                "crew tell refuses to message its own invoking window.",
+                fmt,
+                error_code="SELF_TARGET",
+                exit_code=1,
+            )
+            break  # guard: emit_error normally exits, but defensive break prevents
+            # falling through to the send loop if exit is ever suppressed.
 
     if fmt == "xml":
         root = ET.Element("tell")

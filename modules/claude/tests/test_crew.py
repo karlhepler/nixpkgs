@@ -2572,10 +2572,15 @@ class TestTellTellFile:
         tell_file.write_text(message + "\n")  # trailing newline stripped
 
         lookup = {"my-worker": ("session:0", "@1")}
-        with patch.object(crew_module, "resolve_targets", return_value=[("session:0.0", "my-worker.0", "@1")]):
-            with patch("subprocess.run") as mock_run:
-                mock_run.return_value = fake_run_result()
-                cmd_tell("my-worker", None, "xml", tell_file=str(tell_file))
+        with patch.object(crew_module, "get_current_session", return_value="session"):
+            with patch.object(crew_module, "get_current_window_id", return_value="@999"):
+                with patch.object(
+                    crew_module, "resolve_targets_in_session",
+                    return_value=[("session:0.0", "my-worker.0", "@1")],
+                ):
+                    with patch("subprocess.run") as mock_run:
+                        mock_run.return_value = fake_run_result()
+                        cmd_tell("my-worker", None, "xml", tell_file=str(tell_file))
 
         # The send-keys call for the message should use the file content
         send_keys_calls = [
@@ -2594,10 +2599,15 @@ class TestTellTellFile:
         tell_file = tmp_path / "msg.txt"
         tell_file.write_text("Some message.\n")
 
-        with patch.object(crew_module, "resolve_targets", return_value=[("session:0.0", "my-worker.0", "@1")]):
-            with patch("subprocess.run") as mock_run:
-                mock_run.return_value = fake_run_result()
-                cmd_tell("my-worker", None, "xml", tell_file=str(tell_file))
+        with patch.object(crew_module, "get_current_session", return_value="session"):
+            with patch.object(crew_module, "get_current_window_id", return_value="@999"):
+                with patch.object(
+                    crew_module, "resolve_targets_in_session",
+                    return_value=[("session:0.0", "my-worker.0", "@1")],
+                ):
+                    with patch("subprocess.run") as mock_run:
+                        mock_run.return_value = fake_run_result()
+                        cmd_tell("my-worker", None, "xml", tell_file=str(tell_file))
 
         assert not tell_file.exists(), "File must be deleted after crew tell delivery"
 
@@ -2606,11 +2616,16 @@ class TestTellTellFile:
         tell_file = tmp_path / "msg.txt"
         tell_file.write_text("Some message.\n")
 
-        with patch.object(crew_module, "resolve_targets", return_value=[("session:0.0", "my-worker.0", "@1")]):
-            with patch("subprocess.run") as mock_run:
-                # Simulate tmux send-keys failure (non-zero returncode)
-                mock_run.return_value = fake_run_result(returncode=1)
-                cmd_tell("my-worker", None, "xml", tell_file=str(tell_file))
+        with patch.object(crew_module, "get_current_session", return_value="session"):
+            with patch.object(crew_module, "get_current_window_id", return_value="@999"):
+                with patch.object(
+                    crew_module, "resolve_targets_in_session",
+                    return_value=[("session:0.0", "my-worker.0", "@1")],
+                ):
+                    with patch("subprocess.run") as mock_run:
+                        # Simulate tmux send-keys failure (non-zero returncode)
+                        mock_run.return_value = fake_run_result(returncode=1)
+                        cmd_tell("my-worker", None, "xml", tell_file=str(tell_file))
 
         assert tell_file.exists(), "File must be preserved when tmux delivery fails"
 
@@ -2647,6 +2662,147 @@ class TestTellTellFile:
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
         assert "MISSING_MESSAGE" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# Card #2900 — crew tell cross-session-leak + self-post fix
+#
+# cmd_tell must resolve targets scoped to the CURRENT tmux session only
+# (mirrors cmd_dismiss's use of resolve_targets_in_session) and must reject
+# any target that resolves to the sender's own window (SELF_TARGET).
+# ---------------------------------------------------------------------------
+
+class TestTellSessionScopingAndSelfTarget:
+    """Tests for the crew tell cross-session-leak and self-post fix (card #2900)."""
+
+    def test_tell_rejects_cross_session(self, capsys):
+        """A window named 'worker' that exists ONLY in a DIFFERENT tmux session
+        must not receive the message — resolution is scoped to the current
+        session only, so the cross-session window can never be matched."""
+        def side_effect(cmd, **kwargs):
+            if cmd[:2] == ["tmux", "display-message"]:
+                if "session_name" in cmd[-1]:
+                    return fake_run_result(stdout="session-A\n")
+                if "window_id" in cmd[-1]:
+                    return fake_run_result(stdout="@1\n")
+            if cmd[:3] == ["tmux", "list-windows", "-t"]:
+                # Session-scoped lookup: current session has no 'worker' window.
+                return fake_run_result(stdout="session-A:0|@1|coordinator\n")
+            if cmd[:3] == ["tmux", "list-windows", "-a"]:
+                # Unscoped (all-sessions) lookup would find 'worker' in a
+                # DIFFERENT session — cmd_tell must never issue this call.
+                return fake_run_result(stdout="session-B:0|@5|worker\n")
+            return fake_run_result()
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = side_effect
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_tell("worker", "hello", "xml")
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "WINDOW_NOT_FOUND" in captured.out
+
+        # No message must ever have been delivered to session-B's window.
+        send_keys_calls = [
+            c for c in mock_run.call_args_list
+            if c[0][0][0] == "tmux" and "send-keys" in c[0][0]
+        ]
+        assert not send_keys_calls, (
+            "tell must not deliver to a window that only exists outside the current session"
+        )
+
+    def test_tell_rejects_self_target(self, capsys):
+        """A tell target that resolves to the sender's own window must be
+        rejected (SELF_TARGET) rather than silently delivered."""
+        def side_effect(cmd, **kwargs):
+            if cmd[:2] == ["tmux", "display-message"]:
+                if "session_name" in cmd[-1]:
+                    return fake_run_result(stdout="session-A\n")
+                if "window_id" in cmd[-1]:
+                    return fake_run_result(stdout="@1\n")
+            if cmd[:3] == ["tmux", "list-windows", "-t"]:
+                # 'self' resolves to @1 — the sender's own window id.
+                return fake_run_result(stdout="session-A:0|@1|self\n")
+            return fake_run_result()
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = side_effect
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_tell("self", "hello", "xml")
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "SELF_TARGET" in captured.out
+
+        send_keys_calls = [
+            c for c in mock_run.call_args_list
+            if c[0][0][0] == "tmux" and "send-keys" in c[0][0]
+        ]
+        assert not send_keys_calls, (
+            "tell must not deliver a message to the sender's own window"
+        )
+
+    def test_tell_rejects_not_in_tmux(self, capsys):
+        """cmd_tell must hard-exit with NOT_IN_TMUX (fail closed) when
+        get_current_session() cannot determine the current tmux session,
+        and must never issue a send-keys call."""
+        def side_effect(cmd, **kwargs):
+            if cmd[:2] == ["tmux", "display-message"]:
+                if "session_name" in cmd[-1]:
+                    return fake_run_result(stdout="")
+                if "window_id" in cmd[-1]:
+                    return fake_run_result(stdout="")
+            return fake_run_result()
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = side_effect
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_tell("worker", "hello", "xml")
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "NOT_IN_TMUX" in captured.out
+
+        send_keys_calls = [
+            c for c in mock_run.call_args_list
+            if c[0][0][0] == "tmux" and "send-keys" in c[0][0]
+        ]
+        assert not send_keys_calls, (
+            "tell must not deliver a message when not running inside tmux"
+        )
+
+    def test_tell_rejects_when_window_id_undeterminable(self, capsys):
+        """cmd_tell must hard-exit (fail closed) rather than silently skip the
+        self-target check when get_current_window_id() cannot determine the
+        sender's own window id, even though the session and target both
+        resolve successfully."""
+        def side_effect(cmd, **kwargs):
+            if cmd[:2] == ["tmux", "display-message"]:
+                if "session_name" in cmd[-1]:
+                    return fake_run_result(stdout="session-A\n")
+                if "window_id" in cmd[-1]:
+                    return fake_run_result(stdout="")
+            if cmd[:3] == ["tmux", "list-windows", "-t"]:
+                return fake_run_result(stdout="session-A:0|@5|worker\n")
+            return fake_run_result()
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = side_effect
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_tell("worker", "hello", "xml")
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "WINDOW_ID_UNDETERMINABLE" in captured.out
+
+        send_keys_calls = [
+            c for c in mock_run.call_args_list
+            if c[0][0][0] == "tmux" and "send-keys" in c[0][0]
+        ]
+        assert not send_keys_calls, (
+            "tell must not deliver a message when its own window id cannot be determined"
+        )
 
 
 # ---------------------------------------------------------------------------
