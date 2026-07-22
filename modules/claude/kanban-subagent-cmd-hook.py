@@ -7,9 +7,15 @@ All other kanban subcommands (do, start, done, cancel, defer, criteria add/remov
 list, show, etc.) are denied when called from a sub-agent context. Coordinators
 (main session, no agent_id) are unaffected.
 
-Output format (PreToolUse hook — block-only format):
-  {"decision": "block", "reason": "..."}  — deny
-  (exit 0 with no output)                 — allow (fail open)
+Output format (PreToolUse hook — documented hookSpecificOutput format):
+  {"continue": False, "suppressOutput": False, "hookSpecificOutput": {
+      "hookEventName": "PreToolUse", "permissionDecision": "deny",
+      "permissionDecisionReason": "..."}}  — deny
+  (exit 0 with no output)                  — allow (fail open)
+
+A deny response emits "continue": False, which per the Claude Code hooks docs
+halts the entire agent turn (not just this single tool call) — an intentional
+defense-in-depth hard-stop on a guardrail violation.
 
 Fails open: any error (JSON parse failure, empty stdin, shlex error) results in
 allowing. Never accidentally block innocent commands.
@@ -457,8 +463,26 @@ def _find_kanban_segment(segments: list) -> "list | None":
 # Denial output
 # ---------------------------------------------------------------------------
 
+def _deny_response(reason: str) -> dict:
+    """Return a permissionDecision=deny response with a reason message.
+
+    This mirrors kanban-pretool-hook.py's deny_with_reason() — the
+    documented PreToolUse deny shape (hookSpecificOutput.permissionDecision),
+    not the legacy top-level {"decision": "block", ...} format.
+    """
+    return {
+        "continue": False,
+        "suppressOutput": False,
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": reason,
+        }
+    }
+
+
 def _deny(command: str) -> None:
-    """Print a block decision to stdout and exit."""
+    """Print a permissionDecision=deny response to stdout and exit."""
     # Sanitize for embedding in message (strip non-printable characters)
     safe_cmd = "".join(
         c for c in command if c.isprintable() or c in ("\t", "\n")
@@ -470,11 +494,11 @@ def _deny(command: str) -> None:
         "The coordinator handles all other lifecycle commands "
         "(do/start/done/cancel/defer/criteria add/remove)."
     )
-    print(json.dumps({"decision": "block", "reason": reason}, separators=(",", ":")))
+    print(json.dumps(_deny_response(reason), separators=(",", ":")))
 
 
 def _deny_shell_wrapper(command: str) -> None:
-    """Print a block decision for shell-wrapper (-c/-e) invocations.
+    """Print a permissionDecision=deny response for shell-wrapper (-c/-e) invocations.
 
     Sub-agents may not use shell-wrapper invocations (bash -c, sh -c,
     python3 -c, etc.) because these are equivalent to unrestricted shell
@@ -491,7 +515,7 @@ def _deny_shell_wrapper(command: str) -> None:
         "Use direct command invocation instead. "
         f"Attempted: {safe_cmd!r}."
     )
-    print(json.dumps({"decision": "block", "reason": reason}, separators=(",", ":")))
+    print(json.dumps(_deny_response(reason), separators=(",", ":")))
 
 
 # ---------------------------------------------------------------------------

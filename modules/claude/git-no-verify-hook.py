@@ -8,8 +8,14 @@ flags (--no-verify, --no-gpg-sign, -c commit.gpgsign=false) unless the user
 has explicitly opted in via the CLAUDE_NOVERIFY_AUTHORIZED environment variable.
 
 Output format (PreToolUse hook):
-    {"decision": "block", "reason": "..."} — block the command
-    (exit 0 with no output)               — allow (fail open)
+    {"hookSpecificOutput": {"hookEventName": "PreToolUse",
+                            "permissionDecision": "deny",
+                            "permissionDecisionReason": "..."}} — block the command
+    (exit 0 with no output)                                     — allow (fail open)
+
+A deny response also emits "continue": false, which per the Claude Code hooks
+docs halts the entire agent turn (not just this single tool call) — an
+intentional defense-in-depth hard-stop on a guardrail violation.
 
 Fails open: any error (JSON parse failure, shlex error, missing fields) results
 in allowing. Never accidentally block innocent commands.
@@ -206,6 +212,19 @@ def _check_subcommand_flags(flags: list[str]) -> bool:
     return False
 
 
+def deny_with_reason(reason: str) -> dict:
+    """Return a permissionDecision=deny response with a reason message."""
+    return {
+        "continue": False,
+        "suppressOutput": False,
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": reason,
+        }
+    }
+
+
 def has_bypass_flag(command: str) -> bool:
     """
     Return True if the command is a watched git operation containing a bypass
@@ -302,14 +321,11 @@ def main() -> None:
         sys.exit(0)
 
     # Block the command
-    print(json.dumps({
-        "decision": "block",
-        "reason": (
-            "git --no-verify / --no-gpg-sign requires explicit user approval per CLAUDE.md. "
-            "Set CLAUDE_NOVERIFY_AUTHORIZED=1 in environment to opt in, "
-            "or remove the flag and fix the underlying hook failure."
-        ),
-    }, separators=(",", ":")))
+    print(json.dumps(deny_with_reason(
+        "git --no-verify / --no-gpg-sign requires explicit user approval per CLAUDE.md. "
+        "Set CLAUDE_NOVERIFY_AUTHORIZED=1 in environment to opt in, "
+        "or remove the flag and fix the underlying hook failure."
+    ), separators=(",", ":")))
     sys.exit(0)
 
 

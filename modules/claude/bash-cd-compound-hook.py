@@ -18,9 +18,17 @@ BLOCKED (persistent cd):
   cd ~/path && cmd
   cd $VAR && cmd
 
-Output format (PreToolUse hook — block-only format):
-  {"decision": "block", "reason": "..."}  — block
+Output format (PreToolUse hook — documented hookSpecificOutput format):
+  {"continue": false, "suppressOutput": false, "hookSpecificOutput": {
+     "hookEventName": "PreToolUse",
+     "permissionDecision": "deny",
+     "permissionDecisionReason": "..."
+  }}                                       — block
   (exit 0 with no output)                 — allow (fail open)
+
+A deny response emits "continue": false, which per the Claude Code hooks docs
+halts the entire agent turn (not just this single tool call) — an intentional
+defense-in-depth hard-stop on a guardrail violation.
 
 Fails open: any error (JSON parse failure, shlex error) results in allowing.
 No bypass mechanism — use subshell form (cd X && cmd) instead.
@@ -190,8 +198,13 @@ def main() -> None:
 
     # Block the command
     print(json.dumps({
-        "decision": "block",
-        "reason": _REJECTION_REASON,
+        "continue": False,
+        "suppressOutput": False,
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": _REJECTION_REASON,
+        },
     }, separators=(",", ":")))
     sys.exit(0)
 

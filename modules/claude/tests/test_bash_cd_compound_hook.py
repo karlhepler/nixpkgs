@@ -115,7 +115,10 @@ def make_bash_payload(command: str) -> dict:
 
 def assert_blocked(result: dict | None):
     assert result is not None, "Expected a block response, got silent exit (allow)"
-    assert result.get("decision") == "block", f"Expected block, got: {result}"
+    hook_specific = result.get("hookSpecificOutput", {})
+    assert hook_specific.get("permissionDecision") == "deny", (
+        f"Expected permissionDecision=deny, got: {result}"
+    )
 
 
 def assert_allowed(result: dict | None):
@@ -296,27 +299,28 @@ class TestCdCompoundAllowed:
 class TestRejectionMessageFormat:
     """Verify the block response content is correct."""
 
-    def test_block_response_has_decision_field(self, hook):
-        """Blocked command produces a response with decision='block'."""
+    def test_block_response_has_permission_decision_deny(self, hook):
+        """Blocked command produces a response with permissionDecision='deny'."""
         payload = make_bash_payload("cd /path && cmd")
         result = run_hook_main(hook, payload)
         assert result is not None
-        assert result.get("decision") == "block"
+        assert result.get("hookSpecificOutput", {}).get("permissionDecision") == "deny"
 
-    def test_block_response_has_reason_field(self, hook):
-        """Blocked command response has a non-empty reason field."""
+    def test_block_response_has_permission_decision_reason_field(self, hook):
+        """Blocked command response has a non-empty permissionDecisionReason field."""
         payload = make_bash_payload("cd /path && cmd")
         result = run_hook_main(hook, payload)
         assert result is not None
-        assert "reason" in result
-        assert len(result["reason"]) > 0
+        hook_specific = result.get("hookSpecificOutput", {})
+        assert "permissionDecisionReason" in hook_specific
+        assert len(hook_specific["permissionDecisionReason"]) > 0
 
     def test_reason_mentions_shell_state_persists(self, hook):
         """Reason explains that shell state persists between Bash calls."""
         payload = make_bash_payload("cd /path && cmd")
         result = run_hook_main(hook, payload)
         assert result is not None
-        reason = result.get("reason", "")
+        reason = result.get("hookSpecificOutput", {}).get("permissionDecisionReason", "")
         assert "shell state persists" in reason.lower() or "persists" in reason.lower()
 
     def test_reason_mentions_subshell_escape_valve(self, hook):
@@ -324,7 +328,7 @@ class TestRejectionMessageFormat:
         payload = make_bash_payload("cd /path && cmd")
         result = run_hook_main(hook, payload)
         assert result is not None
-        reason = result.get("reason", "")
+        reason = result.get("hookSpecificOutput", {}).get("permissionDecisionReason", "")
         assert "subshell" in reason.lower() or "(cd" in reason
 
     def test_reason_mentions_no_bypass(self, hook):
@@ -332,7 +336,7 @@ class TestRejectionMessageFormat:
         payload = make_bash_payload("cd /path && cmd")
         result = run_hook_main(hook, payload)
         assert result is not None
-        reason = result.get("reason", "")
+        reason = result.get("hookSpecificOutput", {}).get("permissionDecisionReason", "")
         assert "no bypass" in reason.lower() or "hard block" in reason.lower()
 
 
@@ -389,3 +393,41 @@ class TestFailOpen:
         payload = make_bash_payload('cd /path && "unterminated')
         result = run_hook_main(hook, payload)
         assert_allowed(result)
+
+
+# ---------------------------------------------------------------------------
+# TestPermissionDecisionDenyFormat — composition-root smoke test
+#
+# Feeds a real triggering payload through the hook's actual entry point
+# (main(), via stdin/stdout, exactly as Claude Code invokes it) and asserts
+# the emitted JSON uses the documented hookSpecificOutput.permissionDecision
+# shape rather than the legacy top-level {"decision": "block"} format. This
+# is the regression guard for card #2894 — it fails if a future change
+# reintroduces the legacy format.
+# ---------------------------------------------------------------------------
+
+class TestPermissionDecisionDenyFormat:
+    """Composition-root smoke test: real hook entry point, documented deny shape."""
+
+    def test_compound_cd_emits_permission_decision_deny_shape(self, hook):
+        """cd /tmp && ls through main() emits the documented deny format."""
+        payload = make_bash_payload("cd /tmp && ls")
+        result = run_hook_main(hook, payload)
+
+        assert result is not None, "Expected a block response, got silent exit (allow)"
+
+        # New documented format must be present.
+        assert result.get("continue") is False
+        hook_specific = result.get("hookSpecificOutput")
+        assert hook_specific is not None, f"Missing hookSpecificOutput: {result}"
+        assert hook_specific.get("hookEventName") == "PreToolUse"
+        assert hook_specific.get("permissionDecision") == "deny"
+        assert len(hook_specific.get("permissionDecisionReason", "")) > 0
+
+        # Legacy top-level format must be fully removed, not just supplemented.
+        assert "decision" not in result, (
+            f"Legacy top-level 'decision' key must not be present: {result}"
+        )
+        assert "reason" not in result, (
+            f"Legacy top-level 'reason' key must not be present: {result}"
+        )

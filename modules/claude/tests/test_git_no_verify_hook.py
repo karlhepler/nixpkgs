@@ -92,11 +92,19 @@ def make_bash_payload(command: str) -> dict:
 
 def assert_blocked(result: dict | None):
     assert result is not None, "Expected a block response, got silent exit (allow)"
-    assert result.get("decision") == "block", f"Expected block, got: {result}"
+    hook_specific = result.get("hookSpecificOutput", {})
+    assert hook_specific.get("permissionDecision") == "deny", (
+        f"Expected hookSpecificOutput.permissionDecision == 'deny', got: {result}"
+    )
 
 
 def assert_allowed(result: dict | None):
     assert result is None, f"Expected silent exit (allow), but got output: {result}"
+
+
+def get_deny_reason(result: dict) -> str:
+    """Extract the permissionDecisionReason from a deny response."""
+    return result.get("hookSpecificOutput", {}).get("permissionDecisionReason", "")
 
 
 # ---------------------------------------------------------------------------
@@ -120,7 +128,7 @@ class TestNoVerifyBlocked:
         payload = make_bash_payload("git commit --no-verify -m 'msg'")
         result = run_hook_main(hook, payload)
         assert result is not None
-        reason = result.get("reason", "")
+        reason = get_deny_reason(result)
         assert "--no-verify" in reason or "CLAUDE_NOVERIFY_AUTHORIZED" in reason
 
     def test_git_merge_no_verify_blocked(self, hook):
@@ -379,24 +387,64 @@ class TestFailOpen:
 class TestBlockResponseStructure:
     """Verify the block response is structurally correct."""
 
-    def test_block_response_has_decision_field(self, hook):
+    def test_block_response_has_permission_decision_field(self, hook):
         payload = make_bash_payload("git commit --no-verify -m 'test'")
         result = run_hook_main(hook, payload)
         assert result is not None
-        assert "decision" in result
-        assert result["decision"] == "block"
+        hook_specific = result.get("hookSpecificOutput", {})
+        assert "permissionDecision" in hook_specific
+        assert hook_specific["permissionDecision"] == "deny"
 
     def test_block_response_has_reason_field(self, hook):
         payload = make_bash_payload("git commit --no-verify -m 'test'")
         result = run_hook_main(hook, payload)
         assert result is not None
-        assert "reason" in result
-        assert len(result["reason"]) > 0
+        reason = get_deny_reason(result)
+        assert len(reason) > 0
 
     def test_block_reason_mentions_opt_in_mechanism(self, hook):
         """Block reason should tell the agent how to get authorized."""
         payload = make_bash_payload("git push --no-verify")
         result = run_hook_main(hook, payload)
         assert result is not None
-        reason = result.get("reason", "")
+        reason = get_deny_reason(result)
         assert "CLAUDE_NOVERIFY_AUTHORIZED" in reason
+
+    def test_block_response_no_legacy_top_level_decision_field(self, hook):
+        """The legacy top-level {"decision": "block"} format must be fully removed."""
+        payload = make_bash_payload("git commit --no-verify -m 'test'")
+        result = run_hook_main(hook, payload)
+        assert result is not None
+        assert "decision" not in result, (
+            f"Legacy top-level 'decision' field must not be present, got: {result}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Composition-root smoke test: documented PreToolUse deny format end-to-end
+# ---------------------------------------------------------------------------
+
+class TestDenyFormatSmokeTest:
+    """
+    Composition-root smoke test: feeds a real triggering payload through the
+    hook's actual entry point (main()) and asserts the emitted output uses the
+    documented hookSpecificOutput.permissionDecision == "deny" shape — not the
+    legacy top-level {"decision": "block"} format. Regression guard for a
+    future runtime dropping legacy top-level decision support.
+    """
+
+    def test_no_verify_bash_command_emits_documented_deny_shape(self, hook):
+        payload = make_bash_payload("git commit --no-verify -m 'skip hooks via cli'")
+        result = run_hook_main(hook, payload)
+
+        assert result is not None, "Expected a deny response, got silent exit (allow)"
+
+        assert result.get("continue") is False
+        hook_specific = result.get("hookSpecificOutput")
+        assert hook_specific is not None, (
+            f"Expected top-level 'hookSpecificOutput' key, got: {result}"
+        )
+        assert hook_specific.get("hookEventName") == "PreToolUse"
+        assert hook_specific.get("permissionDecision") == "deny"
+        assert len(hook_specific.get("permissionDecisionReason", "")) > 0
+        assert "decision" not in result

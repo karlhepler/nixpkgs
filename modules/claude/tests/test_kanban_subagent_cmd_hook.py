@@ -112,8 +112,19 @@ def make_bash_payload(
 
 def assert_blocked(result: "dict | None"):
     assert result is not None, "Expected a block response, got silent exit (allow)"
-    assert result.get("decision") == "block", f"Expected block, got: {result}"
-    assert "reason" in result, "Block response must contain a 'reason' field"
+    assert "decision" not in result, (
+        f"Legacy top-level 'decision' key must not be present: {result}"
+    )
+    hook_output = result.get("hookSpecificOutput", {})
+    assert hook_output.get("permissionDecision") == "deny", f"Expected deny, got: {result}"
+    assert "permissionDecisionReason" in hook_output, (
+        "Block response must contain a 'permissionDecisionReason' field"
+    )
+
+
+def block_reason(result: dict) -> str:
+    """Extract the human-readable deny reason from a deny response."""
+    return result.get("hookSpecificOutput", {}).get("permissionDecisionReason", "")
 
 
 def assert_allowed(result: "dict | None"):
@@ -182,8 +193,8 @@ class TestDeniedSubagentCommands:
         payload = make_bash_payload("kanban done 5")
         result = run_hook_main(hook, payload)
         assert_blocked(result)
-        assert "criteria check" in result["reason"]
-        assert "criteria uncheck" in result["reason"]
+        assert "criteria check" in block_reason(result)
+        assert "criteria uncheck" in block_reason(result)
 
     def test_cancel_denied(self, hook):
         """AC 4: Sub-agent calls `kanban cancel 5` → DENY."""
@@ -238,7 +249,7 @@ class TestDeniedSubagentCommands:
         payload = make_bash_payload("kanban done 5")
         result = run_hook_main(hook, payload)
         assert_blocked(result)
-        assert "kanban done 5" in result["reason"]
+        assert "kanban done 5" in block_reason(result)
 
     def test_criteria_with_no_subcommand_denied(self, hook):
         """Sub-agent calls `kanban criteria` alone → DENY."""
@@ -524,7 +535,8 @@ class TestShellWrapperDenial:
         payload = make_bash_payload("bash -c 'kanban done 5'")
         result = run_hook_main(hook, payload)
         assert_blocked(result)
-        assert "shell-wrapper" in result["reason"].lower() or "bash -c" in result["reason"]
+        reason = block_reason(result)
+        assert "shell-wrapper" in reason.lower() or "bash -c" in reason
 
     def test_sh_c_kanban_cancel_denied(self, hook):
         """Test 7: sh -c 'kanban cancel 5' from sub-agent → DENY."""
@@ -635,3 +647,55 @@ class TestBareEnvPrefixBypasses:
         payload = make_bash_payload("KANBAN_SESSION= kanban list")
         result = run_hook_main(hook, payload)
         assert_blocked(result)
+
+
+# ---------------------------------------------------------------------------
+# TestCompositionRootDenyFormat — smoke test guarding the real hook entry
+# point (main()) emits the documented hookSpecificOutput.permissionDecision
+# deny shape, not the legacy top-level {"decision": "block", ...} format.
+# Covers both deny call-sites: _deny() and _deny_shell_wrapper().
+# ---------------------------------------------------------------------------
+
+class TestCompositionRootDenyFormat:
+    """Exercise the real hook.main() entry point end-to-end and assert the
+    emitted deny JSON uses the documented hookSpecificOutput.permissionDecision
+    shape rather than the legacy top-level "decision" key. This is the
+    regression guard that catches a future runtime dropping legacy support.
+    """
+
+    def test_forbidden_kanban_command_emits_permission_decision_deny(self, hook):
+        """Sub-agent invokes a forbidden kanban command (`kanban done 5`) →
+        deny via the _deny() call-site, using the documented
+        hookSpecificOutput.permissionDecision shape."""
+        payload = make_bash_payload("kanban done 5")
+        result = run_hook_main(hook, payload)
+
+        assert result is not None, "Expected a deny response, got silent exit (allow)"
+        assert result.get("continue") is False
+        assert "decision" not in result, (
+            f"Legacy top-level 'decision' key must not be present: {result}"
+        )
+        hook_output = result.get("hookSpecificOutput")
+        assert hook_output is not None, f"Expected hookSpecificOutput, got: {result}"
+        assert hook_output.get("hookEventName") == "PreToolUse"
+        assert hook_output.get("permissionDecision") == "deny"
+        assert "kanban done 5" in hook_output.get("permissionDecisionReason", "")
+
+    def test_shell_wrapper_invocation_emits_permission_decision_deny(self, hook):
+        """Sub-agent invokes a forbidden shell-wrapper command
+        (`bash -c 'kanban done 5'`) → deny via the _deny_shell_wrapper()
+        call-site, using the documented hookSpecificOutput.permissionDecision
+        shape."""
+        payload = make_bash_payload("bash -c 'kanban done 5'")
+        result = run_hook_main(hook, payload)
+
+        assert result is not None, "Expected a deny response, got silent exit (allow)"
+        assert "decision" not in result, (
+            f"Legacy top-level 'decision' key must not be present: {result}"
+        )
+        hook_output = result.get("hookSpecificOutput")
+        assert hook_output is not None, f"Expected hookSpecificOutput, got: {result}"
+        assert hook_output.get("hookEventName") == "PreToolUse"
+        assert hook_output.get("permissionDecision") == "deny"
+        reason = hook_output.get("permissionDecisionReason", "")
+        assert "shell-wrapper" in reason.lower() or "bash -c" in reason
