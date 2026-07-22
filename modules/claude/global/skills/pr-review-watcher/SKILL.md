@@ -201,6 +201,8 @@ Entries in `awaiting_decision` are still visible to the normal dedup/skip check 
 
 Run `slack_read_channel(channel=<channel_id>, limit=15)`.
 
+**Gap-coverage guard (this watcher's instance of the global Pagination Discipline rule — never draw a complete-set conclusion from a single partial page):** a fixed `limit=15` read can be truncated. If more than 15 messages have posted since `watermark_ts`, the oldest ones in that gap would silently fall below the watermark the moment it advances past only the newest ones actually read — the silent-drop failure mode this guard prevents. Before advancing `watermark_ts`, confirm the read covered the whole gap: check the OLDEST message returned in this batch. If it still has `ts > watermark_ts` (meaning older-but-still-new messages may exist beyond this page), keep paginating — re-run `slack_read_channel` bounded to before the oldest ts seen so far (concretely: the underlying Slack `conversations.history` Web API's `latest` parameter is the standard before-timestamp bound — set it to the oldest `ts` already seen this cycle; verify the exact parameter name against this MCP tool's own schema, since it is not otherwise documented in this skill) — until a returned message has `ts <= watermark_ts`, confirming the full new-message set for this cycle is in hand. **Stop condition (history-exhausted):** if a paginated re-run returns an empty page, or fewer than `limit` messages, without ever producing a message with `ts <= watermark_ts`, treat this as history-exhausted — stop paginating, advance `watermark_ts` to the newest message actually seen across all pages read this cycle, and log a warning (e.g., "pr-review-watcher: history-exhausted before reaching watermark_ts — advancing to newest-seen; older gap messages may be unrecoverable"). Do NOT advance the watermark until every message down to the old watermark has actually been examined this way, or the history-exhausted stop condition above has fired.
+
 For each message with `ts > watermark_ts`, where:
 - `user != self_user_id` (ignore operator's own posts)
 - Message body contains a `github.com/<org>/<repo>/pull/<N>` link
@@ -223,7 +225,7 @@ For posts that contain a PR link but no re-review language and the PR is already
 
 Otherwise: candidate for review.
 
-Update `watermark_ts = max(watermark_ts, newest ts seen in this batch)`.
+Once the gap-coverage guard above confirms the full new-message set is in hand, update `watermark_ts = max(watermark_ts, newest ts seen in this batch)`.
 
 ### C) Dedup Each Candidate (MANDATORY immediately before spawning)
 
@@ -507,14 +509,21 @@ CYCLE START:
              move to followup (our_review=<actual event submitted>); fu-<pr> runs § A2 loop; a posted non-approving review NEVER just ends
        (the still-alive session EXECUTES the review-posting decision; the fresh fu-<pr> handles only the follow-up-watching phase — never dismiss-then-respawn to execute the posting decision)
 
-  B) slack_read_channel(limit=15)
-       for each msg ts > watermark, author != self_user_id, contains github PR link:
+  B) slack_read_channel(channel=<channel_id>, limit=15)
+       gap-coverage guard (Pagination Discipline — see § B) New Posts prose): while OLDEST msg in batch has ts > watermark_ts:
+         paginate — re-run slack_read_channel bounded to before the oldest ts seen so far (before-timestamp bound,
+           e.g. Slack conversations.history's `latest` param — verify exact name against this tool's schema);
+           merge into this cycle's batch
+         → empty page OR fewer than `limit` msgs returned, without ever reaching ts <= watermark_ts: history-exhausted —
+           stop paginating, log a warning
+       (loop ends when OLDEST msg in batch has ts <= watermark_ts — full gap coverage confirmed — OR history-exhausted fires)
+       for each msg ts > watermark, author != self_user_id, contains github PR link (across the full, gap-covered batch):
          parse repo + pr
          if pr in done AND post has re-review language → straight-approval flow (see § B) New Posts)
          skip if in active/followup/awaiting_decision/queue
          if pr in done (no re-review language) → skip
          → candidate
-       update watermark_ts
+       update watermark_ts = max(watermark_ts, newest ts seen in this batch)
 
   C+D) for each candidate (SINGLE findings-first path — all authors, no routing branch):
        gh pr view --json state,author,reviews,isCrossRepository
