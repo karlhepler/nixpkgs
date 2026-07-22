@@ -1063,7 +1063,9 @@ def main() -> None:
         # LLM serialization hazard: Claude Code models sometimes emit run_in_background
         # as the JSON string "true" instead of the boolean true. Both must be accepted.
         # The canonical form is boolean true; the string "true" is treated as equivalent.
-        # Any other value (False, "false", None, absent) is treated as not-set → denial.
+        # Any other value (False, "false", None, absent) is treated as not-set. This is
+        # no longer a deny path: absent FOREGROUND_AUTHORIZED triggers self-heal to True
+        # (see below); present FOREGROUND_AUTHORIZED allows the foreground launch as-is.
         #
         # String comparison: strip() removes leading/trailing whitespace (including
         # Unicode whitespace) before lowercasing, so "True", "TRUE", " true " all match.

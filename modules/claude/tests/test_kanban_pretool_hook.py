@@ -2,7 +2,7 @@
 Tests for modules/claude/kanban-pretool-hook.py.
 
 Covered paths:
-- Agent call missing run_in_background → denied with expected error message
+- Agent call missing run_in_background → self-healed to run_in_background=True (allowed)
 - Agent call missing description → denied
 - Agent call missing subagent_type → denied
 - Agent call with invalid subagent_type (general-purpose) → denied
@@ -418,6 +418,8 @@ class TestForegroundAuthorized:
             result = run_hook_main(hook, payload)
 
         assert_allowed(result)
+        updated_input = result.get("hookSpecificOutput", {}).get("updatedInput", {})
+        assert updated_input.get("run_in_background") is False
 
     def test_foreground_authorized_with_whitespace_padding_bypasses(self, hook):
         """FOREGROUND_AUTHORIZED with leading/trailing whitespace on its own line is allowed."""
@@ -438,6 +440,8 @@ class TestForegroundAuthorized:
             result = run_hook_main(hook, payload)
 
         assert_allowed(result)
+        updated_input = result.get("hookSpecificOutput", {}).get("updatedInput", {})
+        assert updated_input.get("run_in_background") is False
 
     def test_foreground_authorized_still_enforces_description(self, hook):
         """FOREGROUND_AUTHORIZED does NOT bypass description check."""
