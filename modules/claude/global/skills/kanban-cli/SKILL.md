@@ -219,6 +219,17 @@ A line-count assertion (`git diff --numstat` or `git diff --stat`) compared agai
 
 **Real incident (PLA-3559, card #9):** a Haiku sub-agent hit this exact structurally-broken MoV and ran `git restore` on the file "to investigate," destroying uncommitted work that had never been committed (no reflog/stash fallback). A failing `kanban criteria check` is a report-and-stop signal, never a revert-and-retry signal — see § MoV Scope Isolation and the KANBAN HARD LIMITS delegation block in `~/.claude/output-styles/staff-engineer.md`.
 
+### Length-based secret-detection heuristics — unreliable without structural anchors
+
+A bare contiguous-character-count regex (e.g., `! rg -q '[A-Za-z0-9_-]{32,}' <file>` asserting "no secret/token leaked") is an example of length-based secret-detection heuristics that fail structurally when the domain data (service identifiers, file paths, hashes, UUIDs) can legitimately be as long as or longer than the secret being guarded against.
+
+- ❌ `! rg -q '[A-Za-z0-9_-]{32,}' .scratchpad/audit.md` — real incident: a Datadog audit scratchpad legitimately contained a 43-char service identifier and an 83-char baked-in project path, both exceeding the `{32,}` threshold, while the actual leaked PAT (personal access token) was only 65 chars — no length threshold separates legitimate long identifiers from the leaked secret
+- ✅ `! rg -q 'DD_PAT='` and `! rg -qi 'authorization: bearer'` — structural anchors (the literal env-var assignment form, or a known header/prefix) instead of a bare character-count regex
+
+**Before authoring any such tripwire:** sample the domain data's actual max legitimate identifier/path length (`rg -o '<pattern>' <existing-similar-file> | awk '{print length}' | sort -rn | head`) to confirm no collision. If the secret's own length is not comfortably above ALL legitimate content, no length threshold is viable — use a structural anchor.
+
+**Completeness limit:** even a structural anchor assumes the secret appears WITH structural context. When a secret can appear with no structural context — a raw key or token pasted with no `KEY=` assignment and no header/prefix nearby — neither a length threshold nor a structural anchor reliably catches it; no single-regex MoV can. Treat the structural-anchor MoV as a tripwire for the common structured case only, and lean on the sub-agent's stop-on-broken-MoV behavior plus human review for the context-free case (or scope the check to where the secret would actually carry structural context).
+
 ### Pre-`kanban do --file` lint (mandatory before every CLI invocation)
 
 Before invoking the kanban CLI, scan every `mov_commands[].cmd` field for these banned patterns:
@@ -236,6 +247,7 @@ Before invoking the kanban CLI, scan every `mov_commands[].cmd` field for these 
 - Line-ordering MoVs (`head -1` line-number comparison) — run `rg -n 'PAT' FILE` and confirm exactly one match per side; anchor on a unique header substring, never a phrase that recurs in body prose. See § Line-ordering MoVs require UNIQUE anchors.
 - `sed`/`awk` range extraction (`/^name()/,/^}/p`) on a mandated ONE-LINE function — the range never closes and spills to EOF; use `rg -m1 '^name' file` or `awk '/^pattern/{print; exit}' file` to match the single line directly.
 - `eval` to define/invoke a dynamically-extracted function before testing — trips the trust-scorer gate (`Score 0 — subshell-expansion, eval`); write the extracted line to a temp file and `source` it instead.
+- Length-based secret-detection heuristics (bare `{32,}` character-count regex) — unreliable when domain data (paths, identifiers, hashes) can legitimately be as long as or longer than the secret; prefer structural anchors (`DD_PAT=`, `Authorization: Bearer`) and sample the domain data's max legitimate length before authoring. See full entry above.
 
 The kanban CLI lint hook is the second-line defense. Every catch is an authoring failure.
 
