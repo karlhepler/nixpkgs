@@ -2023,7 +2023,22 @@ def cmd_dismiss(targets_str: str, fmt: str) -> None:
             # bare window: re-fetch current window ID each iteration so the
             # comparison stays accurate after prior kills shift focus (F6).
             current_window_id = get_current_window_id()
-            if current_window_id and window_id == current_window_id:
+            if not current_window_id:
+                # Fail CLOSED (mirrors cmd_tell's WINDOW_ID_UNDETERMINABLE guard):
+                # if we cannot determine our own window id, we cannot verify
+                # this target isn't the sender's own window, so refuse to act
+                # rather than silently proceeding as if it were safe.
+                emit_error(
+                    f"crew dismiss could not determine its own window id — refusing to "
+                    f"dismiss '{raw}' (cannot verify target does not resolve to the "
+                    "sender's own window)",
+                    fmt,
+                    error_code="WINDOW_ID_UNDETERMINABLE",
+                    exit_code=1,
+                )
+                break  # guard: emit_error normally exits, but defensive break prevents
+                # falling through to the kill logic if exit is ever suppressed.
+            if window_id == current_window_id:
                 # Target is the active window — must switch focus before killing
                 # so the coordinator's terminal is not orphaned.
                 # F1+F2: first verify there is more than one window in the session;

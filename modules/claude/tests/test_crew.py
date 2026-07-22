@@ -4229,6 +4229,56 @@ class TestCmdDismissSentinelCleanup:
 
 
 # ---------------------------------------------------------------------------
+# Card #2906 — cmd_dismiss self-target guard must fail CLOSED
+#
+# cmd_tell's self-target guard was made fail-CLOSED in commit a39b5ab
+# (undeterminable own-window id -> hard-exit with WINDOW_ID_UNDETERMINABLE).
+# cmd_dismiss had the identical pre-existing fail-OPEN pattern: a
+# `if current_window_id:` gate that silently no-op'd the self-target check
+# (and the switch-focus-before-kill safety logic) when
+# get_current_window_id() returned falsy. This must mirror cmd_tell's
+# fail-closed behavior instead of silently proceeding.
+# ---------------------------------------------------------------------------
+
+class TestDismissRejectsUndeterminableWindowId:
+    """cmd_dismiss must hard-exit (fail closed) rather than silently skip the
+    self-target check when get_current_window_id() cannot determine the
+    sender's own window id, even though the session and target both
+    resolve successfully."""
+
+    def test_dismiss_rejects_when_window_id_undeterminable(self, capsys):
+        def side_effect(cmd, **kwargs):
+            if cmd[:2] == ["tmux", "display-message"]:
+                if "session_name" in cmd[-1]:
+                    return fake_run_result(stdout="session-A\n")
+                if "window_id" in cmd[-1]:
+                    return fake_run_result(stdout="")
+            if cmd[:3] == ["tmux", "list-windows", "-t"]:
+                return fake_run_result(stdout="session-A:0|@5|worker\n")
+            return fake_run_result()
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = side_effect
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_dismiss("worker", fmt="xml")
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "WINDOW_ID_UNDETERMINABLE" in captured.out
+
+        dangerous_calls = [
+            c for c in mock_run.call_args_list
+            if isinstance(c[0][0], list) and c[0][0][0] == "tmux"
+            and ("kill-window" in c[0][0] or "kill-pane" in c[0][0]
+                 or "select-window" in c[0][0])
+        ]
+        assert not dangerous_calls, (
+            "dismiss must not kill/switch-focus when its own window id "
+            f"cannot be determined, got: {dangerous_calls}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Emoji icon assignment (crew create calls random-emoji for new windows)
 # ---------------------------------------------------------------------------
 
