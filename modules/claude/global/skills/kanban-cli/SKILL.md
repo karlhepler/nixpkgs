@@ -210,6 +210,15 @@ Real incident: a `kanban criteria check` MoV that used `eval` to invoke a dynami
 
 **Framing:** when an MoV must define and invoke a function extracted from a reviewed file, prefer write-then-`source` over `eval`.
 
+### `git diff --numstat`/`--stat` line-count vs. HEAD on a file carrying OTHER cards' uncommitted work
+
+A line-count assertion (`git diff --numstat` or `git diff --stat`) compared against `HEAD` — or against any baseline other than the working-tree state immediately before THIS card started — is structurally broken when the target file already carries OTHER cards' uncommitted work. The count reflects the cumulative diff rather than the incremental edit this card makes, so the MoV can fail (or pass) purely based on how much unrelated work is sitting in the file.
+
+- ❌ `test $(git diff --numstat HEAD -- file | awk '{print $1}') -eq N` — counts every other card's uncommitted lines in the same file, not just this card's edit
+- ✅ `rg -q 'specific new text' file` — assert CONTENT properties of the current edit only, never a size-vs-baseline comparison
+
+**Real incident (PLA-3559, card #9):** a Haiku sub-agent hit this exact structurally-broken MoV and ran `git restore` on the file "to investigate," destroying uncommitted work that had never been committed (no reflog/stash fallback). A failing `kanban criteria check` is a report-and-stop signal, never a revert-and-retry signal — see § MoV Scope Isolation and the KANBAN HARD LIMITS delegation block in `~/.claude/output-styles/staff-engineer.md`.
+
 ### Pre-`kanban do --file` lint (mandatory before every CLI invocation)
 
 Before invoking the kanban CLI, scan every `mov_commands[].cmd` field for these banned patterns:
