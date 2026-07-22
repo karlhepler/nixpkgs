@@ -197,8 +197,12 @@ def main() -> None:
         sys.exit(0)
 
     # Block the command
+    # stopReason is set at the top level (sibling of continue/hookSpecificOutput)
+    # because Claude Code displays it to the USER when continue is false, while
+    # permissionDecisionReason is directed at Claude.
     print(json.dumps({
         "continue": False,
+        "stopReason": _REJECTION_REASON,
         "suppressOutput": False,
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",

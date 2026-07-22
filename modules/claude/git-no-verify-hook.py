@@ -213,9 +213,15 @@ def _check_subcommand_flags(flags: list[str]) -> bool:
 
 
 def deny_with_reason(reason: str) -> dict:
-    """Return a permissionDecision=deny response with a reason message."""
+    """Return a permissionDecision=deny response with a reason message.
+
+    stopReason is set at the top level (sibling of continue/hookSpecificOutput)
+    because Claude Code displays it to the USER when continue is false, while
+    permissionDecisionReason is directed at Claude.
+    """
     return {
         "continue": False,
+        "stopReason": reason,
         "suppressOutput": False,
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",

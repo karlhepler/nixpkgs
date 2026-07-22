@@ -424,6 +424,12 @@ class TestPermissionDecisionDenyFormat:
         assert hook_specific.get("permissionDecision") == "deny"
         assert len(hook_specific.get("permissionDecisionReason", "")) > 0
 
+        # Top-level stopReason must be present (user-facing halt message) and
+        # non-empty — see card #2905.
+        assert len(result.get("stopReason", "")) > 0, (
+            f"Expected non-empty top-level stopReason: {result}"
+        )
+
         # Legacy top-level format must be fully removed, not just supplemented.
         assert "decision" not in result, (
             f"Legacy top-level 'decision' key must not be present: {result}"

@@ -104,26 +104,49 @@ def assert_allowed(result: dict):
 # ---------------------------------------------------------------------------
 
 class TestMissingRunInBackground:
-    """Agent call missing run_in_background → denied with expected error message."""
+    """Agent call missing run_in_background → self-healed to True, not denied.
 
-    def test_false_run_in_background_denied(self, hook):
+    Per commit 15bd48c ("force background via updatedInput injection instead
+    of denying"), a False/absent run_in_background (without FOREGROUND_AUTHORIZED)
+    is no longer a deny path — the hook injects run_in_background=True into
+    tool_input and falls through to the normal card-injection (allow) path.
+    """
+
+    @staticmethod
+    def _fake_subprocess_run(cmd, **kwargs):
+        card_xml = KanbanMockResponses.card_xml()
+        if cmd[0] == "kanban" and cmd[1] == "show":
+            return KanbanMockResponses.success(stdout=card_xml)
+        if cmd[0] == "kanban" and cmd[1] == "agent":
+            return KanbanMockResponses.success()
+        return KanbanMockResponses.failure()
+
+    def test_false_run_in_background_self_heals_to_true(self, hook):
         payload = make_pretool_payload(run_in_background=False)
-        result = run_hook_main(hook, payload)
-        assert_denied(result, "run_in_background")
+        with patch("subprocess.run", side_effect=self._fake_subprocess_run):
+            result = run_hook_main(hook, payload)
+        assert_allowed(result)
+        updated_input = result.get("hookSpecificOutput", {}).get("updatedInput", {})
+        assert updated_input.get("run_in_background") is True
 
-    def test_missing_run_in_background_denied(self, hook):
+    def test_missing_run_in_background_self_heals_to_true(self, hook):
         # Omit the key entirely from tool_input
         payload = make_pretool_payload(run_in_background=None)
         # Remove the key — make_pretool_payload omits it when None
-        result = run_hook_main(hook, payload)
-        assert_denied(result, "run_in_background")
+        with patch("subprocess.run", side_effect=self._fake_subprocess_run):
+            result = run_hook_main(hook, payload)
+        assert_allowed(result)
+        updated_input = result.get("hookSpecificOutput", {}).get("updatedInput", {})
+        assert updated_input.get("run_in_background") is True
 
-    def test_deny_reason_mentions_background(self, hook):
+    def test_self_heal_preserves_other_updated_input_fields(self, hook):
         payload = make_pretool_payload(run_in_background=False)
-        result = run_hook_main(hook, payload)
-        reason = result.get("hookSpecificOutput", {}).get("permissionDecisionReason", "")
-        assert "run_in_background" in reason
-        assert "true" in reason.lower() or "background" in reason.lower()
+        with patch("subprocess.run", side_effect=self._fake_subprocess_run):
+            result = run_hook_main(hook, payload)
+        updated_input = result.get("hookSpecificOutput", {}).get("updatedInput", {})
+        assert updated_input.get("run_in_background") is True
+        assert updated_input.get("description") == "Test agent description"
+        assert updated_input.get("subagent_type") == "swe-devex"
 
 
 class TestMissingDescription:
@@ -426,19 +449,45 @@ class TestForegroundAuthorized:
         result = run_hook_main(hook, payload)
         assert_denied(result, "description")
 
-    def test_foreground_authorized_in_negation_prose_is_denied(self, hook):
-        """FOREGROUND_AUTHORIZED embedded in prose (negation) must NOT bypass check.
+    def test_foreground_authorized_in_negation_prose_is_still_force_healed(self, hook):
+        """FOREGROUND_AUTHORIZED embedded in prose (negation) must NOT bypass the
+        self-heal-to-background injection.
 
         Bug fix: 'no FOREGROUND_AUTHORIZED marker' used to bypass the check via
         substring match. The line-anchored regex must reject prose that merely
         contains the marker text — the marker must occupy its own line.
+
+        Per commit 15bd48c, the enforcement no longer denies on missing/false
+        run_in_background — it self-heals to True. So the regression guard now
+        asserts run_in_background is force-healed to True (not left as the
+        user-provided False, which would indicate the negation prose was
+        incorrectly treated as authorization).
         """
         payload = make_pretool_payload(
             run_in_background=False,
-            prompt="This prompt says no FOREGROUND_AUTHORIZED marker is present.",
+            prompt=(
+                "This prompt says no FOREGROUND_AUTHORIZED marker is present.\n"
+                "KANBAN CARD #42 | Session: test-session\nDo some work."
+            ),
         )
-        result = run_hook_main(hook, payload)
-        assert_denied(result, "run_in_background")
+        card_xml = KanbanMockResponses.card_xml()
+
+        def fake_subprocess_run(cmd, **kwargs):
+            if cmd[0] == "kanban" and cmd[1] == "show":
+                return KanbanMockResponses.success(stdout=card_xml)
+            if cmd[0] == "kanban" and cmd[1] == "agent":
+                return KanbanMockResponses.success()
+            return KanbanMockResponses.failure()
+
+        with patch("subprocess.run", side_effect=fake_subprocess_run):
+            result = run_hook_main(hook, payload)
+
+        assert_allowed(result)
+        updated_input = result.get("hookSpecificOutput", {}).get("updatedInput", {})
+        assert updated_input.get("run_in_background") is True, (
+            "Negation prose must not be treated as FOREGROUND_AUTHORIZED — "
+            "run_in_background should be force-healed to True."
+        )
 
 
 class TestSkillAgentBypass:
@@ -566,12 +615,21 @@ class TestResponseStructure:
         assert "permissionDecision" in hook_out
 
     def test_deny_response_has_required_fields(self, hook):
-        payload = make_pretool_payload(run_in_background=False)
+        # Missing description is a deterministic deny path that requires no
+        # subprocess/kanban-CLI mocking (checked before any card lookup) —
+        # run_in_background=False no longer denies (see TestMissingRunInBackground).
+        payload = make_pretool_payload(description="")
         result = run_hook_main(hook, payload)
         assert result["continue"] is False
         hook_out = result["hookSpecificOutput"]
         assert hook_out["permissionDecision"] == "deny"
         assert "permissionDecisionReason" in hook_out
+
+        # Top-level stopReason must be present (user-facing halt message) and
+        # non-empty — see card #2905.
+        assert len(result.get("stopReason", "")) > 0, (
+            f"Expected non-empty top-level stopReason: {result}"
+        )
 
 
 class TestCardPatternExtraction:

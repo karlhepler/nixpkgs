@@ -681,6 +681,12 @@ class TestCompositionRootDenyFormat:
         assert hook_output.get("permissionDecision") == "deny"
         assert "kanban done 5" in hook_output.get("permissionDecisionReason", "")
 
+        # Top-level stopReason must be present (user-facing halt message) and
+        # non-empty — see card #2905.
+        assert len(result.get("stopReason", "")) > 0, (
+            f"Expected non-empty top-level stopReason: {result}"
+        )
+
     def test_shell_wrapper_invocation_emits_permission_decision_deny(self, hook):
         """Sub-agent invokes a forbidden shell-wrapper command
         (`bash -c 'kanban done 5'`) → deny via the _deny_shell_wrapper()
@@ -699,3 +705,9 @@ class TestCompositionRootDenyFormat:
         assert hook_output.get("permissionDecision") == "deny"
         reason = hook_output.get("permissionDecisionReason", "")
         assert "shell-wrapper" in reason.lower() or "bash -c" in reason
+
+        # Top-level stopReason must be present (user-facing halt message) and
+        # non-empty — see card #2905.
+        assert len(result.get("stopReason", "")) > 0, (
+            f"Expected non-empty top-level stopReason: {result}"
+        )

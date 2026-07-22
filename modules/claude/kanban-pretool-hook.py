@@ -902,9 +902,16 @@ def allow_with_updated_prompt(original_input: dict, new_prompt: str) -> dict:
 
 
 def deny_with_reason(reason: str) -> dict:
-    """Return a permissionDecision=deny response with a reason message."""
+    """Return a permissionDecision=deny response with a reason message.
+
+    stopReason is set at the top level (sibling of continue/hookSpecificOutput)
+    because Claude Code displays it to the USER when continue is false, while
+    permissionDecisionReason is directed at Claude. Without stopReason, a deny
+    can halt the turn with a blank/default message to the user.
+    """
     return {
         "continue": False,
+        "stopReason": reason,
         "suppressOutput": False,
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",

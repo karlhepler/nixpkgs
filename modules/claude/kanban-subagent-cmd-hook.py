@@ -469,9 +469,14 @@ def _deny_response(reason: str) -> dict:
     This mirrors kanban-pretool-hook.py's deny_with_reason() — the
     documented PreToolUse deny shape (hookSpecificOutput.permissionDecision),
     not the legacy top-level {"decision": "block", ...} format.
+
+    stopReason is set at the top level (sibling of continue/hookSpecificOutput)
+    because Claude Code displays it to the USER when continue is false, while
+    permissionDecisionReason is directed at Claude.
     """
     return {
         "continue": False,
+        "stopReason": reason,
         "suppressOutput": False,
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
