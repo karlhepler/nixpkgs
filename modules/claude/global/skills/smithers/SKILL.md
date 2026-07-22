@@ -41,6 +41,9 @@ Most state lives in conversation history. Track these values mentally across ite
 - `max_cycles` — 10 (hard limit on total iterations)
 - `max_ralph_invocations` — 4 (hard limit on specialist delegations)
 - `approval_watch_cycle` — iteration counter within the approval-watch phase, starts at 0 (see § Approval-Watch Phase). **In-memory only**: a session restart resets the expiry clock to 0, extending the effective watch window. A restart resets the expiry window. This is accepted behavior — the 24h bound is a within-session guarantee only.
+- `stall_check_name` — name of the check currently believed to be the sole pending check across consecutive fast-cycle polls (see Step 2a: Soft-stall detector); `null` when no such streak is active. In-memory, recalled the same way as `stagnation_count`.
+- `stall_cycle_count` — consecutive fast-cycle polls that `stall_check_name` has held the sole-pending position.
+- `stall_warned` — whether the one-time soft-stall warning has already fired for the current streak.
 
 **`clean_confirmed` — durable flag file (NOT in-memory):** This flag MUST survive the ScheduleWakeup gap, which spawns a fresh agent context where in-memory variables do not persist. It is stored as a file:
 
@@ -104,6 +107,32 @@ Compute:
 - `failed_checks` — list of checks where bucket == `fail`
 
 No checks returned → treat as `([], all_terminal=true, fail_fast=false)`.
+
+---
+
+#### Step 2a: Soft-stall detector (observability only)
+
+**Runs every fast-cycle poll, regardless of which Step 6 branch fires later in this same iteration.** This is purely an observability signal layered on top of Step 2's check data — it does not change which branch Step 6 takes, and it never alters the fast-cycle cadence.
+
+Track, across consecutive fast-cycle polls, whether the SAME single check is the sole pending check — `bucket == "pending"` — while every other check on the run has reached a terminal bucket (`pass`, `fail`, `skipping`, `cancel`). These three values are in-memory, recalled across `ScheduleWakeup` continuations the same way `stagnation_count` is (see § STATE):
+
+- `stall_check_name` — name of the check currently believed to be the sole pending check (`null` if none)
+- `stall_cycle_count` — consecutive fast-cycle polls this check has held that position
+- `stall_warned` — whether the one-time warning has already fired for the current streak
+
+From the Step 2 check list, compute `pending_checks` = the checks with `bucket == "pending"`:
+
+- **Exactly one pending check, same name as `stall_check_name`:** increment `stall_cycle_count`.
+- **Exactly one pending check, a different name (including the first time this condition holds):** set `stall_check_name` to that check's name, reset `stall_cycle_count = 1`, reset `stall_warned = false`.
+- **Zero pending checks, or more than one still pending:** reset `stall_check_name = null`, `stall_cycle_count = 0`, `stall_warned = false`. Only ever trigger the warning below when exactly one check is the sole pending check — never when multiple checks are still pending.
+
+**When `stall_cycle_count >= 5` (≈5 minutes at the 60s fast-cycle cadence) AND `NOT stall_warned`:** emit a ONE-TIME soft warning naming the check and its run URL (the `link` field from the Step 2 JSON):
+
+1. Log: `"Soft-stall detector: <stall_check_name> has been the sole pending check for <stall_cycle_count> consecutive cycles — <link>"`.
+2. Send macOS notification: `osascript -e 'display notification "PR <N>: <stall_check_name> is the sole pending check after <stall_cycle_count> cycles" with title "Smithers"'`. Do not invent a new posting path for this — this skill's Slack posting is reserved for the existing Step 7a / merge-time triggers (see § SLACK POSTING); the macOS notification is the surfacing mechanism here, same as every other warning in this skill.
+3. Set `stall_warned = true` so the warning does not repeat on subsequent cycles for the same still-pending check.
+
+This soft-stall detector is purely observability and is **NOT a stop condition** — smithers continues polling normally afterward, unaffected, at the same 60-second fast-cycle cadence. It is independent of, and must not be confused with, the stagnation-STOP in Step 13 (HEAD not advancing after a fix delegation), which remains the only stop-style trigger in the fast-cycle loop.
 
 ---
 
