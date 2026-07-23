@@ -114,7 +114,7 @@ Read at the START of every cycle. Persist at the END of every cycle. If the file
   "watermark_ts": "<newest processed slack message ts>",
   "active":   [{"pr": 123, "repo": "owner/repo", "message_ts": "...", "crew": "review-123", "status": "spawning|reviewing"}],
   "followup": [{"pr": 123, "repo": "owner/repo", "message_ts": "...", "crew": "fu-123", "our_review": "CHANGES_REQUESTED"}],
-  "awaiting_decision": [{"pr": 123, "repo": "owner/repo", "message_ts": "...", "crew": "review-123", "verdict": "CHANGES_REQUESTED | COMMENT | ...", "summary": "<one-line escalated summary>", "findings": [{"idx": 1, "file": "src/x.go", "line": 42, "severity": "concern", "comment": "<candidate comment text>"}], "walkthrough_idx": 0}],
+  "awaiting_decision": [{"pr": 123, "repo": "owner/repo", "message_ts": "...", "crew": "review-123", "verdict": "1 concern, 1 blocking", "summary": "<one-line escalated summary>", "findings": [{"idx": 1, "file": "src/x.go", "line": 42, "severity": "concern", "comment": "<candidate comment text>"}], "walkthrough_idx": 0}],
   "queue":    [],
   "done":     [{"pr": 123, "reason": "reviewed-approved | skipped-human-reviewed | skipped-own-pr | skipped-closed | approved-after-followup | merged | error | operator-dropped"}]
 }
