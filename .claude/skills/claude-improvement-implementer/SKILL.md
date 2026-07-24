@@ -25,7 +25,7 @@ These rules are not judgment calls. No 'just this one branch' or 'I'll PR the ri
 
 2. **Never run `gh pr create`** or any PR-creation primitive (`gh pr create`, `gh pr new`, etc.). Hard prohibition — no exceptions, no 'the change is risky so let me PR it' rationalization. If the implementer ever feels the urge to PR a change instead of committing directly, that urge is the failure mode. STOP and file a `claude-improvement-failed` note describing what triggered the urge. Include the original note content verbatim in the failure note per the Step 8 format.
 
-3. **Standard workflow is always:** `hms` (validation gate) → `git add <specific files>` → `git commit` (per `## Commit Message Convention` below) → `git push origin main`. The `origin main` argument is explicit — not bare `git push` which could push the wrong ref if the worktree is somehow not on `main`.
+3. **Standard workflow is always:** `hms` (validation gate) → `git add <specific files>` → `git commit` (per `## Commit Message Convention` below) → `git push origin main`. The `origin main` argument is explicit — not bare `git push` which could push the wrong ref if the worktree is somehow not on `main`. **Exception — git-invisible-only fixes:** a fix touching ONLY machine-specific git-invisible files (`overconfig.nix`, `user.nix`, or a skill/config they host) deploys via `hms` alone and skips `git add`/`git commit`/`git push` entirely — there is nothing to commit (see Step 7g's Deploy variant).
 
 4. **If a hook rejection, merge conflict, or push failure on `main` occurs,** STOP and file a `claude-improvement-failed` note (per Step 8). Do NOT route around the failure by creating a branch and opening a PR — that violates Rule 1 and Rule 2 simultaneously. The failure note is the recovery path; the human operator resolves it manually.
 
@@ -151,6 +151,8 @@ Exit cleanly.
 
 Process each note **one at a time** in the order returned. Notes that would conflict with in-flight cross-session work are NOT fetched via `get_note` and NOT deleted — they remain in the `claude-improvement` queue for the next cycle to retry. Deferral happens at the top of processing (informed by Step 3 board picture); no special deferral tag or mechanism is used.
 
+> **"Never stage X" means never `git add`/commit X — it does NOT mean the fix is out of scope.** Machine-specific files (`overconfig.nix`, `user.nix`) are git-invisible and never committed, yet they are fully editable and deploy via `hms`-only (see Step 7c scope + Step 7g's deploy variant). Never auto-fail a note just because its target is a never-staged file.
+
 For each note:
 
 #### 7a. Fetch Full Content
@@ -169,9 +171,10 @@ This is crash-loop prevention: if the implementer fails mid-fix, the note is alr
 
 The proposed fix must target one of:
 - A file inside this repository (`~/.config/nixpkgs/`) — any subdirectory. Most fixes target `modules/claude/` (prompts, hooks, agents, shellapps, nix configs, output styles), but fixes to other parts of the repo (`modules/kanban/`, `modules/git/`, repo-root `CLAUDE.md`, etc.) are also in-scope.
+- **Machine-specific, git-invisible in-repo files** — `overconfig.nix` and `user.nix`, AND the skills/config they host (e.g. a `home.file.".claude/commands/*.md"` text block) — ARE in scope. Being git-invisible / never-staged does NOT make them out of scope; it only changes the deploy path (edit → `hms`, no commit — see Step 7g's Deploy variant). Do NOT auto-fail a note as "out of scope" merely because its target lives in `overconfig.nix` / `user.nix`.
 - A new project-local `.claude/skills/...` file.
 
-If the fix targets a path OUTSIDE the repo (e.g., `$HOME/something`, `/tmp/`, another repo), write a failure note using the SAME full format as Step 8:
+Only a path genuinely OUTSIDE `~/.config/nixpkgs/` is out of scope. If the fix targets a path OUTSIDE the repo (e.g., `$HOME/something`, `/tmp/`, another repo), write a failure note using the SAME full format as Step 8:
 - `title`: `"FAILED: <original improvement title>"`
 - `tags`: `["claude-improvement-failed"]`
 - `content`: original note content verbatim + `## Failure reason` section explaining `out of scope for implementer: <proposed path> is outside ~/.config/nixpkgs/`
@@ -265,6 +268,8 @@ Each command must succeed before the next. If any fail, go to Step 8 (failure ha
 
 Note: every git / hms / kanban call relies on cwd being `~/.config/nixpkgs`. Do NOT `cd` during the cycle.
 
+**Deploy variant — git-invisible / never-stage files (`overconfig.nix`, `user.nix`, or a skill/config they host):** these files are made git-invisible by `hms` and must NEVER be `git add`ed / committed — but that does NOT mean they cannot be changed. Their deploy path is: **edit → `hms` → verify the deployed artifact (e.g. `test -f` / `rg` the `~/.claude/...` output) → DONE.** Skip `git add` / `git commit` / `git push` entirely — there is nothing to commit; the change is live the moment `hms` deploys it. (If a single note's fix touches BOTH a normally-committed file AND a git-invisible file, deploy once via `hms`, then commit ONLY the committed file — never the git-invisible one.)
+
 #### 7h. On Success
 
 Move to the next note. Increment success counter.
@@ -350,7 +355,7 @@ Reject any sub-agent output that uses hedge words ("probably", "should work", "I
 claude-improvement: <short summary>
 ```
 
-One commit per successfully processed note. **Never batch multiple improvements into one commit.**
+One commit per successfully processed note — **except a git-invisible-only fix, which produces ZERO commits** (it deploys via `hms` alone; see Step 7g's Deploy variant). **Never batch multiple improvements into one commit.**
 
 ---
 
