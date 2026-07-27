@@ -65,21 +65,32 @@ Recorded in full in Document D § `## Decisions`. Summary:
 
 ## STATE AT PAUSE — verify this first
 
-**Working tree was CLEAN at pause** apart from `.scratchpad/` (untracked, expected).
-
-**Card #2996 — Stage 1 unit 1.5 — was IN FLIGHT when the session paused.** Its agent may have completed, partially completed, or died. **Check this before anything else:**
+**Unit 1.5 landed and is committed.** Both Stage 1 edits are done. Expected state:
 
 ```
-kanban list | rg 2996
-git status --short
-wc -l CLAUDE.md
-bash docs/v5-migration/invariant-assertions.sh
+wc -l CLAUDE.md                                  → 314
+wc -l modules/claude/global/CLAUDE.md            → 450
+bash docs/v5-migration/invariant-assertions.sh   → exit 0, 31/31
+git status --short                               → clean apart from .scratchpad/
 ```
 
-Interpretation:
-- `CLAUDE.md` still **387 lines** and tree clean → 1.5 never landed. Re-launch it (card #2996 is still in `doing`; see § Next action).
-- `CLAUDE.md` at **≤291** and tree dirty → 1.5 completed but was never reviewed, deployed, or committed. Go to § Next action step 2.
-- Anything else → surface to the user before proceeding. Another session may have run overnight.
+If any of that differs, **stop and surface it to the user** — another session may have run overnight.
+
+### ⚠️ Two gates are deliberately OUTSTANDING on unit 1.5
+
+Unit 1.5's work is **committed but neither reviewed nor deployed.** That was a deliberate pause-time choice: committing protects the work from a file-level git operation by another session (a documented past failure destroyed seven cards' work), while withholding `hms` keeps it out of your live sessions until it has been reviewed. Both gates survive.
+
+So `~/.claude/CLAUDE.md` still holds the **pre-edit** project file. The global one at 450 lines IS deployed — that was unit 1.4, which passed its full review and gate.
+
+### The 291 → 314 cap correction
+
+Unit 1.5 reported `blocked` rather than hitting its cap, which is the escalation contract working. It proved 291 unreachable: the number equalled `82 protected + 113 KEEP + 96 sub-agent-needed` **exactly**, budgeting nothing for the 16-line git-alias block, 4 structural lines, or 3 mandated pointers. Even removing the off-limits categories leaves 295.
+
+Root cause, cited: `D-implementation-plan.md:704-710` subtracted the ledger's full safe set including row 6's span 106–108 — that section's own heading and subheading. **Row 6 is a SPLIT that retains KEEP content, so it must retain a heading.** The subtraction treated a SPLIT's structural overhead as removable. The ledger flagged this risk at its line 90 and the zero-slack design left nothing to absorb it.
+
+Row 6's git-alias block measured **16–17 lines, not 49**, so verified-safe dropped 96 → 79.
+
+**The cap was raised to 314. Card #2996's criterion 1 was replaced accordingly.** Document D still states 291 in several places — **it has not been amended yet.** See § Next action.
 
 ---
 
@@ -99,17 +110,21 @@ The plan originally promised 357 lines. Measurement cut that to 176 because **15
 
 ## Next action
 
-**1. If unit 1.5 has not landed:** re-launch card #2996 with an `ai-expert` agent on Opus. Its card body carries the full spec. Note the two things most likely to go wrong: it must quantify **row 6's non-git-alias subset first** (its ledger counts row 6 in full while its own prose qualifies it — this may raise the 291 floor), and the **macOS Trash CLI section (~19 lines) must stay** — it looks like project trivia but is a protected mechanism explanation recording a real failure that destroyed 160 folders.
+**START HERE — in this order:**
 
-**2. Once 1.5 has landed, in this order:**
-   a. Verify independently: line count ≤ its floor, `bash docs/v5-migration/invariant-assertions.sh` exits 0, `modules/claude/global/CLAUDE.md` untouched.
-   b. **Tier-1 AI Expert review** — mandatory, non-optional. Prompt files are Tier 1. Model it on card #2993's card (unit 1.4's review): tell the reviewer what is already mechanically confirmed and direct it at what the tripwire structurally cannot check — pointer quality, coherence of relocated content in its new home, silent losses, scope creep against Q1.
-   c. Resolve non-low findings. Auto-implement blocking/high/medium; surface lows.
-   d. `hms` — the real build gate. `nix flake check` does not run flake8.
-   e. **`git add` any new destination files before `hms`** — Nix excludes untracked files, so a new file that is not staged never reaches `~/.claude/docs/` and its pointer is dead on arrival.
-   f. Commit.
+**1. Tier-1 review of unit 1.5.** Mandatory; prompt files are Tier 1. Model the card on #2993 (unit 1.4's review): state what is already mechanically confirmed — 314 lines, tripwire 31/31, global file untouched, scope isolation held — and direct the reviewer at what the tripwire structurally **cannot** check: pointer quality, whether content lifted into `~/.claude/docs/` reads coherently arriving cold, silent losses against `.scratchpad/S1-unit-1.5-accounting.md`, and scope creep against decision Q1.
 
-**3. Then the two remaining Stage 1 gates:**
+Note for the reviewer: unit 1.4's review found its accounting asserted "no inbound references exist" **in prose without running the search** — it was false and hid a stale pointer. Unit 1.5 was told to write coverage claims as command-and-output pairs. Verify it actually did.
+
+**2. Resolve non-low findings.** Auto-implement blocking / high / medium; surface lows.
+
+**3. `hms`.** The real build gate — `nix flake check` does not run flake8. All Stage 1 destination files are already tracked, so nothing needs staging first, but re-check `git status` in case the review added a file.
+
+**4. Commit any review fixes.** Unit 1.5's own work is already committed; this covers only what the review changes.
+
+**5. Amend Document D for the 291 → 314 correction.** It still states 291 in the Stage 1 arithmetic, the unit table, the validation gate's line-count check, `## Recomputed Numbers`, and `## Executive Summary`. **Correct all of them** — a stale target left anywhere is a number a later agent will chase. Record the SPLIT-overhead root cause so the same subtraction error is not repeated in Stages 2–4, which have SPLIT sections too. Revised Stage 1 aggregate: **450 + 314 = 764, a 153-line reduction from 917.**
+
+**6. Then the two remaining Stage 1 gates:**
    - **Sub-agent injection smoke test.** Spawn one trivial background sub-agent and confirm its injected `claudeMd` block contains BOTH `CLAUDE.md` files and that the 31 assertions still pass against what it actually received. This is the only check that proves the *injection path* works rather than that the files say the right thing.
    - **Owner soak.** One week of ordinary `staff` and `sstaff` work with no behavioral surprise. **Stage 2 does not open until the owner confirms this.** That gate is theirs, not yours.
 
