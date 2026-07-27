@@ -76,11 +76,17 @@ git status --short                               → clean apart from .scratchpa
 
 If any of that differs, **stop and surface it to the user** — another session may have run overnight.
 
-### ⚠️ Two gates are deliberately OUTSTANDING on unit 1.5
+### ⚠️ Unit 1.5 IS LIVE AND UNREVIEWED — corrected claim, read carefully
 
-Unit 1.5's work is **committed but neither reviewed nor deployed.** That was a deliberate pause-time choice: committing protects the work from a file-level git operation by another session (a documented past failure destroyed seven cards' work), while withholding `hms` keeps it out of your live sessions until it has been reviewed. Both gates survive.
+An earlier draft of this document said unit 1.5 was "committed but not deployed, so the review gate survives." **That was wrong.** The correction:
 
-So `~/.claude/CLAUDE.md` still holds the **pre-edit** project file. The global one at 450 lines IS deployed — that was unit 1.4, which passed its full review and gate.
+**The project-root `CLAUDE.md` is not a Nix-deployed artifact.** Claude Code reads it **in place from the repository**. `hms` deploys `modules/claude/global/*` into `~/.claude/`; the project file has no deploy step. Confirmed: `~/.claude/CLAUDE.md` is 450 lines — that is the *global* file — while the 314-line project file is read directly from the repo path.
+
+**Consequence: unit 1.5's change took effect the moment the file changed on disk.** Any session started in this repository since then uses the 314-line version. There was never an `hms` gate to withhold, so the Tier-1 review is now reviewing something already in effect rather than gating it.
+
+**Why this was not reverted:** the tripwire passes 31/31, so every protected invariant is verified intact — the unreviewed dimension is *quality* (pointer usefulness, coherence of relocated content), not invariant correctness. Reverting a change whose safety properties are verified, purely to restore a process ordering, would have been worse than recording accurately that the ordering did not hold.
+
+**Unit 1.4 is different and is fine.** The global file at 450 lines passed its full Tier-1 review, had its findings resolved, and was deployed through `hms` afterward. Its gates held.
 
 ### The 291 → 314 cap correction
 
