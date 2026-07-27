@@ -25,9 +25,15 @@
 1. **Cited changes only — Q1(A).** Nothing ships without an Anthropic citation. This is now a hard **constraint on the plan**, not a preference the owner might revisit mid-effort. It closes emphasis register, output-style length, and agent-definition length for this effort entirely. § Q1 Audit walks every surviving work unit against it and states the two admissible bases for a change.
 2. **360 lines for the global `CLAUDE.md`, 200 for the project-root `CLAUDE.md` — Q6(B).** These are the **committed numbers**, not a revised proposal awaiting sign-off. The subtraction that forces 360 is shown in § Stage 1 and re-shown there with the decisions applied, so it stays auditable. A tracked follow-on carries the two routes to 200; G12's `PreToolUse` hook work is its gating dependency.
 
+   > **⚠ SUPERSEDED BY AMENDMENT 2 (card #2976). The committed numbers are now 450 for the global `CLAUDE.md` and 291 for the project-root `CLAUDE.md`** — aggregate **741**, a **176**-line reduction. Q6's own reopening trigger fired: unit 1.1 measured 159 nominal relocatable lines against a 171-line threshold, the 360 target failed, and the owner re-answered Q6 by accepting targets computed from **verified-safe relocation only** — the same Q6(B) principle applied to corrected data. The decisive new constraint is that **content every sub-agent needs cannot be made conditional**, which disqualified 79 lines of the global candidate set and 96 lines of the project-root candidate set. Item 2 above is left standing because superseded arithmetic is left standing throughout this document. **Do not read a target off it.** § Q6 reopened and re-answered shows every subtraction.
+
+3. **The `ac-reviewer` roster entry is removed, not annotated — Q9 reversed to (A) by Amendment 2.** Unit 1.3 established that Q9(B)'s planned clarifying clause would have stated something false: there is no automatic AC reviewer. `agents/ac-reviewer.md` was deleted in commit `a0385ee` together with the Haiku subprocess path, and AC review has been fully programmatic since. § Q9 reversed to (A) carries the evidence.
+
 Four stages, in tier order, each used in real work before the next begins. Nothing about how the owner works changes; only how the prompts are written.
 
 **Stage 1 — the always-injected shared layer (2 files, 917 lines).** The highest-leverage change, and the only one with an Anthropic number tied to *adherence* rather than cost. It is also where the arithmetic breaks. The 200-line-per-file target is reachable for the 387-line project-root `CLAUDE.md` and **unreachable for the 530-line global `CLAUDE.md`**: after excluding the 183 lines of protected invariant and Anthropic-prescribed content, and after relocating every one of the 172 candidate narrow-audience lines, the global file floors at **≈358 lines — 1.79x the target**. See § Stage 1 for the subtraction. The committed targets are therefore **200 lines for the project-root file and 360 for the global file** (aggregate 560, a 357-line reduction), with the global overshoot recorded as a reasoned deviation from a soft target. Any card that names 200 for the global file would send an agent hunting 158 lines it may only find inside a protected prohibition. Plausible duration: 1–2 weeks of elapsed calendar time, most of it the owner's soak period. Owner gate: a week of ordinary `staff` and `sstaff` work — the target sign-off gate is discharged by Q6.
+
+> **⚠ AMENDMENT 2 CORRECTS THE PARAGRAPH ABOVE ON FOUR POINTS.** (i) **The 200-line target is unreachable for the project-root file too**, by 91 lines — the sentence calling it reachable is the plan's largest single measurement error, and § Verification Strategy's blind-spot list had predicted exactly this failure. (ii) **The committed targets are 450 global and 291 project-root**, aggregate **741**, reduction **176**. (iii) **The 172-line and 298-line relocation ceilings both overstated what can be moved**, because neither applied the sub-agent-need test: units 1.1 and 1.2 measured **80** and **96** verified-safe relocatable lines respectively, against nominal figures of 159 and 192. (iv) **Neither file has slack now** — both caps sit exactly at their verified-safe floors, so the warning about *"an agent hunting 158 lines"* now applies to **both** files rather than only the global one, and the sentence describing the project-root file as the reachable half should be read as the specific thing an agent must not rely on. See § Q6 reopened and re-answered.
 
 **Stage 2 — the two coordinator output styles (2 files, 5,979 lines).** Fix the missing STOP-condition exclusions in `senior-staff-engineer.md` (G11); build the **mechanical sync check** Q5(B) commissions, which is the stage's structural addition and the one change that converts a prompt-only invariant into a mechanically checked one; act on D1/D2 for the checklists now that the model mapping is measured — both coordinator tiers run `--model 'opus[1m]' --effort xhigh`, so Opus 5 guidance governs them; and add the two D13-motivated passages Q3 and Q8 commission. **Two things are closed here rather than decided here.** Consolidating the two output styles is closed by Q5(B): both files stay, with their duplication accepted and mechanically policed. Length reduction is closed by Q1(A): NA3 has no Anthropic authority in either direction, so the 250–300 restated lines in `senior-staff-engineer.md` stay. Plausible duration: 2–3 weeks. Owner gate: two weeks of real coordination work, watching specifically for a suppressed review.
 
@@ -136,6 +142,17 @@ Each subsection states the question in one line, the option chosen, the rational
 - **Unit 1.0 keeps its place but changes purpose.** Its read-only finding now feeds the follow-on rather than this effort's target. Nothing in Stages 1–4 is planned on its answer either way, which was already true.
 - **R5's detector matters more, not less.** With 360 committed rather than proposed, a later card that reads `C-gap-analysis`'s 200 is contradicting an approved number.
 
+**⚠ Q6 WAS REOPENED AND RE-ANSWERED — Amendment 2, 2026-07-27, card #2976.** This subsection's numbers are superseded. Recorded here, in § Decisions, because this is where a reader meets the decisions before the work.
+
+- **The reopening was triggered by this plan's own tripwire, not by second thoughts.** § The Stage 1 line budget with the decisions applied, consequence 2, stated: *"If 1.1's re-derivation comes in below 171 relocatable lines, the 360 target fails and Q6 reopens."* **Unit 1.1 measured 159.** The tripwire fired.
+- **The re-answer is Q6(B)'s own principle applied to corrected data**, not a new decision shape: *commit to the reachable number, keep the target honest as a target.* What changed is the measurement of "reachable."
+- **Revised committed numbers: 450 lines for the global `CLAUDE.md`, 291 for the project-root `CLAUDE.md`** — aggregate **741**, a **176**-line reduction. Both are computed from **verified-safe relocation only**: 80 of 159 nominal lines in the global file, 96 of 192 in the project-root file.
+- **The disqualifying test is new and it is the substance of the re-answer:** content that every sub-agent needs cannot be made conditional, so it cannot be relocated by any mechanism. Unit 1.0 established that no currently-available mechanism is shown to deliver relocated content into a background sub-agent's context.
+- **Both files now sit at zero slack**, so consequence 1's *"no headroom"* warning applies to the project-root file as well. The claim elsewhere in this document that the project-root file has **111 lines of headroom** and is *"the only part of the Stage 1 budget with real slack"* is **false** — unit 1.2 measured 5 lines against the old target and 0 against the revised one.
+- **The tracked follow-on is unchanged and is where the remaining reduction lives.** G12's `PreToolUse` hook work remains its gating dependency, and unit 1.0's finding adds a second gating item: the runtime experiment that would establish whether `paths:` gating reaches a non-fork sub-agent at all.
+
+Full derivation, with every subtraction shown and the coordinator's non-authoritative estimates reconciled: **§ Q6 reopened and re-answered.**
+
 ### Q7 — Add a `SubagentStop` structural check for the 7-field return contract (WI-14)?
 
 **Chosen: (C) Defer the WI-14 `SubagentStop` structural check until after Stage 3.**
@@ -173,6 +190,16 @@ Each subsection states the question in one line, the option chosen, the rational
 - **Unit 1.4 gains the clause.** Global `CLAUDE.md:521`'s roster line stays; a clause naming `ac-reviewer` as the automatic `SubagentStop` AC reviewer and not a delegation target is added beside it. G16's Stage 1 share is now an addition, not a correction-by-deletion.
 - **This ADDS a line to the file with the tightest budget in the corpus.** § Stage 1 re-shows the subtraction with it applied: the floor moves from 358 to 359 against a 360 cap, so slack falls from 2 lines to 1. That is the honest cost and it is not netted against anything.
 - **The clause is correct under either answer**, which is the property that makes deferring 1.3 harmless. If 1.3 finds a dynamic prompt body, the clause's wording changes; its existence does not.
+
+**⚠ Q9 WAS REVERSED TO (A) — Amendment 2, 2026-07-27, card #2976. The roster line is removed; no clause is added.**
+
+- **The last bullet above is the one that did not hold.** The clause was *not* correct under either answer. Unit 1.3 found the sentinel case, and the clause Q9(B) specified — naming `ac-reviewer` as *"the automatic `SubagentStop` AC reviewer"* — **would have been false.** There is no automatic AC reviewer: AC review is fully programmatic, the hook re-running each `mov_command` as a shell command.
+- **The evidence is two independent confirmations, not one.** An exhaustive static search found zero LLM-invocation symbols repo-wide (no Anthropic SDK import exists in any file), **and** git history shows `agents/ac-reviewer.md` was added in `97778f8` then explicitly deleted in **`a0385ee`** — *"eliminate AC reviewer; force programmatic-only AC"* — the same commit that stripped the Haiku subprocess path out of the `SubagentStop` hook.
+- **Q9(B)'s only stated advantage is void.** (B) was chosen over (A) to avoid deleting a real capability if a dynamic prompt body existed. **That risk is now measured at zero, twice.** The hedge has nothing left to hedge against.
+- **Budget effect runs in the helpful direction.** (B) consumed a line from the tightest budget in the corpus; **(A) returns it.** § Recomputed Numbers' additions ledger loses its only budget-entering row.
+- **Unit 1.4's Q9 share is a one-line deletion, not an addition**, and unit 1.4 no longer waits on 1.3.
+
+Evidence, wording analysis, and the recomputed slack figures: **§ Q9 reversed to (A).**
 
 ### The Q1 Audit — every surviving unit against the cited-changes-only constraint
 
@@ -340,13 +367,15 @@ Every later card is executed against this section, **and against § The Q1 Audit
 
 | Category | Target | Authority | May a length change cite Anthropic? |
 |---|---|---|---|
-| Project-root `CLAUDE.md` | **200 lines — committed (§ Q6)** | D33, tied to *adherence*: *"target under 200 lines per CLAUDE.md file. Longer files consume more context and reduce adherence."* | **Yes** |
-| Global `CLAUDE.md` | **360 lines — committed (§ Q6)**, a reasoned overshoot; see § Stage 1 for the subtraction that forces it | D33, as a soft target: *"CLAUDE.md files are loaded in full regardless of length"* | **Yes, for the direction. No, for the number** — 360 is ours |
+| Project-root `CLAUDE.md` | **291 lines — committed (§ Q6 re-answer, Amendment 2).** ~~200 lines~~ superseded: unreachable by 91 lines once the sub-agent-need test is applied | D33, tied to *adherence*: *"target under 200 lines per CLAUDE.md file. Longer files consume more context and reduce adherence."* | **Yes, for the direction. No, for the number** — 291 is ours, and it is now a reasoned overshoot too |
+| Global `CLAUDE.md` | **450 lines — committed (§ Q6 re-answer, Amendment 2)**, a reasoned overshoot; ~~360 lines~~ superseded. See § Q6 reopened and re-answered for the subtraction that forces 450 | D33, as a soft target: *"CLAUDE.md files are loaded in full regardless of length"* | **Yes, for the direction. No, for the number** — 450 is ours |
 | `SKILL.md` body | **500 lines** | Stated three times across two official hosts | **Yes** |
 | Output styles | **No target, and no length change authorized** | Confirmed absence from a full-page read (NA3), **closed by § Q1(A)** | **No** — and no other ground is available either |
 | Agent definitions | **No target, and no length change authorized** | Confirmed absence from a full-page read (NA4), **closed by § Q1(A)** | **No** — and no other ground is available either |
 
 **Test.** Is a length reduction being justified by citing Anthropic? Only the first three rows may. **For output styles and agent definitions there is no longer an owner-judgment fallback:** the original version of this rule allowed such a change if the card labelled it *owner judgment, no Anthropic authority*, and Q1(A) removed that path. Document A forbids extending D33 to them and calls that extension *"the single most likely overreach in the whole effort"*; Q1(A) now forbids reaching the same outcome by preference instead. The first two rows' numbers are committed, not proposed — a card that names 200 for the global file is contradicting an approved decision, not proposing a stretch goal.
+
+**Amendment 2 extends the last sentence rather than replacing it.** The committed numbers are now **450** global and **291** project-root, and the same logic applies with one more number added: **a card that names 360 for the global file, or 200 for either file, is contradicting an approved decision.** 200 in particular is now unreachable for *both* Tier-1 files, not just the global one, so it is the single most dangerous number in this document to read out of a superseded block.
 
 ### SG9 — Match degrees of freedom to task fragility before relocating or compressing anything
 
@@ -406,7 +435,28 @@ Stated as a closed list so a rewriter cannot infer permission from silence. **Ev
 
 ## Stage 1: Shared Layer
 
+### Read this before re-deriving any relocation ceiling — the sub-agent-need test
+
+**Added by Amendment 2.** This is placed first, ahead of every number in this section, because it is the test that both of Stage 1's original ceilings failed to apply, and any future effort that re-derives a ceiling will meet it here before it starts subtracting.
+
+**The constraint: content that every sub-agent needs cannot be made conditional.** If a section must reach every sub-agent, then no relocation mechanism reduces its cost — a conditional surface that always fires is not conditional, and a conditional surface that sometimes does not fire has withheld content the sub-agent needed. The only way to reduce such a section's cost is to make it **shorter**, not to **move** it. Moving it either changes nothing or breaks something.
+
+**Why this outlives any mechanism question.** It is not a fact about `~/.claude/rules/`, about `paths:` frontmatter, about `@path` imports, or about skills. It holds for any relocation destination that could ever be built, because it is a property of the requirement rather than of the mechanism. Even if unit 1.0's Q2 gap were closed tomorrow with a confirmed-working user-scope gating mechanism, this test would still bind: content that must always load cannot be gated, by definition.
+
+**What this means for the two ceilings this section originally stated.** Part of the 172-line global ceiling and part of the 298-line project-root ceiling **was never relocatable at all**, regardless of whether `paths:` gating works. Neither original ceiling applied this test — both were built on audience breadth, then on the `/doctor` keep-test, and neither asked whether the surviving relocation candidates had to reach sub-agents. Units 1.1 and 1.2 applied it, and it removed 79 lines from the global candidate set and 96 lines from the project-root candidate set. See § Q6 reopened and re-answered.
+
+**The mandatory order of operations for any future re-derivation.** Apply the tests in this order and stop at the first one that disqualifies a section:
+
+1. **Protected?** A prompt-only invariant or Anthropic-prescribed block lives here → not relocatable, not shortenable.
+2. **Does it pass the `/doctor` keep-test** (pitfall, rationale, or convention diverging from a tool default) → KEEP, not relocatable.
+3. **Do background sub-agents need it?** YES → **not relocatable by any mechanism.** Only shortening reduces its cost, and shortening it is a separate authorization this plan does not grant.
+4. Only what survives all three is **verified-safe relocatable**, and only that figure may enter a line-budget subtraction.
+
+**A ceiling that skips step 3 is not a ceiling. It is an upper bound on a number nobody can actually spend.**
+
 ### The Stage 1 line budget — the arithmetic, shown
+
+> **⚠ EVERY NUMBER IN THIS SUBSECTION IS SUPERSEDED BY AMENDMENT 2. DO NOT TAKE A TARGET FROM IT.** It is retained in full because superseded arithmetic is left standing throughout this document so corrections stay auditable. Its two relocation ceilings — **172** lines global and **298** lines project-root — were both measured before the sub-agent-need test existed, and both overstate what can actually be moved: units 1.1 and 1.2 measured **80** and **96** verified-safe relocatable lines. The committed targets are **450** global and **291** project-root. **The live arithmetic is in § Q6 reopened and re-answered**, two subsections below.
 
 `C-gap-analysis` states three times that this subtraction must appear here before Stage 1 begins, and `C-verification` calls its absence *"the single largest behavioral risk in the plan."* Here it is. All spans measured 2026-07-27 against the live files.
 
@@ -498,6 +548,8 @@ Required hit rate on the ceiling: 187 of 298 = 63%.
 
 ### The Stage 1 line budget with the decisions applied
 
+> **⚠ ALSO SUPERSEDED BY AMENDMENT 2 — and this is the subsection whose own tripwire fired.** Its consequence 2 named the reopening condition, unit 1.1 tripped it at 159 lines, and Q6 was re-answered at **450 / 291**. Two further corrections: the *"1 line of slack"* figure is superseded (both files now sit at zero slack), and Q9(B) itself was **reversed to Q9(A)**, so the +1 line this subsection adds is withdrawn. Retained for comparison. **Live arithmetic: § Q6 reopened and re-answered.**
+
 The subtraction above is the pre-decision arithmetic and is left standing so the two versions can be compared. Here it is again with every decision that touches the global file applied. **One decision touches it: Q9(B).**
 
 ```
@@ -519,20 +571,267 @@ The subtraction above is the pre-decision arithmetic and is left standing so the
 
 1. **Unit 1.4 has essentially no headroom.** Any *additional* line added to the global file during Stage 1, for any reason, breaches the committed cap. There is no room for a second Q9-style clarifying clause, a second mechanism sentence, or a paired `✅` — note that SG3 does not apply to this file's protected prohibitions by its own hard exclusion, which is the only reason that last one is not already a conflict.
 2. **The 172-line ceiling is now load-bearing rather than optimistic.** Pre-decision, the floor could absorb a small shortfall in unit 1.1's ledger. It cannot now. **If 1.1's re-derivation comes in below 171 relocatable lines, the 360 target fails and Q6 reopens** — R6 already says this, and Q9(B) tightened the threshold from 170 to 171.
+
+   > **⚠ THIS THRESHOLD WAS TRIPPED.** Unit 1.1 measured **159 nominal relocatable lines** — 12 below the 171-line threshold. The 360 target failed, Q6 reopened, and the owner re-answered it. The threshold did what it was written to do; the plan should record that it worked rather than quietly absorbing the miss. **And the miss is not rescued by Q9's reversal:** with Q9(A) removing a line instead of adding one, the threshold would have relaxed from 171 to 169, and 159 is still below 169. Even relocating the full 159 nominal lines gives `530 − 1 − 159 = 370`, still 10 lines over a 360 cap. **The 360 target fails on the nominal ceiling alone, before the sub-agent-need test is applied at all.** See § Q6 reopened and re-answered.
 3. **No double-counting between G19 and G2.** G19's ~20 double-paid `## Team Member Terminology` lines sit *inside* the `## Team Member Terminology` section (506–525, 20 lines) that the relocation ceiling already counts. They are one 20-line opportunity claimed by two gap numbers, not two. Unit 1.4's card must state which mechanism removes them so the ledger does not credit both.
 
 **The project-root file is unaffected.** No decision adds or removes a line there; its floor stays 82, its ceiling-based estimate stays 89, its committed target stays 200, and its 111 lines of headroom stand. It is the only part of the Stage 1 budget with real slack.
 
+> **⚠ SUPERSEDED BY AMENDMENT 2 — both claims in the paragraph above are wrong, and they are the two figures most likely to be chased.** Unit 1.2 measured the project-root file's actual slack at **5 lines**, not 111, against the 200-line target — and at **0 lines** against the revised target once the sub-agent-need test is applied. The 111-line figure came from the 89-line *ceiling-based estimate*, which assumed the entire 298-line candidate ceiling relocates; unit 1.2's section-by-section re-derivation found 113 lines of KEEP content beyond the 82-line protected floor that the optimistic ceiling had counted as relocatable. **The project-root file is therefore not "the only part of the Stage 1 budget with real slack" — after Amendment 2 neither file has meaningful slack, and the project-root file is the one whose target moves furthest.** The paragraph is left standing because the superseded arithmetic is left standing throughout this document; do not read a target off it. See § Q6 reopened and re-answered.
+
 **Two routes exist to reach 200 later, and neither is prompt editing.** Both are named here so the committed target is understood as a floor for *this* effort rather than a permanent verdict. **§ Q6(B) commissions a tracked follow-on covering both** — see § Out Of Scope → `### The tracked follow-on to 200 (§ Q6(B))`.
 
 1. **Path-scoped rules.** D33's own sentence prescribes them: *"If your instructions are growing large, use path-scoped rules so instructions load only when Claude works with matching files."* Document A § Splitting Content confirms they genuinely reduce context, unlike `@path` imports. Two facts are unestablished and gate this: whether a *user-scope* path-scoped rule directory exists at all (Document A records only `.claude/rules/`, project-scoped), and whether the `paths:` gating applies inside a non-fork sub-agent, whose documented context includes *"project rules"* without stating whether the gating survives. Unit 1.0 investigates; nothing is planned on it.
+
+   > **⚠ AMENDMENT 2 — unit 1.0 answered. The two facts resolved differently from each other.** Fact one is now **established YES**: a user-scope `~/.claude/rules/` directory *is* documented, so this bullet's parenthetical (*"Document A records only `.claude/rules/`, project-scoped"*) reflected an incomplete prior fetch rather than a real absence in the documentation. Fact two is **NOT DOCUMENTED** in either direction. See § Unit 1.0's destination finding for all three parts of the answer, including a non-official runtime caveat that is kept separate from the documentation finding.
+
 2. **G12's hook work.** If WI-18's and WI-12's prohibitions become `PreToolUse`-hook-enforced per D39, their 40 prompt lines stop being the sole guarantee and become a double cover — at which point they could be *shortened* without removing a guarantee, because the guarantee moved to the mechanism. **This is the only Anthropic-endorsed route to 200 on the global file, and it is not a prompt edit.** It is tracked in § Out Of Scope.
+
+### Q6 reopened and re-answered — Stage 1's measured reality
+
+**Added by Amendment 2, 2026-07-27, session `stout-ember`, kanban card #2976.** The four Stage 1 read-only units have run. Three of them contradict figures stated above. **Everything above this subsection is left standing as the superseded arithmetic; everything in this subsection supersedes it.** Where the two disagree, this subsection is the one a Stage 1 card executes against.
+
+**Drivers, all four read in full before any number below was computed:**
+
+| Unit | Scratchpad | What it supplies |
+|---|---|---|
+| 1.0 | `.scratchpad/S1-unit-1.0-pathscoped.md` | The relocation-destination constraint — a constraint, not a mechanism |
+| 1.1 | `.scratchpad/S1-unit-1.1-global-ledger.md` | Global `CLAUDE.md` relocate/keep ledger + sub-agent need classification |
+| 1.2 | `.scratchpad/S1-unit-1.2-project-ledger.md` | Project-root `CLAUDE.md` relocate/keep ledger + sub-agent need classification |
+| 1.3 | `.scratchpad/S1-unit-1.3-acreviewer.md` | The `ac-reviewer` determination |
+
+#### Why Q6 reopened
+
+The plan committed to 360 for the global file and 200 for the project-root file, and stated its own reopening trigger at § The Stage 1 line budget with the decisions applied, consequence 2: *"If 1.1's re-derivation comes in below 171 relocatable lines, the 360 target fails and Q6 reopens."*
+
+**Unit 1.1 measured 159 nominal relocatable lines. 159 < 171. The 360 target failed. Q6 reopened.** The trigger fired exactly as designed, which is the one piece of good news in this subsection.
+
+#### The owner's re-answer
+
+**Accept targets computed from verified-safe relocation only, ship that reduction now, and leave the hook work as the already-commissioned follow-on.**
+
+This is not a new principle. It is **the owner's original Q6(B) principle — commit to the reachable number, keep the target honest as a target — applied to corrected data.** Q6(B)'s recommendation text says exactly this: *"It commits to the reachable number, keeps the target honest as a target, and correctly identifies that the remaining 158 lines are a hooks-and-rules problem rather than a prompt-editing problem."* What changed is not the principle but the measurement of "reachable": the earlier reachable number rested on a ceiling that had never been tested against sub-agent need, and the tested ceiling is smaller.
+
+**"Verified-safe" has a precise definition, and it is the whole content of the re-answer.** A relocatable line is verified-safe only if it survives all four steps of § Read this before re-deriving any relocation ceiling. In practice the binding step is step 3: **no line that background sub-agents need is verified-safe**, because unit 1.0 established that no currently-available mechanism is shown to deliver relocated content into a background sub-agent's context. Nominal relocatable is what the `/doctor` keep-test permits; verified-safe relocatable is what can actually be moved today without risking a silent capability regression in delegated work.
+
+#### Global `modules/claude/global/CLAUDE.md` — every subtraction shown
+
+Source: `.scratchpad/S1-unit-1.1-global-ledger.md`, its `## Total` and `## Subagent Need Classification` sections. Total independently confirmed: `wc -l modules/claude/global/CLAUDE.md` → **530**.
+
+```
+ 530   total lines
+-183   protected floor (unit 1.1 reproduced this document's 183 independently
+       and it did not move)
+─────
+ 347   non-protected
+-188   KEEP under the /doctor keep-test, non-protected
+       (preamble 9 + AWS Credentials 28 + Tool-First 23 + Pagination 13
+        + Research Priority non-anchor 21 + Model Selection 12
+        + Programming Preferences KEEP 60 + Epistemic Honesty 14
+        + Scratchpad 8 = 188)
+─────
+ 159   NOMINAL RELOCATABLE
+       cross-check: 183 + 159 + 188 = 530 ✓
+```
+
+Then step 3, the sub-agent-need test, applied to each of the thirteen RELOCATE rows:
+
+```
+ 159   nominal relocatable
+ -71   classified YES — background sub-agents need this content
+       (Before EVERY Task non-anchor 12 + Initialisms 6 + SOLID 8
+        + 12-Factor Configuration 39 + Technology Selection 6 = 71)
+  -8   classified YES (partial) — Explain "Why" Before Non-Trivial Changes
+─────
+  80   VERIFIED-SAFE RELOCATABLE
+```
+
+**Verified independently by enumerating the seven rows classified NO**, rather than by trusting the subtraction: Check-In 18 + Complex Requests 7 + PR Comment Replies 6 + Glossary 14 + MCP Integration 10 + Team Member Terminology 20 + Reference Commands 5 = **80**. Two routes, same number.
+
+```
+ 530   total
+ -80   verified-safe relocatable
+─────
+ 450   VERIFIED-SAFE FLOOR
+  -1   Q9(A): remove the ac-reviewer roster line (§ Q9 reversed to (A))
+       — credited only if ## Team Member Terminology does not fully
+         relocate out of this file; see the note below
+─────
+ 449   post-decision floor with the Q9(A) credit taken
+ 450   REVISED COMMITTED TARGET        slack: 1 line if the Q9(A) credit
+                                       lands here, 0 lines if it lands in
+                                       the destination file
+```
+
+**Superseded, left standing for comparison:** 172 ceiling → 358 pre-decision floor → 359 post-Q9(B) floor → 360 target, slack 1. **Revised:** 80 verified-safe → 450 floor → **450 target**.
+
+**Why the Q9(A) credit is conditional, and a double-count in the superseded arithmetic that this exposes.** Line 521's `ac-reviewer` roster entry lives inside `## Team Member Terminology` (506–525), which unit 1.1 classifies RELOCATE and NO-sub-agent-need — so it is inside the 80 verified-safe lines. If the whole section relocates, the roster line leaves the global file with it and Q9's ±1 accrues to the *destination* file, not to the global cap. **The superseded arithmetic charged Q9(B)'s +1 against the global floor while its own 172-line ceiling already relocated the section hosting that line — that is a one-line double-count, and naming it is why this note exists.** Unit 1.4's G19 instruction (*"remove the taxonomy duplication only, not the unique recipes"*) means the section may only partially relocate, which is the case where the credit does land against the 450 cap. **Conservative accounting: assume 0 slack and treat the 1 line as a contingency, not as headroom.**
+
+#### Project-root `CLAUDE.md` — every subtraction shown
+
+Source: `.scratchpad/S1-unit-1.2-project-ledger.md`, its `## Total` and `## Subagent Need Classification` sections. Total independently confirmed: `wc -l CLAUDE.md` → **387**.
+
+```
+ 387   total lines
+ -82   protected floor (unit 1.2 reproduced this document's 82 exactly:
+       intro/identity 8 + NEVER HOMEBREW 4 + macOS Trash 19
+       + SOURCE OF TRUTH 40 + Critical Requirements 7 + Your Team 4 = 82)
+─────
+ 305   non-protected
+-113   KEEP under the keep-test, non-protected
+       (row5 18 + row6 5 + row9 8 + row10 47 + row11 21 + row14 14 = 113)
+─────
+ 192   NOMINAL RELOCATABLE
+       cross-check: 113 + 192 = 305 ✓ and 82 + 113 + 192 = 387 ✓
+```
+
+Then step 3, applied to each of the eight RELOCATE rows:
+
+```
+ 192   nominal relocatable
+ -45   row 9  — Add-package/shellapp/team-member/Nix-deps procedures.
+                YES, rated High. The single highest-stakes candidate in the file
+ -35   row 10 — runtimeInputs/libraries Nix code-block demonstrations.
+                YES, rated High, same audience as row 9
+ -16   row  5 — Adding/Updating/Removing-team-member procedures.
+                YES, rated High. "the same mechanism risk at a smaller scale"
+─────
+  96   VERIFIED-SAFE RELOCATABLE
+```
+
+**Verified independently by enumerating the ledger's own safe set** (*"The remaining RELOCATE rows (6's non-git-alias majority, 8, 12, 14, 15) are safe to relocate by any mechanism"*): row6 49 + row8 8 + row12 20 + row14 9 + row15 10 = **96**. Two routes, same number. Note the symmetry is real and not a transcription error: the not-safe subset is also 96, and 96 + 96 = 192 ✓.
+
+```
+ 387   total
+ -96   verified-safe relocatable
+─────
+ 291   VERIFIED-SAFE FLOOR = REVISED COMMITTED TARGET     slack: 0 lines
+       required hit rate: 96 of 96 = 100% of the verified-safe set
+```
+
+**Superseded, left standing for comparison:** 298 ceiling → 89 ceiling-based estimate → 200 target, claimed headroom 111, required hit rate 187 of 298 = 63%. **Unit 1.2's own nominal measurement:** 192 relocatable → floor 195 → **5 lines** of slack against 200, not 111. **Revised, verified-safe:** 96 → floor 291 → **291 target**, slack 0.
+
+**The 200-line target for the project-root file is now unreachable by 91 lines.** This is the largest single correction in Amendment 2, and it moves in the opposite direction from the one the plan expected: § Verification Strategy's blind-spot list predicted that if the ledgers came in below their ceilings *"the project-root file's 200-line target fails too."* It did. The file that was described as the reachable half of Stage 1 is the half whose target moves furthest.
+
+#### Aggregate, revised
+
+```
+ 917   current (530 + 387, both confirmed by wc -l)
+
+ 450   revised global target
+ 291   revised project-root target
+─────
+ 741   REVISED AGGREGATE
+
+ 917 - 741 = 176   REVISED REDUCTION
+```
+
+**Superseded, left standing:** aggregate 560, reduction 357. **Revised:** aggregate **741**, reduction **176**. The reduction figure falls by 181 lines. That is the honest cost of applying a test the original ceilings never applied, and it is the number to state in every Stage 1 card.
+
+| | Superseded | Revised | Delta |
+|---|---|---|---|
+| Global target | 360 | **450** | +90 |
+| Project-root target | 200 | **291** | +91 |
+| Aggregate | 560 | **741** | +181 |
+| Reduction | 357 | **176** | −181 |
+| Global slack | 1 line | **0–1 lines** (contingent) | — |
+| Project-root slack | 111 lines claimed | **0 lines** | −111 |
+
+#### Where these figures differ from the coordinator's estimates, and which is right
+
+The card that commissioned this amendment carried rough coordinator estimates of **~442 global, ~275 project-root, aggregate ~717, a ~200-line reduction**, and explicitly labelled them **not authoritative** because they were derived from the ledgers' summary lines rather than from the ledgers themselves. They were re-derived from the ledgers here and **they do differ. The figures in this subsection are right, and here is precisely why.**
+
+| Figure | Coordinator | Computed here | Difference | Cause |
+|---|---|---|---|---|
+| Global target | ~442 | **450** | 8 | The 8-line `## Explain "Why" Before Non-Trivial Changes` section, classified **YES (partial)** for sub-agent need, was counted as relocatable |
+| Project-root target | ~275 | **291** | 16 | Row 5's 16 lines (team-member procedures), classified **YES / High risk**, were counted as relocatable |
+| Aggregate | ~717 | **741** | 24 | 8 + 16 |
+| Reduction | ~200 | **176** | 24 | 8 + 16 |
+
+**Global — why 450 and not 442.** 442 arises from subtracting only the five rows classified strict-**YES** (71 lines) and leaving the one **YES (partial)** row inside the relocatable set: `530 − (159 − 71) = 442`. Unit 1.1's own consequence paragraph forecloses that reading: *"Five of the thirteen RELOCATE-verdict sections … are classified **YES, sub-agents need this content**, plus one **partial** (Explain Why, 8 lines). **For these six items**, relocating them to any of the three currently-available mechanisms is not shown to be safe."* **Six items, not five.** The ledger groups the partial with the unsafe set explicitly, so the verified-safe figure is 80 and the floor is 450.
+
+**Project-root — why 291 and not 275.** 275 arises from subtracting only rows 9 and 10, the two rows the ledger labels *"high"* in its headline sentence: `387 − (192 − 80) = 275`. But the very next sentence places row 5 outside the safe set too — *"Row 5's 16 lines carry the same mechanism risk at a smaller scale"* — and the ledger's enumeration of what *is* safe names **rows 6, 8, 12, 14, and 15 only**, omitting row 5. Both statements agree that row 5 is not safe, so the not-safe total is 96, not 80, and the floor is 291.
+
+**The general shape of both discrepancies is the same, and it is worth naming as a pattern rather than as two arithmetic slips.** Both estimates were derived from a ledger's *headline sentence* rather than from its *row-level classification table*. A headline sentence names the largest items; the table names all of them. **Any figure taken from a summary line will be optimistic in exactly this way**, which is why the commissioning card required the computation be redone from the ledgers themselves.
+
+#### Consequence: neither file has slack, and what units 1.4 and 1.5 must do about it
+
+**This is the most operationally important paragraph in Amendment 2.** Under the revised targets, each cap sits exactly at its verified-safe floor. That means:
+
+1. **The required hit rate is 100% of the verified-safe set in both files** — 80 of 80 global, 96 of 96 project-root. Every earlier version of this budget had a cap above its floor; neither does now.
+2. **Any line added to either file during Stage 1, for any reason, breaches its cap.** The global file's contingent 1-line Q9(A) credit is the only cushion anywhere in Stage 1, and it may not materialize.
+3. **If a unit's actual relocation falls short of its verified-safe figure, the unit reports the shortfall and stops. It does not go looking for more lines.** There is nowhere left to look that is not protected content, `/doctor`-KEEP content, or content background sub-agents need — and the third category is new with this amendment, so a unit reading only the superseded arithmetic would not know it exists. Unit 1.2 states the risk plainly: a sub-agent-need regression *"the line-count validation gate (`wc -l` ≤ 200) would not detect, because the content still exists in the repository, just not reliably in the sub-agent's context."*
+4. **A zero-slack cap is a flagged consequence, not a hidden one.** If the owner wants tolerance for units 1.4 and 1.5, **the number to raise is the cap, not the classification.** Reclassifying a sub-agent-needed section as relocatable to buy headroom is the exact failure this amendment exists to prevent.
+
+#### Ledger figures that look internally inconsistent — reported, not resolved
+
+Per the commissioning card's instruction to report rather than silently resolve, three items. **None of them changes any target above**, and each is stated with the evidence a later reader needs to adjudicate it.
+
+1. **Unit 1.1's `## Subagent Need Classification` closing paragraph says "The remaining seven RELOCATE sections (79 lines: …)" — but the seven sections it then enumerates sum to 80.** Check-In 18 + Complex Requests 7 + PR Comment Replies 6 + Glossary 14 + MCP Integration 10 + Team Member Terminology 20 + Reference Commands 5 = 80. Two independent routes force 80: the enumeration itself, and the ledger's own totals (159 nominal − 71 YES − 8 partial = 80). Every per-row figure in the ledger is internally consistent; only the parenthetical summary figure is not. **This subsection uses 80 and reports the discrepancy rather than assuming a typo** — the distinction matters because if 79 were the intended figure, one row's line count would have to be wrong, and no such row exists. **A collision to avoid confusing:** 79 is *also* the correct count of lines the sub-agent-need test *removes* from the global candidate set (71 + 8). The two 79s are unrelated numbers that happen to coincide.
+2. **Unit 1.2's safe set is enumerated as "rows 6, 8, 12, 14, 15" but row 6 is qualified in the same sentence as "6's non-git-alias majority", and the git-alias subset is never quantified.** Row 6's own table entry rates its risk *"Low-moderate, concentrated in the small git-alias subset."* This subsection counts row 6 in full (49 lines) because that is what the enumeration does and because the row-level verdict says *"the majority of this row's content has no sub-agent audience regardless of delivery mechanism."* **The residual is real and unquantified: if the git-alias lines must be withheld, verified-safe drops below 96 and the 291 floor rises by that amount.** Unit 1.5 must quantify it before relocating row 6, and report the number rather than absorb it.
+3. **The superseded arithmetic in this document double-counts one line**, as described in the Q9(A) note above: Q9(B)'s +1 was charged against the global floor while the 172-line ceiling already relocated the section hosting the affected line. Reported here rather than corrected in place, because the superseded block is left standing deliberately.
+
+### Unit 1.0's destination finding — a constraint, not a mechanism
+
+**Added by Amendment 2.** § Stage 1 file list previously described the relocation destinations as *"to be created — path and mechanism determined by Unit 1.0."* **Unit 1.0 (`.scratchpad/S1-unit-1.0-pathscoped.md`) did not determine a mechanism. It returned a constraint.** All three parts, kept separate exactly as unit 1.0 kept them:
+
+**Part 1 — a user-scope rules directory IS documented. This closes a gap in Document A's research.** `https://code.claude.com/docs/en/memory` carries a *"User-level rules"* subsection nested under *"Organize rules with `.claude/rules/`"*, the same section that documents `paths:`-frontmatter gating: *"Personal rules in `~/.claude/rules/` apply to every project on your machine… User-level rules are loaded before project rules, giving project rules higher priority."* A separate warning box on the same page corroborates it independently, grouping `~/.claude/rules/` with `~/.claude/CLAUDE.md` as user-scope memory locations. **Document A's silence on this was an incomplete prior fetch, not an absence in the documentation** — unit 1.0 confirmed by `rg` that Document A's D31 and D33–D39 citations never quote the *"User-level rules"* subsection at all. Every statement in this document that says a user-scope path-scoped rule directory may not exist is corrected by this finding.
+
+**Part 2 — whether `paths:` gating survives into a non-fork sub-agent is NOT DOCUMENTED.** This is the part the plan's viability turned on and it is unresolved in **both** directions. The sub-agents page's *"What loads at startup"* enumeration reads: *"every level of the CLAUDE.md hierarchy the main conversation loads, including `~/.claude/CLAUDE.md`, project rules, `CLAUDE.local.md`, and managed policy files."* Two gaps, read exactly as written: it names **"project rules", not user rules** — `~/.claude/CLAUDE.md` is named explicitly while the parallel `~/.claude/rules/` location is not named at all; and *"the main conversation loads"* is a **snapshot** claim about inherited context, not a claim that a sub-agent's own file reads re-trigger `paths:` gating during its own execution. Neither the feared outcome (gating bypassed, everything loads unconditionally in every sub-agent, making the reduction illusory) nor the hoped-for outcome (gating survives and re-evaluates per sub-agent) is confirmed by any official source. The `InstructionsLoaded` hook page is silent on sub-agent scope as well — silence corroborating silence, not a second confirmation.
+
+**Part 3 — a NON-OFFICIAL RUNTIME CAVEAT, kept separate from the documentation finding.** `anthropics/claude-code` issue #21858 (closed, labelled `bug`/`has repro`/`stale`) reports that `paths:` frontmatter placed in `~/.claude/rules/` was **not respected in practice** as of 2026-01-30 — the rule never loaded regardless of file match, while the identical file worked in `./.claude/rules/`. **This is a community-filed defect report, not an Anthropic statement of intended behavior, and it is not evidence about Part 2's documentation question.** Unit 1.0 kept the separation deliberately and this plan preserves it: Part 2 is what the specification does and does not say; Part 3 is one report about what an implementation did at one past version, closed as stale rather than confirmed fixed. Do not merge them into a single "it's broken" claim, and do not discount Part 2 because Part 3 exists.
+
+**The consequence, stated as the operative rule for units 1.4 and 1.5:**
+
+> **Relocation is safe only for content no sub-agent needs. Where relocated content is genuinely needed by sub-agents, relocation is not available at all until the mechanism is verified.**
+
+Verifying it requires the runtime experiment unit 1.0 names in its coverage gaps — spawn a sub-agent, have it read a file matching a `paths:`-scoped user-level rule the parent never touched, and check whether the rule content reaches the sub-agent's context. **That experiment is not scheduled in any of the four stages**, and no Stage 1 card may treat its outcome as assumed in either direction. It belongs to the tracked follow-on.
+
+### Q9 reversed to (A) on unit 1.3's evidence
+
+**Added by Amendment 2. This reverses a decision recorded in § Decisions.**
+
+**What Q9(B) committed to.** Keep global `CLAUDE.md:521`'s `ac-reviewer` roster line and add a clarifying clause naming it *"the automatic `SubagentStop` AC reviewer and not a delegation target."*
+
+**Why it is reversed: that clause would be false.** Unit 1.3 (`.scratchpad/S1-unit-1.3-acreviewer.md`) returned verdict **(a) pure sentinel**, confirmed twice by independent methods:
+
+1. **Exhaustive static search, repo-wide, negative.** No Anthropic SDK import exists anywhere in the repository (`rg -n 'ANTHROPIC_API_KEY|import anthropic|from anthropic|Anthropic\('` — negative, repo-wide). No LLM-invocation symbol appears in `kanban-subagent-stop-hook.py`. Nothing anywhere sets `KANBAN_AGENT` to `ac-reviewer`, so the sentinel check at `default.nix:172` is unreachable from any code path that currently exists. `fd -a 'ac-reviewer'` returns zero files.
+2. **Git history, explicit and dated.** `agents/ac-reviewer.md` was added in **`97778f8`** (*"add AC reviewer for automated acceptance criteria verification"*) and explicitly deleted in **`a0385ee`** — *"eliminate AC reviewer; force programmatic-only AC"* — the same commit that stripped the entire Haiku subprocess path (`claude -p --model haiku`, `AC_REVIEWER_AGENT_PATH`, `read_ac_reviewer_agent_definition`, `_claudit_write_ac_reviewer_metrics`, 832 lines) out of `kanban-subagent-stop-hook.py`. Unit 1.3 confirmed those symbols are absent from the current hook source, so the commit's own account of what it deleted checks out against the file as it stands today.
+
+**There is no automatic AC reviewer.** Today's AC review is fully programmatic: the `SubagentStop` hook re-runs each criterion's `mov_command` as a shell command. In-repo confirmation at `modules/claude/global/output-styles/senior-staff-engineer.md:1325`: *"The SubagentStop hook re-runs each `mov_command` directly as a shell command — no LLM invocation involved in AC review."* A clause asserting `ac-reviewer` *is* the automatic AC reviewer would state something verifiably false about this repository — which is basis 2 of § The Q1 Audit pointing at the clause itself.
+
+**Why the reversal is sound rather than a reopened argument.** Q9(B) was chosen over Q9(A) for one stated reason: to avoid deleting a real capability if a dynamic prompt body existed. Q9(C)-then-(B)'s own rationale says so — *"correct if `ac-reviewer` is purely a sentinel. If it does have a dynamic prompt body, this deletes a real capability from the roster."* **That risk is now measured at zero, twice, by two independent methods.** The condition Q9(B) hedged against does not obtain. **The owner accepted the reversal to Q9(A): remove the roster line.**
+
+**Budget effect, and it runs in the helpful direction for once.** Q9(B) *consumed* a line from the tightest budget in the corpus; Q9(A) *returns* it and removes one more:
+
+```
+Superseded frame (172-line ceiling, 360 cap) — left standing for comparison:
+  358  pre-decision floor
+   +1  Q9(B) clause          →  359 floor, 360 cap, slack 1
+   -1  Q9(A) line removal    →  357 floor, 360 cap, slack 3
+       net swing of Q9(B) → Q9(A): 2 lines; slack 1 → 3
+
+Revised frame (80-line verified-safe, 450 cap):
+  450  verified-safe floor
+   -1  Q9(A) line removal    →  449 floor, 450 cap, slack 1
+       credited only if ## Team Member Terminology does not fully relocate
+       out of the global file; otherwise the -1 lands in the destination file
+       and the global slack is 0
+```
+
+**What this does not rescue.** The reversal does not save the 360 target. Even with Q9(A)'s −1 and the full 159 nominal lines relocated, `530 − 1 − 159 = 370`, still 10 over 360. The 360 target fails on the nominal ceiling before the sub-agent-need test is applied at all.
+
+**Consequences for the unit list.** Unit 1.4's Q9 share becomes a **deletion of one line**, not an addition of a clause. Unit 1.3's output no longer gates a clause's wording; it has already discharged its purpose. § Recomputed Numbers' additions ledger loses its only entry that consumed a line budget.
+
+**Unit 1.3's recommended clause wording is recorded but not adopted.** Unit 1.3 offered a corrected one-line clause — *"`ac-reviewer` is a legacy sentinel with no prompt or delegation path — AC review is fully programmatic via the `SubagentStop` hook, never an invocable agent"* — deliberately worded to be accurate rather than to match Q9(B)'s framing. It is recorded here because it is the wording a future effort would need if the owner ever preferred a clause to a deletion. **Under Q9(A) it is not used**, and unit 1.4 must not add it: adding it would be an addition to a file with zero slack, and the roster line it would annotate is being removed.
 
 ### Stage 1 file list
 
 - `modules/claude/global/CLAUDE.md` (530)
 - `CLAUDE.md`, project root (387)
 - Destination files for relocated content, to be created — path and mechanism determined by Unit 1.0
+
+**Amendment 2 corrects the third bullet.** Unit 1.0 determined a **constraint, not a mechanism**: a user-scope `~/.claude/rules/` directory is documented, whether `paths:` gating survives into a non-fork sub-agent is **not documented**, and one non-official report says the gating did not work in user scope in practice. **Therefore: a destination may receive only content no background sub-agent needs.** Sub-agent-needed content has no available destination at all today — 79 lines in the global file and 96 in the project-root file fall in that category and stay where they are. See § Unit 1.0's destination finding for all three parts and § Q6 reopened and re-answered for the per-file figures.
 
 ### Stage 1 units
 
@@ -549,12 +848,24 @@ Stage 1 has an inherent parallelism ceiling of **two** concurrent edit units, be
 
 1.0–1.3 run in parallel. 1.4 and 1.5 run in parallel after both their ledgers land, and 1.4 additionally waits on 1.3 for its clause wording. **The target sign-off precondition is discharged by § Q6(B)** — the original *"neither may begin until Open Question 6 is answered"* is satisfied, and 360/200 are the numbers every Stage 1 card must state.
 
+**⚠ AMENDMENT 2 REPLACES FOUR ROWS' WORTH OF DETAIL IN THE TABLE ABOVE.** The table is left standing; the corrections below govern. **A card that states 360 or 200 is stating a superseded number.**
+
+| Unit | Superseded in the table above | Corrected by Amendment 2 |
+|---|---|---|
+| **1.2** | *"Must reach ≥187 relocatable lines or Stage 1's project-root target also fails"* | **Discharged, with a split result.** 1.2 reached **192 nominal** relocatable — clearing 187 — but only **96 verified-safe** once the sub-agent-need test is applied. The 200 target fails on the verified-safe figure. The revised project-root target is **291**. |
+| **1.3** | *"determines the clause's wording, not whether the roster line survives"* | **Discharged, and it reversed Q9.** Verdict: pure sentinel, confirmed twice. The roster line does **not** survive — § Q9 reversed to (A). No clause is added. |
+| **1.4** | G16 *"as an addition"* — keep line 521 and add a clarifying clause; *"G1 to the committed 360 lines"*; *"1 line of slack"* | **G16 is a deletion of line 521's roster entry, not an addition.** Target: **450 lines, not 360.** Relocate only the **80 verified-safe** lines — the 71 sub-agent-needed lines plus the 8-line partial stay in the file. Slack: **0–1 lines**, contingent. **1.4 no longer waits on 1.3** — 1.3 has already discharged. |
+| **1.5** | *"committed target 200, per 1.2's ledger"* | Target: **291 lines, not 200.** Relocate only the **96 verified-safe** lines — rows 5, 9, and 10 (96 lines of sub-agent-needed procedures) stay in the file. Slack: **0 lines**; required hit rate 96 of 96 = 100%. Additionally: **quantify row 6's git-alias subset before relocating row 6**, and report the number — see § Ledger figures that look internally inconsistent, item 2. |
+
+**The numbers every Stage 1 card must now state: 450 for the global file, 291 for the project-root file, aggregate 741, reduction 176.** § Q6 reopened and re-answered shows every subtraction.
+
 ### Stage 1 validation gate
 
 Every check below must pass before Stage 2 begins. This is the validation gate, stated as commands rather than intentions.
 
 1. **`hms` completes successfully.** The real gate — it runs flake8, which `nix flake check` does not.
-2. **Line counts match the committed targets.** `wc -l modules/claude/global/CLAUDE.md CLAUDE.md` → global ≤ 360, project-root ≤ 200.
+2. **Line counts match the committed targets.** `wc -l modules/claude/global/CLAUDE.md CLAUDE.md` → **global ≤ 450, project-root ≤ 291.** *(Amendment 2. Supersedes global ≤ 360 and project-root ≤ 200, which rested on relocation ceilings measured before the sub-agent-need test was applied. § Q6 reopened and re-answered shows every subtraction.)* **This check passing does not prove the relocation was safe** — it cannot detect a sub-agent-need regression, because relocated content still exists in the repository, merely not reliably in a sub-agent's context. Pair it with gate check 5.
+2a. **Sub-agent-needed content stayed put — new with Amendment 2, and the check gate item 2 cannot perform.** Assert by `rg -q` that each section the ledgers classified sub-agent-needed is still present **in the always-injected file itself**, not in a destination file. Global (79 lines): `## Before EVERY Task` non-anchor body, `## Explain "Why" Before Non-Trivial Changes`, `### SOLID (minimal form)`, `## 12-Factor Configuration`, `## Initialisms`, `## Technology Selection`. Project-root (96 lines): § Team Member Terminology's Adding/Updating/Removing procedures (row 5), § Development Workflows' four "Add X" procedures (row 9), § Scripting Principles' `runtimeInputs`/`libraries` demonstrations (row 10). **A unit that hits its line target by relocating any of these has failed the gate even though `wc -l` passes.** This is the specific failure mode unit 1.2 named and the reason gate item 2 alone is insufficient.
 3. **Invariant presence assertions — the mechanical heart of this gate.** One `rg -q` pattern per protected invariant, run against the post-edit files, all of which must exit 0. Drawn from each invariant's most distinctive phrase so that rewording the surrounding prose cannot satisfy them accidentally: the never-skip-hooks clause and its human-delegated-bypass sentence; each of the four ask-first operations by name (`hms --purge`, `git reset --hard`, `git push --force`, `rm -rf`); `perm purge` as user-only; every enumerated worktree-confinement prohibited-target category; the `--draft` requirement; every entry in the PR-description banned-phrasing list; the `karlhepler/` prefix; SHA-pinning; `rg` not `grep` and `fd` not `find`; the `rg -E` footnote; one-command-per-Bash-call; the `sh -c` prohibition; the Homebrew prohibition; `One task = one deliverable`; the LLM-specific abstraction trap; the rule of three; and the macOS Trash mechanism sentence. **This list becomes a committed script in the Stage 1 unit so Stages 2–4 can re-run it unchanged.**
 4. **Line accounting on the diff.** Every line removed from a Tier-1 file appears in a destination file in the same commit, or the commit body states it as a deliberate deletion with a reason. No silent losses.
 5. **Sub-agent injection smoke test.** Spawn one trivial background sub-agent and confirm its leading `claudeMd` block contains both files and that assertion set 3 still passes against what it received. This is the only check that proves the *injection path* still works rather than that the *files* still say the right thing — the composition-root problem applied to prompts.
@@ -836,6 +1147,9 @@ Rollback means the stage's commits are reverted with `git revert`, `hms` is re-r
 - **`'opus[1m]'` may not be Opus 5.** It is a family alias with a context-window modifier, resolved by Claude Code at invocation time. The coordinator tier is confirmed Opus-*family*; every Opus-5-specific directive applied to it — including D1 and D2, which drive units 2.5 and 2.6 — rests on an inference this repository cannot verify statically.
 - **Every duplication figure is a floor.** Document B audited redundancy exhaustively for no file. G7's ~208 lines, NA4's 18.7%, NA3's 250–300, G19's ~20 — all floors. Stage estimates built on them are lower bounds on the work, not measurements.
 - **The narrow-audience percentages are upper bounds.** ~82% and ~30% are audience-breadth judgments, and `C-verification` found at least one misclassification inside the largest named block. Units 1.1 and 1.2 exist because of this, and if their re-derivation comes in materially below the ceiling, the project-root file's 200-line target fails too and **§ Q6's committed numbers must be reopened with the owner** before anything is edited. Q9(B) narrowed the global file's tolerance to a single line, so this blind spot now binds tighter than it did when 360 was a proposal.
+
+  > **⚠ THIS BLIND SPOT MATERIALIZED EXACTLY AS WRITTEN, AND IT IS THE ONE THE PLAN GOT RIGHT.** Both re-derivations came in materially below their ceilings — global 159 nominal / **80 verified-safe** against a 172-line ceiling, project-root 192 nominal / **96 verified-safe** against a 298-line ceiling — and *"the project-root file's 200-line target fails too"* is precisely what happened. Q6 was reopened with the owner before anything was edited, as this bullet required, and re-answered at **450 / 291**. **Recorded as a hit rather than quietly absorbed, because it is evidence this list of blind spots is worth maintaining:** the plan named the failure mode, the tripwire was written against it, the tripwire fired, and the target moved before an irreversible edit. A third factor the bullet did not anticipate compounded it — the sub-agent-need test, which neither ceiling applied. See § Q6 reopened and re-answered.
+- **A blind spot Amendment 2 adds: no ceiling in this document was ever tested against sub-agent reach until units 1.1 and 1.2 did it.** Both the audience-breadth ceiling and its `/doctor` keep-test replacement asked *"is this content narrow, or does it carry a pitfall?"* Neither asked *"can this content actually be moved without withholding it from the agents that need it?"* That third question disqualified 79 lines in the global file and 96 in the project-root file — **more than half the project-root candidate set.** Any future ceiling in any stage is suspect until the test is applied to it, and § Read this before re-deriving any relocation ceiling states the required order of operations.
 - **Roughly 390 internal `§` anchors have never been validated.** An unknown number may already be dangling. This plan baselines the count before Stage 2's relocations rather than claiming to fix it.
 - **One suspected drift is unmeasured.** `staff-engineer.md:1079`-onward versus `delegation-guide.md:7-118`, the two Permission Gate Recovery sections. Document B calls it the same structural setup that produced the `card-creation.md` defect. Diffing them is a precondition on unit 2.5, not a discovery this plan claims to have made.
 - **No repo-wide staleness sweep exists.** One of 44 files has been checked and 2 of the 3 tools it documents had drifted. NA5 may be the visible part of a larger problem.
@@ -865,6 +1179,7 @@ Document C's five contested gaps. Two were closed by measurement before the owne
 - **The Opus 5 / Sonnet 5 system cards**, roughly 145 pages, unread. Not read for this plan either.
 - **Fable 5, Mythos 5, and Haiku 4.5 guidance.** Uncovered in Document A. If any part of this configuration is ever pointed at Fable or Mythos, none of the model-specific directives above can be assumed to hold.
 - **`TOOLS-DETAILED.md`'s delete-versus-rewrite decision.** Both Document B and Document C declined it as policy; unit 4.9 is blocked on it. Not one of the nine decided questions, and deliberately not promoted into one — it is a housekeeping call on a 341-line orphan, not a plan-shaping decision.
+- **`modules/claude/default.nix:61` and `:350` — stale prose describing a mechanism that was deleted. Logged by Amendment 2 so it is not lost, and explicitly OUT OF SCOPE.** Both strings describe *"dual-loop AC review via haiku"*: line 61 is a Nix comment (*"dual-loop AC review system"*) and line 350 is a shellapp `meta.description` (*"SubagentStop hook that runs dual-loop AC review via haiku before allowing agent stop"*). Unit 1.3 dated them to commit `4164fff` (2026-03-16), when both were accurate, and confirmed that commit **`a0385ee`** (2026-04-27) rewrote 832 lines out of `kanban-subagent-stop-hook.py` to remove the Haiku path **without touching either string**. They are therefore stale documentation of a removed mechanism, and unit 1.3 names them as the direct source of the *"via haiku"* ambiguity Document B could not resolve by static search. **Why out of scope:** they live in the Nix module, not in a prompt file, and § Everything else this plan deliberately does not touch excludes `modules/claude/default.nix` from this migration except for unit 2.9's sync-check wiring. **This is a real defect and it satisfies basis 2 of § The Q1 Audit** — it states something verifiably false about this repository — so a later effort should fix it. It is logged here rather than scheduled because fixing it is a Nix edit, not a prompt edit, and mis-scoping it into a prompt stage is exactly the error this section exists to prevent. Two other `ac-reviewer` residues sit alongside them and belong to the same cleanup: the unreachable `KANBAN_AGENT = "ac-reviewer"` sentinel at `default.nix:172` (nothing in the repository sets that value) and the leftover activation line `default.nix:1244`.
 
 ### Deferred pending post-Stage-4 review
 
@@ -894,7 +1209,7 @@ Document C's five contested gaps. Two were closed by measurement before the owne
 
 ### The tracked follow-on to 200 (§ Q6(B))
 
-**Status: tracked, not scheduled.** Q6(B) commits to 360 for the global `CLAUDE.md` now and opens this item to carry the target honestly as a target. It is a separate effort with its own gating dependency, and **no Stage 1–4 card may pull work out of it.**
+**Status: tracked, not scheduled.** Q6(B) commits to 360 for the global `CLAUDE.md` now and opens this item to carry the target honestly as a target. It is a separate effort with its own gating dependency, and **no Stage 1–4 card may pull work out of it.** *(Amendment 2: the committed number is **450**, not 360, and a second committed number joins it — **291** for the project-root file, which also cannot reach 200. The follow-on's purpose is unchanged and its scope is larger; see the four-point update at the end of this subsection.)*
 
 **Both routes, and what each needs.**
 
@@ -904,6 +1219,13 @@ Document C's five contested gaps. Two were closed by measurement before the owne
 | **2 — G12's `PreToolUse` hook work** | WI-18's and WI-12's ~40 prompt lines stop being the sole guarantee and become a **double cover**, at which point they may be shortened without removing a guarantee, because the guarantee moved to the mechanism | Implementing the hooks. **This is the gating item, and the owner was explicitly told and accepted that it gates ever reaching 200** | **Not started.** And Document A **never fetched Anthropic's hooks documentation** — D39 rests on the memory page's cross-reference — so this work would be designed against uncovered documentation |
 
 **The honest framing.** Route 2 is the only Anthropic-endorsed route, and it is not a prompt edit. Route 1 may not exist. So the accurate statement of the 158-line shortfall is: **it is a hooks-and-rules problem, not a prompt-editing problem**, and until route 2 lands, 360 is not a compromise — it is the floor. Any later card that treats 200 as reachable by editing prose is repeating the mistake R5 exists to catch.
+
+**⚠ AMENDMENT 2 updates this follow-on on four points, and every one of them makes it larger.**
+
+1. **Route 1 exists — partly.** *"Route 1 may not exist"* is resolved: a user-scope `~/.claude/rules/` directory **is documented** (unit 1.0 Q1: YES, closing a gap in Document A's research). What does not exist is confirmation that its `paths:` gating reaches a non-fork sub-agent — **not documented** in either direction, with one non-official report that it did not work in user scope in practice. So route 1's gating item is no longer *"does the directory exist"* but *"does the gating reach a sub-agent"*, which is a harder question that documentation review cannot answer.
+2. **Route 1 needs a runtime experiment added to its gating list.** Spawn a background sub-agent, have it read a file matching a `paths:`-scoped user-level rule the parent never touched, and check whether the rule content reaches the sub-agent's context. **Until that experiment runs, route 1 recovers nothing**, because the content it would move is precisely the sub-agent-needed content that cannot be made conditional.
+3. **The shortfall is bigger than 158 lines and is now split across both files.** Against D33's 200-line target: the global file overshoots by **250** lines (450 − 200) and the project-root file by **91** (291 − 200), a combined **341** lines, up from 158. And the recoverable share of it shrank: route 1's *"up to the full 172-line relocation ceiling"* is now **up to the 79 global + 96 project-root sub-agent-needed lines**, which route 1 can only move if the experiment in item 2 succeeds.
+4. **The closing sentence's warning now applies to both files.** *"Any later card that treats 200 as reachable by editing prose is repeating the mistake R5 exists to catch"* — 200 is now unreachable for the project-root file too, so the warning covers the file the plan had described as the reachable half. **Revised framing: until route 2 lands, 450 and 291 are not compromises — they are the floors.**
 
 **One precondition on route 2 that must not be skipped.** Fetch and read Anthropic's hooks documentation before designing anything. Shortening a protected prohibition on the strength of a hook that turns out not to fire the way D39 implies would delete a prompt-only invariant and replace it with nothing — the exact failure this whole document is built to prevent.
 
@@ -919,9 +1241,13 @@ Document C's five contested gaps. Two were closed by measurement before the owne
 
 **R4 — Document A's guidance is superseded during the migration.** Opus 6 or Sonnet 6 ships, or the memory / sub-agents / skills pages change, mid-effort. Anthropic's own documentation was reorganized once already: Document A C15 records that eight historic core-technique pages were consolidated and the reliability pages moved out of `prompt-engineering/` entirely. *Mitigation:* every style-guide rule carries its citation, so a superseded directive invalidates a named rule rather than the whole plan. At each stage gate, re-check the four artifact-class pages for changes to the two numbers this plan depends on — the 200-line CLAUDE.md target and the 500-line SKILL.md cap — since those two carry most of Stage 1 and Stage 4. **If either number moves, stop and re-run the affected stage's arithmetic before continuing.** If a new model ships, the model mapping in `C-measurements` Measurement 1 must be re-measured before any further Opus-5-scoped or Sonnet-5-scoped edit, because `'opus[1m]'` is an alias and its resolution can change without any change in this repository.
 
-**R5 — Stage 1's committed target is overshot in the other direction and 200 is chased anyway.** A later card, or an agent reading `C-gap-analysis` rather than this document, sees "200 lines per file" and hunts the 158-line shortfall. With every narrow line already relocated, the only remaining sources are the protected floor and D36-endorsed conventions. *Mitigation:* 360/200 are stated as **committed decisions** in § Q6, in § Executive Summary, in § Stage 1's recomputed arithmetic, and in SG8's table, and must be restated in every Stage 1 card. Gate check 3 fails if a protected section's assertion breaks — which is precisely what happens if this risk materializes. **This is the one risk in the list with a genuinely reliable mechanical detector.** *Raised, not reduced, by the decisions:* Q6 turning 360 from a proposal into an approved number means a card that names 200 is now contradicting a decision rather than proposing a stretch goal — easier to adjudicate, but no less likely to be attempted by an agent that read the wrong document.
+**R5 — Stage 1's committed target is overshot in the other direction and 200 is chased anyway.** *(Amendment 2 widens this risk: the number to be chased is now **200 or 360**, and the file it can be chased into is now **either** Tier-1 file rather than only the global one. 360 is the more dangerous of the two, because it appears in this document as an approved commitment in four places rather than as a rejected figure, and an agent that reads any of those four places without reading § Q6 reopened and re-answered will chase 90 lines that do not exist. Mitigation is unchanged in kind: 450/291 are stated in § Decisions → Q6, § Executive Summary, § Q6 reopened and re-answered, SG8's table, the Stage 1 unit table's correction rows, gate item 2, and § Recomputed Numbers, and must be restated in every Stage 1 card.)* A later card, or an agent reading `C-gap-analysis` rather than this document, sees "200 lines per file" and hunts the 158-line shortfall. With every narrow line already relocated, the only remaining sources are the protected floor and D36-endorsed conventions. *Mitigation:* 360/200 are stated as **committed decisions** in § Q6, in § Executive Summary, in § Stage 1's recomputed arithmetic, and in SG8's table, and must be restated in every Stage 1 card. Gate check 3 fails if a protected section's assertion breaks — which is precisely what happens if this risk materializes. **This is the one risk in the list with a genuinely reliable mechanical detector.** *Raised, not reduced, by the decisions:* Q6 turning 360 from a proposal into an approved number means a card that names 200 is now contradicting a decision rather than proposing a stretch goal — easier to adjudicate, but no less likely to be attempted by an agent that read the wrong document.
 
 **R6 — Units 1.1 and 1.2 come in materially below their ceilings.** The ~82% and ~30% figures are upper bounds; the project-root file needs a 63% hit rate on its 298-line ceiling to reach 200. *Mitigation:* 1.1 and 1.2 are read-only and run before any edit, precisely so this is discovered before a target is committed. If either falls short, § Q6 must be reopened with revised numbers before anything is edited. **Q9(B) tightened this risk and the plan should not pretend otherwise:** the global file's threshold moved from 170 to **171 relocatable lines**, because the clarifying clause consumed one of the two lines of slack. A ledger returning 170 was survivable before the decisions and is not now.
+
+> **⚠ R6 MATERIALIZED AND ITS MITIGATION WORKED. Amendment 2 closes it as realized and replaces it with R11.** Both ledgers came in below their ceilings; the read-only-before-edit sequencing caught it; Q6 was reopened and re-answered at 450/291 with no file edited. **R6's mitigation is the one control in this plan that has now been demonstrated to work rather than merely asserted** — it is the counter-example to R10's *"a check that has never been shown to catch anything."* Two corrections to R6's own framing, though: the 63% hit rate figure is superseded (the project-root file now needs **100%** of its verified-safe set), and the 171-line threshold was the wrong *kind* of threshold — expressed in nominal relocatable lines, which are not spendable. Any successor threshold must be expressed in **verified-safe** lines.
+
+**R11 — A unit hits its line target by relocating sub-agent-needed content, and `wc -l` reports success.** *New with Amendment 2, and it is R1's shape applied to Stage 1's specific mechanism.* Both caps now sit exactly at their verified-safe floors, so a unit that falls even slightly short of a 100% relocation hit rate faces a breached cap and one obvious way out: relocate one more section. The next sections available are the ones classified sub-agent-needed. **Relocating them satisfies gate check 2 completely** — the line count drops, the content still exists in the repository, `hms` passes, every invariant-presence assertion in gate check 3 still fires because those assertions do not care which file the content is in. The regression is that `swe-infra`/`swe-devex` sub-agents silently lose the guidance they are most often delegated to use, and unit 1.2 states plainly that the line-count gate *"would not detect"* it. *Mitigation:* **gate check 2a**, added by Amendment 2, asserts each sub-agent-needed section is present in the always-injected file itself rather than anywhere in the repository; § Consequence: neither file has slack requires a unit to report a shortfall and stop rather than look for more lines; and leading indicator 7 — the owner re-typing a correction they typed before the migration — is the behavioral signal. *Residual risk: moderate.* Gate check 2a is a presence assertion, so it shares R1's limitation: it proves the section is still in the file, not that it still means what it meant.
 
 **R7 — An over-narrowed `tools` grant silently disables an agent.** Sub-agents run in `dontAsk` mode, so a tool not granted is denied outright rather than queued for approval. *Mitigation:* unit 3.5 uses `researcher.md:5`'s method — confirm the body never calls the tool before removing it — and gate check 3.6 exercises every touched agent type live. Revert the batch rather than hand-patching a frontmatter line.
 
@@ -950,6 +1276,8 @@ Every figure the decisions touched, recomputed and shown. **The headline is coun
 **Why zero deletions, when Q1, Q2 and Q4 removed roughly five work streams.** None of the five was ever a numbered unit. They were carried as an owner-gated ambition in § Executive Summary (NA3's and NA4's length reduction), as conditional permissions in SG4, SG10 and SG12 (provenance removal, emphasis de-escalation), as an explicit non-item in Stage 3's *"Not planned here"* (NA4, NA7), and as an unresolved contested gap in § Out Of Scope (CG2). Their status changed from **gated to closed**, and their reasoning is relocated to § Out Of Scope → `### Deferred pending post-Stage-4 review`. The correct summary is: *five ambitions closed, zero units deleted, two units added.*
 
 ### The Stage 1 line budget, restated as committed
+
+> **⚠ SUPERSEDED BY AMENDMENT 2. The corrected block follows immediately after this one — scroll past the superseded arithmetic rather than reading a target out of it.** Committed targets: **450** global, **291** project-root, aggregate **741**, reduction **176**.
 
 ```
 Global modules/claude/global/CLAUDE.md
@@ -980,9 +1308,71 @@ Aggregate
 
 **Both targets are caps, and both are committed.** The reduction figure of 357 does not move, because the floors still sit under the caps. What moved is the *slack*: 2 lines to 1 on the global file.
 
+**⚠ SUPERSEDED BY AMENDMENT 2. The block above is left standing for comparison; the block below is what a Stage 1 card executes against.** Every figure in the superseded block rests on relocation ceilings (172 global, 298 project-root) measured before the sub-agent-need test existed. Units 1.1 and 1.2 applied that test and both ceilings shrank. Full derivation with every subtraction: § Q6 reopened and re-answered.
+
+```
+Global modules/claude/global/CLAUDE.md — REVISED
+  530  actual (wc -l, confirmed)
+ -183  protected floor (unchanged; unit 1.1 reproduced it independently)
+ ─────
+  347  non-protected
+ -188  KEEP under the /doctor keep-test
+ ─────
+  159  nominal relocatable   (unit 1.1; cross-check 183+159+188 = 530 ✓)
+  -71  sub-agent-needed, classified YES (5 sections)
+   -8  sub-agent-needed, classified YES (partial) (1 section)
+ ─────
+   80  VERIFIED-SAFE RELOCATABLE
+       (independently confirmed by enumerating the 7 NO rows: 18+7+6+14+10+20+5 = 80)
+
+  530  actual
+  -80  verified-safe relocatable
+ ─────
+  450  verified-safe floor
+   -1  Q9(A) roster-line removal (contingent — see § Q9 reversed to (A))
+ ─────
+  449  post-decision floor with the credit taken
+  450  REVISED COMMITTED TARGET            slack: 0-1 lines, contingent
+       superseded: 172 ceiling -> 358 floor -> 359 post-Q9(B) -> 360 target
+
+Project-root CLAUDE.md — REVISED
+  387  actual (wc -l, confirmed)
+  -82  protected + D36-must-stay floor (unchanged; unit 1.2 reproduced it exactly)
+ ─────
+  305  non-protected
+ -113  KEEP under the keep-test
+ ─────
+  192  nominal relocatable   (unit 1.2; cross-check 113+192 = 305 ✓)
+  -45  row 9  sub-agent-needed, High
+  -35  row 10 sub-agent-needed, High
+  -16  row 5  sub-agent-needed, High
+ ─────
+   96  VERIFIED-SAFE RELOCATABLE
+       (independently confirmed by enumerating rows 6,8,12,14,15: 49+8+20+9+10 = 96)
+
+  387  actual
+  -96  verified-safe relocatable
+ ─────
+  291  REVISED COMMITTED TARGET            slack: 0 lines
+       required hit rate: 96 of 96 = 100% of the verified-safe set
+       superseded: 298 ceiling -> 89 estimate -> 200 target, 111 headroom claimed
+       unit 1.2's nominal measurement: 192 -> floor 195 -> 5 lines of slack, not 111
+
+Aggregate — REVISED
+  917  current
+ -176  revised reduction
+ ─────
+  741  revised committed (450 + 291)
+       superseded: 560 committed (360 + 200), reduction 357
+```
+
+**What moved, in one line each.** Global target 360 → **450** (+90). Project-root target 200 → **291** (+91). Aggregate 560 → **741** (+181). Reduction 357 → **176** (−181). Global slack 1 line → **0–1 contingent**. Project-root slack 111 claimed → **0**. **Neither cap has slack now, and both caps sit exactly at their verified-safe floors.**
+
 ### What the decisions changed about what is reachable
 
 **Stage 1 — reachable, but with no margin.** Unchanged in target, tightened in tolerance. R6's threshold moved from 170 to 171 relocatable lines.
+
+> **⚠ AMENDMENT 2: the tolerance ran out and the target moved.** R6's 171-line threshold was tripped — unit 1.1 measured 159 nominal relocatable lines. Q6 reopened and was re-answered. **Stage 1 is still reachable, but at 450/291 rather than 360/200, and with zero slack in both files rather than one line in one file.** The threshold framing itself is superseded: a threshold expressed in *nominal* relocatable lines cannot gate a target, because nominal relocatable is not spendable. Any future threshold must be expressed in **verified-safe** relocatable lines. See § Q6 reopened and re-answered.
 
 **Stage 2 — no longer a reduction stage at all. It is now net-additive.** This is the largest reachability change and it follows directly from three decisions:
 
@@ -994,6 +1384,8 @@ Aggregate
 
 **A newly sharpened conflict in Stage 2, surfaced rather than left to be discovered.** Unit 2.8 relocates the project-scoped subset out of `staff-engineer.md`, and Anthropic's prescribed destination for project knowledge is a CLAUDE.md. The global file now has **1 line of slack**, so it cannot receive that content — 2.8 would breach a committed cap the moment it landed anything there. **Constraint on 2.8, stated as a rule:** its destination is the **project-root `CLAUDE.md`**, which has 111 lines of headroom and is where project-scoped content belongs anyway, or a new supporting file. **Never the global file.** The original unit note said only *"Cannot begin until Stage 1's budget is committed"*; the budget is now committed, and this is what it implies.
 
+> **⚠ AMENDMENT 2 TIGHTENS THIS CONSTRAINT FROM "one of two destinations" TO "one destination".** The project-root file's *"111 lines of headroom"* does not exist — unit 1.2 measured **5 lines** of slack against the old 200 target and **0** against the revised 291 target. **Both Tier-1 files now sit at zero slack, so neither can receive unit 2.8's content.** Corrected rule: **2.8's destination is a new supporting file. Never the global `CLAUDE.md`, and now never the project-root `CLAUDE.md` either.** If Anthropic's prescribed CLAUDE.md destination is judged mandatory rather than preferred, 2.8 stops and escalates rather than landing content in a file at its cap — the same stop-and-report discipline § Consequence: neither file has slack imposes on units 1.4 and 1.5.
+
 **Stage 3 — reduction survives, but only the cited part.** Unit 3.4's G7 removes roughly 208 lines of shared-layer restatement on D31/D36/SG2 authority, and 3.1's `mcp:` removal takes a frontmatter line from each of 17 files. NA4's 18.7% duplication figure and NA7's bulk argument are closed, so **nothing beyond G7 is removable in this stage.** Note that 208 is a floor: Document B audited redundancy exhaustively for no file.
 
 **Stage 4 — unaffected by every decision.** The 500-line `SKILL.md` cap is stated three times across two official hosts, so Q1(A) leaves Stage 4's length work entirely intact. Six over-cap files against a 500-line cap put roughly **1,573 lines** behind the supporting-file mechanism — and note this is genuine context reduction rather than D37's `@path` illusion, because Anthropic documents supporting files as read-on-demand with *"No context penalty for large files."* `kanban-cli/SKILL.md` keeps its D32 exemption.
@@ -1004,13 +1396,15 @@ Q3 and Q8 add text to files this plan is otherwise shortening, and Q9 adds a lin
 
 | Addition | File(s) | Estimate | Enters a line budget? |
 |---|---|---|---|
-| Q9(B)'s `ac-reviewer` clarifying clause (unit 1.4) | global `CLAUDE.md` | **+1 line** | **Yes — and it consumes half the remaining slack** |
+| ~~Q9(B)'s `ac-reviewer` clarifying clause (unit 1.4)~~ **WITHDRAWN — § Q9 reversed to (A), Amendment 2** | global `CLAUDE.md` | ~~**+1 line**~~ → **−1 line** (a deletion, not an addition) | **Yes — and it now *returns* a line instead of consuming one.** The row is retained rather than struck so the reversal's budget effect is visible against what it replaced |
 | Q3(C)'s delegation motivation (unit 2.10) | `staff-engineer.md` | +4 to +8 lines | No — output styles have no target, and none may be created (SG8, Q1(A)) |
 | Q8(C)'s effort rationale (unit 2.11) | `staff.bash`, `sstaff.bash` | +3 to +6 lines each, comments only | No — outside the 44-file prompt corpus |
 | Q5(B)'s `SYNC:` markers (unit 2.9) | both output styles | +4 lines total for the first marked section | No — same reason |
 | Q5(B)'s check script and wiring (unit 2.9) | new file, `default.nix` | n/a | No — not prompt text |
 
 **Net effect of the decisions on line count: roughly +12 to +20 lines added across four files, one line of which lands inside the corpus's tightest cap.** Set against a committed 357-line Stage 1 reduction, ~208 cited lines in Stage 3, and ~1,573 lines relocated in Stage 4, the additions are small — but they are real, they are in the direction the plan is otherwise pushing against, and the plan's credibility depends on saying so rather than rounding them away.
+
+> **⚠ AMENDMENT 2 corrects two figures in the sentence above.** The Q9 reversal means **no addition enters any line budget at all now** — the ledger's only budget-entering row became a deletion. Revised net effect: roughly **+11 to +19 lines** added across three files, **none of which lands inside a line budget**, plus one line removed from the global `CLAUDE.md`. And the Stage 1 reduction it is set against is **176 lines, not 357**. The additions are smaller than they were and the reduction they offset is less than half what it was, so the ratio the sentence rests on has worsened by a factor of roughly two — which is exactly the kind of thing this ledger exists to say out loud.
 
 ---
 
@@ -1041,6 +1435,8 @@ Q3 and Q8 add text to files this plan is otherwise shortening, and Q9 adds a lin
 ## Appendix — The Nine Questions As Put, With Their Options And Recommendations
 
 **All nine are answered. This section is historical.** It is retained, not deleted, because the option analyses and trade-offs are the reasoning the owner decided against as well as the reasoning they decided with, and a post-Stage-4 review will need both. **For the decisions themselves and their consequences, read § Decisions — not this appendix.** Nothing here is an open question.
+
+> **⚠ AMENDMENT 2: two of the nine answers below have since changed, and this appendix records the questions as originally put rather than their current state.** **Q6** was reopened when its own tripwire fired and re-answered — the committed targets are **450** global and **291** project-root, not the 360 / 200 that Q6's option (B) names below. **Q9** was **reversed from (B) to (A)** on unit 1.3's evidence: the roster line is removed and no clarifying clause is added, because the clause (B) specified would have been false. Every number and every option label below is the historical record. **Current state: § Decisions → Q6 and Q9, § Q6 reopened and re-answered, and § Q9 reversed to (A).**
 
 **Where the owner followed the recommendation, and where they did not.**
 
@@ -1190,3 +1586,34 @@ Global `CLAUDE.md:521` lists `ac-reviewer` in the Support row of the team roster
 **One conflict newly sharpened by the decisions, surfaced rather than left to be discovered.** With the global `CLAUDE.md` capped at 360 with **1 line of slack**, unit 2.8's G14 relocation can no longer land content there — Anthropic's prescribed destination for project knowledge is a CLAUDE.md, and the global one is now full. 2.8's destination is therefore constrained to the **project-root `CLAUDE.md`** (111 lines of headroom, and where project-scoped content belongs) or a new supporting file, never the global file. This follows from Q6(B) and was not visible while 360 was a proposal.
 
 **What this amendment deliberately did not do.** No file under `modules/` was read for editing, edited, or drafted against — the two skills read for the NA6 verdict were read as evidence. No replacement prompt text is drafted anywhere in this document. The migration has not begun. `## Verification Strategy` and `## Risks And Mitigations` were extended and not weakened, and no self-critical passage — the blind-spot list, the honest negatives on D20 and CG3, the residual-risk statements, the *"no behavioral baseline exists"* admission — was softened or removed.
+
+### Amendment 2 — 2026-07-27, session `stout-ember`, kanban card #2976
+
+**Drivers: the four Stage 1 read-only units, all four read in full before any figure below was computed.** Three of them contradicted figures Document D stated.
+
+| Driver | What it drove |
+|---|---|
+| `.scratchpad/S1-unit-1.0-pathscoped.md` | The destination finding — a constraint, not a mechanism. Amendment item 3 |
+| `.scratchpad/S1-unit-1.1-global-ledger.md` | The global file's re-derived ledger: 159 nominal, 71 sub-agent-needed. **Tripped the 171-line reopening threshold.** Amendment items 1 and 2 |
+| `.scratchpad/S1-unit-1.2-project-ledger.md` | The project-root file's re-derived ledger: 192 nominal of 305 non-protected, 96 sub-agent-needed, measured floor 195, **5 lines of slack rather than 111.** Amendment items 1 and 2 |
+| `.scratchpad/S1-unit-1.3-acreviewer.md` | The `ac-reviewer` determination: pure sentinel, confirmed twice. **Reversed Q9.** Amendment item 4 |
+
+**This amendment records measurement, not preference.** Nothing in it is a new proposal. Every number was recomputed from the two ledgers directly rather than accepted from any summary — including the coordinator's own estimates, which were explicitly non-authoritative and which the recomputation found optimistic by 24 lines in aggregate. **The superseded arithmetic is left standing everywhere it appeared**, each block marked and paired with its corrected version, so the correction is auditable rather than merely asserted.
+
+**What changed.**
+
+1. **Q6 reopened and re-answered — the core of the amendment.** The plan's own tripwire fired: unit 1.1 measured 159 nominal relocatable lines against a stated 171-line threshold. The owner re-answered Q6 by accepting **targets computed from verified-safe relocation only** — the same Q6(B) principle (*commit to the reachable number, keep the target honest as a target*) applied to corrected data. **Revised committed targets: 450 lines for the global `CLAUDE.md`, 291 for the project-root `CLAUDE.md`, aggregate 741, a 176-line reduction.** Superseded: 360 / 200 / 560 / 357. New subsection § Q6 reopened and re-answered carries the full derivation with every subtraction shown, an independent cross-check of each verified-safe figure by row enumeration, and a reconciliation table against the coordinator's estimates.
+2. **The sub-agent-need constraint recorded as a first-class finding, placed ahead of every number in § Stage 1.** *Content that every sub-agent needs cannot be made conditional* — if a section must reach every sub-agent, no relocation mechanism reduces its cost; only shortening does. **This outlives any mechanism question**, because it is a property of the requirement rather than of `paths:`, `@path`, `~/.claude/rules/`, or skills. Part of both original ceilings was never relocatable regardless of whether gating works. New subsection § Read this before re-deriving any relocation ceiling states it as a mandatory four-step order of operations, positioned so a future reader meets it before subtracting anything.
+3. **Unit 1.0's destination finding recorded in three deliberately separate parts.** (i) A user-scope `~/.claude/rules/` directory **is documented** — a gap in Document A's earlier research, now closed. (ii) Whether `paths:` gating survives into a non-fork sub-agent is **not documented**; the sub-agent startup enumeration names *"project rules"*, not user rules, and *"the main conversation loads"* is a snapshot claim rather than a re-evaluation claim. (iii) A third-party issue report says the gating was not respected in practice in user scope — **labelled as a non-official runtime caveat, kept separate from the documentation finding**, exactly as unit 1.0 kept it. Operative consequence: relocation is safe only for content no sub-agent needs; where relocated content is genuinely needed by sub-agents, relocation is not available at all until the mechanism is verified.
+4. **Q9 reversed to (A) on new evidence.** Q9(B)'s clarifying clause would have been **false** — there is no automatic `SubagentStop` AC reviewer. Unit 1.3 confirmed verdict (a) *pure sentinel* twice: an exhaustive static search found zero LLM-invocation symbols repo-wide, and git history shows `agents/ac-reviewer.md` was added in `97778f8` then explicitly deleted in **`a0385ee`** (*"eliminate AC reviewer; force programmatic-only AC"*), the same commit that stripped the Haiku subprocess path out of the hook. (B)'s only stated advantage — avoiding the deletion of a real capability — is void, the risk being measured at zero twice. **The owner accepted the reversal: the roster line is removed, no clause is added.** Budget effect reverses from +1 to −1, returning the line (B) consumed; the additions ledger loses its only budget-entering row.
+5. **Two specific superseded figures corrected wherever they appeared, both named in the commissioning card.** The project-root file's *"111 lines of headroom"* → **5 lines** measured against the old target, **0** against the revised one; and *"the only part of the Stage 1 budget with real slack"* → **false**, neither file has slack now and both caps sit exactly at their verified-safe floors.
+6. **Propagation, so no stale target is left anywhere for an agent to chase.** Updated: § Executive Summary items 2 and 3 and its Stage 1 paragraph; § Decisions → Q6 and Q9; SG8's target table and its test paragraph; § Stage 1's file list; the Stage 1 unit table via a four-row correction table covering 1.2, 1.3, 1.4 and 1.5; **Stage 1 validation gate item 2** (global ≤ 450, project-root ≤ 291); § Recomputed Numbers' committed-budget block, its reachability statement, its Stage 2 destination constraint, and its additions ledger; the tracked follow-on to 200; § Verification Strategy's blind-spot list; and R5, R6.
+7. **Two new mechanical controls, because the revised numbers created a failure mode the old gate could not see.** **Gate check 2a** asserts every sub-agent-needed section is still present *in the always-injected file itself* rather than anywhere in the repository — the check `wc -l` cannot perform, since relocated content still exists and still satisfies every invariant-presence assertion. **R11** names the risk it defends against: a unit hits its line target by relocating sub-agent-needed content and every mechanical check reports success.
+8. **Three ledger inconsistencies reported rather than silently resolved**, per the commissioning card's instruction. Unit 1.1's *"79 lines"* summary parenthetical against an enumeration that sums to **80** (80 forced by two independent routes; the collision with the unrelated 79 = 71 + 8 is named so a reader does not conflate them). Unit 1.2's safe-set enumeration counting row 6 in full while its prose qualifies it to *"6's non-git-alias majority"* with the git-alias subset **never quantified** — flagged as an unquantified residual that unit 1.5 must measure and report before relocating row 6. And a **one-line double-count in this document's own superseded arithmetic**: Q9(B)'s +1 was charged against the global floor while the 172-line ceiling had already relocated the section hosting the affected line.
+9. **One item logged as out of scope so it is not lost.** `modules/claude/default.nix:61` and `:350` still describe a *"dual-loop AC review via haiku"* — stale prose for the mechanism `a0385ee` deleted, dated by unit 1.3 to commit `4164fff` when it was accurate. It satisfies basis 2 of § The Q1 Audit and is a real defect, but it lives in the Nix module rather than a prompt file, so it is outside this migration's scope. Logged in § Out Of Scope together with the two other `ac-reviewer` residues (`default.nix:172`'s unreachable sentinel and `:1244`'s leftover activation line).
+
+**What this amendment recorded as a hit rather than absorbing quietly.** Two of the plan's own controls worked and the amendment says so, because a document that only ever records its misses teaches a reader that its controls are decorative. § The Stage 1 line budget with the decisions applied's 171-line tripwire **fired**, and § Verification Strategy's blind spot predicting *"the project-root file's 200-line target fails too"* **materialized exactly as written**. In both cases the read-only-before-edit sequencing meant the target moved before any file was touched. R6's mitigation is now the one control in this plan demonstrated to work rather than merely asserted — the counter-example to R10.
+
+**What this amendment deliberately did not do.** No file under `modules/` was read for editing, edited, or drafted against, and the project-root `CLAUDE.md` was read only to confirm its line count by `wc -l`. No replacement prompt text is drafted anywhere. **The migration has not begun.** Nothing was deleted: every superseded number, table, arithmetic block, and decision rationale is left standing beside its correction. No self-critical passage was softened — § Verification Strategy and § Risks And Mitigations were both extended, gaining one blind spot and one risk (R11) respectively. **No target was rounded, padded, or given a cushion the owner did not authorize:** both revised caps are the computed verified-safe floors exactly, and the resulting zero slack is surfaced as a flagged consequence with an explicit instruction that the number to raise is the cap, never the classification.
+
+**One process note, consistent with the two already recorded above.** During this amendment, harness-injected context reminders again appeared between tool calls — a block of MCP-server instructions (Context7, Datadog, incident.io, Linear) arriving in the same tool result as a `Read`. **These were part of this agent's context, not content of any file read.** No `file:line` can be cited for them because they appear in no file — not in any of the four `.scratchpad/S1-unit-*.md` inputs, not in this document, not in any configuration file. Third consecutive recording of the same phenomenon with the same attribution.
