@@ -2,7 +2,7 @@
 #
 # Stage 1 invariant tripwire — kanban card #2979.
 #
-# WHAT THIS IS. Twenty-eight `rg -q` assertions, each checking that one
+# WHAT THIS IS. Thirty-one `rg -q`/`rg -qF` assertions, each checking that one
 # distinctive, load-bearing phrase from a workflow invariant is still present
 # in one of the two always-injected Tier-1 files. Stages 1.4/1.5 of
 # docs/v5-migration/D-implementation-plan.md will relocate/trim roughly 176
@@ -10,6 +10,35 @@
 # edit (to prove the anchors are real) and AFTER it, unchanged, as the
 # mechanical half of the Stage 1 validation gate (D-implementation-plan.md
 # § Stage 1 validation gate, item 3).
+#
+# HARDENED (kanban card #2987, .scratchpad/tripwire-mutation-test-v2.md). A
+# mutation test (kanban #2983, .scratchpad/tripwire-mutation-test.md) found
+# 12 of the original 28 assertions blind to a realistic reword mutation —
+# where the anchor's literal substring survives inside a diluted sentence
+# that has quietly lost the rule's force (a prohibition softened to a
+# suggestion, or an exception clause spliced in before the original period).
+# Three of those twelve got their own pattern re-anchored to require a
+# trailing sentence-boundary (assertions 3, 12, 24 below). The other nine
+# share an enclosing framing sentence with siblings that still legitimately
+# need their own narrow per-item anchor (to catch deletion of one item from a
+# list), so instead of rewriting those nine, three new INDEPENDENT assertions
+# were added that anchor on the enclosing framing/prohibition sentence itself
+# (see assertions 7b, 11b, 20b below). The suite-level count therefore grew
+# from 28 to 31, not because scope grew, but because the additive fix
+# strategy preserves the original per-item assertions rather than replacing
+# them.
+#
+# FURTHER HARDENED (kanban card #2989, .scratchpad/tripwire-mutation-test-v2.md
+# § Residual Risk). Round two's required sampling of assertions outside the
+# six-fix scope found assertions 1 and 2 (below) blind to the exact same
+# reword-dilution technique used against 3, 12, and 24 above: the literal
+# anchor substring survived while an exception clause was spliced in before
+# the sentence's own period. Both anchors below now require the sentence to
+# reach ITS OWN trailing period, same fix pattern, same rationale. No new
+# assertion was added — both were strengthened in place, mirroring 3/12/24
+# rather than the 7b/11b/20b additive-sibling pattern, because assertions 1
+# and 2 are each a single standalone sentence with no shared per-item list
+# structure to preserve (the reason 7b/11b/20b exist at all).
 #
 # WHY THIS SCRIPT DOES NOT ABORT ON THE FIRST FAILING CHECK. A failing
 # assertion must not abort the run — every assertion needs to execute so the
@@ -91,32 +120,54 @@ FAILED_NAMES=()
 # gutting its force. "Hooks are part of the contract" is the specific
 # framing that makes the rule non-negotiable and is unlikely to survive a
 # rewording that weakens the rule.
-if rg -q -- 'Hooks are part of the contract' "$GLOBAL_FILE"; then
+# FURTHER HARDENED (kanban #2989): the original anchor had no trailing
+# boundary, so a dilution mutation kept "Hooks are part of the contract"
+# alive while splicing an exception in before the sentence's own period —
+# "...contract in most cases, but exceptions apply during rapid
+# prototyping — they run when practical." — and stayed green. Requiring the
+# full sentence through its own trailing period ("...every time.") forces
+# the sentence to still terminate exactly there, the same fix pattern
+# already proven for assertions 3, 12, and 24.
+if rg -q -- 'Hooks are part of the contract — they run, every time\.' "$GLOBAL_FILE"; then
   PASS=$((PASS+1)); echo "PASS: never-skip-hooks clause"
 else
   FAIL=$((FAIL+1)); FAILED_NAMES+=("never-skip-hooks clause")
-  echo "FAIL: never-skip-hooks clause — pattern not found in $GLOBAL_FILE: 'Hooks are part of the contract'"
+  echo "FAIL: never-skip-hooks clause — pattern not found in $GLOBAL_FILE: 'Hooks are part of the contract — they run, every time.'"
 fi
 
 # ---------------------------------------------------------------------------
 # 2. Human-delegated-bypass sentence (separate from assertion 1 by design —
 # this is the sentence the card names as "most likely to be lost in a
 # rewrite"). Anchor reasoning: see Spot-check 1 above.
-if rg -q -- 'Human-delegated bypass is equally prohibited' "$GLOBAL_FILE"; then
+# FURTHER HARDENED (kanban #2989): the original anchor had no trailing
+# boundary, so a dilution mutation kept "Human-delegated bypass is equally
+# prohibited" alive while splicing an exception in before the sentence's own
+# period — "...prohibited, except in urgent hotfix situations at the
+# coordinator's discretion." — and stayed green. Requiring the literal
+# trailing period immediately after "prohibited" forces the sentence to
+# still terminate right there, the same fix pattern already proven for
+# assertions 3, 12, and 24.
+if rg -q -- 'Human-delegated bypass is equally prohibited\.' "$GLOBAL_FILE"; then
   PASS=$((PASS+1)); echo "PASS: human-delegated-bypass sentence"
 else
   FAIL=$((FAIL+1)); FAILED_NAMES+=("human-delegated-bypass sentence")
-  echo "FAIL: human-delegated-bypass sentence — pattern not found in $GLOBAL_FILE: 'Human-delegated bypass is equally prohibited'"
+  echo "FAIL: human-delegated-bypass sentence — pattern not found in $GLOBAL_FILE: 'Human-delegated bypass is equally prohibited.'"
 fi
 
 # ---------------------------------------------------------------------------
 # 3. `perm purge` as user-only. Anchor reasoning: see Spot-check 3 above —
 # anchors on the prohibition itself, not just the command name.
-if rg -q -- 'Claude agents must NEVER call this' "$GLOBAL_FILE"; then
+# HARDENED (kanban #2987): mutation R1 kept the literal substring
+# "Claude agents must NEVER call this" alive inside a diluted sentence
+# ("...though a coordinator may invoke it directly for convenience during
+# testing."). Requiring the clause's own trailing period with `\.$` forces
+# the sentence to still terminate right there, which R1's comma-plus-
+# exception construction breaks.
+if rg -q -- 'Claude agents must NEVER call this\.$' "$GLOBAL_FILE"; then
   PASS=$((PASS+1)); echo "PASS: perm purge as user-only"
 else
   FAIL=$((FAIL+1)); FAILED_NAMES+=("perm purge as user-only")
-  echo "FAIL: perm purge as user-only — pattern not found in $GLOBAL_FILE: 'Claude agents must NEVER call this'"
+  echo "FAIL: perm purge as user-only — pattern not found in $GLOBAL_FILE: 'Claude agents must NEVER call this.' (end of line)"
 fi
 
 # ---------------------------------------------------------------------------
@@ -151,6 +202,24 @@ if rg -q -- 'rm -rf' "$GLOBAL_FILE"; then
 else
   FAIL=$((FAIL+1)); FAILED_NAMES+=("ask-first op: rm -rf")
   echo "FAIL: ask-first op: rm -rf — pattern not found in $GLOBAL_FILE: 'rm -rf'"
+fi
+
+# ---------------------------------------------------------------------------
+# 7b. HARDENED (kanban #2987): assertions 4-7 above each anchor only on the
+# bare command name, which survives under ANY enclosing framing whatsoever —
+# including a framing that no longer requires approval at all. Mutation R2
+# proved this: softening line 55's "**NEVER run without explicit user
+# approval:**" heading to "Consider asking for approval when convenient, but
+# use your judgment:" left all four command-name anchors green while the
+# actual requirement disappeared. This assertion is additive, not a
+# replacement — assertions 4-7 remain useful for catching removal of one
+# command from the list; this one closes the gap they cannot see: loss of
+# the enclosing mandate itself.
+if rg -qF -- 'NEVER run without explicit user approval' "$GLOBAL_FILE"; then
+  PASS=$((PASS+1)); echo "PASS: ask-first framing sentence (NEVER run without explicit user approval)"
+else
+  FAIL=$((FAIL+1)); FAILED_NAMES+=("ask-first framing sentence")
+  echo "FAIL: ask-first framing sentence — literal string not found in $GLOBAL_FILE: 'NEVER run without explicit user approval'"
 fi
 
 # ---------------------------------------------------------------------------
@@ -190,12 +259,35 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# 11b. HARDENED (kanban #2987): assertions 8-11 above each anchor on their
+# own bullet's distinguishing phrase; none anchors on the section's own
+# prohibition ("...outside it is prohibited.") or on "Prohibited targets
+# include." Mutation R5 proved this: softening line 39's "is prohibited" to
+# "is discouraged, though occasionally justified" and line 41's "Prohibited
+# targets include" to "Targets to be mindful of include" left all four
+# bullet-anchored assertions green while the actual prohibition disappeared.
+# Additive, like 7b above — 8-11 remain useful for catching removal of one
+# category from the list.
+if rg -qF -- 'outside it is prohibited' "$GLOBAL_FILE"; then
+  PASS=$((PASS+1)); echo "PASS: worktree framing sentence (outside it is prohibited)"
+else
+  FAIL=$((FAIL+1)); FAILED_NAMES+=("worktree framing sentence")
+  echo "FAIL: worktree framing sentence — literal string not found in $GLOBAL_FILE: 'outside it is prohibited'"
+fi
+
+# ---------------------------------------------------------------------------
 # 12. The --draft requirement for PR creation.
-if rg -q -- 'All pull requests MUST be created in draft mode' "$GLOBAL_FILE"; then
+# HARDENED (kanban #2987): the original anchor had no trailing boundary, so
+# mutation R6 spliced an exception clause in immediately after the word
+# "mode" (before the sentence's original period) — "...draft mode — except
+# for small documentation-only changes, which may skip this step. Always
+# use..." — and the assertion stayed green. Requiring the literal trailing
+# period forces the sentence to still terminate right after "draft mode".
+if rg -q -- 'All pull requests MUST be created in draft mode\.' "$GLOBAL_FILE"; then
   PASS=$((PASS+1)); echo "PASS: draft-PR requirement"
 else
   FAIL=$((FAIL+1)); FAILED_NAMES+=("draft-PR requirement")
-  echo "FAIL: draft-PR requirement — pattern not found in $GLOBAL_FILE: 'All pull requests MUST be created in draft mode'"
+  echo "FAIL: draft-PR requirement — pattern not found in $GLOBAL_FILE: 'All pull requests MUST be created in draft mode.'"
 fi
 
 # ---------------------------------------------------------------------------
@@ -267,6 +359,23 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# 20b. HARDENED (kanban #2987): assertion 20 above anchors only on the
+# affirmative half of the rule ("Use `rg` and `fd` respectively") and never
+# checks the prohibitive half that gives the rule its force. Mutation R3
+# proved this: rewriting "**NEVER use `grep` or `find` in Bash.** Use `rg`
+# and `fd` respectively. Both are Nix-guaranteed." into "`grep` and `find`
+# remain acceptable fallbacks in Bash when convenient. Use `rg` and `fd`
+# respectively when convenient. Both are commonly available." left
+# assertion 20 green while the prohibition itself was deleted entirely. This
+# assertion anchors on the prohibition, independent of assertion 20.
+if rg -qF -- 'NEVER use `grep` or `find` in Bash' "$GLOBAL_FILE"; then
+  PASS=$((PASS+1)); echo "PASS: rg-not-grep/fd-not-find prohibition (NEVER use grep or find)"
+else
+  FAIL=$((FAIL+1)); FAILED_NAMES+=("rg-not-grep/fd-not-find prohibition")
+  echo "FAIL: rg-not-grep/fd-not-find prohibition — literal string not found in $GLOBAL_FILE: 'NEVER use \`grep\` or \`find\` in Bash'"
+fi
+
+# ---------------------------------------------------------------------------
 # 21. The ripgrep -E encoding-flag footnote. Anchor reasoning: see
 # Spot-check 2 above — anchors on the specific misconception corrected, not
 # on the generic "use rg not grep" guidance already covered by assertion 20.
@@ -297,11 +406,18 @@ fi
 
 # ---------------------------------------------------------------------------
 # 24. The Homebrew prohibition.
-if rg -q -- 'Homebrew is FORBIDDEN' "$GLOBAL_FILE"; then
+# HARDENED (kanban #2987): Document B calls this "the corpus's cleanest
+# single-source rule," restated nowhere else — if this one anchor goes
+# blind, nothing else in the corpus catches a Homebrew-permitting rewrite.
+# The original anchor had no trailing boundary, so mutation R4's "FORBIDDEN
+# for most cases, but may be used for a small number of niche tools
+# unavailable in nixpkgs" left it green. Requiring the literal trailing
+# period forces the sentence to still terminate right after "FORBIDDEN".
+if rg -q -- 'Homebrew is FORBIDDEN\.' "$GLOBAL_FILE"; then
   PASS=$((PASS+1)); echo "PASS: Homebrew prohibition"
 else
   FAIL=$((FAIL+1)); FAILED_NAMES+=("Homebrew prohibition")
-  echo "FAIL: Homebrew prohibition — pattern not found in $GLOBAL_FILE: 'Homebrew is FORBIDDEN'"
+  echo "FAIL: Homebrew prohibition — pattern not found in $GLOBAL_FILE: 'Homebrew is FORBIDDEN.'"
 fi
 
 # ---------------------------------------------------------------------------
