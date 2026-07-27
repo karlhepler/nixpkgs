@@ -6,6 +6,9 @@
 
 > **🚨 NEVER HOMEBREW 🚨** STOP. Do NOT suggest, install, or mention Homebrew. Ever. Use Nix (nixpkgs/nixpkgs-unstable) or direct binary downloads ONLY.
 
+> **Reference material is in `~/.claude/docs/`, not in this file — read the named file when its topic comes up:** `coordination-reference.md` holds the Agent / Sub-agent / Skill / Session ID glossary and the delegatable-agent roster (who exists, and which capabilities run via Skill tool instead of delegation). `cli-and-mcp-reference.md` holds the `claude-inspect`, `perm`, `tmux-restore`, and `prc` entry points, plus Context7 MCP config and its WebSearch fallback.
+> `user-confirmation-protocols.md` holds the check-in template required before 3+-file, architectural, or database/API changes, and the paraphrase-first rule for ambiguous multi-step requests (skipped for simple commands like "Read file" or "Run tests") — both need an interactive user, so neither applies to a background sub-agent.
+
 ---
 
 ## Before EVERY Task
@@ -163,31 +166,6 @@ When researching, investigating, or looking up information, ALWAYS follow this p
 For changes affecting >1 file, >20 lines, or behavior:
 - Why this approach and trade-offs
 - Alternatives considered
-
----
-
-## Check-In Before Executing
-
-**Required for:** 3+ files, architectural decisions, database/API changes.
-
-```
-Task: [What you're about to do]
-Why: [Problem being solved]
-Approach: [Your solution]
-Changes: [Files affected]
-Scope: This will ONLY change [X]. NOT [Y, Z].
-
-Ready to proceed?
-```
-
-Wait for confirmation.
-
----
-
-## Complex Requests
-
-For multi-step/ambiguous requests, paraphrase understanding first.
-Skip for simple commands ("Read file", "Run tests").
 
 ---
 
@@ -448,12 +426,6 @@ Two questions — that's all:
 
 ---
 
-## PR Comment Replies
-
-See the `/review-pr-comments` skill for full workflow. For read-only fetching (listing, finding, filtering comments without replying), use `prc list <pr>` with optional flags (`--author`, `--bots-only`, `--inline-only`, `--resolved`, `--unresolved`, `--full`) — never `gh api` + `jq`.
-
----
-
 ## GitHub Actions Security
 
 **All GitHub Actions MUST be pinned to commit SHA with version comment.**
@@ -462,30 +434,6 @@ See the `/review-pr-comments` skill for full workflow. For read-only fetching (l
 ❌ `actions/checkout@v4` or `actions/checkout@v4.1.1`
 
 Use `pinact run` to pin, `pinact run -u` to update, `pinact run --check` in CI to enforce.
-
----
-
-## Glossary
-
-**Agent:** A Claude Code instance executing work (the AI itself)
-
-**Sub-agent:** A background agent spawned via Task tool to handle delegated work
-
-**Skill:** A specialized capability invoked via Skill tool. Exception/workflow skills live at `skills/<name>/SKILL.md`; slash-commands live at `~/.claude/commands/`.
-
-**Session ID:** Friendly name identifier for Claude session (e.g., `clear-vale`, `swift-falcon`, `smart-bell`). Automatically injected at startup via the SessionStart hook. Used by coordinator-tier tools (kanban, perm) as an ownership key to scope session state.
-
-**Open:** When the user says "open X", Claude runs the macOS `open` command via Bash (e.g., `open file.txt`, `open https://example.com`). "Open" means launch/display, not read or process in Claude.
-
----
-
-## MCP Integration
-
-**Context7 MCP** - Authoritative documentation lookup for libraries and frameworks. (Background sub-agent MCP constraints documented in § Research Priority Order.)
-
-- Tools: `mcp__context7__resolve-library-id` (find library), `mcp__context7__query-docs` (query documentation)
-- When it fails: Fall back to WebSearch for official documentation
-- Config: Automatically enabled if `CONTEXT7_API_KEY` set in `overconfig.nix`. To disable: Remove key, run `hms`.
 
 ---
 
@@ -500,31 +448,3 @@ Use `pinact run` to pin, `pinact run -u` to update, `pinact run --check` in CI t
 `.scratchpad/` (at the project root) is the canonical location for temporary working files. Not git-tracked, persists across sessions. The directory is guaranteed to exist — the SessionStart hook creates it automatically.
 
 **Do NOT** run `ls .scratchpad` or `mkdir -p .scratchpad` before writing scratchpad files — just write.
-
----
-
-## Team Member Terminology
-
-**Delegatable team members** are defined in `agents/<name>.md` — the source of truth for sub-agents Claude Code can delegate work to. Each agent definition is self-contained: full skill content in the file body, agent metadata in the frontmatter.
-
-See project CLAUDE.md § Team Member Terminology for the full add/update/remove workflow with Nix source paths.
-
-**Exception/workflow skills** run via Skill tool directly — not delegated as background sub-agents:
-- learn, project-planner — interactive exception skills; live at `skills/<name>/SKILL.md`
-- review-pr-comments, manage-pr-comments — workflow skills; live at `skills/<name>/SKILL.md`
-- pr-review — multi-file skill with supporting files; lives at `skills/pr-review/SKILL.md`
-
-**Your Team (delegatable agents):**
-- Engineering: swe-backend, swe-frontend, swe-fullstack, swe-devex, swe-infra, swe-security, swe-sre
-- QA: qa-engineer
-- Design: product-ux, visual-designer
-- Support: researcher, scribe, ai-expert, ac-reviewer, debugger
-- Business: finance, lawyer, marketing
-
----
-
-## Reference Commands
-
-For session analytics, run `claude-inspect --help`. For permission management, run `perm --help`.
-
-- `tmux-restore`: Pick and restore a tmux-resurrect snapshot via fzf
