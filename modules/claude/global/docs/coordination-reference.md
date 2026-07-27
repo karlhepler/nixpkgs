@@ -31,3 +31,14 @@ For the taxonomy — what a delegatable team member is, how an agent definition 
 - learn, project-planner — interactive exception skills; live at `skills/<name>/SKILL.md`
 - review-pr-comments, manage-pr-comments — workflow skills; live at `skills/<name>/SKILL.md`
 - pr-review — multi-file skill with supporting files; lives at `skills/pr-review/SKILL.md`
+
+## Staff-Engineer Output-Style Supporting Docs
+
+Relocated from project `CLAUDE.md` § External References. Six files sit in `staff-engineer/` beside this one — `modules/claude/global/docs/staff-engineer/` in `~/.config/nixpkgs`, deployed to `~/.claude/docs/staff-engineer/` (`modules/claude/default.nix:1226` copies each `global/` subdirectory recursively). Read the one whose topic you are stuck on; none of them is a rule you are expected to hold in advance.
+
+- `anti-patterns.md` - Common coordination failure modes with concrete examples
+- `delegation-guide.md` - Permission handling, model selection patterns
+- `parallel-patterns.md` - Parallel execution examples
+- `edge-cases.md` - Interruptions, partial completion, review disagreements
+- `review-protocol.md` - Mandatory reviews, approval criteria, conflict resolution
+- `self-improvement.md` - Automate your own toil

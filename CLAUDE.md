@@ -111,8 +111,6 @@ Some capabilities intentionally have no agent definition because they run differ
 - `hme`: Open `home.nix` in vim (zsh alias — not a standalone command; never invoke from Bash tool — opens interactive vim)
 - `hmu`: Open `user.nix` in vim (zsh alias — not a standalone command; never invoke from Bash tool — opens interactive vim)
 - `hmo`: Open `overconfig.nix` in vim (zsh alias — not a standalone command; never invoke from Bash tool — opens interactive vim)
-- `hm`: Change directory to `~/.config/nixpkgs` (zsh alias — not a standalone command)
-- For deep hms semantics (failure modes, backup mechanism, `--purge` EXIT trap, git-invisible cycle): see `modules/system/HMS.md`.
 
 ### Git Workflow
 - `commit "message"`: Stage all changes and commit
@@ -130,32 +128,7 @@ Some capabilities intentionally have no agent definition because they run differ
 - `workout -`: Toggle to previous worktree location
 - `groot`: Navigate to git repository root
 
-### Tmux Session Management
-- `tmux-restore`: Pick and restore a tmux-resurrect snapshot via fzf (shows sessions and window names in preview)
-
-### Claude Code Helpers
-
-> **These are shellapps defined in this repo.** To extend or modify them, edit their source in `modules/claude/` and run `hms`. Do NOT edit deployed copies directly.
-
-- `q "question"`: Quick Claude question (haiku model - fastest)
-- `qq "question"`: Claude question (sonnet model - balanced)
-- `qqq "question"`: Complex Claude question (opus model - most capable)
-- `prc`: PR comment management tool (list, reply, resolve, collapse) — source: `modules/claude/prc.py`; see `/manage-pr-comments` skill for usage documentation
-- `prr`: PR Review submission CLI using GitHub REST API; submits structured PR reviews with inline comments from a findings JSON file — source: `modules/claude/prr.py`
-
-#### Coordination CLIs
-
-> **`staff`, `sstaff`, and `crew` are the coordination-tier CLIs** — they launch or interact with Claude sessions that operate as coordinators. All three are shellapps defined in `modules/claude/` and deployed via `hms`.
-
-- `staff`: Launch Claude Code with the Staff Engineer output style (loads `~/.claude/output-styles/staff-engineer.md`) — source: `modules/claude/staff.bash`
-- `sstaff`: Launch Claude Code with the Senior Staff Engineer output style (loads `~/.claude/output-styles/senior-staff-engineer.md`, coordinator-of-coordinators tier) — source: `modules/claude/sstaff.bash`
-- `crew`: Pane-based session orchestrator — subcommands: `list`, `tell`, `read`, `dismiss`, `find`, `create`, `status`, `project-path`, `resume`, `sessions` — source: `modules/claude/crew.py`; see `crew-cli` skill for full reference
-
-#### Analytics and Lifecycle CLIs
-
-- `claude-inspect`: Session and usage analytics CLI — subcommands: `session`, `agents`, `tools`, `cards`, `compare`, `list`, `estimate`, `throughput`, `criterion-rejections` (`ac-rejections`) — source: `modules/claude/claude-inspect.py`
-- `kanban`: Project coordination-board CLI — subcommands: `do`, `todo`, `start`, `defer`, `done`, `cancel`; criteria management; inspection commands like `list`, `show`, `status` — source: `modules/kanban/kanban.py`
-- `perm`: Permission management (subcommands: `allow`, `always`, `cleanup`, `cleanup-stale`, `list`, `check` — plus `session-hook`/`hook` which are internal hook handlers; `purge` is user-only) — source: `modules/claude/perm.py`; mechanics documented in § Reference Documentation
+**Every other command this repo defines** — the `hm` directory alias, `q`/`qq`/`qqq`, `prc`, `prr`, the coordination-tier CLIs (`staff`, `sstaff`, `crew`), the analytics and lifecycle CLIs (`claude-inspect`, `kanban`, `perm`), and `tmux-restore` — is listed with its subcommands and its source path in `~/.claude/docs/cli-and-mcp-reference.md` § Repository Command Reference (source: `modules/claude/global/docs/cli-and-mcp-reference.md`). Read it when you need a subcommand name you do not remember, or the source file to edit to change a command's behavior.
 
 ## Critical Requirements
 
@@ -163,14 +136,6 @@ Some capabilities intentionally have no agent definition because they run differ
 2. **Backup Synchronization**: Sync `~/.backup` folder with cloud storage for machine-specific configuration safety (human maintenance task — not Claude-actionable)
 3. **--purge Flag**: Claude Code must NEVER use the `--purge` flag with `hms`. What `--purge` does: it registers an EXIT trap (hms.bash:79) that fires unconditionally when the script exits — whether hms completes successfully, aborts mid-run on validation failure (Step 4), fails during `home-manager switch` (Step 7), or exits for any other reason. There is no way to run `hms --purge` without killing the tmux server and closing every active tmux session, including the one Claude Code is running in. This is irreversible. The flag exists for the user to run deliberately after tmux config changes, not for automation. Full semantics: `modules/system/HMS.md`.
 4. **macOS ARM Only**: This configuration is locked to `aarch64-darwin` (Apple Silicon Macs)
-
-## Configuration Structure
-
-Domain-centric module architecture - related functionality co-located.
-
-**Core files:** flake.nix (inputs/outputs), home.nix (entry point), user.nix (identity), overconfig.nix (machine-specific).
-
-For detailed architecture, see README.md and source files in modules/.
 
 ## Development Workflows
 
@@ -328,29 +293,9 @@ home.packages = with pkgs; [
 
 user.nix and overconfig.nix are made git-invisible by `hms` after first run. Backups linked via `*.latest.nix` symlinks.
 
-## Claude Code Integration
-
-**Configuration deployment:**
-- Global settings: `modules/claude/global/CLAUDE.md` → `~/.claude/CLAUDE.md`
-- Agents: `modules/claude/global/agents/*.md` → `~/.claude/agents/`
-- Hooks: notification-hook, complete-hook, csharp-format-hook (configured in `modules/claude/default.nix`)
-- Commands: `~/.claude/TOOLS.md` auto-generated from shellapp metadata
-
-**MCP integration:**
-- Context7 MCP auto-configured if `CONTEXT7_API_KEY` set in overconfig.nix
-- Config merged into `~/.claude.json` (preserves Claude's metadata)
-- To disable: Remove `CONTEXT7_API_KEY`, run `hms`
-
-**Analytics Dashboard (claudit):**
-- Grafana-based dashboard for Claude Code usage analytics (user nickname: "claudit")
-- Dashboard definition: `modules/claudit/dashboard.json`
-- Metrics collection: `modules/claudit/claude-metrics-hook.py` (captures metrics via Claude Code metrics hook)
-- Displays: Total cost (today/all-time), token breakdown (input/output/cache), cost by session, turn statistics by agent type, tool usage heat map (by tool and agent)
-- Access via Grafana interface (configured in Home Manager)
-
 ## Your Team
 
-For the full roster of delegatable agents and exception skills, see global CLAUDE.md.
+For the full roster of delegatable agents — and the separate list of capabilities that run via Skill tool instead of being delegated — see `~/.claude/docs/coordination-reference.md` § Team Member Terminology (source: `modules/claude/global/docs/coordination-reference.md`). Read it before delegating, to confirm the agent you have in mind actually exists.
 
 ## Reference Documentation
 
@@ -360,28 +305,10 @@ For the full roster of delegatable agents and exception skills, see global CLAUD
 
 **Command reference:** See `~/.claude/TOOLS.md` (auto-generated from shellapp metadata on `hms`).
 
-**Nix development:**
-- `nix run nixpkgs#nix-prefetch-github -- owner repo --rev main`: Get hash for GitHub packages
-- `nix flake update`: Update dependencies
-- `nix flake check`: Partial validation only — does NOT catch flake8 errors. Use `hms` as the real gate.
-- `nix flake metadata`: Show flake info
-- `nix search nixpkgs <package>`: Search packages
-
-**Implementation details:** See source files in `modules/` directories for specific configurations (theme, LSP, activation hooks, etc).
+**Repository architecture, the Claude Code deployment map, and the Nix command recipes:** See `~/.claude/docs/nixpkgs-repo-reference.md` (source: `modules/claude/global/docs/nixpkgs-repo-reference.md`) — the module layout and core files, what deploys from `modules/claude/global/` into `~/.claude/`, the hook and Context7 MCP wiring, the claudit analytics dashboard, and the `nix flake` / `nix-prefetch-github` invocations. Read it when you need to trace a deployed artifact back to its source, or when you need a `nix` command against this flake.
 
 **perm CLI mechanics (authoritative summary):**
 - `perm allow <pattern> --session <id>` and `perm always <pattern> --session <id>` both write the permission pattern to `.claude/settings.local.json` — that file never contains a session ID.
 - `--session` is an ownership key recorded only in `.claude/.perm-tracking.json`.
 - The sole difference between `allow` and `always` is in `.perm-tracking.json`: `allow` creates a temporary, session-scoped claim (removable via cleanup); `always` creates a permanent entry that survives cleanup.
 - Rule of thumb: `settings.local.json` = what is permitted; `.perm-tracking.json` = who owns it and for how long.
-
-## External References
-
-Supporting documentation for the staff engineer output style:
-
-- [anti-patterns.md](modules/claude/global/docs/staff-engineer/anti-patterns.md) - Common coordination failure modes with concrete examples
-- [delegation-guide.md](modules/claude/global/docs/staff-engineer/delegation-guide.md) - Permission handling, model selection patterns
-- [parallel-patterns.md](modules/claude/global/docs/staff-engineer/parallel-patterns.md) - Parallel execution examples
-- [edge-cases.md](modules/claude/global/docs/staff-engineer/edge-cases.md) - Interruptions, partial completion, review disagreements
-- [review-protocol.md](modules/claude/global/docs/staff-engineer/review-protocol.md) - Mandatory reviews, approval criteria, conflict resolution
-- [self-improvement.md](modules/claude/global/docs/staff-engineer/self-improvement.md) - Automate your own toil
