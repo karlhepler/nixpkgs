@@ -32,7 +32,16 @@ On error (PR not found, no branch tracking): print a clear error message and sto
 
 ## STATE
 
-Most state lives in conversation history. Track these values mentally across iterations:
+**One state model, two boundaries — read this before changing anything in this section.**
+
+- **A `ScheduleWakeup` continuation resumes this same session.** The conversation context — and therefore every counter below — persists across the wakeup gap. On a continuation you *recall* those values; you never re-initialize them.
+- **A process restart** (session killed, watcher re-invoked) is the boundary that loses the conversation context. The three durable flag files below exist for *that* boundary — not for the wakeup gap.
+
+Throughout this skill, "in-memory" means *resident in the live session's conversation context*: it survives wakeups, and is lost on restart.
+
+**Evidence basis for the wakeup half of this model**, recorded so a future reader knows what would overturn it: (1) a recorded incident in which an approval-watch run reached cycle 55+ while accumulating ~500-560k tokens of polling context — see the "a verbal stand-down is not sufficient evidence" note in the `senior-staff-engineer` output style; an in-conversation counter cannot reach 55, and context cannot accumulate, if every wakeup started a fresh context. (2) `ScheduleWakeup`'s own documentation, which describes a one-hour prompt-cache TTL such that effectively every allowed delay wakes with the conversation context still cached, while requiring the *prompt* be re-supplied on each firing. This is inference from an incident record plus tool documentation, **not** a reading of the platform implementation; direct evidence about `ScheduleWakeup`'s implementation semantics would supersede it.
+
+Track these values in the conversation context across iterations:
 
 - `cycle` — iteration counter, starts at 1
 - `fix_count` — number of times you have delegated fix work to a specialist
@@ -40,12 +49,12 @@ Most state lives in conversation history. Track these values mentally across ite
 - `pre_sha` — HEAD commit SHA captured before delegating fix work
 - `max_cycles` — 10 (hard limit on total iterations)
 - `max_ralph_invocations` — 4 (hard limit on specialist delegations)
-- `approval_watch_cycle` — iteration counter within the approval-watch phase, starts at 0 (see § Approval-Watch Phase). **In-memory only**: a session restart resets the expiry clock to 0, extending the effective watch window. A restart resets the expiry window. This is accepted behavior — the 24h bound is a within-session guarantee only.
+- `approval_watch_cycle` — iteration counter within the approval-watch phase, starts at 0 (see § Approval-Watch Phase). **In-memory only**: it accumulates across wakeup pulses (that is what makes the ~24h expiry bound at AW-6 reachable at all), but a session restart resets it to 0 and so extends the effective watch window. This is accepted behavior — the 24h bound is a within-session guarantee only.
 - `stall_check_name` — name of the check currently believed to be the sole pending check across consecutive fast-cycle polls (see Step 2a: Soft-stall detector); `null` when no such streak is active. In-memory, recalled the same way as `stagnation_count`.
 - `stall_cycle_count` — consecutive fast-cycle polls that `stall_check_name` has held the sole-pending position.
 - `stall_warned` — whether the one-time soft-stall warning has already fired for the current streak.
 
-**`clean_confirmed` — durable flag file (NOT in-memory):** This flag MUST survive the ScheduleWakeup gap, which spawns a fresh agent context where in-memory variables do not persist. It is stored as a file:
+**`clean_confirmed` — durable flag file (NOT in-memory):** This flag MUST survive a **process restart**, which loses the conversation context and with it every counter above. It is not needed for the wakeup gap — the conversation context persists across a `ScheduleWakeup` continuation (see the state model above) — but it is the only carrier of the two-cycle clean handshake that survives a kill-and-re-invoke: without the file, a restarted watcher has to observe a fresh no-work cycle before it can reach Step 7a. It is stored as a file:
 
 - **File path:** `.smithers/clean_confirmed` (relative to the git repo root)
 - **Set:** `touch "$(git rev-parse --show-toplevel)/.smithers/clean_confirmed"` (first no-work invocation, Step 7)
@@ -53,7 +62,9 @@ Most state lives in conversation history. Track these values mentally across ite
 - **Clear:** `rm -f "$(git rev-parse --show-toplevel)/.smithers/clean_confirmed"` (after Step 7a completes OR on any abort/error in Step 7a)
 - **Init:** On first invocation, if the file does not exist, treat as false. The `.smithers/` directory is auto-created by smithers on first need (see Step 7) if it does not exist — it is a state-only directory holding transient flag files, with no application code or tracked content. Smithers does NOT modify the host repo's `.gitignore`. The user is responsible for ensuring `.smithers/` is ignored globally via their git config (typically by appending `.smithers/` to `~/.config/git/ignore`, or to the file referenced by `git config --global core.excludesfile` if configured). Setup is a one-time host-machine action — ideally managed via dotfiles or nixpkgs (e.g., the `programs.git.ignores` list in home-manager) — not by smithers at runtime. **Users of THIS nixpkgs configuration:** the setup is already handled — `.smithers` is included in `programs.git.ignores` (see `modules/git/default.nix`). Just run `hms` to deploy the global ignore; nothing else is required.
 
-On first invocation all counters are at their initial values. On ScheduleWakeup continuations, recall counter values from the conversation context and test the `clean_confirmed` flag file.
+On first invocation all counters are at their initial values. On `ScheduleWakeup` continuations, recall counter values from the conversation context — they persist across the wakeup and MUST NOT be re-initialized — and test the `clean_confirmed` flag file.
+
+🚨 **Never treat a wakeup as a fresh start for a counter.** Every budget and stop bound in the fast cycle is one of these recalled in-conversation counters: `cycle` against `max_cycles`, `fix_count` against `max_ralph_invocations`, `stagnation_count >= 2`, and `approval_watch_cycle` against the ~144-pulse approval-watch ceiling. Re-initializing any of them on a wakeup would silently reset that bound on every pulse so it could never fire, leaving a loop that holds merge authority running without a stop condition.
 
 **`slack_posted` — durable flag file (NOT in-memory):** This flag prevents duplicate Slack notifications when smithers runs multiple cycles on the same clean PR (e.g., user re-invokes the watcher on a PR that was already posted to Slack). It is stored as a file:
 
@@ -62,7 +73,7 @@ On first invocation all counters are at their initial values. On ScheduleWakeup 
 - **Test:** `test -f "$(git rev-parse --show-toplevel)/.smithers/slack_posted"` (before invoking `smithers-post` in Step 7a)
 - **Clear:** Not cleared by smithers — persists across watcher runs. The user clears it manually if a re-post is desired.
 
-**`approval_watch` — durable flag file (NOT in-memory):** This flag marks that smithers has entered the approval-watch phase on a given PR. It must survive the ScheduleWakeup gap so fresh agent contexts know to use the slow-pulse cadence.
+**`approval_watch` — durable flag file (NOT in-memory):** This flag marks that smithers has entered the approval-watch phase on a given PR. It must survive a **process restart**, so that a re-invoked watcher detects the phase on its first invocation and resumes the slow-pulse cadence instead of dropping back into the 1-minute fix cycle (see § NOTES). Keep it a file.
 
 - **File path:** `.smithers/approval_watch` (relative to the git repo root)
 - **Set:** `touch "$(git rev-parse --show-toplevel)/.smithers/approval_watch"` (when entering the approval-watch phase after the Slack post, in Step 7a)
@@ -785,7 +796,7 @@ smithers-post <PR_NUMBER_OR_URL>
   ```bash
   smithers-post <PR_NUMBER_OR_URL> --webhook-url "<url>"
   ```
-- **Wakeup threading:** because `webhook_override` is conversation-context state, it does NOT survive the fresh agent context spawned after a `ScheduleWakeup` gap on its own. It is carried the same way the PR argument itself is carried — embedded as literal text in the `prompt` field of every `ScheduleWakeup` call in this skill: `prompt: "Continue /smithers <PR_URL> webhook=<url>"` instead of the bare `"Continue /smithers <PR_URL>"`. This applies on every wakeup in the session — the initial fast cycle, entering approval-watch, and every approval-watch pulse — not just the first one. Omitting it on any single wakeup silently drops the override for the rest of the run.
+- **Wakeup threading:** the wakeup `prompt` is what ARGUMENT PARSING consumes on the invocation that follows the gap, so a prompt omitting the `webhook=<url>` token parses as `webhook_override` unset — and a process restart loses the conversation context that would otherwise hold it. The prompt text is therefore the only carrier that survives both boundaries; thread it explicitly rather than relying on recalling it from context. It is carried the same way the PR argument itself is carried — embedded as literal text in the `prompt` field of every `ScheduleWakeup` call in this skill: `prompt: "Continue /smithers <PR_URL> webhook=<url>"` instead of the bare `"Continue /smithers <PR_URL>"`. This applies on every wakeup in the session — the initial fast cycle, entering approval-watch, and every approval-watch pulse — not just the first one. Omitting it on any single wakeup silently drops the override for the rest of the run.
 - **Default unchanged:** when no `webhook=<url>` token is given, `webhook_override` is never set, `--webhook-url` is never passed to `smithers-post`, and `smithers-post` reads `SMITHERS_SLACK_WEBHOOK_URL` exactly as it did before this feature existed. Every normal `/smithers <PR>` invocation is unaffected.
 - **Security note:** the override URL is a live-posting credential — it persists in plaintext in the wakeup `prompt` text and the session transcript for the life of the watch (potentially up to ~144 approval-watch pulses over ~24h, per AW-6). Prefer this override only for genuinely temporary/incident routing, not long-lived secrets, and rotate the webhook in Slack if it may have been exposed.
 
@@ -798,7 +809,8 @@ Smithers posts to Slack at Step 7a (PR ready for review) and optionally again at
 ## NOTES
 
 - The 1-minute ScheduleWakeup is the platform-minimum cadence for the fast CI cycle. The approval-watch phase uses a ~10-minute cadence — appropriate for human review timescales.
-- Most state is in the conversation context. Three durable exceptions use flag files because they must survive the ScheduleWakeup gap: `clean_confirmed` (`.smithers/clean_confirmed`), `slack_posted` (`.smithers/slack_posted`), and `approval_watch` (`.smithers/approval_watch`). `slack_posted` additionally survives watcher restarts.
+- Most state is in the conversation context, which persists across `ScheduleWakeup` continuations. Three durable exceptions use flag files because they must survive a **process restart**, which does lose the conversation context: `clean_confirmed` (`.smithers/clean_confirmed`), `slack_posted` (`.smithers/slack_posted`), and `approval_watch` (`.smithers/approval_watch`). `slack_posted` is never cleared by smithers at all — it is the cross-restart guard against a duplicate Slack ping to reviewers.
+- 🚨 **None of the three flag files is redundant, and none may be removed.** Each is the sole carrier of its fact across a restart (see the next two notes). Deleting them on the grounds that conversation context survives wakeups is a misreading of the boundary: the context does not survive a restart. The cost of that mistake is duplicate reviewer pings on every re-invocation and a lost clean-confirmation handshake — properties that look redundant right up until they silently break.
 - If this session is killed and restarted, the loop restarts from cycle 1 with a fresh `fix_count` and `stagnation_count`. The `clean_confirmed` flag file persists across restarts — if it exists when smithers restarts, smithers will proceed directly to Step 7a on the next no-work cycle. This is intentional and correct behavior. Similarly, if `.smithers/approval_watch` exists when smithers restarts, smithers will detect the phase on the first invocation and resume the slow-pulse cadence.
 - The smithers-post Slack notification (Step 7a) deduplicates across sessions via the `.smithers/slack_posted` flag. If the watcher restarts on a PR that already has the flag set, smithers will skip the Slack post. To re-post (e.g., to re-notify after a long approval-watch expiry), the user manually removes `.smithers/slack_posted`.
 - `webhook_override` (see § Slack Webhook Override) is never written to a file — unlike the three durable flags above, it is pure conversation-context state. A session kill/restart silently loses it: Slack posts revert to the default `SMITHERS_SLACK_WEBHOOK_URL` channel unless the operator re-supplies `webhook=<url>` on manual re-invocation.
