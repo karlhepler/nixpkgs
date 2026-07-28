@@ -28,7 +28,52 @@ a real one: `_invoke_fix_session` blocks on `staff -p --model sonnet
 ceiling that kills the whole process tree on expiry; `poll_loop` now builds
 a bounded task brief from the `PRSnapshot` per attempt and advances the
 gate's own `fix_count`/`stagnation_count` counters as attempts complete —
-closing the loop from detection to repair.
+closing the loop from detection to repair. Card 3046 closes the last seam
+gap: `execute_land` is the GitHub mutation adapter that actually runs `gh pr
+merge` for a `Land` message (nothing executed it before this card, even
+though `tick` already emitted it), and `execute_disarm` is its safety
+counterpart — `tick` now emits `Disarm` on every terminal path (landing, and
+every TERMINAL-suppressor `Stop` alike), and `execute_disarm` permanently
+revokes merge authority for the rest of the process once it fires, so a
+later stale `Land` can never merge a PR the watch has already stopped
+watching. Both adapters are bound in `build_send` alongside the others.
+Card 3052 adds two more closing pieces. `sweep_threads`/`replied_and_resolved`
+give Smithers a way to actually CLOSE a bot thread out — reply and resolve as
+one atomic action via `prc reply`/`prc resolve`, never a partial success —
+and `_is_ready_to_land` now hard-blocks landing while any actionable bot
+thread remains unresolved. Separately, `_is_approval_watch_cadence` lets
+`poll_loop` fall back to a slower `APPROVAL_WATCH_POLL_SECONDS` cadence while
+a PR is clean and merely waiting on a human reviewer, reverting to the normal
+cadence the moment that stops being true. Card 3060 closes four findings from
+a security audit of this file. `tick` now checks `_held(req)` — a coordinator
+hold or manual-merge opt-out — BEFORE ever emitting `Land`, even when the
+snapshot is otherwise fully ready to land: previously ready-to-land bypassed
+every suppressor including the operator's own hold, locked in by a since-
+deleted test. `_sanitize_for_brief` neutralizes every externally-sourced
+string (failing CI check names, thread author/URL) before it is interpolated
+into the fix session's task brief — a CI check's displayed name is
+attacker-controlled, so this closes a concrete prompt-injection path.
+`_invoke_fix_session` now hands the fix session subprocess an explicit,
+filtered environment (`_build_fix_session_env`/`FIX_SESSION_ENV_ALLOWLIST`)
+instead of silently inheriting the operator's entire shell, and `FIX_SESSION_
+CMD` now carries mechanically-enforced `--disallowedTools` deny rules for
+`gh pr merge`/`kubectl`/`aws`/`gcloud`, marking the session with
+`SMITHERS_FIX_SESSION=1` for a future scoped `PreToolUse` hook — making
+`FIX_SESSION_CONSTRAINTS`'s prose enforceable rather than merely requested.
+Card 3068 closes a peer-review finding (.scratchpad/smithers-devex-review.md
+Finding 1): `sweep_threads` was fully implemented, unit-tested, and never
+called from `poll_loop` — the third instance of this file's built-but-
+unwired defect class, after `Notify` and `Land`. `poll_loop` now calls
+`sweep_threads` every cycle, immediately before the gate evaluates this same
+cycle's `TickRequest`, so a thread it closes out can never also re-fire
+Trigger 3 or block Trigger 5 in that same tick. Separately, `--no-merge` is
+a new CLI flag giving an operator a real, reachable way to set
+`manual_merge_opt_out` (§ audit Finding 2) — previously correct in `_held`
+but unreachable from the real binary. `coordinator_hold` had the identical
+unreachability problem with no legitimate caller of its own to wire it to;
+it is removed from `TickRequest`/`_held` rather than left dangling (YAGNI —
+a speculative "some other process pauses this watch" caller can be added
+once one actually exists).
 
 Usage:
     smithers                        # Auto-detect the PR for the current git
@@ -54,7 +99,7 @@ import signal
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
@@ -105,6 +150,17 @@ SLACK_SEARCH_TOOL = "mcp__claude_ai_Slack__slack_search_public"
 # block the poll loop indefinitely.
 SLACK_DEDUP_TIMEOUT_SECONDS = int(os.environ.get("SMITHERS_SLACK_DEDUP_TIMEOUT_SECONDS", "45"))
 
+# Approval-watch cadence (card 3052, § APPROVAL-WATCH CADENCE;
+# `_is_approval_watch_cadence`, `poll_loop`) — the slower polling interval
+# used while a PR is clean and merely waiting on a human reviewer
+# (§ `_is_clean_awaiting_review`). Polling at the ordinary Active-tier
+# baseline (`PollLoopConfig.poll_interval_seconds`, 60s) buys nothing in this
+# state: nothing Smithers does makes a human approve faster, and every extra
+# poll is a pure GitHub API round trip. 900s (15 minutes) is a full order of
+# magnitude slower than the 60s baseline, and still gets Smithers back to
+# work well within one work session of a review landing.
+APPROVAL_WATCH_POLL_SECONDS = int(os.environ.get("SMITHERS_APPROVAL_WATCH_POLL_SECONDS", "900"))
+
 # Trigger 3's exclusion list (§ The gate, trigger 3; .scratchpad/2967-v3-
 # design.md:81 — "an unfiltered 'any bot comment' trigger fires on
 # informational bot noise with no way to suppress it, which is exactly the
@@ -154,12 +210,33 @@ FIX_INVOCATION_TIMEOUT_SECONDS = int(os.environ.get("SMITHERS_FIX_INVOCATION_TIM
 # id can be logged (§ Output parsing and trust) — it is not one of the four
 # settled tokens above, and nothing in its payload is ever allowed to drive
 # a decision; the prompt itself goes via stdin, never as a trailing argument.
+#
+# `--disallowedTools` (§ audit Finding 3 — BLOCKING; card 3060 Fix 4) makes
+# `FIX_SESSION_CONSTRAINTS`'s prose ("do NOT merge", "no cluster/secrets/
+# IAM/system operations") mechanically enforced rather than something the
+# fix session merely chooses to honor — belt and braces with the prose, not
+# a replacement for it: the prose tells a cooperative model what not to do,
+# these deny rules stop an uncooperative or injected one (§ Fix 2, prompt
+# injection reaching this same session via CI check names). Verified against
+# Claude Code 2.1.220 (`.scratchpad/smithers-tool-restriction-research.md`):
+# a `Bash(...)` deny rule is a hard floor in EVERY permission mode, including
+# `bypassPermissions`, so it is not weakened by `--permission-mode dontAsk`
+# above; it matches each subcommand of a compound `&&`-chained command
+# independently, so chaining can't smuggle a denied command past it; and
+# `Bash(gh pr merge *)` requires a word boundary after "merge", so it does
+# NOT match a bare, argument-less `gh pr merge` — `Bash(gh pr merge)` is the
+# separate, exact-match rule that closes that gap. `kubectl`/`aws`/`gcloud`
+# don't need the same two-rule treatment: every realistic invocation carries
+# a subcommand argument, so a bare `Bash(<tool> *)` already blocks "every
+# matching call" per the same research.
 FIX_SESSION_CMD: Tuple[str, ...] = (
     "staff", "-p",
     "--model", "sonnet",
     "--effort", "high",
     "--permission-mode", "dontAsk",
     "--output-format", "json",
+    "--disallowedTools",
+    "Bash(gh pr merge) Bash(gh pr merge *) Bash(kubectl *) Bash(aws *) Bash(gcloud *)",
 )
 
 # Safety constraints carried into every fix session's task brief (§ Security
@@ -269,7 +346,13 @@ class CommentThread:
     without reaching around this type. Like every other field here, a key
     entirely absent from the underlying JSON becomes an explicit `None`
     ("unknown") via `_get_field` — never silently defaulted (e.g.
-    `reply_count` missing is `None`, not a fabricated `0`)."""
+    `reply_count` missing is `None`, not a fabricated `0`).
+
+    `comment_id` (card 3052, § THREAD SWEEP WITH ATOMIC REPLY-AND-RESOLVE)
+    is `prc.py`'s own `id`/`databaseId` field (`prc.py:208,240`) — the
+    integer `prc reply <comment_id>` expects. Deliberately distinct from
+    `thread_id`, which is the GraphQL node id `prc resolve <thread_id>`
+    expects: a sweep needs BOTH to close a thread out atomically."""
 
     thread_id: Optional[str]
     author: str
@@ -277,6 +360,7 @@ class CommentThread:
     type: Optional[str]  # "inline" (review thread comment) or "pr-level" (issue comment)
     in_reply_to_id: Optional[int]  # id of the comment this replies to; None if not a reply OR if missing
     reply_count: Optional[int]  # number of replies to this comment; None only if the field itself was missing
+    comment_id: Optional[int] = None  # prc.py's own "id" (databaseId) — what `prc reply` addresses
 
 
 @dataclass(frozen=True)
@@ -550,6 +634,7 @@ def _fetch_unresolved_threads(
         thread_type = _get_field(comment, "type", "prc list", log_path)
         in_reply_to_id = _get_field(comment, "in_reply_to_id", "prc list", log_path)
         reply_count = _get_field(comment, "reply_count", "prc list", log_path)
+        comment_id = _get_field(comment, "id", "prc list", log_path)
 
         thread = CommentThread(
             thread_id=thread_id,
@@ -558,6 +643,7 @@ def _fetch_unresolved_threads(
             type=thread_type,
             in_reply_to_id=in_reply_to_id,
             reply_count=reply_count,
+            comment_id=comment_id,
         )
         if is_bot is True:
             bot.append(thread)
@@ -781,7 +867,7 @@ def _merge_queue_evicted(prior_merge_queue_state: Optional[str], current_merge_q
     return prior_merge_queue_state is not None and current_merge_queue_state is None
 
 
-def _is_ready_to_land(snapshot: PRSnapshot) -> bool:
+def _is_ready_to_land(snapshot: PRSnapshot, informational_bot_authors: Tuple[str, ...]) -> bool:
     """Trigger 5: the PR is fully satisfied and ready to land — routes to
     the deterministic land action, not a Claude invocation.
 
@@ -792,6 +878,14 @@ def _is_ready_to_land(snapshot: PRSnapshot) -> bool:
     debounced "confirmed clean" wait (`CleanConfirmedAt`, § State model) is
     owned by a later card — this predicate answers only "is the snapshot
     clean right now", with no debounce.
+
+    Unresolved bot threads are a HARD merge blocker (card 3052, § THREAD
+    SWEEP WITH ATOMIC REPLY-AND-RESOLVE): reuses `_has_actionable_bot_comment`
+    — the SAME predicate Trigger 3 uses — evaluated over the snapshot's own
+    FULL `unresolved_bot_threads` tuple as fetched, never a filtered or
+    partial view, so readiness can never be inferred from an incomplete
+    listing. Any actionable bot thread blocks landing outright, even when
+    every other readiness condition below is otherwise satisfied.
     """
     if snapshot.is_draft:
         return False
@@ -802,6 +896,8 @@ def _is_ready_to_land(snapshot: PRSnapshot) -> bool:
     if snapshot.mergeable != "MERGEABLE":
         return False
     if snapshot.merge_state_status != "CLEAN":
+        return False
+    if _has_actionable_bot_comment(snapshot, informational_bot_authors):
         return False
     return snapshot.review_decision == "APPROVED"
 
@@ -850,9 +946,13 @@ def _only_pending_checks_and_nothing_else_actionable(req: "TickRequest") -> bool
 
 
 def _held(req: "TickRequest") -> bool:
-    """Suppressor 5: a coordinator hold or manual-merge opt-out is recorded
-    in state."""
-    return req.coordinator_hold or req.manual_merge_opt_out
+    """Suppressor 5: a manual-merge opt-out is recorded in state (§ card
+    3068 Fix 2 — the operator's `--no-merge` flag, wired through `poll_loop`
+    onto `TickRequest.manual_merge_opt_out`). `coordinator_hold` used to be
+    checked here too, but had no caller anywhere that could ever set it to
+    True in the real binary — removed rather than left permanently
+    unreachable (§ module docstring, card 3068)."""
+    return req.manual_merge_opt_out
 
 
 def _fix_session_in_flight(req: "TickRequest") -> bool:
@@ -898,10 +998,11 @@ def _suppressed(req: "TickRequest") -> bool:
 #
 #   TRANSIENT — means "not right now", and legitimately clears on its own on
 #   a later tick with no external intervention: all-pending checks resolve,
-#   a coordinator lifts a hold, an in-flight fix session finishes. These
-#   three keep emitting `NoWorkNeeded`, exactly as before this card:
+#   the operator lifts the `--no-merge` opt-out, an in-flight fix session
+#   finishes. These three keep emitting `NoWorkNeeded`, exactly as before
+#   this card:
 #     - Suppressor 4, `_only_pending_checks_and_nothing_else_actionable`
-#     - Suppressor 5, `_held` (coordinator hold or manual-merge opt-out)
+#     - Suppressor 5, `_held` (the operator's manual-merge opt-out)
 #     - Suppressor 6, `_fix_session_in_flight`
 # ---------------------------------------------------------------------------
 
@@ -950,8 +1051,7 @@ class TickRequest:
     max_cycles: int = 10  # v2's default
     stagnation_count: int = 0  # HEAD didn't advance across N consecutive fix cycles (v2 Step 13)
     active_fix_session: Optional[str] = None  # non-None means a fix session is already in flight for this PR
-    coordinator_hold: bool = False  # a coordinator hold is recorded in state
-    manual_merge_opt_out: bool = False  # a manual-merge opt-out is recorded in state
+    manual_merge_opt_out: bool = False  # the operator's --no-merge flag (§ card 3068 Fix 2)
 
 
 # ---------------------------------------------------------------------------
@@ -973,9 +1073,11 @@ def _is_clean_awaiting_review(snapshot: PRSnapshot) -> bool:
     behavior the cross-restart Slack dedup subsystem (card 3031) was built
     for.
 
-    Only ever consulted from inside the "no trigger fired" branch of `tick`,
-    so checks_fail, merge conflicts, actionable bot comments, and
-    merge-queue eviction are already known-false by construction (§ The
+    Only ever consulted from inside the "no trigger fired" branch of `tick`
+    (or, since card 3052, `poll_loop`'s `_is_approval_watch_cadence` — the
+    same precondition applies there too, guarded by its own `_trigger_fired`
+    check first), so checks_fail, merge conflicts, actionable bot comments,
+    and merge-queue eviction are already known-false by construction (§ The
     gate TRIGGERS) — this predicate only adds the checks those triggers
     don't cover: draft state, pending/unknown checks, and review approval.
     """
@@ -1015,6 +1117,49 @@ def _terminal_stop_notify(snapshot: PRSnapshot, reason: str) -> Notify:
     )
 
 
+def _trigger_fired(
+    snapshot: PRSnapshot,
+    prior_merge_queue_state: Optional[str],
+    informational_bot_authors: Tuple[str, ...],
+) -> bool:
+    """True when any of the four TRIGGERS fires (§ The gate). Extracted so
+    `tick`'s own gate evaluation and `poll_loop`'s approval-watch-cadence
+    decision (card 3052, § APPROVAL_WATCH_POLL_SECONDS,
+    `_is_approval_watch_cadence`) share ONE definition of "a trigger fired"
+    and can never diverge — a second, independently-reimplemented copy in
+    `poll_loop` could silently drift from the gate's own logic over time."""
+    return (
+        _has_failing_check(snapshot)
+        or _has_merge_conflict(snapshot)
+        or _has_actionable_bot_comment(snapshot, informational_bot_authors)
+        or _merge_queue_evicted(prior_merge_queue_state, snapshot.merge_queue_state)
+    )
+
+
+def _is_approval_watch_cadence(
+    snapshot: PRSnapshot,
+    prior_merge_queue_state: Optional[str],
+    informational_bot_authors: Tuple[str, ...],
+) -> bool:
+    """§ APPROVAL-WATCH CADENCE (card 3052): True exactly when `poll_loop`
+    should sleep `APPROVAL_WATCH_POLL_SECONDS` (the slow cadence) rather than
+    `PollLoopConfig.poll_interval_seconds` (the normal/Active-tier baseline)
+    after this cycle — no trigger fired AND the snapshot is genuinely
+    clean-awaiting-review (§ `_is_clean_awaiting_review`), the exact same
+    condition `tick` uses to decide whether to emit the recurring
+    awaiting-review `Notify`.
+
+    Recomputed fresh from the just-fetched snapshot every single cycle, with
+    no memory of the prior cycle's cadence — so a PR that starts failing CI
+    again, picks up a new actionable bot comment, or gets approved, returns
+    to the normal cadence on its very next poll. Nothing strands the loop on
+    the slow interval past the cycle where the state actually changed.
+    """
+    if _trigger_fired(snapshot, prior_merge_queue_state, informational_bot_authors):
+        return False
+    return _is_clean_awaiting_review(snapshot)
+
+
 def tick(req: TickRequest, send: Callable[[Message], None]) -> None:
     """The pure gate handler (§ Ports and adapters; § The gate).
 
@@ -1032,28 +1177,49 @@ def tick(req: TickRequest, send: Callable[[Message], None]) -> None:
     `Stop{reason}` rather than a silent `NoWorkNeeded` — card 3027, closing
     the peer-review finding that a poll loop could keep polling forever
     after budget exhaustion while structurally unable to ever act again.
-    Ready-to-land is still checked first and bypasses every suppressor,
-    terminal or transient — a fully clean, ready-to-land snapshot lands
-    regardless of exhausted budgets.
+    Ready-to-land is still checked first and bypasses every NON-HOLD
+    suppressor, terminal or transient — a fully clean, ready-to-land
+    snapshot lands regardless of exhausted fix/cycle/stagnation budgets or
+    an in-flight fix session.
+
+    An operator hold is the one suppressor exempt from that bypass (§ audit
+    Finding 2 — BLOCKING; card 3060 Fix 1): `_held(req)` — `manual_merge_
+    opt_out`, reachable today via the real `--no-merge` CLI flag (§ card
+    3068 Fix 2) — is checked BEFORE `Land` is ever emitted, even when the
+    snapshot is otherwise fully ready to land. A field named
+    `manual_merge_opt_out` means "do not merge this for me"; it must win over
+    a green, approved, mergeable snapshot, not the other way around. A held,
+    ready-to-land snapshot yields a plain `NoWorkNeeded` — the same
+    transient-suppression outcome `_held` produces everywhere else in this
+    gate (§ The gate, Suppressor 5) — never `Land`.
+
+    Every terminal path — landing (success) and every TERMINAL-suppressor
+    Stop alike — also emits `Disarm{reason}` immediately after, unconditional
+    on which terminal reason applies (§ card 3046, closing the seam gap where
+    Land/Disarm existed in the Message union but nothing ever executed or
+    constructed them). Once a watch reaches any terminal state, Smithers must
+    permanently give up its authority to merge, so a later `Land` — a retry,
+    a stale timer, a resumed state file — can never execute after the watch
+    has stopped.
     """
     snapshot = req.pr_snapshot
 
-    if _is_ready_to_land(snapshot):
+    if _is_ready_to_land(snapshot, req.informational_bot_authors):
+        if _held(req):
+            send(NoWorkNeeded())
+            return
         send(Land(method="squash"))
+        send(Disarm(reason="landed"))
         return
 
     terminal_reason = _terminal_suppression_reason(req)
     if terminal_reason is not None:
         send(Stop(reason=terminal_reason))
         send(_terminal_stop_notify(snapshot, terminal_reason))
+        send(Disarm(reason=terminal_reason))
         return
 
-    trigger_fired = (
-        _has_failing_check(snapshot)
-        or _has_merge_conflict(snapshot)
-        or _has_actionable_bot_comment(snapshot, req.informational_bot_authors)
-        or _merge_queue_evicted(req.prior_merge_queue_state, snapshot.merge_queue_state)
-    )
+    trigger_fired = _trigger_fired(snapshot, req.prior_merge_queue_state, req.informational_bot_authors)
 
     if not trigger_fired:
         if _is_clean_awaiting_review(snapshot):
@@ -1066,6 +1232,248 @@ def tick(req: TickRequest, send: Callable[[Message], None]) -> None:
         return
 
     send(StartFixSession(name=f"smithers-fix-pr-{snapshot.pr_number}", brief=""))
+
+
+# ---------------------------------------------------------------------------
+# GitHub mutation adapter (Land) and the Disarm safety adapter (§ Ports and
+# adapters). `execute_land` performs the real merge via `gh pr merge`,
+# honouring `msg.method`; `execute_disarm` permanently revokes merge
+# authority for the remainder of this process. Both bind to their own
+# message type only — a silent no-op on any other message, exactly like
+# every other adapter in this file — and share one mutable `armed` dict,
+# closed over per watch by `build_send` (§ composition root) the same way
+# `notify_slack`'s `already_posted` dict is shared: a plain, same-process
+# cache, never a second, independently-disagreeing source of truth.
+# ---------------------------------------------------------------------------
+
+LAND_METHOD_FLAGS: Dict[str, str] = {
+    "squash": "--squash",
+    "merge": "--merge",
+    "rebase": "--rebase",
+}
+
+
+def execute_land(msg: Message, pr_number: Optional[str], log_path: str, armed: Dict[str, bool]) -> None:
+    """The GitHub mutation adapter — binds to `Land` messages and performs
+    the real merge via `gh pr merge <pr> <method-flag>` (§ Ports and adapters
+    table: "GitHub mutation | Land | gh pr merge"). Reuses the `_run`
+    subprocess convention already established by `resolve_pr` — capture
+    output as text, never raise, inspect `returncode` at the call site.
+
+    Never raises past this boundary for an OPERATIONAL failure (§ card
+    scope, never-raise discipline; § peer review Finding 3, card 3068 Fix
+    3): any refusal `gh` itself reports — branch protection, a check that
+    turned red since the snapshot was fetched, etc. — is logged and this
+    function returns. That refusal is correct and final; it is never
+    retried with an escalated flag. This does NOT cover a missing `gh`
+    binary: `_run` deliberately does not catch `FileNotFoundError` (§ `_run`
+    docstring) — an absent, Nix-guaranteed dependency is an environment
+    fault this adapter is intended to surface, not swallow (§ CLAUDE.md §
+    Scripting Principles).
+
+    HARD PROHIBITION: never passes a force-merge flag, GitHub's
+    administrator-override flag, or any other branch-protection-bypass flag
+    to `gh`. `LAND_METHOD_FLAGS` is the only source of flags this function
+    ever adds to the command.
+
+    Refuses outright, before ever invoking `gh`, once `armed["armed"]` is
+    False (§ execute_disarm) — a stale `Land` reaching this adapter after
+    the watch has already disarmed must never merge.
+    """
+    if not isinstance(msg, Land):
+        return
+
+    if not armed.get("armed", True):
+        log_event(log_path, "land_refused_disarmed", pr=pr_number, method=msg.method)
+        return
+
+    if pr_number is None:
+        log_event(log_path, "land_skipped_no_pr_number", method=msg.method)
+        return
+
+    flag = LAND_METHOD_FLAGS.get(msg.method, "--squash")
+    result = _run(["gh", "pr", "merge", pr_number, flag])
+
+    if result.returncode != 0:
+        log_event(
+            log_path,
+            "land_failed",
+            pr=pr_number,
+            method=msg.method,
+            message=(result.stderr or "").strip()[:500],
+        )
+        return
+
+    log_event(log_path, "land_succeeded", pr=pr_number, method=msg.method)
+
+
+def execute_disarm(msg: Message, log_path: str, armed: Dict[str, bool]) -> None:
+    """The disarm adapter — binds to `Disarm` messages and permanently
+    revokes merge authority for the remainder of this process (§ Ports and
+    adapters; § card 3046). Flips the shared `armed["armed"]` flag to False;
+    every `Land` `execute_land` sees from this point on, for the life of the
+    process, is refused unconditionally — there is no re-arm."""
+    if not isinstance(msg, Disarm):
+        return
+
+    armed["armed"] = False
+    log_event(log_path, "disarmed", reason=msg.reason)
+
+
+# ---------------------------------------------------------------------------
+# Thread sweep with atomic reply-and-resolve (card 3052, § THREAD SWEEP WITH
+# ATOMIC REPLY-AND-RESOLVE) — the GitHub comment-mutation adapter that
+# actually closes a bot thread out. `_fetch_unresolved_threads` /
+# `_is_actionable_bot_thread` could already READ and CLASSIFY a thread, but
+# nothing could CLOSE one out before this card.
+#
+# THE GOVERNING RULE: reply and resolve are a single atomic action. A reply
+# without a matching resolve is a defect, not a partial success — `prc.py`'s
+# own `is_resolved` field (mirrored onto every `CommentThread` via
+# `_fetch_unresolved_threads`) only flips when a thread is EXPLICITLY
+# resolved, so a replied-to-but-unresolved thread re-triggers Trigger 3 (§
+# `_is_actionable_bot_thread`) on every subsequent poll, spamming the pull
+# request with a comment every cycle forever. This holds on EVERY path a
+# caller might use this adapter for — deferral, a terminal cap-stop, or a
+# known-limitation acknowledgment alike: if Smithers replies at all, it
+# resolves, or it reports the thread as still open.
+#
+# Both `prc reply` and `prc resolve` go through the SAME never-raising `_run`
+# subprocess convention `resolve_pr`/`execute_land` already established —
+# `gh api` + `jq` is never used here; `prc` is the one canonical tool for
+# every PR comment mutation in this repo.
+# ---------------------------------------------------------------------------
+
+DEFAULT_THREAD_SWEEP_REPLY_MESSAGE = (
+    "Smithers: acknowledged. Closing out this thread as part of the "
+    "automated pull request watch."
+)
+
+
+def replied_and_resolved(thread: CommentThread, reply_message: str, log_path: str) -> bool:
+    """The atomicity guarantee (§ THREAD SWEEP WITH ATOMIC REPLY-AND-RESOLVE).
+
+    Returns True ONLY when BOTH the reply and the resolve succeed. It is
+    structurally impossible for this function to report success after a
+    reply whose resolve failed: the resolve is attempted immediately after a
+    successful reply, in the same call, and any resolve failure flips the
+    return value to False right there — there is no code path that can
+    return True without having just observed `prc resolve` exit zero. If the
+    reply itself fails, the resolve is never even attempted (nothing was
+    said, so there is nothing to mark closed).
+
+    Never raises for an OPERATIONAL failure (§ card scope, never-raise
+    discipline matching `execute_land`/`execute_disarm`; § peer review
+    Finding 3, card 3068 Fix 3) — a non-zero `prc` exit, a missing
+    `comment_id`/`thread_id`, or any other outcome `prc` itself can report
+    is logged via `log_event` and returned as a plain bool; a caller never
+    sees an exception out of this adapter for any of those. This does NOT
+    cover a missing `prc` binary: both `_run` calls below go through the
+    shared `_run` helper, which deliberately does not catch
+    `FileNotFoundError` — an absent, Nix-guaranteed dependency is an
+    environment fault this adapter is intended to surface, not swallow.
+    """
+    if thread.comment_id is None:
+        log_event(
+            log_path,
+            "thread_sweep_reply_skipped_no_comment_id",
+            thread_id=thread.thread_id,
+            author=thread.author,
+            url=thread.url,
+        )
+        return False
+
+    if thread.thread_id is None:
+        log_event(
+            log_path,
+            "thread_sweep_resolve_skipped_no_thread_id",
+            comment_id=thread.comment_id,
+            author=thread.author,
+            url=thread.url,
+        )
+        return False
+
+    reply_result = _run(["prc", "reply", str(thread.comment_id), reply_message])
+    if reply_result.returncode != 0:
+        log_event(
+            log_path,
+            "thread_sweep_reply_failed",
+            comment_id=thread.comment_id,
+            thread_id=thread.thread_id,
+            author=thread.author,
+            message=(reply_result.stderr or "").strip()[:500],
+        )
+        return False
+
+    log_event(
+        log_path,
+        "thread_sweep_replied",
+        comment_id=thread.comment_id,
+        thread_id=thread.thread_id,
+        author=thread.author,
+    )
+
+    resolve_result = _run(["prc", "resolve", str(thread.thread_id)])
+    if resolve_result.returncode != 0:
+        # A reply landed but the resolve did not — exactly the defect state
+        # the governing rule exists to prevent. Logged under its own distinct
+        # event name (never folded into "thread_sweep_reply_failed") so this
+        # class of failure is greppable on its own.
+        log_event(
+            log_path,
+            "thread_sweep_resolve_failed_after_reply",
+            comment_id=thread.comment_id,
+            thread_id=thread.thread_id,
+            author=thread.author,
+            message=(resolve_result.stderr or "").strip()[:500],
+        )
+        return False
+
+    log_event(
+        log_path,
+        "thread_sweep_resolved",
+        comment_id=thread.comment_id,
+        thread_id=thread.thread_id,
+        author=thread.author,
+    )
+    return True
+
+
+def sweep_threads(
+    threads: Tuple[CommentThread, ...],
+    informational_bot_authors: Tuple[str, ...],
+    log_path: str,
+    reply_message: str = DEFAULT_THREAD_SWEEP_REPLY_MESSAGE,
+) -> Tuple[CommentThread, ...]:
+    """The thread-sweep adapter (§ THREAD SWEEP WITH ATOMIC REPLY-AND-
+    RESOLVE) — walks `threads` (the snapshot's own FULL, unfiltered
+    `unresolved_bot_threads` tuple — never a filtered or partial listing, so
+    a caller can never infer a clean state from an incomplete view) and
+    closes out every ACTIONABLE one (§ `_is_actionable_bot_thread`, the SAME
+    predicate Trigger 3 uses) via `replied_and_resolved`'s atomic
+    reply-then-resolve.
+
+    Returns the threads that remain open after this sweep: every
+    non-actionable thread (left untouched, exactly as it was — e.g. an
+    informational-bot-list exclusion, or one already replied to) plus any
+    actionable thread whose reply-and-resolve did not fully succeed. Per the
+    governing rule, there is no distinct "partially closed" state to report:
+    a thread this function did not manage to close out atomically is
+    reported exactly like one it never touched — still open.
+
+    Never raises for an OPERATIONAL failure (§ never-raise discipline;
+    § card 3068 Fix 3) — every per-thread outcome is logged by
+    `replied_and_resolved` itself, which draws the same operational-vs-
+    missing-binary distinction its own docstring states.
+    """
+    still_open: List[CommentThread] = []
+    for thread in threads:
+        if not _is_actionable_bot_thread(thread, informational_bot_authors):
+            still_open.append(thread)
+            continue
+        if not replied_and_resolved(thread, reply_message, log_path):
+            still_open.append(thread)
+    return tuple(still_open)
 
 
 # ---------------------------------------------------------------------------
@@ -1281,11 +1689,14 @@ def log_adapter(msg: Message, log_path: str) -> None:
 # ---------------------------------------------------------------------------
 # The composition root (§ Ports and adapters) — binds real adapters to the
 # `send` output port via fan-out: one emitted message reaches every bound
-# adapter. This card wires the notification adapters (macOS + Slack) and the
-# structured log adapter. Other adapters in the design's table (GitHub
-# mutation, fix execution, scheduler) belong to later cards that own those
-# message types (§ card scope, OUT OF SCOPE) — an unbound message type is
-# simply logged here, never silently mutated.
+# adapter. Wires the GitHub mutation adapter (`execute_land`) and the disarm
+# safety adapter (`execute_disarm`, § card 3046), the notification adapters
+# (macOS + Slack), and the structured log adapter. Fix execution
+# (`StartFixSession`) is deliberately NOT one of these `send`-bound adapters —
+# it is invoked directly by `poll_loop` itself (§ Fix execution), not fanned
+# out here. The scheduler belongs to a later card that owns that message type
+# (§ card scope, OUT OF SCOPE) — an unbound message type is simply logged
+# here, never silently mutated.
 # ---------------------------------------------------------------------------
 
 def fan_out(handlers: List[Callable[[Message], None]]) -> Callable[[Message], None]:
@@ -1310,14 +1721,24 @@ def build_send(
     so a caller can share one dict across multiple `tick()` calls in a
     future poll loop; a fresh dict is created when omitted.
 
+    `armed` (§ card 3046) is a fresh, always-True mutable flag scoped to
+    this one watch — never a parameter, unlike `already_posted` — since
+    re-arming across watches would defeat the whole point of the safety
+    mechanism: each new `build_send` call is a fresh watch, starting
+    fully armed, that can only ever be disarmed once and never re-armed
+    for its own lifetime.
+
     No `dry_run` parameter: the CLI's one dry-run mechanism is `cmd_watch`'s
     own early return before this composition root is ever constructed
     (§ card 3035 Fix 3) — see `notify_macos`/`notify_slack`."""
     if already_posted is None:
         already_posted = {}
+    armed: Dict[str, bool] = {"armed": True}
 
     return fan_out(
         [
+            lambda msg: execute_land(msg, pr_number, log_path, armed),
+            lambda msg: execute_disarm(msg, log_path, armed),
             lambda msg: notify_macos(msg, log_path),
             lambda msg: notify_slack(msg, pr_number, log_path, already_posted),
             lambda msg: log_adapter(msg, log_path),
@@ -1352,6 +1773,52 @@ class PollLoopConfig:
     informational_bot_authors: Tuple[str, ...] = ()
     accept_api_billing: bool = False
     env: Optional[Dict[str, str]] = None  # override for tests; live os.environ read fresh every tick otherwise
+    manual_merge_opt_out: bool = False  # the operator's --no-merge flag (§ card 3068 Fix 2)
+
+
+# Bound on any single externally-sourced field once run through
+# `_sanitize_for_brief` (§ audit Finding 1) — generous enough to keep a real
+# CI check name or thread URL fully readable, small enough that no single
+# field can balloon the brief.
+SANITIZE_FOR_BRIEF_MAX_LENGTH = 200
+
+
+def _sanitize_for_brief(text: str) -> str:
+    """Neutralize one externally-sourced string before it is interpolated
+    into the fix session's task brief (§ audit Finding 1 — BLOCKING,
+    concrete prompt injection; card 3060 Fix 2).
+
+    `snapshot.checks_fail` names come straight from `gh pr checks`'s `name`
+    field with zero sanitization between the GitHub API and the prompt text:
+    anyone who can push a workflow file on a PR branch controls a CI check's
+    displayed name, and can set it to arbitrary, injected-instruction-shaped
+    text. `thread.author` and the thread's URL/id (§ audit Finding 10) are a
+    materially narrower, GitHub-structurally-constrained variant of the same
+    class, but are routed through this same helper rather than trusted as a
+    special case — one sanitizer, applied uniformly to every externally-
+    sourced field this function interpolates.
+
+    Strips CR/LF (and every other ASCII control character) so injected text
+    can never introduce what would read as a new instruction line in the
+    brief, collapses the resulting whitespace, and truncates to
+    `SANITIZE_FOR_BRIEF_MAX_LENGTH` so no single field can balloon the brief.
+    Does NOT attempt to make the brief injection-proof overall (§ audit
+    Finding 11 — the fix session still visits comment URLs itself with its
+    own unrestricted tools, a separate, only-partially-inherent surface this
+    helper does not and cannot close). Scope is exactly: text smithers
+    itself interpolates is neutralized first.
+    """
+    if not text:
+        return ""
+
+    without_control_chars = "".join(
+        " " if (ch in ("\n", "\r") or ord(ch) < 32 or ord(ch) == 127) else ch for ch in text
+    )
+    collapsed = " ".join(without_control_chars.split())
+
+    if len(collapsed) > SANITIZE_FOR_BRIEF_MAX_LENGTH:
+        return collapsed[:SANITIZE_FOR_BRIEF_MAX_LENGTH] + "…"
+    return collapsed
 
 
 def _build_fix_task_brief(snapshot: PRSnapshot, informational_bot_authors: Tuple[str, ...]) -> str:
@@ -1364,6 +1831,12 @@ def _build_fix_task_brief(snapshot: PRSnapshot, informational_bot_authors: Tuple
     § Fix execution). The subprocess inherits the CLI's own working
     directory, already the checked-out worktree for this PR — no separate
     `--branch`/`--repo` plumbing is needed (§ How the CLI starts the fix).
+
+    Every externally-sourced field interpolated below — failing check names,
+    thread author, thread URL/id — is routed through `_sanitize_for_brief`
+    first (§ audit Finding 1, card 3060 Fix 2): CI check names in particular
+    are attacker-controlled and reach this function with zero sanitization
+    from `gh pr checks` itself.
     """
     lines: List[str] = [
         f"Fix pull request #{snapshot.pr_number}. The current working "
@@ -1373,7 +1846,8 @@ def _build_fix_task_brief(snapshot: PRSnapshot, informational_bot_authors: Tuple
     ]
 
     if snapshot.checks_fail:
-        lines.append(f"- Failing CI checks: {', '.join(snapshot.checks_fail)}")
+        sanitized_checks = ", ".join(_sanitize_for_brief(name) for name in snapshot.checks_fail)
+        lines.append(f"- Failing CI checks: {sanitized_checks}")
 
     if snapshot.mergeable == "CONFLICTING":
         lines.append("- Merge conflicts with the base branch need resolving.")
@@ -1381,7 +1855,10 @@ def _build_fix_task_brief(snapshot: PRSnapshot, informational_bot_authors: Tuple
     for thread in snapshot.unresolved_bot_threads:
         if _is_actionable_bot_thread(thread, informational_bot_authors):
             location = thread.url or f"thread {thread.thread_id}"
-            lines.append(f"- Unresolved bot comment from {thread.author}: {location}")
+            lines.append(
+                f"- Unresolved bot comment from {_sanitize_for_brief(thread.author)}: "
+                f"{_sanitize_for_brief(location)}"
+            )
 
     lines.extend(["", FIX_SESSION_CONSTRAINTS])
     return "\n".join(lines)
@@ -1455,7 +1932,75 @@ def _kill_fix_session_process_tree(process: "subprocess.Popen", log_path: str, n
         log_event(log_path, "fix_invocation_kill_did_not_reap", name=name)
 
 
-def _invoke_fix_session(msg: StartFixSession, log_path: str) -> FixAttemptResult:
+# The fix session subprocess's environment allowlist (§ audit Finding 6 —
+# MEDIUM; card 3060 Fix 3). `subprocess.Popen` inherits the ENTIRE parent
+# environment when `env=` is omitted — every secret exported in the
+# operator's own shell (cloud credentials, other API tokens) would otherwise
+# be reachable to the fix session's Bash tool, which (per FIX_SESSION_
+# CONSTRAINTS/Fix 4) has broad access beyond the small deny list this card
+# adds. An explicit ALLOWlist, never a blocklist, so nothing not named here
+# can leak through by omission:
+#   - PATH, HOME: so the subprocess can find and run `staff`/`claude`/`gh`
+#     at all, and so `gh` finds its stored, file-based credentials under
+#     `$HOME/.config/gh` (verified via `gh help environment`: `GH_CONFIG_DIR`
+#     defaults to `$XDG_CONFIG_HOME/gh` if set, else `$HOME/.config/gh`) —
+#     confirmed this operator's `gh` auth is exactly that file-based kind
+#     (`~/.config/gh/hosts.yml` present) and `XDG_CONFIG_HOME` is unset here,
+#     so `HOME` alone reaches the real config directory.
+#   - LANG, LC_ALL: `subprocess.Popen(..., text=True)` decodes the child's
+#     stdout/stderr using the locale's preferred encoding; dropping these
+#     risks a decode failure on any non-ASCII text a real `staff`/`claude`
+#     invocation is likely to produce or echo back.
+#   - CLAUDE_CODE_OAUTH_TOKEN: Anthropic's own documented headless-auth
+#     mechanism for SUBSCRIPTION billing (see `REFUSAL_ENV_VARS` above) —
+#     forwarded only if the parent actually has it set, never synthesized.
+# Deliberately EXCLUDES GH_TOKEN/GITHUB_TOKEN: `gh`'s own file-based stored
+# credentials (above) already authenticate it without handing a raw,
+# live token to the session's broad tool surface — confirmed via `gh help
+# environment` that these env vars only take PRECEDENCE over, never replace
+# the need for, stored credentials, so omitting them does not break `gh`
+# auth for an operator who has already run `gh auth login`.
+FIX_SESSION_ENV_ALLOWLIST: Tuple[str, ...] = (
+    "PATH",
+    "HOME",
+    "LANG",
+    "LC_ALL",
+    "CLAUDE_CODE_OAUTH_TOKEN",
+)
+
+
+def _build_fix_session_env(base_env: Dict[str, str]) -> Dict[str, str]:
+    """Build the filtered environment for the fix session subprocess (§
+    audit Finding 6; card 3060 Fix 3) from `base_env` — never `os.environ`
+    read directly here, so every caller (and every test) controls exactly
+    what this function sees, matching the rest of this module's env-as-
+    parameter convention (`billing_preflight`, `PollLoopConfig.env`).
+
+    Carries forward only `FIX_SESSION_ENV_ALLOWLIST` entries that are
+    actually present in `base_env` — never synthesizes a value for a
+    variable that isn't already set — and always adds `SMITHERS_FIX_SESSION
+    = "1"` (§ card 3060 Fix 4), marking this subprocess as smithers-spawned
+    so a future `PreToolUse` hook can scope deny logic to it specifically
+    (modelled on the existing `git-no-verify-hook.py` pattern; the hook
+    itself is out of this card's scope).
+
+    Never re-admits a `REFUSAL_ENV_VARS` entry, however it reached
+    `base_env`: `FIX_SESSION_ENV_ALLOWLIST` has zero overlap with
+    `REFUSAL_ENV_VARS` by construction (an allowlist, not a blocklist), and
+    `test_no_refusal_env_var_reaches_the_child_environment` asserts this
+    holds directly rather than trusting it to hold by inspection alone —
+    re-admitting one of those variables here would silently defeat
+    `billing_preflight`'s own fail-closed control for the fix session's own
+    billing.
+    """
+    filtered = {name: base_env[name] for name in FIX_SESSION_ENV_ALLOWLIST if name in base_env}
+    filtered["SMITHERS_FIX_SESSION"] = "1"
+    return filtered
+
+
+def _invoke_fix_session(
+    msg: StartFixSession, log_path: str, env: Optional[Dict[str, str]] = None
+) -> FixAttemptResult:
     """The fix-execution adapter (§ Fix execution) — a single blocking
     `staff -p --model sonnet --effort high --permission-mode dontAsk`
     subprocess invocation (`FIX_SESSION_CMD`), wrapped in an external
@@ -1464,12 +2009,25 @@ def _invoke_fix_session(msg: StartFixSession, log_path: str) -> FixAttemptResult
     argument. Runs to completion and terminates itself; this call blocks
     until it does, is killed for exceeding the ceiling, or fails to start.
 
+    `env` (§ audit Finding 6; card 3060 Fix 3) is the caller's own base
+    environment — `poll_loop` passes through the same per-cycle `env` dict
+    it already reads for `billing_preflight`, so both share one source of
+    truth for "what the operator's environment looks like this cycle"; a
+    caller that omits it gets a fresh `os.environ` read here instead
+    (mirroring `PollLoopConfig.env`'s own override-for-tests convention).
+    Either way, `base_env` is never handed to the subprocess directly — it
+    is always passed through `_build_fix_session_env` first, so the child
+    only ever inherits the small, explicit allowlist that helper defines.
+
     Per § Output parsing and trust, the ONLY things a caller may treat as a
     control signal are `FixAttemptResult.outcome` and `.returncode` — never
     the content of `.message`, which exists purely for logging. Whether the
     fix actually worked is re-derived from GitHub on the next poll, never
     from anything this function returns.
     """
+    base_env = env if env is not None else dict(os.environ)
+    subprocess_env = _build_fix_session_env(base_env)
+
     try:
         process = subprocess.Popen(
             list(FIX_SESSION_CMD),
@@ -1478,6 +2036,7 @@ def _invoke_fix_session(msg: StartFixSession, log_path: str) -> FixAttemptResult
             stderr=subprocess.PIPE,
             text=True,
             start_new_session=True,  # own process group so a timeout can kill the whole tree
+            env=subprocess_env,
         )
     except OSError as e:
         log_event(log_path, "fix_invocation_failed_to_start", name=msg.name, message=str(e))
@@ -1529,11 +2088,20 @@ def poll_loop(pr: str, config: PollLoopConfig, send: Callable[[Message], None], 
     ahead of EVERY tick, not merely once at process startup, and never one of
     the gate's six suppressors (§ Policy risk, Hazard 1; § The gate) — a
     watch started today can still be running tomorrow under a changed
-    environment; (2) a fresh `PRSnapshot` is fetched; (3) the pure `tick`
-    gate handler decides what to do; (4) every resulting `Message` fans out
-    through `send`, with `StartFixSession` additionally handed to
-    `_invoke_fix_session` (§ Fix execution) — a real, blocking `staff -p`
-    invocation, not a stub.
+    environment; (2) a fresh `PRSnapshot` is fetched; (3) `sweep_threads`
+    (§ card 3052, wired here by card 3068 Fix 1) closes out every actionable
+    bot thread in the just-fetched snapshot BEFORE the gate ever sees it —
+    the snapshot handed to `tick` this cycle already reflects the sweep, so
+    a thread closed out this cycle can never also fire Trigger 3 or block
+    Trigger 5 in the SAME tick; (4) the pure `tick` gate handler decides
+    what to do; (5) every resulting `Message` fans out through `send`, with
+    `StartFixSession` additionally handed to `_invoke_fix_session` (§ Fix
+    execution) — a real, blocking `staff -p` invocation, not a stub. The
+    same per-cycle `env` dict billing_preflight just checked is passed
+    straight through to `_invoke_fix_session`, which filters it down to a
+    small allowlist before the subprocess ever sees it (§ audit Finding 6;
+    card 3060 Fix 3) — one source of truth for "the operator's environment
+    this cycle", never a second, independently-read `os.environ`.
 
     A GitHub fetch failure never reaches `tick` at all — no GitHub read (it
     already failed), no gate evaluation, no fix invocation (§ Failure and
@@ -1563,6 +2131,15 @@ def poll_loop(pr: str, config: PollLoopConfig, send: Callable[[Message], None], 
     immediately following an invocation (`stagnation_check_pending`) so a
     quiet run with no trigger firing at all never inflates it — only
     consecutive INVOCATIONS with no forward progress do.
+
+    Approval-watch cadence (card 3052, § APPROVAL-WATCH CADENCE): the sleep
+    at the end of each cycle uses `APPROVAL_WATCH_POLL_SECONDS` instead of
+    `config.poll_interval_seconds` whenever `_is_approval_watch_cadence`
+    holds for the snapshot just fetched this cycle — the PR is clean and
+    genuinely has nothing left to do but wait on a human reviewer. This is
+    recomputed fresh every cycle (never carried over from the prior one), so
+    the loop returns to the normal cadence immediately once CI starts
+    failing again, a new actionable bot comment lands, or review clears.
     """
     cycle = 0
     consecutive_failures = 0
@@ -1580,7 +2157,7 @@ def poll_loop(pr: str, config: PollLoopConfig, send: Callable[[Message], None], 
         send(msg)
         if isinstance(msg, StartFixSession):
             brief = _build_fix_task_brief(snapshot, config.informational_bot_authors)
-            _invoke_fix_session(StartFixSession(name=msg.name, brief=brief), log_path)
+            _invoke_fix_session(StartFixSession(name=msg.name, brief=brief), log_path, env=env)
             fix_count += 1
             last_fix_attempt_head_sha = snapshot.head_sha
             stagnation_check_pending = True
@@ -1618,6 +2195,20 @@ def poll_loop(pr: str, config: PollLoopConfig, send: Callable[[Message], None], 
                 stagnation_count = 0
             stagnation_check_pending = False
 
+        # Thread sweep (§ card 3052; wired here by card 3068 Fix 1, closing
+        # a peer-review finding that `sweep_threads` was fully implemented
+        # and unit-tested but never called from anywhere in production).
+        # Runs BEFORE this cycle's TickRequest is built, so a thread it
+        # closes out atomically feeds the SAME cycle's gate evaluation —
+        # left un-swept, an actionable thread keeps re-firing Trigger 3
+        # (§ `_has_actionable_bot_comment`) every cycle forever, burning the
+        # fix budget until the whole watch permanently Stops/Disarms itself
+        # over a comment Smithers never actually attempted to close.
+        still_open_bot_threads = sweep_threads(
+            snapshot.unresolved_bot_threads, config.informational_bot_authors, log_path
+        )
+        snapshot = replace(snapshot, unresolved_bot_threads=still_open_bot_threads)
+
         req = TickRequest(
             pr_snapshot=snapshot,
             prior_merge_queue_state=prior_merge_queue_state,
@@ -1627,6 +2218,7 @@ def poll_loop(pr: str, config: PollLoopConfig, send: Callable[[Message], None], 
             cycle=cycle,
             stagnation_count=stagnation_count,
             active_fix_session=active_fix_session,
+            manual_merge_opt_out=config.manual_merge_opt_out,
         )
         tick(req, _handle)
 
@@ -1634,8 +2226,11 @@ def poll_loop(pr: str, config: PollLoopConfig, send: Callable[[Message], None], 
             log_event(log_path, "poll_loop_stopped", cycle=cycle)
             return
 
+        approval_watch = _is_approval_watch_cadence(
+            snapshot, prior_merge_queue_state, config.informational_bot_authors
+        )
         prior_merge_queue_state = snapshot.merge_queue_state
-        time.sleep(config.poll_interval_seconds)
+        time.sleep(APPROVAL_WATCH_POLL_SECONDS if approval_watch else config.poll_interval_seconds)
 
 
 # ---------------------------------------------------------------------------
@@ -1715,6 +2310,20 @@ def build_parser() -> argparse.ArgumentParser:
             f"{', '.join(DEFAULT_INFORMATIONAL_BOT_AUTHORS)}"
         ),
     )
+    parser.add_argument(
+        "--no-merge",
+        action="store_true",
+        default=False,
+        dest="no_merge",
+        help=(
+            "Watch and fix this pull request, but never merge it — the "
+            "operator merges it manually. Wires straight through to the "
+            "gate's manual-merge opt-out suppressor (§ The gate, Suppressor "
+            "5; § audit Finding 2): a snapshot that is otherwise fully "
+            "ready to land still yields no action instead of Land while "
+            "this flag is set."
+        ),
+    )
 
     return parser
 
@@ -1743,6 +2352,7 @@ def cmd_watch(args: argparse.Namespace) -> int:
         informational_bot_authors=_resolve_informational_bot_authors(
             args.informational_bot_authors, dict(os.environ)
         ),
+        manual_merge_opt_out=args.no_merge,
     )
     poll_loop(pr, config, send, args.log_file)
     return 0
