@@ -6,6 +6,30 @@ Nix Home Manager configuration managing development environments with flakes. Cr
 
 **Required**: This repository must be installed at `~/.config/nixpkgs`.
 
+## 🚨 ALL WORK HAPPENS DIRECTLY ON `main` — NO BRANCHES, EVER 🚨
+
+**Every change in this repository is made directly on `main`. No branches. No worktrees. No pull requests. Every single time, without exception.**
+
+**This OVERRIDES global CLAUDE.md § Git Branch Naming and any global instruction to "branch first" before committing.** Those rules exist for work repositories with a pull-request flow. This repository has no pull-request flow, and following them here causes active damage.
+
+**Why this is absolute, not a preference:**
+
+- **Multiple Claude sessions share this one checkout.** Creating a branch switches the checkout for *every* session working in it. Any other session that commits while you are on your branch has its work silently land on *your* branch instead of `main`. This is not hypothetical — it has happened, and it captured two unrelated commits from a concurrent session before it was caught.
+- **`hms` deploys from the working tree.** Being on a branch means you are deploying and testing a tree that does not match `main`.
+- **There is no reviewer and no merge step.** A branch here has no destination. It is pure overhead and pure risk.
+
+**Forbidden in this repository, with no exceptions:**
+
+| Never run | Instead |
+|---|---|
+| `git checkout -b <name>` / `git switch -c <name>` | Stay on `main` |
+| `git worktree add` / `workout <branch>` | Stay in `~/.config/nixpkgs` |
+| `gh pr create` | Commit and push to `main` |
+
+**The workflow is always:** edit on `main` → `git add` → `hms` → `commit` → `push`. See § Development Workflows.
+
+**If you find yourself on a branch in this repo, that is a bug to fix immediately**, not a state to work from. Fast-forward `main` to it (`git checkout main && git merge --ff-only <branch>`), delete the branch, and continue on `main`. Never rebase or squash — other sessions' commits may be on that branch and their history must be preserved exactly.
+
 ## 🚨 NEVER HOMEBREW 🚨
 
 **Homebrew is FORBIDDEN.** See global CLAUDE.md § PACKAGE INSTALLATION for details. Use Nix (`modules/packages.nix`), direct binary downloads, or language-specific managers ONLY.
