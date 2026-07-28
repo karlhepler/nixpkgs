@@ -57,6 +57,7 @@ from crew import (
     cmd_project_path,
     cmd_resume,
     cmd_sessions,
+    cmd_smithers,
     cmd_status,
     cmd_tell,
     get_all_panes,
@@ -5695,3 +5696,146 @@ class TestClassifyPaneActivityBackgroundAgentWait:
             "should not trigger background-agents-wait active classification."
         )
         assert activity != "background-agents-wait"
+
+
+# ---------------------------------------------------------------------------
+# cmd_smithers — drop a smithers pane into a crew member's window
+# ---------------------------------------------------------------------------
+
+class TestCmdSmithers:
+    """Tests for cmd_smithers: create a split running smithers, idempotently."""
+
+    def _fake_run_no_split(self, worktree_cwd: str):
+        """side_effect for the 'no split exists yet' happy path.
+
+        list-windows resolves 'pricing' -> 'main:0'; list-panes reports a
+        single pane (index 0) whose cwd is worktree_cwd; split-window
+        succeeds and reports new pane index '1'; send-keys succeeds.
+        """
+        def fake_run(cmd, **kwargs):
+            joined = " ".join(str(c) for c in cmd)
+            if "list-windows" in joined:
+                return fake_run_result(stdout="main:0|@1|pricing\n")
+            if "list-panes" in joined:
+                return fake_run_result(stdout=f"0|zsh|{worktree_cwd}\n")
+            if "split-window" in joined:
+                return fake_run_result(stdout="1\n")
+            if "send-keys" in joined:
+                return fake_run_result()
+            return fake_run_result()
+        return fake_run
+
+    def test_creates_split_with_correct_geometry_and_path_inheritance(self, capsys):
+        """No existing split: create a 25% bottom split with -c set to pane 0's
+        cwd (the worktree), then send bare 'smithers' to the new pane.
+
+        Path inheritance is load-bearing: smithers resolves its target PR from
+        the pane's working directory, so the new pane must start in the crew
+        member's worktree (matching the user's own prefix+s keybinding, which
+        also uses -c "#{pane_current_path}").
+        """
+        worktree_cwd = "/Users/karlhepler/worktrees/pricing"
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = self._fake_run_no_split(worktree_cwd)
+            rc = cmd_smithers("pricing", "human")
+
+        assert rc == 0
+
+        split_calls = [
+            c for c in mock_run.call_args_list
+            if c[0][0][0] == "tmux" and "split-window" in c[0][0]
+        ]
+        assert len(split_calls) == 1
+        split_cmd = split_calls[0][0][0]
+        assert "-v" in split_cmd
+        assert split_cmd[split_cmd.index("-l") + 1] == "25%"
+        assert "-c" in split_cmd
+        assert split_cmd[split_cmd.index("-c") + 1] == worktree_cwd
+
+        send_keys_calls = [
+            c for c in mock_run.call_args_list
+            if c[0][0][0] == "tmux" and "send-keys" in c[0][0]
+        ]
+        assert len(send_keys_calls) == 1
+        send_cmd = send_keys_calls[0][0][0]
+        # Bare 'smithers' with no PR argument — it auto-detects the PR from cwd.
+        assert "smithers" in send_cmd
+        assert send_cmd.count("smithers") == 1
+
+        captured = capsys.readouterr()
+        assert "started smithers" in captured.out
+
+    def test_already_running_is_idempotent_noop(self, capsys):
+        """A split already exists and is running smithers: report already-running,
+        return success, and never touch tmux beyond the read-only lookups (no new
+        split, no send-keys)."""
+        def fake_run(cmd, **kwargs):
+            joined = " ".join(str(c) for c in cmd)
+            if "list-windows" in joined:
+                return fake_run_result(stdout="main:0|@1|pricing\n")
+            if "list-panes" in joined:
+                return fake_run_result(
+                    stdout="0|zsh|/worktrees/pricing\n1|smithers|/worktrees/pricing\n"
+                )
+            return fake_run_result()
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = fake_run
+            rc = cmd_smithers("pricing", "human")
+
+        assert rc == 0
+
+        mutating_calls = [
+            c for c in mock_run.call_args_list
+            if c[0][0][0] == "tmux" and ("split-window" in c[0][0] or "send-keys" in c[0][0])
+        ]
+        assert not mutating_calls, "already-running must be a no-op — no split or send-keys"
+
+        captured = capsys.readouterr()
+        assert "already" in captured.out.lower()
+        assert "running" in captured.out.lower()
+
+    def test_foreign_pane_is_refused_not_clobbered(self, capsys):
+        """A split exists but is NOT running smithers: refuse with an error and
+        never overwrite the foreign pane (no send-keys, no new split created)."""
+        def fake_run(cmd, **kwargs):
+            joined = " ".join(str(c) for c in cmd)
+            if "list-windows" in joined:
+                return fake_run_result(stdout="main:0|@1|pricing\n")
+            if "list-panes" in joined:
+                return fake_run_result(
+                    stdout="0|zsh|/worktrees/pricing\n1|vim|/worktrees/pricing\n"
+                )
+            return fake_run_result()
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = fake_run
+            rc = cmd_smithers("pricing", "human")
+
+        assert rc == 1
+
+        mutating_calls = [
+            c for c in mock_run.call_args_list
+            if c[0][0][0] == "tmux" and ("split-window" in c[0][0] or "send-keys" in c[0][0])
+        ]
+        assert not mutating_calls, "foreign pane must never be clobbered"
+
+        captured = capsys.readouterr()
+        assert "refus" in (captured.out + captured.err).lower()
+
+    def test_window_not_found_errors(self, capsys):
+        """Target window doesn't exist: error, no tmux mutation attempted."""
+        def fake_run(cmd, **kwargs):
+            joined = " ".join(str(c) for c in cmd)
+            if "list-windows" in joined:
+                return fake_run_result(stdout="main:0|@1|other-window\n")
+            return fake_run_result()
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = fake_run
+            rc = cmd_smithers("missing", "human")
+
+        assert rc == 1
+        captured = capsys.readouterr()
+        assert "not found" in (captured.out + captured.err).lower()

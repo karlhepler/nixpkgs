@@ -1,6 +1,6 @@
 ---
 name: crew-cli
-description: crew CLI full command reference. Auto-load when about to run any crew subcommand and need exact arguments, flag syntax, or error handling. Covers all subcommands: list, tell, read, dismiss, find, create, status, project-path, resume, sessions, active. Includes --format flag behavior, exit code table, pane targeting rules (window vs window.pane), multi-target comma syntax, and crew create vs crew tell sequencing discipline. This skill is the canonical source for all crew CLI syntax — no external pointer needed.
+description: crew CLI full command reference. Auto-load when about to run any crew subcommand and need exact arguments, flag syntax, or error handling. Covers all subcommands: list, tell, read, dismiss, find, create, status, project-path, resume, sessions, active, smithers. Includes --format flag behavior, exit code table, pane targeting rules (window vs window.pane), multi-target comma syntax, and crew create vs crew tell sequencing discipline. This skill is the canonical source for all crew CLI syntax — no external pointer needed.
 ---
 
 # crew CLI — Full Command Reference
@@ -11,7 +11,7 @@ Exhaustive reference for all `crew` subcommands. Senior Staff uses these in prod
 
 **Top-level syntax:**
 ```bash
-crew [-h] [--format {xml,json,human}] {list,tell,read,dismiss,find,create,status,sessions,resume,project-path,active} ...
+crew [-h] [--format {xml,json,human}] {list,tell,read,dismiss,find,create,status,sessions,resume,project-path,active,smithers} ...
 ```
 
 **Global flag:**
@@ -524,9 +524,37 @@ crew active --format human           # Human-readable output
 
 ---
 
-## Invoking Smithers
+## crew smithers
 
-To run smithers on a PR, use the `/smithers` skill: `/smithers <PR>` directly in a session, or `crew tell <crew-member> "/smithers <PR>"` to start it in a crew member's window.
+Drop a smithers pane into a crew member's tmux window: a bottom split running the `smithers` loop, below the crew member's own Claude session pane.
+
+```bash
+crew smithers <name>
+```
+
+**Arguments:**
+- `<name>` — Crew member window name (the tmux window where smithers should be launched).
+
+**What it does:**
+- Creates a 25% bottom split in the target window (`tmux split-window -v -l 25%`) — same geometry as the user's own `prefix+s` keybinding (`modules/tmux/default.nix`).
+- The new pane's working directory is set with `-c "#{pane_current_path}"`, inheriting pane 0's cwd (the crew member's worktree). This is load-bearing: `smithers` auto-detects its target PR from the current working directory, so without path inheritance it would resolve the wrong PR or none at all.
+- Sends bare `smithers` (no arguments) to the new pane — no PR needs to be passed explicitly.
+
+**Idempotency contract (one smithers per window):**
+- No split exists → create the split and start smithers.
+- Split exists AND is running smithers → report already-running, exit `0` (no-op — safe to re-invoke).
+- Split exists but NOT running smithers → refuse with an error (ambiguous state) rather than overwriting the foreign pane.
+- Target window not found → error.
+
+**Scope:** `crew smithers` is sstaff-only. Staff engineers do not invoke it directly — sstaff uses it after a staff session has created a draft pull request, to hand the pull request off to the smithers review/iterate loop.
+
+**Examples:**
+```bash
+crew smithers pricing          # start smithers in the pricing window
+crew smithers auth             # start smithers in the auth window
+```
+
+**Other ways to invoke smithers:** the `/smithers` skill (`/smithers <PR>`) runs it directly in the current session; `crew tell <crew-member> "/smithers <PR>"` sends it as a message to an existing crew member's Claude pane instead of a dedicated split.
 
 ---
 
