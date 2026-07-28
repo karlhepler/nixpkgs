@@ -68,7 +68,7 @@ Recorded in full in Document D § `## Decisions`. Summary:
 **Unit 1.5 landed and is committed.** Both Stage 1 edits are done. Expected state:
 
 ```
-wc -l CLAUDE.md                                  → 338   (was 314; see amendment below)
+wc -l CLAUDE.md                                  → 310   (314 at Stage 1 close → 338 after 82160b4 → 310 after the Tier-1 review fixes, dc8eba5)
 wc -l modules/claude/global/CLAUDE.md            → 450
 bash docs/v5-migration/invariant-assertions.sh   → exit 0, 31/31
 git status --short                               → clean apart from .scratchpad/
@@ -124,8 +124,10 @@ Row 6's git-alias block measured **16–17 lines, not 49**, so verified-safe dro
 | File | Original | Cap | Status |
 |---|---|---|---|
 | `modules/claude/global/CLAUDE.md` | 530 | **450** | ✅ reviewed, deployed, committed |
-| `CLAUDE.md` (project root) | 387 | ~~314~~ → **338** | ✅ reviewed, committed, live; cap superseded by `82160b4` |
-| Aggregate | 917 | ~~764~~ → **788** | **Stage 1 reduction 153 — disk only, see below; 129 net after `82160b4`** |
+| `CLAUDE.md` (project root) | 387 | ~~314~~ ~~338~~ → **310** | ✅ Tier-1 reviewed (#3024 + #3025), 11 findings applied, committed `dc8eba5`, live |
+| Aggregate | 917 | ~~764~~ ~~788~~ → **760** | **157-line reduction — exceeds Stage 1's 153 while fully preserving `82160b4`'s +24** |
+
+> **The Tier-1 review made the file both better and smaller.** Sequence: 387 → 314 (unit 1.5) → 338 (owner's `82160b4`, +24) → **310** (review fixes, −28). The −28 is F10's relocation of three Nix code blocks into `docs/nixpkgs-repo-reference.md` plus F12's removal of a duplicated procedure, against six additions that each add arbitration or routing. **No rule was removed or weakened to get there, and the owner's section is byte-for-byte untouched.** Current aggregate 450 + 310 = 760, a 157-line reduction from 917 — 4 lines better than Stage 1's close despite carrying 24 lines of content Stage 1 never had.
 
 > **This table was itself stale until 2026-07-28.** It said 291 / 741 / 176 after the cap correction had already been recorded elsewhere in this same document — exactly the failure this document warns about two sections down. Caught on re-read at resume. If you find another stale figure here, fix it and do not assume the rest are right.
 
@@ -143,15 +145,33 @@ The plan originally promised 357 lines. Measurement cut that to 176, and unit 1.
 
 **START HERE — in this order:**
 
-**1. Tier-1 review of unit 1.5.** Mandatory; prompt files are Tier 1. Model the card on #2993 (unit 1.4's review): state what is already mechanically confirmed — **338** lines (314 at Stage 1's close, plus the user's 24-line `82160b4`, which is out of scope for this review), tripwire 31/31, global file untouched, scope isolation held — and direct the reviewer at what the tripwire structurally **cannot** check: pointer quality, whether content lifted into `~/.claude/docs/` reads coherently arriving cold, silent losses against `.scratchpad/S1-unit-1.5-accounting.md`, and scope creep against decision Q1.
+**1. ~~Tier-1 review of unit 1.5.~~ ✅ DONE 2026-07-28 — cards #3024 (delta, Sonnet) and #3025 (full-file audit, Opus), run in parallel.** Outcome: **0 blocking, 6 high, 6 medium, 1 low.**
+
+- **Delta review (#3024) came back clean** — 0 blocking/high/medium. All three pointers name destination, content, and trigger condition; `nixpkgs-repo-reference.md` stands alone on a cold read; every relocation and retention claim in the accounting file verified against current state; no Q1 scope creep. Findings: `.scratchpad/S1-unit-1.5-review-delta.md`.
+- **Full-file audit (#3025) found 12**, all one shape: *rules correct where stated but not routed to the moment they fire.* Findings: `.scratchpad/S1-unit-1.5-review-audit.md`.
+- **The one low finding**, from #3024: unit 1.5's accounting at `:563` claims it checked "every § reference that crosses the edit boundary" but cites only three sampled checks. The reviewer ran the missing broad check itself and **the claim is true** — so no artifact defect, only a rigor gap. Captured as instance 4 in improvement note `bb5ee147`, which it materially changed: unit 1.5 *had been explicitly instructed* to write coverage claims as command-and-output pairs, and still produced an honestly-cited sample described with an exhaustive noun. That falsifies a prose-form requirement as sufficient and promotes "encode the broad check as a programmatic MoV" to the primary fix.
+
+Original scoping instructions retained below as the record of how the cards were authored.
+
+Mandatory; prompt files are Tier 1. Model the card on #2993 (unit 1.4's review): state what is already mechanically confirmed — **338** lines (314 at Stage 1's close, plus the user's 24-line `82160b4`, which is out of scope for this review), tripwire 31/31, global file untouched, scope isolation held — and direct the reviewer at what the tripwire structurally **cannot** check: pointer quality, whether content lifted into `~/.claude/docs/` reads coherently arriving cold, silent losses against `.scratchpad/S1-unit-1.5-accounting.md`, and scope creep against decision Q1.
 
 Note for the reviewer: unit 1.4's review found its accounting asserted "no inbound references exist" **in prose without running the search** — it was false and hid a stale pointer. Unit 1.5 was told to write coverage claims as command-and-output pairs. Verify it actually did.
 
-**2. Resolve non-low findings.** Auto-implement blocking / high / medium; surface lows.
+**2. ~~Resolve non-low findings.~~ ✅ DONE 2026-07-28 — 11 of 12 applied across three sequential cards.** All three cards edited `CLAUDE.md`, so they could not run in parallel.
 
-**3. `hms`.** The real build gate — `nix flake check` does not run flake8. All Stage 1 destination files are already tracked, so nothing needs staging first, but re-check `git status` in case the review added a file.
+| Card | Findings | Result |
+|---|---|---|
+| #3028 | F1 precedence line · F2 `--purge` override · F5(b) Quick Commands routing | 5/5 AC |
+| #3029 | F4 phantom team table → two real rosters · F6 semantics-check routing · F8 invalid `skills/` paths · F12 duplicate procedure | 5/5 AC |
+| #3030 | F7 skills membership rule · F9 Critical Requirements framing · F10 Nix-examples relocation · F11 `git add` mechanism | 5/5 AC |
 
-**4. Commit any review fixes.** Unit 1.5's own work is already committed; this covers only what the review changes.
+**F3 and F5(a) declined by the owner** — both target the owner-authored `## ALL WORK HAPPENS DIRECTLY ON main` section. F1's precedence line subsumes F3 (the reviewer said so explicitly), and F5(b)'s callsite warning closes F5(a)'s `git tmp` gap from the other direction. **That section remains byte-for-byte as the owner wrote it**, confirmed by all three agents via diff.
+
+Every edit adds arbitration, routing, or a corrected path. **No rule was removed or weakened** — the owner's standing constraint held.
+
+**3. ~~`hms`.~~ ✅ DONE 2026-07-28.** Required this time, not optional: F10's relocation writes to `modules/claude/global/docs/nixpkgs-repo-reference.md`, which *is* Nix-deployed. Verified landed at `~/.claude/docs/nixpkgs-repo-reference.md:35`, 86 lines matching source. No new files, so nothing needed staging first — both targets were already tracked.
+
+**4. ~~Commit any review fixes.~~ ✅ DONE — `dc8eba5`**, exactly two files. Staged by explicit path after confirming nothing else was in the index; a concurrent session was actively committing to `modules/` throughout, which is why the fixes were landed promptly rather than left loose in the shared checkout.
 
 **5. ~~Amend Document D for the 291 → 314 correction.~~ ✅ DONE — verified complete 2026-07-28. Do not re-do.** Amendment 3 (card #2999) landed this. Every location this item named was checked: the Stage 1 arithmetic, the unit table (`:376`), the validation gate, `## Recomputed Numbers` (`:1358`), and `## Executive Summary` (`:21`) all carry **450 / 314 / 764 / 153**. The 63 remaining lines mentioning 291 are each preceded by an explicit `⚠ SUPERSEDED BY AMENDMENT 3` callout, per the document's convention of leaving superseded arithmetic standing so corrections stay auditable — they are history, not stale targets. The SPLIT-overhead root cause is recorded in § The SPLIT structural-overhead rule, with the mandatory fourth check for Stages 2–4.
 
