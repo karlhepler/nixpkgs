@@ -12,7 +12,7 @@ billing preflight (§ Policy risk, Hazard 1, .scratchpad/2967-v3-design.md):
 import json
 import os
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -23,16 +23,22 @@ from smithers import (
     CommentThread,
     FetchFailure,
     Land,
+    Notify,
     NoWorkNeeded,
+    PollLoopConfig,
     PRSnapshot,
+    ResolutionFailure,
     StartFixSession,
     TickRequest,
     billing_preflight,
     build_parser,
+    build_send,
     cmd_watch,
     fetch_pr_snapshot,
     log_event,
     main,
+    poll_loop,
+    resolve_pr,
     tick,
 )
 
@@ -119,46 +125,52 @@ def make_gh_side_effect(
 # ---------------------------------------------------------------------------
 
 class TestArgumentParsing:
-    def test_watch_accepts_pr_argument(self):
+    """Flat parser, no subcommands (§ card 3019) — the `pr` positional is
+    optional (nargs="?") so bare `smithers` parses cleanly with args.pr=None."""
+
+    def test_pr_argument_is_optional(self):
         parser = build_parser()
-        args = parser.parse_args(["watch", "123"])
-        assert args.command == "watch"
+        args = parser.parse_args([])
+        assert args.pr is None
+
+    def test_accepts_explicit_pr_number(self):
+        parser = build_parser()
+        args = parser.parse_args(["123"])
         assert args.pr == "123"
 
-    def test_watch_accepts_pr_url(self):
+    def test_accepts_explicit_pr_url(self):
         parser = build_parser()
-        args = parser.parse_args(["watch", "https://github.com/karlhepler/nixpkgs/pull/123"])
+        args = parser.parse_args(["https://github.com/karlhepler/nixpkgs/pull/123"])
         assert args.pr == "https://github.com/karlhepler/nixpkgs/pull/123"
 
-    def test_watch_accepts_dry_run_flag(self):
+    def test_accepts_dry_run_flag(self):
         parser = build_parser()
-        args = parser.parse_args(["watch", "123", "--dry-run"])
+        args = parser.parse_args(["123", "--dry-run"])
         assert args.dry_run is True
 
-    def test_watch_dry_run_defaults_false(self):
+    def test_dry_run_defaults_false(self):
         parser = build_parser()
-        args = parser.parse_args(["watch", "123"])
+        args = parser.parse_args(["123"])
         assert args.dry_run is False
 
-    def test_watch_accept_api_billing_defaults_false(self):
+    def test_accept_api_billing_defaults_false(self):
         parser = build_parser()
-        args = parser.parse_args(["watch", "123"])
+        args = parser.parse_args(["123"])
         assert args.accept_api_billing is False
 
-    def test_watch_accept_api_billing_flag(self):
+    def test_accept_api_billing_flag(self):
         parser = build_parser()
-        args = parser.parse_args(["watch", "123", "--i-accept-api-billing"])
+        args = parser.parse_args(["123", "--i-accept-api-billing"])
         assert args.accept_api_billing is True
 
-    def test_missing_pr_argument_errors(self):
+    def test_no_arguments_at_all_does_not_error(self):
+        """Bare `smithers` — the design's stated primary invocation — must
+        parse cleanly, not raise SystemExit like the old required-subcommand
+        shape did."""
         parser = build_parser()
-        with pytest.raises(SystemExit):
-            parser.parse_args(["watch"])
-
-    def test_missing_subcommand_errors(self):
-        parser = build_parser()
-        with pytest.raises(SystemExit):
-            parser.parse_args([])
+        args = parser.parse_args([])
+        assert args.pr is None
+        assert args.dry_run is False
 
     def test_top_level_help_exits_zero(self):
         parser = build_parser()
@@ -166,11 +178,36 @@ class TestArgumentParsing:
             parser.parse_args(["--help"])
         assert exc_info.value.code == 0
 
-    def test_watch_help_exits_zero(self):
+
+class TestWatchAliasStripping:
+    """`main()` strips a leading literal "watch" token before handing argv to
+    the parser, so the earlier `smithers watch <pr>` form keeps working as a
+    plain alias even though the parser itself no longer defines a subcommand
+    (§ card 3019)."""
+
+    def test_watch_prefix_is_stripped_before_parsing(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        result = main(["watch", "123", "--dry-run", "--log-file", log_path])
+        assert result == 0
+
+    def test_watch_prefix_and_bare_form_resolve_the_same_pr(self, tmp_path, capsys):
+        log_path = str(tmp_path / "smithers.jsonl")
+        main(["watch", "123", "--dry-run", "--log-file", log_path])
+        out_with_watch = capsys.readouterr().out
+
+        main(["123", "--dry-run", "--log-file", log_path])
+        out_without_watch = capsys.readouterr().out
+
+        assert "123" in out_with_watch
+        assert "123" in out_without_watch
+
+    def test_watch_alone_with_no_pr_leaves_pr_none_for_resolution(self, tmp_path):
         parser = build_parser()
-        with pytest.raises(SystemExit) as exc_info:
-            parser.parse_args(["watch", "--help"])
-        assert exc_info.value.code == 0
+        argv = ["watch"]
+        if argv and argv[0] == "watch":
+            argv = argv[1:]
+        args = parser.parse_args(argv)
+        assert args.pr is None
 
 
 # ---------------------------------------------------------------------------
@@ -301,17 +338,23 @@ class TestLogEvent:
 
 
 # ---------------------------------------------------------------------------
-# TODO stubs — attachment points exist with the intended signatures
+# TODO stubs — attachment points exist with the intended signatures.
+# `poll_loop` itself is fully wired now (§ card 3021) — see the dedicated
+# TestPollLoop* classes below. Only fix execution (phase 3) remains a stub.
 # ---------------------------------------------------------------------------
 
 class TestPhaseStubsExist:
-    def test_poll_loop_stub_raises_not_implemented(self):
-        """poll_loop's signature now carries config + send (review carry-
-        forward #3006 Finding 2) mirroring tick's own seam; the body is
-        still a later-card TODO. `tick` itself is no longer a stub — see
-        TestTickNoTriggers and friends below."""
-        with pytest.raises(NotImplementedError):
-            smithers_module.poll_loop("123", None, lambda msg: None, "/tmp/smithers.jsonl")
+    def test_fix_invocation_stub_logs_and_does_not_raise(self, tmp_path):
+        """`_invoke_fix_stub` fixes the call site's intended signature for
+        phase 3 (§ card scope, OUT OF SCOPE) without crashing the loop when a
+        trigger fires today."""
+        log_path = str(tmp_path / "smithers.jsonl")
+        smithers_module._invoke_fix_stub(
+            StartFixSession(name="smithers-fix-pr-123", brief=""), log_path
+        )
+
+        lines = open(log_path).read().strip().splitlines()
+        assert any(json.loads(line)["event"] == "fix_invocation_stub_todo" for line in lines)
 
 
 # ---------------------------------------------------------------------------
@@ -563,6 +606,212 @@ class TestFetchFailureVsEmptyResult:
 
 
 # ---------------------------------------------------------------------------
+# resolve_pr() — PR auto-detection from the current git worktree (§ card
+# 3019). An explicit PR number/URL always short-circuits with zero
+# git/gh calls; auto-detect shells out to `git rev-parse`, `gh auth status`,
+# and `gh pr view --json number,url` — all faked below, no real gh calls,
+# no network.
+# ---------------------------------------------------------------------------
+
+def make_resolve_side_effect(
+    git_returncode: int = 0,
+    gh_missing: bool = False,
+    gh_auth_returncode: int = 0,
+    gh_view_returncode: int = 0,
+    gh_view_stdout: str = json.dumps(
+        {"number": 123, "url": "https://github.com/karlhepler/nixpkgs/pull/123"}
+    ),
+    gh_view_stderr: str = "",
+):
+    """Build a subprocess.run side_effect covering every command resolve_pr
+    can issue when auto-detecting: `git rev-parse --is-inside-work-tree`,
+    `gh auth status`, and `gh pr view --json number,url`."""
+
+    def side_effect(cmd, **kwargs):
+        if cmd[:2] == ["git", "rev-parse"]:
+            return fake_run_result(returncode=git_returncode)
+        if cmd[:2] == ["gh", "auth"]:
+            if gh_missing:
+                raise FileNotFoundError("gh: command not found")
+            return fake_run_result(returncode=gh_auth_returncode)
+        if cmd[:3] == ["gh", "pr", "view"]:
+            if gh_missing:
+                raise FileNotFoundError("gh: command not found")
+            return fake_run_result(stdout=gh_view_stdout, stderr=gh_view_stderr, returncode=gh_view_returncode)
+        raise AssertionError(f"unexpected command in test: {cmd}")
+
+    return side_effect
+
+
+class TestResolvePRExplicitOverride:
+    """An explicit PR number or URL always wins — no git/gh calls at all."""
+
+    def test_explicit_number_short_circuits_with_no_subprocess_calls(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+
+        def side_effect(cmd, **kwargs):
+            raise AssertionError(f"resolve_pr must not shell out for an explicit PR: {cmd}")
+
+        with patch("subprocess.run", side_effect=side_effect):
+            pr, failure = resolve_pr("123", log_path)
+
+        assert pr == "123"
+        assert failure is None
+
+    def test_explicit_url_short_circuits_with_no_subprocess_calls(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        url = "https://github.com/karlhepler/nixpkgs/pull/123"
+
+        def side_effect(cmd, **kwargs):
+            raise AssertionError(f"resolve_pr must not shell out for an explicit PR: {cmd}")
+
+        with patch("subprocess.run", side_effect=side_effect):
+            pr, failure = resolve_pr(url, log_path)
+
+        assert pr == url
+        assert failure is None
+
+
+class TestResolvePRAutoDetectSuccess:
+    def test_resolves_pr_number_from_current_branch(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        with patch("subprocess.run", side_effect=make_resolve_side_effect()):
+            pr, failure = resolve_pr(None, log_path)
+
+        assert failure is None
+        assert pr == "123"
+
+
+class TestResolvePRNotAGitRepo:
+    def test_not_a_git_repo_is_a_typed_failure(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        with patch("subprocess.run", side_effect=make_resolve_side_effect(git_returncode=128)):
+            pr, failure = resolve_pr(None, log_path)
+
+        assert pr is None
+        assert isinstance(failure, ResolutionFailure)
+        assert failure.reason == "not_a_git_repo"
+        assert "git repository" in failure.message
+
+    def test_not_a_git_repo_never_calls_gh(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+
+        def side_effect(cmd, **kwargs):
+            if cmd[:2] == ["git", "rev-parse"]:
+                return fake_run_result(returncode=128)
+            raise AssertionError(f"gh must not be invoked when not in a git repo: {cmd}")
+
+        with patch("subprocess.run", side_effect=side_effect):
+            pr, failure = resolve_pr(None, log_path)
+
+        assert pr is None
+        assert failure.reason == "not_a_git_repo"
+
+
+class TestResolvePRGhUnavailable:
+    def test_gh_not_found_is_a_typed_failure(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        with patch("subprocess.run", side_effect=make_resolve_side_effect(gh_missing=True)):
+            pr, failure = resolve_pr(None, log_path)
+
+        assert pr is None
+        assert isinstance(failure, ResolutionFailure)
+        assert failure.reason == "gh_unavailable"
+
+
+class TestResolvePRGhUnauthenticated:
+    def test_gh_unauthenticated_is_a_typed_failure(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        with patch("subprocess.run", side_effect=make_resolve_side_effect(gh_auth_returncode=1)):
+            pr, failure = resolve_pr(None, log_path)
+
+        assert pr is None
+        assert isinstance(failure, ResolutionFailure)
+        assert failure.reason == "gh_unauthenticated"
+
+    def test_gh_unauthenticated_never_calls_gh_pr_view(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+
+        def side_effect(cmd, **kwargs):
+            if cmd[:2] == ["git", "rev-parse"]:
+                return fake_run_result(returncode=0)
+            if cmd[:2] == ["gh", "auth"]:
+                return fake_run_result(returncode=1)
+            raise AssertionError(f"gh pr view must not run when unauthenticated: {cmd}")
+
+        with patch("subprocess.run", side_effect=side_effect):
+            pr, failure = resolve_pr(None, log_path)
+
+        assert pr is None
+        assert failure.reason == "gh_unauthenticated"
+
+
+class TestResolvePRNoPRForBranch:
+    def test_no_pr_for_branch_is_a_typed_failure(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        side_effect = make_resolve_side_effect(
+            gh_view_returncode=1,
+            gh_view_stdout="",
+            gh_view_stderr='no pull requests found for branch "main"',
+        )
+        with patch("subprocess.run", side_effect=side_effect):
+            pr, failure = resolve_pr(None, log_path)
+
+        assert pr is None
+        assert isinstance(failure, ResolutionFailure)
+        assert failure.reason == "no_pr_for_branch"
+        assert "main" in failure.message
+
+
+class TestResolvePRGenericGhError:
+    def test_unrecognized_gh_pr_view_failure_is_a_generic_gh_error(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        side_effect = make_resolve_side_effect(
+            gh_view_returncode=1,
+            gh_view_stdout="",
+            gh_view_stderr="some other gh failure unrelated to missing PRs",
+        )
+        with patch("subprocess.run", side_effect=side_effect):
+            pr, failure = resolve_pr(None, log_path)
+
+        assert pr is None
+        assert failure.reason == "gh_error"
+
+    def test_unparseable_gh_pr_view_json_is_a_gh_error(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        side_effect = make_resolve_side_effect(gh_view_stdout="not valid json")
+        with patch("subprocess.run", side_effect=side_effect):
+            pr, failure = resolve_pr(None, log_path)
+
+        assert pr is None
+        assert failure.reason == "gh_error"
+
+    def test_missing_number_field_is_a_gh_error(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        side_effect = make_resolve_side_effect(
+            gh_view_stdout=json.dumps({"url": "https://github.com/karlhepler/nixpkgs/pull/123"})
+        )
+        with patch("subprocess.run", side_effect=side_effect):
+            pr, failure = resolve_pr(None, log_path)
+
+        assert pr is None
+        assert failure.reason == "gh_error"
+
+
+class TestResolvePRLogsFailures:
+    def test_failure_is_logged_with_reason_and_message(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        with patch("subprocess.run", side_effect=make_resolve_side_effect(git_returncode=128)):
+            resolve_pr(None, log_path)
+
+        log_contents = open(log_path).read()
+        record = json.loads(log_contents.strip().splitlines()[-1])
+        assert record["event"] == "resolve_pr_failed"
+        assert record["reason"] == "not_a_git_repo"
+        assert "message" in record
+
+
+# ---------------------------------------------------------------------------
 # cmd_watch() and main() — directly exercised (review carry-forward #3006
 # Finding 3), mirroring test_crew.py's convention of testing cmd_* handlers.
 # ---------------------------------------------------------------------------
@@ -571,7 +820,7 @@ class TestCmdWatch:
     def test_dry_run_passes_preflight_and_returns_zero(self, tmp_path, capsys):
         log_path = str(tmp_path / "smithers.jsonl")
         parser = build_parser()
-        args = parser.parse_args(["watch", "123", "--dry-run", "--log-file", log_path])
+        args = parser.parse_args(["123", "--dry-run", "--log-file", log_path])
 
         result = cmd_watch(args)
 
@@ -580,22 +829,31 @@ class TestCmdWatch:
         assert "dry run" in out
         assert "123" in out
 
-    def test_non_dry_run_returns_zero_and_prints_skeleton_message(self, tmp_path, capsys):
+    def test_non_dry_run_wires_and_invokes_poll_loop(self, tmp_path):
+        """A real (unbounded) poll_loop must never actually run inside a
+        test — patch it and assert cmd_watch wires it with the resolved PR,
+        a real send port, and the log file, per its own composition-root
+        contract (§ Ports and adapters)."""
         log_path = str(tmp_path / "smithers.jsonl")
         parser = build_parser()
-        args = parser.parse_args(["watch", "123", "--log-file", log_path])
+        args = parser.parse_args(["123", "--log-file", log_path])
 
-        result = cmd_watch(args)
+        with patch.object(smithers_module, "poll_loop") as mock_poll_loop:
+            result = cmd_watch(args)
 
         assert result == 0
-        out = capsys.readouterr().out
-        assert "skeleton only" in out
+        assert mock_poll_loop.call_count == 1
+        call_pr, call_config, call_send, call_log_path = mock_poll_loop.call_args[0]
+        assert call_pr == "123"
+        assert isinstance(call_config, PollLoopConfig)
+        assert callable(call_send)
+        assert call_log_path == log_path
 
     def test_billing_refusal_raises_systemexit_before_any_action(self, tmp_path, monkeypatch):
         log_path = str(tmp_path / "smithers.jsonl")
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-whatever")
         parser = build_parser()
-        args = parser.parse_args(["watch", "123", "--dry-run", "--log-file", log_path])
+        args = parser.parse_args(["123", "--dry-run", "--log-file", log_path])
 
         with pytest.raises(SystemExit):
             cmd_watch(args)
@@ -605,7 +863,7 @@ class TestCmdWatch:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-whatever")
         parser = build_parser()
         args = parser.parse_args(
-            ["watch", "123", "--dry-run", "--i-accept-api-billing", "--log-file", log_path]
+            ["123", "--dry-run", "--i-accept-api-billing", "--log-file", log_path]
         )
 
         result = cmd_watch(args)
@@ -632,6 +890,81 @@ class TestMain:
         # Explicit argv (not reading real sys.argv) keeps this test hermetic.
         result = main(["watch", "456", "--dry-run", "--log-file", log_path])
         assert result == 0
+
+
+# ---------------------------------------------------------------------------
+# cmd_watch()/main() with NO explicit PR — exercises the auto-detect path
+# end to end (§ card 3019). Every failure prints a clear message to stderr
+# and returns non-zero; never a stack trace.
+# ---------------------------------------------------------------------------
+
+class TestBareInvocationAutoDetect:
+    def test_bare_invocation_resolves_pr_and_proceeds(self, tmp_path, capsys):
+        log_path = str(tmp_path / "smithers.jsonl")
+        with patch("subprocess.run", side_effect=make_resolve_side_effect()):
+            result = main(["--dry-run", "--log-file", log_path])
+
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "123" in out
+
+    def test_not_a_git_repo_prints_clear_message_and_returns_nonzero(self, tmp_path, capsys):
+        log_path = str(tmp_path / "smithers.jsonl")
+        with patch("subprocess.run", side_effect=make_resolve_side_effect(git_returncode=128)):
+            result = main(["--dry-run", "--log-file", log_path])
+
+        assert result == 1
+        err = capsys.readouterr().err
+        assert "git repository" in err
+        assert "Traceback" not in err
+
+    def test_gh_unavailable_prints_clear_message_and_returns_nonzero(self, tmp_path, capsys):
+        log_path = str(tmp_path / "smithers.jsonl")
+        with patch("subprocess.run", side_effect=make_resolve_side_effect(gh_missing=True)):
+            result = main(["--dry-run", "--log-file", log_path])
+
+        assert result == 1
+        err = capsys.readouterr().err
+        assert "gh" in err.lower()
+        assert "Traceback" not in err
+
+    def test_gh_unauthenticated_prints_clear_message_and_returns_nonzero(self, tmp_path, capsys):
+        log_path = str(tmp_path / "smithers.jsonl")
+        with patch("subprocess.run", side_effect=make_resolve_side_effect(gh_auth_returncode=1)):
+            result = main(["--dry-run", "--log-file", log_path])
+
+        assert result == 1
+        err = capsys.readouterr().err
+        assert "authenticat" in err.lower()
+        assert "Traceback" not in err
+
+    def test_no_pr_for_branch_prints_clear_message_and_returns_nonzero(self, tmp_path, capsys):
+        log_path = str(tmp_path / "smithers.jsonl")
+        side_effect = make_resolve_side_effect(
+            gh_view_returncode=1,
+            gh_view_stdout="",
+            gh_view_stderr='no pull requests found for branch "main"',
+        )
+        with patch("subprocess.run", side_effect=side_effect):
+            result = main(["--dry-run", "--log-file", log_path])
+
+        assert result == 1
+        err = capsys.readouterr().err
+        assert "no pull request" in err.lower()
+        assert "Traceback" not in err
+
+    def test_explicit_pr_argument_bypasses_auto_detect_entirely(self, tmp_path, capsys):
+        log_path = str(tmp_path / "smithers.jsonl")
+
+        def side_effect(cmd, **kwargs):
+            raise AssertionError(f"explicit PR argument must skip auto-detect entirely: {cmd}")
+
+        with patch("subprocess.run", side_effect=side_effect):
+            result = main(["999", "--dry-run", "--log-file", log_path])
+
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "999" in out
 
 
 # ---------------------------------------------------------------------------
@@ -1067,3 +1400,285 @@ class TestSuppressorsDoNotBlockLand:
         messages = []
         tick(req, messages.append)
         assert messages == [Land(method="squash")]
+
+
+# ---------------------------------------------------------------------------
+# Notification adapters (§ Ports and adapters) — macOS via osascript, Slack
+# exclusively via the smithers-post CLI. Real subprocess calls are always
+# faked at the boundary (`subprocess.run`), never a real osascript/Slack
+# call, per card constraints.
+# ---------------------------------------------------------------------------
+
+class TestNotifyMacosAdapter:
+    def test_dry_run_logs_and_makes_no_subprocess_call(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        with patch("subprocess.run", side_effect=AssertionError("dry-run must not call osascript")):
+            smithers_module.notify_macos(Notify(title="t", body="b", sound=True), dry_run=True, log_path=log_path)
+
+        log_contents = open(log_path).read()
+        assert "notify_macos_dry_run" in log_contents
+
+    def test_real_run_invokes_osascript(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            return fake_run_result()
+
+        with patch("subprocess.run", side_effect=fake_run):
+            smithers_module.notify_macos(Notify(title="t", body="b", sound=True), dry_run=False, log_path=log_path)
+
+        assert len(calls) == 1
+        assert calls[0][0] == "osascript"
+
+    def test_non_notify_message_is_a_no_op(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        with patch("subprocess.run", side_effect=AssertionError("must not be called for a non-Notify message")):
+            smithers_module.notify_macos(NoWorkNeeded(), dry_run=False, log_path=log_path)
+        assert not os.path.exists(log_path)
+
+
+class TestNotifySlackAdapter:
+    def test_dry_run_logs_and_makes_no_subprocess_call(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        with patch("subprocess.run", side_effect=AssertionError("dry-run must not call smithers-post")):
+            smithers_module.notify_slack(
+                Notify(title="t", body="b", sound=False), "123", dry_run=True, log_path=log_path, already_posted={}
+            )
+
+        log_contents = open(log_path).read()
+        assert "notify_slack_dry_run" in log_contents
+
+    def test_real_run_invokes_smithers_post_with_pr_number(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            return fake_run_result()
+
+        with patch("subprocess.run", side_effect=fake_run):
+            smithers_module.notify_slack(
+                Notify(title="t", body="b", sound=False), "123", dry_run=False, log_path=log_path, already_posted={}
+            )
+
+        assert calls == [["smithers-post", "123"]]
+
+    def test_no_pr_number_is_a_no_op(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        with patch("subprocess.run", side_effect=AssertionError("must not be called with no PR number")):
+            smithers_module.notify_slack(
+                Notify(title="t", body="b", sound=False), None, dry_run=False, log_path=log_path, already_posted={}
+            )
+        assert not os.path.exists(log_path)
+
+    def test_dedup_skips_a_second_post_for_the_same_pr(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            return fake_run_result()
+
+        already_posted = {}
+        with patch("subprocess.run", side_effect=fake_run):
+            smithers_module.notify_slack(
+                Notify(title="t1", body="b1", sound=False), "123", dry_run=False, log_path=log_path,
+                already_posted=already_posted,
+            )
+            smithers_module.notify_slack(
+                Notify(title="t2", body="b2", sound=False), "123", dry_run=False, log_path=log_path,
+                already_posted=already_posted,
+            )
+
+        assert len(calls) == 1, "must not post to Slack twice for the same PR"
+        log_contents = open(log_path).read()
+        assert "notify_slack_dedup_skip" in log_contents
+
+
+class TestLogAdapter:
+    def test_every_message_type_is_logged(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        smithers_module.log_adapter(Land(method="squash"), log_path)
+
+        record = json.loads(open(log_path).read().strip())
+        assert record["event"] == "message"
+        assert record["type"] == "Land"
+        assert record["method"] == "squash"
+
+
+# ---------------------------------------------------------------------------
+# Composition-root smoke test (§ Ports and adapters, Composition-root
+# corollary) — builds `tick` through the REAL entry point (`build_send`, the
+# composition root) with REAL adapters wired, against a recorded fixture.
+# Only the outermost I/O boundary (`subprocess.run`) is faked, never `send`
+# itself — an adapter `build_send` forgot to bind would silently never fire,
+# and this class of test catches that; a handler-with-injected-fake unit
+# test cannot.
+# ---------------------------------------------------------------------------
+
+class TestCompositionRootSmoke:
+    def test_real_entry_point_logs_tick_output_for_a_recorded_fixture(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+
+        with patch(
+            "subprocess.run",
+            side_effect=make_gh_side_effect(
+                checks=json.dumps([{"name": "build", "bucket": "pass", "workflow": "CI"}]),
+                prc=json.dumps({"comments": []}),
+            ),
+        ):
+            snapshot, failure = fetch_pr_snapshot("123", log_path)
+        assert failure is None
+
+        req = TickRequest(pr_snapshot=snapshot)
+        send = build_send(pr_number="123", dry_run=True, log_path=log_path)
+
+        # tick is pure and every adapter must respect dry_run: no subprocess
+        # call is expected at all once tick() emits through the real send.
+        with patch("subprocess.run", side_effect=AssertionError("no subprocess calls expected in dry-run")):
+            tick(req, send)
+
+        records = [json.loads(line) for line in open(log_path).read().strip().splitlines()]
+        message_records = [r for r in records if r["event"] == "message"]
+        assert any(r["type"] == "Land" for r in message_records), (
+            "the structured-log adapter never saw the Land message — build_send "
+            "did not actually wire the log adapter into the real fan-out"
+        )
+
+    def test_real_entry_point_fires_both_notification_adapters(self, tmp_path):
+        """Sends a Notify message directly through the REAL `send` built by
+        `build_send` and asserts BOTH the macOS osascript adapter and the
+        Slack smithers-post adapter actually fire — proving build_send's
+        fan-out list really includes both, not just one silently dropped."""
+        log_path = str(tmp_path / "smithers.jsonl")
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            return fake_run_result()
+
+        send = build_send(pr_number="123", dry_run=False, log_path=log_path)
+
+        with patch("subprocess.run", side_effect=fake_run):
+            send(Notify(title="PR ready", body="squash and merge", sound=True))
+
+        assert any(cmd[0] == "osascript" for cmd in calls), "macOS notify adapter never fired"
+        assert any(cmd[0] == "smithers-post" for cmd in calls), "Slack notify adapter never fired"
+
+    def test_dry_run_end_to_end_performs_no_notification_and_no_mutation(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        send = build_send(pr_number="123", dry_run=True, log_path=log_path)
+
+        with patch("subprocess.run", side_effect=AssertionError("dry-run must not call any subprocess")):
+            send(Notify(title="t", body="b", sound=False))
+
+        log_contents = open(log_path).read()
+        assert "notify_macos_dry_run" in log_contents
+        assert "notify_slack_dry_run" in log_contents
+
+
+# ---------------------------------------------------------------------------
+# The poll loop (§ card 3021) — foreground, bounded-for-tests cadence. The
+# clock is always faked here (`time.sleep` patched) — never sleeps for real.
+# ---------------------------------------------------------------------------
+
+NOTHING_ACTIONABLE_VIEW = json.dumps({
+    "number": 123,
+    "headRefOid": "abc123def456",
+    "isDraft": True,  # excludes the ready-to-land trigger unambiguously
+    "mergeable": "MERGEABLE",
+    "mergeStateStatus": "CLEAN",
+    "reviewDecision": "REVIEW_REQUIRED",
+    "latestReviews": [],
+})
+NOTHING_ACTIONABLE_CHECKS = json.dumps([{"name": "lint", "bucket": "pending", "workflow": "CI"}])
+NOTHING_ACTIONABLE_PRC = json.dumps({"comments": []})
+
+
+class TestPollLoopTerminatesOnBound:
+    def test_loop_returns_after_max_cycles_and_sleeps_the_baseline_interval(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        sent = []
+
+        with patch(
+            "subprocess.run",
+            side_effect=make_gh_side_effect(
+                view=NOTHING_ACTIONABLE_VIEW,
+                checks=NOTHING_ACTIONABLE_CHECKS,
+                prc=NOTHING_ACTIONABLE_PRC,
+            ),
+        ):
+            with patch("time.sleep") as mock_sleep:
+                config = PollLoopConfig(max_cycles=3, env={}, accept_api_billing=True)
+                poll_loop("123", config, sent.append, log_path)
+
+        # Three ticks, nothing actionable each time -> three NoWorkNeeded
+        # messages, and the loop returns instead of looping forever.
+        assert len(sent) == 3
+        assert all(isinstance(msg, NoWorkNeeded) for msg in sent)
+        # A legitimately empty/pending-only result is not a fetch failure —
+        # each tick sleeps the ordinary baseline interval, never a backoff.
+        assert mock_sleep.call_args_list == [call(60), call(60), call(60)]
+
+
+class TestPollLoopPreflightRunsAheadOfEveryTick:
+    def test_preflight_invoked_once_per_tick_not_once_per_run(self, tmp_path):
+        """The carried-forward finding this card exists to close: preflight
+        must fire on EVERY tick, not just once at process start. Asserting
+        `call_count == max_cycles` (not merely `>= 1`) is what would catch a
+        regression back to a startup-only preflight call."""
+        log_path = str(tmp_path / "smithers.jsonl")
+        sent = []
+
+        with patch(
+            "subprocess.run",
+            side_effect=make_gh_side_effect(
+                view=NOTHING_ACTIONABLE_VIEW,
+                checks=NOTHING_ACTIONABLE_CHECKS,
+                prc=NOTHING_ACTIONABLE_PRC,
+            ),
+        ):
+            with patch("time.sleep"):
+                with patch.object(smithers_module, "billing_preflight") as mock_preflight:
+                    config = PollLoopConfig(max_cycles=4, env={}, accept_api_billing=True)
+                    poll_loop("123", config, sent.append, log_path)
+
+        assert mock_preflight.call_count == 4
+
+
+class TestPollLoopBackoffOnRepeatedFetchFailure:
+    def test_backoff_grows_and_caps_across_consecutive_failures(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        sent = []
+
+        def always_fail(cmd, **kwargs):
+            return fake_run_result(stdout="", stderr="rate limited", returncode=1)
+
+        with patch("subprocess.run", side_effect=always_fail):
+            with patch("time.sleep") as mock_sleep:
+                config = PollLoopConfig(max_cycles=4, env={}, accept_api_billing=True)
+                poll_loop("123", config, sent.append, log_path)
+
+        # Exponential 300 -> 900 -> 1800, then capped at 1800 — never a
+        # spin, and `tick` never ran so no message was ever sent.
+        assert mock_sleep.call_args_list == [call(300), call(900), call(1800), call(1800)]
+        assert sent == []
+
+    def test_fix_trigger_still_reaches_the_stub_when_present(self, tmp_path):
+        """A failing check IS actionable (§ The gate, trigger 1) — confirms
+        the loop reaches `tick` and hands a fired trigger to the phase-3 fix
+        stub rather than invoking anything real (§ card scope, OUT OF
+        SCOPE)."""
+        log_path = str(tmp_path / "smithers.jsonl")
+        sent = []
+
+        with patch("subprocess.run", side_effect=make_gh_side_effect()):
+            with patch("time.sleep"):
+                config = PollLoopConfig(max_cycles=1, env={}, accept_api_billing=True)
+                poll_loop("123", config, sent.append, log_path)
+
+        assert any(isinstance(msg, StartFixSession) for msg in sent)
+        log_contents = open(log_path).read()
+        assert "fix_invocation_stub_todo" in log_contents

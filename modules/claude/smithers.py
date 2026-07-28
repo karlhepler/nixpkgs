@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-smithers: v3 PR watcher — foreground CLI (phase 1, cards 1-3)
+smithers: v3 PR watcher — foreground CLI (phase 1, cards 1-4 + PR auto-detect)
 
 Manually-started, foreground CLI that will own its own poll loop and watch a
 single pull request to completion (§ Process model, .scratchpad/2967-v3-design.md).
@@ -9,13 +9,22 @@ minimal JSONL logging scaffold. Card 2 added the GitHub read adapter:
 `PRSnapshot`, the immutable value object the gate reasons over, and
 `fetch_pr_snapshot()`, which builds one from `gh pr view`, `gh pr checks`, and
 `prc list`. Card 3 added the `Message` union and the pure `tick` gate handler
-with its five TRIGGERS. Card 4 (this revision) adds the gate's six
-SUPPRESSORS — the poll loop's body remains TODO for a later phase-1 card.
+with its five TRIGGERS. Card 4 added the gate's six SUPPRESSORS. Card 3019
+added PR auto-detection from the current git worktree. This revision (card
+3021) wires the foreground poll loop itself — preflight, fetch, tick, and
+send, on a bounded cadence — completing phase 1 (§ Build plan, phase 1). Fix
+execution (invoking Claude) is a clearly-marked stub owned by phase 3.
 
 Usage:
-    smithers watch <pr>             # Watch PR #<pr> (or full URL) in the foreground
-    smithers watch <pr> --dry-run   # Skeleton-only: parses args, runs the
-                                     # preflight, does not mutate anything
+    smithers                        # Auto-detect the PR for the current git
+                                     # branch and watch it in the foreground
+    smithers <pr>                   # Watch PR #<pr> (or full URL) instead of
+                                     # auto-detecting
+    smithers watch <pr>             # Equivalent to `smithers <pr>` — kept for
+                                     # backward compatibility, not required
+    smithers --dry-run              # Skeleton-only: parses args, runs the
+                                     # preflight and PR resolution, does not
+                                     # poll or mutate anything
     smithers --help
 
 Fully ephemeral: no state file, no schema, no persistence across a restart
@@ -28,6 +37,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
@@ -58,8 +68,8 @@ REFUSAL_ENV_VARS = (
 
 # NOTE: CLAUDE_CODE_OAUTH_TOKEN is deliberately NOT in REFUSAL_ENV_VARS. It is
 # Anthropic's documented headless-auth mechanism for SUBSCRIPTION billing
-# (generated via `claude setup-token`, intended for CI/scripts/launchd —
-# exactly v3's own deployment shape), not a raw-API-billing signal. Refusing
+# (generated via `claude setup-token`, intended for CI/scripts/other
+# unattended automation), not a raw-API-billing signal. Refusing
 # on it would break the exact billing mode v3 depends on: it would stop
 # smithers from ever running under the one auth path Anthropic recommends for
 # unattended, subscription-billed automation like this tool. Do not re-add it.
@@ -223,6 +233,119 @@ class FetchFailure:
 
     source: str  # e.g. "gh pr view", "gh pr checks", "prc list"
     message: str
+
+
+# ---------------------------------------------------------------------------
+# PR resolution (§ card 3019) — bare `smithers` auto-detects the PR for the
+# current git worktree/branch; an explicit PR number or URL always overrides.
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class ResolutionFailure:
+    """A typed, non-raised failure explaining why smithers could not resolve
+    a PR to watch (§ card scope, Error handling). Never raised past
+    `resolve_pr` — a caller gets a typed failure with a specific reason it
+    can print a clear, actionable message for, never a stack trace."""
+
+    reason: str  # "not_a_git_repo" | "gh_unavailable" | "gh_unauthenticated" | "no_pr_for_branch" | "gh_error"
+    message: str
+
+
+def _run(cmd: List[str]) -> subprocess.CompletedProcess:
+    """Thin subprocess.run wrapper: capture output as text, never raise on a
+    non-zero exit (the caller inspects returncode itself). Deliberately does
+    NOT catch FileNotFoundError — callers that need to distinguish "binary
+    not on PATH" from any other failure do that at the call site (see
+    resolve_pr's gh auth status call)."""
+    return subprocess.run(cmd, capture_output=True, text=True, check=False)
+
+
+def _resolution_failed(reason: str, message: str, log_path: str) -> ResolutionFailure:
+    log_event(log_path, "resolve_pr_failed", reason=reason, message=message)
+    return ResolutionFailure(reason=reason, message=message)
+
+
+def resolve_pr(explicit_pr: Optional[str], log_path: str) -> Tuple[Optional[str], Optional[ResolutionFailure]]:
+    """Resolve the PR identifier smithers should watch (§ card 3019, § How to
+    start a watch).
+
+    If `explicit_pr` is truthy (a PR number or a full PR URL passed on the
+    command line), it always wins — returned unchanged with no resolution
+    attempted, no git/gh calls made at all.
+
+    Otherwise, auto-detects the PR belonging to the current git branch:
+    confirms the working directory is inside a git repository, confirms `gh`
+    is on PATH and authenticated, then asks `gh pr view --json number,url`
+    with NO pr argument — this is `gh`'s own documented behavior (verified
+    via `gh pr view --help`: "Without an argument, the pull request that
+    belongs to the current branch is displayed"), not a smithers-invented
+    convention.
+
+    Never raises past this boundary — every failure returns a typed
+    ResolutionFailure with a distinct reason instead (§ card scope, Error
+    handling), so a caller can print a clear message rather than a stack
+    trace for each of: not in a git repo, gh missing, gh unauthenticated, no
+    PR exists for this branch, or any other gh error.
+    """
+    if explicit_pr:
+        return explicit_pr, None
+
+    repo_check = _run(["git", "rev-parse", "--is-inside-work-tree"])
+    if repo_check.returncode != 0:
+        return None, _resolution_failed(
+            "not_a_git_repo",
+            "not inside a git repository — cd into a repo with a pull request, "
+            "or pass a PR number/URL explicitly",
+            log_path,
+        )
+
+    try:
+        auth_check = _run(["gh", "auth", "status"])
+    except FileNotFoundError:
+        return None, _resolution_failed(
+            "gh_unavailable",
+            "gh is not installed or not on PATH — install the GitHub CLI, "
+            "or pass a PR number/URL explicitly",
+            log_path,
+        )
+
+    if auth_check.returncode != 0:
+        return None, _resolution_failed(
+            "gh_unauthenticated",
+            "gh is not authenticated — run `gh auth login`, or pass a PR number/URL explicitly",
+            log_path,
+        )
+
+    view = _run(["gh", "pr", "view", "--json", "number,url"])
+    if view.returncode != 0:
+        stderr = view.stderr.strip()
+        if "no pull requests found" in stderr.lower():
+            return None, _resolution_failed(
+                "no_pr_for_branch",
+                "no pull request found for the current branch — open one first, "
+                f"or pass a PR number/URL explicitly ({stderr or 'gh reported no PR'})",
+                log_path,
+            )
+        return None, _resolution_failed(
+            "gh_error",
+            stderr or f"gh pr view exited {view.returncode} with no output",
+            log_path,
+        )
+
+    try:
+        data = json.loads(view.stdout)
+    except json.JSONDecodeError as e:
+        return None, _resolution_failed(
+            "gh_error", f"could not parse gh pr view output: {e}", log_path
+        )
+
+    number = data.get("number")
+    if number is None:
+        return None, _resolution_failed(
+            "gh_error", "gh pr view response had no PR number", log_path
+        )
+
+    return str(number), None
 
 
 # ---------------------------------------------------------------------------
@@ -412,32 +535,10 @@ def fetch_pr_snapshot(pr: str, log_path: str) -> Tuple[Optional[PRSnapshot], Opt
 
 
 # ---------------------------------------------------------------------------
-# TODO stubs — attachment points for later phase-1 cards. Not called yet.
-# ---------------------------------------------------------------------------
-
-def poll_loop(pr: str, config: Any, send: Callable[[Any], None], log_path: str) -> None:
-    """TODO(phase1-card3+): the in-process poll loop — the composition root.
-
-    Signature extended per peer review carry-forward (#3006 Finding 2): now
-    carries `config` (resolved thresholds/intervals) and `send` (the same
-    output port `tick()` already expects), mirroring `tick`'s own seam so a
-    later card can fill in this body without another signature change.
-
-    Will own the CLI's own sleep/tick cadence — 60s Active / 600s
-    Approval-watch / exponential backoff on API errors (§ Poll loop and
-    cadence) — fetch a PRSnapshot each iteration via fetch_pr_snapshot, build
-    a TickRequest from in-memory State + config, call tick(req, send), and
-    apply the resulting messages back into its own loop state. Runs entirely
-    in plain code while idle; costs zero Claude tokens until the gate fires.
-    """
-    raise NotImplementedError("poll loop body lands in a later phase-1 card")
-
-
-# ---------------------------------------------------------------------------
 # Message union (§ Ports and adapters) — the pure handler's own output
-# vocabulary. Frozen, stdlib-only. The composition root fans these out to
-# adapters (GitHub mutation, session lifecycle, notification, state update,
-# scheduler, structured log, test spy) once a later card wires poll_loop.
+# vocabulary. Frozen, stdlib-only. The composition root (`poll_loop`, below)
+# fans these out to adapters (GitHub mutation, session lifecycle,
+# notification, state update, scheduler, structured log, test spy).
 # ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
@@ -737,48 +838,288 @@ def tick(req: TickRequest, send: Callable[[Message], None]) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Notification adapters (§ Ports and adapters) — bind to `Notify` messages.
+# `send` fans every message out to every adapter (see `fan_out` below), so
+# each adapter is responsible for filtering to what it binds; any message
+# that isn't a `Notify` is a silent no-op here.
+# ---------------------------------------------------------------------------
+
+def notify_macos(msg: Message, dry_run: bool, log_path: str) -> None:
+    """macOS notification adapter, via `osascript` (§ Ports and adapters
+    table: "Notification | Notify | macOS osascript + Slack via
+    smithers-post"). `dry_run` logs what would have fired and performs no
+    real notification — no `osascript` subprocess call at all."""
+    if not isinstance(msg, Notify):
+        return
+
+    if dry_run:
+        log_event(log_path, "notify_macos_dry_run", title=msg.title, body=msg.body, sound=msg.sound)
+        return
+
+    script = f"display notification {json.dumps(msg.body)} with title {json.dumps(msg.title)}"
+    if msg.sound:
+        script += ' sound name "default"'
+    _run(["osascript", "-e", script])
+    log_event(log_path, "notify_macos", title=msg.title, sound=msg.sound)
+
+
+def notify_slack(
+    msg: Message,
+    pr_number: Optional[str],
+    dry_run: bool,
+    log_path: str,
+    already_posted: Dict[str, bool],
+) -> None:
+    """Slack notification adapter — exclusively via the `smithers-post` CLI
+    (§ Policy risk / decisions row 42: no MCP, no curl, no hand-rolled
+    wrapper). `smithers-post` fetches its own PR title/body/summaries and
+    posts Block Kit formatting; this adapter only decides *whether* and
+    *when* to invoke it — never reimplements its formatting or its gh calls.
+
+    Dedup note: `smithers-post.py` was read directly for this card (its
+    argparse surface is `pr`, `--no-summaries`, `--webhook-url` only — see
+    `smithers-post.py`) and carries NO built-in dedup of its own — verified
+    by source inspection, not assumed. The same-PR dedup that existed
+    historically lived in the now-retired v2 markdown skill's hand-maintained
+    `.smithers/slack_posted` flag FILE (`global/skills/smithers/SKILL.md:58`),
+    which has no equivalent under v3's fully-ephemeral, no-state-file
+    architecture (this module's own header docstring). This adapter
+    preserves the same observable behavior — never post twice for the same
+    PR within one watch run — via in-memory closure state (`already_posted`)
+    rather than a file. Cross-restart / calendar-day persistence would
+    require the persistent State model a later poll-loop card owns; not
+    invented here ahead of scope (YAGNI).
+    """
+    if not isinstance(msg, Notify):
+        return
+    if pr_number is None:
+        return
+    if already_posted.get(pr_number):
+        log_event(log_path, "notify_slack_dedup_skip", pr=pr_number)
+        return
+
+    if dry_run:
+        log_event(log_path, "notify_slack_dry_run", pr=pr_number, title=msg.title)
+        return
+
+    _run(["smithers-post", str(pr_number)])
+    already_posted[pr_number] = True
+    log_event(log_path, "notify_slack", pr=pr_number, title=msg.title)
+
+
+# ---------------------------------------------------------------------------
+# Structured log adapter (§ Ports and adapters) — receives every message
+# unconditionally, regardless of type, for post-hoc debugging.
+# ---------------------------------------------------------------------------
+
+def log_adapter(msg: Message, log_path: str) -> None:
+    log_event(log_path, "message", type=type(msg).__name__, **msg.__dict__)
+
+
+# ---------------------------------------------------------------------------
+# The composition root (§ Ports and adapters) — binds real adapters to the
+# `send` output port via fan-out: one emitted message reaches every bound
+# adapter. This card wires the notification adapters (macOS + Slack) and the
+# structured log adapter. Other adapters in the design's table (GitHub
+# mutation, fix execution, scheduler) belong to later cards that own those
+# message types (§ card scope, OUT OF SCOPE) — an unbound message type is
+# simply logged here, never silently mutated.
+# ---------------------------------------------------------------------------
+
+def fan_out(handlers: List[Callable[[Message], None]]) -> Callable[[Message], None]:
+    """`send := fanOut([]Handler{...})` (§ Ports and adapters) — a plain
+    function that calls every bound handler with the same message."""
+
+    def send(msg: Message) -> None:
+        for handler in handlers:
+            handler(msg)
+
+    return send
+
+
+def build_send(
+    pr_number: Optional[str],
+    dry_run: bool,
+    log_path: str,
+    already_posted: Optional[Dict[str, bool]] = None,
+) -> Callable[[Message], None]:
+    """The composition root: builds the real `send` port for one watch run
+    on one PR, with real adapters wired via `fan_out` (§ Ports and adapters,
+    Composition-root corollary). `already_posted` is exposed as a parameter
+    so a caller can share one dict across multiple `tick()` calls in a
+    future poll loop; a fresh dict is created when omitted."""
+    if already_posted is None:
+        already_posted = {}
+
+    return fan_out(
+        [
+            lambda msg: notify_macos(msg, dry_run, log_path),
+            lambda msg: notify_slack(msg, pr_number, dry_run, log_path, already_posted),
+            lambda msg: log_adapter(msg, log_path),
+        ]
+    )
+
+
+# ---------------------------------------------------------------------------
+# The poll loop (§ Process model, § Poll loop and cadence) — the foreground
+# CLI's own composition root. Owns cadence internally; does not exit between
+# polls. Phase 4 owns the full Active/Approval-watch adaptive-cadence swap
+# (§ Build plan, phase 4) — this card wires only the single baseline
+# interval (the 60s Active value) plus the exponential GitHub-API-error
+# backoff table (§ Failure and retry).
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class PollLoopConfig:
+    """Resolved thresholds/intervals for one `poll_loop` run.
+
+    `max_cycles=None` (the default) means the loop runs until its pane is
+    killed (§ Process model, § How to stop a watch) — the production shape.
+    Tests pass a finite bound so the loop actually returns rather than
+    depending on a side effect to break out (§ card scope, "the loop
+    terminates on its bound").
+    """
+
+    max_cycles: Optional[int] = None
+    poll_interval_seconds: int = 60  # the Active-tier baseline (§ Poll loop and cadence)
+    backoff_intervals_seconds: Tuple[int, ...] = (300, 900, 1800)
+    max_fix_invocations: int = 4  # v2's max_ralph_invocations default
+    informational_bot_authors: Tuple[str, ...] = ()
+    accept_api_billing: bool = False
+    env: Optional[Dict[str, str]] = None  # override for tests; live os.environ read fresh every tick otherwise
+
+
+def _invoke_fix_stub(msg: StartFixSession, log_path: str) -> None:
+    """TODO(phase3): fix-execution adapter (§ Fix execution) — the blocking
+    `staff -p --model sonnet --effort high "<brief>"` subprocess invocation
+    that actually starts a fix session. Deliberately NOT this card's scope
+    (§ card scope, OUT OF SCOPE) — this stub only fixes the call site's
+    intended signature so phase 3 can fill in the body without `poll_loop`
+    needing another change. Logs and returns rather than raising, so a fired
+    trigger never crashes the loop while this remains unimplemented."""
+    log_event(log_path, "fix_invocation_stub_todo", name=msg.name)
+
+
+def poll_loop(pr: str, config: PollLoopConfig, send: Callable[[Message], None], log_path: str) -> None:
+    """The in-process poll loop — foreground, owns its own cadence, does not
+    exit between polls (§ Process model, § Poll loop and cadence).
+
+    Per tick, in order: (1) the billing preflight runs first — fail-closed,
+    ahead of EVERY tick, not merely once at process startup, and never one of
+    the gate's six suppressors (§ Policy risk, Hazard 1; § The gate) — a
+    watch started today can still be running tomorrow under a changed
+    environment; (2) a fresh `PRSnapshot` is fetched; (3) the pure `tick`
+    gate handler decides what to do; (4) every resulting `Message` fans out
+    through `send`, with `StartFixSession` additionally handed to the
+    phase-3 stub above.
+
+    A GitHub fetch failure never reaches `tick` at all — no GitHub read (it
+    already failed), no gate evaluation, no fix invocation (§ Failure and
+    retry) — the loop backs off instead (exponential, capped at
+    `config.backoff_intervals_seconds[-1]`) and retries next cycle. A
+    legitimately empty result (e.g. zero checks, zero comments) is never
+    treated as a failure — `fetch_pr_snapshot`'s own typed
+    `(snapshot, FetchFailure)` contract already makes that distinction; this
+    loop just acts on it.
+    """
+    cycle = 0
+    consecutive_failures = 0
+    fix_count = 0
+    prior_merge_queue_state: Optional[str] = None
+    active_fix_session: Optional[str] = None
+
+    def _handle(msg: Message) -> None:
+        send(msg)
+        if isinstance(msg, StartFixSession):
+            _invoke_fix_stub(msg, log_path)
+
+    while config.max_cycles is None or cycle < config.max_cycles:
+        cycle += 1
+
+        env = config.env if config.env is not None else dict(os.environ)
+        billing_preflight(env, config.accept_api_billing, log_path)
+
+        snapshot, failure = fetch_pr_snapshot(pr, log_path)
+
+        if failure is not None:
+            consecutive_failures += 1
+            backoff_index = min(consecutive_failures - 1, len(config.backoff_intervals_seconds) - 1)
+            backoff_seconds = config.backoff_intervals_seconds[backoff_index]
+            log_event(
+                log_path,
+                "poll_fetch_failed",
+                source=failure.source,
+                message=failure.message,
+                backoff_seconds=backoff_seconds,
+            )
+            time.sleep(backoff_seconds)
+            continue
+
+        consecutive_failures = 0
+
+        req = TickRequest(
+            pr_snapshot=snapshot,
+            prior_merge_queue_state=prior_merge_queue_state,
+            informational_bot_authors=config.informational_bot_authors,
+            fix_count=fix_count,
+            max_fix_invocations=config.max_fix_invocations,
+            cycle=cycle,
+            active_fix_session=active_fix_session,
+        )
+        tick(req, _handle)
+
+        prior_merge_queue_state = snapshot.merge_queue_state
+        time.sleep(config.poll_interval_seconds)
+
+
+# ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------
 
 def build_parser() -> argparse.ArgumentParser:
+    """Flat parser, no subcommands (§ card 3019).
+
+    `watch` used to be a required subcommand (`smithers watch <pr>`). The
+    design's stated primary invocation is bare `smithers` with no arguments
+    at all (§ How to start a watch, .scratchpad/2967-v3-design.md), which
+    auto-detects the PR for the current git branch — there is no required
+    `smithers watch <pr>` form any more. `main()` strips a leading literal
+    "watch" token before parsing so the old form still works as a plain
+    alias, without this parser needing to know about it."""
     parser = argparse.ArgumentParser(
         prog="smithers",
         description=(
             "Smithers v3: a foreground CLI that watches one pull request to "
             "completion, polling GitHub in plain code and invoking Claude "
-            "only when work is actually needed."
+            "only when work is actually needed.\n\n"
+            "Bare `smithers`, with no arguments, auto-detects the pull request\n"
+            "belonging to the current git branch. An explicit PR number or URL\n"
+            "argument targets that PR instead of auto-detecting.\n\n"
+            "Examples:\n"
+            "  smithers\n"
+            "  smithers 123\n"
+            "  smithers 123 --dry-run\n"
+            "  smithers https://github.com/owner/repo/pull/123\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-
-    sub = parser.add_subparsers(dest="command", required=True)
-
-    p_watch = sub.add_parser(
-        "watch",
-        help="Watch a single pull request in the foreground until it merges or stops",
-        description=(
-            "Watch a single pull request in the foreground until it merges,\n"
-            "is stopped by a suppressor, or hits its attempt cap.\n\n"
-            "Runs in a tmux pane and owns its own poll loop internally — this\n"
-            "is not a daemon and does not persist state across a restart.\n\n"
-            "Example:\n"
-            "  smithers watch 123\n"
-            "  smithers watch 123 --dry-run\n"
-        ),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    p_watch.add_argument(
+    parser.add_argument(
         "pr",
         metavar="PR",
-        help="PR number or full URL to watch",
+        nargs="?",
+        default=None,
+        help=(
+            "PR number or full URL to watch. If omitted, auto-detects the PR "
+            "belonging to the current git branch."
+        ),
     )
-    p_watch.add_argument(
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         default=False,
-        help="Parse arguments and run the billing preflight only; do not poll or mutate anything",
+        help="Parse arguments and resolve the PR only; do not poll or mutate anything",
     )
-    p_watch.add_argument(
+    parser.add_argument(
         "--i-accept-api-billing",
         action="store_true",
         default=False,
@@ -789,7 +1130,7 @@ def build_parser() -> argparse.ArgumentParser:
             "credential environment variable present that would bill at raw API rates."
         ),
     )
-    p_watch.add_argument(
+    parser.add_argument(
         "--log-file",
         metavar="PATH",
         default=DEFAULT_LOG_PATH,
@@ -806,28 +1147,32 @@ def build_parser() -> argparse.ArgumentParser:
 def cmd_watch(args: argparse.Namespace) -> int:
     billing_preflight(dict(os.environ), args.accept_api_billing, args.log_file)
 
-    log_event(args.log_file, "watch_started", pr=args.pr, dry_run=args.dry_run)
+    pr, failure = resolve_pr(args.pr, args.log_file)
+    if failure is not None:
+        print(f"Error: {failure.message}", file=sys.stderr)
+        return 1
+
+    log_event(args.log_file, "watch_started", pr=pr, dry_run=args.dry_run)
 
     if args.dry_run:
-        print(f"smithers watch: dry run for PR {args.pr!r} — preflight passed, no further action taken")
+        print(f"smithers watch: dry run for PR {pr!r} — preflight passed, no further action taken")
         return 0
 
-    # TODO(phase1-card3+): poll_loop(args.pr, config, send, args.log_file)
-    print(
-        f"smithers watch: skeleton only for PR {args.pr!r} — "
-        "poll loop and gate land in later phase-1 cards"
-    )
+    send = build_send(pr_number=pr, dry_run=False, log_path=args.log_file)
+    config = PollLoopConfig(accept_api_billing=args.accept_api_billing)
+    poll_loop(pr, config, send, args.log_file)
     return 0
 
 
 def main(argv: Optional[list] = None) -> int:
-    """Entry point. `watch` is currently the only subcommand, and
-    `add_subparsers(..., required=True)` guarantees `args.command == "watch"`
-    by the time parsing succeeds — there is no second command to fall through
-    to, so there is deliberately no fallback branch here (peer review #3006
-    Finding 4 flagged the previous `else: parser.print_help(); return 1`
-    branch as dead code no test could ever reach; removed rather than kept
-    as untested filler)."""
+    """Entry point. Bare `smithers` (no arguments) is the primary invocation
+    (§ How to start a watch) — cmd_watch resolves the PR to watch from the
+    current git branch when args.pr is None. A leading literal "watch" token
+    is stripped here for backward compatibility with the earlier
+    `smithers watch <pr>` subcommand form — it is accepted, never required."""
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] == "watch":
+        argv = argv[1:]
     parser = build_parser()
     args = parser.parse_args(argv)
     return cmd_watch(args)
