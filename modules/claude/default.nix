@@ -1222,7 +1222,39 @@ ${generateToolsMarkdown {
 }}
 EOF
       '';
+
+      # check-tools-detailed: staleness gate for the hand-written
+      # global/TOOLS-DETAILED.md, using the generated TOOLS.md above as the
+      # authority on what this configuration actually ships.
+      #
+      # Motivation: burns.py was deleted in ddc7255 (2026-05-18). The generated
+      # TOOLS.md dropped `burns` immediately; the hand-written file kept
+      # documenting it for over two months because nothing was watching.
+      #
+      # One-directional by design: every documented tool must ship, but a
+      # shipped tool need not be documented — TOOLS-DETAILED.md is a deep-dive
+      # companion for a subset of tools, not an index (e.g. `smithers-post`
+      # ships and is deliberately undocumented there). A bidirectional check
+      # would fail on correct state, and a check that fails on correct state
+      # gets disabled rather than fixed.
+      #
+      # Standalone-runnable, so it can be exercised without a full hms:
+      #   bash modules/claude/check-tools-detailed.bash
+      checkToolsDetailed = ./check-tools-detailed.bash;
     in lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      # check-tools-detailed: fail the activation BEFORE anything is copied if
+      # TOOLS-DETAILED.md documents a tool the freshly generated TOOLS.md no
+      # longer lists. Gating ahead of the copy is what keeps a stale doc from
+      # ever reaching ~/.claude/. Both paths are passed explicitly so the gate
+      # reads the TOOLS.md being built right now, not the one a previous
+      # activation left behind.
+      if [ -z "''${DRY_RUN_CMD:-}" ]; then
+        if ! ${pkgs.bash}/bin/bash ${checkToolsDetailed} \
+            ${claudeGlobalDir}/TOOLS-DETAILED.md ${toolsMarkdown}; then
+          exit 1
+        fi
+      fi
+
       # Copy all global configuration (mirrors global/ -> ~/.claude/ structure)
       $DRY_RUN_CMD mkdir -p ~/.claude
 
