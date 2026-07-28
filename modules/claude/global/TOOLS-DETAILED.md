@@ -4,155 +4,104 @@ This file provides comprehensive documentation for critical Claude Code integrat
 
 ---
 
-## burns
-
-**Purpose:** Run Ralph Orchestrator with Ralph Coordinator output style
-
-**Command:** `burns`
-
-**Usage:**
-```bash
-# Inline prompt (uses -p flag)
-burns "Your prompt here"
-
-# Prompt from file (uses -P flag)
-burns path/to/file.md
-
-# Custom max iterations
-burns --max-ralph-iterations 5 "Your prompt"
-```
-
-**Configuration:**
-
-Priority: CLI flag > environment variable > default
-
-| Option | Environment Variable | Default | Description |
-|--------|---------------------|---------|-------------|
-| `--max-ralph-iterations N` | `BURNS_MAX_RALPH_ITERATIONS` | 3 | Maximum iterations for Ralph Orchestrator |
-
-**Behavior:**
-- Accepts either inline prompt strings or file paths
-- Auto-detects file vs string based on file existence
-- Handles Ctrl+C gracefully with full process tree cleanup
-
-**Exit Codes:**
-- `0` - Success
-- `1` - Error (invalid arguments, missing Staff Engineer hat file)
-- `130` - User interrupted (Ctrl+C)
-
-**Examples:**
-```bash
-# Quick one-off task
-burns "Review the authentication logic in auth.go"
-
-# Complex multi-step task from file
-burns project-plan.md
-
-# Allow more iterations for complex tasks
-burns --max-ralph-iterations 5 "Refactor the entire API layer"
-
-# Override default with environment variable
-BURNS_MAX_RALPH_ITERATIONS=2 burns "Quick code review"
-```
-
-**Related Commands:**
-- `smithers` - Autonomous PR watcher that uses burns internally
-- `kanban` - View cards created during burns sessions
-
----
-
 ## smithers
 
-**Purpose:** Token-efficient autonomous PR watcher
+**Purpose:** Foreground CLI that watches one pull request to completion — polls GitHub directly and invokes Claude only when there is actual work to do
 
 **Command:** `smithers`
 
 **Usage:**
 ```bash
-# Infer PR from current branch
+# Auto-detect the PR for the current git branch and watch it in the foreground
 smithers
 
-# Specify PR by number
+# Watch a specific PR by number or full URL
 smithers 123
-
-# Specify PR by URL
 smithers https://github.com/owner/repo/pull/123
 
-# Custom Ralph iterations
-smithers --max-ralph-iterations 5 123
+# `watch` is accepted for backward compatibility but never required
+smithers watch 123
 
-# Custom watch cycles
-smithers --max-iterations 6 123
-
-# Combine both options
-smithers --max-ralph-iterations 2 --max-iterations 3 123
+# Resolve the PR and run the billing preflight only — no polling, no mutation
+smithers --dry-run
 ```
 
-**Configuration:**
+**Flags:**
 
-Priority: CLI flag > environment variable > default
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--dry-run` | off | Resolve the PR and run the billing preflight only; exit without polling |
+| `--i-accept-api-billing` | off | The only way to run with a raw-API billing credential present in the environment (see Billing Preflight below); there is no environment-variable override |
+| `--log-file PATH` | see `SMITHERS_LOG_PATH` below | JSONL structured log destination |
+| `--informational-bot-authors AUTHORS` | see `SMITHERS_INFORMATIONAL_BOT_AUTHORS` below | Comma-separated bot authors excluded from the actionable-bot-comment trigger |
+| `--no-merge` | off | Watch and fix the PR, but never merge it — the operator merges manually |
 
-| Option | Environment Variable | Default | Description |
-|--------|---------------------|---------|-------------|
-| `--max-ralph-iterations N` | `SMITHERS_MAX_RALPH_ITERATIONS` | 4 | How many times to ask Ralph to fix issues |
-| `--max-iterations N` | `SMITHERS_MAX_ITERATIONS` | 4 | How many CI check cycles to monitor |
+**Environment Variables:**
 
-**How It Works:**
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SMITHERS_LOG_PATH` | `~/.local/state/smithers/smithers.jsonl` | JSONL log destination (overridden by `--log-file`) |
+| `SMITHERS_INFORMATIONAL_BOT_AUTHORS` | `codecov[bot]` | Comma-separated bot-author exclusion list for the actionable-bot-comment trigger (overridden by `--informational-bot-authors`) |
+| `SMITHERS_APPROVAL_WATCH_POLL_SECONDS` | `900` | Poll interval while the PR is clean and only waiting on human review; no CLI override |
+| `SMITHERS_SLACK_DEDUP_TIMEOUT_SECONDS` | `45` | Wall-clock bound on the cross-restart Slack dedup probe; no CLI override |
+| `SMITHERS_FIX_INVOCATION_TIMEOUT_SECONDS` | `1200` | Wall-clock ceiling on one fix-session invocation before its process tree is killed; no CLI override |
 
-1. **Poll CI checks** (token-free) - Wait for checks to reach terminal state
-2. **Gather intelligence** - Collect failed checks, bot comments, merge conflicts
-3. **Invoke Ralph** (only when work needed) - Generate focused prompt and run `burns`
-4. **Re-check** - Verify fixes worked, repeat if needed
-5. **Complete** - Exit when PR is ready to merge or max cycles reached
+There is no `--max-ralph-iterations` / `--max-iterations` flag, or any equivalent environment variable, in the current CLI — the fix-attempt budget (4 attempts) and poll-cycle budget (10 cycles) are fixed constants, not operator-configurable.
+
+**Billing Preflight:**
+- Runs before every poll cycle, not just once at startup
+- Fails closed: refuses to run if a raw-API billing credential (e.g. `ANTHROPIC_API_KEY`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`) is present — no degraded mode
+- The only bypass is `--i-accept-api-billing`
+- The subscription-billed headless-auth token is deliberately exempt from this refusal list
+
+**How It Works (the gate):**
+
+Each cycle: fetch a fresh PR snapshot (`gh pr view`, `gh pr checks`, `prc list`) → close out any actionable bot thread via `prc reply` + `prc resolve` before evaluating this same cycle → check five triggers → if a trigger fires and none of six suppressors block it, act.
+
+Triggers (any one is sufficient): a failing CI check; a merge conflict with the base branch; an actionable, unresolved bot comment thread; a confirmed merge-queue entry bouncing (currently unreachable — no GitHub field yet exposes merge-queue state); or the PR being fully clean, approved, and ready to land, which routes to an automatic merge rather than a fix session.
+
+Suppressors block action even when a trigger fires. Transient ones: only pending checks with nothing else actionable; a fix session already in flight; the operator's `--no-merge` opt-out. Terminal ones end the watch entirely (logged and notified): the fix-attempt budget is exhausted (4 attempts), the poll-cycle budget is exhausted (10 cycles), or HEAD hasn't advanced across two consecutive fix attempts (stagnation).
+
+**Fix Execution:** a single blocking `staff -p --model sonnet --effort high --permission-mode dontAsk` invocation, given a bounded task brief via stdin, with deny rules blocking `gh pr merge`, `kubectl`, `aws`, and `gcloud`. Bounded by `SMITHERS_FIX_INVOCATION_TIMEOUT_SECONDS` (default 1200s / 20 minutes); on timeout the whole subprocess tree is killed. Runs with a small allowlisted environment, never the operator's full shell environment.
+
+**Landing:** when the ready-to-land trigger fires, smithers merges the PR itself via `gh pr merge --squash` (unless `--no-merge` is set), then permanently revokes its own merge authority for the rest of the run.
 
 **Behavior:**
-- Polls CI checks every 10 seconds (configurable via `POLL_INTERVAL` constant)
-- Only invokes Ralph when actionable work exists (failed checks or merge conflicts)
-- Sends macOS notifications on completion, interruption, or max cycles reached
-- Handles Ctrl+C gracefully with full process tree cleanup
-- Dynamically extends watch cycles if unaddressed bot comments exist
-
-**Environment Variables Set:**
-- `BURNS_MAX_RALPH_ITERATIONS` - Passed to burns when invoking Ralph
+- Fully ephemeral — no state file, no persistence across a restart; all counters live only in the running process's memory
+- Polls every 60 seconds as the baseline cadence; falls back to `SMITHERS_APPROVAL_WATCH_POLL_SECONDS` (default 900s) while the PR is clean and merely awaiting human review, returning to the 60s cadence the moment that stops being true
+- A GitHub fetch failure backs off exponentially (300s / 900s / 1800s) rather than reaching the gate at all
 
 **Exit Codes:**
-- `0` - Success (PR ready to merge or already merged)
-- `1` - Max cycles reached with unresolved issues
-- `130` - User interrupted (Ctrl+C)
+- `0` - Success (dry run completed, or the watch loop returned after a terminal stop)
+- `1` - Error (PR could not be resolved, or the billing preflight refused to run)
 
 **Notifications:**
-- **Success** (Glass sound) - PR ready to merge
-- **Max Cycles** (Sosumi sound) - Reached limit without completing
-- **Interrupted** (Basso sound) - User pressed Ctrl+C
+- **macOS** via `osascript` — every terminal stop fires an audible notification; the recurring "clean and awaiting review" notice is silent. There is one sound, not distinct sounds per outcome.
+- **Slack** via the separate `smithers-post` command, posted when the PR is clean and awaiting review. With no state file, cross-restart duplicate posts are avoided by asking Slack itself (a scoped headless Claude search) whether a post already exists before posting again.
 
 **Examples:**
 ```bash
-# Watch current branch's PR
+# Watch current branch's PR, auto-detecting it
 smithers
 
-# Watch specific PR with defaults
-smithers 123
+# Watch a specific PR, never merging it automatically
+smithers --no-merge 123
 
-# Conservative approach (fewer Ralph invocations)
-smithers --max-ralph-iterations 2 123
+# Custom log destination and a wider bot exclusion list
+smithers --log-file /tmp/smithers.jsonl --informational-bot-authors "codecov[bot],dependabot[bot]" 123
 
-# Aggressive approach (more watch cycles)
-smithers --max-iterations 6 123
-
-# Quick check for small PRs
-SMITHERS_MAX_RALPH_ITERATIONS=1 SMITHERS_MAX_ITERATIONS=2 smithers
+# Confirm PR resolution and billing preflight without polling
+smithers --dry-run 123
 ```
 
 **Integration:**
-- Works seamlessly with `prc` for comment management
-- Uses `burns` internally to invoke Ralph
-- Creates kanban cards for work tracking
-- Integrates with GitHub CLI (`gh`) for all PR operations
+- Uses `prc` to read and close out PR comment threads every cycle
+- Merges via `gh pr merge` when the gate decides the PR is ready to land
+- Posts Slack notifications via the separate `smithers-post` command
 
 **Related Commands:**
-- `burns` - Underlying orchestrator used by smithers
-- `prc` - PR comment management (recommended in generated prompts)
-- `kanban` - View work tracked during smithers sessions
+- `prc` - PR comment management; smithers sweeps bot threads through it every cycle
+- `smithers-post` - Slack notification delivery (see `TOOLS.md`)
 
 ---
 
@@ -183,6 +132,10 @@ prc unresolve <thread-id>
 prc collapse [PR] --bots-only --reason resolved
 ```
 
+**Output Format:**
+
+`--format {xml,json,human}` (default: `xml`) is a top-level flag that applies to every subcommand. Machine-readable examples that pipe through `jq` need `--format json` explicitly — XML is the default, not JSON.
+
 **Subcommands:**
 
 ### list
@@ -195,11 +148,14 @@ Fetch and filter PR comments with powerful filtering options.
 - `--author USERNAME` - Filter by specific author username
 - `--author-pattern REGEX` - Filter by author using regex pattern
 - `--bots-only` - Show only bot comments
+- `--inline-only` - Show only inline review comments (exclude PR-level comments)
 - `--max-replies N` - Show comments with at most N replies (use 0 for unanswered)
 - `--resolved` - Show only resolved threads
 - `--unresolved` - Show only unresolved threads
+- `--full` - Include full comment body text (default: metadata-only, no body)
+- `--max-body-len N` - Truncate each comment body to N chars (requires `--full`)
 
-**Output:** JSON with comment metadata, reply counts, thread status
+**Output:** Comment metadata, reply counts, and thread status (XML by default; JSON with `--format json`)
 
 ### reply
 Reply to a comment (inline or PR-level).
@@ -214,7 +170,7 @@ Reply to a comment (inline or PR-level).
 - For PR-level comments: Posts comment with @mention
 - Rate-limited: 1 second delay between operations
 
-**Output:** JSON with success status and new comment details
+**Output:** Success status and new comment details (XML by default; JSON with `--format json`)
 
 ### resolve / unresolve
 Mark a review thread as resolved or unresolved.
@@ -222,7 +178,7 @@ Mark a review thread as resolved or unresolved.
 **Arguments:**
 - `thread-id` - Thread node ID (from `list` output)
 
-**Output:** JSON with success status and thread resolution state
+**Output:** Success status and thread resolution state (XML by default; JSON with `--format json`)
 
 ### collapse
 Minimize comments using GitHub's minimize feature.
@@ -230,17 +186,18 @@ Minimize comments using GitHub's minimize feature.
 **Arguments:**
 - `PR` (optional) - PR number, URL, or omit to infer from current branch
 
-**Filters:** Same as `list` command
+**Filters:** `--author`, `--author-pattern`, `--bots-only` only — unlike `list`, `collapse` does not support `--max-replies`, `--resolved`, or `--unresolved`.
 
 **Options:**
 - `--reason CHOICE` - Minimize reason (choices: off-topic, spam, outdated, abuse, resolved)
   - Default: resolved
+- `--verbose` / `-v` - Emit a success report (format controlled by `--format`)
 
-**Output:** JSON with collapsed count and any errors
+**Output:** Silent on success (exit 0) unless `--verbose`/`-v` is passed, in which case it emits the collapsed count and any errors. Errors always go to stderr with exit 1, regardless of `--verbose`.
 
 **Data Model:**
 
-Comments returned by `list` include:
+Comments returned by `list` include (shown here with `--full`; by default `body`, `body_text`, and `diff_hunk` are omitted entirely — metadata-only):
 
 ```json
 {
@@ -259,6 +216,7 @@ Comments returned by `list` include:
   "url": "https://github.com/...",
   "path": "path/to/file.go",
   "line": 42,
+  "diff_hunk": null,
   "thread_id": "PRR_kwDOAbc123",
   "is_resolved": false,
   "in_reply_to_id": null,
@@ -275,8 +233,8 @@ prc list --bots-only --max-replies 0
 
 **Reply to specific comment:**
 ```bash
-# Get comment ID from list output
-prc list --bots-only --max-replies 0 | jq -r '.comments[0].id'
+# Get comment ID from list output (--format json required for jq)
+prc list --format json --bots-only --max-replies 0 | jq -r '.comments[0].id'
 
 # Reply to that comment
 prc reply 123456789 "Fixed in commit abc123. The issue was..."
@@ -284,8 +242,8 @@ prc reply 123456789 "Fixed in commit abc123. The issue was..."
 
 **Resolve thread after fixing:**
 ```bash
-# Get thread ID from comment
-prc list --unresolved | jq -r '.comments[0].thread_id'
+# Get thread ID from comment (--format json required for jq)
+prc list --format json --unresolved | jq -r '.comments[0].thread_id'
 
 # Resolve it
 prc resolve PRR_kwDOAbc123
@@ -298,17 +256,17 @@ prc collapse --bots-only --reason resolved
 
 **Integration:**
 - Uses GitHub GraphQL API exclusively for efficiency
-- Outputs machine-readable JSON for consumption by agents
-- Recommended by smithers in generated prompts
+- Outputs XML by default; `--format json` for JSON consumption by agents/scripts
+- Invoked directly by smithers for its GitHub read adapter and bot-thread sweep (`prc list --format json`, `prc reply`, `prc resolve`)
 - Works seamlessly with current branch or explicit PR specification
 
 **Rate Limiting:**
 - All mutations include 1-second delays
-- GraphQL cost information included in output
+- GraphQL cost information included in `list` output's `rate_limit` field
 - Respects GitHub API rate limits
 
 **Error Handling:**
-- All errors returned as JSON with error codes
+- All errors returned in the selected output format (XML by default; JSON with `--format json`) with error codes
 - Descriptive error messages for debugging
 - Exit code 1 for errors, 0 for success
 
