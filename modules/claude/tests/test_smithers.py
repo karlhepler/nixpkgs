@@ -20,14 +20,20 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import smithers as smithers_module
 from smithers import (
     REFUSAL_ENV_VARS,
+    CommentThread,
     FetchFailure,
+    Land,
+    NoWorkNeeded,
     PRSnapshot,
+    StartFixSession,
+    TickRequest,
     billing_preflight,
     build_parser,
     cmd_watch,
     fetch_pr_snapshot,
     log_event,
     main,
+    tick,
 )
 
 
@@ -302,13 +308,10 @@ class TestPhaseStubsExist:
     def test_poll_loop_stub_raises_not_implemented(self):
         """poll_loop's signature now carries config + send (review carry-
         forward #3006 Finding 2) mirroring tick's own seam; the body is
-        still a later-card TODO."""
+        still a later-card TODO. `tick` itself is no longer a stub — see
+        TestTickNoTriggers and friends below."""
         with pytest.raises(NotImplementedError):
             smithers_module.poll_loop("123", None, lambda msg: None, "/tmp/smithers.jsonl")
-
-    def test_tick_stub_raises_not_implemented(self):
-        with pytest.raises(NotImplementedError):
-            smithers_module.tick(None, lambda msg: None)
 
 
 # ---------------------------------------------------------------------------
@@ -629,3 +632,438 @@ class TestMain:
         # Explicit argv (not reading real sys.argv) keeps this test hermetic.
         result = main(["watch", "456", "--dry-run", "--log-file", log_path])
         assert result == 0
+
+
+# ---------------------------------------------------------------------------
+# The gate's TRIGGERS (§ The gate) — the pure `tick` handler over a
+# PRSnapshot. Suppressors are a sibling card's scope and are not exercised
+# here: any trigger firing always results in an action message.
+# ---------------------------------------------------------------------------
+
+def _snapshot(**overrides):
+    """A PRSnapshot with "nothing is happening" defaults, so each gate test
+    only overrides the field(s) relevant to it. `checks_pending` is non-empty
+    by default so the ready-to-land trigger never accidentally fires in a
+    test that isn't about it."""
+    defaults = dict(
+        pr_number=123,
+        head_sha="abc123",
+        is_draft=False,
+        mergeable="MERGEABLE",
+        merge_state_status="BLOCKED",
+        checks_pass=(),
+        checks_fail=(),
+        checks_pending=("still-running",),
+        checks_other=(),
+        checks_unknown=(),
+        review_decision="REVIEW_REQUIRED",
+        approvals=(),
+        unresolved_bot_threads=(),
+        unresolved_human_threads=(),
+        unresolved_unknown_author_threads=(),
+        merge_queue_state=None,
+    )
+    defaults.update(overrides)
+    return PRSnapshot(**defaults)
+
+
+def _bot_thread(**overrides):
+    defaults = dict(
+        thread_id="t1",
+        author="coderabbitai",
+        url="https://example/1#discussion_r1",
+        type="inline",
+        in_reply_to_id=None,
+        reply_count=0,
+    )
+    defaults.update(overrides)
+    return CommentThread(**defaults)
+
+
+class TestTickNoTriggers:
+    def test_clean_pending_snapshot_yields_no_work_needed(self):
+        messages = []
+        tick(TickRequest(pr_snapshot=_snapshot()), messages.append)
+        assert messages == [NoWorkNeeded()]
+
+
+class TestFailingCheckTrigger:
+    def test_failing_check_starts_a_fix_session(self):
+        snapshot = _snapshot(checks_fail=("test",), checks_pending=())
+        messages = []
+        tick(TickRequest(pr_snapshot=snapshot), messages.append)
+        assert len(messages) == 1
+        assert isinstance(messages[0], StartFixSession)
+
+
+class TestMergeConflictTrigger:
+    def test_conflicting_mergeable_starts_a_fix_session(self):
+        snapshot = _snapshot(mergeable="CONFLICTING", checks_pending=())
+        messages = []
+        tick(TickRequest(pr_snapshot=snapshot), messages.append)
+        assert len(messages) == 1
+        assert isinstance(messages[0], StartFixSession)
+
+
+class TestActionableBotCommentTrigger:
+    def test_zero_confirmed_replies_non_reply_bot_thread_is_actionable(self):
+        snapshot = _snapshot(
+            checks_pending=(),
+            unresolved_bot_threads=(_bot_thread(reply_count=0, in_reply_to_id=None),),
+        )
+        messages = []
+        tick(TickRequest(pr_snapshot=snapshot), messages.append)
+        assert len(messages) == 1
+        assert isinstance(messages[0], StartFixSession)
+
+    def test_unknown_reply_count_is_not_actionable(self):
+        """None means UNKNOWN, not zero — must not be treated as actionable,
+        distinct from a confirmed reply_count == 0 above."""
+        snapshot = _snapshot(
+            checks_pending=(),
+            unresolved_bot_threads=(_bot_thread(reply_count=None),),
+        )
+        messages = []
+        tick(TickRequest(pr_snapshot=snapshot), messages.append)
+        assert messages == [NoWorkNeeded()]
+
+    def test_confirmed_nonzero_reply_count_is_not_actionable(self):
+        snapshot = _snapshot(
+            checks_pending=(),
+            unresolved_bot_threads=(_bot_thread(reply_count=2),),
+        )
+        messages = []
+        tick(TickRequest(pr_snapshot=snapshot), messages.append)
+        assert messages == [NoWorkNeeded()]
+
+    def test_a_reply_thread_is_never_actionable_even_with_zero_further_replies(self):
+        snapshot = _snapshot(
+            checks_pending=(),
+            unresolved_bot_threads=(_bot_thread(reply_count=0, in_reply_to_id=999),),
+        )
+        messages = []
+        tick(TickRequest(pr_snapshot=snapshot), messages.append)
+        assert messages == [NoWorkNeeded()]
+
+    def test_informational_bot_author_is_excluded_even_when_actionable_shaped(self):
+        snapshot = _snapshot(
+            checks_pending=(),
+            unresolved_bot_threads=(_bot_thread(author="codecov[bot]", reply_count=0, in_reply_to_id=None),),
+        )
+        req = TickRequest(pr_snapshot=snapshot, informational_bot_authors=("codecov[bot]",))
+        messages = []
+        tick(req, messages.append)
+        assert messages == [NoWorkNeeded()]
+
+
+class TestReadyToLandTrigger:
+    def test_all_clear_snapshot_emits_land(self):
+        snapshot = _snapshot(
+            checks_pass=("build",),
+            checks_pending=(),
+            mergeable="MERGEABLE",
+            merge_state_status="CLEAN",
+            review_decision="APPROVED",
+        )
+        messages = []
+        tick(TickRequest(pr_snapshot=snapshot), messages.append)
+        assert messages == [Land(method="squash")]
+
+    def test_draft_pr_is_never_ready_to_land(self):
+        snapshot = _snapshot(
+            is_draft=True,
+            checks_pass=("build",),
+            checks_pending=(),
+            mergeable="MERGEABLE",
+            merge_state_status="CLEAN",
+            review_decision="APPROVED",
+        )
+        messages = []
+        tick(TickRequest(pr_snapshot=snapshot), messages.append)
+        assert messages == [NoWorkNeeded()]
+
+
+class TestMergeQueueEvictionTrigger:
+    def test_fires_once_a_prior_confirmed_value_is_wired_in(self):
+        """Proves the predicate's logic directly: once a later card wires a
+        real confirmed prior merge-queue state into TickRequest, this
+        trigger fires the moment the snapshot's own state bounces to null —
+        no further code change required, only new data."""
+        snapshot = _snapshot(checks_pending=())
+        req = TickRequest(pr_snapshot=snapshot, prior_merge_queue_state="QUEUED")
+        messages = []
+        tick(req, messages.append)
+        assert len(messages) == 1
+        assert isinstance(messages[0], StartFixSession)
+
+    def test_structurally_unreachable_today_with_real_adapter_defaults(self, tmp_path):
+        """`fetch_pr_snapshot` hard-codes merge_queue_state=None (no `gh`
+        field exposes it) and `TickRequest.prior_merge_queue_state` defaults
+        to None with nothing yet writing anything else into it (`poll_loop`
+        is still a stub — see TestPhaseStubsExist). Both inputs this trigger
+        depends on are always None in real usage today, so a real, fully
+        fetched snapshot with nothing else actionable yields NoWorkNeeded,
+        never a merge-queue-triggered fix session."""
+        log_path = str(tmp_path / "smithers.jsonl")
+        with patch(
+            "subprocess.run",
+            side_effect=make_gh_side_effect(
+                checks=json.dumps([{"bucket": "pending", "name": "lint", "workflow": "CI"}]),
+                prc=json.dumps({"comments": []}),
+            ),
+        ):
+            snapshot, failure = fetch_pr_snapshot("123", log_path)
+        assert failure is None
+        assert snapshot.merge_queue_state is None
+
+        req = TickRequest(pr_snapshot=snapshot)
+        assert req.prior_merge_queue_state is None
+
+        messages = []
+        tick(req, messages.append)
+        assert messages == [NoWorkNeeded()]
+
+
+# ---------------------------------------------------------------------------
+# The gate's SUPPRESSORS (§ The gate) — table-driven over every trigger and
+# every suppressor. Phase 1's exit criterion for the gate: proves each of the
+# six suppressors blocks every trigger it's relevant to, and that a fired
+# trigger passes through to StartFixSession when every suppressor is clear.
+# ---------------------------------------------------------------------------
+
+# Each trigger case: (name, snapshot overrides, TickRequest kwargs) that make
+# `tick` fire a StartFixSession when no suppressor is active. Deliberately
+# excludes the ready-to-land trigger (§ The gate, trigger 5) — it routes to
+# the deterministic Land action, never to a Claude invocation, so the
+# suppressors (which only gate invocation) never apply to it; see
+# TestSuppressorsDoNotBlockLand below.
+TRIGGER_CASES = [
+    ("failing_check", dict(checks_fail=("test",), checks_pending=()), {}),
+    ("merge_conflict", dict(mergeable="CONFLICTING", checks_pending=()), {}),
+    (
+        "actionable_bot_comment",
+        dict(checks_pending=(), unresolved_bot_threads=(_bot_thread(),)),
+        {},
+    ),
+    ("merge_queue_eviction", dict(checks_pending=()), dict(prior_merge_queue_state="QUEUED")),
+]
+
+# Each suppressor case: (name, TickRequest kwargs) that make `_suppressed`
+# true on its own, independent of which trigger fired.
+SUPPRESSOR_CASES = [
+    ("fix_budget_exhausted", dict(fix_count=4, max_fix_invocations=4)),
+    ("cycle_budget_exhausted", dict(cycle=10, max_cycles=10)),
+    ("stagnated", dict(stagnation_count=2)),
+    ("coordinator_hold", dict(coordinator_hold=True)),
+    ("manual_merge_opt_out", dict(manual_merge_opt_out=True)),
+    ("fix_session_in_flight", dict(active_fix_session="smithers-fix-pr-123")),
+]
+
+TRIGGER_SUPPRESSOR_COMBOS = [
+    pytest.param(
+        trigger_name,
+        snapshot_overrides,
+        base_req_kwargs,
+        suppressor_name,
+        suppressor_kwargs,
+        id=f"{trigger_name}-blocked-by-{suppressor_name}",
+    )
+    for trigger_name, snapshot_overrides, base_req_kwargs in TRIGGER_CASES
+    for suppressor_name, suppressor_kwargs in SUPPRESSOR_CASES
+]
+
+
+class TestGateTriggersPassThroughWithNoSuppressors:
+    """The no-suppressor case: every trigger, with all six suppressors at
+    their clear defaults, still starts a fix session."""
+
+    @pytest.mark.parametrize("trigger_name,snapshot_overrides,base_req_kwargs", TRIGGER_CASES)
+    def test_trigger_fires_start_fix_session_when_all_suppressors_clear(
+        self, trigger_name, snapshot_overrides, base_req_kwargs
+    ):
+        snapshot = _snapshot(**snapshot_overrides)
+        req = TickRequest(pr_snapshot=snapshot, **base_req_kwargs)
+        messages = []
+        tick(req, messages.append)
+        assert len(messages) == 1, trigger_name
+        assert isinstance(messages[0], StartFixSession), trigger_name
+
+
+class TestGateSuppressorsBlockEveryTrigger:
+    """Every suppressor blocks every trigger it's relevant to: the full
+    cross product of TRIGGER_CASES x SUPPRESSOR_CASES."""
+
+    @pytest.mark.parametrize(
+        "trigger_name,snapshot_overrides,base_req_kwargs,suppressor_name,suppressor_kwargs",
+        TRIGGER_SUPPRESSOR_COMBOS,
+    )
+    def test_suppressor_blocks_fired_trigger(
+        self, trigger_name, snapshot_overrides, base_req_kwargs, suppressor_name, suppressor_kwargs
+    ):
+        snapshot = _snapshot(**snapshot_overrides)
+        req_kwargs = dict(base_req_kwargs)
+        req_kwargs.update(suppressor_kwargs)
+        req = TickRequest(pr_snapshot=snapshot, **req_kwargs)
+
+        messages = []
+        tick(req, messages.append)
+
+        assert messages == [NoWorkNeeded()], f"{suppressor_name} failed to block {trigger_name}"
+
+
+class TestFixBudgetSuppressor:
+    def test_below_threshold_passes_through(self):
+        snapshot = _snapshot(checks_fail=("test",), checks_pending=())
+        req = TickRequest(pr_snapshot=snapshot, fix_count=3, max_fix_invocations=4)
+        messages = []
+        tick(req, messages.append)
+        assert isinstance(messages[0], StartFixSession)
+
+    def test_at_threshold_suppresses(self):
+        snapshot = _snapshot(checks_fail=("test",), checks_pending=())
+        req = TickRequest(pr_snapshot=snapshot, fix_count=4, max_fix_invocations=4)
+        messages = []
+        tick(req, messages.append)
+        assert messages == [NoWorkNeeded()]
+
+    def test_above_threshold_suppresses(self):
+        snapshot = _snapshot(checks_fail=("test",), checks_pending=())
+        req = TickRequest(pr_snapshot=snapshot, fix_count=5, max_fix_invocations=4)
+        messages = []
+        tick(req, messages.append)
+        assert messages == [NoWorkNeeded()]
+
+
+class TestCycleBudgetSuppressor:
+    def test_below_threshold_passes_through(self):
+        snapshot = _snapshot(checks_fail=("test",), checks_pending=())
+        req = TickRequest(pr_snapshot=snapshot, cycle=9, max_cycles=10)
+        messages = []
+        tick(req, messages.append)
+        assert isinstance(messages[0], StartFixSession)
+
+    def test_at_threshold_suppresses(self):
+        snapshot = _snapshot(checks_fail=("test",), checks_pending=())
+        req = TickRequest(pr_snapshot=snapshot, cycle=10, max_cycles=10)
+        messages = []
+        tick(req, messages.append)
+        assert messages == [NoWorkNeeded()]
+
+
+class TestStagnationSuppressor:
+    def test_below_threshold_passes_through(self):
+        snapshot = _snapshot(checks_fail=("test",), checks_pending=())
+        req = TickRequest(pr_snapshot=snapshot, stagnation_count=1)
+        messages = []
+        tick(req, messages.append)
+        assert isinstance(messages[0], StartFixSession)
+
+    def test_at_threshold_suppresses(self):
+        snapshot = _snapshot(checks_fail=("test",), checks_pending=())
+        req = TickRequest(pr_snapshot=snapshot, stagnation_count=2)
+        messages = []
+        tick(req, messages.append)
+        assert messages == [NoWorkNeeded()]
+
+    def test_above_threshold_suppresses(self):
+        snapshot = _snapshot(checks_fail=("test",), checks_pending=())
+        req = TickRequest(pr_snapshot=snapshot, stagnation_count=3)
+        messages = []
+        tick(req, messages.append)
+        assert messages == [NoWorkNeeded()]
+
+
+class TestOnlyPendingChecksSuppressor:
+    """Suppressor 4: v1's early-exit branch — every check still pending and
+    nothing else actionable."""
+
+    def test_only_pending_checks_yields_no_work_needed(self):
+        snapshot = _snapshot()  # default: checks_pending=("still-running",), nothing else actionable
+        req = TickRequest(pr_snapshot=snapshot)
+        messages = []
+        tick(req, messages.append)
+        assert messages == [NoWorkNeeded()]
+
+    def test_predicate_true_when_only_pending_checks_exist(self):
+        snapshot = _snapshot()
+        req = TickRequest(pr_snapshot=snapshot)
+        assert smithers_module._only_pending_checks_and_nothing_else_actionable(req) is True
+
+    def test_predicate_false_once_a_failing_check_joins_pending_ones(self):
+        snapshot = _snapshot(checks_fail=("test",))  # checks_pending stays non-empty (default)
+        req = TickRequest(pr_snapshot=snapshot)
+        assert smithers_module._only_pending_checks_and_nothing_else_actionable(req) is False
+
+    def test_predicate_false_when_no_checks_are_pending_at_all(self):
+        snapshot = _snapshot(checks_pending=())
+        req = TickRequest(pr_snapshot=snapshot)
+        assert smithers_module._only_pending_checks_and_nothing_else_actionable(req) is False
+
+
+class TestHoldSuppressors:
+    def test_coordinator_hold_suppresses(self):
+        snapshot = _snapshot(checks_fail=("test",), checks_pending=())
+        req = TickRequest(pr_snapshot=snapshot, coordinator_hold=True)
+        messages = []
+        tick(req, messages.append)
+        assert messages == [NoWorkNeeded()]
+
+    def test_manual_merge_opt_out_suppresses(self):
+        snapshot = _snapshot(checks_fail=("test",), checks_pending=())
+        req = TickRequest(pr_snapshot=snapshot, manual_merge_opt_out=True)
+        messages = []
+        tick(req, messages.append)
+        assert messages == [NoWorkNeeded()]
+
+    def test_neither_hold_flag_set_passes_through(self):
+        snapshot = _snapshot(checks_fail=("test",), checks_pending=())
+        req = TickRequest(pr_snapshot=snapshot)
+        messages = []
+        tick(req, messages.append)
+        assert isinstance(messages[0], StartFixSession)
+
+
+class TestFixSessionInFlightSuppressor:
+    def test_active_fix_session_suppresses(self):
+        snapshot = _snapshot(checks_fail=("test",), checks_pending=())
+        req = TickRequest(pr_snapshot=snapshot, active_fix_session="smithers-fix-pr-123")
+        messages = []
+        tick(req, messages.append)
+        assert messages == [NoWorkNeeded()]
+
+    def test_no_active_fix_session_passes_through(self):
+        snapshot = _snapshot(checks_fail=("test",), checks_pending=())
+        req = TickRequest(pr_snapshot=snapshot, active_fix_session=None)
+        messages = []
+        tick(req, messages.append)
+        assert isinstance(messages[0], StartFixSession)
+
+
+class TestSuppressorsDoNotBlockLand:
+    """Trigger 5 (ready-to-land) routes to the deterministic Land action, not
+    a Claude invocation — the suppressors gate invocation only, so a
+    fully-clean, ready-to-land snapshot lands even with every suppressor
+    maximally active."""
+
+    def test_ready_to_land_ignores_every_suppressor(self):
+        snapshot = _snapshot(
+            checks_pass=("build",),
+            checks_pending=(),
+            mergeable="MERGEABLE",
+            merge_state_status="CLEAN",
+            review_decision="APPROVED",
+        )
+        req = TickRequest(
+            pr_snapshot=snapshot,
+            fix_count=100,
+            max_fix_invocations=4,
+            cycle=100,
+            max_cycles=10,
+            stagnation_count=100,
+            coordinator_hold=True,
+            manual_merge_opt_out=True,
+            active_fix_session="smithers-fix-pr-123",
+        )
+        messages = []
+        tick(req, messages.append)
+        assert messages == [Land(method="squash")]
