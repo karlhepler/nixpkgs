@@ -32,8 +32,32 @@ kanban do '{"type":"work","action":"...","intent":"...","criteria":["AC1","AC2",
 
 **Research card example** (findings returned as agent output, not file changes):
 
+```json
+// .scratchpad/kanban-card-<session>.json
+{
+  "type": "research",
+  "action": "Investigate caching strategies for API responses",
+  "intent": "Understand options to inform architecture decision",
+  "model": "sonnet",
+  "criteria": [
+    {
+      "text": "Options documented with tradeoffs",
+      "mov_commands": [{"cmd": "test -f .scratchpad/caching-findings.md", "timeout": 5}]
+    },
+    {
+      "text": "Performance characteristics compared",
+      "mov_commands": [{"cmd": "rg -q tradeoff .scratchpad/caching-findings.md", "timeout": 10}]
+    },
+    {
+      "text": "Recommendation provided with rationale",
+      "mov_commands": [{"cmd": "rg -q recommendation .scratchpad/caching-findings.md", "timeout": 10}]
+    }
+  ]
+}
+```
+
 ```bash
-kanban do '{"type":"research","action":"Investigate caching strategies for API responses","intent":"Understand options to inform architecture decision","model":"sonnet","criteria":["Options documented with tradeoffs [MoV: test -f .scratchpad/caching-findings.md]","Performance characteristics compared [MoV: rg tradeoff .scratchpad/caching-findings.md]","Recommendation provided with rationale [MoV: rg recommendation .scratchpad/caching-findings.md]"]}' --session <id>
+kanban do --file .scratchpad/kanban-card-<session>.json --session <id>
 ```
 
 Research cards use `readFiles` (not `editFiles`) and their AC verifies that findings are documented and returned — not that source files were changed.
@@ -46,26 +70,26 @@ Be accurate — these are not placeholder guesses, they define the actual scope 
 
 **AC items must be terse, falsifiable, and verifiable.** Each criterion has two parts: a short declarative statement + its means of verification (MoV). The MoV tells the Haiku AC reviewer exactly how to get the data — a command to run, a file to read, or a path to check. Without it, the reviewer wastes 10+ turns hunting.
 
-**Format:** `"<statement> [MoV: <command or path>]"`
+**Format:** each criterion is a JSON object: `{"text": "<statement>", "mov_commands": [{"cmd": "<command>", "timeout": <seconds>}]}`. `mov_commands` is snake_case — never the camelCase variant — and is an array, even for a single command. `timeout` is mandatory on every entry (integer seconds; typical range 5-30s for file checks and `rg`, up to 120s for test runners). The old bracket-style annotation embedded in the `text` string is obsolete — the CLI validator treats it as plain prose, not a verification hook.
 
-✅ ".gitignore contains a dist/ entry [MoV: rg 'dist' .gitignore]"
-✅ "API returns 200 for valid input [MoV: curl -s localhost:3000/api/health]"
-✅ "Error handler logs to stderr [MoV: read src/error.ts, check stderr usage]"
+✅ `{"text": ".gitignore contains a dist/ entry", "mov_commands": [{"cmd": "rg -q 'dist' .gitignore", "timeout": 5}]}`
+✅ `{"text": "API returns 200 for valid input", "mov_commands": [{"cmd": "curl -s -o /dev/null -w '%{http_code}' localhost:3000/api/health | rg -q 200", "timeout": 10}]}`
+✅ `{"text": "Error handler logs to stderr", "mov_commands": [{"cmd": "rg -q 'stderr' src/error.ts", "timeout": 5}]}`
 ❌ ".gitignore still contains the dist/ entry — it was NOT removed because we need it for build artifacts (cat .gitignore | rg 'dist' returns a match)" — rationale is noise
-❌ "Code works correctly" — no MoV, not falsifiable
+❌ "Code works correctly" — no mov_commands, not falsifiable
 
 **Grep MoV scoping — avoid false positives:** When a MoV uses `rg` to verify absence or presence of specific content, the pattern must be scoped tightly enough to match ONLY the change being verified — not unrelated content in the same file. A blanket pattern that matches other legitimate content will false-positive, burning retry cycles on correct work.
 
-✅ "No stale 2-minute references in distribution section [MoV: rg -c 'distribution.*every 2 minute' docs/monitoring-runbook.md]"
-❌ "No stale 2-minute references [MoV: rg -c '2.minute' docs/monitoring-runbook.md]" — matches unrelated "2 minute" references (circuit breaker, deploy queue)
+✅ `{"text": "No stale 2-minute references in distribution section", "mov_commands": [{"cmd": "! rg -q 'distribution.*every 2 minute' docs/monitoring-runbook.md", "timeout": 10}]}`
+❌ `{"text": "No stale 2-minute references", "mov_commands": [{"cmd": "! rg -q '2.minute' docs/monitoring-runbook.md", "timeout": 10}]}` — matches unrelated "2 minute" references (circuit breaker, deploy queue)
 
 **The test:** Before writing a grep MoV, ask: "Could this pattern match content unrelated to my change?" If yes, add surrounding context words to disambiguate, or use a different verification approach.
 
-**Test-as-MoV (preferred for complex or multi-criterion work cards):** When the deliverable is complex enough that individual file inspections would burn many reviewer turns, write a test first that programmatically encodes the vision. The sub-agent's action includes "make this test pass." Every AC item then shares a single MoV: `[MoV: <test command>]`. The reviewer runs the test once and verifies all criteria in one shot.
+**Test-as-MoV (preferred for complex or multi-criterion work cards):** When the deliverable is complex enough that individual file inspections would burn many reviewer turns, write a test first that programmatically encodes the vision. The sub-agent's action includes "make this test pass." Every AC item then repeats the same `mov_commands` entry (identical `cmd`/`timeout`) across all criteria. The reviewer runs the test once per criterion and verifies all criteria in one shot.
 
-✅ "User profile returns sanitized email [MoV: npm test -- user-profile.test.ts]"
-✅ "Missing fields return 422 with error details [MoV: npm test -- user-profile.test.ts]"
-✅ "Admin role bypasses rate limit [MoV: npm test -- user-profile.test.ts]"
+✅ `{"text": "User profile returns sanitized email", "mov_commands": [{"cmd": "npm test -- user-profile.test.ts", "timeout": 60}]}`
+✅ `{"text": "Missing fields return 422 with error details", "mov_commands": [{"cmd": "npm test -- user-profile.test.ts", "timeout": 60}]}`
+✅ `{"text": "Admin role bypasses rate limit", "mov_commands": [{"cmd": "npm test -- user-profile.test.ts", "timeout": 60}]}`
 
 This collapses N criteria into one reviewer action. Use when: 3+ behavioral criteria on a single feature, integration-level verification needed, or file inspection alone can't confirm correctness.
 
