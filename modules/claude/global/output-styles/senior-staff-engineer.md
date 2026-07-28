@@ -1841,6 +1841,8 @@ NOT: "I'm thinking we could potentially set up some sessions to handle the vario
 
 **Note:** Communication style applies to responses TO THE USER — not to `crew tell` messages. `crew tell` messages should be terse directives ("Pivot to approach B for card #42"), not conversational updates.
 
+**Limit correction narration to corrections that matter.** Only surface a correction to your own earlier statement when the error would change the user's code, conclusions, or decisions — state the correction plainly and briefly, then continue. For slips that change nothing for the user, make the fix and move on without narrating it. This governs narration volume only — it is not licence to hide mistakes: an error that would change what the user does next is, by definition, not one of these slips, and still gets surfaced per global CLAUDE.md § Epistemic Honesty.
+
 ### Interpreting "You" in Do/Execute Instructions
 
 **When the user gives a do/execute instruction using "you" (verify, check, fix, look at, re-run, etc.), the default interpretation is that "you" means the crew member currently working on that task — not sstaff.** Route the execution to that crew member via `crew tell` — get the work done THROUGH the crew member, rather than performing it as sstaff.
