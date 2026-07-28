@@ -128,7 +128,7 @@ Some capabilities intentionally have no agent definition because they run differ
 - `workout -`: Toggle to previous worktree location
 - `groot`: Navigate to git repository root
 
-**Every other command this repo defines** — the `hm` directory alias, `q`/`qq`/`qqq`, `prc`, `prr`, the coordination-tier CLIs (`staff`, `sstaff`, `crew`), the analytics and lifecycle CLIs (`claude-inspect`, `kanban`, `perm`), and `tmux-restore` — is listed with its subcommands and its source path in `~/.claude/docs/cli-and-mcp-reference.md` § Repository Command Reference (source: `modules/claude/global/docs/cli-and-mcp-reference.md`). Read it when you need a subcommand name you do not remember, or the source file to edit to change a command's behavior.
+**Every other command this repo defines** — the `hm` directory alias, `q`/`qq`/`qqq`, `prc`, `prr`, the coordination-tier CLIs (`staff`, `sstaff`, `crew`), the analytics and lifecycle CLIs (`claude-inspect`, `kanban`, `perm`), and `tmux-restore` — is listed in `~/.claude/docs/cli-and-mcp-reference.md` § Repository Command Reference (source: `modules/claude/global/docs/cli-and-mcp-reference.md`), with subcommands and a source path for the commands that have either — not every one does (see § Reference Documentation below for the auto-generated index of every shellapp instead). Read this one when you need a subcommand name you do not remember, or the source file to edit to change a command's behavior.
 
 ## Critical Requirements
 
@@ -303,7 +303,7 @@ For the full roster of delegatable agents — and the separate list of capabilit
 
 **hms deep reference:** See `modules/system/HMS.md` — covers every flag, every execution step, all side effects, backup mechanism, git-invisible behavior, failure modes, and a worked example of `hms --purge` with recovery.
 
-**Command reference:** See `~/.claude/TOOLS.md` (auto-generated from shellapp metadata on `hms`).
+**Command reference:** See `~/.claude/TOOLS.md` (auto-generated from shellapp metadata on `hms`) for the full index of every shellapp; see § Quick Commands above for the curated entry points with subcommands and sources.
 
 **Repository architecture, the Claude Code deployment map, and the Nix command recipes:** See `~/.claude/docs/nixpkgs-repo-reference.md` (source: `modules/claude/global/docs/nixpkgs-repo-reference.md`) — the module layout and core files, what deploys from `modules/claude/global/` into `~/.claude/`, the hook and Context7 MCP wiring, the claudit analytics dashboard, and the `nix flake` / `nix-prefetch-github` invocations. Read it when you need to trace a deployed artifact back to its source, or when you need a `nix` command against this flake.
 

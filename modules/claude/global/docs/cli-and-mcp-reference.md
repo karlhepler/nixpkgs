@@ -4,12 +4,6 @@ Which command to reach for, and how the Context7 MCP server is wired. Read it wh
 
 Source of truth is `modules/claude/global/docs/cli-and-mcp-reference.md` in `~/.config/nixpkgs`. It deploys to `~/.claude/docs/cli-and-mcp-reference.md` on `hms` — edit the source, never the deployed copy.
 
-## Reference Commands
-
-For session analytics, run `claude-inspect --help`. For permission management, run `perm --help`.
-
-- `tmux-restore`: Pick and restore a tmux-resurrect snapshot via fzf (shows sessions and window names in preview)
-
 ## PR Comment Replies
 
 See the `/review-pr-comments` skill for full workflow. For read-only fetching (listing, finding, filtering comments without replying), use `prc list <pr>` with optional flags (`--author`, `--bots-only`, `--inline-only`, `--resolved`, `--unresolved`, `--full`) — never `gh api` + `jq`.
@@ -24,10 +18,9 @@ See the `/review-pr-comments` skill for full workflow. For read-only fetching (l
 
 ## Repository Command Reference (`~/.config/nixpkgs`)
 
-Relocated from project `CLAUDE.md` § Quick Commands, which keeps only the `hms` family and the Git Workflow aliases inline. Everything below is a shellapp defined in `~/.config/nixpkgs` — to extend or modify one, edit its source in the named module and run `hms`. Do NOT edit deployed copies directly.
+Relocated from project `CLAUDE.md` § Quick Commands, which keeps only the `hms` family and the Git Workflow aliases inline. This is the single index for every other command this repo defines — a quick-help sentence pointing here is folded into the relevant entry below rather than repeated as a second introduction. Everything below is a shellapp defined in `~/.config/nixpkgs` — to extend or modify one, edit its source in the named module and run `hms`. Do NOT edit deployed copies directly.
 
 - `hm`: Change directory to `~/.config/nixpkgs` (zsh alias — not a standalone command)
-- For deep `hms` semantics (failure modes, backup mechanism, `--purge` EXIT trap, git-invisible cycle): see `modules/system/HMS.md`.
 
 ### Claude Code Helpers
 
@@ -53,4 +46,4 @@ Relocated from project `CLAUDE.md` § Quick Commands, which keeps only the `hms`
 
 ### Tmux Session Management
 
-`tmux-restore` is listed under § Reference Commands above. The project-root copy of this entry carried one extra detail — that the fzf picker shows sessions and window names in its preview — which is folded into that entry rather than duplicated here.
+- `tmux-restore`: Pick and restore a tmux-resurrect snapshot via fzf (shows sessions and window names in preview)

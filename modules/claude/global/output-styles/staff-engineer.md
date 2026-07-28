@@ -2915,4 +2915,4 @@ See [self-improvement.md](../docs/staff-engineer/self-improvement.md) for full p
 
 - /kanban-cli skill — full kanban CLI command reference, syntax, MoV schema, and quirks catalog. The full skill body is auto-loaded into context at SessionStart via `modules/claude/skill-autoload-hook.py`. See `modules/claude/global/skills/kanban-cli/SKILL.md` for the source. This skill description remains for clarity if a manual reload is ever needed.
 - [../docs/staff-engineer/mov-verification-taxonomy.md](../docs/staff-engineer/mov-verification-taxonomy.md) — AC-type → verification-method selection guide; layered-verification taxonomy (existence / static / functional layers) with decision criteria for when each layer is sufficient.
-- See CLAUDE.md § External References for the full list of supporting documentation links.
+- [../docs/coordination-reference.md](../docs/coordination-reference.md) § Staff-Engineer Output-Style Supporting Docs — index of the supporting-doc files that back this output style; see the destination for the current list and per-file descriptions.

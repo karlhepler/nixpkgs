@@ -1,6 +1,6 @@
-# Coordination Reference — Terminology And Roster
+# Coordination Reference — Terminology, Roster, And Staff-Engineer Docs Index
 
-Lookup material, not procedure. Read it when you need to know what a term means or who can be delegated to; nothing here changes how you do your own work.
+Lookup material, not procedure. Read it when you need to know what a term means, who can be delegated to, or which staff-engineer companion doc covers the topic you are stuck on; nothing here changes how you do your own work.
 
 Source of truth is `modules/claude/global/docs/coordination-reference.md` in `~/.config/nixpkgs`. It deploys to `~/.claude/docs/coordination-reference.md` on `hms` — edit the source, never the deployed copy.
 
@@ -34,11 +34,14 @@ For the taxonomy — what a delegatable team member is, how an agent definition 
 
 ## Staff-Engineer Output-Style Supporting Docs
 
-Relocated from project `CLAUDE.md` § External References. Six files sit in `staff-engineer/` beside this one — `modules/claude/global/docs/staff-engineer/` in `~/.config/nixpkgs`, deployed to `~/.claude/docs/staff-engineer/` (`modules/claude/default.nix:1226` copies each `global/` subdirectory recursively). Read the one whose topic you are stuck on; none of them is a rule you are expected to hold in advance.
+Relocated from project `CLAUDE.md` § External References. Nine files sit in `staff-engineer/` beside this one — `modules/claude/global/docs/staff-engineer/` in `~/.config/nixpkgs`, deployed to `~/.claude/docs/staff-engineer/` (`modules/claude/default.nix:1226` copies each `global/` subdirectory recursively). Read the one whose topic you are stuck on; none of them is a rule you are expected to hold in advance.
 
 - `anti-patterns.md` - Common coordination failure modes with concrete examples
+- `card-creation.md` - Kanban card authoring syntax: inline JSON for simple cards, `--file` for complex ones
 - `delegation-guide.md` - Permission handling, model selection patterns
-- `parallel-patterns.md` - Parallel execution examples
 - `edge-cases.md` - Interruptions, partial completion, review disagreements
+- `mov-verification-taxonomy.md` - Selecting the right depth of MoV for each acceptance-criterion claim, consulted at card-authoring time
+- `parallel-patterns.md` - Parallel execution examples
 - `review-protocol.md` - Mandatory reviews, approval criteria, conflict resolution
 - `self-improvement.md` - Automate your own toil
+- `understanding-requirements.md` - Finding the user's actual problem before delegating, and when to escalate to `/researcher`

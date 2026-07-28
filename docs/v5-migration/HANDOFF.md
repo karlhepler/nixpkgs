@@ -104,11 +104,13 @@ Row 6's git-alias block measured **16–17 lines, not 49**, so verified-safe dro
 
 | File | Original | Cap | Status |
 |---|---|---|---|
-| `modules/claude/global/CLAUDE.md` | 530 | **450** | ✅ done, deployed, committed |
-| `CLAUDE.md` (project root) | 387 | **291** | ⏳ unit 1.5 |
-| Aggregate | 917 | **741** | 176-line reduction |
+| `modules/claude/global/CLAUDE.md` | 530 | **450** | ✅ reviewed, deployed, committed |
+| `CLAUDE.md` (project root) | 387 | **314** | ✅ committed and live; Tier-1 review outstanding |
+| Aggregate | 917 | **764** | **153-line reduction** |
 
-The plan originally promised 357 lines. Measurement cut that to 176 because **151 lines across both files are needed by every sub-agent and cannot be relocated anywhere** — no available mechanism both reduces context and reliably reaches a background sub-agent. **Anthropic's 200-line target is unreachable by prompt editing alone.** The hook-enforcement route is the tracked follow-on.
+> **This table was itself stale until 2026-07-28.** It said 291 / 741 / 176 after the cap correction had already been recorded elsewhere in this same document — exactly the failure this document warns about two sections down. Caught on re-read at resume. If you find another stale figure here, fix it and do not assume the rest are right.
+
+The plan originally promised 357 lines. Measurement cut that to 176, and unit 1.5's proof cut it again to **153**, because **151 lines across both files are needed by every sub-agent and cannot be relocated anywhere** — no available mechanism both reduces context and reliably reaches a background sub-agent — and because a SPLIT section's structural overhead was wrongly counted as relocatable. **Anthropic's 200-line target is unreachable by prompt editing alone.** The hook-enforcement route is the tracked follow-on.
 
 **Do not treat a cap as a quota.** If a unit cannot reach its cap without touching protected or sub-agent-needed content, it must report the achievable floor and the coordinator raises the cap. Never reclassify content to hit a number.
 
