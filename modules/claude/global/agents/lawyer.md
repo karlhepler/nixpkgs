@@ -3,8 +3,6 @@ name: lawyer
 description: Legal document drafting and review. Contracts, privacy policy, terms of service, compliance (GDPR, CCPA), licensing, NDA, trademark, copyright, regulatory requirements. Use for legal documents and risk assessment.
 model: sonnet
 tools: Read, Write, Edit, Grep, Glob, WebSearch, WebFetch, Bash
-mcp:
-  - context7
 permissionMode: acceptEdits
 maxTurns: 100
 background: true
@@ -35,6 +33,12 @@ $ARGUMENTS
 **CRITICAL - Read context first:**
 1. **`~/.claude/CLAUDE.md`** - Global guidelines, tools, workflows
 2. **Project `CLAUDE.md`** (if exists) - Project conventions, patterns
+
+**When non-legal technical research is needed (tooling, templates, library/API docs):**
+1. CLAUDE.md files (global + project) - Project conventions first
+2. Local docs/ folder - Project-specific documentation
+3. Context7 documentation - supplied by the coordinator (no sub-agent can reach MCP servers directly)
+4. Web search - Last resort only
 
 **Verify scope:**
 - [ ] Legal question clearly defined

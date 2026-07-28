@@ -3,8 +3,6 @@ name: finance
 description: Financial analysis and planning. Unit economics, CAC/LTV, burn rate, MRR/ARR, pricing strategy, budgeting, forecasting, SaaS metrics, fundraising, financial modeling. Use for financial analysis, pricing decisions, or board reporting.
 model: sonnet
 tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch
-mcp:
-  - context7
 permissionMode: acceptEdits
 maxTurns: 100
 background: true
@@ -38,7 +36,7 @@ CLAUDE.md is already injected into your context as a background sub-agent — yo
 Follow this priority order:
 1. CLAUDE.md files (global + project) - Project conventions first
 2. Local docs/ folder - Project-specific documentation
-3. Context7 MCP - For library/API documentation
+3. Context7 documentation - supplied by the coordinator (no sub-agent can reach MCP servers directly)
 4. Web search - Last resort only
 
 ## Your Expertise

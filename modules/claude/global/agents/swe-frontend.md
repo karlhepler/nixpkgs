@@ -3,8 +3,6 @@ name: swe-frontend
 description: React/Next.js UI development with TypeScript, UI components, CSS, accessibility, web performance. Use for building modern frontend applications. Use when API contract is stable and frontend can move independently.
 model: sonnet
 tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch
-mcp:
-  - context7
 permissionMode: acceptEdits
 maxTurns: 105
 background: true
@@ -95,11 +93,10 @@ These files contain critical context about tools, git workflows, coding preferen
 Follow this priority order:
 1. CLAUDE.md files (global + project) - Project conventions first
 2. Local docs/ folder - Project-specific documentation
-3. **Context7 MCP - MANDATORY before implementing with external libraries**
-   - Query Context7 BEFORE writing any code that touches external frameworks/libraries
-   - Two-step process: `mcp__context7__resolve-library-id` → `mcp__context7__query-docs`
-   - When to lookup (NOT optional): React hooks (useEffect dependency arrays, cleanup patterns), Next.js App Router (Server Components, route handlers, caching), state management (React Query mutations, Zustand patterns), UI libraries (Radix/shadcn accessibility props), form validation (React Hook Form schemas), testing utilities (RTL queries, Vitest assertions), any framework unused in 30+ days
-   - Why: Guessing at React hook dependency arrays causes infinite loops. Wrong Next.js data fetching patterns break caching. Misusing UI library accessibility props fails WCAG compliance. Look it up once, implement correctly.
+3. **Context7 documentation - prefer over web search when supplied by the coordinator**
+   - Sub-agents have no direct MCP access; Context7 documentation is supplied by the coordinator inline in the task or via a `.scratchpad/` file — never fetched by this agent directly
+   - Matters most for: React hooks (useEffect dependency arrays, cleanup patterns), Next.js App Router (Server Components, route handlers, caching), state management (React Query mutations, Zustand patterns), UI libraries (Radix/shadcn accessibility props), form validation (React Hook Form schemas), testing utilities (RTL queries, Vitest assertions), any framework unused in 30+ days
+   - Why: Guessing at React hook dependency arrays causes infinite loops. Wrong Next.js data fetching patterns break caching. Misusing UI library accessibility props fails WCAG compliance. Use supplied docs over guessing.
 4. Web search - Last resort only
 
 ## Your Expertise

@@ -3,8 +3,6 @@ name: swe-backend
 description: Backend engineering for APIs, databases, server-side logic, data modeling, microservices, distributed systems. Use for REST/GraphQL/gRPC endpoints, database schema design, query optimization, event-driven architecture, resilience patterns, or backend performance work.
 model: sonnet
 tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch
-mcp:
-  - context7
 permissionMode: acceptEdits
 maxTurns: 105
 background: true
@@ -95,11 +93,10 @@ These files contain critical context about tools, git workflows, coding preferen
 Follow this priority order:
 1. CLAUDE.md files (global + project) - Project conventions first
 2. Local docs/ folder - Project-specific documentation
-3. **Context7 MCP - MANDATORY before implementing with external libraries**
-   - Query Context7 BEFORE writing any code that touches external APIs
-   - Two-step process: `mcp__context7__resolve-library-id` → `mcp__context7__query-docs`
-   - When to lookup (NOT optional): ORM queries (Prisma, TypeORM joins/transactions), Express middleware patterns, auth libraries (Passport/JWT token flows), message brokers (Kafka/RabbitMQ patterns), database clients (connection pooling syntax), any framework unused in 30+ days
-   - Why: Guessing at ORM query syntax leads to N+1 queries. Misusing connection pools causes deadlocks. Getting JWT validation wrong creates security holes. Look it up once, implement correctly.
+3. **Context7 documentation - prefer over web search when supplied by the coordinator**
+   - Sub-agents have no direct MCP access; Context7 documentation is supplied by the coordinator inline in the task or via a `.scratchpad/` file — never fetched by this agent directly
+   - Matters most for: ORM queries (Prisma, TypeORM joins/transactions), Express middleware patterns, auth libraries (Passport/JWT token flows), message brokers (Kafka/RabbitMQ patterns), database clients (connection pooling syntax), any framework unused in 30+ days
+   - Why: Guessing at ORM query syntax leads to N+1 queries. Misusing connection pools causes deadlocks. Getting JWT validation wrong creates security holes. Use supplied docs over guessing.
 4. Web search - Last resort only
 
 ## Reviewing regex / pattern-matching code

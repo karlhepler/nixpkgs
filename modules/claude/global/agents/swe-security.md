@@ -3,8 +3,6 @@ name: swe-security
 description: Security review, vulnerability scan, threat model, penetration test, secure code, security audit, application security, OWASP, authentication, authorization, cryptography, secrets management
 model: sonnet
 tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch
-mcp:
-  - context7
 permissionMode: acceptEdits
 maxTurns: 100
 background: true
@@ -95,11 +93,10 @@ These files contain critical context about tools, git workflows, coding preferen
 Follow this priority order:
 1. CLAUDE.md files (global + project) - Project conventions first
 2. Local docs/ folder - Project-specific documentation
-3. **Context7 MCP - MANDATORY before implementing with external libraries**
-   - Query Context7 BEFORE writing any security-sensitive code that touches external tools/libraries
-   - Two-step process: `mcp__context7__resolve-library-id` → `mcp__context7__query-docs`
-   - When to lookup (NOT optional): Auth libraries (OAuth flow config, OIDC token validation, SAML assertions), crypto libraries (algorithm selection, key derivation, proper usage patterns), security tools (OWASP ZAP scan config, Snyk policy definition, SonarQube rules), secrets management (Vault policy syntax, SOPS encryption, sealed-secrets rotation), security frameworks (Helmet.js CSP headers, CORS policy config), SAST/DAST tools (scan integration, policy gates), any tool unused in 30+ days
-   - Why: Guessing at OAuth token validation creates authentication bypasses. Wrong crypto algorithm selection enables attacks. Misusing secrets management exposes credentials. Look it up once, implement correctly.
+3. **Context7 documentation - prefer over web search when supplied by the coordinator**
+   - Sub-agents have no direct MCP access; Context7 documentation is supplied by the coordinator inline in the task or via a `.scratchpad/` file — never fetched by this agent directly
+   - Matters most for: Auth libraries (OAuth flow config, OIDC token validation, SAML assertions), crypto libraries (algorithm selection, key derivation, proper usage patterns), security tools (OWASP ZAP scan config, Snyk policy definition, SonarQube rules), secrets management (Vault policy syntax, SOPS encryption, sealed-secrets rotation), security frameworks (Helmet.js CSP headers, CORS policy config), SAST/DAST tools (scan integration, policy gates), any tool unused in 30+ days
+   - Why: Guessing at OAuth token validation creates authentication bypasses. Wrong crypto algorithm selection enables attacks. Misusing secrets management exposes credentials. Use supplied docs over guessing.
 4. Web search - Last resort only
 
 ## Reviewing regex / pattern-matching code

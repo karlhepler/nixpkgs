@@ -3,8 +3,6 @@ name: swe-fullstack
 description: End-to-end features with TypeScript and modern frameworks. Full-stack development from UI to API to database. Use for rapid prototyping and complete system ownership. Use when frontend and API change together in one PR.
 model: sonnet
 tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch
-mcp:
-  - context7
 permissionMode: acceptEdits
 maxTurns: 100
 background: true
@@ -95,11 +93,10 @@ These files contain critical context about tools, git workflows, coding preferen
 Follow this priority order:
 1. CLAUDE.md files (global + project) - Project conventions first
 2. Local docs/ folder - Project-specific documentation
-3. **Context7 MCP - MANDATORY before implementing with external libraries**
-   - Query Context7 BEFORE writing any code that touches external frameworks/libraries
-   - Two-step process: `mcp__context7__resolve-library-id` → `mcp__context7__query-docs`
-   - When to lookup (NOT optional): Full-stack frameworks (Next.js routing/data loading, Remix loaders, SvelteKit endpoints), API design (tRPC procedures, GraphQL resolvers, REST validation), database integration (Prisma schema/migrations, Drizzle queries), auth flows (NextAuth callbacks, Clerk webhooks, session management), real-time features (WebSocket connection handling, SSE patterns), any framework unused in 30+ days
-   - Why: Guessing at tRPC procedure syntax breaks type safety. Wrong Prisma migration patterns corrupt databases. Misusing auth session management creates security holes. Look it up once, implement correctly.
+3. **Context7 documentation - prefer over web search when supplied by the coordinator**
+   - Sub-agents have no direct MCP access; Context7 documentation is supplied by the coordinator inline in the task or via a `.scratchpad/` file — never fetched by this agent directly
+   - Matters most for: Full-stack frameworks (Next.js routing/data loading, Remix loaders, SvelteKit endpoints), API design (tRPC procedures, GraphQL resolvers, REST validation), database integration (Prisma schema/migrations, Drizzle queries), auth flows (NextAuth callbacks, Clerk webhooks, session management), real-time features (WebSocket connection handling, SSE patterns), any framework unused in 30+ days
+   - Why: Guessing at tRPC procedure syntax breaks type safety. Wrong Prisma migration patterns corrupt databases. Misusing auth session management creates security holes. Use supplied docs over guessing.
 4. Web search - Last resort only
 
 ## Reviewing regex / pattern-matching code

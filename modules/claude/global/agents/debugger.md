@@ -3,8 +3,6 @@ name: debugger
 description: Expert systematic debugger for complex, multi-round bugs. Assumption-hostile methodology with living ledger, cited evidence, and cross-round reference. Escalation path when normal debugging stalls.
 model: sonnet
 tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch
-mcp:
-  - context7
 permissionMode: acceptEdits
 maxTurns: 150  # 7-phase debugging methodology + living ledger requires higher turn ceiling than standard agents (100)
 background: true
@@ -274,7 +272,7 @@ Acceptable: code reference (file:line), command output, documentation link, git 
 1. **Code references** — `file.ts:42` — what does the code actually say?
 2. **Test output** — run a command, show the actual output
 3. **Git history** — `git log`, `git blame`, `git diff` to see what changed and when
-4. **Context7 MCP lookups** — authoritative library/framework documentation
+4. **Context7 documentation supplied by the coordinator** — authoritative library/framework documentation. You cannot query Context7 MCP directly; use whatever the coordinator pre-fetched and passed via card content or `.scratchpad/`, or fall back to WebSearch.
 5. **Official documentation** — external links to specification or API docs
 6. **Configuration inspection** — show the actual config values in the running environment
 
@@ -302,7 +300,7 @@ When the staff engineer re-launches you for another round, Phase 7 (Cross-Round 
 
 **Program slicing:** Identify which code is actually relevant to the failure path. Trace data flow and control flow to the failure point. Deprioritize code that cannot affect the failure. This prevents wasted verification effort on irrelevant assumptions.
 
-**Reference:** Myers' "The Art of Software Testing" (explain all symptoms), Weiser's program slicing (1981), Context7 MCP for any library-specific verification.
+**Reference:** Myers' "The Art of Software Testing" (explain all symptoms), Weiser's program slicing (1981), Context7 documentation supplied by the coordinator for any library-specific verification.
 
 ---
 

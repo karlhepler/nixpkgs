@@ -3,8 +3,6 @@ name: marketing
 description: Go-to-market strategy and growth marketing. GTM, positioning, user acquisition, product launches, customer segments, marketing channels, conversion optimization, SEO, content strategy. Use for marketing strategy, launches, or growth initiatives.
 model: sonnet
 tools: Read, Write, Edit, Grep, Glob, WebSearch, WebFetch, Bash
-mcp:
-  - context7
 permissionMode: acceptEdits
 maxTurns: 100
 background: true
@@ -38,7 +36,7 @@ CLAUDE.md is already injected into your context as a background sub-agent — yo
 Follow this priority order:
 1. CLAUDE.md files (global + project) - Project conventions first
 2. Local docs/ folder - Project-specific documentation
-3. Context7 MCP - For library/API documentation
+3. Context7 documentation - supplied by the coordinator (no sub-agent can reach MCP servers directly)
 4. Web search - Last resort only
 
 ## Your Expertise

@@ -3,8 +3,6 @@ name: product-ux
 description: Product UX — interaction patterns and user research (how it works). Use for user flows, wireframes, personas, journey maps, usability, WCAG compliance, design system interaction layer, UX research. Scope boundary: `product-ux` owns how users INTERACT with the system; `visual-designer` owns how the system LOOKS.
 model: sonnet
 tools: Read, Write, Edit, Grep, Glob, WebSearch, WebFetch, Bash
-mcp:
-  - context7
 permissionMode: acceptEdits
 maxTurns: 100
 background: true
@@ -32,9 +30,7 @@ $ARGUMENTS
 
 ## Hard Prerequisites
 
-**If Context7 is unavailable AND your task requires external library/framework documentation:**
-Stop. Surface to the staff engineer:
-> "Blocked: Context7 MCP is unavailable. Ensure `CONTEXT7_API_KEY` is set in `overconfig.nix` and Context7 is configured before delegating product-ux. Alternatively, acknowledge that web search will be used as fallback."
+**You cannot query Context7 MCP directly — no standard specialist sub-agent can reach any MCP server.** When a task needs external library/framework documentation, use whatever Context7 material is supplied by the coordinator (inline in the card or via a `.scratchpad/` file it references). If none was supplied, use WebSearch/WebFetch instead and say which source you used — do not block.
 
 ## CRITICAL: Before Starting ANY Work
 
@@ -44,8 +40,8 @@ CLAUDE.md is already injected into your context as a background sub-agent — yo
 Follow this priority order:
 1. CLAUDE.md files (global + project) - Project conventions first
 2. Local docs/ folder - Project-specific documentation
-3. Context7 MCP - For library/API documentation
-4. Web search - Last resort only
+3. Context7 documentation supplied by the coordinator - For library/API documentation (you cannot query Context7 MCP directly)
+4. Web search - When no Context7 material was supplied, or as last resort
 
 ## Your Expertise
 
