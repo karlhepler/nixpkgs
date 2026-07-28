@@ -52,7 +52,7 @@ When you see any of these, STOP IMMEDIATELY. Do not modify the source code to
 Do not modify the kanban JSON — that's tampering with the audit trail and
 strictly forbidden under the hard rule for `.kanban/` edits.
 
-Emit final return:
+✅ Emit final return:
 
   Status: blocked
   AC: <which are checked, which are blocked>
@@ -66,9 +66,15 @@ Concrete examples of what NOT to do:
 
 - ❌ Modify the source to add Lua-pattern-syntax characters when the rg pattern
      was authored with malformed Lua-pattern escapes
+  ✅ Instead: leave the source untouched and follow "✅ Emit final return" above.
 - ❌ Loop 50+ tool uses re-running variants of the failing check
+  ✅ Instead: after 3 attempts at the same broken check produce the same
+     structural error, stop and follow "✅ Emit final return" above rather
+     than retrying.
 - ❌ 'Let me try a completely fresh perspective' as a third attempt at the
      same broken check
+  ✅ Instead: recognize the third attempt itself as the stop signal, and
+     follow "✅ Emit final return" above rather than reframing and retrying.
 
 ## Hard Rule: Secret-Safe Environment Inspection
 

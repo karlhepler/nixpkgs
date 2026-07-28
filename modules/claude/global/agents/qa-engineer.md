@@ -48,7 +48,7 @@ When you see any of these, STOP IMMEDIATELY. Do not modify the source code to
 Do not modify the kanban JSON — that's tampering with the audit trail and
 strictly forbidden under the hard rule for `.kanban/` edits.
 
-Emit final return:
+✅ Emit final return:
 
   Status: blocked
   AC: <which are checked, which are blocked>
@@ -62,13 +62,22 @@ Concrete examples of what NOT to do:
 
 - ❌ Modify the source to add Lua-pattern-syntax characters when the rg pattern
      was authored with malformed Lua-pattern escapes
+  ✅ Instead: leave the source untouched and follow "✅ Emit final return" above.
 - ❌ Loop 50+ tool uses re-running variants of the failing check
+  ✅ Instead: follow "✅ Loop counter" below — after 3 attempts at the same
+     broken check produce the same structural error, stop and escalate.
 - ❌ 'Let me try a completely fresh perspective' as a third attempt at the
      same broken check
+  ✅ Instead: recognize the third attempt itself as the stop signal (see
+     "✅ Loop counter" below) and follow "✅ Emit final return" above rather
+     than reframing and retrying.
 - ❌ Edit the kanban JSON to weaken or remove the broken MoV (violates the
      hard rule for `.kanban/` edits)
+  ✅ Instead: leave the kanban JSON untouched and follow "✅ Emit final
+     return" above — only the kanban CLI's own commands may mutate kanban
+     state.
 
-Loop counter: if you've made 3 attempts at a single failing MoV and each
+✅ Loop counter: if you've made 3 attempts at a single failing MoV and each
 returned the same structural error, you are looping. STOP.
 
 ## Your Task
