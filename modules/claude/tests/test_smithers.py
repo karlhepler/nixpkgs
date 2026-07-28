@@ -29,6 +29,7 @@ from smithers import (
     PRSnapshot,
     ResolutionFailure,
     StartFixSession,
+    Stop,
     TickRequest,
     billing_preflight,
     build_parser,
@@ -1181,15 +1182,19 @@ TRIGGER_CASES = [
     ("merge_queue_eviction", dict(checks_pending=()), dict(prior_merge_queue_state="QUEUED")),
 ]
 
-# Each suppressor case: (name, TickRequest kwargs) that make `_suppressed`
-# true on its own, independent of which trigger fired.
+# Each suppressor case: (name, TickRequest kwargs, expected_reason) that make
+# `_suppressed`/`_terminal_suppression_reason` true on its own, independent
+# of which trigger fired. `expected_reason` is the Stop reason for a
+# TERMINAL suppressor (fix/cycle budget exhausted, stagnated — card 3027),
+# or None for a TRANSIENT one, which still yields a plain NoWorkNeeded
+# (§ The gate classification, smithers.py `_terminal_suppression_reason`).
 SUPPRESSOR_CASES = [
-    ("fix_budget_exhausted", dict(fix_count=4, max_fix_invocations=4)),
-    ("cycle_budget_exhausted", dict(cycle=10, max_cycles=10)),
-    ("stagnated", dict(stagnation_count=2)),
-    ("coordinator_hold", dict(coordinator_hold=True)),
-    ("manual_merge_opt_out", dict(manual_merge_opt_out=True)),
-    ("fix_session_in_flight", dict(active_fix_session="smithers-fix-pr-123")),
+    ("fix_budget_exhausted", dict(fix_count=4, max_fix_invocations=4), "fix_budget_exhausted"),
+    ("cycle_budget_exhausted", dict(cycle=10, max_cycles=10), "cycle_budget_exhausted"),
+    ("stagnated", dict(stagnation_count=2), "stagnation_limit_reached"),
+    ("coordinator_hold", dict(coordinator_hold=True), None),
+    ("manual_merge_opt_out", dict(manual_merge_opt_out=True), None),
+    ("fix_session_in_flight", dict(active_fix_session="smithers-fix-pr-123"), None),
 ]
 
 TRIGGER_SUPPRESSOR_COMBOS = [
@@ -1199,10 +1204,11 @@ TRIGGER_SUPPRESSOR_COMBOS = [
         base_req_kwargs,
         suppressor_name,
         suppressor_kwargs,
+        expected_reason,
         id=f"{trigger_name}-blocked-by-{suppressor_name}",
     )
     for trigger_name, snapshot_overrides, base_req_kwargs in TRIGGER_CASES
-    for suppressor_name, suppressor_kwargs in SUPPRESSOR_CASES
+    for suppressor_name, suppressor_kwargs, expected_reason in SUPPRESSOR_CASES
 ]
 
 
@@ -1224,14 +1230,16 @@ class TestGateTriggersPassThroughWithNoSuppressors:
 
 class TestGateSuppressorsBlockEveryTrigger:
     """Every suppressor blocks every trigger it's relevant to: the full
-    cross product of TRIGGER_CASES x SUPPRESSOR_CASES."""
+    cross product of TRIGGER_CASES x SUPPRESSOR_CASES. A TERMINAL suppressor
+    blocks with a distinguishable `Stop{reason}` (card 3027); a TRANSIENT
+    one still blocks with a plain `NoWorkNeeded`, exactly as before."""
 
     @pytest.mark.parametrize(
-        "trigger_name,snapshot_overrides,base_req_kwargs,suppressor_name,suppressor_kwargs",
+        "trigger_name,snapshot_overrides,base_req_kwargs,suppressor_name,suppressor_kwargs,expected_reason",
         TRIGGER_SUPPRESSOR_COMBOS,
     )
     def test_suppressor_blocks_fired_trigger(
-        self, trigger_name, snapshot_overrides, base_req_kwargs, suppressor_name, suppressor_kwargs
+        self, trigger_name, snapshot_overrides, base_req_kwargs, suppressor_name, suppressor_kwargs, expected_reason
     ):
         snapshot = _snapshot(**snapshot_overrides)
         req_kwargs = dict(base_req_kwargs)
@@ -1241,10 +1249,17 @@ class TestGateSuppressorsBlockEveryTrigger:
         messages = []
         tick(req, messages.append)
 
-        assert messages == [NoWorkNeeded()], f"{suppressor_name} failed to block {trigger_name}"
+        if expected_reason is not None:
+            assert messages == [Stop(reason=expected_reason)], f"{suppressor_name} failed to stop {trigger_name}"
+        else:
+            assert messages == [NoWorkNeeded()], f"{suppressor_name} failed to block {trigger_name}"
 
 
 class TestFixBudgetSuppressor:
+    """TERMINAL (card 3027): once tripped, emits Stop{reason} rather than a
+    silent NoWorkNeeded — this budget only ever grows for the life of a
+    watch, so every future tick would otherwise be suppressed forever."""
+
     def test_below_threshold_passes_through(self):
         snapshot = _snapshot(checks_fail=("test",), checks_pending=())
         req = TickRequest(pr_snapshot=snapshot, fix_count=3, max_fix_invocations=4)
@@ -1252,22 +1267,27 @@ class TestFixBudgetSuppressor:
         tick(req, messages.append)
         assert isinstance(messages[0], StartFixSession)
 
-    def test_at_threshold_suppresses(self):
+    def test_at_threshold_stops_with_reason(self):
         snapshot = _snapshot(checks_fail=("test",), checks_pending=())
         req = TickRequest(pr_snapshot=snapshot, fix_count=4, max_fix_invocations=4)
         messages = []
         tick(req, messages.append)
-        assert messages == [NoWorkNeeded()]
+        assert messages == [Stop(reason="fix_budget_exhausted")]
 
-    def test_above_threshold_suppresses(self):
+    def test_above_threshold_stops_with_reason(self):
         snapshot = _snapshot(checks_fail=("test",), checks_pending=())
         req = TickRequest(pr_snapshot=snapshot, fix_count=5, max_fix_invocations=4)
         messages = []
         tick(req, messages.append)
-        assert messages == [NoWorkNeeded()]
+        assert messages == [Stop(reason="fix_budget_exhausted")]
 
 
 class TestCycleBudgetSuppressor:
+    """TERMINAL (card 3027): once tripped, emits Stop{reason} rather than a
+    silent NoWorkNeeded — the concrete bug this card fixes (a poll loop with
+    an unbounded outer cadence would otherwise keep polling forever past
+    this threshold, structurally unable to ever start a fix session again)."""
+
     def test_below_threshold_passes_through(self):
         snapshot = _snapshot(checks_fail=("test",), checks_pending=())
         req = TickRequest(pr_snapshot=snapshot, cycle=9, max_cycles=10)
@@ -1275,15 +1295,30 @@ class TestCycleBudgetSuppressor:
         tick(req, messages.append)
         assert isinstance(messages[0], StartFixSession)
 
-    def test_at_threshold_suppresses(self):
+    def test_at_threshold_stops_with_reason(self):
         snapshot = _snapshot(checks_fail=("test",), checks_pending=())
         req = TickRequest(pr_snapshot=snapshot, cycle=10, max_cycles=10)
         messages = []
         tick(req, messages.append)
-        assert messages == [NoWorkNeeded()]
+        assert messages == [Stop(reason="cycle_budget_exhausted")]
+
+    def test_stops_even_when_nothing_would_otherwise_be_actionable(self):
+        """The terminal check runs ahead of, and independent of, trigger
+        evaluation — a budget exhausted with a fully quiet snapshot must
+        still Stop rather than silently fall through to NoWorkNeeded, since
+        the watch is doomed regardless of what happens to fire later."""
+        snapshot = _snapshot()  # default: only pending checks, nothing actionable
+        req = TickRequest(pr_snapshot=snapshot, cycle=10, max_cycles=10)
+        messages = []
+        tick(req, messages.append)
+        assert messages == [Stop(reason="cycle_budget_exhausted")]
 
 
 class TestStagnationSuppressor:
+    """TERMINAL (card 3027): once tripped, emits Stop{reason} rather than a
+    silent NoWorkNeeded — HEAD not advancing across cycles means further
+    fix attempts cannot help, so the watch is over."""
+
     def test_below_threshold_passes_through(self):
         snapshot = _snapshot(checks_fail=("test",), checks_pending=())
         req = TickRequest(pr_snapshot=snapshot, stagnation_count=1)
@@ -1291,19 +1326,19 @@ class TestStagnationSuppressor:
         tick(req, messages.append)
         assert isinstance(messages[0], StartFixSession)
 
-    def test_at_threshold_suppresses(self):
+    def test_at_threshold_stops_with_reason(self):
         snapshot = _snapshot(checks_fail=("test",), checks_pending=())
         req = TickRequest(pr_snapshot=snapshot, stagnation_count=2)
         messages = []
         tick(req, messages.append)
-        assert messages == [NoWorkNeeded()]
+        assert messages == [Stop(reason="stagnation_limit_reached")]
 
-    def test_above_threshold_suppresses(self):
+    def test_above_threshold_stops_with_reason(self):
         snapshot = _snapshot(checks_fail=("test",), checks_pending=())
         req = TickRequest(pr_snapshot=snapshot, stagnation_count=3)
         messages = []
         tick(req, messages.append)
-        assert messages == [NoWorkNeeded()]
+        assert messages == [Stop(reason="stagnation_limit_reached")]
 
 
 class TestOnlyPendingChecksSuppressor:
@@ -1621,6 +1656,41 @@ class TestPollLoopTerminatesOnBound:
         # A legitimately empty/pending-only result is not a fetch failure —
         # each tick sleeps the ordinary baseline interval, never a backoff.
         assert mock_sleep.call_args_list == [call(60), call(60), call(60)]
+
+
+class TestPollLoopTerminatesOnStop:
+    """Card 3027: reproduces the invisible-degradation bug this card fixes —
+    the gate's own cycle-budget suppressor (default threshold 10, a fixed
+    TickRequest default independent of this loop's own `max_cycles` bound)
+    trips well before the loop's outer bound of 15. Before this card, that
+    tripped suppressor emitted a silent NoWorkNeeded forever after; now it
+    emits Stop, and the loop must exit immediately rather than continuing to
+    poll all the way to its outer bound."""
+
+    def test_loop_exits_early_when_the_gates_cycle_budget_is_exhausted(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        sent = []
+
+        with patch("subprocess.run", side_effect=make_gh_side_effect()):
+            with patch("time.sleep") as mock_sleep:
+                config = PollLoopConfig(max_cycles=15, env={}, accept_api_billing=True)
+                poll_loop("123", config, sent.append, log_path)
+
+        # Nine fix-triggering ticks (a failing check fires every cycle, no
+        # suppressor active yet), then a tenth tick where the gate's own
+        # cycle >= max_cycles(10) default trips -> Stop, and the loop
+        # returns instead of continuing on to the outer bound of 15.
+        assert len(sent) == 10
+        assert all(isinstance(msg, StartFixSession) for msg in sent[:-1])
+        assert isinstance(sent[-1], Stop)
+        assert sent[-1].reason == "cycle_budget_exhausted"
+
+        # No sleep follows the Stop-carrying tick — the loop returns
+        # immediately rather than sleeping and polling again.
+        assert mock_sleep.call_count == 9
+
+        log_contents = open(log_path).read()
+        assert "poll_loop_stopped" in log_contents
 
 
 class TestPollLoopPreflightRunsAheadOfEveryTick:

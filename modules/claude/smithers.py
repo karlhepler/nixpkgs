@@ -13,7 +13,11 @@ with its five TRIGGERS. Card 4 added the gate's six SUPPRESSORS. Card 3019
 added PR auto-detection from the current git worktree. This revision (card
 3021) wires the foreground poll loop itself — preflight, fetch, tick, and
 send, on a bounded cadence — completing phase 1 (§ Build plan, phase 1). Fix
-execution (invoking Claude) is a clearly-marked stub owned by phase 3.
+execution (invoking Claude) is a clearly-marked stub owned by phase 3. Card
+3027 closes a peer-review finding: the three TERMINAL gate suppressors
+(fix/cycle budget exhausted, stagnated) now emit `Stop{reason}` instead of a
+silent `NoWorkNeeded`, and the poll loop exits on `Stop` rather than
+spinning forever, structurally incapable of ever acting again.
 
 Usage:
     smithers                        # Auto-detect the PR for the current git
@@ -772,6 +776,53 @@ def _suppressed(req: "TickRequest") -> bool:
     )
 
 
+# ---------------------------------------------------------------------------
+# Terminal vs. transient suppressors (§ The gate; card 3027 peer-review
+# finding). The six suppressors above split into two kinds:
+#
+#   TERMINAL — represents permanent exhaustion of a bounded resource for this
+#   watch. `cycle`, `fix_count`, and `stagnation_count` are all monotonically
+#   non-decreasing for the life of a watch (poll_loop only ever increments
+#   them), so once one of these three trips, EVERY future tick is doomed to
+#   be suppressed the same way forever. Silently emitting NoWorkNeeded on
+#   every subsequent tick would leave the watch looking alive (the pane is
+#   still polling) while being structurally incapable of ever acting again —
+#   the invisible-degradation failure this card exists to close. Terminal
+#   suppressors emit `Stop{reason}` instead, and are checked ahead of (and
+#   independent of) whether any trigger fired this tick — the watch is over
+#   regardless of what happens to be actionable at this exact instant:
+#     - Suppressor 1, `_fix_budget_exhausted`   -> "fix_budget_exhausted"
+#     - Suppressor 2, `_cycle_budget_exhausted` -> "cycle_budget_exhausted"
+#     - Suppressor 3, `_stagnated`              -> "stagnation_limit_reached"
+#
+#   TRANSIENT — means "not right now", and legitimately clears on its own on
+#   a later tick with no external intervention: all-pending checks resolve,
+#   a coordinator lifts a hold, an in-flight fix session finishes. These
+#   three keep emitting `NoWorkNeeded`, exactly as before this card:
+#     - Suppressor 4, `_only_pending_checks_and_nothing_else_actionable`
+#     - Suppressor 5, `_held` (coordinator hold or manual-merge opt-out)
+#     - Suppressor 6, `_fix_session_in_flight`
+# ---------------------------------------------------------------------------
+
+TERMINAL_SUPPRESSOR_REASONS: Tuple[Tuple[Callable[["TickRequest"], bool], str], ...] = (
+    (_fix_budget_exhausted, "fix_budget_exhausted"),
+    (_cycle_budget_exhausted, "cycle_budget_exhausted"),
+    (_stagnated, "stagnation_limit_reached"),
+)
+
+
+def _terminal_suppression_reason(req: "TickRequest") -> Optional[str]:
+    """Returns the reason string for the first TERMINAL suppressor that has
+    tripped (§ classification above), or None if none has. A caller checks
+    this ahead of the trigger/transient-suppressor path entirely: a terminal
+    suppressor means this watch is over, not merely "nothing to invoke a fix
+    for right now"."""
+    for predicate, reason in TERMINAL_SUPPRESSOR_REASONS:
+        if predicate(req):
+            return reason
+    return None
+
+
 @dataclass(frozen=True)
 class TickRequest:
     """Immutable input to `tick` (§ Ports and adapters).
@@ -808,15 +859,30 @@ def tick(req: TickRequest, send: Callable[[Message], None]) -> None:
     Pure: no I/O, no mutation, never raises — every outcome, including
     "nothing to do", leaves through `send`. Invoke Claude if and only if ALL
     suppressors are clear AND at least one trigger fires: a fired trigger
-    still yields NoWorkNeeded if any one of the six suppressors is active,
-    since none of them carve out a distinct message of their own (§ The
-    gate) — the observable outcome of "suppressed" and "nothing fired" are
-    the same at this layer.
+    still yields NoWorkNeeded if any one of the three TRANSIENT suppressors
+    is active, since none of them carve out a distinct message of their own
+    (§ The gate) — the observable outcome of "transiently suppressed" and
+    "nothing fired" are the same at this layer.
+
+    A TERMINAL suppressor (fix/cycle budget exhausted, or stagnated — see
+    `_terminal_suppression_reason`) is checked ahead of, and independent of,
+    whether any trigger fired: it means this watch is over, so it emits
+    `Stop{reason}` rather than a silent `NoWorkNeeded` — card 3027, closing
+    the peer-review finding that a poll loop could keep polling forever
+    after budget exhaustion while structurally unable to ever act again.
+    Ready-to-land is still checked first and bypasses every suppressor,
+    terminal or transient — a fully clean, ready-to-land snapshot lands
+    regardless of exhausted budgets.
     """
     snapshot = req.pr_snapshot
 
     if _is_ready_to_land(snapshot):
         send(Land(method="squash"))
+        return
+
+    terminal_reason = _terminal_suppression_reason(req)
+    if terminal_reason is not None:
+        send(Stop(reason=terminal_reason))
         return
 
     trigger_fired = (
@@ -1021,17 +1087,28 @@ def poll_loop(pr: str, config: PollLoopConfig, send: Callable[[Message], None], 
     treated as a failure — `fetch_pr_snapshot`'s own typed
     `(snapshot, FetchFailure)` contract already makes that distinction; this
     loop just acts on it.
+
+    A `Stop` message (a TERMINAL suppressor tripped — § classification above
+    `_terminal_suppression_reason`) ends the loop immediately: `send` still
+    receives it like any other message (so the structured log and any bound
+    notification adapters see it), but no further sleep or poll happens
+    after it (§ card 3027) — this is what keeps the loop from spinning
+    forever, invisibly incapable of acting, once a budget is exhausted.
     """
     cycle = 0
     consecutive_failures = 0
     fix_count = 0
     prior_merge_queue_state: Optional[str] = None
     active_fix_session: Optional[str] = None
+    stopped = False
 
     def _handle(msg: Message) -> None:
+        nonlocal stopped
         send(msg)
         if isinstance(msg, StartFixSession):
             _invoke_fix_stub(msg, log_path)
+        if isinstance(msg, Stop):
+            stopped = True
 
     while config.max_cycles is None or cycle < config.max_cycles:
         cycle += 1
@@ -1067,6 +1144,10 @@ def poll_loop(pr: str, config: PollLoopConfig, send: Callable[[Message], None], 
             active_fix_session=active_fix_session,
         )
         tick(req, _handle)
+
+        if stopped:
+            log_event(log_path, "poll_loop_stopped", cycle=cycle)
+            return
 
         prior_merge_queue_state = snapshot.merge_queue_state
         time.sleep(config.poll_interval_seconds)
