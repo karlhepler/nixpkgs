@@ -68,7 +68,7 @@ Recorded in full in Document D § `## Decisions`. Summary:
 **Unit 1.5 landed and is committed.** Both Stage 1 edits are done. Expected state:
 
 ```
-wc -l CLAUDE.md                                  → 314
+wc -l CLAUDE.md                                  → 338   (was 314; see amendment below)
 wc -l modules/claude/global/CLAUDE.md            → 450
 bash docs/v5-migration/invariant-assertions.sh   → exit 0, 31/31
 git status --short                               → clean apart from .scratchpad/
@@ -76,13 +76,32 @@ git status --short                               → clean apart from .scratchpa
 
 If any of that differs, **stop and surface it to the user** — another session may have run overnight.
 
+### ⚠️ AMENDMENT 2026-07-28 — the project file is 338, and the 314 cap is superseded
+
+**The user committed `82160b4`, adding 24 lines to the project-root `CLAUDE.md`: `## 🚨 ALL WORK HAPPENS DIRECTLY ON \`main\` — NO BRANCHES, EVER 🚨` at lines 9–31.** The file is now **338 lines against a cap this document recorded as 314**.
+
+**This is not a regression of Stage 1 and must not be treated as one.** Two separate facts:
+
+| | Value | Meaning |
+|---|---|---|
+| Stage 1's achieved reduction | **153 lines** (917 → 764) | historical, correct, unchanged — do not restate it as anything else |
+| Current net reduction | **129 lines** (917 → 788) | Stage 1's 153 minus 24 lines of *new policy content* the user added afterward |
+
+Stage 1 removed 153 lines. The user then added 24 lines of new content. Conflating the two would both understate Stage 1's outcome and misdescribe the file today.
+
+**The cap yields to the content, by this document's own rule** — "Do not treat a cap as a quota," two sections down. `82160b4` documents a prohibition whose absence had already caused real damage: a branch created in this shared checkout captured two unrelated commits from a concurrent session (`4fdc9e9`, `0561642` — Stage 1's own work). That content is worth more than the number. **The 314 figure is superseded; the operative cap for the project-root file is 338.**
+
+**Every other `314` in this document and in `D-implementation-plan.md` is now historical.** It correctly describes the state at Stage 1's close. Do not blanket-replace it — 95 lines across the migration docs match `314` or `387`, and most are legitimate history (`387` was the true pre-migration count). Fix only figures asserted as *current state*.
+
+**Nothing live is broken.** `invariant-assertions.sh` was re-run at this amendment: **31/31 passing**. It asserts content presence, not line counts — its only `387` is a corpus comment — so no tripwire depends on either figure. This staleness was documentary only.
+
 ### ⚠️ Unit 1.5 IS LIVE — corrected claim, read carefully
 
 An earlier draft of this document said unit 1.5 was "committed but not deployed, so the review gate survives." **That was wrong.** The correction:
 
-**The project-root `CLAUDE.md` is not a Nix-deployed artifact.** Claude Code reads it **in place from the repository**. `hms` deploys `modules/claude/global/*` into `~/.claude/`; the project file has no deploy step. Confirmed: `~/.claude/CLAUDE.md` is 450 lines — that is the *global* file — while the 314-line project file is read directly from the repo path.
+**The project-root `CLAUDE.md` is not a Nix-deployed artifact.** Claude Code reads it **in place from the repository**. `hms` deploys `modules/claude/global/*` into `~/.claude/`; the project file has no deploy step. Confirmed: `~/.claude/CLAUDE.md` is 450 lines — that is the *global* file — while the project file (314 lines at Stage 1's close, **338 today** after `82160b4`) is read directly from the repo path.
 
-**Consequence: unit 1.5's change took effect the moment the file changed on disk.** Any session started in this repository since then uses the 314-line version. There was never an `hms` gate to withhold, so the Tier-1 review is now reviewing something already in effect rather than gating it.
+**Consequence: unit 1.5's change took effect the moment the file changed on disk.** Any session started in this repository since then uses the post-edit version (314 lines then, **338 now**). There was never an `hms` gate to withhold, so the Tier-1 review is now reviewing something already in effect rather than gating it.
 
 **Why this was not reverted:** the tripwire passes 31/31, so every protected invariant is verified intact — the unreviewed dimension is *quality* (pointer usefulness, coherence of relocated content), not invariant correctness. Reverting a change whose safety properties are verified, purely to restore a process ordering, would have been worse than recording accurately that the ordering did not hold.
 
@@ -96,7 +115,7 @@ Root cause, cited: `D-implementation-plan.md:704-710` subtracted the ledger's fu
 
 Row 6's git-alias block measured **16–17 lines, not 49**, so verified-safe dropped 96 → 79.
 
-**The cap was raised to 314. Card #2996's criterion 1 was replaced accordingly.** Document D still states 291 in several places — **it has not been amended yet.** See § Next action.
+**The cap was raised to 314. Card #2996's criterion 1 was replaced accordingly.** ~~Document D still states 291 in several places — **it has not been amended yet.** See § Next action.~~ **✅ DONE — corrected 2026-07-28.** Amendment 3 (card #2999) amended Document D. It carries 63 lines mentioning 291, all of them **explicitly marked superseded** with `⚠ SUPERSEDED BY AMENDMENT 3` callouts — that is the document's deliberate convention ("superseded arithmetic is left standing throughout this document so corrections stay auditable"), not an oversight. Verified: § Executive Summary and § Recomputed Numbers — the two sections next-action 5 named specifically — both carry the corrected 450 / 314 / 764 / 153 figures immediately after their superseded blocks. **Do not re-do this work.**
 
 ---
 
@@ -105,8 +124,8 @@ Row 6's git-alias block measured **16–17 lines, not 49**, so verified-safe dro
 | File | Original | Cap | Status |
 |---|---|---|---|
 | `modules/claude/global/CLAUDE.md` | 530 | **450** | ✅ reviewed, deployed, committed |
-| `CLAUDE.md` (project root) | 387 | **314** | ✅ reviewed, committed, live |
-| Aggregate | 917 | **764** | **153-line reduction — disk only, see below** |
+| `CLAUDE.md` (project root) | 387 | ~~314~~ → **338** | ✅ reviewed, committed, live; cap superseded by `82160b4` |
+| Aggregate | 917 | ~~764~~ → **788** | **Stage 1 reduction 153 — disk only, see below; 129 net after `82160b4`** |
 
 > **This table was itself stale until 2026-07-28.** It said 291 / 741 / 176 after the cap correction had already been recorded elsewhere in this same document — exactly the failure this document warns about two sections down. Caught on re-read at resume. If you find another stale figure here, fix it and do not assume the rest are right.
 
@@ -124,7 +143,7 @@ The plan originally promised 357 lines. Measurement cut that to 176, and unit 1.
 
 **START HERE — in this order:**
 
-**1. Tier-1 review of unit 1.5.** Mandatory; prompt files are Tier 1. Model the card on #2993 (unit 1.4's review): state what is already mechanically confirmed — 314 lines, tripwire 31/31, global file untouched, scope isolation held — and direct the reviewer at what the tripwire structurally **cannot** check: pointer quality, whether content lifted into `~/.claude/docs/` reads coherently arriving cold, silent losses against `.scratchpad/S1-unit-1.5-accounting.md`, and scope creep against decision Q1.
+**1. Tier-1 review of unit 1.5.** Mandatory; prompt files are Tier 1. Model the card on #2993 (unit 1.4's review): state what is already mechanically confirmed — **338** lines (314 at Stage 1's close, plus the user's 24-line `82160b4`, which is out of scope for this review), tripwire 31/31, global file untouched, scope isolation held — and direct the reviewer at what the tripwire structurally **cannot** check: pointer quality, whether content lifted into `~/.claude/docs/` reads coherently arriving cold, silent losses against `.scratchpad/S1-unit-1.5-accounting.md`, and scope creep against decision Q1.
 
 Note for the reviewer: unit 1.4's review found its accounting asserted "no inbound references exist" **in prose without running the search** — it was false and hid a stale pointer. Unit 1.5 was told to write coverage claims as command-and-output pairs. Verify it actually did.
 
@@ -134,7 +153,9 @@ Note for the reviewer: unit 1.4's review found its accounting asserted "no inbou
 
 **4. Commit any review fixes.** Unit 1.5's own work is already committed; this covers only what the review changes.
 
-**5. Amend Document D for the 291 → 314 correction.** It still states 291 in the Stage 1 arithmetic, the unit table, the validation gate's line-count check, `## Recomputed Numbers`, and `## Executive Summary`. **Correct all of them** — a stale target left anywhere is a number a later agent will chase. Record the SPLIT-overhead root cause so the same subtraction error is not repeated in Stages 2–4, which have SPLIT sections too. Revised Stage 1 aggregate: **450 + 314 = 764, a 153-line reduction from 917.**
+**5. ~~Amend Document D for the 291 → 314 correction.~~ ✅ DONE — verified complete 2026-07-28. Do not re-do.** Amendment 3 (card #2999) landed this. Every location this item named was checked: the Stage 1 arithmetic, the unit table (`:376`), the validation gate, `## Recomputed Numbers` (`:1358`), and `## Executive Summary` (`:21`) all carry **450 / 314 / 764 / 153**. The 63 remaining lines mentioning 291 are each preceded by an explicit `⚠ SUPERSEDED BY AMENDMENT 3` callout, per the document's convention of leaving superseded arithmetic standing so corrections stay auditable — they are history, not stale targets. The SPLIT-overhead root cause is recorded in § The SPLIT structural-overhead rule, with the mandatory fourth check for Stages 2–4.
+
+> **⚠ The project-root cap is now 338, not 314** — the user's commit `82160b4` added 24 lines of branching policy. See § AMENDMENT 2026-07-28 near the top of this document, and `D-implementation-plan.md` § Amendment 6. **Stage 1's achieved reduction remains 153; the current net is 129.** Those are different numbers measuring different things — do not substitute one for the other.
 
 **6. Then the two remaining Stage 1 gates:**
    - **Sub-agent injection smoke test — DONE, verdict `OLD BOTH` (card #3004); re-run from a fresh session — DONE, CONFIRMED (card #3013).** Both files were present in the injected `claudeMd` block, but both carried pre-edit content, for the parent session and any sub-agent spawned from it — that verdict stands unchanged. Separately, two sessions started **after** Stage 1's edits landed were each checked for an added marker from those edits and both confirmed presence. See the callout above § Stage 1 numbers and `D-implementation-plan.md` § Amendment 5. This gate is now satisfied for a session started after the edits landed.
