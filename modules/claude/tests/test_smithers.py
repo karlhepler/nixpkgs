@@ -166,6 +166,16 @@ class TestArgumentParsing:
         args = parser.parse_args(["123", "--i-accept-api-billing"])
         assert args.accept_api_billing is True
 
+    def test_informational_bot_authors_defaults_none(self):
+        parser = build_parser()
+        args = parser.parse_args(["123"])
+        assert args.informational_bot_authors is None
+
+    def test_informational_bot_authors_flag(self):
+        parser = build_parser()
+        args = parser.parse_args(["123", "--informational-bot-authors", "codecov[bot],renovate[bot]"])
+        assert args.informational_bot_authors == "codecov[bot],renovate[bot]"
+
     def test_no_arguments_at_all_does_not_error(self):
         """Bare `smithers` — the design's stated primary invocation — must
         parse cleanly, not raise SystemExit like the old required-subcommand
@@ -309,6 +319,43 @@ class TestExplicitBypass:
         }
         with pytest.raises(SystemExit):
             billing_preflight(env, accept_api_billing=False, log_path=log_path)
+
+
+# ---------------------------------------------------------------------------
+# Informational bot authors — Trigger 3's exclusion list (§ The gate,
+# trigger 3; .scratchpad/3033-swe-devex-review.md Finding 4). Previously
+# always the empty tuple in production — no CLI flag, no env var populated
+# it — so the actionable-bot-comment filter excluded nothing.
+# ---------------------------------------------------------------------------
+
+class TestResolveInformationalBotAuthors:
+    def test_explicit_flag_wins_over_everything(self):
+        result = smithers_module._resolve_informational_bot_authors(
+            "alice[bot], bob[bot]", {"SMITHERS_INFORMATIONAL_BOT_AUTHORS": "carol[bot]"}
+        )
+        assert result == ("alice[bot]", "bob[bot]")
+
+    def test_env_var_wins_when_no_explicit_flag(self):
+        result = smithers_module._resolve_informational_bot_authors(
+            None, {"SMITHERS_INFORMATIONAL_BOT_AUTHORS": "carol[bot], dave[bot]"}
+        )
+        assert result == ("carol[bot]", "dave[bot]")
+
+    def test_falls_back_to_conservative_default_when_neither_is_set(self):
+        result = smithers_module._resolve_informational_bot_authors(None, {})
+        assert result == smithers_module.DEFAULT_INFORMATIONAL_BOT_AUTHORS
+        assert len(result) > 0, "the default must be non-empty to have any effect"
+
+    def test_empty_explicit_string_falls_back_to_default_rather_than_disabling_the_list(self):
+        """An explicit value that parses to zero authors (blank, or only
+        commas/whitespace) must not silently disable the exclusion list —
+        that would be indistinguishable from the original bug (Finding 4)."""
+        result = smithers_module._resolve_informational_bot_authors(" , ,  ", {})
+        assert result == smithers_module.DEFAULT_INFORMATIONAL_BOT_AUTHORS
+
+    def test_whitespace_around_entries_is_trimmed(self):
+        result = smithers_module._resolve_informational_bot_authors(" alice[bot] ,  bob[bot]", {})
+        assert result == ("alice[bot]", "bob[bot]")
 
 
 # ---------------------------------------------------------------------------
@@ -976,6 +1023,32 @@ class TestCmdWatch:
         assert isinstance(call_config, PollLoopConfig)
         assert callable(call_send)
         assert call_log_path == log_path
+        assert call_config.informational_bot_authors == smithers_module.DEFAULT_INFORMATIONAL_BOT_AUTHORS
+
+    def test_informational_bot_authors_flag_flows_into_poll_loop_config(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        parser = build_parser()
+        args = parser.parse_args(
+            ["123", "--informational-bot-authors", "alice[bot],bob[bot]", "--log-file", log_path]
+        )
+
+        with patch.object(smithers_module, "poll_loop") as mock_poll_loop:
+            cmd_watch(args)
+
+        call_config = mock_poll_loop.call_args[0][1]
+        assert call_config.informational_bot_authors == ("alice[bot]", "bob[bot]")
+
+    def test_informational_bot_authors_env_var_flows_into_poll_loop_config(self, tmp_path, monkeypatch):
+        log_path = str(tmp_path / "smithers.jsonl")
+        monkeypatch.setenv("SMITHERS_INFORMATIONAL_BOT_AUTHORS", "carol[bot]")
+        parser = build_parser()
+        args = parser.parse_args(["123", "--log-file", log_path])
+
+        with patch.object(smithers_module, "poll_loop") as mock_poll_loop:
+            cmd_watch(args)
+
+        call_config = mock_poll_loop.call_args[0][1]
+        assert call_config.informational_bot_authors == ("carol[bot]",)
 
     def test_billing_refusal_raises_systemexit_before_any_action(self, tmp_path, monkeypatch):
         log_path = str(tmp_path / "smithers.jsonl")
@@ -1377,7 +1450,10 @@ class TestGateSuppressorsBlockEveryTrigger:
         tick(req, messages.append)
 
         if expected_reason is not None:
-            assert messages == [Stop(reason=expected_reason)], f"{suppressor_name} failed to stop {trigger_name}"
+            assert messages == [
+                Stop(reason=expected_reason),
+                smithers_module._terminal_stop_notify(snapshot, expected_reason),
+            ], f"{suppressor_name} failed to stop {trigger_name}"
         else:
             assert messages == [NoWorkNeeded()], f"{suppressor_name} failed to block {trigger_name}"
 
@@ -1399,14 +1475,20 @@ class TestFixBudgetSuppressor:
         req = TickRequest(pr_snapshot=snapshot, fix_count=4, max_fix_invocations=4)
         messages = []
         tick(req, messages.append)
-        assert messages == [Stop(reason="fix_budget_exhausted")]
+        assert messages == [
+            Stop(reason="fix_budget_exhausted"),
+            smithers_module._terminal_stop_notify(snapshot, "fix_budget_exhausted"),
+        ]
 
     def test_above_threshold_stops_with_reason(self):
         snapshot = _snapshot(checks_fail=("test",), checks_pending=())
         req = TickRequest(pr_snapshot=snapshot, fix_count=5, max_fix_invocations=4)
         messages = []
         tick(req, messages.append)
-        assert messages == [Stop(reason="fix_budget_exhausted")]
+        assert messages == [
+            Stop(reason="fix_budget_exhausted"),
+            smithers_module._terminal_stop_notify(snapshot, "fix_budget_exhausted"),
+        ]
 
 
 class TestCycleBudgetSuppressor:
@@ -1427,7 +1509,10 @@ class TestCycleBudgetSuppressor:
         req = TickRequest(pr_snapshot=snapshot, cycle=10, max_cycles=10)
         messages = []
         tick(req, messages.append)
-        assert messages == [Stop(reason="cycle_budget_exhausted")]
+        assert messages == [
+            Stop(reason="cycle_budget_exhausted"),
+            smithers_module._terminal_stop_notify(snapshot, "cycle_budget_exhausted"),
+        ]
 
     def test_stops_even_when_nothing_would_otherwise_be_actionable(self):
         """The terminal check runs ahead of, and independent of, trigger
@@ -1438,7 +1523,10 @@ class TestCycleBudgetSuppressor:
         req = TickRequest(pr_snapshot=snapshot, cycle=10, max_cycles=10)
         messages = []
         tick(req, messages.append)
-        assert messages == [Stop(reason="cycle_budget_exhausted")]
+        assert messages == [
+            Stop(reason="cycle_budget_exhausted"),
+            smithers_module._terminal_stop_notify(snapshot, "cycle_budget_exhausted"),
+        ]
 
 
 class TestStagnationSuppressor:
@@ -1458,14 +1546,20 @@ class TestStagnationSuppressor:
         req = TickRequest(pr_snapshot=snapshot, stagnation_count=2)
         messages = []
         tick(req, messages.append)
-        assert messages == [Stop(reason="stagnation_limit_reached")]
+        assert messages == [
+            Stop(reason="stagnation_limit_reached"),
+            smithers_module._terminal_stop_notify(snapshot, "stagnation_limit_reached"),
+        ]
 
     def test_above_threshold_stops_with_reason(self):
         snapshot = _snapshot(checks_fail=("test",), checks_pending=())
         req = TickRequest(pr_snapshot=snapshot, stagnation_count=3)
         messages = []
         tick(req, messages.append)
-        assert messages == [Stop(reason="stagnation_limit_reached")]
+        assert messages == [
+            Stop(reason="stagnation_limit_reached"),
+            smithers_module._terminal_stop_notify(snapshot, "stagnation_limit_reached"),
+        ]
 
 
 class TestOnlyPendingChecksSuppressor:
@@ -1572,14 +1666,6 @@ class TestSuppressorsDoNotBlockLand:
 # ---------------------------------------------------------------------------
 
 class TestNotifyMacosAdapter:
-    def test_dry_run_logs_and_makes_no_subprocess_call(self, tmp_path):
-        log_path = str(tmp_path / "smithers.jsonl")
-        with patch("subprocess.run", side_effect=AssertionError("dry-run must not call osascript")):
-            smithers_module.notify_macos(Notify(title="t", body="b", sound=True), dry_run=True, log_path=log_path)
-
-        log_contents = open(log_path).read()
-        assert "notify_macos_dry_run" in log_contents
-
     def test_real_run_invokes_osascript(self, tmp_path):
         log_path = str(tmp_path / "smithers.jsonl")
         calls = []
@@ -1589,7 +1675,7 @@ class TestNotifyMacosAdapter:
             return fake_run_result()
 
         with patch("subprocess.run", side_effect=fake_run):
-            smithers_module.notify_macos(Notify(title="t", body="b", sound=True), dry_run=False, log_path=log_path)
+            smithers_module.notify_macos(Notify(title="t", body="b", sound=True), log_path=log_path)
 
         assert len(calls) == 1
         assert calls[0][0] == "osascript"
@@ -1597,7 +1683,7 @@ class TestNotifyMacosAdapter:
     def test_non_notify_message_is_a_no_op(self, tmp_path):
         log_path = str(tmp_path / "smithers.jsonl")
         with patch("subprocess.run", side_effect=AssertionError("must not be called for a non-Notify message")):
-            smithers_module.notify_macos(NoWorkNeeded(), dry_run=False, log_path=log_path)
+            smithers_module.notify_macos(NoWorkNeeded(), log_path=log_path)
         assert not os.path.exists(log_path)
 
 
@@ -1619,21 +1705,11 @@ def fake_dedup_run(claude_result="NOT_DUPLICATE", calls=None):
 
 
 class TestNotifySlackAdapter:
-    def test_dry_run_logs_and_makes_no_subprocess_call(self, tmp_path):
-        log_path = str(tmp_path / "smithers.jsonl")
-        with patch("subprocess.run", side_effect=AssertionError("dry-run must not call smithers-post")):
-            smithers_module.notify_slack(
-                Notify(title="t", body="b", sound=False), "123", dry_run=True, log_path=log_path, already_posted={}
-            )
-
-        log_contents = open(log_path).read()
-        assert "notify_slack_dry_run" in log_contents
-
     def test_no_pr_number_is_a_no_op(self, tmp_path):
         log_path = str(tmp_path / "smithers.jsonl")
         with patch("subprocess.run", side_effect=AssertionError("must not be called with no PR number")):
             smithers_module.notify_slack(
-                Notify(title="t", body="b", sound=False), None, dry_run=False, log_path=log_path, already_posted={}
+                Notify(title="t", body="b", sound=False), None, log_path=log_path, already_posted={}
             )
         assert not os.path.exists(log_path)
 
@@ -1645,7 +1721,7 @@ class TestNotifySlackAdapter:
 
         with patch("subprocess.run", side_effect=fake_dedup_run("DUPLICATE", calls)):
             smithers_module.notify_slack(
-                Notify(title="t", body="b", sound=False), "123", dry_run=False, log_path=log_path, already_posted={}
+                Notify(title="t", body="b", sound=False), "123", log_path=log_path, already_posted={}
             )
 
         assert calls == [
@@ -1665,7 +1741,7 @@ class TestNotifySlackAdapter:
 
         with patch("subprocess.run", side_effect=fake_dedup_run("NOT_DUPLICATE", calls)):
             smithers_module.notify_slack(
-                Notify(title="t", body="b", sound=False), "123", dry_run=False, log_path=log_path, already_posted={}
+                Notify(title="t", body="b", sound=False), "123", log_path=log_path, already_posted={}
             )
 
         assert calls[0][0] == "claude", "must query Slack first"
@@ -1687,7 +1763,7 @@ class TestNotifySlackAdapter:
 
         with patch("subprocess.run", side_effect=fake_run):
             smithers_module.notify_slack(
-                Notify(title="t", body="b", sound=False), "123", dry_run=False, log_path=log_path, already_posted={}
+                Notify(title="t", body="b", sound=False), "123", log_path=log_path, already_posted={}
             )
 
         assert calls[-1] == ["smithers-post", "123"], "a failed dedup query must fail OPEN, not swallow the post"
@@ -1702,7 +1778,7 @@ class TestNotifySlackAdapter:
 
         with patch("subprocess.run", side_effect=fake_dedup_run("NOT_DUPLICATE", calls)):
             smithers_module.notify_slack(
-                Notify(title="t", body="b", sound=False), "123", dry_run=False, log_path=log_path, already_posted={}
+                Notify(title="t", body="b", sound=False), "123", log_path=log_path, already_posted={}
             )
 
         claude_cmd = calls[0]
@@ -1719,11 +1795,11 @@ class TestNotifySlackAdapter:
         already_posted = {}
         with patch("subprocess.run", side_effect=fake_dedup_run("NOT_DUPLICATE", calls)):
             smithers_module.notify_slack(
-                Notify(title="t1", body="b1", sound=False), "123", dry_run=False, log_path=log_path,
+                Notify(title="t1", body="b1", sound=False), "123", log_path=log_path,
                 already_posted=already_posted,
             )
             smithers_module.notify_slack(
-                Notify(title="t2", body="b2", sound=False), "123", dry_run=False, log_path=log_path,
+                Notify(title="t2", body="b2", sound=False), "123", log_path=log_path,
                 already_posted=already_posted,
             )
 
@@ -1866,6 +1942,23 @@ class TestLogAdapter:
 # test cannot.
 # ---------------------------------------------------------------------------
 
+def _fake_run_with_slack_dedup(calls=None, dedup_result="NOT_DUPLICATE"):
+    """A subprocess.run side_effect that answers any `claude -p` dedup probe
+    with a canned verdict and lets every other command (osascript,
+    smithers-post) through to a plain successful fake result — the shared
+    plumbing every composition-root smoke test below needs once adapters run
+    for real rather than being short-circuited by a dry_run flag."""
+
+    def side_effect(cmd, **kwargs):
+        if calls is not None:
+            calls.append(cmd)
+        if cmd[0] == "claude":
+            return fake_run_result(stdout=json.dumps({"result": dedup_result}))
+        return fake_run_result()
+
+    return side_effect
+
+
 class TestCompositionRootSmoke:
     def test_real_entry_point_logs_tick_output_for_a_recorded_fixture(self, tmp_path):
         log_path = str(tmp_path / "smithers.jsonl")
@@ -1881,11 +1974,9 @@ class TestCompositionRootSmoke:
         assert failure is None
 
         req = TickRequest(pr_snapshot=snapshot)
-        send = build_send(pr_number="123", dry_run=True, log_path=log_path)
+        send = build_send(pr_number="123", log_path=log_path)
 
-        # tick is pure and every adapter must respect dry_run: no subprocess
-        # call is expected at all once tick() emits through the real send.
-        with patch("subprocess.run", side_effect=AssertionError("no subprocess calls expected in dry-run")):
+        with patch("subprocess.run", side_effect=_fake_run_with_slack_dedup()):
             tick(req, send)
 
         records = [json.loads(line) for line in open(log_path).read().strip().splitlines()]
@@ -1903,28 +1994,43 @@ class TestCompositionRootSmoke:
         log_path = str(tmp_path / "smithers.jsonl")
         calls = []
 
-        def fake_run(cmd, **kwargs):
-            calls.append(cmd)
-            return fake_run_result()
+        send = build_send(pr_number="123", log_path=log_path)
 
-        send = build_send(pr_number="123", dry_run=False, log_path=log_path)
-
-        with patch("subprocess.run", side_effect=fake_run):
+        with patch("subprocess.run", side_effect=_fake_run_with_slack_dedup(calls)):
             send(Notify(title="PR ready", body="squash and merge", sound=True))
 
         assert any(cmd[0] == "osascript" for cmd in calls), "macOS notify adapter never fired"
         assert any(cmd[0] == "smithers-post" for cmd in calls), "Slack notify adapter never fired"
 
-    def test_dry_run_end_to_end_performs_no_notification_and_no_mutation(self, tmp_path):
+    def test_tick_itself_emits_notify_for_a_clean_awaiting_review_pr_and_it_reaches_the_adapters(self, tmp_path):
+        """The complementary direction to the fan-out test above
+        (§ card 3035 Fix 1; .scratchpad/3033-swe-devex-review.md Finding 2).
+        Every other Notify-adapter test in this file hand-constructs a
+        `Notify` and calls `send` directly — proving delivery, never
+        emission. This one drives the REAL `tick()` against a PRSnapshot
+        that is genuinely clean but not yet approved (no fabricated
+        Notify anywhere in this test) and asserts the Notify `tick` itself
+        produces reaches both real notification adapters through the real
+        `send` built by `build_send`. A `tick` that regressed back to never
+        emitting a `Notify` at all would fail this test even though every
+        adapter-side test above still passes."""
         log_path = str(tmp_path / "smithers.jsonl")
-        send = build_send(pr_number="123", dry_run=True, log_path=log_path)
+        calls = []
 
-        with patch("subprocess.run", side_effect=AssertionError("dry-run must not call any subprocess")):
-            send(Notify(title="t", body="b", sound=False))
+        snapshot = _snapshot(
+            checks_pass=("build",),
+            checks_pending=(),
+            mergeable="MERGEABLE",
+            review_decision="REVIEW_REQUIRED",
+        )
+        req = TickRequest(pr_snapshot=snapshot)
+        send = build_send(pr_number="123", log_path=log_path)
 
-        log_contents = open(log_path).read()
-        assert "notify_macos_dry_run" in log_contents
-        assert "notify_slack_dry_run" in log_contents
+        with patch("subprocess.run", side_effect=_fake_run_with_slack_dedup(calls)):
+            tick(req, send)
+
+        assert any(cmd[0] == "osascript" for cmd in calls), "tick's Notify never reached the macOS adapter"
+        assert any(cmd[0] == "smithers-post" for cmd in calls), "tick's Notify never reached the Slack adapter"
 
 
 # ---------------------------------------------------------------------------
@@ -2013,12 +2119,14 @@ class TestPollLoopTerminatesOnStop:
         # Nine fix-triggering ticks (a failing check fires every cycle, no
         # suppressor active yet — HEAD advances every cycle so neither the
         # fix budget nor stagnation trips first), then a tenth tick where
-        # the gate's own cycle >= max_cycles(10) default trips -> Stop, and
+        # the gate's own cycle >= max_cycles(10) default trips -> Stop
+        # (plus its accompanying terminal Notify, § card 3035 Fix 1), and
         # the loop returns instead of continuing on to the outer bound of 15.
-        assert len(sent) == 10
-        assert all(isinstance(msg, StartFixSession) for msg in sent[:-1])
-        assert isinstance(sent[-1], Stop)
-        assert sent[-1].reason == "cycle_budget_exhausted"
+        assert len(sent) == 11
+        assert all(isinstance(msg, StartFixSession) for msg in sent[:-2])
+        assert isinstance(sent[-2], Stop)
+        assert sent[-2].reason == "cycle_budget_exhausted"
+        assert isinstance(sent[-1], Notify)
         assert mock_invoke.call_count == 9
 
         # No sleep follows the Stop-carrying tick — the loop returns

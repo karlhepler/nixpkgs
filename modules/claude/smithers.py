@@ -105,6 +105,36 @@ SLACK_SEARCH_TOOL = "mcp__claude_ai_Slack__slack_search_public"
 # block the poll loop indefinitely.
 SLACK_DEDUP_TIMEOUT_SECONDS = int(os.environ.get("SMITHERS_SLACK_DEDUP_TIMEOUT_SECONDS", "45"))
 
+# Trigger 3's exclusion list (§ The gate, trigger 3; .scratchpad/2967-v3-
+# design.md:81 — "an unfiltered 'any bot comment' trigger fires on
+# informational bot noise with no way to suppress it, which is exactly the
+# false-positive class the Node implementation's allowlist exists to
+# prevent"). Kept deliberately small and conservative
+# (.scratchpad/3033-swe-devex-review.md Finding 4): a bot wrongly excluded
+# here silently drops genuine feedback, which is worse than one spurious fix
+# invocation. Override via SMITHERS_INFORMATIONAL_BOT_AUTHORS
+# (comma-separated) or --informational-bot-authors, which both win over this
+# default (§ _resolve_informational_bot_authors).
+DEFAULT_INFORMATIONAL_BOT_AUTHORS: Tuple[str, ...] = ("codecov[bot]",)
+
+
+def _resolve_informational_bot_authors(
+    explicit: Optional[str], env: Dict[str, str]
+) -> Tuple[str, ...]:
+    """Resolve the Trigger 3 exclusion list. Precedence: the explicit
+    `--informational-bot-authors` CLI flag, then
+    `SMITHERS_INFORMATIONAL_BOT_AUTHORS` (comma-separated, whitespace
+    trimmed, empty entries dropped), then `DEFAULT_INFORMATIONAL_BOT_AUTHORS`.
+    An explicit value that parses to zero authors (empty string, or only
+    commas/whitespace) falls back to the default rather than silently
+    disabling the exclusion list."""
+    raw = explicit if explicit is not None else env.get("SMITHERS_INFORMATIONAL_BOT_AUTHORS")
+    if raw is None:
+        return DEFAULT_INFORMATIONAL_BOT_AUTHORS
+    authors = tuple(a.strip() for a in raw.split(",") if a.strip())
+    return authors if authors else DEFAULT_INFORMATIONAL_BOT_AUTHORS
+
+
 # Fix execution (§ Fix execution, § Failure modes,
 # .scratchpad/2967-v3-design.md) — the external wall-clock ceiling on ONE
 # blocking fix-session invocation. "Proposed: 20 minutes — wider than a bare
@@ -924,6 +954,67 @@ class TickRequest:
     manual_merge_opt_out: bool = False  # a manual-merge opt-out is recorded in state
 
 
+# ---------------------------------------------------------------------------
+# Notify construction (§ Ports and adapters; § Feature parity checklist rows
+# 42/44; .scratchpad/3033-swe-devex-review.md Finding 2) — the pure handler's
+# own vocabulary for WHEN a notification belongs, kept separate from the
+# adapters that decide HOW to deliver one. Only ever called from inside
+# `tick`, never from `poll_loop`/the composition root (§ card 3035
+# constraints: emission is a gate decision, not an adapter-side concern).
+# ---------------------------------------------------------------------------
+
+def _is_clean_awaiting_review(snapshot: PRSnapshot) -> bool:
+    """True inside `tick`'s "no trigger fired" branch when the PR is
+    genuinely clean — CI fully green, not merely all-pending — and not a
+    draft, but not yet ready to land because review has not been approved.
+    Mirrors v2's Step 7a: "the PR is clean ... but cannot be merged yet —
+    typically because review is required. Notify reviewers via Slack"
+    (modules/claude/global/skills/smithers/SKILL.md:351) — the exact
+    behavior the cross-restart Slack dedup subsystem (card 3031) was built
+    for.
+
+    Only ever consulted from inside the "no trigger fired" branch of `tick`,
+    so checks_fail, merge conflicts, actionable bot comments, and
+    merge-queue eviction are already known-false by construction (§ The
+    gate TRIGGERS) — this predicate only adds the checks those triggers
+    don't cover: draft state, pending/unknown checks, and review approval.
+    """
+    if snapshot.is_draft:
+        return False
+    if not snapshot.checks_pass or snapshot.checks_pending or snapshot.checks_unknown:
+        return False
+    return snapshot.review_decision != "APPROVED"
+
+
+def _clean_awaiting_review_notify(snapshot: PRSnapshot) -> Notify:
+    """The Notify emitted alongside `NoWorkNeeded` when
+    `_is_clean_awaiting_review` holds (§ above). `sound=False`: this is a
+    recurring, non-terminal state that can repeat every poll cycle while
+    review is pending — not a one-time terminal outcome — and
+    `notify_slack`'s cross-restart dedup (card 3031) is what keeps this
+    from posting to Slack more than once per PR, not this predicate."""
+    return Notify(
+        title="Smithers",
+        body=f"PR #{snapshot.pr_number} is clean and awaiting review",
+        sound=False,
+    )
+
+
+def _terminal_stop_notify(snapshot: PRSnapshot, reason: str) -> Notify:
+    """The macOS-audible Notify accompanying every terminal `Stop{reason}`
+    (§ Feature parity checklist row 44: "keep the distinct sounds per
+    terminal state"). Safe to fire unconditionally here: every TERMINAL
+    suppressor already halts the watch for real (`poll_loop` returns on
+    `Stop`), unlike a hypothetical Land-time notification, which would be
+    premature today since no adapter yet performs the real GitHub mutation
+    (§ Feature parity checklist row 13 — a later phase)."""
+    return Notify(
+        title="Smithers",
+        body=f"PR #{snapshot.pr_number} watch stopped: {reason}",
+        sound=True,
+    )
+
+
 def tick(req: TickRequest, send: Callable[[Message], None]) -> None:
     """The pure gate handler (§ Ports and adapters; § The gate).
 
@@ -954,6 +1045,7 @@ def tick(req: TickRequest, send: Callable[[Message], None]) -> None:
     terminal_reason = _terminal_suppression_reason(req)
     if terminal_reason is not None:
         send(Stop(reason=terminal_reason))
+        send(_terminal_stop_notify(snapshot, terminal_reason))
         return
 
     trigger_fired = (
@@ -964,6 +1056,8 @@ def tick(req: TickRequest, send: Callable[[Message], None]) -> None:
     )
 
     if not trigger_fired:
+        if _is_clean_awaiting_review(snapshot):
+            send(_clean_awaiting_review_notify(snapshot))
         send(NoWorkNeeded())
         return
 
@@ -981,16 +1075,14 @@ def tick(req: TickRequest, send: Callable[[Message], None]) -> None:
 # that isn't a `Notify` is a silent no-op here.
 # ---------------------------------------------------------------------------
 
-def notify_macos(msg: Message, dry_run: bool, log_path: str) -> None:
+def notify_macos(msg: Message, log_path: str) -> None:
     """macOS notification adapter, via `osascript` (§ Ports and adapters
     table: "Notification | Notify | macOS osascript + Slack via
-    smithers-post"). `dry_run` logs what would have fired and performs no
-    real notification — no `osascript` subprocess call at all."""
+    smithers-post"). Unconditional: the CLI's one dry-run mechanism is
+    `cmd_watch`'s own early return before `build_send` is ever constructed
+    (§ card 3035 Fix 3) — this adapter carries no second, unreachable
+    dry-run branch of its own."""
     if not isinstance(msg, Notify):
-        return
-
-    if dry_run:
-        log_event(log_path, "notify_macos_dry_run", title=msg.title, body=msg.body, sound=msg.sound)
         return
 
     script = f"display notification {json.dumps(msg.body)} with title {json.dumps(msg.title)}"
@@ -1122,7 +1214,6 @@ def query_slack_dedup(pr_reference: str, log_path: str) -> Optional[bool]:
 def notify_slack(
     msg: Message,
     pr_number: Optional[str],
-    dry_run: bool,
     log_path: str,
     already_posted: Dict[str, bool],
 ) -> None:
@@ -1151,6 +1242,11 @@ def notify_slack(
     itself fails for ANY reason, this adapter FAILS OPEN and posts anyway,
     logging that dedup could not be verified (§ query_slack_dedup docstring
     for why that direction, not the reverse, is required).
+
+    Unconditional, like `notify_macos`: the CLI's one dry-run mechanism is
+    `cmd_watch`'s own early return before `build_send` is ever constructed
+    (§ card 3035 Fix 3) — this adapter carries no second, unreachable
+    dry-run branch of its own.
     """
     if not isinstance(msg, Notify):
         return
@@ -1158,10 +1254,6 @@ def notify_slack(
         return
     if already_posted.get(pr_number):
         log_event(log_path, "notify_slack_dedup_skip", pr=pr_number, source="in_memory")
-        return
-
-    if dry_run:
-        log_event(log_path, "notify_slack_dry_run", pr=pr_number, title=msg.title)
         return
 
     verdict = query_slack_dedup(pr_number, log_path)
@@ -1209,7 +1301,6 @@ def fan_out(handlers: List[Callable[[Message], None]]) -> Callable[[Message], No
 
 def build_send(
     pr_number: Optional[str],
-    dry_run: bool,
     log_path: str,
     already_posted: Optional[Dict[str, bool]] = None,
 ) -> Callable[[Message], None]:
@@ -1217,14 +1308,18 @@ def build_send(
     on one PR, with real adapters wired via `fan_out` (§ Ports and adapters,
     Composition-root corollary). `already_posted` is exposed as a parameter
     so a caller can share one dict across multiple `tick()` calls in a
-    future poll loop; a fresh dict is created when omitted."""
+    future poll loop; a fresh dict is created when omitted.
+
+    No `dry_run` parameter: the CLI's one dry-run mechanism is `cmd_watch`'s
+    own early return before this composition root is ever constructed
+    (§ card 3035 Fix 3) — see `notify_macos`/`notify_slack`."""
     if already_posted is None:
         already_posted = {}
 
     return fan_out(
         [
-            lambda msg: notify_macos(msg, dry_run, log_path),
-            lambda msg: notify_slack(msg, pr_number, dry_run, log_path, already_posted),
+            lambda msg: notify_macos(msg, log_path),
+            lambda msg: notify_slack(msg, pr_number, log_path, already_posted),
             lambda msg: log_adapter(msg, log_path),
         ]
     )
@@ -1607,6 +1702,19 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_LOG_PATH,
         help=f"JSONL log destination (default: {DEFAULT_LOG_PATH} or $SMITHERS_LOG_PATH)",
     )
+    parser.add_argument(
+        "--informational-bot-authors",
+        metavar="AUTHORS",
+        default=None,
+        dest="informational_bot_authors",
+        help=(
+            "Comma-separated bot authors excluded from the actionable-bot-"
+            "comment trigger (§ The gate, trigger 3) — e.g. coverage bots "
+            "that comment informationally and never expect a fix. Overrides "
+            "$SMITHERS_INFORMATIONAL_BOT_AUTHORS. Default: "
+            f"{', '.join(DEFAULT_INFORMATIONAL_BOT_AUTHORS)}"
+        ),
+    )
 
     return parser
 
@@ -1629,8 +1737,13 @@ def cmd_watch(args: argparse.Namespace) -> int:
         print(f"smithers watch: dry run for PR {pr!r} — preflight passed, no further action taken")
         return 0
 
-    send = build_send(pr_number=pr, dry_run=False, log_path=args.log_file)
-    config = PollLoopConfig(accept_api_billing=args.accept_api_billing)
+    send = build_send(pr_number=pr, log_path=args.log_file)
+    config = PollLoopConfig(
+        accept_api_billing=args.accept_api_billing,
+        informational_bot_authors=_resolve_informational_bot_authors(
+            args.informational_bot_authors, dict(os.environ)
+        ),
+    )
     poll_loop(pr, config, send, args.log_file)
     return 0
 
