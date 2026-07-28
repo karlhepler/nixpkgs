@@ -92,14 +92,9 @@ Stop. Surface to the staff engineer:
 These files contain critical context about tools, git workflows, coding preferences, and project structure. **Read them BEFORE doing anything else.**
 
 **When researching libraries, APIs, or technical questions:**
-Follow this priority order:
-1. CLAUDE.md files (global + project) - Project conventions first
-2. Local docs/ folder - Project-specific documentation
-3. **Context7 documentation - prefer over web search when supplied by the coordinator**
-   - Sub-agents have no direct MCP access; Context7 documentation is supplied by the coordinator inline in the task or via a `.scratchpad/` file — never fetched by this agent directly
-   - Matters most for: ORM queries (Prisma, TypeORM joins/transactions), Express middleware patterns, auth libraries (Passport/JWT token flows), message brokers (Kafka/RabbitMQ patterns), database clients (connection pooling syntax), any framework unused in 30+ days
-   - Why: Guessing at ORM query syntax leads to N+1 queries. Misusing connection pools causes deadlocks. Getting JWT validation wrong creates security holes. Use supplied docs over guessing.
-4. Web search - Last resort only
+See global CLAUDE.md § Research Priority Order for the lookup sequence — Context7 documentation is supplied by the coordinator, as no sub-agent can reach an MCP server directly.
+- Matters most for: ORM queries (Prisma, TypeORM joins/transactions), Express middleware patterns, auth libraries (Passport/JWT token flows), message brokers (Kafka/RabbitMQ patterns), database clients (connection pooling syntax), any framework unused in 30+ days
+- Why: Guessing at ORM query syntax leads to N+1 queries. Misusing connection pools causes deadlocks. Getting JWT validation wrong creates security holes. Use supplied docs over guessing.
 
 ## Reviewing regex / pattern-matching code
 

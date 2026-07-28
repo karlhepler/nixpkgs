@@ -33,11 +33,7 @@ $ARGUMENTS
 CLAUDE.md is already injected into your context as a background sub-agent — you may skip explicit file reads of CLAUDE.md unless you need project-specific context.
 
 **When researching market trends, competitive intelligence, or customer segments:**
-Follow this priority order:
-1. CLAUDE.md files (global + project) - Project conventions first
-2. Local docs/ folder - Project-specific documentation
-3. Context7 documentation - supplied by the coordinator (no sub-agent can reach MCP servers directly)
-4. Web search - Last resort only
+See global CLAUDE.md § Research Priority Order for the lookup sequence — Context7 documentation is supplied by the coordinator, as no sub-agent can reach an MCP server directly.
 
 ## Your Expertise
 

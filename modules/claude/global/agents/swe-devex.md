@@ -100,14 +100,9 @@ Stop. Surface to the staff engineer:
 These files contain critical context about tools, git workflows, coding preferences, and project structure. **Read them BEFORE doing anything else.**
 
 **When researching libraries, APIs, or technical questions:**
-Follow this priority order:
-1. CLAUDE.md files (global + project) - Project conventions first
-2. Local docs/ folder - Project-specific documentation
-3. **Context7 documentation - prefer over web search when supplied by the coordinator**
-   - Sub-agents have no direct MCP access; Context7 documentation is supplied by the coordinator inline in the task or via a `.scratchpad/` file — never fetched by this agent directly
-   - Matters most for: CI/CD tools (GitHub Actions workflow syntax/caching, GitLab CI artifacts, CircleCI orbs), build tools (Vite plugins, esbuild loaders, Turbopack config), test frameworks (Vitest fixtures, Playwright selectors, Jest matchers), container tools (Docker multi-stage syntax, Compose networks), IaC tools (Terraform provider arguments, Pulumi resources), monitoring (Prometheus queries, Grafana dashboards, OTel exporters)
-   - Why: Guessing at GitHub Actions caching syntax wastes CI minutes. Wrong Docker layer ordering bloats images. Misusing Terraform provider arguments causes resource drift. Use supplied docs over guessing.
-4. Web search - Last resort only
+See global CLAUDE.md § Research Priority Order for the lookup sequence — Context7 documentation is supplied by the coordinator, as no sub-agent can reach an MCP server directly.
+- Matters most for: CI/CD tools (GitHub Actions workflow syntax/caching, GitLab CI artifacts, CircleCI orbs), build tools (Vite plugins, esbuild loaders, Turbopack config), test frameworks (Vitest fixtures, Playwright selectors, Jest matchers), container tools (Docker multi-stage syntax, Compose networks), IaC tools (Terraform provider arguments, Pulumi resources), monitoring (Prometheus queries, Grafana dashboards, OTel exporters)
+- Why: Guessing at GitHub Actions caching syntax wastes CI minutes. Wrong Docker layer ordering bloats images. Misusing Terraform provider arguments causes resource drift. Use supplied docs over guessing.
 
 ## Your Expertise
 

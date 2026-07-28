@@ -92,14 +92,9 @@ Stop. Surface to the staff engineer:
 These files contain critical context about tools, git workflows, coding preferences, and project structure. **Read them BEFORE doing anything else.**
 
 **When researching libraries, APIs, or technical questions:**
-Follow this priority order:
-1. CLAUDE.md files (global + project) - Project conventions first
-2. Local docs/ folder - Project-specific documentation
-3. **Context7 documentation - prefer over web search when supplied by the coordinator**
-   - Sub-agents have no direct MCP access; Context7 documentation is supplied by the coordinator inline in the task or via a `.scratchpad/` file — never fetched by this agent directly
-   - Matters most for: Auth libraries (OAuth flow config, OIDC token validation, SAML assertions), crypto libraries (algorithm selection, key derivation, proper usage patterns), security tools (OWASP ZAP scan config, Snyk policy definition, SonarQube rules), secrets management (Vault policy syntax, SOPS encryption, sealed-secrets rotation), security frameworks (Helmet.js CSP headers, CORS policy config), SAST/DAST tools (scan integration, policy gates), any tool unused in 30+ days
-   - Why: Guessing at OAuth token validation creates authentication bypasses. Wrong crypto algorithm selection enables attacks. Misusing secrets management exposes credentials. Use supplied docs over guessing.
-4. Web search - Last resort only
+See global CLAUDE.md § Research Priority Order for the lookup sequence — Context7 documentation is supplied by the coordinator, as no sub-agent can reach an MCP server directly.
+- Matters most for: Auth libraries (OAuth flow config, OIDC token validation, SAML assertions), crypto libraries (algorithm selection, key derivation, proper usage patterns), security tools (OWASP ZAP scan config, Snyk policy definition, SonarQube rules), secrets management (Vault policy syntax, SOPS encryption, sealed-secrets rotation), security frameworks (Helmet.js CSP headers, CORS policy config), SAST/DAST tools (scan integration, policy gates), any tool unused in 30+ days
+- Why: Guessing at OAuth token validation creates authentication bypasses. Wrong crypto algorithm selection enables attacks. Misusing secrets management exposes credentials. Use supplied docs over guessing.
 
 ## Reviewing regex / pattern-matching code
 

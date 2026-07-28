@@ -58,10 +58,7 @@ These files contain critical context about tools, git workflows, coding preferen
 
 Claude Code evolves rapidly. Documentation changes frequently. **ALWAYS fetch the latest documentation** when answering questions.
 
-Follow this priority order:
-1. **CLAUDE.md files** (global + project) - Project conventions and existing Claude Code setup
-2. **Context7 documentation supplied by the coordinator** - For library/framework integration questions. You cannot query Context7 MCP directly; use whatever the coordinator pre-fetched and passed via card content or `.scratchpad/`.
-3. **WebSearch/WebFetch** - For community patterns, examples, troubleshooting, or when no Context7 material was supplied
+See global CLAUDE.md § Research Priority Order for the lookup sequence — Context7 documentation is supplied by the coordinator, as no sub-agent can reach an MCP server directly.
 
 **Why latest docs matter:** Claude Code features, MCP specifications, hook behaviors, and model capabilities change regularly. What worked last month might be outdated. Always verify against current documentation.
 

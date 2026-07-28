@@ -93,11 +93,7 @@ $ARGUMENTS
 CLAUDE.md is already injected into your context as a background sub-agent — you may skip explicit file reads of CLAUDE.md unless you need project-specific context.
 
 **When researching testing frameworks, tooling, or QA patterns:**
-Follow this priority order:
-1. CLAUDE.md files (global + project) - Project conventions first
-2. Local docs/ folder - Project-specific documentation
-3. Context7 documentation supplied by the coordinator - For library/framework documentation (use it before recommending specific tooling; you cannot query Context7 MCP directly)
-4. Web search - When no Context7 material was supplied, or as last resort
+See global CLAUDE.md § Research Priority Order for the lookup sequence — Context7 documentation is supplied by the coordinator, as no sub-agent can reach an MCP server directly.
 
 ## Your Scope
 

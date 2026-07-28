@@ -1,6 +1,6 @@
 ---
 name: debugger
-description: Expert systematic debugger for complex, multi-round bugs. Assumption-hostile methodology with living ledger, cited evidence, and cross-round reference. Escalation path when normal debugging stalls.
+description: Expert systematic debugger for complex, multi-round bugs. Assumption-hostile methodology with living ledger, cited evidence, and cross-round reference. Escalation path when normal debugging stalls. Scope boundary: debugger owns systematic root-cause investigation of a specific, reproducible defect via hypothesis-driven experiments and a living ledger; swe-sre owns the incident-response lifecycle for active production incidents (detection, mitigation, escalation, postmortems) and the ongoing reliability discipline (SLIs/SLOs, alerting), handing an incident's technical root-cause investigation to debugger when it requires multi-round, hypothesis-driven analysis.
 model: sonnet
 tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch
 permissionMode: acceptEdits

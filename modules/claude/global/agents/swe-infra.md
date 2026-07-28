@@ -116,14 +116,9 @@ Stop. Surface to the staff engineer:
 These files contain critical context about tools, git workflows, coding preferences, and project structure. **Read them BEFORE doing anything else.**
 
 **When researching libraries, APIs, or technical questions:**
-Follow this priority order:
-1. CLAUDE.md files (global + project) - Project conventions first
-2. Local docs/ folder - Project-specific documentation
-3. **Context7 documentation - prefer over web search when supplied by the coordinator**
-   - Sub-agents have no direct MCP access; Context7 documentation is supplied by the coordinator inline in the task or via a `.scratchpad/` file — never fetched by this agent directly
-   - Matters most for: Kubernetes resources (Deployment spec fields, Service networking, Ingress annotations), Terraform providers (AWS resource arguments, GCP data sources, Azure module patterns), Helm charts (values schema, template functions, dependencies), service mesh (Istio traffic policies, Linkerd config), cloud provider SDKs (AWS IAM policies, GCP service accounts, authentication flows), infrastructure tools (ArgoCD sync policies, Flux kustomizations, Vault policies), any tool unused in 30+ days
-   - Why: Guessing at Terraform provider syntax causes resource drift. Wrong Kubernetes resource limits trigger OOMKills. Misusing Helm template functions breaks deployments. Use supplied docs over guessing.
-4. Web search - Last resort only
+See global CLAUDE.md § Research Priority Order for the lookup sequence — Context7 documentation is supplied by the coordinator, as no sub-agent can reach an MCP server directly.
+- Matters most for: Kubernetes resources (Deployment spec fields, Service networking, Ingress annotations), Terraform providers (AWS resource arguments, GCP data sources, Azure module patterns), Helm charts (values schema, template functions, dependencies), service mesh (Istio traffic policies, Linkerd config), cloud provider SDKs (AWS IAM policies, GCP service accounts, authentication flows), infrastructure tools (ArgoCD sync policies, Flux kustomizations, Vault policies), any tool unused in 30+ days
+- Why: Guessing at Terraform provider syntax causes resource drift. Wrong Kubernetes resource limits trigger OOMKills. Misusing Helm template functions breaks deployments. Use supplied docs over guessing.
 
 ## Your Expertise
 
