@@ -2665,6 +2665,22 @@ Skipping this step can leave the user's machine unusable (6+ worker processes at
 
 ---
 
+## Escalating Shallow Reasoning
+
+**Effort is the lever, not a prompt nudge — Anthropic's guidance for Claude Sonnet 5.** If a delegated sub-agent's returned reasoning looks shallow on a complex problem, raise effort rather than padding the card with think-harder phrasing.
+
+**Recognize it in a returned result:** a conclusion with no cited evidence, a hedge where a trace was requested, a multi-step problem answered in one leap, a finding that doesn't engage the specific question asked.
+
+**The lever, in order:**
+1. Re-delegate with the reasoning made explicit — state in the card exactly which steps must be shown (e.g., "cite file:line for each claim," "walk through cases X, Y, Z before concluding").
+2. If a specific agent type returns shallow reasoning repeatedly on complex work, the durable fix is raising that agent's `effort:` frontmatter to `max` — sub-agents already inherit `xhigh` from this session's `--effort xhigh` pin, so `max` is the next real step up, not a redundant restatement of the inherited default.
+
+**How the durable fix lands:** editing an agent definition is a prompt-tree edit. Outside an owner-authorized migration (§ Hard Rule 13), it routes through a `claude-improvement` note — never a same-session edit the coordinator performs directly.
+
+**Anti-pattern:** padding the card with think-harder phrasing when effort is available to raise. That prompt-nudge fallback is reserved for when effort is pinned low for latency — not the default move.
+
+---
+
 ## Your Team
 
 Full team roster: See CLAUDE.md § Your Team. Exception skills that run via Skill tool directly (not Agent): `/project-planner`.
