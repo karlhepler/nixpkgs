@@ -928,6 +928,8 @@ Stage 1 has an inherent parallelism ceiling of **two** concurrent edit units, be
 
 **The numbers every Stage 1 card must now state: 450 for the global file, 314 for the project-root file, aggregate 764, reduction 153.** § Q6 reopened and re-answered shows every subtraction, and the correction following it shows why 291 failed.
 
+> **⚠ AMENDMENT 4 (card #3005) qualifies this sentence.** The 153-line reduction is a disk measurement only. Card #3004's injection smoke test (verdict `OLD BOTH`) found it unrealized in the session that made it, and untested for a session started afterward. See § The in-session verification limit and § Amendment 4 for the corrected claim and for why the Stage 1 reviews are unaffected.
+
 ### Stage 1 validation gate
 
 Every check below must pass before Stage 2 begins. This is the validation gate, stated as commands rather than intentions.
@@ -938,6 +940,8 @@ Every check below must pass before Stage 2 begins. This is the validation gate, 
 3. **Invariant presence assertions — the mechanical heart of this gate.** One `rg -q` pattern per protected invariant, run against the post-edit files, all of which must exit 0. Drawn from each invariant's most distinctive phrase so that rewording the surrounding prose cannot satisfy them accidentally: the never-skip-hooks clause and its human-delegated-bypass sentence; each of the four ask-first operations by name (`hms --purge`, `git reset --hard`, `git push --force`, `rm -rf`); `perm purge` as user-only; every enumerated worktree-confinement prohibited-target category; the `--draft` requirement; every entry in the PR-description banned-phrasing list; the `karlhepler/` prefix; SHA-pinning; `rg` not `grep` and `fd` not `find`; the `rg -E` footnote; one-command-per-Bash-call; the `sh -c` prohibition; the Homebrew prohibition; `One task = one deliverable`; the LLM-specific abstraction trap; the rule of three; and the macOS Trash mechanism sentence. **This list becomes a committed script in the Stage 1 unit so Stages 2–4 can re-run it unchanged.**
 4. **Line accounting on the diff.** Every line removed from a Tier-1 file appears in a destination file in the same commit, or the commit body states it as a deliberate deletion with a reason. No silent losses.
 5. **Sub-agent injection smoke test.** Spawn one trivial background sub-agent and confirm its leading `claudeMd` block contains both files and that assertion set 3 still passes against what it received. This is the only check that proves the *injection path* still works rather than that the *files* still say the right thing — the composition-root problem applied to prompts.
+
+   > **Run 2026-07-28, card #3004, session `stout-ember`.** Verdict: **`OLD BOTH`**. Both files were present in the spawned sub-agent's `claudeMd` block — injection is structurally intact — but both files' content was the pre-edit version, still carrying `## External References` and `## Configuration Structure` and none of the four reference markers the edits added. Full result: `.scratchpad/S1-injection-smoke-test.md`. **This does not mean unit 1.4 or unit 1.5's edits are wrong.** It means this check, run in-session, cannot pass for any stage that reduces injected content — see § The in-session verification limit. Re-run this check from a session started after Stage 1's edits landed before treating it as passed.
 6. **Owner soak.** One week of ordinary `staff` and `sstaff` work with no reported behavioral surprise.
 
 ### Stage 1 revert procedure
@@ -1160,6 +1164,19 @@ Seven invariants are prompt-only with no mechanical backstop (WI-7, WI-10, WI-12
 ## Verification Strategy
 
 The hardest problem in this plan. Rewriting a prompt cannot be proven behavior-preserving, and a plan that claims otherwise is more dangerous than one that admits its blind spots.
+
+### The in-session verification limit — read this before designing any check for Stages 2–4
+
+**You cannot verify a context-size reduction from inside the session that made the change.** A sub-agent spawned after the edit still receives the pre-edit content — confirmed, not theorized. Card #3004 ran Stage 1 validation gate item 5 (the sub-agent injection smoke test) from the same parent session that had just committed unit 1.5, instructing the sub-agent not to read either Tier-1 file directly so it could report only what its own injected context contained. **Verdict: `OLD BOTH`.** Both files were present in the spawned sub-agent's leading `claudeMd` block — so injection is structurally intact — but both files' content was the pre-edit version. The project-root file still carried `## External References` and `## Configuration Structure`, headings unit 1.5 removed from disk, and neither file carried any of the four reference markers the edits added. Full result: `.scratchpad/S1-injection-smoke-test.md`.
+
+The mechanism is not established — only the observation is. What is consistent with the observation: whatever serves injected context to a sub-agent appears to snapshot it at parent-session start, independent of what changes on disk afterward.
+
+**State the two claims separately — conflating them is the specific error this section exists to prevent.**
+
+- **PROVEN.** The reduction is not realized in the session that made it, nor in any sub-agent spawned from that session.
+- **NOT PROVEN.** That the reduction IS realized in a session started after the change landed. No test has confirmed this. It is plausible; it is untested. Do not write that restarting fixes it — record it as untested, not as working.
+
+**Consequence for Stages 2, 3, and 4.** Every remaining stage reduces content that is injected or loaded the same way Stage 1 did — coordinator output styles at session start, sub-agent definitions and skills per-invocation. Each stage's structural analogue of gate item 5 must be run from a session **started after** that stage's edits land, never from the session that made them. Run in-session, it reproduces `OLD BOTH` regardless of whether the edit is correct, and a reader could misread that as the edit having failed rather than as the check having been run at the wrong time. This is a fix to how verification is sequenced, not an edit to any stage's content. See § Amendment 4.
 
 ### What can be checked mechanically
 
@@ -1463,6 +1480,8 @@ Aggregate — REVISED
 
 **What moved, in one line each.** Global target 360 → **450** (+90). Project-root target 200 → **291** → **314** (+114 from 200). Aggregate 560 → **741** → **764** (+204 from 560). Reduction 357 → **176** → **153** (−204 from 357). Global slack 1 line → **0–1 contingent**. Project-root slack 111 claimed → **0**. **Neither cap has slack now, and both caps sit exactly at their verified-safe floors.**
 
+> **⚠ AMENDMENT 4 qualifies the reduction figure above.** 153 lines is a disk measurement. Card #3004's injection smoke test (verdict `OLD BOTH`) found the reduction unrealized in the session that made it — a sub-agent spawned from that session still received the pre-edit, 917-line content. Whether a session started after the edit lands receives the reduced files is **untested**; do not assert that it does. The accurate claim: **153 lines removed from disk; benefit unrealized in-session; realization on a fresh session untested.** See § The in-session verification limit and § Amendment 4.
+
 ### What the decisions changed about what is reachable
 
 **Stage 1 — reachable, but with no margin.** Unchanged in target, tightened in tolerance. R6's threshold moved from 170 to 171 relocatable lines.
@@ -1734,3 +1753,17 @@ Global `CLAUDE.md:521` lists `ac-reviewer` in the Support row of the team roster
 5. **Nothing else changed.** No target, decision, or stage content outside the project-root line-count cap and its dependent arithmetic was touched. The ten owner decisions in § Decisions stand exactly as recorded. No file under `modules/`, no output style, no agent definition, and no skill was read for editing or edited.
 
 **What this amendment deliberately did not do.** No file under `modules/` was read for editing, edited, or drafted against. The project-root `CLAUDE.md` itself was not re-read by this amendment; its 314-line state was taken from unit 1.5's accounting, which verified it directly. No replacement prompt text is drafted anywhere in this document beyond what Amendment 2 already drafted. Nothing was deleted: every superseded number, table, arithmetic block, and decision rationale — including Amendment 2's own now-superseded 291 — is left standing beside its correction, exactly as the pattern established by Amendments 1 and 2 requires.
+
+### Amendment 4 — 2026-07-28, session `stout-ember`, kanban card #3005
+
+**Driver: card #3004's injection smoke test result.** The final Stage 1 validation-gate check — item 5, the sub-agent injection smoke test — was run against a background sub-agent instructed not to read either Tier-1 file directly, so it could report only what its own injected context contained. **Verdict: `OLD BOTH`.** Both files were present, but both carried pre-edit content: the project-root file still showed `## External References` and `## Configuration Structure`, headings unit 1.5 removed, and neither file showed any of the four reference markers the Stage 1 edits added. Full result: `.scratchpad/S1-injection-smoke-test.md`.
+
+**What changed.**
+
+1. **New subsection § The in-session verification limit, added ahead of every check in § Verification Strategy** — the same placement pattern Amendments 2 and 3 used for their respective rules, so a future reader meets this limit before designing a verification for Stages 2–4. States the rule (a context-size reduction cannot be verified from inside the session that made the change, nor from a sub-agent spawned from that session), the evidence for it (the `OLD BOTH` result above), and the two claims held separately: **proven** — unrealized in-session; **not proven** — whether a fresh session realizes it, which remains untested.
+2. **§ Stage 1 units' closing sentence, § Stage 1 validation gate item 5, and § Recomputed Numbers' "what moved" sentence each gained a qualifying callout.** None of the three had its numbers changed — 450 / 314 / 764 / 153 all stand — but each now states that the 153-line reduction is a disk measurement whose in-session benefit is unrealized and whose fresh-session benefit is untested, cross-referenced to § The in-session verification limit rather than restated three times.
+3. **The corrected form of the Stage 1 achievement claim, stated once for reuse:** **153 lines removed from disk; benefit unrealized in-session; realization on a fresh session untested.** Any future card or document stating what Stage 1 achieved should use this form rather than an unqualified "153 lines saved" or a bare "153-line reduction" standing alone.
+4. **The Stage 1 reviews are unaffected, and this amendment says so explicitly rather than leaving a later reader to wonder.** Unit 1.4's and unit 1.5's Tier-1 reviews read both files from disk deliberately — reading from disk rather than trusting injected context is precisely how the discrepancy this amendment records was later detected. The review agents' own behavior was governed by the pre-edit instruction files, but those files are a **superset** of the post-edit ones: they carry the relocated content inline rather than behind a pointer. A reviewer working from a superset cannot be missing content the subset lacks, so there is no contradiction and no correctness impact on either review.
+5. **`docs/v5-migration/HANDOFF.md` updated to carry the same verdict and one operational instruction: the owner soak must begin from a session started after Stage 1's edits landed.** Soaking from a session started before the edits exercises the pre-edit files and would validate nothing — the soak is now also the only planned confirmation that a fresh session receives the reduced files, which this amendment's item 1 records as untested until that soak runs.
+
+**What this amendment deliberately did not do.** No target, decision, or stage content changed — 450, 314, 764, and 153 all stand exactly as Amendment 3 left them. No file under `modules/`, no output style, no agent definition, and no skill was read for editing or edited. No claim is added that a fresh session resolves `OLD BOTH`; the amendment records that possibility as untested and stops there, deliberately, because this project has already been damaged more than once by a plausible-and-untested claim being recorded as settled.

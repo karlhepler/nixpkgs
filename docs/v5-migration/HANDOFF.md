@@ -76,7 +76,7 @@ git status --short                               → clean apart from .scratchpa
 
 If any of that differs, **stop and surface it to the user** — another session may have run overnight.
 
-### ⚠️ Unit 1.5 IS LIVE AND UNREVIEWED — corrected claim, read carefully
+### ⚠️ Unit 1.5 IS LIVE — corrected claim, read carefully
 
 An earlier draft of this document said unit 1.5 was "committed but not deployed, so the review gate survives." **That was wrong.** The correction:
 
@@ -105,10 +105,12 @@ Row 6's git-alias block measured **16–17 lines, not 49**, so verified-safe dro
 | File | Original | Cap | Status |
 |---|---|---|---|
 | `modules/claude/global/CLAUDE.md` | 530 | **450** | ✅ reviewed, deployed, committed |
-| `CLAUDE.md` (project root) | 387 | **314** | ✅ committed and live; Tier-1 review outstanding |
-| Aggregate | 917 | **764** | **153-line reduction** |
+| `CLAUDE.md` (project root) | 387 | **314** | ✅ reviewed, committed, live |
+| Aggregate | 917 | **764** | **153-line reduction — disk only, see below** |
 
 > **This table was itself stale until 2026-07-28.** It said 291 / 741 / 176 after the cap correction had already been recorded elsewhere in this same document — exactly the failure this document warns about two sections down. Caught on re-read at resume. If you find another stale figure here, fix it and do not assume the rest are right.
+
+> **⚠ Injection smoke test result (card #3004): `OLD BOTH`.** A sub-agent spawned from this session, instructed not to read either Tier-1 file directly, received the pre-edit content of both — the project-root file still carried `## External References` and `## Configuration Structure`, headings Stage 1 removed, and neither file carried any of the four reference markers the edits added. Injection is structurally intact (both files were present); the content served was stale. **The 153-line reduction above is a disk measurement, not a confirmed saving** — it is unrealized in the session that made it, and untested for a session started afterward. Full result: `.scratchpad/S1-injection-smoke-test.md`; the rule this establishes and the corrected achievement claim: `docs/v5-migration/D-implementation-plan.md` § The in-session verification limit and § Amendment 4. **Consequence: the owner soak below must begin from a FRESH session started after Stage 1's edits landed.** Soaking from a session started before the edits exercises the pre-edit files and validates nothing — restarting `staff`/`sstaff` first makes the soak both the behavioral check and the only planned confirmation that a fresh session actually picks up the reduced files, which remains untested until that soak runs.
 
 The plan originally promised 357 lines. Measurement cut that to 176, and unit 1.5's proof cut it again to **153**, because **151 lines across both files are needed by every sub-agent and cannot be relocated anywhere** — no available mechanism both reduces context and reliably reaches a background sub-agent — and because a SPLIT section's structural overhead was wrongly counted as relocatable. **Anthropic's 200-line target is unreachable by prompt editing alone.** The hook-enforcement route is the tracked follow-on.
 
@@ -133,8 +135,8 @@ Note for the reviewer: unit 1.4's review found its accounting asserted "no inbou
 **5. Amend Document D for the 291 → 314 correction.** It still states 291 in the Stage 1 arithmetic, the unit table, the validation gate's line-count check, `## Recomputed Numbers`, and `## Executive Summary`. **Correct all of them** — a stale target left anywhere is a number a later agent will chase. Record the SPLIT-overhead root cause so the same subtraction error is not repeated in Stages 2–4, which have SPLIT sections too. Revised Stage 1 aggregate: **450 + 314 = 764, a 153-line reduction from 917.**
 
 **6. Then the two remaining Stage 1 gates:**
-   - **Sub-agent injection smoke test.** Spawn one trivial background sub-agent and confirm its injected `claudeMd` block contains BOTH `CLAUDE.md` files and that the 31 assertions still pass against what it actually received. This is the only check that proves the *injection path* works rather than that the files say the right thing.
-   - **Owner soak.** One week of ordinary `staff` and `sstaff` work with no behavioral surprise. **Stage 2 does not open until the owner confirms this.** That gate is theirs, not yours.
+   - **Sub-agent injection smoke test — DONE, verdict `OLD BOTH` (card #3004).** Both files were present in the injected `claudeMd` block, but both carried pre-edit content. See the callout above § Stage 1 numbers and `D-implementation-plan.md` § The in-session verification limit. This check needs to be re-run from a session started after the edits landed before it can be counted as passed.
+   - **Owner soak.** One week of ordinary `staff` and `sstaff` work with no behavioral surprise, **starting from a FRESH session** — not the session that made Stage 1's edits, which would only exercise pre-edit files. **Stage 2 does not open until the owner confirms this.** That gate is theirs, not yours.
 
 ---
 
