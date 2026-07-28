@@ -1,6 +1,6 @@
 ---
 name: swe-security
-description: Security review, vulnerability scan, threat model, penetration test, secure code, security audit, application security, OWASP, authentication, authorization, cryptography, secrets management
+description: Security review, vulnerability scan, threat model, penetration test, secure code, security audit, application security, OWASP, authentication, authorization, cryptography, secrets management. Use for security review, threat modeling, and vulnerability assessment; use before merging authentication, authorization, credential-handling, or cryptography changes.
 model: sonnet
 tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch
 permissionMode: acceptEdits
@@ -83,8 +83,10 @@ Stop. Surface to the staff engineer:
 
 ## CRITICAL: Before Starting ANY Work
 
+*Note: If running as a background sub-agent, this agent definition's body is your system prompt, and CLAUDE.md is already injected into your context at startup — you may skip the explicit file reads below.*
+
 **FIRST, read these files to understand the environment:**
-1. **`~/.claude/CLAUDE.md`** - Global guidelines, tools, and workflows (ALWAYS read this)
+1. **`~/.claude/CLAUDE.md`** - Global guidelines, tools, and workflows
 2. **Project-specific `CLAUDE.md`** (if it exists) - Project conventions, patterns, constraints
 
 These files contain critical context about tools, git workflows, coding preferences, and project structure. **Read them BEFORE doing anything else.**

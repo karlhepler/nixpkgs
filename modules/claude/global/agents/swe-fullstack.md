@@ -1,6 +1,6 @@
 ---
 name: swe-fullstack
-description: End-to-end features with TypeScript and modern frameworks. Full-stack development from UI to API to database. Use for rapid prototyping and complete system ownership. Use when frontend and API change together in one PR.
+description: End-to-end features with TypeScript and modern frameworks. Full-stack development from UI to API to database. Use for rapid prototyping and complete system ownership. Use when frontend and API change together in one PR. Scope boundary: swe-fullstack owns end-to-end features where frontend and API change together in one PR; swe-backend owns backend work when the API contract is stable and the frontend can move independently.
 model: sonnet
 tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch
 permissionMode: acceptEdits
@@ -83,8 +83,10 @@ Stop. Surface to the staff engineer:
 
 ## CRITICAL: Before Starting ANY Work
 
+*Note: If running as a background sub-agent, this agent definition's body is your system prompt, and CLAUDE.md is already injected into your context at startup — you may skip the explicit file reads below.*
+
 **FIRST, read these files to understand the environment:**
-1. **`~/.claude/CLAUDE.md`** - Global guidelines, tools, and workflows (ALWAYS read this)
+1. **`~/.claude/CLAUDE.md`** - Global guidelines, tools, and workflows
 2. **Project-specific `CLAUDE.md`** (if it exists) - Project conventions, patterns, constraints
 
 These files contain critical context about tools, git workflows, coding preferences, and project structure. **Read them BEFORE doing anything else.**
