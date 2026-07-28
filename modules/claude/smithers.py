@@ -17,7 +17,12 @@ execution (invoking Claude) is a clearly-marked stub owned by phase 3. Card
 3027 closes a peer-review finding: the three TERMINAL gate suppressors
 (fix/cycle budget exhausted, stagnated) now emit `Stop{reason}` instead of a
 silent `NoWorkNeeded`, and the poll loop exits on `Stop` rather than
-spinning forever, structurally incapable of ever acting again.
+spinning forever, structurally incapable of ever acting again. Card 3031
+adds cross-restart Slack dedup with no local state file: `notify_slack` now
+asks Slack itself, via a narrowly-scoped headless Claude invocation
+(`query_slack_dedup`), whether a post about this PR already exists before
+posting — replacing the old in-run-only in-memory dedup, which never
+survived a restart.
 
 Usage:
     smithers                        # Auto-detect the PR for the current git
@@ -77,6 +82,21 @@ REFUSAL_ENV_VARS = (
 # on it would break the exact billing mode v3 depends on: it would stop
 # smithers from ever running under the one auth path Anthropic recommends for
 # unattended, subscription-billed automation like this tool. Do not re-add it.
+
+# Cross-restart Slack dedup (§ query_slack_dedup, § notify_slack) — the exact
+# MCP tool name the dedup probe is allowlisted to, PER INVOCATION, via
+# `--allowedTools`. Verified against `claude --help`'s documented
+# `mcp__<server>__<tool>` naming convention (already established elsewhere in
+# this codebase, e.g. `mcp__context7__resolve-library-id` in
+# global/CLAUDE.md) — never assumed to generalize from the Bash/file-tool
+# examples in `claude --help`'s own usage text.
+SLACK_SEARCH_TOOL = "mcp__claude_ai_Slack__slack_search_public"
+
+# Wall-clock bound on the dedup probe (§ query_slack_dedup, "bound the
+# cost") — a scoped, allowlisted call should complete in 1-2 turns; this
+# caps the worst case (a hung invocation) rather than letting a single tick
+# block the poll loop indefinitely.
+SLACK_DEDUP_TIMEOUT_SECONDS = int(os.environ.get("SMITHERS_SLACK_DEDUP_TIMEOUT_SECONDS", "45"))
 
 
 # ---------------------------------------------------------------------------
@@ -929,6 +949,125 @@ def notify_macos(msg: Message, dry_run: bool, log_path: str) -> None:
     log_event(log_path, "notify_macos", title=msg.title, sound=msg.sound)
 
 
+def _build_slack_dedup_prompt(pr_reference: str) -> str:
+    """The dedup probe's prompt (§ query_slack_dedup). Searches by the PR
+    reference itself — its number or URL — never by channel: the
+    `smithers-post` incoming webhook is write-only and never reveals which
+    channel it posts to (§ notify_slack docstring), so a channel-scoped
+    query has nothing to key on. A prior post WILL contain this PR's own
+    link or number regardless of which channel it landed in, so that is
+    what dedup keys on instead. Demands a single bare token back so the
+    caller parses an exact field, never screen-scraped prose (§ card
+    constraints)."""
+    return (
+        f"Search Slack for any existing message about pull request "
+        f"{pr_reference}. Search for the PR's own number or URL "
+        f"({pr_reference!r}) — do not search by channel; a prior post about "
+        "this PR will contain that link or number regardless of which "
+        "channel it was posted to.\n\n"
+        f"Use the {SLACK_SEARCH_TOOL} tool to run the search.\n\n"
+        "Respond with EXACTLY one word and nothing else: "
+        "DUPLICATE if you find an existing message about this PR, or "
+        "NOT_DUPLICATE if you do not."
+    )
+
+
+def _parse_slack_dedup_response(stdout_content: str) -> Optional[bool]:
+    """Parse the dedup probe's `--output-format json` envelope into a strict
+    True/False/None verdict (§ query_slack_dedup). Mirrors
+    `smithers-post.py`'s own `_parse_haiku_json_response` shape (a "result"
+    field inside a JSON envelope), but deliberately does NOT screen-scrape
+    prose (§ card constraints) — only an EXACT "DUPLICATE" or
+    "NOT_DUPLICATE" token (case-insensitive, whitespace-trimmed) is
+    accepted; anything else returns None, which is the caller's signal to
+    fail OPEN rather than guess."""
+    if not stdout_content:
+        return None
+
+    try:
+        wrapper = json.loads(stdout_content)
+    except json.JSONDecodeError:
+        return None
+
+    result_text = wrapper.get("result")
+    if not isinstance(result_text, str):
+        return None
+
+    token = result_text.strip().upper()
+    if token == "DUPLICATE":
+        return True
+    if token == "NOT_DUPLICATE":
+        return False
+    return None
+
+
+def query_slack_dedup(pr_reference: str, log_path: str) -> Optional[bool]:
+    """Ask Slack itself whether a post about `pr_reference` already exists,
+    via a headless `claude -p` invocation allowlisted to EXACTLY
+    `SLACK_SEARCH_TOOL` — nothing else.
+
+    Why per-invocation, not a settings grant: `perm` cannot grant a tool
+    globally — both `allow` and `always` write project-local
+    `.claude/settings.local.json` (§ Reference Documentation, perm CLI
+    mechanics), and smithers runs from arbitrary repos, so there is no
+    single settings file to grant into. Instead the allowlist is passed PER
+    INVOCATION via `--allowedTools`, combined with `--permission-mode
+    dontAsk` so anything outside that one tool is denied outright rather
+    than prompted for. This is least-privilege by construction, needs no
+    settings change anywhere, and works identically from any repo.
+
+    Returns True (a duplicate exists — do not post), False (none found —
+    safe to post), or None on ANY failure: the tool denied, the invocation
+    erroring, a timeout, or unparseable output. None is always the caller's
+    cue to FAIL OPEN and post anyway (§ card constraints, fail-open
+    direction) — a missed dedup costs one duplicate Slack message, while a
+    dedup that fails CLOSED would silently swallow the one notification
+    this whole watch exists to deliver, which is strictly worse. Never
+    raises past this boundary; every failure is logged with a reason
+    instead.
+    """
+    cmd = [
+        "claude", "-p",
+        "--model", "sonnet",
+        "--output-format", "json",
+        "--allowedTools", SLACK_SEARCH_TOOL,
+        "--permission-mode", "dontAsk",
+    ]
+    prompt = _build_slack_dedup_prompt(pr_reference)
+
+    try:
+        result = subprocess.run(
+            cmd,
+            input=prompt,
+            capture_output=True,
+            text=True,
+            timeout=SLACK_DEDUP_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except (subprocess.TimeoutExpired, OSError) as e:
+        log_event(log_path, "slack_dedup_query_failed", pr=pr_reference, message=str(e))
+        return None
+
+    if result.returncode != 0:
+        log_event(
+            log_path,
+            "slack_dedup_query_failed",
+            pr=pr_reference,
+            message=f"claude exited {result.returncode}: {result.stderr.strip()}",
+        )
+        return None
+
+    verdict = _parse_slack_dedup_response(result.stdout.strip())
+    if verdict is None:
+        log_event(
+            log_path,
+            "slack_dedup_query_failed",
+            pr=pr_reference,
+            message="could not parse a DUPLICATE/NOT_DUPLICATE verdict from claude's output",
+        )
+    return verdict
+
+
 def notify_slack(
     msg: Message,
     pr_number: Optional[str],
@@ -942,31 +1081,45 @@ def notify_slack(
     posts Block Kit formatting; this adapter only decides *whether* and
     *when* to invoke it — never reimplements its formatting or its gh calls.
 
-    Dedup note: `smithers-post.py` was read directly for this card (its
-    argparse surface is `pr`, `--no-summaries`, `--webhook-url` only — see
-    `smithers-post.py`) and carries NO built-in dedup of its own — verified
-    by source inspection, not assumed. The same-PR dedup that existed
-    historically lived in the now-retired v2 markdown skill's hand-maintained
-    `.smithers/slack_posted` flag FILE (`global/skills/smithers/SKILL.md:58`),
-    which has no equivalent under v3's fully-ephemeral, no-state-file
-    architecture (this module's own header docstring). This adapter
-    preserves the same observable behavior — never post twice for the same
-    PR within one watch run — via in-memory closure state (`already_posted`)
-    rather than a file. Cross-restart / calendar-day persistence would
-    require the persistent State model a later poll-loop card owns; not
-    invented here ahead of scope (YAGNI).
+    `smithers-post.py` was read directly for this card (its argparse surface
+    is `pr`, `--no-summaries`, `--webhook-url` only — see `smithers-post.py`)
+    and carries NO built-in dedup of its own — verified by source
+    inspection, not assumed.
+
+    Cross-restart dedup (§ card 3031): this fully-ephemeral CLI (§ module
+    docstring) has no state file to remember "already posted" across a
+    restart. Instead, `query_slack_dedup` asks Slack itself — via a headless
+    Claude invocation scoped to exactly the Slack search tool — whether a
+    post about this PR already exists. `already_posted` remains as a
+    same-run, zero-cost first check: once a PR has been posted (or
+    confirmed a duplicate) once in this run, every later tick short-circuits
+    before ever invoking Claude again. The two mechanisms never disagree,
+    because `already_posted` is only ever set from the outcome of the very
+    query it goes on to short-circuit — it is a cache of that query's
+    result, not a second, independent source of truth. If the Slack query
+    itself fails for ANY reason, this adapter FAILS OPEN and posts anyway,
+    logging that dedup could not be verified (§ query_slack_dedup docstring
+    for why that direction, not the reverse, is required).
     """
     if not isinstance(msg, Notify):
         return
     if pr_number is None:
         return
     if already_posted.get(pr_number):
-        log_event(log_path, "notify_slack_dedup_skip", pr=pr_number)
+        log_event(log_path, "notify_slack_dedup_skip", pr=pr_number, source="in_memory")
         return
 
     if dry_run:
         log_event(log_path, "notify_slack_dry_run", pr=pr_number, title=msg.title)
         return
+
+    verdict = query_slack_dedup(pr_number, log_path)
+    if verdict is True:
+        already_posted[pr_number] = True
+        log_event(log_path, "notify_slack_dedup_skip", pr=pr_number, source="slack_query")
+        return
+    if verdict is None:
+        log_event(log_path, "notify_slack_dedup_query_failed_posting_anyway", pr=pr_number)
 
     _run(["smithers-post", str(pr_number)])
     already_posted[pr_number] = True

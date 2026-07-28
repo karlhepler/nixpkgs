@@ -11,6 +11,7 @@ billing preflight (§ Policy risk, Hazard 1, .scratchpad/2967-v3-design.md):
 
 import json
 import os
+import subprocess
 import sys
 from unittest.mock import MagicMock, call, patch
 
@@ -1474,6 +1475,23 @@ class TestNotifyMacosAdapter:
         assert not os.path.exists(log_path)
 
 
+def fake_dedup_run(claude_result="NOT_DUPLICATE", calls=None):
+    """Build a subprocess.run side_effect that answers a `claude -p` dedup
+    invocation with a canned verdict token and passes any other command
+    (e.g. `smithers-post`) through to a plain successful fake result.
+    Records every command into `calls` (a caller-supplied list) when given,
+    so a test can assert both which commands ran and in what order."""
+
+    def side_effect(cmd, **kwargs):
+        if calls is not None:
+            calls.append(cmd)
+        if cmd[0] == "claude":
+            return fake_run_result(stdout=json.dumps({"result": claude_result}))
+        return fake_run_result()
+
+    return side_effect
+
+
 class TestNotifySlackAdapter:
     def test_dry_run_logs_and_makes_no_subprocess_call(self, tmp_path):
         log_path = str(tmp_path / "smithers.jsonl")
@@ -1485,21 +1503,6 @@ class TestNotifySlackAdapter:
         log_contents = open(log_path).read()
         assert "notify_slack_dry_run" in log_contents
 
-    def test_real_run_invokes_smithers_post_with_pr_number(self, tmp_path):
-        log_path = str(tmp_path / "smithers.jsonl")
-        calls = []
-
-        def fake_run(cmd, **kwargs):
-            calls.append(cmd)
-            return fake_run_result()
-
-        with patch("subprocess.run", side_effect=fake_run):
-            smithers_module.notify_slack(
-                Notify(title="t", body="b", sound=False), "123", dry_run=False, log_path=log_path, already_posted={}
-            )
-
-        assert calls == [["smithers-post", "123"]]
-
     def test_no_pr_number_is_a_no_op(self, tmp_path):
         log_path = str(tmp_path / "smithers.jsonl")
         with patch("subprocess.run", side_effect=AssertionError("must not be called with no PR number")):
@@ -1508,16 +1511,87 @@ class TestNotifySlackAdapter:
             )
         assert not os.path.exists(log_path)
 
-    def test_dedup_skips_a_second_post_for_the_same_pr(self, tmp_path):
+    # -- Direction 1: dedup query FOUND an existing post -> never post again --
+
+    def test_dedup_found_skips_the_post_entirely(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        calls = []
+
+        with patch("subprocess.run", side_effect=fake_dedup_run("DUPLICATE", calls)):
+            smithers_module.notify_slack(
+                Notify(title="t", body="b", sound=False), "123", dry_run=False, log_path=log_path, already_posted={}
+            )
+
+        assert calls == [
+            [
+                "claude", "-p", "--model", "sonnet", "--output-format", "json",
+                "--allowedTools", smithers_module.SLACK_SEARCH_TOOL, "--permission-mode", "dontAsk",
+            ]
+        ], "must query Slack and then stop — smithers-post must never run when a duplicate is found"
+        log_contents = open(log_path).read()
+        assert "notify_slack_dedup_skip" in log_contents
+
+    # -- Direction 2: dedup query did NOT find an existing post -> post --
+
+    def test_dedup_not_found_posts_to_slack(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        calls = []
+
+        with patch("subprocess.run", side_effect=fake_dedup_run("NOT_DUPLICATE", calls)):
+            smithers_module.notify_slack(
+                Notify(title="t", body="b", sound=False), "123", dry_run=False, log_path=log_path, already_posted={}
+            )
+
+        assert calls[0][0] == "claude", "must query Slack first"
+        assert calls[-1] == ["smithers-post", "123"], "must post once no duplicate is found"
+        log_contents = open(log_path).read()
+        assert "notify_slack" in log_contents
+
+    # -- Direction 3: dedup query FAILS -> fail OPEN and post anyway --
+
+    def test_dedup_query_failure_fails_open_and_still_posts(self, tmp_path):
         log_path = str(tmp_path / "smithers.jsonl")
         calls = []
 
         def fake_run(cmd, **kwargs):
             calls.append(cmd)
+            if cmd[0] == "claude":
+                raise subprocess.TimeoutExpired(cmd=cmd, timeout=45)
             return fake_run_result()
 
-        already_posted = {}
         with patch("subprocess.run", side_effect=fake_run):
+            smithers_module.notify_slack(
+                Notify(title="t", body="b", sound=False), "123", dry_run=False, log_path=log_path, already_posted={}
+            )
+
+        assert calls[-1] == ["smithers-post", "123"], "a failed dedup query must fail OPEN, not swallow the post"
+        log_contents = open(log_path).read()
+        assert "slack_dedup_query_failed" in log_contents
+        assert "notify_slack_dedup_query_failed_posting_anyway" in log_contents
+        assert "notify_slack" in log_contents
+
+    def test_dedup_invocation_uses_the_scoped_allowlist(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        calls = []
+
+        with patch("subprocess.run", side_effect=fake_dedup_run("NOT_DUPLICATE", calls)):
+            smithers_module.notify_slack(
+                Notify(title="t", body="b", sound=False), "123", dry_run=False, log_path=log_path, already_posted={}
+            )
+
+        claude_cmd = calls[0]
+        assert claude_cmd[claude_cmd.index("--allowedTools") + 1] == smithers_module.SLACK_SEARCH_TOOL
+        assert claude_cmd[claude_cmd.index("--permission-mode") + 1] == "dontAsk"
+
+    def test_in_memory_cache_skips_a_second_slack_query_for_the_same_pr(self, tmp_path):
+        """`already_posted` is a same-run cache of the dedup query's own
+        outcome, never a second, independently-disagreeing mechanism — once
+        set, later ticks in the same run must not re-query Slack at all."""
+        log_path = str(tmp_path / "smithers.jsonl")
+        calls = []
+
+        already_posted = {}
+        with patch("subprocess.run", side_effect=fake_dedup_run("NOT_DUPLICATE", calls)):
             smithers_module.notify_slack(
                 Notify(title="t1", body="b1", sound=False), "123", dry_run=False, log_path=log_path,
                 already_posted=already_posted,
@@ -1527,9 +1601,122 @@ class TestNotifySlackAdapter:
                 already_posted=already_posted,
             )
 
-        assert len(calls) == 1, "must not post to Slack twice for the same PR"
+        claude_calls = [c for c in calls if c[0] == "claude"]
+        post_calls = [c for c in calls if c[0] == "smithers-post"]
+        assert len(claude_calls) == 1, "must not query Slack twice for the same PR in one run"
+        assert len(post_calls) == 1, "must not post to Slack twice for the same PR"
         log_contents = open(log_path).read()
         assert "notify_slack_dedup_skip" in log_contents
+
+
+# ---------------------------------------------------------------------------
+# query_slack_dedup() — direct unit tests (§ card 3031, cross-restart Slack
+# dedup). `subprocess.run` is always faked at this boundary: never a real
+# `claude -p` invocation, never a real Slack call.
+# ---------------------------------------------------------------------------
+
+class TestSlackDedupQuery:
+    def test_duplicate_response_returns_true(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        with patch(
+            "subprocess.run",
+            side_effect=lambda cmd, **kw: fake_run_result(stdout=json.dumps({"result": "DUPLICATE"})),
+        ):
+            verdict = smithers_module.query_slack_dedup("123", log_path)
+        assert verdict is True
+
+    def test_not_duplicate_response_returns_false(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        with patch(
+            "subprocess.run",
+            side_effect=lambda cmd, **kw: fake_run_result(stdout=json.dumps({"result": "NOT_DUPLICATE"})),
+        ):
+            verdict = smithers_module.query_slack_dedup("123", log_path)
+        assert verdict is False
+
+    def test_lowercase_and_whitespace_padded_token_still_parses(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        with patch(
+            "subprocess.run",
+            side_effect=lambda cmd, **kw: fake_run_result(stdout=json.dumps({"result": "  duplicate  \n"})),
+        ):
+            verdict = smithers_module.query_slack_dedup("123", log_path)
+        assert verdict is True
+
+    def test_nonzero_exit_code_returns_none_and_logs_failure(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        with patch(
+            "subprocess.run",
+            side_effect=lambda cmd, **kw: fake_run_result(stdout="", stderr="permission denied", returncode=1),
+        ):
+            verdict = smithers_module.query_slack_dedup("123", log_path)
+        assert verdict is None
+        log_contents = open(log_path).read()
+        assert "slack_dedup_query_failed" in log_contents
+
+    def test_timeout_returns_none_and_logs_failure(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+
+        def raise_timeout(cmd, **kw):
+            raise subprocess.TimeoutExpired(cmd=cmd, timeout=45)
+
+        with patch("subprocess.run", side_effect=raise_timeout):
+            verdict = smithers_module.query_slack_dedup("123", log_path)
+        assert verdict is None
+        log_contents = open(log_path).read()
+        assert "slack_dedup_query_failed" in log_contents
+
+    def test_unparseable_json_returns_none_and_logs_failure(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        with patch("subprocess.run", side_effect=lambda cmd, **kw: fake_run_result(stdout="not valid json")):
+            verdict = smithers_module.query_slack_dedup("123", log_path)
+        assert verdict is None
+        log_contents = open(log_path).read()
+        assert "slack_dedup_query_failed" in log_contents
+
+    def test_unrecognized_token_returns_none_and_logs_failure(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        with patch(
+            "subprocess.run",
+            side_effect=lambda cmd, **kw: fake_run_result(
+                stdout=json.dumps({"result": "maybe? let me look again"})
+            ),
+        ):
+            verdict = smithers_module.query_slack_dedup("123", log_path)
+        assert verdict is None
+        log_contents = open(log_path).read()
+        assert "slack_dedup_query_failed" in log_contents
+
+    def test_invocation_is_scoped_to_the_slack_search_tool_and_dont_ask_mode(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        captured = []
+
+        def fake_run(cmd, **kw):
+            captured.append(cmd)
+            return fake_run_result(stdout=json.dumps({"result": "NOT_DUPLICATE"}))
+
+        with patch("subprocess.run", side_effect=fake_run):
+            smithers_module.query_slack_dedup("123", log_path)
+
+        cmd = captured[0]
+        assert cmd[0] == "claude"
+        assert "-p" in cmd
+        assert cmd[cmd.index("--allowedTools") + 1] == smithers_module.SLACK_SEARCH_TOOL
+        assert cmd[cmd.index("--permission-mode") + 1] == "dontAsk"
+        assert cmd[cmd.index("--model") + 1] == "sonnet"
+
+    def test_prompt_searches_by_pr_reference_not_by_channel(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        captured_input = []
+
+        def fake_run(cmd, **kw):
+            captured_input.append(kw.get("input", ""))
+            return fake_run_result(stdout=json.dumps({"result": "NOT_DUPLICATE"}))
+
+        with patch("subprocess.run", side_effect=fake_run):
+            smithers_module.query_slack_dedup("999", log_path)
+
+        assert "999" in captured_input[0]
 
 
 class TestLogAdapter:
