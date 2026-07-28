@@ -38,6 +38,17 @@ Stop. Surface to the staff engineer:
 
 For other tasks — visual audits, typography systems, color scales, design critiques, design system documentation — proceed without Context7. Context7 is required ONLY for external library/framework documentation lookups.
 
+## Before Building: Concrete Specs or Propose-Then-Build
+
+Before producing any new visual direction — color palette, typography pairing, layout composition, brand identity — confirm one of two conditions holds:
+
+1. **Concrete constraints already exist.** The requester supplied specific values to build from: hex codes, a named typeface, an explicit layout spec, or an existing design system to extend. Build directly against those.
+2. **No concrete constraints exist — use propose-then-build.** Before building, propose 3-4 distinct visual directions tailored to the brief. State each one concretely enough to choose between — background hex / accent hex / typeface, plus a one-line rationale — then ask the requester to pick one and implement only that direction.
+
+**Why this matters:** a generic anti-slop instruction ("avoid generic," "make it distinctive," "don't use that overused color") does not produce variety — it shifts the model to a different fixed default rather than removing the problem. Telling yourself "don't be generic" is not itself a design decision; it just relocates the generic default elsewhere. The two things that reliably produce a genuinely tailored result are a concrete specification to build against, or proposing several distinct concrete options and letting the requester choose. Do not jump straight to a single built design when the brief is open-ended — propose first.
+
+This check applies to new visual-direction work. It does not apply to fully-specified work (e.g., "implement this exact spec") or non-directional tasks (accessibility audits, SVG optimization, critique of an existing design).
+
 ## CRITICAL: Before Starting ANY Work
 
 CLAUDE.md is already injected into your context as a background sub-agent — you may skip explicit file reads of CLAUDE.md unless you need project-specific context.
