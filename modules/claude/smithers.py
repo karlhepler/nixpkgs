@@ -22,7 +22,13 @@ adds cross-restart Slack dedup with no local state file: `notify_slack` now
 asks Slack itself, via a narrowly-scoped headless Claude invocation
 (`query_slack_dedup`), whether a post about this PR already exists before
 posting — replacing the old in-run-only in-memory dedup, which never
-survived a restart.
+survived a restart. Card 3032 replaces the phase-3 fix-execution stub with
+a real one: `_invoke_fix_session` blocks on `staff -p --model sonnet
+--effort high --permission-mode dontAsk`, wrapped in an external wall-clock
+ceiling that kills the whole process tree on expiry; `poll_loop` now builds
+a bounded task brief from the `PRSnapshot` per attempt and advances the
+gate's own `fix_count`/`stagnation_count` counters as attempts complete —
+closing the loop from detection to repair.
 
 Usage:
     smithers                        # Auto-detect the PR for the current git
@@ -44,6 +50,7 @@ in this process's memory for the life of the run.
 import argparse
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -97,6 +104,50 @@ SLACK_SEARCH_TOOL = "mcp__claude_ai_Slack__slack_search_public"
 # caps the worst case (a hung invocation) rather than letting a single tick
 # block the poll loop indefinitely.
 SLACK_DEDUP_TIMEOUT_SECONDS = int(os.environ.get("SMITHERS_SLACK_DEDUP_TIMEOUT_SECONDS", "45"))
+
+# Fix execution (§ Fix execution, § Failure modes,
+# .scratchpad/2967-v3-design.md) — the external wall-clock ceiling on ONE
+# blocking fix-session invocation. "Proposed: 20 minutes — wider than a bare
+# one-shot prompt would need, since the staff-engineer persona's own
+# review/delegation apparatus takes real time" (§ Failure modes). The CLI
+# kills the subprocess's entire process tree if this is exceeded and records
+# the attempt as failed — never as a crash.
+FIX_INVOCATION_TIMEOUT_SECONDS = int(os.environ.get("SMITHERS_FIX_INVOCATION_TIMEOUT_SECONDS", "1200"))
+
+# The settled fix-session invocation (§ How the CLI starts the fix). `-p`,
+# `--model sonnet`, `--effort high`, and `--permission-mode dontAsk` are
+# explicit user decisions — not defaults this module infers — and must never
+# be substituted. `staff.bash` execs `claude ... "$@"`, so these, appended
+# last, cleanly override its own `opus[1m]`/`xhigh`/`auto` defaults
+# (`modules/claude/staff.bash:12-17`) with no change to `staff.bash` itself.
+# `--output-format json` is layered on top so the cost estimate and session
+# id can be logged (§ Output parsing and trust) — it is not one of the four
+# settled tokens above, and nothing in its payload is ever allowed to drive
+# a decision; the prompt itself goes via stdin, never as a trailing argument.
+FIX_SESSION_CMD: Tuple[str, ...] = (
+    "staff", "-p",
+    "--model", "sonnet",
+    "--effort", "high",
+    "--permission-mode", "dontAsk",
+    "--output-format", "json",
+)
+
+# Safety constraints carried into every fix session's task brief (§ Security
+# and safety constraints; § How the CLI starts the fix). Also the vehicle for
+# the no-delegation instruction: a PreToolUse hook denies cardless Agent-tool
+# delegation, so a fix session that tries to delegate burns turns on denials
+# before giving up — telling it not to bother saves that cost outright.
+FIX_SESSION_CONSTRAINTS = (
+    "Constraints for this session:\n"
+    "- Do the work directly yourself. Do NOT delegate any part of it via "
+    "the Agent tool — a PreToolUse hook denies cardless Agent-tool "
+    "delegation for this invocation, so any attempt to delegate will only "
+    "burn turns on denials before giving up.\n"
+    "- No cluster, secrets, IAM, database, or system operations.\n"
+    "- Do NOT merge this pull request under any circumstance. Merging is "
+    "the watching CLI's own decision, re-derived from a fresh GitHub read "
+    "on its next poll — never this session's."
+)
 
 
 # ---------------------------------------------------------------------------
@@ -1208,15 +1259,171 @@ class PollLoopConfig:
     env: Optional[Dict[str, str]] = None  # override for tests; live os.environ read fresh every tick otherwise
 
 
-def _invoke_fix_stub(msg: StartFixSession, log_path: str) -> None:
-    """TODO(phase3): fix-execution adapter (§ Fix execution) — the blocking
-    `staff -p --model sonnet --effort high "<brief>"` subprocess invocation
-    that actually starts a fix session. Deliberately NOT this card's scope
-    (§ card scope, OUT OF SCOPE) — this stub only fixes the call site's
-    intended signature so phase 3 can fill in the body without `poll_loop`
-    needing another change. Logs and returns rather than raising, so a fired
-    trigger never crashes the loop while this remains unimplemented."""
-    log_event(log_path, "fix_invocation_stub_todo", name=msg.name)
+def _build_fix_task_brief(snapshot: PRSnapshot, informational_bot_authors: Tuple[str, ...]) -> str:
+    """Assemble the fix session's task brief from the `PRSnapshot` the gate
+    just acted on (§ How the CLI starts the fix). Bounded by design: tells
+    the fix session WHAT is actionable this cycle — failing checks, merge
+    conflicts, actionable bot threads — never dumps the whole snapshot, and
+    never chooses HOW to fix any of it ("No Ralph, no Burns, no hats ... the
+    choosing is left entirely to the staff-engineer subprocess itself",
+    § Fix execution). The subprocess inherits the CLI's own working
+    directory, already the checked-out worktree for this PR — no separate
+    `--branch`/`--repo` plumbing is needed (§ How the CLI starts the fix).
+    """
+    lines: List[str] = [
+        f"Fix pull request #{snapshot.pr_number}. The current working "
+        "directory is already the checked-out worktree for this PR.",
+        "",
+        "What is actionable this cycle:",
+    ]
+
+    if snapshot.checks_fail:
+        lines.append(f"- Failing CI checks: {', '.join(snapshot.checks_fail)}")
+
+    if snapshot.mergeable == "CONFLICTING":
+        lines.append("- Merge conflicts with the base branch need resolving.")
+
+    for thread in snapshot.unresolved_bot_threads:
+        if _is_actionable_bot_thread(thread, informational_bot_authors):
+            location = thread.url or f"thread {thread.thread_id}"
+            lines.append(f"- Unresolved bot comment from {thread.author}: {location}")
+
+    lines.extend(["", FIX_SESSION_CONSTRAINTS])
+    return "\n".join(lines)
+
+
+@dataclass(frozen=True)
+class FixAttemptResult:
+    """Outcome of one blocking fix-session invocation (§ Exit handling).
+
+    Exactly one of three outcomes, never conflated: `"completed"` (the
+    process exited zero), `"failed"` (a non-zero exit, or the process could
+    not even be started), or `"timeout"` (the wall-clock ceiling was
+    exceeded and the process tree was killed — treated as a failed attempt,
+    not a crash, per § Failure modes).
+
+    `session_id`/`cost_usd` are parsed from the `--output-format json`
+    envelope PURELY for logging (§ Output parsing and trust) — nothing here
+    is derived from `.result` prose, and nothing downstream may treat
+    `outcome == "completed"` as proof the fix actually worked. Only the next
+    GitHub poll, re-deriving ground truth from `gh`, can prove that.
+    """
+
+    outcome: str  # "completed" | "failed" | "timeout"
+    returncode: Optional[int]
+    session_id: Optional[str] = None
+    cost_usd: Optional[float] = None
+    message: str = ""
+
+
+def _parse_fix_session_envelope(stdout_content: str) -> Dict[str, Any]:
+    """Best-effort parse of the `--output-format json` envelope for LOGGING
+    ONLY (§ Output parsing and trust) — `session_id` and a cost estimate if
+    present, nothing else. Mirrors `_parse_slack_dedup_response`'s own
+    fail-safe shape: never raises, and an unparseable or missing envelope
+    simply yields an empty dict rather than a fabricated value."""
+    if not stdout_content:
+        return {}
+    try:
+        wrapper = json.loads(stdout_content)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(wrapper, dict):
+        return {}
+
+    fields: Dict[str, Any] = {}
+    if isinstance(wrapper.get("session_id"), str):
+        fields["session_id"] = wrapper["session_id"]
+    cost = wrapper.get("total_cost_usd", wrapper.get("cost_usd"))
+    if isinstance(cost, (int, float)):
+        fields["cost_usd"] = cost
+    return fields
+
+
+def _kill_fix_session_process_tree(process: "subprocess.Popen", log_path: str, name: str) -> None:
+    """Kill the fix session's ENTIRE process group, not just its own PID
+    (§ Failure modes: the CLI "kills the subprocess if it is exceeded").
+    `staff.bash` execs `claude` directly (same PID), but a running Claude
+    session can itself spawn further subprocesses (Bash tool invocations,
+    etc.) that a bare `process.kill()` would orphan rather than terminate.
+    The process is started with `start_new_session=True` (see
+    `_invoke_fix_session`) so the whole tree shares one process group id,
+    killable with a single signal."""
+    try:
+        pgid = os.getpgid(process.pid)
+        os.killpg(pgid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        log_event(log_path, "fix_invocation_kill_did_not_reap", name=name)
+
+
+def _invoke_fix_session(msg: StartFixSession, log_path: str) -> FixAttemptResult:
+    """The fix-execution adapter (§ Fix execution) — a single blocking
+    `staff -p --model sonnet --effort high --permission-mode dontAsk`
+    subprocess invocation (`FIX_SESSION_CMD`), wrapped in an external
+    wall-clock ceiling (`FIX_INVOCATION_TIMEOUT_SECONDS`, § Failure modes).
+    The prompt (`msg.brief`) is piped via stdin, never as a trailing
+    argument. Runs to completion and terminates itself; this call blocks
+    until it does, is killed for exceeding the ceiling, or fails to start.
+
+    Per § Output parsing and trust, the ONLY things a caller may treat as a
+    control signal are `FixAttemptResult.outcome` and `.returncode` — never
+    the content of `.message`, which exists purely for logging. Whether the
+    fix actually worked is re-derived from GitHub on the next poll, never
+    from anything this function returns.
+    """
+    try:
+        process = subprocess.Popen(
+            list(FIX_SESSION_CMD),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            start_new_session=True,  # own process group so a timeout can kill the whole tree
+        )
+    except OSError as e:
+        log_event(log_path, "fix_invocation_failed_to_start", name=msg.name, message=str(e))
+        return FixAttemptResult(outcome="failed", returncode=None, message=str(e))
+
+    try:
+        stdout, stderr = process.communicate(input=msg.brief, timeout=FIX_INVOCATION_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        _kill_fix_session_process_tree(process, log_path, msg.name)
+        log_event(
+            log_path,
+            "fix_invocation_timeout",
+            name=msg.name,
+            timeout_seconds=FIX_INVOCATION_TIMEOUT_SECONDS,
+        )
+        return FixAttemptResult(
+            outcome="timeout",
+            returncode=None,
+            message=f"exceeded {FIX_INVOCATION_TIMEOUT_SECONDS}s wall-clock ceiling",
+        )
+
+    envelope = _parse_fix_session_envelope(stdout)
+
+    if process.returncode != 0:
+        log_event(
+            log_path,
+            "fix_invocation_failed",
+            name=msg.name,
+            returncode=process.returncode,
+            message=(stderr or "").strip()[:500],
+            **envelope,
+        )
+        return FixAttemptResult(
+            outcome="failed",
+            returncode=process.returncode,
+            message=(stderr or "").strip(),
+            **envelope,
+        )
+
+    log_event(log_path, "fix_invocation_completed", name=msg.name, **envelope)
+    return FixAttemptResult(outcome="completed", returncode=0, **envelope)
 
 
 def poll_loop(pr: str, config: PollLoopConfig, send: Callable[[Message], None], log_path: str) -> None:
@@ -1229,8 +1436,9 @@ def poll_loop(pr: str, config: PollLoopConfig, send: Callable[[Message], None], 
     watch started today can still be running tomorrow under a changed
     environment; (2) a fresh `PRSnapshot` is fetched; (3) the pure `tick`
     gate handler decides what to do; (4) every resulting `Message` fans out
-    through `send`, with `StartFixSession` additionally handed to the
-    phase-3 stub above.
+    through `send`, with `StartFixSession` additionally handed to
+    `_invoke_fix_session` (§ Fix execution) — a real, blocking `staff -p`
+    invocation, not a stub.
 
     A GitHub fetch failure never reaches `tick` at all — no GitHub read (it
     already failed), no gate evaluation, no fix invocation (§ Failure and
@@ -1247,19 +1455,40 @@ def poll_loop(pr: str, config: PollLoopConfig, send: Callable[[Message], None], 
     notification adapters see it), but no further sleep or poll happens
     after it (§ card 3027) — this is what keeps the loop from spinning
     forever, invisibly incapable of acting, once a budget is exhausted.
+
+    Two of the gate's own suppressor counters are advanced here, once per
+    fix attempt (§ Fix execution, "the attempt cap and stagnation check
+    already exist in the gate as terminal suppressors" — this loop only
+    keeps the counters they read honest, it never re-implements the
+    suppressor logic itself): `fix_count` increments on every invocation,
+    completed or not. `stagnation_count` — "HEAD unchanged across 2
+    consecutive fix invocations" (§ Failure modes) — is checked once per
+    cycle, comparing the freshly-fetched HEAD against the HEAD recorded at
+    the PRIOR fix invocation; the comparison is deferred to the cycle
+    immediately following an invocation (`stagnation_check_pending`) so a
+    quiet run with no trigger firing at all never inflates it — only
+    consecutive INVOCATIONS with no forward progress do.
     """
     cycle = 0
     consecutive_failures = 0
     fix_count = 0
+    stagnation_count = 0
+    last_fix_attempt_head_sha: Optional[str] = None
+    stagnation_check_pending = False
     prior_merge_queue_state: Optional[str] = None
     active_fix_session: Optional[str] = None
     stopped = False
+    snapshot: Optional[PRSnapshot] = None  # rebound each cycle; only ever read inside _handle
 
     def _handle(msg: Message) -> None:
-        nonlocal stopped
+        nonlocal stopped, fix_count, last_fix_attempt_head_sha, stagnation_check_pending
         send(msg)
         if isinstance(msg, StartFixSession):
-            _invoke_fix_stub(msg, log_path)
+            brief = _build_fix_task_brief(snapshot, config.informational_bot_authors)
+            _invoke_fix_session(StartFixSession(name=msg.name, brief=brief), log_path)
+            fix_count += 1
+            last_fix_attempt_head_sha = snapshot.head_sha
+            stagnation_check_pending = True
         if isinstance(msg, Stop):
             stopped = True
 
@@ -1287,6 +1516,13 @@ def poll_loop(pr: str, config: PollLoopConfig, send: Callable[[Message], None], 
 
         consecutive_failures = 0
 
+        if stagnation_check_pending:
+            if snapshot.head_sha == last_fix_attempt_head_sha:
+                stagnation_count += 1
+            else:
+                stagnation_count = 0
+            stagnation_check_pending = False
+
         req = TickRequest(
             pr_snapshot=snapshot,
             prior_merge_queue_state=prior_merge_queue_state,
@@ -1294,6 +1530,7 @@ def poll_loop(pr: str, config: PollLoopConfig, send: Callable[[Message], None], 
             fix_count=fix_count,
             max_fix_invocations=config.max_fix_invocations,
             cycle=cycle,
+            stagnation_count=stagnation_count,
             active_fix_session=active_fix_session,
         )
         tick(req, _handle)

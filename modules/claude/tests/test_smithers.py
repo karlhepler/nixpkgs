@@ -11,6 +11,7 @@ billing preflight (§ Policy risk, Hazard 1, .scratchpad/2967-v3-design.md):
 
 import json
 import os
+import signal
 import subprocess
 import sys
 from unittest.mock import MagicMock, call, patch
@@ -340,23 +341,148 @@ class TestLogEvent:
 
 
 # ---------------------------------------------------------------------------
-# TODO stubs — attachment points exist with the intended signatures.
-# `poll_loop` itself is fully wired now (§ card 3021) — see the dedicated
-# TestPollLoop* classes below. Only fix execution (phase 3) remains a stub.
+# Fix execution (§ card 3032) — `_invoke_fix_session` replaces the phase-3
+# stub with a real, blocking `staff -p` subprocess invocation. Every test
+# here fakes `subprocess.Popen` — never spawns a real `staff`/`claude`
+# process (§ card constraints: costs money, spawns a nested session).
 # ---------------------------------------------------------------------------
 
-class TestPhaseStubsExist:
-    def test_fix_invocation_stub_logs_and_does_not_raise(self, tmp_path):
-        """`_invoke_fix_stub` fixes the call site's intended signature for
-        phase 3 (§ card scope, OUT OF SCOPE) without crashing the loop when a
-        trigger fires today."""
+def _fake_fix_process(stdout: str = "", stderr: str = "", returncode: int = 0, pid: int = 4242) -> MagicMock:
+    process = MagicMock()
+    process.communicate.return_value = (stdout, stderr)
+    process.returncode = returncode
+    process.pid = pid
+    return process
+
+
+class TestInvokeFixSession:
+    def test_clean_completion_returns_completed_outcome_and_logs_it(self, tmp_path):
         log_path = str(tmp_path / "smithers.jsonl")
-        smithers_module._invoke_fix_stub(
-            StartFixSession(name="smithers-fix-pr-123", brief=""), log_path
+        process = _fake_fix_process(
+            stdout=json.dumps({"session_id": "sess-1", "total_cost_usd": 0.42}),
+            returncode=0,
         )
 
-        lines = open(log_path).read().strip().splitlines()
-        assert any(json.loads(line)["event"] == "fix_invocation_stub_todo" for line in lines)
+        with patch("subprocess.Popen", return_value=process) as mock_popen:
+            result = smithers_module._invoke_fix_session(
+                StartFixSession(name="smithers-fix-pr-123", brief="fix the thing"), log_path
+            )
+
+        assert result.outcome == "completed"
+        assert result.returncode == 0
+        assert result.session_id == "sess-1"
+        assert result.cost_usd == 0.42
+
+        # The invocation itself: all four settled flags, plus -p, plus the
+        # logging-only --output-format json — never the brief as a trailing
+        # argument (it goes via stdin instead).
+        cmd = mock_popen.call_args.args[0]
+        assert cmd[0] == "staff"
+        assert "-p" in cmd
+        assert cmd[cmd.index("--model") + 1] == "sonnet"
+        assert cmd[cmd.index("--effort") + 1] == "high"
+        assert cmd[cmd.index("--permission-mode") + 1] == "dontAsk"
+        assert "fix the thing" not in cmd
+
+        assert process.communicate.call_args.kwargs["input"] == "fix the thing"
+
+        log_contents = open(log_path).read()
+        assert "fix_invocation_completed" in log_contents
+
+    def test_non_zero_exit_returns_failed_outcome_and_logs_it(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        process = _fake_fix_process(stderr="boom", returncode=1)
+
+        with patch("subprocess.Popen", return_value=process):
+            result = smithers_module._invoke_fix_session(
+                StartFixSession(name="smithers-fix-pr-123", brief="fix the thing"), log_path
+            )
+
+        assert result.outcome == "failed"
+        assert result.returncode == 1
+        log_contents = open(log_path).read()
+        assert "fix_invocation_failed" in log_contents
+
+    def test_timeout_kills_the_process_group_and_returns_timeout_outcome(self, tmp_path):
+        """§ Failure modes: the CLI wraps the blocking call in an external
+        wall-clock ceiling and kills the subprocess if it is exceeded,
+        recording the attempt as failed — never a crash. The clock is never
+        slept for real here: `communicate` raises `TimeoutExpired`
+        immediately, so nothing waits."""
+        log_path = str(tmp_path / "smithers.jsonl")
+        process = _fake_fix_process(pid=99999)
+        process.communicate.side_effect = subprocess.TimeoutExpired(cmd=["staff"], timeout=1)
+
+        with patch("subprocess.Popen", return_value=process):
+            with patch("os.getpgid", return_value=99999) as mock_getpgid:
+                with patch("os.killpg") as mock_killpg:
+                    result = smithers_module._invoke_fix_session(
+                        StartFixSession(name="smithers-fix-pr-123", brief="fix the thing"), log_path
+                    )
+
+        assert result.outcome == "timeout"
+        assert result.returncode is None
+        mock_getpgid.assert_called_once_with(99999)
+        mock_killpg.assert_called_once_with(99999, signal.SIGKILL)
+        log_contents = open(log_path).read()
+        assert "fix_invocation_timeout" in log_contents
+
+    def test_textual_result_content_never_overrides_a_non_zero_exit(self, tmp_path):
+        """§ Output parsing and trust: the subprocess's textual output is
+        NEVER a control signal. A `.result` claiming success must not flip
+        `outcome` away from what the real exit code says."""
+        log_path = str(tmp_path / "smithers.jsonl")
+        process = _fake_fix_process(
+            stdout=json.dumps({"result": "All fixed! Everything is great now."}),
+            returncode=1,
+        )
+
+        with patch("subprocess.Popen", return_value=process):
+            result = smithers_module._invoke_fix_session(
+                StartFixSession(name="smithers-fix-pr-123", brief="fix the thing"), log_path
+            )
+
+        assert result.outcome == "failed"
+        assert result.returncode == 1
+        # FixAttemptResult carries no field at all sourced from `.result` text.
+        assert not hasattr(result, "result")
+
+
+class TestBuildFixTaskBrief:
+    def test_brief_names_the_pr_failing_checks_and_actionable_bot_comments(self):
+        snapshot = _snapshot(
+            checks_fail=("test",),
+            checks_pending=(),
+            unresolved_bot_threads=(_bot_thread(author="coderabbitai"),),
+        )
+
+        brief = smithers_module._build_fix_task_brief(snapshot, informational_bot_authors=())
+
+        assert "123" in brief
+        assert "test" in brief
+        assert "coderabbitai" in brief
+
+    def test_brief_excludes_informational_bot_authors(self):
+        snapshot = _snapshot(
+            checks_pending=(),
+            unresolved_bot_threads=(_bot_thread(author="release-notes-bot"),),
+        )
+
+        brief = smithers_module._build_fix_task_brief(
+            snapshot, informational_bot_authors=("release-notes-bot",)
+        )
+
+        assert "release-notes-bot" not in brief
+
+    def test_brief_instructs_against_agent_tool_delegation(self):
+        brief = smithers_module._build_fix_task_brief(_snapshot(), informational_bot_authors=())
+        assert "delegat" in brief.lower()
+        assert "Agent" in brief
+
+    def test_brief_carries_the_merge_and_safety_constraints(self):
+        brief = smithers_module._build_fix_task_brief(_snapshot(), informational_bot_authors=())
+        assert "merge" in brief.lower()
+        assert "secrets" in brief.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -1858,19 +1984,42 @@ class TestPollLoopTerminatesOnStop:
         log_path = str(tmp_path / "smithers.jsonl")
         sent = []
 
-        with patch("subprocess.run", side_effect=make_gh_side_effect()):
-            with patch("time.sleep") as mock_sleep:
-                config = PollLoopConfig(max_cycles=15, env={}, accept_api_billing=True)
-                poll_loop("123", config, sent.append, log_path)
+        def changing_head_side_effect(cmd, **kwargs):
+            """HEAD advances every `gh pr view` call — isolates the
+            cycle-budget suppressor from `fix_count`/`stagnation_count`
+            (§ card 3032, now wired), which would otherwise trip first
+            against a HEAD that never moves."""
+            if cmd[:3] == ["gh", "pr", "view"]:
+                changing_head_side_effect.calls += 1
+                view = json.loads(GH_VIEW_FIXTURE)
+                view["headRefOid"] = f"sha-{changing_head_side_effect.calls}"
+                return fake_run_result(stdout=json.dumps(view))
+            if cmd[:3] == ["gh", "pr", "checks"]:
+                return fake_run_result(stdout=GH_CHECKS_FIXTURE)
+            if cmd[:2] == ["prc", "list"]:
+                return fake_run_result(stdout=PRC_LIST_FIXTURE)
+            raise AssertionError(f"unexpected command in test: {cmd}")
+
+        changing_head_side_effect.calls = 0
+
+        with patch("subprocess.run", side_effect=changing_head_side_effect):
+            with patch.object(smithers_module, "_invoke_fix_session") as mock_invoke:
+                with patch("time.sleep") as mock_sleep:
+                    config = PollLoopConfig(
+                        max_cycles=15, max_fix_invocations=20, env={}, accept_api_billing=True
+                    )
+                    poll_loop("123", config, sent.append, log_path)
 
         # Nine fix-triggering ticks (a failing check fires every cycle, no
-        # suppressor active yet), then a tenth tick where the gate's own
-        # cycle >= max_cycles(10) default trips -> Stop, and the loop
-        # returns instead of continuing on to the outer bound of 15.
+        # suppressor active yet — HEAD advances every cycle so neither the
+        # fix budget nor stagnation trips first), then a tenth tick where
+        # the gate's own cycle >= max_cycles(10) default trips -> Stop, and
+        # the loop returns instead of continuing on to the outer bound of 15.
         assert len(sent) == 10
         assert all(isinstance(msg, StartFixSession) for msg in sent[:-1])
         assert isinstance(sent[-1], Stop)
         assert sent[-1].reason == "cycle_budget_exhausted"
+        assert mock_invoke.call_count == 9
 
         # No sleep follows the Stop-carrying tick — the loop returns
         # immediately rather than sleeping and polling again.
@@ -1923,19 +2072,23 @@ class TestPollLoopBackoffOnRepeatedFetchFailure:
         assert mock_sleep.call_args_list == [call(300), call(900), call(1800), call(1800)]
         assert sent == []
 
-    def test_fix_trigger_still_reaches_the_stub_when_present(self, tmp_path):
+    def test_fix_trigger_still_reaches_the_real_fix_invocation(self, tmp_path):
         """A failing check IS actionable (§ The gate, trigger 1) — confirms
-        the loop reaches `tick` and hands a fired trigger to the phase-3 fix
-        stub rather than invoking anything real (§ card scope, OUT OF
-        SCOPE)."""
+        the loop reaches `tick` and hands a fired trigger to the real
+        `_invoke_fix_session` adapter (§ card 3032), not merely a stub.
+        `_invoke_fix_session` itself is faked here — never a real `staff -p`
+        invocation (§ card constraints)."""
         log_path = str(tmp_path / "smithers.jsonl")
         sent = []
 
         with patch("subprocess.run", side_effect=make_gh_side_effect()):
-            with patch("time.sleep"):
-                config = PollLoopConfig(max_cycles=1, env={}, accept_api_billing=True)
-                poll_loop("123", config, sent.append, log_path)
+            with patch.object(smithers_module, "_invoke_fix_session") as mock_invoke:
+                with patch("time.sleep"):
+                    config = PollLoopConfig(max_cycles=1, env={}, accept_api_billing=True)
+                    poll_loop("123", config, sent.append, log_path)
 
         assert any(isinstance(msg, StartFixSession) for msg in sent)
-        log_contents = open(log_path).read()
-        assert "fix_invocation_stub_todo" in log_contents
+        mock_invoke.assert_called_once()
+        invoked_msg = mock_invoke.call_args.args[0]
+        assert isinstance(invoked_msg, StartFixSession)
+        assert invoked_msg.brief  # a real, non-empty brief was assembled from the snapshot
