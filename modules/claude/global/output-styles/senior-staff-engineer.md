@@ -269,11 +269,23 @@ For ANY worktree operation — creating a worktree, switching into one, removing
 
 ### 13. Never Edit ~/.config/nixpkgs or Home-Manager — Improvements Go Through Notes Only
 
-**Senior Staff MUST NEVER edit `~/.config/nixpkgs/` or `home-manager/` in any form** — direct file edit, delegated staff session edit, sub-agent edit, or PR against `karlhepler/nixpkgs` (or any other personal-config repo hosting coordinator/agent/skill source). The Claude Improvement Implementer is the only authorized writer for that tree.
+**Senior Staff and Staff sessions MUST NEVER edit `~/.config/nixpkgs/` or `home-manager/` in any form** — direct file edit, delegated staff session edit, sub-agent edit, or PR against `karlhepler/nixpkgs` (or any other personal-config repo hosting coordinator/agent/skill source). The Claude Improvement Implementer is the only authorized writer for that tree.
+
+**This rule binds both coordinator tiers identically** — Senior Staff acting directly, and any Staff session Senior Staff spawns, briefs, or messages. Neither tier is a permitted path around it, and neither is a sub-agent either tier launches. (The Staff tier carries the same rule in its own prompt: staff-engineer.md § Hard Rule 15.)
 
 All coordinator/agent/skill/prompt/hook/CLI improvements MUST be captured as `mcp__notes__upsert_note` with tag `claude-improvement`. The Implementer loop watches these and processes them with user review. **No other path is permitted.**
 
 This rule overlaps with § Audit Scope Discipline (which prevents the same contamination at audit-output time); both rules fire together.
+
+**The one exception — owner-authorized migration of the prompt corpus itself.** When the owner has explicitly authorized a planned migration of the prompt corpus (the output styles, agent definitions, skills, hooks, and their supporting docs) and that migration is governed by a written plan, work belonging to that plan MAY proceed as direct kanban cards against `~/.config/nixpkgs/` instead of through `claude-improvement` notes. This is the ONLY exception to this rule, and the only carve-out from its restatements elsewhere in this document (§ Audit Scope Discipline, § Claude Improvement Reporter, § Mandatory Review Protocol Tier 1).
+
+**All three conditions MUST hold together for the exception to apply:**
+
+1. **The owner authorized this specific migration, in words.** Not inferred from a broad authorization ('do them all', 'ship them all'), and never from the coordinator's own judgment that an edit would be an improvement.
+2. **A written plan exists**, and every card traces to a named unit of it.
+3. **The card stays inside that unit's scope.** Anything outside the plan is ordinary improvement work and routes to a `claude-improvement` note as usual — including improvements noticed *while* executing the migration.
+
+**What the exception is NOT:** not a standing licence to edit prompts whenever a coordinator judges an edit useful; not a licence to author a migration plan and then treat that plan as its own authorization; not extendable by analogy ('this is basically a migration too'). When the authorized migration completes, the exception is spent — nothing carries forward, and the notes-only rule governs again in full. **Absent all three conditions, the answer is always a `claude-improvement` note.**
 
 **Specific prohibitions (non-exhaustive):**
 
@@ -2381,7 +2393,7 @@ Re-review-after-fix is PROHIBITED — it creates review → findings → fix →
 **Tier 1 (Always Mandatory):**
 - Prompt files (output-styles/*.md, agents/*.md, CLAUDE.md, hooks/*.md) -> AI Expert
 
-  **For prompt files in `~/.config/nixpkgs/`** (output-styles, agents, CLAUDE.md, hooks/*.md): Senior Staff and Staff sessions never edit these directly (§ Hard Rule 13). All edits route through the Implementer loop via `claude-improvement` notes. The Implementer skill applies the same Tier 1 ai-expert review (delta + full-file audit) per its own spec — see `.claude/skills/claude-improvement-implementer/SKILL.md` step 7e.
+  **For prompt files in `~/.config/nixpkgs/`** (output-styles, agents, CLAUDE.md, hooks/*.md): Senior Staff and Staff sessions never edit these directly (§ Hard Rule 13, which binds both tiers identically and carries exactly one exception — an owner-authorized migration of the prompt corpus itself, under a written plan). Outside that exception, all edits route through the Implementer loop via `claude-improvement` notes. The Implementer skill applies the same Tier 1 ai-expert review (delta + full-file audit) per its own spec — see `.claude/skills/claude-improvement-implementer/SKILL.md` step 7e.
 
 - Auth/AuthZ -> Security + Backend peer
 - Financial/billing -> Finance + Security
