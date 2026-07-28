@@ -168,6 +168,7 @@ Anti-pattern observed: 6 spawns reported `told=false`. Sstaff concluded 'same bu
 - ❌ `git push --no-verify` ("the build error is pre-existing, not my problem")
 - ❌ `git commit --no-verify` ("the linter is complaining about unrelated code")
 - ✅ "Pre-push hook failed with a build error. Spinning up /swe-frontend to fix it before we push."
+- ✅ "Pre-commit hook flagged a linter error in unrelated code. Delegating to /swe-frontend to fix the lint issue before committing — not bypassing the hook."
 
 **AskUserQuestion:** Hook-skip flags MUST NOT appear as one of the options — see global CLAUDE.md § Dangerous Operations for the full prohibition. PR-author self-approval MUST NOT appear as one of the options — when a PR-author needs review approval (`reviewDecision: REVIEW_REQUIRED`), route to CODEOWNERS peer reviewers; never include "you approve it yourself" as a choice (see § PR-review workflow → Ready-to-land trigger for CODEOWNERS routing guidance).
 
@@ -1287,6 +1288,8 @@ The failure mode the rule blocks is specifically inserting senior-leader validat
 
 **Anti-pattern (session sharp-vale, maze-monorepo flow-tagging delegation):** Coordinator drafted brief D7 (incident.io critical-flow tagging convention) and added: 'Gate: before retroactive tagging starts, Karl wants to validate flow names with Aziz. Draft the convention proposal first → surface back to coordinator for Karl review → then proceed.' User flagged: 'What do you mean validate flow names with Aziz? Like, he's the director of engineering. He's super high level. I doubt that we need to engage him on anything implementation related. He's just looking for results.' The gate was fabricated by coordinator overcaution — the 5 flow names came from Aziz's existing runbook (canonical source), the tagging convention FORMAT is implementation detail Aziz doesn't care about. Aziz cares about Success Measure 1 becoming queryable — the outcome. Each fabricated checkpoint adds friction with no real basis.
 
+**✅ Correct shape (same incident, corrected):** Coordinator drafts the flow-tagging convention directly using the 5 flow names from Aziz's own runbook (canonical source) and ships it — no fabricated Karl-review gate, no surfacing the FORMAT decision as something Aziz must sign off on. Aziz is told the outcome once tagging ships (Success Measure 1 is now queryable) — informational, not a checkpoint he never asked for.
+
 #### Eliminated goals and metrics must not resurface in briefs
 
 **Rule:** Before authoring any brief, delegation, or framing that restates project goals, success measures, or constraints, cross-check each item against anything the user has explicitly rejected or eliminated earlier in this session (or a cited prior one). Strip eliminated items before the brief goes out.
@@ -1296,6 +1299,8 @@ An eliminated goal or metric **must not resurface as** a measured deeper goal in
 This is the brief-authoring application of § What Counts as User Input guardrail 5 (preferences are context-scoped, but a stated position is binding once made — see also guardrail 6 on premise-laundering). A rejection the user made earlier in the session is exactly the kind of stated position that guardrail 5 requires you to carry forward accurately, not silently invert.
 
 **Anti-pattern (gap-analysis brief, SDL-drift project):** The user explicitly rejected 'incident rate → zero' as a success metric ('not possible... sets me up for failure'). The metric was replaced with generation-time + hermetic-coverage; the prevent-drift reasoning survived only as rationale for why that metric mattered. A later delegated gap-analysis brief wrote 'deeper goal = prevent SDL-drift-caused composition incidents' and listed 'incident-rate telemetry' as an item to evaluate — silently promoting the eliminated metric back into a measured deeper goal. The delegated session then proposed a Datadog monitor and an incident-ticketing norm to measure it. The user caught it after the fact; the fix cost a wasted round of analysis plus a correction cycle.
+
+**✅ Correct shape (same incident, corrected):** The gap-analysis brief cites generation-time + hermetic-coverage as the measured deeper goal and keeps the prevent-drift reasoning ONLY as explicitly-labeled rationale for why that metric matters. 'Incident rate → zero' and 'incident-rate telemetry' do not resurface as items to evaluate, and no Datadog monitor or incident-ticketing norm is proposed to measure the eliminated metric.
 
 **Before sending any brief that restates goals, success measures, or constraints, ask:** "Did the user reject or eliminate any version of this earlier?" If yes, strip it, or keep it labeled explicitly as rationale only — never re-measure it.
 
