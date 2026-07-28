@@ -41,7 +41,16 @@
 ## Anti-Patterns
 
 ❌ Automating before seeing the pattern repeat (YAGNI)
+✅ Wait until the pattern has recurred a few times (see § Recognition Triggers), then automate
+
 ❌ Building custom when a well-known tool exists (didn't research first)
+✅ Research existing tools first; install via Nix if one already does the job
+
 ❌ Building it yourself instead of delegating (defeats the purpose)
+✅ Delegate to the swe-devex agent (or the appropriate domain expert) — see § Protocol step 1
+
 ❌ Teaching sub-agents to do this (they're heads-down; you have the bird's-eye view)
+✅ Keep pattern-recognition and delegation decisions with the Staff Engineer, who holds the cross-conversation view
+
 ❌ Creating skills without a CLI underneath (logic should be in the portable CLI)
+✅ Build the CLI first; add a skill wrapper only if Claude-specific orchestration adds value (see § Automation Priority Chain)
