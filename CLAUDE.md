@@ -6,6 +6,10 @@ Nix Home Manager configuration managing development environments with flakes. Cr
 
 **Required**: This repository must be installed at `~/.config/nixpkgs`.
 
+**Platform**: This configuration is locked to `aarch64-darwin` (Apple Silicon Macs).
+
+**Precedence:** Where this file and global `CLAUDE.md` conflict, **this file wins** for all work in this repository. Conflicts called out explicitly below are the known ones, not the only ones — if a global rule would produce a different action here than this file's rules, follow this file.
+
 ## 🚨 ALL WORK HAPPENS DIRECTLY ON `main` — NO BRANCHES, EVER 🚨
 
 **Every change in this repository is made directly on `main`. No branches. No worktrees. No pull requests. Every single time, without exception.**
@@ -103,7 +107,7 @@ This repository (`~/.config/nixpkgs`) is the **single source of truth** for syst
 - Create agent definition in `modules/claude/global/agents/<name>.md` with full skill content and agent frontmatter (name, description, model, tools, permissionMode, maxTurns, background, mcp)
 - Add to git: `git add modules/claude/global/agents/<name>.md`
 - Run `hms` to deploy to `~/.claude/agents/`
-- Update staff-engineer team table if needed
+- Add the agent to **both** real rosters (always required, not optional — no other roster artifact exists): `modules/claude/global/docs/coordination-reference.md` (grouped roster) and `modules/claude/global/output-styles/staff-engineer.md` § Available sub-agents (flat list). Note: the staff engineer is an **output style**, not an agent definition — it does not live in `modules/claude/global/agents/`.
 
 **Updating a team member** means:
 - Edit `modules/claude/global/agents/<name>.md` as needed
@@ -113,17 +117,21 @@ This repository (`~/.config/nixpkgs`) is the **single source of truth** for syst
 **Removing a team member** means:
 - Delete `modules/claude/global/agents/<name>.md`
 - Run `hms` to remove from deployment
-- Update staff-engineer team table
+- Remove the agent from **both** real rosters: `modules/claude/global/docs/coordination-reference.md` (grouped roster) and `modules/claude/global/output-styles/staff-engineer.md` § Available sub-agents (flat list).
 
 **Why agent definitions are self-contained:** The agent definition preloads all skill content directly into the sub-agent's context at startup (95%+ reliability vs 70% with separate skill files). No `skills:` frontmatter indirection needed.
 
 ### Exception Skills
 
-Some capabilities intentionally have no agent definition because they run differently:
+Anything under `modules/claude/global/skills/` is an exception skill, **not** a delegatable team member: it is invoked via the Skill tool, and the "Adding a team member" procedure above does not apply to it. If the artifact you are editing lives in `skills/`, use the paths in this section. The categories below explain the variants you will encounter:
 
 - **Exception skills** (project-planner) — Run via Skill tool directly, not delegated as background sub-agents. These are specialized capabilities invoked for specific use cases, not general-purpose team members.
-- **Workflow skills** (manage-pr-comments, review-pr-comments) — Live at `skills/<name>/SKILL.md`. Run via Skill tool with specific CLI tooling integration. These coordinate external processes and don't fit the standard team member pattern.
-- **Multi-file skills** (pr-review) — Live in `skills/<name>/SKILL.md` instead of `agents/<name>.md` because they have supporting files (e.g., `skills/pr-review/review-citation-guide.md`, `skills/pr-review/review-domains.md`). Deployed via `default.nix` skill copy rules. Invoked via Skill tool directly.
+- **Workflow skills** (manage-pr-comments, review-pr-comments) — Live at `modules/claude/global/skills/<name>/SKILL.md`. Run via Skill tool with specific CLI tooling integration. These coordinate external processes and don't fit the standard team member pattern.
+- **Multi-file skills** (pr-review) — Live in `modules/claude/global/skills/<name>/SKILL.md` instead of `agents/<name>.md` because they have supporting files, e.g.:
+  - `modules/claude/global/skills/pr-review/review-citation-guide.md`
+  - `modules/claude/global/skills/pr-review/review-domains.md`
+
+  Deployed via `default.nix` skill copy rules. Invoked via Skill tool directly.
 
 **Important:** The "Adding a team member" process (agent definition) applies to standard delegatable team members only, not these exceptions. When updating or adding capabilities, distinguish between delegatable agents and exception/workflow skills.
 
@@ -137,6 +145,9 @@ Some capabilities intentionally have no agent definition because they run differ
 - `hmo`: Open `overconfig.nix` in vim (zsh alias — not a standalone command; never invoke from Bash tool — opens interactive vim)
 
 ### Git Workflow
+
+**In this repository, the branch- and worktree-creating entries below are FORBIDDEN — see § ALL WORK HAPPENS DIRECTLY ON `main`. They are listed because they exist and are used in other repositories; here, `git branches`, `git resume`, `git tmp`, and every `workout` form are off-limits. Only `commit`, `push`, `pull`, `save`, `git trunk`, and `groot` apply here.**
+
 - `commit "message"`: Stage all changes and commit
 - `push`: Push current branch to origin
 - `pull`: Pull with automatic stash/unstash
@@ -154,18 +165,18 @@ Some capabilities intentionally have no agent definition because they run differ
 
 **Every other command this repo defines** — the `hm` directory alias, `q`/`qq`/`qqq`, `prc`, `prr`, the coordination-tier CLIs (`staff`, `sstaff`, `crew`), the analytics and lifecycle CLIs (`claude-inspect`, `kanban`, `perm`), and `tmux-restore` — is listed in `~/.claude/docs/cli-and-mcp-reference.md` § Repository Command Reference (source: `modules/claude/global/docs/cli-and-mcp-reference.md`), with subcommands and a source path for the commands that have either — not every one does (see § Reference Documentation below for the auto-generated index of every shellapp instead). Read this one when you need a subcommand name you do not remember, or the source file to edit to change a command's behavior.
 
-## Critical Requirements
+## Critical Requirements (recap — full statements above)
 
 1. **Repository Location**: MUST be installed at `~/.config/nixpkgs`
 2. **Backup Synchronization**: Sync `~/.backup` folder with cloud storage for machine-specific configuration safety (human maintenance task — not Claude-actionable)
-3. **--purge Flag**: Claude Code must NEVER use the `--purge` flag with `hms`. What `--purge` does: it registers an EXIT trap (hms.bash:79) that fires unconditionally when the script exits — whether hms completes successfully, aborts mid-run on validation failure (Step 4), fails during `home-manager switch` (Step 7), or exits for any other reason. There is no way to run `hms --purge` without killing the tmux server and closing every active tmux session, including the one Claude Code is running in. This is irreversible. The flag exists for the user to run deliberately after tmux config changes, not for automation. Full semantics: `modules/system/HMS.md`.
+3. **--purge Flag**: Claude Code must NEVER use the `--purge` flag with `hms`. **This OVERRIDES global CLAUDE.md § Ask-First Operations, which lists `hms --purge` as approvable — in this repository it is not approvable, and no user answer makes it runnable by Claude. Only the user may run it, typed themselves.** What `--purge` does: it registers an EXIT trap (hms.bash:79) that fires unconditionally when the script exits — whether hms completes successfully, aborts mid-run on validation failure (Step 4), fails during `home-manager switch` (Step 7), or exits for any other reason. There is no way to run `hms --purge` without killing the tmux server and closing every active tmux session, including the one Claude Code is running in. This is irreversible. The flag exists for the user to run deliberately after tmux config changes, not for automation. Full semantics: `modules/system/HMS.md`.
 4. **macOS ARM Only**: This configuration is locked to `aarch64-darwin` (Apple Silicon Macs)
 
 ## Development Workflows
 
-**🚨 Deployment Order: `git add` (if needed) → `hms` → `commit` → `push`**
+**🚨 Deployment Order: `git add` (new files) → `hms` → `commit` → `push`**
 
-Wait for `hms` to succeed before running `git commit`. The `hms` build is the validation step — a failing build means the change is broken, not just undeployed. Stage files with `git add` if needed before running `hms`, but only commit after the build passes.
+Wait for `hms` to succeed before running `git commit`. The `hms` build is the validation step — a failing build means the change is broken, not just undeployed. Stage files with `git add` before running `hms` whenever the change adds a new file — a Nix flake only sees git-tracked files, so an untracked file is invisible to the build even though it exists on disk, and `hms` will succeed without deploying it. Only commit after the build passes.
 
 **`hms` flake8 is stricter than `nix flake check` — `hms` is the real gate.** `nix flake check` does not build derivations and never runs flake8 — Python source files that `hms` rejects on flake8 lint (F541 unnecessary f-string, F841 unused variable observed in practice) will pass `nix flake check` silently. Do not treat `nix flake check` passing as a green light to commit. Always run `hms` as the final pre-commit gate.
 
@@ -173,10 +184,11 @@ Wait for `hms` to succeed before running `git commit`. The `hms` build is the va
 
 🚨 **NEVER via Homebrew** - Use Nix or direct download ONLY
 
-1. Add to `modules/packages.nix` under appropriate category
-2. For LSP servers: Also update Neovim LSP config
-3. Run `hms` to apply
-4. Verify: `which <package-name>`
+1. **If the package provides a command-line binary, verify semantics first** — multiple nixpkgs packages can provide the same binary name; see § macOS Trash CLI → "General principle" before choosing which package to add.
+2. Add to `modules/packages.nix` under appropriate category
+3. For LSP servers: Also update Neovim LSP config
+4. Run `hms` to apply
+5. Verify: `which <package-name>`
 
 **Example (CORRECT):**
 ```nix
@@ -194,17 +206,13 @@ brew install colima  # ❌ FORBIDDEN
 
 **Add new shellapp:**
 1. Create bash script in appropriate module directory (e.g., `modules/git/new-script.bash`)
-2. Add shellapp definition to module's `_module.args.{domain}Shellapps` rec block
+2. Add shellapp definition to module's `_module.args.{domain}Shellapps` rec block. Before listing anything in `runtimeInputs`, run the semantics check in § macOS Trash CLI → "General principle" (`nix eval --raw nixpkgs#<pkg>.meta.description`), and prefer `pkgs.darwin.*` for macOS-facing tools.
 3. Add to git: `git add modules/git/new-script.bash`
 4. Run `hms` to deploy
 5. Command automatically available system-wide
 6. Documentation auto-generated in `~/.claude/TOOLS.md`
 
-**Add delegatable team member:**
-1. Create `modules/claude/global/agents/your-agent.md` with full skill content and agent frontmatter
-2. Add to git: `git add modules/claude/global/agents/your-agent.md`
-3. Run `hms` to deploy
-4. Agent automatically available in `~/.claude/agents/`
+**Add delegatable team member:** Follow § Team Member Terminology → "Adding a team member" — that is the complete procedure, including both roster updates. Summary: create `modules/claude/global/agents/<name>.md` → `git add` → `hms` → update both rosters (`modules/claude/global/docs/coordination-reference.md` and `modules/claude/global/output-styles/staff-engineer.md`).
 
 For exception/workflow skills (invoked via Skill tool), create at `modules/claude/global/skills/<name>/SKILL.md` instead. See § Team Member Terminology for the full distinction.
 
@@ -246,43 +254,7 @@ bat file.txt
 
 **This applies to code review too.** Do not flag missing dependency handling (e.g., `FileNotFoundError` for a CLI, `command -v` checks) as a deficiency when the dependency is Nix-guaranteed via `runtimeInputs`, `wrapProgram`, or `modules/packages.nix`. Defensive checks for Nix-managed binaries are an anti-pattern, not a best practice.
 
-**When adding external dependencies to scripts:**
-
-**For shellapps (preferred):**
-Declare dependencies directly in the script's Nix definition using `runtimeInputs`:
-
-```nix
-myScript = pkgs.writeShellApplication {
-  name = "my-command";
-  runtimeInputs = [ pkgs.bat pkgs.jq pkgs.fd ];  # Script-specific dependencies
-  text = ''
-    # These commands are guaranteed to exist - no fallbacks needed
-    bat file.txt
-    echo '{"key":"value"}' | jq .
-    fd pattern
-  '';
-};
-```
-
-**For Python scripts:**
-```nix
-myPythonScript = pkgs.writers.writePython3Bin "my-script" {
-  libraries = [ pkgs.python3Packages.requests pkgs.python3Packages.jinja2 ];
-} ''
-  import requests  # Guaranteed to exist
-  import jinja2    # No try/except needed
-'';
-```
-
-**For system-wide tools:**
-Add to `modules/packages.nix` only when the tool should be available globally (not script-specific):
-```nix
-home.packages = with pkgs; [
-  bat  # Available system-wide in all shells
-  fd
-  ripgrep
-];
-```
+**When adding external dependencies to scripts:** script-specific dependencies go in `runtimeInputs` in the script's own Nix definition; system-wide tools go in `modules/packages.nix`. Worked Nix examples for `writeShellApplication`, `writePython3Bin` (`libraries`), and `home.packages`: `~/.claude/docs/nixpkgs-repo-reference.md` § Declaring Script Dependencies (source: `modules/claude/global/docs/nixpkgs-repo-reference.md`).
 
 **The principle:**
 - **Script-specific dependencies** → `runtimeInputs` in the script's Nix definition

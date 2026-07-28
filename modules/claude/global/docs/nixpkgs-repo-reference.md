@@ -32,6 +32,49 @@ For detailed architecture, see README.md and source files in modules/.
 - Displays: Total cost (today/all-time), token breakdown (input/output/cache), cost by session, turn statistics by agent type, tool usage heat map (by tool and agent)
 - Access via Grafana interface (configured in Home Manager)
 
+## Declaring Script Dependencies
+
+Worked Nix examples for declaring script dependencies. The routing rule (script-specific →
+`runtimeInputs`; system-wide → `modules/packages.nix`) and the "never write fallbacks" rule live
+in project `CLAUDE.md` § Scripting Principles — read that section for the why; this section is
+reference only.
+
+**For shellapps (preferred):**
+Declare dependencies directly in the script's Nix definition using `runtimeInputs`:
+
+```nix
+myScript = pkgs.writeShellApplication {
+  name = "my-command";
+  runtimeInputs = [ pkgs.bat pkgs.jq pkgs.fd ];  # Script-specific dependencies
+  text = ''
+    # These commands are guaranteed to exist - no fallbacks needed
+    bat file.txt
+    echo '{"key":"value"}' | jq .
+    fd pattern
+  '';
+};
+```
+
+**For Python scripts:**
+```nix
+myPythonScript = pkgs.writers.writePython3Bin "my-script" {
+  libraries = [ pkgs.python3Packages.requests pkgs.python3Packages.jinja2 ];
+} ''
+  import requests  # Guaranteed to exist
+  import jinja2    # No try/except needed
+'';
+```
+
+**For system-wide tools:**
+Add to `modules/packages.nix` only when the tool should be available globally (not script-specific):
+```nix
+home.packages = with pkgs; [
+  bat  # Available system-wide in all shells
+  fd
+  ripgrep
+];
+```
+
 ## Nix Development
 
 - `nix run nixpkgs#nix-prefetch-github -- owner repo --rev main`: Get hash for GitHub packages
