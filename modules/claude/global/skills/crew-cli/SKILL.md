@@ -1,6 +1,6 @@
 ---
 name: crew-cli
-description: crew CLI full command reference. Auto-load when about to run any crew subcommand and need exact arguments, flag syntax, or error handling. Covers all subcommands: list, tell, read, dismiss, find, create, status, project-path, resume, sessions, active, smithers. Includes --format flag behavior, exit code table, pane targeting rules (window vs window.pane), multi-target comma syntax, and crew create vs crew tell sequencing discipline. This skill is the canonical source for all crew CLI syntax — no external pointer needed.
+description: crew CLI full command reference. Auto-load when about to run any crew subcommand and need exact arguments, flag syntax, or error handling. Covers all subcommands: list, tell, read, dismiss, find, create, status, project-path, resume, sessions, active, smithers. Includes --format flag behavior, exit code table, pane targeting rules (window vs window.pane), multi-target comma syntax, and crew create vs crew tell sequencing discipline. This skill is the canonical source for all crew CLI syntax — every invocation, flag, and exit code is inline here; tool-internal behavior for diagnosing unexpected output lives in the companion internals-and-diagnostics.md.
 ---
 
 # crew CLI — Full Command Reference
@@ -53,26 +53,12 @@ crew create <name> [--repo <path>] [--branch <branch>] [--base <base-branch>] [-
 - `--tell-file PATH` reads the brief from a file. The file is deleted automatically after successful delivery. If delivery fails (e.g., Claude Code didn't start), the file is preserved so you can retry.
 - Use `--cmd <other>` to override the spawn command when not using `staff`.
 
-**Modal auto-handling (startup modals):**
-When `--tell` or `--tell-file` is used, `crew create` must wait for Claude Code to become ready before delivering the brief. During this wait, two categories of startup prompts are automatically dismissed so they do not block delivery:
-- **Folder-trust prompt** (`Quick safety check: Is this a project you created or one you trust? 1. Yes, I trust this folder / 2. No, exit`) — this is Claude Code's ONE-TIME first-run check for a never-before-opened project directory (e.g. a freshly cloned repo). Answered per `--trust-folder` flag (`yes`→1/Enter, `no`→2/Down+Enter). Checked FIRST in the poll loop — it is the earliest prompt Claude Code can show, gating everything else including whether `.mcp.json` is even read.
-- **MCP server trust modal** (`New MCP server found in .mcp.json: ...`) — answered per `--mcp-trust` flag (`all`→2/Down+Enter, `this`→1/Enter, `none`→3/Down+Down+Enter). Multiple MCP modals chain correctly — each is answered in sequence.
-- **Unknown modals** — if a numbered-choice + `Enter to confirm` prompt appears but does not match either known signature, it is NOT auto-dismissed. A warning is emitted to stderr and the wait loop continues; the `--tell` delivery will time out and report `told="false"` if the modal is not manually cleared.
-
 **Recovery when `told="false"` and the folder-trust prompt is the blocker:**
 This prompt can silently drop a `--tell` brief — the session never reaches the `auto mode on` ready sentinel. Once the poll thread detects the folder-trust prompt, `folder_trust_detected` is set unconditionally and the auto-answer attempt always fires — `--trust-folder` only selects which keystroke sequence is sent (`yes` vs `no`), not whether the attempt happens. So `told_reason` reads `folder-trust prompt detected and auto-answered (--trust-folder 'no')` (or `'yes'`) whenever the prompt was seen at all, including when `--trust-folder no` was passed. The generic `session never reported ready` reason only occurs when the folder-trust prompt was never detected before the wait ceiling — a fast race where the deadline is exceeded before the poll thread ever checks. To recover manually:
 1. `crew read <name>` — confirm the pane shows the folder-trust prompt (`Is this a project you created or one you trust?`).
 2. `crew tell <name> --keys "Enter"` — accept option 1 (Yes, I trust this folder).
 3. Wait for the `auto mode on` status bar (poll with `crew read <name> --lines 5` or `crew active`).
 4. Re-deliver the brief with a standalone `crew tell <name> "<brief>"` — the original `--tell` payload was dropped, not queued, so it must be resent.
-
-**Post-switch hook:**
-After `git worktree add` and before launching the staff session, `crew create` automatically runs the repository's `.git/workout-hooks/post-switch` script if it exists and is executable. This mirrors the legacy `workout` CLI behavior so spawned worktrees are fully initialized (e.g., `mise trust`, `pnpm bootstrap`) before Staff starts work.
-
-- **When it runs:** After worktree creation, before tmux window open. Skipped when `--no-worktree` is used.
-- **Env vars passed:** `WORKTREE_PATH` (new worktree absolute path), `SOURCE_REPO` (source repo absolute path), `BRANCH` (branch checked out). Note: the reference implementation at `maze-monorepo/.git/workout-hooks/post-switch` currently uses only `cwd` (runs `mise trust --yes && pnpm bootstrap`) and does not consume these env vars. The vars are provided as a forward-looking contract for hooks that need them.
-- **Absent hook:** Silent no-op — no error, no output. Proceed as normal.
-- **Non-zero exit:** `crew create` emits `POST_SWITCH_HOOK_FAILED` error (exit 1) with the hook's exit code and last 20 lines of output. Staff session is NOT launched — worktree setup is incomplete.
 
 **Examples:**
 ```bash
@@ -82,7 +68,7 @@ crew create pricing --tell-file /tmp/brief.txt                         # Create 
 crew create auth --base main                                            # Create from main instead of current branch
 crew create docs --repo ~/worktrees/other-project/main                 # Create in a different repo
 crew create payment --branch payment-v2                                 # Window named "payment", branch "payment-v2"
-crew create hotfix --no-worktree                                        # Work directly in repo without creating a worktree (hook skipped)
+crew create hotfix --no-worktree                                        # Work directly in repo without creating a worktree (post-switch hook skipped)
 crew create pricing --tell "Build auth" --mcp-trust all                 # Trust all future MCPs (default)
 crew create pricing --tell "Build auth" --mcp-trust this                # Trust only the prompting MCP
 crew create pricing --tell "Build auth" --mcp-trust none                # Skip MCP server usage
@@ -265,34 +251,7 @@ crew status --lines 50         # Moderate read per pane
 crew status --all              # Include all panes
 ```
 
-**XML output schema** (default format — use this when parsing status programmatically):
-
-Single-pane window (staff engineer only, no smithers split):
-```xml
-<status lines="20">
-  <window name="feature-auth">
-    <pane index="0" command="2.1.100" crew="feature-auth.0">...captured output...</pane>
-  </window>
-</status>
-```
-
-Multi-pane window (typical example — staff engineer in pane 0, smithers in pane 1; pane indices are not guaranteed):
-```xml
-<status lines="20">
-  <window name="pricing">
-    <pane index="0" command="2.1.100" crew="pricing.0">...captured output...</pane>
-    <pane index="1" command="smithers" crew="pricing.1">...captured output...</pane>
-  </window>
-</status>
-```
-
-Attribute reference:
-- `<status lines="N">` — N is the `--lines` value passed to the command
-- `<window name="...">` — bare window name (no session prefix); groups panes in the same window
-- `<pane index="...">` — tmux pane index within the window (0-based string)
-- `<pane command="...">` — `pane_current_command` as reported by tmux (e.g., `2.1.100`, `smithers`, `zsh`)
-- `<pane crew="window.pane">` — crew address for use as a target in `crew tell`, `crew read`, etc.
-- pane text content — last N lines of scrollback from that pane
+**Output:** XML by default. Every `<pane>` carries a `crew="window.pane"` address — use it verbatim as a `crew tell` / `crew read` target.
 
 ---
 
@@ -337,13 +296,6 @@ crew sessions [--window <name>] [--worktree <path>] [--format xml|json|human]
 - `--window <name>` — Restrict to sessions for this single tmux window name. Window must exist in current tmux session — exits 1 (`WINDOW_NOT_FOUND`) if not. If the window is found but has no Claude sessions, emits a warning (not an error).
 - `--worktree <path>` — Use an explicit worktree path instead of tmux window lookup. Bypasses the window-to-path resolution step entirely.
 
-**Behavior:**
-- Default (no flags): scans all windows in the current tmux session, resolves each pane's working directory to a Claude project key (`~/.claude/projects/<key>/`), and lists `.jsonl` session files sorted by most-recently-modified first.
-- With `--window <name>`: restricts to that single window. Window must exist in the current tmux session; exits 1 (`WINDOW_NOT_FOUND`) if not found.
-- With `--worktree <path>`: bypasses tmux lookup entirely — scans the projects directory for the given path.
-- Session files are sorted by mtime descending (most recent first).
-- Output is buffered and emitted atomically after all windows are scanned.
-
 **Output (XML default):**
 ```xml
 <sessions>
@@ -380,17 +332,6 @@ crew resume <name> [--session <id>] [--format xml|json|human]
 **Arguments:**
 - `name` (required) — Window name. Must match a worktree in `~/worktrees/<name>` or an active tmux window with that name. Must be filesystem-safe (alphanumeric, hyphens, underscores only).
 - `--session <id>` — Explicit session UUID to resume. Default: most recent `.jsonl` file by mtime. Use `crew sessions --window <name>` to list available IDs.
-
-**Behavior:**
-1. Validates `name` against the filesystem-safe name regex.
-2. Aborts if a tmux window named `<name>` already exists (error: `WINDOW_EXISTS`).
-3. Resolves the worktree path: first checks active tmux windows (cross-session), then falls back to `~/worktrees/<name>`.
-4. Scans `~/.claude/projects/<key>/` for `.jsonl` session files.
-5. If `--session` not given, picks the most recent `.jsonl` by mtime.
-6. Emits a warning if multiple sessions exist and the most recent was picked.
-7. Creates a new tmux window: `tmux new-window -n <name> -c <worktree_path> -d`.
-8. Launches: `staff --name <name> --resume <session_id>` via tmux send-keys.
-9. Emits structured success output.
 
 **Note:** Worktree resolution is intentionally cross-session (unlike other crew subcommands). On recovery, the originating tmux session may no longer exist — so `crew resume` scans all tmux windows first, then falls back to `~/worktrees/<name>`.
 
@@ -429,15 +370,6 @@ crew project-path <worktree> [--format json|human]
 **Arguments:**
 - `worktree` (required) — Path to the worktree directory. Use `.` for the current working directory. Accepts absolute paths or `~`-prefixed paths.
 
-**Behavior:**
-- Resolves `.` to `cwd` via `os.getcwd()`.
-- Mangles the path to a project key: replaces every `/` with `-` (Claude Code's path mangling scheme).
-- Checks if `~/.claude/projects/<key>/` exists.
-- Lists any `.jsonl` session files in that directory, sorted by mtime descending.
-- Does NOT modify any files — read-only diagnostic command.
-
-**Path mangling:** Claude Code converts a worktree path to a project key by replacing every `/` with `-`. Example: `/Users/me/worktrees/pricing` → `-Users-me-worktrees-pricing`. The project directory is then `~/.claude/projects/-Users-me-worktrees-pricing/`.
-
 **Output (XML default):**
 ```xml
 <project-path worktree="/Users/me/worktrees/pricing" key="-Users-me-worktrees-pricing" sessions_dir_exists="true">
@@ -472,17 +404,6 @@ crew active [--names-only] [--format xml|json|human]
 **Arguments:**
 - `--names-only` — Print just the names of windows with at least one active pane, one per line. Intended for shell-script consumers. `--names-only` takes precedence; if both are provided, `--format` is silently ignored.
 
-**Active detection (recent lines only — NOT scrollback):**
-- `claude-thinking`: A Claude Code spinner verb (e.g. `Brewing`, `Architecting`, `Crystallizing`) appears alongside a spinner glyph (`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ · ✻ ✳ ✶`) on one of the last 2 visible pane lines.
-- `smithers`: Smithers/Ralph loop-control output (`Cycle N/M`, `ITERATION N`, `Waiting for CI checks`) appears on a recent line.
-
-Historical completion markers like `✻ Baked for 13m 13s` in scrollback do NOT trigger active classification — only the last 2 visible lines are examined for active-work indicators.
-
-**Idle detection:**
-- `claude-empty`: Claude pane at empty prompt (`❯` with nothing after it).
-- `shell`: Shell prompt with no foreground command.
-- `unknown`: Does not match any known pattern.
-
 **Window-level aggregation:** A window is reported as active if ANY of its panes is active.
 
 **Output (XML default):** Only active windows are included in the `<active>` root element.
@@ -498,12 +419,6 @@ Historical completion markers like `✻ Baked for 13m 13s` in scrollback do NOT 
     <pane index="1" state="active" activity="loop" detail="Cycle 3/10" />
   </window>
 </active>
-```
-
-**`--names-only` output:**
-```
-results-rescue
-deliver-carve
 ```
 
 **Examples:**
@@ -555,6 +470,12 @@ crew smithers auth             # start smithers in the auth window
 ```
 
 **Other ways to invoke smithers:** the `/smithers` skill (`/smithers <PR>`) runs it directly in the current session; `crew tell <crew-member> "/smithers <PR>"` sends it as a message to an existing crew member's Claude pane instead of a dedicated split.
+
+---
+
+## Tool Internals and Diagnostics (Reference)
+
+The startup-modal poll loop behind `crew create --tell`, the `post-switch` worktree-hook contract, the `crew status` XML schema and attribute reference, the window-scan behavior behind `crew sessions`, the nine-step `crew resume` algorithm, the path-mangling behavior behind `crew project-path`, and the spinner/loop pattern matching behind `crew active` describe what the binary does internally — not needed to invoke any subcommand, since every invocation, flag, exit code, and error code is inline above. Read `~/.claude/skills/crew-cli/internals-and-diagnostics.md` (source: `modules/claude/global/skills/crew-cli/internals-and-diagnostics.md`) when a command produced output you did not expect, when a `--tell` brief was dropped, or when extending `crew` itself.
 
 ---
 
