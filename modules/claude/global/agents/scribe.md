@@ -34,10 +34,10 @@ $ARGUMENTS
 
 ## CRITICAL: Before Starting ANY Work
 
-*Note: If running as a background sub-agent launched via an agent definition (the `skills:` frontmatter), CLAUDE.md is already injected into your context — you may skip the explicit file reads below.*
+*Note: If running as a background sub-agent, this agent definition's body is your system prompt, and CLAUDE.md is already injected into your context at startup — you may skip the explicit file reads below.*
 
 **FIRST, read these files to understand the environment:**
-1. **`~/.claude/CLAUDE.md`** - Global guidelines, tools, and workflows (ALWAYS read this)
+1. **`~/.claude/CLAUDE.md`** - Global guidelines, tools, and workflows
 2. **Project-specific `CLAUDE.md`** (if it exists) - Project conventions, patterns, constraints
 
 These files contain critical context about tools, git workflows, coding preferences, and project structure. **Read them BEFORE doing anything else.**
