@@ -63,67 +63,15 @@ This skill fetches PR diffs, posts unified GitHub reviews via `prr`, runs kanban
 **If any are missing:** Stop immediately. Do not start work. Surface to the user:
 > "Blocked: One or more required permissions are missing from `permissions.allow`. Add `Bash(gh pr *)`, `Bash(gh api *)`, `Bash(kanban *)`, `Bash(prc *)`, `Bash(prr *)`, `Bash(git branch *)`, `Bash(git rev-parse *)`, `Bash(crew *)`, and `Bash(workout *)` before running /pr-review."
 
-## Re-Review / Straight-Approval Mode
+## Alternate Review Modes
 
-**Trigger:** When `/pr-review` is invoked explicitly in re-review mode — i.e., the invocation context, the watcher brief, or `$ARGUMENTS` contains the word `re-review` or `straight-approval` (greppable signal from the caller).
+Two caller-signaled modes change what this skill does. **Check for both signals in `$ARGUMENTS` and in the invocation brief before Phase 1 begins.** If either matches, Read `~/.claude/skills/pr-review/review-modes-and-followup.md` (source: `modules/claude/global/skills/pr-review/review-modes-and-followup.md`) before going any further — that file holds each mode's full flow, its abort conditions, and the caller contract.
 
-**In this mode, skip the full specialist review pass entirely.** The author has addressed prior feedback; the job is to confirm and help them land it, not to re-scrutinize the diff or surface a new round of findings. Opening a closed review loop with new findings is the failure mode to avoid.
+**Re-review / straight-approval** — signaled by the word `re-review` or `straight-approval` in the invocation context, the watcher brief, or `$ARGUMENTS`. Skip the full specialist review pass entirely: no specialist delegation, no new findings, no new inline comments. The author has addressed prior feedback; the job is to confirm and help them land it. Opening a closed review loop with new findings is the failure mode to avoid.
 
-**Re-review flow:**
+**Restricted-output** — signaled by the `--restricted-output` flag or the phrase "restricted-output mode". Phases 1–5 run in FULL and unchanged — do not skip a specialist, shorten analysis, or lower scrutiny. Only the Phase 6 post step changes.
 
-1. Parse the PR number from `$ARGUMENTS` as normal.
-2. Run the safety re-check: `gh pr view <pr> [--repo owner/repo] --json author,state,mergedAt,reviewDecision,reviews,latestReviews`.
-3. **Abort conditions** (deliberate subset — a peer's COMMENTED does NOT block the straight approval; only CHANGES_REQUESTED by a non-author, non-bot human does):
-   - `state != OPEN` or `mergedAt` non-null → nothing to do; exit cleanly.
-   - `reviewDecision == APPROVED` AND at least one approving review is from a real human (not a bot/auto-approval account — apply the same three-rule bot-detection criteria used in Phase 5: login does NOT end in `[bot]`, `gh api users/<login>` returns HTTP 200, `type == "User"`) → already straight-approved by a human; exit cleanly (do NOT post a duplicate). A `reviewDecision == APPROVED` satisfied SOLELY by bot/auto-approval accounts does NOT trigger this abort.
-   - Any non-author, non-bot human has `state == CHANGES_REQUESTED` in `reviews` → genuinely blocked by a peer; exit cleanly.
-4. **If none of the abort conditions are true:** post a **straight approval** via `prr submit <pr> --event APPROVE` (add `--repo owner/repo` if cross-repo) with a brief, friendly body: `"Thanks for addressing the comments — looks good."`. No new findings. No new inline comments. No specialist delegation. No re-litigating.
-5. Report the approval posted and exit. The follow-through loop is not needed — an APPROVE event is a terminal state.
-
-**Do NOT:** run Phase 1–5. Do NOT spawn specialists. Do NOT generate findings. Do NOT write a `.scratchpad/review-<number>.json` with inline comments. The straight approval is the entire output.
-
-## Restricted-Output Review Mode
-
-**Trigger:** When `/pr-review` is invoked with the `--restricted-output` flag, or the invocation context / watcher brief explicitly states the review must run in restricted-output mode (greppable signal from the caller — see § Caller Contract below).
-
-**What does NOT change in this mode:** Run the FULL normal internal review exactly as usual — Phase 1 through Phase 5 (worktree setup, PR context fetch, domain detection, parallel specialist delegation, aggregation) execute unchanged. Do not skip any specialist, do not shorten analysis, do not lower scrutiny. The only thing this mode restricts is what happens at the POST step (Phase 6).
-
-**What changes — the POST step (Phase 6) is replaced entirely by this decision:**
-
-After aggregation completes (end of Phase 5) and the FINAL PRE-POST CHECK (§ Phase 6) passes with no abort condition triggered, evaluate the aggregated verdict:
-
-1. **CLEAN APPROVE** — every specialist returned LGTM (no blocking, no concern, no comment-level findings at all): submit an APPROVE review with an **empty body and zero inline comments**. This is the only case where anything gets written to GitHub in this mode:
-   ```bash
-   prr submit <pr-number> --event APPROVE --body ""
-   ```
-   Approve silently — no summary text, no "looks good" note, no follow-up notes folded in. Empty body, zero comments, APPROVE event only.
-
-2. **NOT a clean approve** — any specialist returned a concern, a comment-level finding, or a blocking issue (anything that would normally produce an inline comment or a non-empty review body): **post NOTHING to the PR.** Do not call `prr submit`. Do not call `gh pr comment`. Do not write anything to GitHub. Instead, emit the verdict and a short summary back to the caller (see § Caller Contract) so the operator can handle it manually.
-
-**HARD CONSTRAINT — the only permitted GitHub write in this mode is an empty APPROVE:**
-- NEVER post inline comments in this mode, under any circumstance.
-- NEVER post a COMMENTED or CHANGES_REQUESTED review in this mode, under any circumstance.
-- If the aggregated findings contain anything beyond all-LGTM, the correct action is silence-plus-escalation, never a partial or watered-down post.
-
-**No follow-up loop in this mode:** § Follow-Through After a Non-Approving Review does not apply — restricted-output mode never produces a non-approving GitHub review, so there are no comment threads to follow through on. A clean approve is terminal (same as any APPROVE). A non-clean escalation is also terminal from `/pr-review`'s perspective — the operator takes it from there.
-
-### Caller Contract
-
-**How the mode is triggered:** The caller (typically `pr-review-watcher`, but any caller may do this) signals restricted-output mode by either:
-- Passing `--restricted-output` as a flag in `$ARGUMENTS` (e.g., `/pr-review 456 --restricted-output`), or
-- Including the literal phrase "restricted-output mode" or "RESTRICTED-OUTPUT MODE" in the invocation brief text.
-
-Either signal is sufficient and greppable — check for the flag or the phrase before Phase 1 begins, and set a mode flag for use at Phase 6.
-
-**How `/pr-review` emits the escalation verdict/summary back to the caller:** When the case-2 (not-clean) path is taken, `/pr-review` reports its result to standard output in this exact format, then stops:
-
-```
-ESCALATE-<pr-number>: <verdict — LGTM/Concerns/Blocking counts> — <one-line summary of what was found>
-```
-
-Example: `ESCALATE-456: 1 concern, 1 blocking — swe-security flagged a missing auth check on the new endpoint; swe-backend flagged an N+1 query.`
-
-When run under a `crew`-spawned session (the normal `pr-review-watcher` path), this printed line is what the caller reads via `crew read` to detect the escalation and route it to the operator. When the clean-approve case is taken, `/pr-review` prints `REVIEW-POSTED-<pr-number>` exactly as it does in normal mode — the caller's existing `REVIEW-POSTED-<pr>` detection logic (§ /pr-review Integration in `pr-review-watcher`) requires no change to recognize a silent approve.
+> **HARD CONSTRAINT — stated here, resident, so it holds even if the supporting file goes unread.** In restricted-output mode the only permitted GitHub write is an APPROVE with an **empty body and zero inline comments**, and only when every specialist returned LGTM. NEVER post inline comments. NEVER post a COMMENTED or CHANGES_REQUESTED review. Anything short of all-LGTM means post NOTHING to the PR and escalate the verdict to the caller instead.
 
 ## Phase 1 — Worktree Setup + One-Way Handoff
 
@@ -304,100 +252,17 @@ In a **single message**, make one Agent tool call per specialist (all in paralle
 
 **🚨 Mandatory kanban-card header — do not omit:** The kanban PreToolUse hook (`modules/claude/kanban-pretool-hook.py`) denies any Agent tool call whose prompt does not contain a `KANBAN CARD #<N> | Session: <session-id>` reference somewhere in the prompt. Placing it as the literal first line remains best practice — it keeps the header unambiguous and easy to verify — so before constructing each specialist's prompt, resolve that specialist's card number from the Phase 4 `kanban do` array response (§ Create All Kanban Cards at Once) using the card-to-specialist mapping noted there, and prepend it as the first line of the prompt — substituting `{card-number}` and `{current-session}` with the resolved values, never leaving an unresolved placeholder in what's actually sent to the Agent tool.
 
-```
-KANBAN CARD #{card-number} | Session: {current-session}
+**The prompt template itself is in `~/.claude/skills/pr-review/review-domains.md` § Specialist Prompt Template** (source: `modules/claude/global/skills/pr-review/review-domains.md`). Read that file at this point in Phase 4 — you cannot construct a specialist prompt without it, and the same read supplies the domain-focus blocks and the Cross-Cutting section named below. Paste the template as written, resolving every slot first:
 
-You are a {domain} specialist reviewing PR #{number}: {title}
-
-**Author:** {author}
-**Base ← Head:** {baseRefName} ← {headRefName}
-
-**PR Description:**
-{body}
-
-**Full Diff:**
-{diff text}
-
----
-
-**Your Domain Focus ({domain}):**
-{domain-specific focus instructions — see below}
-
-**Full Repository Access:**
-<!-- ORCHESTRATOR: Replace the block below with resolved text — never emit {if ...} markers literally in the final prompt. -->
-{if repo_path is set:
-The complete PR branch is checked out at: `{repo_path}`
-
-You have full read access to the entire repository. Use it to:
-- Read surrounding code to understand context beyond the diff
-- Check existing patterns, conventions, and abstractions in the codebase
-- Look at tests to understand expected behavior and coverage gaps
-- Read local docs (README, docs/ folder) for project conventions
-- Understand import relationships and how changed code fits the larger system
-
-You are NOT limited to the diff. Treat the diff as the focal point, but use the full repository to give informed, contextual reviews.
-}
-{if repo_path is null:
-  {if --repo flag was used:
-**Note:** This PR is in a different repository (`--repo` flag). The repository is not checked out locally — review is based on the diff only.
-  }
-  {if fork PR:
-**Note:** This PR is from a forked repository. The fork branch is not available locally for worktree checkout — review is based on the diff only.
-  }
-}
-
-**Citation Requirement:**
-For citation rules, acceptable sources, and examples, Read [review-citation-guide.md](review-citation-guide.md).
-
-**Reviewer Orientation:**
-You are on the author's side. Your job is to help confirm that intent is carried through and to catch things that might bite them — not to audit or gatekeep. Assume the author was deliberate and had a reason. Approach every finding with curiosity and respect.
-
-**Tone and Format (applies to all output — inline comments and body-level findings alike):**
-- **1–3 sentences max** per inline finding. Use line breaks to stay readable. If a comment covers multiple distinct points, use bullets instead of one dense paragraph.
-- **Curious when uncertain** — "did you mean to...?", "is this intentional?", "curious if this could...", "curious if..." Sound like a friend whose PR you want to help land.
-- **No severity label prefixes** in comment text — never write `[blocking]`, `[concern]`, `[nit]`, or any square-bracket qualifier. Severity belongs in the SEVERITY field only.
-- **No chain-of-thought** — state the observation, optionally note why it matters, done. No "I confirmed this by reviewing..." explanations.
-- **No specialist attribution** — comments are posted as a unified review. No `[swe-security]` or similar.
-- **Default to COMMENT severity** — only use blocking for high-risk issues: regressions, security vulnerabilities, or data loss.
-- **When in doubt, leave it out** — if a finding is borderline or minor, cut it entirely. No nits — drop them hard; bots already review the PR and surface style/nit-level observations.
-- **Confirm intent before flagging** — a deviation that looks wrong may be the intentional design. Before treating it as a defect, ask: "is this intentional?" If the code could plausibly serve the author's stated intent, verify intent first rather than flagging it outright. Use curious phrasing ("did you mean to...?", "is this intentional?") to surface the question instead.
-- **Bias toward APPROVE** — when a change is safe (no blocking issue: security / data-loss / regression / correctness) AND serves the author's stated intent, approve. Non-blocking suggestions become optional 'follow-up to consider' notes folded inside the approval, not a withheld verdict. Reserve COMMENT / CHANGES_REQUESTED for genuinely blocking issues only.
-- **Tentative phrasing for suggestions** — for non-blocking findings and suggestions, use tentative, collaborative language. Preferred phrasings: "probably worth ...", "might be worth ...", "could be worth considering ...", "one option might be ...", "no strong opinion, but ...". These pair naturally with the curious framing above ("curious if...", "did you mean to...?"). Reserve firmer, more direct wording only for genuinely blocking issues (security, data-loss, regression) — and even then stay respectful.
-  - **Anti-patterns for non-blocking suggestions:** "worth doing X", "you should X", and bare imperatives — they land as directives even when meant as suggestions.
-
-**Required Output Format:**
-Write your complete findings to `.scratchpad/review-{number}-{domain}.md` using this structure:
-
-## {Domain} Review
-
-**Verdict:** ✅ LGTM | ⚠️ Concerns | 🚨 Blocking Issues
-
-### Findings
-
-FILE: path/to/file.go
-LINE: 42
-SEVERITY: blocking | concern | comment
-COMMENT: [Inline comment text — 1–3 sentences, plain language, no severity label prefix, no specialist attribution. Use bullets if multiple distinct points. Cite sources inline when referencing standards.]
-
-### Overall Observations
-[Findings with no specific file or line location — e.g. architecture concerns, missing test coverage patterns, cross-cutting issues. These will be folded into the review body as bullet points, NOT posted as inline comments. Write each as a short plain-language statement — no severity prefixes.]
-
-- [observation]
-
-### Summary
-[1–3 sentences]
-
-If no findings in your domain, return `✅ LGTM` with a one-line summary. No findings or observations block needed.
-
-**Kanban:**
-Your card number is #{card-number}. Session is {current-session}.
-After completing each AC, run: `kanban criteria check #{card-number} <n> --session {current-session}`
-When all AC are checked, stop. The SubagentStop hook calls `kanban done` automatically.
-```
+- `{card-number}` and `{current-session}` — per the mandatory header rule above.
+- `{number}`, `{title}`, `{author}`, `{baseRefName}`, `{headRefName}`, `{body}`, `{diff text}` — from the Phase 2 context.
+- The `{if repo_path ...}` conditionals — resolve per the rule above; never emit an `{if ...}` marker literally.
+- `{domain focus}` — that specialist's one-line domain block PLUS the full Cross-Cutting section (§ Domain-Specific Focus Instructions below).
+- `{citation requirement}` — insert this line verbatim: `For citation rules, acceptable sources, and examples, Read [review-citation-guide.md](review-citation-guide.md).` The specialist receives the pointer, not the guide's contents.
 
 ### Domain-Specific Focus Instructions
 
-For domain-specific focus text to include under **Your Domain Focus ({domain}):** in each specialist's prompt, see [review-domains.md](review-domains.md).
+The domain-focus text to include under **Your Domain Focus ({domain}):** is in the same file the template came from — `review-domains.md` § Review Domain Focus Instructions. One read covers both.
 
 **Injection rule for the Cross-Cutting section:** After the per-domain focus line, append the full **Cross-Cutting: Composition Wiring and Lifecycle** section from `review-domains.md` to EVERY specialist's prompt. This section is in addition to the domain-focus line — not a replacement for it. Every specialist receives both: their one-line domain block AND the full cross-cutting section.
 
@@ -496,7 +361,7 @@ Aggregate all specialist FILE/LINE/SEVERITY/COMMENT findings (those with actual 
 
 Post a **single unified GitHub review** via `prr`.
 
-**Restricted-output mode override:** If restricted-output mode was signaled (§ Restricted-Output Review Mode / § Caller Contract), after the FINAL PRE-POST CHECK runs at the post step below, skip the normal posting logic and apply the restricted-output decision instead: clean-approve → empty-body APPROVE only; anything else → post nothing, emit `ESCALATE-<pr-number>: ...` and stop. Abort conditions (superseded PR, already human-reviewed, etc.) are checked identically in both paths.
+**Restricted-output mode override:** If restricted-output mode was signaled (§ Alternate Review Modes; the full flow and the caller contract are in `review-modes-and-followup.md`), after the FINAL PRE-POST CHECK runs at the post step below, skip the normal posting logic and apply the restricted-output decision instead: clean-approve → empty-body APPROVE only; anything else → post nothing, emit `ESCALATE-<pr-number>: ...` and stop. Abort conditions (superseded PR, already human-reviewed, etc.) are checked identically in both paths.
 
 ### FINAL PRE-POST CHECK
 
@@ -563,101 +428,13 @@ Report back:
 
 ## Follow-Through After a Non-Approving Review
 
-**Trigger:** Only when the submitted review event is COMMENT or CHANGES_REQUESTED — a non-approving review. An APPROVE review needs no follow-up.
+**Trigger:** the submitted review event is COMMENT or CHANGES_REQUESTED. An APPROVE review needs no follow-up, and restricted-output mode never produces a non-approving review, so this does not apply there.
 
 **Guiding principle:** The intent of review is to HELP the author land their change — be curious and inquisitive, catch genuinely dangerous issues, confirm the code serves the author's stated intent. Do not gate; do not leave teammates hanging. Help our friends get their PRs through. This behavior generalizes to ANY automated PR-review workflow, not just one repo or channel.
 
-### Transition Into the Follow-Up Loop
+**This step is mandatory, not optional.** Read `~/.claude/skills/pr-review/review-modes-and-followup.md` § Follow-Through Loop (source: `modules/claude/global/skills/pr-review/review-modes-and-followup.md`) and enter the loop now. That section holds the durable flag-file guard, the ScheduleWakeup cadence and wakeup prompt, the per-wake reply-thread and new-commit checks, the approve-when-resolved condition, and the stop conditions.
 
-After posting a COMMENT or CHANGES_REQUESTED review, schedule a follow-up check using `ScheduleWakeup` at a ~5-minute cadence. A foreground skill cannot busy-wait; use ScheduleWakeup to re-fire the follow-up check. One independent loop per PR — do not start a second loop if one is already running for this PR.
-
-**Durable loop-dedup (flag file):** Because ScheduleWakeup spawns a fresh agent context where in-memory state does not persist, use a per-PR flag file to detect whether a follow-up loop is already running. This mirrors the `approval_watch` pattern in smithers.
-
-- **File path:** `.scratchpad/review-<pr-number>-followup-running` (relative to the git repo root)
-- **Check on entry:** `test -f .scratchpad/review-<pr-number>-followup-running` — if the flag exists, a loop is already active; do NOT schedule another wakeup.
-- **Set when starting the loop:** `touch .scratchpad/review-<pr-number>-followup-running`
-- **Clear when a stop condition is reached:** `rm -f .scratchpad/review-<pr-number>-followup-running`
-
-Before scheduling the first wakeup, check for the flag. If it already exists, skip — a loop is in progress.
-
-```bash
-# Guard: skip if a follow-up loop is already running for this PR
-test -f .scratchpad/review-<pr-number>-followup-running && exit 0
-
-# Mark the loop as active (survives the ScheduleWakeup gap)
-touch .scratchpad/review-<pr-number>-followup-running
-```
-
-Then schedule the first follow-up check:
-
-```
-ScheduleWakeup(
-  delaySeconds=300,
-  reason="Follow-up check for PR <pr-number> — waiting ~5 minutes before re-checking reply threads and new commits",
-  prompt="Re-enter the follow-up loop for /pr-review on PR <pr-number>: check unresolved threads, check for new commits, approve if all concerns resolved, or schedule the next wakeup."
-)
-```
-
-### On Each Wake
-
-When the follow-up check fires:
-
-1. **Re-check reply threads.** Pull the current state of all review comment threads on the PR:
-
-   ```bash
-   prc list <pr> --unresolved
-   ```
-
-   For each unresolved thread where a reply has arrived since the last check:
-
-   - **If the author addressed the concern** (a fix was pushed or a satisfactory answer was given): VERIFY it genuinely resolves the issue AND the code still serves the author's stated intent. If both are true, resolve the thread — reply and resolve in two steps:
-     ```bash
-     prc reply <comment_id> '<brief acknowledgment>'
-     prc resolve <thread_id>
-     ```
-     If more is needed, post a friendly, helpful reply explaining what's still outstanding.
-   - **If waiting on the author:** just wait — do not post anything.
-
-2. **Check for new commits.** Pull any new commits the author pushed since the last check:
-
-   ```bash
-   gh pr view <number> --json commits --jq '.commits[-3:]'
-   ```
-
-   If new commits are present, re-read the updated diff and assess whether outstanding concerns have been addressed in code:
-
-   ```bash
-   gh pr diff <number>
-   ```
-
-### Approving When All Concerns Are Resolved
-
-When ALL previously raised concerns are resolved — threads resolved, code verified, no remaining outstanding issues — submit an APPROVE review:
-
-```bash
-prr submit <pr-number> --findings .scratchpad/review-<pr-number>-followup.json --event APPROVE
-```
-
-The follow-up findings JSON should have an empty `comments` array and a brief approval message in `body` (e.g., `"All concerns addressed — looks good to merge."`).
-
-### Stop Conditions
-
-Stop the follow-up loop only when the PR is **approved-by-us, merged, or closed**:
-
-```bash
-# Check current PR state
-gh pr view <number> --json state,reviews --jq '{state: .state, reviews: [.reviews[] | {author: .author.login, state: .state}]}'
-```
-
-- `state` is `MERGED` or `CLOSED` → clear the flag file and stop immediately
-- Our account appears in `reviews` with `state: APPROVED` → clear the flag file and stop immediately
-- Otherwise → schedule the next ScheduleWakeup and continue the loop
-
-When a stop condition is reached, clear the durable flag:
-
-```bash
-rm -f .scratchpad/review-<pr-number>-followup-running
-```
+Guard before scheduling anything: `test -f .scratchpad/review-<pr-number>-followup-running`. If the flag exists, a loop is already active for this PR — do NOT start a second one.
 
 ## Critical Rules
 
