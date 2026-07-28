@@ -95,6 +95,12 @@ let
     flakeIgnore = [ "E226" "E265" "E501" "F541" "W503" "W504" ];
   } (builtins.readFile ./claude-inspect.py);
 
+  # Smithers Python CLI (v3 foreground PR watcher — CLI skeleton + billing
+  # preflight; poll loop/gate/GitHub adapter land in later phase-1 cards)
+  smithersScript = pkgs.writers.writePython3Bin "smithers" {
+    flakeIgnore = [ "E265" "E501" "W503" "W504" ];  # Ignore shebang, line length, line breaks
+  } (builtins.readFile ./smithers.py);
+
 in {
   # ============================================================================
   # Claude Code Configuration & Shell Applications
@@ -334,6 +340,14 @@ $orphan_warning"
         description = "Introspect Claude session metrics from the SQLite metrics DB (token usage, cost, tool calls, card events)";
         mainProgram = "claude-inspect";
         homepage = "${builtins.toString ./.}/claude-inspect.py";
+      };
+    };
+
+    smithers = smithersScript // {
+      meta = {
+        description = "Foreground CLI that watches a single pull request to completion, polling GitHub in plain code and invoking Claude only when work is needed";
+        mainProgram = "smithers";
+        homepage = "${builtins.toString ./.}/smithers.py";
       };
     };
 
