@@ -1361,6 +1361,10 @@ EOF
       $DRY_RUN_CMD rm -f ~/.claude/agents/stk-staff.md
       $DRY_RUN_CMD rm -f ~/.claude/commands/stk-burns.md
       $DRY_RUN_CMD rm -f ~/.claude/commands/stk-staff.md
+      # ac-reviewer agent retired — commands/ac-reviewer.md was pruned above but
+      # the copied agents/ file was missed (source is deleted, not deployed via
+      # symlink, so it survives on disk until explicitly removed here)
+      $DRY_RUN_CMD rm -f ~/.claude/agents/ac-reviewer.md
 
       # Add generated TOOLS.md (use install to handle read-only destination from previous build)
       $DRY_RUN_CMD install -m 644 ${toolsMarkdown} ~/.claude/TOOLS.md
