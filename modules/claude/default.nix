@@ -58,7 +58,7 @@ let
     flakeIgnore = [ "E265" "E402" "E501" "W503" "W504" ];  # E402: shim injects sys.path before imports
   } (sessionEnvPathShim + builtins.readFile ./kanban-pretool-hook.py);
 
-  # Kanban SubagentStop hook — dual-loop AC review system
+  # Kanban SubagentStop hook — calls kanban done to gate card completion
   kanbanSubagentStopHookScript = pkgs.writers.writePython3Bin "kanban-subagent-stop-hook" {
     flakeIgnore = [ "E265" "E402" "E501" "W503" "W504" ];  # E402: shim injects sys.path before imports
   } (sessionEnvPathShim + builtins.readFile ./kanban-subagent-stop-hook.py);
@@ -361,7 +361,7 @@ $orphan_warning"
 
     kanban-subagent-stop-hook = kanbanSubagentStopHookScript // {
       meta = {
-        description = "SubagentStop hook that runs dual-loop AC review via haiku before allowing agent stop";
+        description = "SubagentStop hook that calls kanban done to gate card completion before allowing agent stop";
         mainProgram = "kanban-subagent-stop-hook";
         homepage = "${builtins.toString ./.}/kanban-subagent-stop-hook.py";
       };
