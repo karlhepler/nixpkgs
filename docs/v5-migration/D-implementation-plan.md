@@ -1853,3 +1853,45 @@ Resolved in favour of binding both tiers, with a named exception for an owner-au
 **6. One carry-forward for Stage 3's G13 work.** G13 is partly a **labelling** problem, not an authoring problem. Card #3041 changed **zero content** in `parallel-patterns.md` — the correct forms already existed as `Fix:` sections and simply were not marked, so it relabelled them `✅ Fix:`. Before authoring `✅` counterparts in the 17 agent files, check whether correct-form content already exists under another heading (`Fix:`, `Instead:`, `Correct:`) and mark it rather than writing something new.
 
 **What this amendment deliberately did not do.** No target, cap, or committed number changed. 450, 310, 760, and Stage 1's 153 all stand. No stage's gap groupings, validation gates, or revert procedures were rewritten — only the execution order between them. No claim is made that any unit beyond those marked **Done** above has been completed.
+
+### Amendment 8 — 2026-07-29, session `stout-ember`, close-out
+
+Records the outcome of every remaining unit. Written before the final two units landed, so their status below is *in flight*, not *done* — the distinction is the point of this log.
+
+**1. Scale.** 54 commits across 59 files: all **17** agent definitions, **15** skill files, **7** supporting docs under `docs/staff-engineer/`, both output styles, **10** files under `modules/claude/` (including `default.nix` and two new check scripts), and **7** migration documents. Per-unit commits throughout, so any single unit reverts alone.
+
+**2. Four units correctly changed nothing, and that is the most useful result in this log.** A migration that cannot produce a null result is not measuring, it is confirming.
+
+- **Unit 2.4b** — `anti-patterns.md`. All 8 `Concrete failure:` bullets tested against SG4's category test; all 8 are category 2 with the corrective already inline. File **unedited**, 8 determinations recorded.
+- **Unit 2.4a** — `parallel-patterns.md`. **Zero content changed.** The correct forms already existed as `Fix:` sections and were merely unmarked; they were relabelled `✅ Fix:`. G13 was a labelling problem here, not an authoring one.
+- **Unit 2.8** — the highest remedy risk in Stage 2, and the plan's assumption did not survive. Of 18 `nixpkgs`/`hms` mentions in `staff-engineer.md`, only **3** are genuinely project-scoped, and all three **already exist in their correct destination** (`docs/staff-engineer/mov-verification-taxonomy.md:366` and `CLAUDE.md:41`) behind pointers verified non-dangling. The other 15 are 7 safety rules plus 4 cross-project rules that relocation would have *narrowed*, and 4 examples. **Nothing moved. No file edited.** Classification in `.scratchpad/2-8-scope-classification.md`.
+- **Card #3097** — adjudication of two reported staleness items. **Both rejected as false positives.** See item 4.
+
+**3. Verification results, measured after all editing.**
+
+- **Invariant tripwire: 31 passed, 0 failed.** No safety rule was lost across 49 units of editing — the specific risk of a large prompt-corpus rewrite.
+- **All 17 agent frontmatters intact**: exactly one `name`, `description`, and `model` each, and **zero** `mcp:` keys. G9's removal is corpus-wide.
+- **All 6 relocation companion files exist, are referenced from their `SKILL.md`, and deploy.** The deploy mechanism is `default.nix:1272` — `find … -maxdepth 1 -type d -exec cp -rf {} ~/.claude/` — which copies every top-level directory recursively. G6's supporting-file mechanism is sound; the relocated content is reachable, not orphaned.
+- **Caps hold**: global `CLAUDE.md` 450/450, project `CLAUDE.md` 310 against the committed 314, `staff-engineer.md` 2,990.
+
+**4. Two reported defects failed adjudication; a third nobody reported was real.** A prior card, correctly scoped to report rather than fix, named two stale items in `edge-cases.md`. Card #3097 tested both:
+
+- **`kanban list --output-style=xml` is NOT obsolete.** It is the current default for both `list` and `show` per `modules/kanban/README.md:141`, and appears throughout `kanban.py`, four kanban test files, `kanban-subagent-stop-hook.py`, `prc.py`, and `claude-inspect.py`. Verdict: **current-and-redundant**, not obsolete — a different finding with a different correct action, which is none.
+- **`redo card #NN` terminology matches the current prompt**, which uses "redo loop" itself. Not a defect.
+- **Real finding nobody reported:** `docs/staff-engineer/edge-cases.md` at the repository root is a **content-diverged, unreferenced, undeployed duplicate**. The source of truth is `modules/claude/global/docs/staff-engineer/edge-cases.md`. The root tree holds exactly one file against the source tree's nine. **Not deleted — reported.** Deleting an unrequested file at the close of a long session is a worse failure than a documented orphan. This is the **fifth** instance in this migration of the same shape: a correct artifact accompanied by a stale twin that nothing prunes.
+
+The lesson generalizes § Investigate Before Stating trigger 6 beyond ambiguous `X vs Y` phrasing: a confident report and a correct report are indistinguishable in a return value. A follow-up card built from a report must be scoped *adjudicate-then-fix-what-survives*, and its criteria must assert that a verdict was recorded — never that a reported literal is absent from a file. Filed as a `claude-improvement` note.
+
+**5. A sixth instance of the same shape, found during close-out and now carded.** `ac-reviewer` was retired roughly three months ago. `default.nix:1290` prunes its `commands/` file; **nothing prunes `~/.claude/agents/ac-reviewer.md`**, which is still on disk from April and still appears in the live available-agents list — a retired agent remains delegable today. Agent files are **copied, not symlinked**, so deleting the source prunes nothing, and `cp -rf` never removes a destination whose source is gone. Three sibling agents already have prune lines at `:1318-1321`; this one was missed. Card **#3098** adds it and separately adjudicates whether the `KANBAN_AGENT = "ac-reviewer"` conditional at `:175-178` is now dead code — *adjudicate, not assume*, per item 4.
+
+**6. Two exemptions, argued rather than granted.**
+
+- **`smithers/SKILL.md` (804 lines)** stays over cap. Its state-model rationale was **wrong** in four places: it justified on-disk flags by claiming `ScheduleWakeup` spawns a fresh context. Were that true, every stop bound in its fast cycle — `max_cycles`, `max_ralph_invocations`, stagnation, and the approval-watch ceiling — is a counter recalled *from* that context and would silently reset on each wakeup, never firing, in a loop holding merge authority. Two lines of evidence refute it. The rationale was corrected; **the flags were kept**, because they are load-bearing across *restart* even though they are not across *wakeup*.
+- **`kanban-cli/SKILL.md:31-254` (542 lines)** retains its D32 exemption: exact scripts stay inline, byte-identical.
+
+**7. Outstanding at the time of writing — two units, both gated.**
+
+- **Unit 2.9** (card #3091), *in flight* — the unit this entire migration exists to build. Everything before it corrected content; this one builds the mechanism that stops the correction from silently rotting. Its gate is not satisfiable by reasoning: one character inside one marked block must be altered, the check run, and **the failure observed and seen to name the section**, then reverted by editing it back. *A check never observed failing is not known to work.* It must also be observed **passing** clean — a check that fails when it should pass gets wired into `hms` and breaks every subsequent deploy for every session in this repository. **All pieces land in one commit**; reverting two of three would leave a check with no markers.
+- **Card #3098**, *queued* — blocked on 2.9, which holds `default.nix`.
+
+`hms` has not yet run against the final state. Until it does, no unit in this push is deployed, only committed.
