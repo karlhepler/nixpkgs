@@ -1895,3 +1895,36 @@ The lesson generalizes § Investigate Before Stating trigger 6 beyond ambiguous 
 - **Card #3098**, *queued* — blocked on 2.9, which holds `default.nix`.
 
 `hms` has not yet run against the final state. Until it does, no unit in this push is deployed, only committed.
+
+### Amendment 8 addendum — 2026-07-29, session `stout-ember`
+
+**Supersedes Amendment 8 item 7.** Both units listed there as outstanding have landed, and `hms` has run twice against the final state. This addendum records what was *observed*, not what was expected.
+
+**Unit 2.9 landed, and the gate was observed failing before it was trusted.** A one-character case change inside the marked block produced a failure naming both the section and the exact character offset where the copies diverge; the change was reverted by editing it back and the clean pass re-confirmed. The check then fired live during two separate activations, reporting `OK — 1 marked section(s) present in both output styles and byte-identical`. That last observation closes the one item the implementing card could not verify for itself — whether the wiring actually runs during `hms`. It does.
+
+Three things fell out of building it that the plan did not anticipate:
+
+- **The first implementation would have hung the deploy, not failed it.** Slurping each ~370KB file into a single bash variable took **159 seconds**. Measured in bash: `${x%%needle*}` costs 14.36s and `${x#*needle}` 37.39s against a 366KB string, while per-line operations are free. Rewritten line-based it runs in **0.06s**. The script header carries the measurements and a do-not-reintroduce note. A slow gate on the activation path is a worse failure mode than a broken one, because nothing reports it.
+- **Unit 2.1's content copy had never actually landed.** At 2.9's start the three STOP-condition exclusions existed in `staff-engineer.md` only — the senior file did not carry them, and no unit-2.1 commit existed. So the copy landed inside 2.9, byte-for-byte, with the reachability check the plan required at `:969`: the copied text only narrows suppression and grants no new authority. **The unit built to detect this exact drift found it still present on arrival.**
+- **Marker inertness inside a live coordinator prompt is not verified**, because a sub-agent cannot spawn a coordinator session to check. The validation record states this and supplies a one-step owner check rather than asserting the property.
+
+**Card #3098 landed, and its second half correctly changed nothing.** The prune line joined the existing agents cleanup block. Observed before and after: the deployed agents directory held **18** files against **17** in source, and the difference was exactly the orphan; it now holds **17**, byte-identical to source. A retired agent is no longer delegable.
+
+The `KANBAN_AGENT = "ac-reviewer"` conditional was **left untouched on evidence**. A repository-wide grep found nothing in this repository setting it — but an external, independently versioned plugin demonstrably did, via subprocess spawn, within the same timeframe as the retirement. That pin is currently non-executable, which is a circumstance rather than a structural guarantee. Under genuine doubt the conditional stays and the evidence is recorded instead of a verdict being asserted. This is the same discipline that rejected two reported defects in item 4, applied in the opposite direction: there it withheld a fix from a claim that failed verification, here it withholds a removal from a claim that could not be proven.
+
+**Final observed state.**
+
+| Check | Result |
+|---|---|
+| Invariant tripwire, post-deploy | **31 passed, 0 failed** |
+| `hms` activation | Succeeded; **both** gates fired and reported OK |
+| All 17 agent definitions | Source and deployed **byte-identical** |
+| Deployed agent count | **17**, matching source exactly |
+| Both output styles | Source and deployed **byte-identical** |
+| Marked section | Appears **exactly once** per file; marker pairs balanced |
+| 6 relocation companion files | All present in the deployed tree |
+| `edge-cases.md` | Reachable at the deployed path the new pointers resolve to |
+| Caps | global `CLAUDE.md` **450/450**; project `CLAUDE.md` **310** against 314 |
+| Kanban board | **Empty** — no card outstanding |
+
+**One item deliberately left open.** `docs/staff-engineer/edge-cases.md` at the repository root remains in place: a content-diverged, unreferenced, undeployed duplicate of the source-of-truth file. It was reported rather than deleted. Removing an unrequested file at the close of a long session is a worse failure than a documented orphan, and the decision belongs to the owner.
