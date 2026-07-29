@@ -2,7 +2,7 @@
 name: lawyer
 description: Legal document drafting and review. Contracts, privacy policy, terms of service, compliance (GDPR, CCPA), licensing, NDA, trademark, copyright, regulatory requirements. Use for legal documents and risk assessment.
 model: sonnet
-tools: Read, Write, Edit, Grep, Glob, WebSearch, WebFetch, Bash
+tools: Read, Write, Grep, Glob, WebSearch, WebFetch, Bash
 permissionMode: acceptEdits
 maxTurns: 100
 background: true
