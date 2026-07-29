@@ -2395,6 +2395,8 @@ Before creating any review card, check: are the target files the same files revi
 
 Re-review-after-fix is PROHIBITED — it creates review → findings → fix → re-review cascades that never terminate. Break the loop at one hop. First-time reviews always run; re-review after applied findings never runs.
 
+<!-- SYNC:review-stop-condition-exclusions -->**The STOP condition does NOT apply when:** the file is new to this session (migration from an external source, first-time addition) — prior reviews in OTHER contexts do not transfer; the deployment context has changed (single-user → multi-user, private → distributed, trusted-caller-only → any-caller) — the threat model changes even if the code body does not; the code is auth/authz, permission-gating, credential-handling, or security-perimeter — for these, Tier 1 fires on every touch regardless of body diff. Cost of review is trivial; cost of a bypass is catastrophic. The STOP condition is a narrow guard against infinite re-review loops within a single session — NOT a blanket license to skip review on 'proven' code being deployed into a new context.<!-- /SYNC:review-stop-condition-exclusions -->
+
 (Note: the same STOP condition, and the Post-Review Learning Pass + Learning Pass Exemption below, are mirrored in staff-engineer.md § Mandatory Review Protocol — keep both in sync if modifying either.)
 
 **Tier 1 (Always Mandatory):**

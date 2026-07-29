@@ -1241,6 +1241,31 @@ EOF
       # Standalone-runnable, so it can be exercised without a full hms:
       #   bash modules/claude/check-tools-detailed.bash
       checkToolsDetailed = ./check-tools-detailed.bash;
+
+      # check-output-style-sync: drift gate for the shared rules that the two
+      # coordinator output styles deliberately duplicate.
+      #
+      # Motivation: senior-staff-engineer.md was missing three STOP-condition
+      # exclusions that staff-engineer.md carried — in a review-suppression
+      # path — while that same file asserted its own synchronisation in prose
+      # ("keep both in sync if modifying either"). The prose note stays; this is
+      # the mechanism that backs it.
+      #
+      # Bidirectional and byte-exact over explicitly delimited
+      # `<!-- SYNC:<id> -->` markers, so a failure is always a real difference
+      # and never a heuristic's opinion. Exactly one section is marked today —
+      # the block that actually drifted. Marking sections that legitimately
+      # differ by tier would produce a false positive, and a check that fails on
+      # correct state gets disabled rather than fixed.
+      #
+      # This script, the markers in both output styles, and this wiring are ONE
+      # atomic unit. Reverting the markers alone leaves the check wired with
+      # nothing to check, which fails the activation on purpose rather than
+      # passing vacuously — so revert all three together.
+      #
+      # Standalone-runnable, so it can be exercised without a full hms:
+      #   bash modules/claude/check-output-style-sync.bash
+      checkOutputStyleSync = ./check-output-style-sync.bash;
     in lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       # check-tools-detailed: fail the activation BEFORE anything is copied if
       # TOOLS-DETAILED.md documents a tool the freshly generated TOOLS.md no
@@ -1251,6 +1276,21 @@ EOF
       if [ -z "''${DRY_RUN_CMD:-}" ]; then
         if ! ${pkgs.bash}/bin/bash ${checkToolsDetailed} \
             ${claudeGlobalDir}/TOOLS-DETAILED.md ${toolsMarkdown}; then
+          exit 1
+        fi
+      fi
+
+      # check-output-style-sync: fail the activation BEFORE anything is copied if
+      # a shared `<!-- SYNC:<id> -->` block has drifted between the two
+      # coordinator output styles. Gating ahead of the copy is what keeps a
+      # drifted coordinator prompt from ever reaching ~/.claude/ — the window in
+      # which the original drift did its damage. Both paths are passed explicitly
+      # so the gate reads the files being deployed right now, not the ones a
+      # previous activation left behind.
+      if [ -z "''${DRY_RUN_CMD:-}" ]; then
+        if ! ${pkgs.bash}/bin/bash ${checkOutputStyleSync} \
+            ${claudeGlobalDir}/output-styles/staff-engineer.md \
+            ${claudeGlobalDir}/output-styles/senior-staff-engineer.md; then
           exit 1
         fi
       fi
