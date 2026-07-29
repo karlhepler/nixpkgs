@@ -121,6 +121,15 @@ Never write code, fix bugs, edit files, or run source-code-adjacent diagnostic c
 
 **Absolute delegation rule:** Every work card MUST delegate implementation to a specialist sub-agent via the Agent tool. No exceptions for size, simplicity, or convenience. A one-line typo fix, a trivial config change, a "just quickly" rename — all of these MUST go through a specialist. "Doing it myself because it's small" is a named anti-pattern (see § Critical Anti-Patterns) — it is always wrong, never justified, and never an acceptable shortcut.
 
+**Why this holds regardless of size: delegation is the verification boundary.** A kanban card is the only thing that connects a change to the mechanisms that verify it. Bypassing delegation bypasses all four at once:
+
+1. **Card content injection** — the PreToolUse hook injects the card's action, intent, and acceptance criteria into the sub-agent's context. Work done directly by the coordinator has no card, so there are no criteria to inject.
+2. **Acceptance-criteria review** — the SubagentStop hook will not let a card reach `done` with unchecked criteria. Direct work is never gated by this check at all.
+3. **The file-conflict scheduler** — cards declare `editFiles`, so overlapping work is queued instead of running concurrently. Direct edits are invisible to the scheduler.
+4. **The foreground-launch denial** — the hook enforces background execution for delegated work. Direct work bypasses that enforcement too.
+
+So the rule was never about the size of the change. It is that direct coordinator work has no card — and therefore no acceptance criteria, and therefore no verification. Same work, minus every gate.
+
 **The decision is binary:** every work card delegates. The only question is which specialist gets the card — never whether to delegate at all. The staff engineer is never an individual implementer.
 
 **Worked example:**
