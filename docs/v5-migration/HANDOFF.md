@@ -179,7 +179,9 @@ Every edit adds arbitration, routing, or a corrected path. **No rule was removed
 
 **6. Then the two remaining Stage 1 gates:**
    - **Sub-agent injection smoke test — DONE, verdict `OLD BOTH` (card #3004); re-run from a fresh session — DONE, CONFIRMED (card #3013).** Both files were present in the injected `claudeMd` block, but both carried pre-edit content, for the parent session and any sub-agent spawned from it — that verdict stands unchanged. Separately, two sessions started **after** Stage 1's edits landed were each checked for an added marker from those edits and both confirmed presence. See the callout above § Stage 1 numbers and `D-implementation-plan.md` § Amendment 5. This gate is now satisfied for a session started after the edits landed.
-   - **Owner soak.** One week of ordinary `staff` and `sstaff` work with no behavioral surprise, **starting from a FRESH session** — not the session that made Stage 1's edits, which would only exercise pre-edit files. **This soak no longer needs to serve as confirmation that a fresh session receives the reduced files — card #3013 settled that separately (see § Stage 1 numbers above).** The soak remains the *behavioral* check: whether the relocated pointers get followed and prove useful in ordinary use, whether any rule reads as having lost force once relocated, and whether anything reads as missing rather than merely moved. **Stage 2 does not open until the owner confirms this.** That gate is theirs, not yours.
+   - **Owner soak — ⚠ SUPERSEDED 2026-07-28. The owner dropped the calendar soaks and authorized proceeding without them**, collapsing Stages 2, 3, and 4 into a single dependency-ordered push (`D-implementation-plan.md` § Amendment 7). **The gate below no longer blocks anything; it is retained as history.** What replaced it: every mechanical gate was kept and every Tier-1 review was kept, on this session's own evidence that the two are not interchangeable — the invariant tripwire passed 31/31 while a full-file audit of the same corpus found 12 real findings. Mechanical checks alone are demonstrably insufficient for prompt quality, and the reviews cost minutes rather than weeks, so they were the wrong thing to trade for speed. One soak at the end replaced three.
+     ~~One week of ordinary `staff` and `sstaff` work with no behavioral surprise, **starting from a FRESH session** — not the session that made Stage 1's edits, which would only exercise pre-edit files. This soak no longer needs to serve as confirmation that a fresh session receives the reduced files — card #3013 settled that separately (see § Stage 1 numbers above). The soak remains the *behavioral* check: whether the relocated pointers get followed and prove useful in ordinary use, whether any rule reads as having lost force once relocated, and whether anything reads as missing rather than merely moved. Stage 2 does not open until the owner confirms this. That gate is theirs, not yours.~~
+     **The behavioral question it asked is still open and still the owner's** — whether relocated pointers get followed in ordinary use, whether any rule reads as having lost force, and whether anything reads as missing rather than merely moved. Nothing mechanical can answer those. They are now answered by using the thing, not by a scheduled gate.
 
 ---
 
@@ -195,16 +197,22 @@ It survived three mutation rounds and provably catches both **deletion** and **r
 
 ---
 
-## Open hand-offs to later stages
+## ~~Open hand-offs to later stages~~ — ✅ ALL SIX CLOSED 2026-07-29
 
-| Item | Owner |
-|---|---|
-| Stale pointer `senior-staff-engineer.md:1904` (roster reference) | Stage 2 |
-| Stale pointer `senior-staff-engineer.md:1298` (roster reference) | Stage 2 |
-| Check-in 5-field template now behind a discretionary read for the staff tier — decide whether to inline it in `staff-engineer.md` | Stage 2 |
-| Mechanical sync check between the two coordinator prompts (Q5) | Stage 2 |
-| `manage-pr-comments` `Bash(gh *)` deny-override (Q10) | Stage 4 |
-| `default.nix:61,350` describe a deleted "dual-loop AC review via haiku" — out of migration scope, one-line fix whenever | unscheduled |
+**Every item below is resolved.** Verdicts in `.scratchpad/handoff-open-items.md` (cards #3099, #3091).
+
+**⚠ This table was nearly missed.** The migration finished all 49 of its units, the kanban board went empty, and the working tree went clean — and this table still held five items no unit had ever picked up. An empty board only proves that the cards *someone created* are done. **This table was the sole record of work nobody had claimed.** Anyone closing out a later stage should read this section before declaring completion, for exactly that reason.
+
+| Item | Was | Verdict |
+|---|---|---|
+| Stale pointer `senior-staff-engineer.md:1904` (roster reference) | Stage 2 | ✅ **No change needed** — already fixed by commit `0561642`, verified against the `73cb65e` baseline. The line number was a Stage 1 snapshot and had long since shifted. |
+| Stale pointer `senior-staff-engineer.md:1298` (roster reference) | Stage 2 | ✅ **No change needed** — same, already fixed pre-card. |
+| Check-in 5-field template behind a discretionary read for the staff tier — decide whether to inline | Stage 2 | ✅ **Recommendation recorded: do NOT inline.** `staff-engineer.md` is fully injected, so every line costs context on every session; the template needs an interactive user and is inapplicable to background sub-agents. Owner's call, not acted on. |
+| Mechanical sync check between the two coordinator prompts (Q5) | Stage 2 | ✅ **Delivered** as unit 2.9 — `modules/claude/check-output-style-sync.bash`, wired into activation, observed failing on injected drift and passing clean. |
+| `manage-pr-comments` `Bash(gh *)` deny-override (Q10) | Stage 4 | ✅ **No live conflict today** — no deny entry currently narrows the skill's broad grant. Recommendation recorded: implement via the `perm` CLI, never by editing a settings file. Owner's call, not acted on. |
+| `default.nix:61,350` describe a deleted "dual-loop AC review via haiku" | unscheduled | ✅ **Real and fixed** at `:61` and `:364`, prose only. The second was a `meta.description`, so the stale phrasing was *shipped documentation* in the generated tool catalog, not just an internal comment — the catalog no longer contains the phrase. |
+
+**Three of six needed no change.** Two were already fixed; two are owner decisions deliberately left as recommendations. Only one was a real defect — and it was the one the table itself had dismissed as "out of migration scope, one-line fix whenever."
 | Document D's 183-line protected table is keyed to the pre-edit 530-line global file — **re-derive before any further edit to that file** | whoever edits it next |
 
 ---
