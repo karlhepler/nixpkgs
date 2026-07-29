@@ -4,7 +4,9 @@ description: Manage PR comments using prc CLI when user asks to "manage PR comme
 version: 1.0
 allowed-tools:
   - Bash(prc *)
-  - Bash(gh *)
+  - Bash(gh auth status *)
+  - Bash(gh pr view *)
+  - Bash(gh api *)
 ---
 
 # Manage Pull Request Comments
