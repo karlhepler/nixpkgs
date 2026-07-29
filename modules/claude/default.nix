@@ -1366,6 +1366,57 @@ EOF
       # symlink, so it survives on disk until explicitly removed here)
       $DRY_RUN_CMD rm -f ~/.claude/agents/ac-reviewer.md
 
+      # Structural prune (card #3106): remove any deployed file under
+      # agents/, skills/, output-styles/, or commands/ that has no
+      # counterpart at the identical relative path under
+      # ${claudeGlobalDir}. The cp -rf copy above only adds/overwrites — it
+      # never removes a destination whose source is gone, so every retired
+      # agent/skill/output-style/command has needed its own hand-written
+      # `rm -f` line above (easy to forget — ac-reviewer.md's stayed
+      # invocable for three months). This generalizes that pattern instead
+      # of requiring a new line per retirement. Comparison is per-file across
+      # the whole subtree (skills/ nests companion files under
+      # skills/<name>/), not per top-level directory, so retiring one skill
+      # does not touch its siblings.
+      #
+      # EXCLUSION — verified via `git log --all` to have zero history in this
+      # repo before excluding (see .scratchpad/deploy-prune.md, card #3106):
+      #   skills/maze-staff-plugin-sync/** — Karl's personal meta-skill that
+      #   syncs this repo to the public staff plugin; deliberately hand-
+      #   authored only in ~/.claude, never in this repo's source tree.
+      #
+      # Gated on DRY_RUN_CMD being unset, matching the other destructive
+      # gates in this activation (verify-settings-deploy, check-tools-detailed,
+      # check-output-style-sync) — a `home-manager switch --dry-run` must
+      # never delete anything.
+      #
+      # LOUD BY DESIGN: every removal is echoed to stdout. This whole prune
+      # exists because a stale deploy went unnoticed for three months — a
+      # silent delete on every activation is one bad exclusion away from
+      # quietly eating a file the user cares about. Steady state is zero
+      # output (nothing is normally stale), so any line here is a real signal
+      # worth reading in `hms` output, not noise.
+      if [ -z "''${DRY_RUN_CMD:-}" ]; then
+        for prune_subdir in agents skills output-styles commands; do
+          dest_dir=~/.claude/$prune_subdir
+          src_dir=${claudeGlobalDir}/$prune_subdir
+          [ -d "$dest_dir" ] || continue
+          while IFS= read -r rel_path; do
+            case "$prune_subdir/$rel_path" in
+              skills/maze-staff-plugin-sync/*) continue ;;
+            esac
+            if [ ! -e "$src_dir/$rel_path" ]; then
+              rm -f "$dest_dir/$rel_path"
+              echo "claude prune: removed stale $prune_subdir/$rel_path (no source counterpart)"
+            fi
+          done < <(cd "$dest_dir" && find . -type f | sed 's#^\./##')
+          # Remove now-empty subdirectories left behind by a fully retired
+          # skill/agent (e.g. a deleted skills/<name>/ subtree). -depth forces
+          # bottom-up traversal so nested empty dirs collapse in one pass.
+          find "$dest_dir" -mindepth 1 -depth -type d -empty -delete 2>/dev/null || true
+        done
+      fi
+
       # Add generated TOOLS.md (use install to handle read-only destination from previous build)
       $DRY_RUN_CMD install -m 644 ${toolsMarkdown} ~/.claude/TOOLS.md
     '';
