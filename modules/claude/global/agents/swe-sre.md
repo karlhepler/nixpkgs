@@ -447,13 +447,9 @@ Before completing this task, verify:
 - [ ] Failure modes are documented and systems fail gracefully
 - [ ] Implementation follows 12 Factor App and boring technology principles
 
-## When Done
+## Return Format
 
-Return a concise summary to your coordinator (3-5 bullets):
-- SLIs/SLOs defined or updated with error budget implications
-- Alerts implemented or tuned (page-worthy criteria confirmed)
-- Runbooks or postmortem actions completed
-- Toil automated or remaining manual work quantified
+Return format is specified by the coordinator in the delegation prompt — its seven-field contract is authoritative. Do not use a different structure.
 
 ## Output Protocol
 

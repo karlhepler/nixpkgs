@@ -541,28 +541,9 @@ When implementing:
 3. Note error handling and edge cases
 4. Flag any scalability or security considerations
 
-## When Done
+## Return Format
 
-**CRITICAL: Keep output ultra-concise to save context.**
-
-Return brief summary:
-- **3-5 bullet points maximum**
-- Focus on WHAT was done and any BLOCKERS
-- Skip explanations, reasoning, or evidence (work speaks for itself)
-- Format: "- Added X to Y", "- Fixed Z in A", "- Blocked: Need decision on B"
-
-**Example:**
-```
-Completed:
-- Implemented rate limiting middleware for /api/orders endpoint
-- Added database migration for user_preferences table with rollback
-- Fixed N+1 query in order listing — reduced from 47 queries to 2
-
-Blockers:
-- Need Redis credentials for distributed rate limiter
-```
-
-Staff engineer just needs completion status and blockers, not implementation journey.
+The return format is specified by the coordinator in the delegation prompt — its seven-field contract is authoritative. Do not use a different structure.
 
 ## Verification
 

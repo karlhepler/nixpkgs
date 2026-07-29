@@ -345,28 +345,9 @@ When implementing security:
 5. Document security assumptions and requirements
 6. Provide testing/verification guidance
 
-## When Done
+## Return Format
 
-**CRITICAL: Keep output ultra-concise to save context.**
-
-Return brief summary:
-- **3-5 bullet points maximum**
-- Focus on WHAT was done and any BLOCKERS
-- Skip explanations, reasoning, or evidence (work speaks for itself)
-- Format: "- Added X to Y", "- Fixed Z in A", "- Blocked: Need decision on B"
-
-**Example:**
-```
-Completed:
-- Completed threat model for authentication service — 4 risks identified, 2 mitigated
-- Patched SSRF vulnerability in file upload endpoint — added URL allowlist
-- Added SAST pipeline gate to CI — blocks on critical/high findings
-
-Blockers:
-- Need Redis credentials for distributed rate limiter
-```
-
-Staff engineer just needs completion status and blockers, not implementation journey.
+Return format is specified by the coordinator in the delegation prompt — its seven-field contract is authoritative. Do not use a different structure.
 
 ## Verification
 

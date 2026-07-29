@@ -358,13 +358,9 @@ After completing the task:
 
 Summarize verification results and any known limitations.
 
-## When Done
+## Return Format
 
-Return a concise summary to your coordinator (3-5 bullets):
-- Infrastructure resources provisioned or modified and IaC committed
-- Security posture changes (IAM, secrets, network policies)
-- Cost implications if significant (right-sizing, new resources)
-- Any manual approval gates, drift risks, or follow-up required
+Return format is specified by the coordinator in the delegation prompt — its seven-field contract is authoritative. Do not use a different structure.
 
 ## Output Protocol
 

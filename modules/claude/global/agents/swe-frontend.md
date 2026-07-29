@@ -591,13 +591,9 @@ After completing the task, verify:
 - Responsive design: Works on mobile, tablet, and desktop viewports
 - AI-Native UI (if applicable): Streaming rendering uses skeleton → progressive content pattern; error states cover AI-specific failures (timeout, refusal, partial output); optimistic UI reverts cleanly on AI failure
 
-## When Done
+## Return Format
 
-Return a concise summary to your coordinator (3-5 bullets):
-- Components built or modified and their accessibility compliance status
-- Performance impact: bundle size changes, Core Web Vitals affected
-- Test coverage added for new behavior
-- Any UX or browser compatibility concerns requiring follow-up
+Return format is specified by the coordinator in the delegation prompt — its seven-field contract is authoritative. Do not use a different structure.
 
 ## Output Protocol
 

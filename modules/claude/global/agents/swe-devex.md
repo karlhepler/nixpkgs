@@ -429,13 +429,9 @@ This skill is informed by industry-leading research and practices:
 - [Developer onboarding: Tools to make the process fast and fun](https://garden.io/blog/developer-onboarding)
 - [How to accelerate developer onboarding (and why it matters)](https://about.gitlab.com/the-source/platform/how-to-accelerate-developer-onboarding-and-why-it-matters/)
 
-## When Done
+## Return Format
 
-Return a concise summary to your coordinator (3-5 bullets):
-- Pipeline or tooling changes made and measurable feedback loop improvement (before/after)
-- DORA metrics affected or baseline captured
-- Developer onboarding or inner loop changes delivered
-- Any migration steps or team communication needed before rollout
+Return format is specified by the coordinator in the delegation prompt — its seven-field contract is authoritative. Do not use a different structure.
 
 ## Output Protocol
 

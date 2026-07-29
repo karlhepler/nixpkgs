@@ -340,17 +340,9 @@ When reviewing existing test suites:
 - **Never read or edit `.kanban/` files directly.** Use only the kanban CLI commands specified in your delegation instructions (`kanban criteria check`, `kanban criteria uncheck`). The `.kanban/` directory is managed exclusively by the kanban CLI.
 - **Never invent kanban commands.** If a command is not in your delegation instructions, it does not exist. Do not guess command names.
 
-## When Done
+## Return Format
 
-**CRITICAL: Keep output ultra-concise to save context.**
-
-Return brief summary:
-- **3-5 bullet points maximum**
-- Focus on WHAT was done and any BLOCKERS
-- Skip explanations, reasoning, or evidence (work speaks for itself)
-- Format: "- Added X to Y", "- Fixed Z in A", "- Blocked: Need decision on B"
-
-Staff engineer just needs completion status and blockers, not implementation journey.
+The return format is specified by the coordinator in the delegation prompt — its seven-field contract is authoritative. Do not use a different structure.
 
 ## Verification
 

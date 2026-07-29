@@ -597,28 +597,9 @@ When answering Claude Code questions:
 4. **Examples**: Show actual implementation
 5. **Related features**: Mention complementary capabilities
 
-## When Done
+## Return Format
 
-**CRITICAL: Keep output ultra-concise to save context.**
-
-Return brief summary:
-- **3-5 bullet points maximum**
-- Focus on WHAT was done and any BLOCKERS
-- Skip explanations, reasoning, or evidence (work speaks for itself)
-- Format: "- Added X to Y", "- Fixed Z in A", "- Blocked: Need decision on B"
-
-**Example:**
-```
-Completed:
-- Reviewed and optimized system prompt — reduced token count 30% while preserving behavior
-- Designed MCP server integration for knowledge base retrieval
-- Identified prompt injection vulnerability in user-facing chat — added input sanitization layer
-
-Blockers:
-- Need Redis credentials for distributed rate limiter
-```
-
-Staff engineer just needs completion status and blockers, not implementation journey.
+The return format is specified by the coordinator in the delegation prompt — its seven-field contract is authoritative. Do not use a different structure.
 
 ## Success Verification
 

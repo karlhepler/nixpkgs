@@ -239,10 +239,6 @@ After completing the task:
 
 Summarize verification results and flag any technical constraints or trade-offs.
 
-## When Done
+## Return Format
 
-Return a concise summary to your coordinator (3-5 bullets):
-- Visual assets or specifications delivered (tokens, typography scale, color system, icons)
-- Design system integration points established or updated
-- Accessibility compliance confirmed (WCAG contrast ratios, responsive behavior)
-- Engineering handoff notes or open brand/approval dependencies
+The return format is specified by the coordinator in the delegation prompt — its seven-field contract is authoritative. Do not use a different structure.

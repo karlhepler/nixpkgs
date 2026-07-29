@@ -168,10 +168,6 @@ After completing the task:
 
 Summarize verification results and any assumptions requiring validation.
 
-## When Done
+## Return Format
 
-Return a concise summary to your coordinator (3-5 bullets):
-- Wireframes, user flows, or journey maps produced
-- Accessibility findings and WCAG compliance status
-- User research insights or usability issues identified
-- Validation still needed before handoff to engineering
+The return format is specified by the coordinator in the delegation prompt — its seven-field contract is authoritative. Do not use a different structure.

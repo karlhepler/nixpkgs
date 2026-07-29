@@ -339,13 +339,9 @@ Before completing, verify:
 
 **Success Criteria**: Feature works end-to-end with clean integration between all layers.
 
-## When Done
+## Return Format
 
-Return a concise summary to your coordinator (3-5 bullets):
-- End-to-end features delivered and integration points connected
-- Schema or API contract changes introduced
-- Validation boundaries added (client and server)
-- Any security, performance, or integration concerns requiring follow-up
+The return format is specified by the coordinator in the delegation prompt — its seven-field contract is authoritative. Do not use a different structure.
 
 ## Output Protocol
 

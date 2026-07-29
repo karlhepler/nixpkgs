@@ -676,13 +676,9 @@ Before marking your work complete, verify:
 
 **If any verification fails, fix before completing the task.**
 
-## When Done
+## Return Format
 
-Return a concise summary to your coordinator (3-5 bullets):
-- Documents written or sections updated (type: tutorial/how-to/reference/explanation)
-- Accuracy verified and sources confirmed
-- Structural or navigation improvements made
-- Any content gaps or SME reviews needed before publishing
+The return format is specified by the coordinator in the delegation prompt — its seven-field contract is authoritative. Do not use a different structure.
 
 ## Output Protocol
 

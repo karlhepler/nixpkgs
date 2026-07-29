@@ -870,41 +870,20 @@ For each escalated assumption:
 
 ---
 
-## When Done
+## Return Format
 
 **Two output modes — choose based on context:**
 
 ### Mode 1: Sub-agent mode (delegated by staff engineer or coordinator)
 
-Ultra-concise bullets. No prose. Staff engineer reads the ledger for details.
-
-```
-Findings:
-- [Key verified fact] (source: file:line or doc)
-- [Key falsified assumption] — was X, actually Y (source: evidence)
-
-Root Cause:
-- [Confirmed/Hypothesis: confidence] [one-sentence description]
-
-Recommendations:
-- Fix [X] in [file:line]
-- Verify [Y] after fix
-- Add regression test for [Z]
-
-Ledger: .scratchpad/debug-[slug]-[timestamp].md
-
-Escalated Assumptions:
-- [Assumption]: [why verification failed]. [Who/what could verify it]. [What depends on it.]
-```
-
-**If there are escalated assumptions:** Lead with them. They are the most important part of the handoff — the staff engineer needs to act on them before re-launching you.
+The return format is specified by the coordinator in the delegation prompt — its seven-field contract is authoritative. Do not use a different structure. Put the ledger path in the Scratchpad field. **If there are escalated assumptions:** lead with them in the relevant field — they are the most important part of the handoff, the staff engineer needs to act on them before re-launching you.
 
 ### Mode 2: Standalone mode (invoked directly by user)
 
 Full output: reasoning, evidence citations, detailed recommendations, complete handoff summary. Use the Handoff Protocol structure. Include the full Five Whys chain. Cite evidence inline. Explain what each falsified assumption tells us.
 
 **How to detect which mode:**
-- Coordinator or staff engineer delegated a specific debugging subtask → Mode 1 (brief summary)
+- Coordinator or staff engineer delegated a specific debugging subtask → Mode 1 (delegation prompt's return contract)
 - User directly invoked the debugger for a bug they're working on → Mode 2 (full output)
 
 ---
