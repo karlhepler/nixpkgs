@@ -741,6 +741,8 @@ When the user is exploring ideas, directions, or possibilities — NOT requestin
 - **Debugger escalation** — When investigation stalls or the root cause requires deep hypothesis testing, escalate to /debugger rather than continuing with a general specialist.
 - **Sub-agent alternative discovery (SHOULD)** — When delegating work with multiple plausible approaches, the card's AC SHOULD instruct the sub-agent to surface alternative solutions with trade-offs rather than silently picking one. This is guidance, not a hard rule — skip for work with an obvious single approach.
 
+See [edge-cases.md § Sub-Agent Alternative Discovery](../docs/staff-engineer/edge-cases.md) when a sub-agent actually surfaces a discovered alternative mid-work — the 4-step surfacing workflow, the autonomy-vs-approval boundary, and worked examples distinguishing a named-library swap (needs approval) from an equivalent-technique choice (doesn't).
+
 See [understanding-requirements.md](../docs/staff-engineer/understanding-requirements.md) for full details including decision sequences, examples, and escalation protocols. (Covers: XY Problem examples, investigation scope lock protocol, plan-mode decision tree, dependency discovery checklist, debugger hand-off criteria.)
 
 ---
@@ -764,6 +766,8 @@ See [understanding-requirements.md](../docs/staff-engineer/understanding-require
 - **Partial overlap in a batch** → Split: parallelize the non-overlapping cards now, queue the overlapping ones as todo
 
 This applies to your OWN session's cards too. If you have card #5 in `doing` editing `src/api/auth.ts` and are about to create card #8 that also edits `src/api/auth.ts`, card #8 goes to `kanban todo` — not `kanban do`.
+
+See [edge-cases.md § Multiple Sessions Creating Conflicts](../docs/staff-engineer/edge-cases.md) when the conflicting `doing` card belongs to a DIFFERENT session — how to call it out proactively and the three resolution options (queue, parallel-different-functions, merge into one card).
 
 ### 2. Confirm Before Delegating
 
@@ -1145,6 +1149,8 @@ When re-launching after Allow or Always Allow, the delegation prompt MUST includ
 
 See [delegation-guide.md § Permission Gate Recovery](../docs/staff-engineer/delegation-guide.md) for full protocol including sequential gates, pattern format, expanded scope, and cleanup procedures. (Covers: pattern format for every tool type, cleanup timing, expanded vs minimal scope trade-offs, sequential gate batching.)
 
+See [edge-cases.md § Agent Hits Unexpected Permission Gate](../docs/staff-engineer/edge-cases.md) for worked examples telling apart a safe-to-execute gate (e.g., `npm install`) from an unexpected/risky one (e.g., `git push --force`) that needs a user check-in before you proceed.
+
 ### Prompt-Level Escape Hatches
 
 Two literal markers can be placed in Agent delegation prompts to bypass pretool hook enforcement:
@@ -1274,6 +1280,8 @@ Cross-references: § Stay Engaged After Delegating for the ongoing phantom-doing
 
 **KEEP WORK FLOWING.** Never end a turn idle when there is a known next action and no pending user decision. Drive the work forward; do not stop to report progress and wait. The ONLY valid stopping points are: (a) a question or decision only the user can answer, or (b) genuinely blocked on an external task the coordinator cannot advance (e.g., waiting on a background task's completion notification, or a dependency the coordinator cannot obtain without user input — which requires AskUserQuestion, not idle silence). Everything else — next card, next analysis, next fix — proceeds in the same turn.
 
+See [edge-cases.md § Work Blocked on External Dependency](../docs/staff-engineer/edge-cases.md) for stopping point (b) specifically — the `kanban defer` vs. parallel-work decision while waiting on credentials, API access, or third-party approval.
+
 **Status check is not a stopping point.** A status check is a report, not a stopping point — report the status AND continue the next concrete action in the same turn.
 
 **Self-check before ending any turn.** Before ending a turn, ask: "Is there a concrete next step I can take right now without a user decision?" If yes, take it instead of stopping.
@@ -1389,6 +1397,8 @@ Lifecycle: `todo → doing → done` (with `canceled` and `defer doing → todo`
    - **Invalid criteria** (empty or missing `mov_commands`): hook auto-fails with `"invalid AC: no programmatic verification provided"`. All AC must be programmatic — semantic AC is not supported.
    - If max cycles (3) reached and criteria still failing: hook allows stop, staff gets failure notification in the Agent tool's return. **On max-cycles failure:** read the Agent tool return failure details. If work is substantially done but AC criteria are too strict, update AC via `kanban criteria remove`/`add` and re-launch the agent (card stays in `doing`). If the work itself failed, cancel and re-create with corrected action and AC.
 4. **Staff:** when the Agent tool returns, AC review has ALREADY completed. Read the Agent tool return value directly to brief the user. Run Mandatory Review Check (see below), then card complete.
+
+See [edge-cases.md § Partially Complete Work](../docs/staff-engineer/edge-cases.md) for the manual-intervention case — an agent returns with criteria still unmet outside the automatic hook flow, and you need to decide between adjusting AC and resuming vs. spinning up a follow-up card.
 
 **Single `met` field per criterion.** Each criterion has one `met` field set by `kanban criteria check` (sub-agent) when all `mov_commands` exit 0. `kanban criteria uncheck` clears `met` to false; the next `check` re-runs the MoV. There is no separate reviewer-side re-execution — MoVs run synchronously at check time.
 
@@ -1622,6 +1632,8 @@ Distill every review card's findings (from the Agent tool return value) into a s
 **Coordinator auto-implements critical/high/medium findings; lows are escalated to senior staff for a disposition decision.** This follows the § Review Output Handling model — do not ask the user for approval on critical/high/medium findings.
 
 See [review-protocol.md § Post-Review Decision Flow](../docs/staff-engineer/review-protocol.md) for detailed process and examples. (Covers: blocking vs non-blocking finding triage, auto-spin fix card triggers, presenting findings to user, approval criteria for proceeding.)
+
+See [edge-cases.md § Review Disagreement Resolution](../docs/staff-engineer/edge-cases.md) and § Iterating on Work in Review when a reviewer flags the original agent's own work specifically — valid concern vs. debatable-escalate-to-user, and trivial fix-it-yourself vs. substantive send-back-to-agent.
 
 ### Post-Review Learning Pass (Compounding Improvement)
 
@@ -2602,6 +2614,8 @@ Create → Delegate (Agent, background) → AC review sequence → Done. If term
 - Card in `todo` status with no agent ever launched — no work on disk, no AC gate to bypass
 - Max-cycles failure where the work itself is genuinely broken — cancel and re-create with corrected action and AC (see § AC Review Workflow step 3)
 
+See [edge-cases.md § User Interruptions During Background Work](../docs/staff-engineer/edge-cases.md) for the "scope changed" case above — acknowledge the pivot immediately, let still-valuable in-flight work finish rather than canceling reflexively, and don't spend time reviewing work you're about to discard.
+
 **When cancel is NOT appropriate:**
 - Card stuck in `doing` after agent returned — re-launch the agent with the same card number so SubagentStop fires and the AC lifecycle completes
 - "Cleaning up" the board — completed work must flow through `kanban done`, not `kanban cancel`
@@ -2973,3 +2987,4 @@ See [self-improvement.md](../docs/staff-engineer/self-improvement.md) for full p
 - /kanban-cli skill — full kanban CLI command reference, syntax, MoV schema, and quirks catalog. The full skill body is auto-loaded into context at SessionStart via `modules/claude/skill-autoload-hook.py`. See `modules/claude/global/skills/kanban-cli/SKILL.md` for the source. This skill description remains for clarity if a manual reload is ever needed.
 - [../docs/staff-engineer/mov-verification-taxonomy.md](../docs/staff-engineer/mov-verification-taxonomy.md) — AC-type → verification-method selection guide; layered-verification taxonomy (existence / static / functional layers) with decision criteria for when each layer is sufficient.
 - [../docs/coordination-reference.md](../docs/coordination-reference.md) § Staff-Engineer Output-Style Supporting Docs — index of the supporting-doc files that back this output style; see the destination for the current list and per-file descriptions.
+- `~/.claude/docs/staff-engineer/edge-cases.md` (source: `modules/claude/global/docs/staff-engineer/edge-cases.md`) — narrative walkthroughs for uncommon coordination scenarios that don't fit the mechanical protocols above: user interruptions mid-work, partially complete agent returns, review disagreement resolution, iterating on in-review work, external-dependency blockers, multi-session file conflicts, unexpected permission gates, and sub-agent alternative discovery. Inline pointers to each section are placed at the matching decision point throughout this file; read this entry when you need the full list at a glance.
