@@ -1396,6 +1396,24 @@ EOF
       # quietly eating a file the user cares about. Steady state is zero
       # output (nothing is normally stale), so any line here is a real signal
       # worth reading in `hms` output, not noise.
+      #
+      # DELIBERATE `-type f` — DO NOT ADD `-type l` / `-o -type l` / switch to
+      # `find -L` BELOW. `find . -type f` intentionally never matches a
+      # symlink, and that is load-bearing, not an oversight. Files declared
+      # via `home.file` in overconfig.nix (e.g. ~/.claude/commands/3ps-report.md,
+      # ~/.claude/commands/weekly-commits.md) are deployed by Home Manager as
+      # symlinks into the Nix store (`lrwxr-xr-x ... -> /nix/store/...`), not
+      # as regular files — confirmed via `ls -la ~/.claude/commands/`. Those
+      # symlinks are Home Manager's own `linkGeneration` step to create and
+      # prune; this loop only cleans up stale regular-file *copies* left by
+      # the `cp -rf` sweep above. The two mechanisms are complementary, not
+      # overlapping: together they cover every deploy path, and neither can
+      # touch the other's artifacts. If this loop were changed to also match
+      # symlinks, it would delete every `home.file`-managed artifact under
+      # agents/, skills/, output-styles/, and commands/ on the next
+      # activation, because none of them have a counterpart under
+      # ${claudeGlobalDir} — that would look like a thoroughness fix and
+      # would actually destroy machine-specific, user-authored config.
       if [ -z "''${DRY_RUN_CMD:-}" ]; then
         for prune_subdir in agents skills output-styles commands; do
           dest_dir=~/.claude/$prune_subdir
