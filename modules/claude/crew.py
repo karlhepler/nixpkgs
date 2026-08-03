@@ -3335,45 +3335,178 @@ def cmd_create(
 _SMITHERS_SPLIT_PERCENT = 25
 
 
-def _list_panes_in_window(session_idx: str) -> List[Tuple[str, str, str]]:
-    """Return panes in the given window as list of (pane_index, pane_current_command, pane_current_path).
+def _list_panes_in_window(session_idx: str) -> List[Tuple[str, str, str, str]]:
+    """Return panes in the given window as list of
+    (pane_index, pane_current_command, pane_current_path, pane_pid).
 
     session_idx is in 'session:window_index' format (e.g. 'free-brook:0').
+
+    pane_pid is tmux's #{pane_pid} — the PID of the pane's root process (the
+    pane's shell, in practice). It is used by _pane_smithers_status to match
+    against the FULL COMMAND LINE (argv) of that process and its descendants,
+    rather than the single foreground command name tmux reports via
+    pane_current_command. See _pane_smithers_status for why this distinction
+    is load-bearing.
     """
     result = subprocess.run(
         [
             "tmux", "list-panes",
             "-t", session_idx,
-            "-F", "#{pane_index}|#{pane_current_command}|#{pane_current_path}",
+            "-F", "#{pane_index}|#{pane_current_command}|#{pane_current_path}|#{pane_pid}",
         ],
         capture_output=True, text=True, check=False,
     )
     panes = []
     for line in result.stdout.splitlines():
-        parts = line.split("|", 2)
-        if len(parts) == 3:
+        parts = line.split("|", 3)
+        if len(parts) == 4:
             panes.append(tuple(parts))  # type: ignore[arg-type]
     return panes  # type: ignore[return-value]
 
 
-def _pane_is_running_smithers(pane: Tuple[str, str, str]) -> bool:
-    """Return True if the pane appears to be running smithers.
+# Interpreters whose first non-flag argument names the SCRIPT being executed.
+# A shebang script (smithers is a Nix writePython3Bin) is exec'd by the kernel
+# as its interpreter, so `ps`/tmux report the interpreter binary (e.g.
+# "python3.13"), never "smithers", as the running command. This lets
+# _argv_runs_smithers look past the interpreter to the script it was handed —
+# the same anchoring principle _CLAUDE_COMMAND_RE (above) already applies to
+# Claude Code's own versioned-binary/node installs.
+_INTERPRETER_BASENAME_RE = re.compile(
+    r"^(python(\d+(\.\d+)*)?|node|ruby(\d+(\.\d+)*)?|perl|sh|bash|zsh)$"
+)
 
-    Checks pane_current_command against 'smithers' (exact match).
-    smithers is a Nix-packaged Python binary (writePython3Bin, see
-    modules/claude/default.nix), so pane_current_command reports 'smithers'
-    (not 'python3' or a version string). This is the simplest and most
-    reliable check — no scrollback scraping needed.
 
-    Subshell detection gap: when smithers spawns a child process (gh, python3,
-    etc.) that becomes the pane's foreground command, tmux reports the child as
-    pane_current_command and this function returns False. The failure mode is
-    SAFE — cmd_smithers returns AMBIGUOUS_PANE_STATE (rc=1) rather than
-    silently overwriting the pane. Workaround: wait for smithers to return to
-    idle, then re-invoke; or kill the pane and re-invoke from scratch.
+def _argv_runs_smithers(argv: str) -> bool:
+    """Return True only if `argv` is a process where smithers IS the program
+    being executed — never merely a token that appears somewhere in it.
+
+    Matches exactly two shapes:
+      1. Direct execution — the basename of the executable (argv's first
+         token) is 'smithers'.
+      2. Interpreted execution — the executable is a known interpreter (see
+         _INTERPRETER_BASENAME_RE) and the first non-flag token following it
+         has basename 'smithers'. Flags between the interpreter and the
+         script (e.g. `python3 -u <script>`) are skipped rather than assumed
+         absent, so the script is not required to sit at a fixed index.
+
+    Deliberately narrower than an unanchored substring match (what
+    `pgrep -f smithers` does): a token that merely APPEARS in the command
+    line — an editor's or pager's filename argument, a grep/rg pattern or
+    path, a git argument, anything else that is not an interpreter — is
+    never treated as "this process is smithers". Anchoring on the executable
+    position (and, for interpreters, the position immediately after it) is
+    what supplies that distinction.
+
+    Callers must fail CLOSED on ambiguity: this function only ever asserts a
+    positive match for the two shapes above and returns False for everything
+    else, including cases it cannot fully characterize. A False result folds
+    into the caller's existing "not smithers" / indeterminate handling — it
+    never fabricates a match.
     """
-    _idx, pane_current_command, _path = pane
-    return pane_current_command == "smithers"
+    tokens = argv.split()
+    if not tokens:
+        return False
+
+    exe_basename = os.path.basename(tokens[0])
+    if exe_basename == "smithers":
+        return True
+
+    if not _INTERPRETER_BASENAME_RE.match(exe_basename):
+        return False
+
+    for tok in tokens[1:]:
+        if tok.startswith("-"):
+            continue
+        return os.path.basename(tok) == "smithers"
+
+    return False
+
+
+def _pane_process_argvs(pane_pid: str) -> Optional[List[str]]:
+    """Return the full command line (argv) of pane_pid and every descendant process.
+
+    Reads the entire process table once via `ps -A -ww -o pid=,ppid=,command=`
+    (`-ww` disables the terminal-width truncation BSD ps otherwise applies to
+    long command lines) and walks the descendant tree rooted at pane_pid.
+
+    This reads the FULL COMMAND LINE of every process, never the single
+    foreground command name tmux's #{pane_current_command} reports. For an
+    interpreted script (python3, node, ruby, a shell script, ...) tmux
+    reports the resolved INTERPRETER as pane_current_command — never the
+    script's own name — so any check that compares against that reported
+    name alone fails permanently for such tooling. Note: reading the full
+    command line here is distinct from how it is later matched — matching
+    is `_argv_runs_smithers`'s job, and it is deliberately narrower than an
+    unanchored `pgrep -f` substring search (see that function's docstring).
+
+    Returns None when the process table could not be read (ps failure) or
+    pane_pid is absent from it (e.g. a race between the tmux snapshot and the
+    ps snapshot). Callers MUST treat None as "could not determine" — never as
+    "confirmed nothing is running" — see _pane_smithers_status.
+    """
+    result = subprocess.run(
+        ["ps", "-A", "-ww", "-o", "pid=,ppid=,command="],
+        capture_output=True, text=True, check=False,
+    )
+    if result.returncode != 0:
+        return None
+
+    argv_by_pid: Dict[str, str] = {}
+    children_by_ppid: Dict[str, List[str]] = {}
+    for line in result.stdout.splitlines():
+        parts = line.strip().split(None, 2)
+        if len(parts) < 3:
+            continue
+        pid, ppid, command = parts
+        argv_by_pid[pid] = command
+        children_by_ppid.setdefault(ppid, []).append(pid)
+
+    if pane_pid not in argv_by_pid:
+        return None
+
+    argvs: List[str] = []
+    visited = set()
+    stack = [pane_pid]
+    while stack:
+        pid = stack.pop()
+        if pid in visited:
+            continue
+        visited.add(pid)
+        argvs.append(argv_by_pid[pid])
+        stack.extend(children_by_ppid.get(pid, []))
+    return argvs
+
+
+def _pane_smithers_status(pane_pid: str) -> Tuple[Optional[bool], List[str]]:
+    """Determine whether smithers is running in the process tree rooted at pane_pid.
+
+    Matches against the FULL ARGV of pane_pid and its descendants (see
+    _pane_process_argvs) rather than the bare command name tmux reports via
+    #{pane_current_command}. smithers is a Nix-packaged Python binary
+    (writePython3Bin, see modules/claude/default.nix); tmux therefore reports
+    the resolved interpreter (e.g. 'python3.13'), never 'smithers', as the
+    pane's foreground command — an exact-match comparison against that name
+    fails permanently. Never infer "process X is not running" from a
+    command-name comparison — match argv instead, via _argv_runs_smithers,
+    which requires smithers to be the program actually being EXECUTED (not
+    merely a token appearing anywhere in the command line).
+
+    Returns (matched, argvs):
+      matched=True  — smithers IS the program being executed by pane_pid or a
+                      descendant (see _argv_runs_smithers).
+      matched=False — the process tree was read successfully and no process in
+                      it executes smithers (confirmed something else is
+                      running).
+      matched=None  — the process tree could not be read at all. This is
+                      INDETERMINATE, not a confirmed absence — callers must
+                      say "could not determine", never assert "none running".
+      argvs: every argv string actually inspected (empty when matched is None).
+    """
+    argvs = _pane_process_argvs(pane_pid)
+    if argvs is None:
+        return None, []
+    matched = any(_argv_runs_smithers(argv) for argv in argvs)
+    return matched, argvs
 
 
 def _split_window_horizontal(session_idx: str, percent: int, cwd: str) -> Optional[str]:
@@ -3434,6 +3567,13 @@ def cmd_smithers(name: str, fmt: str) -> int:
         refuse to overwrite so the user can decide).
       - Window not found → error.
 
+    Detection of "is smithers running in this pane" matches against the
+    FULL ARGV of the pane's process tree (see _pane_smithers_status), not
+    tmux's #{pane_current_command} — smithers is an interpreted script, so
+    tmux reports the interpreter, never 'smithers', as the foreground
+    command. A process tree that cannot be read is reported as
+    indeterminate ("could not determine"), never as a confirmed absence.
+
     'smithers' auto-detects the PR from the worktree's current branch — no args needed.
     """
     lookup = get_window_lookup()
@@ -3457,10 +3597,37 @@ def cmd_smithers(name: str, fmt: str) -> int:
     panes = _list_panes_in_window(session_idx)
 
     if len(panes) > 1:
-        # A split already exists. Check whether smithers is running in any of the extra panes.
-        smithers_pane = next((p for p in panes if _pane_is_running_smithers(p)), None)
+        # A split already exists. Check each extra pane's process tree for
+        # smithers, matching on FULL ARGV — not the bare command tmux reports
+        # via pane_current_command, which for smithers (a Nix
+        # writePython3Bin) reports the INTERPRETER ('python3.13'), never
+        # 'smithers'. See _pane_smithers_status / _argv_runs_smithers — the
+        # match requires smithers to be the program actually executed, not
+        # merely a substring of the command line (unlike `pgrep -f`).
+        smithers_pane: Optional[Tuple[str, str]] = None
+        # First extra pane whose process tree could not be read at all —
+        # indeterminate, distinct from a confirmed "something else is here".
+        indeterminate_pane: Optional[Tuple[str, str, List[str]]] = None
+        # Extra panes whose process tree WAS read and confirmed to be
+        # running something other than smithers.
+        foreign_panes: List[Tuple[str, str]] = []
+
+        for p in panes:
+            pane_index, pane_cmd, _path, pane_pid = p
+            if pane_index == "0":
+                continue
+            matched, argvs = _pane_smithers_status(pane_pid)
+            if matched:
+                smithers_pane = (pane_index, pane_cmd)
+                break
+            if matched is None:
+                if indeterminate_pane is None:
+                    indeterminate_pane = (pane_index, pane_cmd, argvs)
+            else:
+                foreign_panes.append((pane_index, pane_cmd))
+
         if smithers_pane is not None:
-            pane_index, _cmd, _path = smithers_pane
+            pane_index, _cmd = smithers_pane
             msg = f"smithers already running in pane {name}.{pane_index}"
             if fmt == "xml":
                 elem = ET.Element(
@@ -3482,13 +3649,40 @@ def cmd_smithers(name: str, fmt: str) -> int:
                 print(msg)
             return 0
 
-        # Extra pane(s) exist but none are running smithers — ambiguous state.
-        extra_pane_info = ", ".join(
-            f"pane {p[0]} ({p[1]})" for p in panes if p[0] != "0"
-        )
+        if indeterminate_pane is not None:
+            # Case (b): the process tree could not be read at all — this is
+            # inability to determine, NOT a confirmed absence. Say so
+            # plainly, and include both the pane's reported command (what
+            # tmux showed) and the argv actually inspected (what the check
+            # looked at, empty here since the read failed) so the next
+            # reader can see the evidence rather than trusting an assertion.
+            pane_index, pane_cmd, argvs = indeterminate_pane
+            msg = (
+                f"could not determine whether smithers is running in window "
+                f"'{name}' pane {pane_index} — pane reports command "
+                f"{pane_cmd!r} but its process tree could not be read "
+                f"(argv inspected: {argvs!r}) — refusing to overwrite"
+            )
+            if fmt == "xml":
+                elem = ET.Element(
+                    "error",
+                    message=msg,
+                    error_code="AMBIGUOUS_PANE_STATE",
+                    window=name,
+                )
+                print(xml_to_string(elem))
+            elif fmt == "json":
+                print(json.dumps({"error": msg, "error_code": "AMBIGUOUS_PANE_STATE", "window": name}))
+            else:
+                print(f"Error: {msg}", file=sys.stderr)
+            return 1
+
+        # Case (a): every extra pane's process tree was read successfully and
+        # confirmed to be running something other than smithers.
+        extra_pane_info = ", ".join(f"pane {idx} ({cmd})" for idx, cmd in foreign_panes)
         msg = (
-            f"window '{name}' has extra pane(s) but none running smithers "
-            f"({extra_pane_info}) — refusing to overwrite"
+            f"window '{name}' has extra pane(s) confirmed running something "
+            f"other than smithers ({extra_pane_info}) — refusing to overwrite"
         )
         if fmt == "xml":
             elem = ET.Element(

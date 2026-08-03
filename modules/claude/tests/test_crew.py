@@ -26,6 +26,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import crew as crew_module
 from crew import (
+    _argv_runs_smithers,
     _BACKGROUND_AGENT_WAIT_RE,
     _branch_exists,
     _capture_pane_tail,
@@ -5709,15 +5710,16 @@ class TestCmdSmithers:
         """side_effect for the 'no split exists yet' happy path.
 
         list-windows resolves 'pricing' -> 'main:0'; list-panes reports a
-        single pane (index 0) whose cwd is worktree_cwd; split-window
-        succeeds and reports new pane index '1'; send-keys succeeds.
+        single pane (index 0, pid 50000) whose cwd is worktree_cwd;
+        split-window succeeds and reports new pane index '1'; send-keys
+        succeeds.
         """
         def fake_run(cmd, **kwargs):
             joined = " ".join(str(c) for c in cmd)
             if "list-windows" in joined:
                 return fake_run_result(stdout="main:0|@1|pricing\n")
             if "list-panes" in joined:
-                return fake_run_result(stdout=f"0|zsh|{worktree_cwd}\n")
+                return fake_run_result(stdout=f"0|zsh|{worktree_cwd}|50000\n")
             if "split-window" in joined:
                 return fake_run_result(stdout="1\n")
             if "send-keys" in joined:
@@ -5776,7 +5778,17 @@ class TestCmdSmithers:
                 return fake_run_result(stdout="main:0|@1|pricing\n")
             if "list-panes" in joined:
                 return fake_run_result(
-                    stdout="0|zsh|/worktrees/pricing\n1|smithers|/worktrees/pricing\n"
+                    stdout=(
+                        "0|zsh|/worktrees/pricing|50000\n"
+                        "1|smithers|/worktrees/pricing|50001\n"
+                    )
+                )
+            if cmd[0] == "ps":
+                return fake_run_result(
+                    stdout=(
+                        "50000 1 /bin/zsh\n"
+                        "50001 50000 smithers\n"
+                    )
                 )
             return fake_run_result()
 
@@ -5805,7 +5817,17 @@ class TestCmdSmithers:
                 return fake_run_result(stdout="main:0|@1|pricing\n")
             if "list-panes" in joined:
                 return fake_run_result(
-                    stdout="0|zsh|/worktrees/pricing\n1|vim|/worktrees/pricing\n"
+                    stdout=(
+                        "0|zsh|/worktrees/pricing|50000\n"
+                        "1|vim|/worktrees/pricing|50002\n"
+                    )
+                )
+            if cmd[0] == "ps":
+                return fake_run_result(
+                    stdout=(
+                        "50000 1 /bin/zsh\n"
+                        "50002 50000 vim somefile.txt\n"
+                    )
                 )
             return fake_run_result()
 
@@ -5823,6 +5845,83 @@ class TestCmdSmithers:
 
         captured = capsys.readouterr()
         assert "refus" in (captured.out + captured.err).lower()
+
+    def test_smithers_already_running_detected_for_interpreted_script(self, capsys):
+        """smithers is a Nix writePython3Bin — an interpreted script — so tmux's
+        #{pane_current_command} reports the resolved INTERPRETER ('python3.13'),
+        never 'smithers'. Detection must match on the FULL ARGV of the pane's
+        process tree (what `pgrep -fal smithers` would find), not the bare
+        command name, so the already-running branch is still reached: an
+        idempotent no-op, not a false AMBIGUOUS_PANE_STATE error."""
+        def fake_run(cmd, **kwargs):
+            joined = " ".join(str(c) for c in cmd)
+            if "list-windows" in joined:
+                return fake_run_result(stdout="main:0|@1|pricing\n")
+            if "list-panes" in joined:
+                return fake_run_result(
+                    stdout=(
+                        "0|zsh|/worktrees/pricing|50000\n"
+                        "1|python3.13|/worktrees/pricing|50001\n"
+                    )
+                )
+            if cmd[0] == "ps":
+                return fake_run_result(
+                    stdout=(
+                        "50000 1 /bin/zsh\n"
+                        "50001 50000 /nix/store/abc123/bin/python3.13 "
+                        "/Users/karlhepler/.nix-profile/bin/smithers\n"
+                    )
+                )
+            return fake_run_result()
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = fake_run
+            rc = cmd_smithers("pricing", "human")
+
+        assert rc == 0
+
+        mutating_calls = [
+            c for c in mock_run.call_args_list
+            if c[0][0][0] == "tmux" and ("split-window" in c[0][0] or "send-keys" in c[0][0])
+        ]
+        assert not mutating_calls, "already-running must be a no-op — no split or send-keys"
+
+        captured = capsys.readouterr()
+        assert "already" in captured.out.lower()
+        assert "running" in captured.out.lower()
+
+    @pytest.mark.parametrize("argv,expected", [
+        # Adversarial: 'smithers' appears in the command line but is NOT the
+        # program being executed — must be rejected. An unanchored substring
+        # match (the bug this test guards against) would incorrectly match
+        # every one of these.
+        ("vim smithers.py", False),
+        ("vim /Users/karlhepler/.config/nixpkgs/modules/claude/smithers.py", False),
+        ("less smithers.py", False),
+        ("rg smithers", False),
+        ("git log smithers.py", False),
+        ("grep -r smithers modules/", False),
+        ("code smithers-notes.md", False),
+        # True positive: smithers IS the program being executed, via an
+        # interpreter (a shebang script is exec'd by the kernel as its
+        # interpreter, so the interpreter — not 'smithers' — is what ps/tmux
+        # report as the running command).
+        (
+            "/nix/store/abc123/bin/python3.13 "
+            "/Users/karlhepler/.nix-profile/bin/smithers",
+            True,
+        ),
+    ])
+    def test_smithers_argv_match_rejects_mentions_without_execution(self, argv, expected):
+        """_argv_runs_smithers must match only when smithers is the program
+        actually being executed, never when 'smithers' merely appears as an
+        argument to some other program (editor, pager, grep, git, ...).
+
+        Table-driven so a future regression (e.g. reverting to an unanchored
+        substring/`pgrep -f`-style match) shows exactly which adversarial
+        case started matching again, instead of one collapsed assertion.
+        """
+        assert _argv_runs_smithers(argv) == expected
 
     def test_window_not_found_errors(self, capsys):
         """Target window doesn't exist: error, no tmux mutation attempted."""
