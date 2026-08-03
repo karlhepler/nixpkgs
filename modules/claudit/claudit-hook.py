@@ -35,11 +35,16 @@ ERROR_LOG_PATH = Path.home() / ".claude" / "metrics" / "claudit-errors.log"
 
 # ---------------------------------------------------------------------------
 # Pricing table — per 1M tokens, keyed by normalized model name
-# Prices last verified: 2026-04-28
+# Prices last verified: 2026-08-03
 # Source: https://platform.claude.com/docs/en/about-claude/pricing
 #
-# NOTE: "opus" covers Claude Opus 3/4/4.1 ($15/$75 tier).
-#       "opus-4" covers Claude Opus 4.5/4.6/4.7 ($5/$25 tier — ~3x cheaper).
+# NOTE: "opus" covers the known LEGACY Opus releases (Opus 3, Opus 4, Opus
+#       4.1) at the $15/$75 tier. "opus-4" is the CURRENT-tier bucket
+#       ($5/$25 — ~3x cheaper) and covers everything else in the Opus
+#       family, including Opus 4.5/4.6/4.7/4.8 and Opus 5. See
+#       _LEGACY_OPUS_MARKERS below for the exact denylist and the
+#       rationale for defaulting new/unrecognized Opus releases here
+#       instead of to the legacy tier.
 #       cache_write uses the 5-minute cache write rate (dominant use case).
 # ---------------------------------------------------------------------------
 PRICING = {
@@ -49,14 +54,15 @@ PRICING = {
         "cache_read": 0.30,
         "cache_write": 3.75,
     },
-    # Claude Opus 4.5 / 4.6 / 4.7 — released 2025-2026, significantly cheaper
+    # Current-tier Opus: Opus 4.5 / 4.6 / 4.7 / 4.8 / 5 and any future
+    # release not explicitly listed in _LEGACY_OPUS_MARKERS.
     "opus-4": {
         "input": 5.00,
         "output": 25.00,
         "cache_read": 0.50,
         "cache_write": 6.25,
     },
-    # Claude Opus 3 / Claude Opus 4 / Claude Opus 4.1 — legacy $15/$75 tier
+    # Legacy-tier Opus: Opus 3 / Opus 4 / Opus 4.1 — see _LEGACY_OPUS_MARKERS.
     "opus": {
         "input": 15.00,
         "output": 75.00,
@@ -219,30 +225,86 @@ def parse_timestamp(raw) -> float | None:
 # Model normalization
 # ---------------------------------------------------------------------------
 
+# Known LEGACY Opus releases, priced at the expensive $15/$75 tier ('opus').
+# Every other Opus string (including any not-yet-catalogued future release)
+# falls through to the cheaper $5/$25 'opus-4' tier — see normalize_model()
+# docstring for the fail-safe rationale.
+#
+# Matched as case-insensitive substrings against the full lowered model
+# string (not just the version fragment), since Claude 3 Opus's real model
+# ID places the version before the 'opus' keyword ("claude-3-opus-...")
+# while Opus 4.x/5 place it after ("claude-opus-4-1-...").
+#
+#   "3-opus"           -> Claude Opus 3   (claude-3-opus-20240229)
+#   "opus-3"           -> defensive: in case the vendor ever flips ID order
+#   "opus-4-1"         -> Claude Opus 4.1 (claude-opus-4-1[-20250805])
+#   "opus-4.1"         -> defensive dot-notation form
+#   "opus-4-20250514"  -> Claude Opus 4, bare/no-minor, exact historical
+#                         snapshot ID (fixed forever; this release will
+#                         never get a different date suffix)
+#   "opus-4-0"         -> Claude Opus 4, bare/no-minor, alias form
+#   "opus-4.0"         -> defensive dot-notation form
+#
+# Anchored on a VERSION BOUNDARY, not matched as a bare substring: each
+# marker only counts as a hit when it is NOT immediately followed by another
+# digit (i.e. followed by a non-digit delimiter, or occurs at end-of-string).
+# Without this, a bare `"opus-4-1" in lower` substring check would also match
+# a future two-digit minor release such as "claude-opus-4-10-..." (Opus
+# 4.10) — "opus-4-1" IS a substring of "opus-4-10" — misclassifying a
+# CURRENT-tier model as legacy Opus 4.1. Same risk for "opus-4.1" vs
+# "opus-4.10", and symmetrically for "opus-4-0"/"opus-4.0" vs a zero-padded
+# "opus-4-01"/"opus-4.01". The trailing `(?!\d)` closes this for every
+# marker uniformly; it is a no-op for markers that already end at a natural
+# boundary (e.g. "opus-4-20250514") and load-bearing for the bare numeric
+# markers above.
+_LEGACY_OPUS_MARKERS = (
+    "3-opus",
+    "opus-3",
+    "opus-4-1",
+    "opus-4.1",
+    "opus-4-20250514",
+    "opus-4-0",
+    "opus-4.0",
+)
+
+_LEGACY_OPUS_PATTERN = re.compile(
+    r"(?:" + "|".join(re.escape(marker) for marker in _LEGACY_OPUS_MARKERS) + r")(?!\d)"
+)
+
+
 def normalize_model(model: str) -> str:
     """
     Collapse full model strings to short form.
 
     Rules (substring match, case-insensitive):
-      contains 'sonnet'                -> 'sonnet'
-      contains 'opus' AND ('4.5'|'4.6'|'4.7'|'4-5'|'4-6'|'4-7') -> 'opus-4'
-      contains 'opus'                  -> 'opus'  (Opus 3 / 4 / 4.1 legacy tier)
-      contains 'haiku'                 -> 'haiku'
-      else                             -> first 20 chars of original
+      contains 'sonnet'                          -> 'sonnet'
+      contains 'opus' AND a legacy marker         -> 'opus'    (expensive $15/$75 tier)
+      contains 'opus' (anything else)             -> 'opus-4'  (current $5/$25 tier)
+      contains 'haiku'                            -> 'haiku'
+      else                                        -> first 20 chars of original
 
-    The 'opus-4' bucket covers Claude Opus 4.5/4.6/4.7 which are priced at
-    $5/$25 per MTok — roughly 3x cheaper than the legacy 'opus' tier ($15/$75).
-    Distinguishing them prevents silent ~3x under-reporting of opus-tier costs.
+    Legacy-marker matching is boundary-anchored (see _LEGACY_OPUS_PATTERN):
+    a marker only counts as a hit when not immediately followed by another
+    digit, so a hypothetical future release like Opus 4.10 does not collide
+    with the Opus 4.1 marker.
+
+    Deliberately inverted from an allowlist-of-cheap-versions to a
+    denylist-of-known-legacy-versions (see _LEGACY_OPUS_MARKERS): a new
+    Opus release that isn't in the denylist yet defaults to the CURRENT
+    ($5/$25) tier rather than the LEGACY ($15/$75) tier. Anthropic ships
+    new Opus versions faster than this table gets updated, so staleness
+    here is the steady state, not an anomaly. A wrong-but-cheap cost figure
+    is far less corrosive to trust in the dashboard than a wrong-but-
+    expensive one that looks authoritative — this fails safe in the
+    direction the table will actually drift.
     """
     lower = model.lower()
     if "sonnet" in lower:
         return "sonnet"
     if "opus" in lower:
-        # Opus 4.5 / 4.6 / 4.7 use a different (cheaper) pricing tier than Opus 3/4/4.1.
-        # Match both dot-notation (4.5) and hyphen-notation (4-5) as seen in API model IDs.
-        if any(v in lower for v in ("4.5", "4.6", "4.7", "4-5", "4-6", "4-7")):
-            return "opus-4"
-        return "opus"
+        if _LEGACY_OPUS_PATTERN.search(lower):
+            return "opus"
+        return "opus-4"
     if "haiku" in lower:
         return "haiku"
     return model[:20]
