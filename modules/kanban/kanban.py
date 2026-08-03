@@ -1000,6 +1000,34 @@ _MOV_GREP_BOOL_LONG_FLAGS: frozenset[str] = frozenset([
     "--version", "--help",
 ])
 
+# ---------------------------------------------------------------------------
+# Cross-card MoV scope-isolation patterns
+#
+# A modification-emptiness assertion (e.g. `test -z "$(git diff ... -- path)"`)
+# claims a path has zero git-diff output. That claim is only checkable if no
+# OTHER card can write to `path` — see check_mov_scope_isolation below.
+# ---------------------------------------------------------------------------
+
+# `test -z "$(...` / `[ -z "$(...` / `[[ -z "$(...` — a command-substitution
+# wrapped in an emptiness test. Quote around $( is optional (works unquoted too).
+_MOV_EMPTINESS_DASH_Z_RE = re.compile(
+    r'(?:test|\[\[?)\s+-z\s+"?\s*(?:\$\(|`)'
+)
+
+# `... | wc -l)"? -eq 0` / `... | wc -l)"? = 0` — a piped line-count compared to
+# zero. Distinct idiom from -z: asserts "diff produced zero changed-file lines".
+_MOV_EMPTINESS_WC_ZERO_RE = re.compile(
+    r'\|\s*wc\s+-l\s*\)"?\s*(?:-eq|=)\s*0\b'
+)
+
+# Extracts the git-diff pathspec(s) following a `--` pathspec-separator inside
+# a command substitution. Non-greedy scan before `--` skips over flags like
+# `--name-only` (which contain literal `--` but are never followed by
+# whitespace); the real pathspec separator is `--` followed by whitespace.
+_MOV_GIT_DIFF_PATH_RE = re.compile(
+    r'git\s+diff\b[^)`|]*?--\s+([^)`|"]+)'
+)
+
 
 # ---------------------------------------------------------------------------
 # Per-cmd detection helpers
@@ -1198,6 +1226,75 @@ def _mov_is_rg_E_flag_token(cmd: str) -> bool:
     return False
 
 
+def _mov_extract_emptiness_assertion_paths(cmd: str) -> list[str]:
+    """Return git-diff pathspec(s) that cmd asserts are unmodified, or [].
+
+    Recognizes two shapes that assert "git diff for these paths has zero output":
+      - test -z "$(git diff ... -- <path>)"  /  [ -z "$(...)" ]  /  [[ -z "$(...)" ]]
+      - "$(git diff ... -- <path> | wc -l)" compared via -eq 0 / = 0
+
+    Only fires when BOTH an emptiness-comparison (-z or wc -l==0) AND a
+    `git diff ... --` pathspec are present in the same cmd — a bare `git diff`
+    with no comparison, or an emptiness test on something unrelated to git
+    diff, does not match. This keeps content-based MoVs (rg -qF, test -f, etc.)
+    entirely untouched.
+
+    A captured pathspec segment may contain multiple space-separated paths
+    (git diff accepts multiple pathspecs after --); all are returned.
+    """
+    if not (_MOV_EMPTINESS_DASH_Z_RE.search(cmd) or _MOV_EMPTINESS_WC_ZERO_RE.search(cmd)):
+        return []
+
+    match = _MOV_GIT_DIFF_PATH_RE.search(cmd)
+    if not match:
+        return []
+
+    raw_paths = match.group(1).strip()
+    if not raw_paths:
+        return []
+    try:
+        paths = shlex.split(raw_paths)
+    except ValueError:
+        paths = raw_paths.split()
+    return [p for p in paths if p and not p.startswith("-")]
+
+
+def _path_is_prefix_of(prefix: str, other: str) -> bool:
+    """True if `prefix`'s '/'-split path segments are a leading subsequence of `other`'s.
+
+    Segment-based (not substring-based), so 'modules' does NOT falsely prefix-match
+    'modules-extra/foo.py'. A path is trivially a prefix of itself (equal segments).
+    Used to detect directory-containment overlap: an asserted path like 'modules/'
+    "contains" an editFiles entry like 'modules/claude/foo.py', in either direction.
+    """
+    prefix_parts = [p for p in prefix.split("/") if p]
+    other_parts = [p for p in other.split("/") if p]
+    if not prefix_parts or not other_parts:
+        return False
+    if len(prefix_parts) > len(other_parts):
+        return False
+    return other_parts[:len(prefix_parts)] == prefix_parts
+
+
+def _mov_path_overlaps_editfile(asserted_path: str, edit_file: str) -> bool:
+    """True if a MoV's asserted-unmodified path overlaps an editFiles entry.
+
+    Reuses _globs_overlap (the file-conflict scheduler's own glob-matching
+    machinery) for concrete-vs-glob and glob-vs-glob overlap, then additionally
+    checks directory containment in both directions — the dominant real-world
+    shape is a directory asserted-empty (e.g. 'modules/') while another card's
+    editFiles entry is a concrete file nested under it (e.g. 'modules/claude/foo.py'),
+    or vice versa.
+    """
+    if _globs_overlap([asserted_path], [edit_file]):
+        return True
+    if _path_is_prefix_of(asserted_path, edit_file):
+        return True
+    if _path_is_prefix_of(edit_file, asserted_path):
+        return True
+    return False
+
+
 def _mov_check_cmd(cmd: str) -> "list[tuple[str, str]]":
     """
     Check a single cmd string against all banned MoV patterns.
@@ -1354,6 +1451,164 @@ def validate_mov_commands_content(card_json) -> None:
         print(f"    Fix: {fix}", file=sys.stderr)
         print("", file=sys.stderr)
     print("Correct the MoV commands before running kanban do/todo.", file=sys.stderr)
+    sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# Cross-card MoV scope-isolation validation
+#
+# A modification-emptiness MoV (e.g. `test -z "$(git diff ... -- <path>)"`)
+# asserts that <path> has zero git-diff output. That assertion can never pass
+# if ANOTHER card's declared editFiles overlaps <path> — the other card's work
+# will modify <path> while this card's criterion is checked, making the MoV
+# structurally unsatisfiable no matter how well this card's own work is done.
+# See staff-engineer.md § MoV Scope Isolation for the worked failure history.
+# ---------------------------------------------------------------------------
+
+def _mov_collect_emptiness_assertions(card: dict) -> list[tuple[int, int, str]]:
+    """Return (ac_idx, cmd_idx, asserted_path) for every path-emptiness
+    assertion found in this card's mov_commands.
+    """
+    results: list[tuple[int, int, str]] = []
+    criteria = card.get("criteria") or card.get("ac") or []
+    if not isinstance(criteria, list):
+        return results
+
+    for ac_idx, criterion in enumerate(criteria):
+        if not isinstance(criterion, dict):
+            continue
+        mov_commands = criterion.get("mov_commands") or []
+        if not isinstance(mov_commands, list):
+            continue
+        for cmd_idx, entry in enumerate(mov_commands):
+            if not isinstance(entry, dict):
+                continue
+            cmd = entry.get("cmd", "")
+            if not cmd or not isinstance(cmd, str):
+                continue
+            for asserted_path in _mov_extract_emptiness_assertion_paths(cmd):
+                results.append((ac_idx, cmd_idx, asserted_path))
+    return results
+
+
+def check_mov_scope_isolation(
+    cards: list[dict],
+    board_cards: list[dict],
+) -> list[tuple[int, int, int, str, str, str]]:
+    """Check each card's path-emptiness MoV assertions for cross-card overlap.
+
+    Args:
+        cards: card dicts being created in this batch, in array order (a single
+               card is normalized to a 1-element list by the caller).
+        board_cards: cards currently in todo/doing (any session), each carrying
+                     an 'id' key (card number string) — see
+                     _load_scope_isolation_board_cards.
+
+    Returns a list of (card_idx, ac_idx, cmd_idx, conflict_label, asserted_path,
+    overlapping_file) tuples, one per detected conflict:
+      - conflict_label is "card #<N>" for a board (todo/doing) conflict, or
+        "batch sibling [<idx>]" for a same-batch sibling conflict — the sibling
+        does not exist on the board yet at lint time, so it cannot be named by
+        card number, only by its position in the incoming array.
+    """
+    violations: list[tuple[int, int, int, str, str, str]] = []
+
+    for idx, card in enumerate(cards):
+        assertions = _mov_collect_emptiness_assertions(card)
+        if not assertions:
+            continue
+
+        for ac_idx, cmd_idx, asserted_path in assertions:
+            # 1. Board cards (todo/doing, ALL sessions) — pre-existing in-flight work.
+            for other in board_cards:
+                for ef in other.get("editFiles") or []:
+                    if _mov_path_overlaps_editfile(asserted_path, ef):
+                        conflict_label = f"card #{other.get('id', 'unknown')}"
+                        violations.append((idx, ac_idx, cmd_idx, conflict_label, asserted_path, ef))
+
+            # 2. Same-batch siblings — cards being created alongside this one in
+            #    the same `kanban do`/`kanban todo` array. These do not exist on
+            #    the board yet, so a board-only scan would miss them entirely.
+            for sib_idx, sibling in enumerate(cards):
+                if sib_idx == idx:
+                    continue
+                for ef in sibling.get("editFiles") or []:
+                    if _mov_path_overlaps_editfile(asserted_path, ef):
+                        conflict_label = f"batch sibling [{sib_idx}]"
+                        violations.append((idx, ac_idx, cmd_idx, conflict_label, asserted_path, ef))
+
+    return violations
+
+
+def _load_scope_isolation_board_cards(root: Path) -> list[dict]:
+    """Load all cards from todo AND doing columns (across all sessions), with IDs.
+
+    Used by check_mov_scope_isolation: a MoV path-emptiness assertion is only
+    valid if no in-flight card (queued in todo, or active in doing) declares
+    that path in editFiles — a card in todo will eventually move to doing and
+    modify the path just as surely as a card already doing.
+    """
+    cards = []
+    for col in ("todo", "doing"):
+        for card_path in find_cards_in_column(root, col):
+            try:
+                card = read_card(card_path)
+                card["id"] = card_number(card_path)
+                cards.append(card)
+            except (json.JSONDecodeError, OSError):
+                continue
+    return cards
+
+
+def validate_mov_scope_isolation(card_json, root: Path) -> None:
+    """Reject card creation when a MoV path-emptiness assertion overlaps
+    another card's declared editFiles.
+
+    Accepts a single card dict or a list of card dicts (bulk creation), mirroring
+    validate_mov_commands_content. Checks against two populations (see
+    check_mov_scope_isolation): in-flight board cards (todo/doing, any session)
+    and same-batch siblings in card_json itself.
+
+    Exits with code 1 if any violations are found, printing an actionable error
+    report to stderr. Returns normally when no path-emptiness assertions overlap
+    another card's scope.
+    """
+    if isinstance(card_json, dict):
+        cards = [card_json]
+    elif isinstance(card_json, list):
+        cards = [c for c in card_json if isinstance(c, dict)]
+    else:
+        return  # Not a card — nothing to validate
+
+    board_cards = _load_scope_isolation_board_cards(root)
+    violations = check_mov_scope_isolation(cards, board_cards)
+    if not violations:
+        return
+
+    is_bulk = len(cards) > 1
+
+    print("Error: MoV scope-isolation violation(s) detected in card JSON.", file=sys.stderr)
+    print("", file=sys.stderr)
+    for card_idx, ac_idx, cmd_idx, conflict_label, asserted_path, overlapping_file in violations:
+        card_label = f"card[{card_idx}] " if is_bulk else ""
+        print(
+            f"  {card_label}criteria[{ac_idx}] → mov_commands[{cmd_idx}].cmd",
+            file=sys.stderr,
+        )
+        print(
+            f"    Asserts path {asserted_path!r} has no git-diff modifications, "
+            f"but this overlaps {conflict_label}'s editFiles entry {overlapping_file!r}.",
+            file=sys.stderr,
+        )
+        print("", file=sys.stderr)
+    print(
+        "A path-emptiness MoV (e.g. `test -z \"$(git diff ... -- <path>)\"`) can never pass "
+        "while another card's editFiles overlaps that path — the other card's work will "
+        "modify it. Narrow the asserted path so it excludes the conflicting card's scope, "
+        "or replace the MoV with a content-based assertion instead "
+        "(e.g. `rg -qF 'expected text' file` / `test -f file`).",
+        file=sys.stderr,
+    )
     sys.exit(1)
 
 
@@ -1778,6 +2033,13 @@ def cmd_do(args) -> None:
     # per-card structural validation. validate_no_unknown_fields runs later, inside
     # validate_and_build_card, at the start of each card's structural validation pass.
     validate_mov_commands_content(data)
+
+    # Cross-card MoV scope-isolation: reject path-emptiness assertions (e.g.
+    # `test -z "$(git diff ... -- <path>)"`) that overlap another card's
+    # editFiles — either an in-flight board card (todo/doing, any session) or
+    # a sibling in this same creation batch. See § Cross-card MoV scope-isolation
+    # validation above validate_mov_scope_isolation's definition.
+    validate_mov_scope_isolation(data, root)
 
     session = args.session if hasattr(args, "session") and args.session else get_current_session_id()
 
@@ -3347,6 +3609,13 @@ def cmd_todo(args) -> None:
     # per-card structural validation. validate_no_unknown_fields runs later, inside
     # validate_and_build_card, at the start of each card's structural validation pass.
     validate_mov_commands_content(data)
+
+    # Cross-card MoV scope-isolation: reject path-emptiness assertions (e.g.
+    # `test -z "$(git diff ... -- <path>)"`) that overlap another card's
+    # editFiles — either an in-flight board card (todo/doing, any session) or
+    # a sibling in this same creation batch. See § Cross-card MoV scope-isolation
+    # validation above validate_mov_scope_isolation's definition.
+    validate_mov_scope_isolation(data, root)
 
     session = args.session if hasattr(args, "session") and args.session else get_current_session_id()
 
