@@ -302,6 +302,7 @@ Create one or more cards in `doing` state immediately.
   Every criterion is implicitly programmatic; presence of non-empty `mov_commands` is the canonical signal. The `mov_type` field has been removed from the schema.
 - **No `&&` in `cmd`.** HARD RULE — split compound checks into separate array items. See Quirks Catalog item 12 (CLI-enforced).
 - **`__CARD_ID__` placeholder:** Use the literal token `__CARD_ID__` in `mov_commands[].cmd` or criterion `text` fields when you need to reference the card's own number (e.g., `"cmd": "rg -q 'pattern' .scratchpad/__CARD_ID__-findings.md"`). The CLI substitutes the actual assigned card number at card-create time. Scope: only `mov_commands[].cmd` and criterion `text` — not `action`, `intent`, or other fields.
+  ⚠️ **Never put `__CARD_ID__` in `editFiles`/`readFiles`.** Those fields are never substituted, and `kanban do`/`kanban todo` now reject a card containing the token there at creation time: the file-conflict scheduler reads `editFiles` for cross-session overlap detection before the card's number is assigned, so an unsubstituted token could never match a real path and would silently defeat that conflict check.
 - **Returns:** Card number on stdout (e.g., `42`). The assigned number is what you use in all subsequent commands.
 
 ### `kanban todo [json_data] [--file PATH] [--session SESSION]`

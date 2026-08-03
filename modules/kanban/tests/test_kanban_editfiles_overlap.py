@@ -664,3 +664,209 @@ class TestGlobOverlapBlocksWithoutExactMatch:
         assert len(todo_cards) == 1, "Conflicting card must be deferred to todo"
         doing_cards = [c for c in (board / "doing").glob("*.json") if c.name != "99.json"]
         assert len(doing_cards) == 0, "No new card must be placed in doing on conflict"
+
+
+# ---------------------------------------------------------------------------
+# Tests: __CARD_ID__ placeholder rejected in editFiles/readFiles
+#
+# __CARD_ID__ is substituted ONLY in criterion text and mov_commands[].cmd,
+# inside create_card_in_column, AFTER next_number() assigns the card's real
+# number. But cmd_do reads card["editFiles"] for check_editfiles_overlap
+# BEFORE create_card_in_column runs — i.e. before any number exists to
+# substitute in. Substitution cannot repair this ordering, so a literal
+# __CARD_ID__ token in editFiles/readFiles is rejected at creation time
+# instead of being silently written as a file-scope entry that can never
+# match a real path (which would defeat the file-conflict scheduler).
+# ---------------------------------------------------------------------------
+
+def _make_card_json_with_fields(edit_files=None, read_files=None, action="Do the thing"):
+    """Build a minimal valid single-card JSON string with explicit editFiles/readFiles."""
+    card = {
+        "action": action,
+        "intent": "Because reasons",
+        "type": "work",
+        "agent": "swe-devex",
+        "criteria": [
+            {
+                "text": "Some check",
+                "mov_type": "programmatic",
+                "mov_commands": [{"cmd": "true", "timeout": 5}],
+                "met": False,
+            }
+        ],
+    }
+    if edit_files is not None:
+        card["editFiles"] = edit_files
+    if read_files is not None:
+        card["readFiles"] = read_files
+    return json.dumps(card)
+
+
+class TestCardIdPlaceholderRejectedInFileScopeFields:
+    """validate_and_build_card / cmd_do / cmd_todo reject __CARD_ID__ in editFiles/readFiles."""
+
+    def test_card_id_placeholder_in_editfiles(self, kanban, capsys):
+        """validate_and_build_card exits 1 when editFiles contains __CARD_ID__."""
+        data = json.loads(_make_card_json_with_fields(
+            edit_files=[".scratchpad/card-__CARD_ID__-output.txt"],
+        ))
+        with pytest.raises(SystemExit) as exc_info:
+            kanban.validate_and_build_card(data, session="test-session")
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "__CARD_ID__" in captured.err
+        assert "editFiles" in captured.err
+
+    def test_card_id_placeholder_in_readfiles(self, kanban, capsys):
+        """validate_and_build_card exits 1 when readFiles contains __CARD_ID__."""
+        data = json.loads(_make_card_json_with_fields(
+            read_files=["modules/kanban/tests/card___CARD_ID__.py"],
+        ))
+        with pytest.raises(SystemExit) as exc_info:
+            kanban.validate_and_build_card(data, session="test-session")
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "__CARD_ID__" in captured.err
+        assert "readFiles" in captured.err
+
+    def test_valid_editfiles_without_placeholder_passes(self, kanban):
+        """editFiles/readFiles without the placeholder are accepted (regression)."""
+        data = json.loads(_make_card_json_with_fields(
+            edit_files=["src/foo.ts"],
+            read_files=["src/bar.ts"],
+        ))
+        try:
+            card = kanban.validate_and_build_card(data, session="test-session")
+        except SystemExit as e:
+            pytest.fail(f"Valid editFiles/readFiles raised SystemExit({e.code})")
+        assert card["editFiles"] == ["src/foo.ts"]
+
+    def test_card_id_placeholder_in_glob_editfiles(self, kanban, capsys):
+        """A glob editFiles entry that ALSO contains __CARD_ID__ is rejected.
+
+        The rejection predicate is an exact-substring match on the literal
+        token and is glob-agnostic by construction — this is a regression
+        guard so a future change to glob handling cannot silently reintroduce
+        the hazard for entries like 'src/__CARD_ID__/*.ts'.
+        """
+        data = json.loads(_make_card_json_with_fields(
+            edit_files=["src/__CARD_ID__/*.ts"],
+        ))
+        with pytest.raises(SystemExit) as exc_info:
+            kanban.validate_and_build_card(data, session="test-session")
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "__CARD_ID__" in captured.err
+        assert "editFiles" in captured.err
+
+    def test_cmd_do_rejects_card_id_placeholder_in_editfiles(self, kanban, tmp_path, capsys):
+        """cmd_do exits 1 and writes no card when editFiles contains __CARD_ID__."""
+        board = _setup_board(tmp_path)
+        args = _make_do_args(
+            board,
+            _make_card_json_with_fields(edit_files=[".scratchpad/__CARD_ID__.txt"]),
+        )
+
+        with patch.object(kanban, "write_kanban_event"):
+            with pytest.raises(SystemExit) as exc_info:
+                kanban.cmd_do(args)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "__CARD_ID__" in captured.err
+        assert len(list((board / "doing").glob("*.json"))) == 0
+        assert len(list((board / "todo").glob("*.json"))) == 0
+
+    def test_cmd_do_rejects_card_id_placeholder_in_readfiles(self, kanban, tmp_path, capsys):
+        """cmd_do exits 1 and writes no card when readFiles contains __CARD_ID__."""
+        board = _setup_board(tmp_path)
+        args = _make_do_args(
+            board,
+            _make_card_json_with_fields(read_files=[".scratchpad/__CARD_ID__.txt"]),
+        )
+
+        with patch.object(kanban, "write_kanban_event"):
+            with pytest.raises(SystemExit) as exc_info:
+                kanban.cmd_do(args)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "__CARD_ID__" in captured.err
+        assert len(list((board / "doing").glob("*.json"))) == 0
+        assert len(list((board / "todo").glob("*.json"))) == 0
+
+    def test_cmd_todo_rejects_card_id_placeholder_in_editfiles(self, kanban, tmp_path, capsys):
+        """cmd_todo exits 1 and writes no card when editFiles contains __CARD_ID__."""
+        board = _setup_board(tmp_path)
+        args = SimpleNamespace(
+            root=str(board),
+            json_data=_make_card_json_with_fields(edit_files=[".scratchpad/__CARD_ID__.txt"]),
+            json_file=None,
+            session="test-session",
+        )
+
+        with patch.object(kanban, "write_kanban_event"):
+            with pytest.raises(SystemExit) as exc_info:
+                kanban.cmd_todo(args)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "__CARD_ID__" in captured.err
+        assert len(list((board / "todo").glob("*.json"))) == 0
+
+    def test_cmd_do_bulk_array_rejects_one_card_with_placeholder_in_editfiles(self, kanban, tmp_path, capsys):
+        """Bulk array: one card with __CARD_ID__ in editFiles → exit 1, no cards written."""
+        board = _setup_board(tmp_path)
+        bulk_array = [
+            json.loads(_make_card_json_with_fields(action="First valid card", edit_files=["src/a.ts"])),
+            json.loads(_make_card_json_with_fields(
+                action="Bad card", edit_files=[".scratchpad/__CARD_ID__.txt"],
+            )),
+        ]
+        args = _make_do_args(board, json.dumps(bulk_array))
+
+        with patch.object(kanban, "write_kanban_event"):
+            with pytest.raises(SystemExit) as exc_info:
+                kanban.cmd_do(args)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "__CARD_ID__" in captured.err
+        # Fail-fast validation happens before any card in the batch is created.
+        assert len(list((board / "doing").glob("*.json"))) == 0
+        assert len(list((board / "todo").glob("*.json"))) == 0
+
+    def test_card_id_placeholder_in_editfiles_todo_bulk_array(self, kanban, tmp_path, capsys):
+        """cmd_todo bulk array: one card with __CARD_ID__ in editFiles → exit 1, no cards written.
+
+        cmd_todo's bulk-array call site loops over data and calls
+        validate_and_build_card(card_data, session) per element — identical to
+        cmd_do's bulk-array call site (see
+        test_cmd_do_bulk_array_rejects_one_card_with_placeholder_in_editfiles
+        above). This drives the real cmd_todo bulk-array entry point directly
+        rather than the validator, so the todo-column creation path itself is
+        covered, not just the shared validation logic.
+        """
+        board = _setup_board(tmp_path)
+        bulk_array = [
+            json.loads(_make_card_json_with_fields(action="First valid card", edit_files=["src/a.ts"])),
+            json.loads(_make_card_json_with_fields(
+                action="Bad card", edit_files=[".scratchpad/__CARD_ID__.txt"],
+            )),
+        ]
+        args = SimpleNamespace(
+            root=str(board),
+            json_data=json.dumps(bulk_array),
+            json_file=None,
+            session="test-session",
+        )
+
+        with patch.object(kanban, "write_kanban_event"):
+            with pytest.raises(SystemExit) as exc_info:
+                kanban.cmd_todo(args)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "__CARD_ID__" in captured.err
+        # Fail-fast validation happens before any card in the batch is created.
+        assert len(list((board / "todo").glob("*.json"))) == 0

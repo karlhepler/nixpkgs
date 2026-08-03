@@ -1782,6 +1782,34 @@ def validate_and_build_card(data: dict, session: str | None) -> dict:
             print(f"Error: {field} must be an array, got {type(val).__name__}", file=sys.stderr)
             sys.exit(1)
 
+    # Fail-closed: reject __CARD_ID__ in editFiles/readFiles at creation time.
+    #
+    # __CARD_ID__ is ONLY substituted in criterion text and mov_commands[].cmd
+    # (see substitute_card_id_placeholders), and that substitution happens inside
+    # create_card_in_column — AFTER next_number() assigns the card's real number.
+    # But editFiles/readFiles are read for cross-session file-conflict detection
+    # (check_editfiles_overlap, called from cmd_do) BEFORE create_card_in_column
+    # runs, i.e. before any card number exists to substitute in. Substitution
+    # cannot repair this: the concrete path simply doesn't exist yet at the
+    # moment the conflict comparison happens. A literal __CARD_ID__ token left
+    # in editFiles/readFiles can never match a real path, so the file-conflict
+    # scheduler would silently report no conflict where one may exist. Reject
+    # the card instead of writing an unusable file-scope entry.
+    for field in ("editFiles", "readFiles"):
+        val = data.get(field)
+        if not val:
+            continue
+        for entry in val:
+            if isinstance(entry, str) and "__CARD_ID__" in entry:
+                print(
+                    f"Error: {field} entry {entry!r} contains the __CARD_ID__ placeholder. "
+                    f"__CARD_ID__ is substituted only in criterion text and mov_commands[].cmd, "
+                    f"never in {field} — a literal token here matches no real path and would "
+                    f"silently defeat the file-conflict scheduler. Spell out the concrete path.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+
     # Parse criteria from JSON (support both "criteria" and "ac" shorthand)
     criteria = data.get("criteria") or data.get("ac", [])
 
