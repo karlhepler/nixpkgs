@@ -2014,7 +2014,7 @@ Include this block in the `action` field of every review/research card, substitu
 
 ```
 RESILIENCE DIRECTIVES (review/research cards):
-- Write findings INCREMENTALLY to .scratchpad/<card-id>-<agent>.md as you go. Append each finding the moment it is formed. DO NOT accumulate findings in reasoning and emit at the end — context exhaustion before the emit = zero preserved output.
+- Write findings INCREMENTALLY to .scratchpad/<card-id>-<agent>.md as you go. BEFORE RUNNING ANY INVESTIGATION COMMAND, create this file and write a skeleton as your first action: the platform-status header (per Block B) plus a stub for each required section — the section title and the word "in progress" — before anything else happens. Only then begin investigating, appending each finding to its section the moment it is formed. DO NOT accumulate findings in reasoning and emit at the end — context exhaustion before the emit = zero preserved output. "Append as you go" is not sufficient on its own: an agent can satisfy that instruction literally while still running many tool uses before its first finding is even formed, and the file would not exist for that entire span under the old wording alone. A stopped agent must leave a partially-populated file on disk, never a missing one.
 - Check AC criteria AFTER each sub-investigation, not in a final batch. As soon as criterion N is satisfied, run `kanban criteria check <card> <n>` and move on. For programmatic criteria, the check command runs each command in `mov_commands` — if the check fails, fix the underlying issue and retry before moving to the next criterion.
 - HARD CAP: stop at <finding-cap> findings (set by the staff engineer on this card; typical range 10–15 depending on scope breadth). When cap is reached: finalize the scratchpad file, check remaining criteria, stop. DO NOT keep exploring looking for more.
 - GREP-FIRST investigation. Use `rg` to locate relevant code paths; read only hit locations in full. Preserve context budget for writing, not exploring.
@@ -2688,11 +2688,12 @@ Create → Delegate (Agent, background) → AC review sequence → Done. If term
 - Duplicate card created by mistake
 - Card in `todo` status with no agent ever launched — no work on disk, no AC gate to bypass
 - Max-cycles failure where the work itself is genuinely broken — cancel and re-create with corrected action and AC (see § AC Review Workflow step 3)
+- Two consecutive stops on the same card with no bytes written to the deliverable each time — a card-shape signal, not agent-luck; see § Stuck Card Diagnostic Protocol → Repeat-stop exception. Cancel and recreate the card smaller rather than re-launching a third time.
 
 See [edge-cases.md § User Interruptions During Background Work](../docs/staff-engineer/edge-cases.md) for the "scope changed" case above — acknowledge the pivot immediately, let still-valuable in-flight work finish rather than canceling reflexively, and don't spend time reviewing work you're about to discard.
 
 **When cancel is NOT appropriate:**
-- Card stuck in `doing` after agent returned — re-launch the agent with the same card number so SubagentStop fires and the AC lifecycle completes
+- Card stuck in `doing` after agent returned — re-launch the agent with the same card number so SubagentStop fires and the AC lifecycle completes. Exception: this default does NOT hold when the repeat-stop zero-byte-delta signal applies (two consecutive stops, no bytes written each time) — see § Stuck Card Diagnostic Protocol → Repeat-stop exception, and cancel/recreate instead.
 - "Cleaning up" the board — completed work must flow through `kanban done`, not `kanban cancel`
 - Agent hit max retry cycles but work is substantially done — update AC via `kanban criteria remove`/`add` and re-launch the agent (card stays in `doing`), not cancel. Cancel is only appropriate when the work itself is genuinely broken (see "When cancel IS appropriate" above)
 
@@ -2721,6 +2722,8 @@ When a card is in `doing` after the agent has returned, **run `kanban show <N> -
 | All criteria have `met == true` but `kanban done` failed | File conflict, hook failure, or other non-AC issue | Investigate the failure reason. Fix the underlying issue, then run `kanban done <N> 'summary'` manually |
 
 **The anti-pattern this prevents:** Treating all stuck cards identically by re-launching the agent. Re-launch only helps when criteria are unchecked. It is pointless — and wasteful — when the agent already did its work and the issue is in the completion layer.
+
+**Repeat-stop exception (card-shape signal, not agent-luck):** the `met == false` row above assumes re-launch is likely to make progress — that assumption breaks down on a repeat failure. It does NOT apply when this is the SECOND consecutive stop on the SAME card and BOTH stops produced NO BYTES WRITTEN to the deliverable file — a zero byte delta across an attempt with a non-trivial tool-use count (i.e., the agent did real work, not an instant no-op). Two consecutive zero-delta stops on the same card is a card-shape signal, not an agent-luck signal: the card itself is mis-shaped (too broad, ambiguous, or paired with the wrong agent type). Cancel and recreate the card smaller rather than re-launching a third time. An agent that stopped having already written substantial content to the deliverable is a different situation — that one is re-launchable with a targeted prompt per the table above; only the zero-delta case indicates the card needs reshaping.
 
 **TaskStop Orphan Cleanup (mandatory):** TaskStop kills the Claude agent process but does NOT terminate child processes spawned by that agent's Bash tool calls. Long-running processes — test runners (`vitest`, `jest`, `mocha`), build tools (`turbo`, `webpack`, `esbuild`), dev servers (`next dev`, `vite dev`, `wrangler dev`), and any process that spawns worker pools — will continue consuming CPU after TaskStop.
 
