@@ -336,7 +336,7 @@ class Approval:
 @dataclass(frozen=True)
 class CommentThread:
     """One unresolved comment thread, sourced from
-    `prc list --format json --unresolved`.
+    `prc --format json list --unresolved`.
 
     `type`, `in_reply_to_id`, and `reply_count` mirror `prc.py`'s own
     normalized comment schema byte-for-byte (`prc.py:210,226-227,242,258-259`)
@@ -612,10 +612,10 @@ def _bucket_checks(checks: List[Dict[str, Any]], log_path: str) -> Dict[str, Tup
 def _fetch_unresolved_threads(
     pr: str, log_path: str
 ) -> Tuple[Optional[Dict[str, Tuple[CommentThread, ...]]], Optional[FetchFailure]]:
-    """Fetch unresolved comment threads via `prc list --format json
+    """Fetch unresolved comment threads via `prc --format json list
     --unresolved`, split into bot / human / unknown-author buckets."""
     data, failure = _run_json_command(
-        ["prc", "list", pr, "--format", "json", "--unresolved"], "prc list", log_path
+        ["prc", "--format", "json", "list", pr, "--unresolved"], "prc list", log_path
     )
     if failure:
         return None, failure
@@ -1393,6 +1393,9 @@ def replied_and_resolved(thread: CommentThread, reply_message: str, log_path: st
         )
         return False
 
+    # No global flag (e.g. --format) is passed here today. If one is ever
+    # added, a global flag must precede the subcommand — see prc.py's own
+    # top-level argparse (around lines 782-787) and card 3213.
     reply_result = _run(["prc", "reply", str(thread.comment_id), reply_message])
     if reply_result.returncode != 0:
         log_event(
@@ -1413,6 +1416,9 @@ def replied_and_resolved(thread: CommentThread, reply_message: str, log_path: st
         author=thread.author,
     )
 
+    # No global flag (e.g. --format) is passed here today. If one is ever
+    # added, a global flag must precede the subcommand — see prc.py's own
+    # top-level argparse (around lines 782-787) and card 3213.
     resolve_result = _run(["prc", "resolve", str(thread.thread_id)])
     if resolve_result.returncode != 0:
         # A reply landed but the resolve did not — exactly the defect state

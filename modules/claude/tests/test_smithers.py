@@ -103,6 +103,39 @@ PRC_LIST_FIXTURE = json.dumps({
 })
 
 
+def _prc_subcommand(cmd):
+    """Return the subcommand token from a `prc` argv list (`cmd[0] == "prc"`),
+    skipping past any global flag that precedes it (card 3213 Finding 1).
+
+    `--format json` can precede the subcommand (card 3205), so the
+    subcommand is not reliably at a fixed position — but per prc.py's own
+    top-level argparse (around lines 782-787, confirmed against the real
+    installed binary), there is exactly ONE global flag, `--format`, and it
+    always consumes exactly two tokens (the flag plus its value). That makes
+    the subcommand's position deterministic: skip every recognized
+    value-consuming global flag, then the next token is the subcommand.
+
+    This must never silently return the wrong token if a second global flag
+    is ever added to prc.py without updating GLOBAL_FLAGS_CONSUMING_VALUE
+    below — so it asserts the token it lands on doesn't itself look like a
+    flag, and fails loudly (AssertionError) instead of guessing."""
+    GLOBAL_FLAGS_CONSUMING_VALUE = {"--format"}
+
+    idx = 1  # cmd[0] is "prc" itself
+    while idx < len(cmd) and cmd[idx] in GLOBAL_FLAGS_CONSUMING_VALUE:
+        idx += 2  # flag token + its value token
+    assert idx < len(cmd), f"no subcommand token found in {cmd}"
+
+    subcommand = cmd[idx]
+    assert not subcommand.startswith("-"), (
+        f"expected a subcommand token at index {idx} in {cmd}, got the "
+        f"flag-like token {subcommand!r} instead — a new global flag was "
+        "likely added to prc.py without updating _prc_subcommand's "
+        "GLOBAL_FLAGS_CONSUMING_VALUE set"
+    )
+    return subcommand
+
+
 def make_gh_side_effect(
     view: str = GH_VIEW_FIXTURE,
     checks: str = GH_CHECKS_FIXTURE,
@@ -124,7 +157,10 @@ def make_gh_side_effect(
             return fake_run_result(stdout=view)
         if cmd[:3] == ["gh", "pr", "checks"]:
             return fake_run_result(stdout=checks, returncode=checks_returncode)
-        if cmd[:2] == ["prc", "list"]:
+        # `--format json` precedes the `list` subcommand (card 3205), so the
+        # subcommand is located positionally via `_prc_subcommand` rather
+        # than a fixed cmd[:2] shape (card 3213 Finding 1).
+        if cmd[0] == "prc" and _prc_subcommand(cmd) == "list":
             return fake_run_result(stdout=prc)
         if cmd[:2] == ["prc", "reply"]:
             return fake_run_result()
@@ -2646,7 +2682,7 @@ class TestSweepThreadsWiredIntoPollLoop:
                 return fake_run_result(stdout=ready_to_land_view)
             if cmd[:3] == ["gh", "pr", "checks"]:
                 return fake_run_result(stdout=ready_to_land_checks)
-            if cmd[:2] == ["prc", "list"]:
+            if cmd[0] == "prc" and _prc_subcommand(cmd) == "list":
                 return fake_run_result(stdout=actionable_thread_prc)
             if cmd[:2] == ["prc", "reply"]:
                 return fake_run_result()
@@ -2818,7 +2854,7 @@ class TestPollLoopTerminatesOnStop:
                 return fake_run_result(stdout=json.dumps(view))
             if cmd[:3] == ["gh", "pr", "checks"]:
                 return fake_run_result(stdout=GH_CHECKS_FIXTURE)
-            if cmd[:2] == ["prc", "list"]:
+            if cmd[0] == "prc" and _prc_subcommand(cmd) == "list":
                 return fake_run_result(stdout=PRC_LIST_FIXTURE)
             if cmd[:2] == ["prc", "reply"]:
                 return fake_run_result()
@@ -3019,7 +3055,7 @@ class TestPollLoopApprovalWatchCadence:
                 checks_calls["count"] += 1
                 checks = CLEAN_AWAITING_REVIEW_CHECKS if checks_calls["count"] == 1 else failing_checks
                 return fake_run_result(stdout=checks)
-            if cmd[:2] == ["prc", "list"]:
+            if cmd[0] == "prc" and _prc_subcommand(cmd) == "list":
                 return fake_run_result(stdout=CLEAN_AWAITING_REVIEW_PRC)
             raise AssertionError(f"unexpected command in test: {cmd}")
 
@@ -3033,3 +3069,114 @@ class TestPollLoopApprovalWatchCadence:
             call(smithers_module.APPROVAL_WATCH_POLL_SECONDS),
             call(config.poll_interval_seconds),
         ]
+
+
+# ---------------------------------------------------------------------------
+# Contract test (card 3205): every `prc` invocation smithers constructs must
+# be ACCEPTED by the argument parser of the REAL, currently-installed `prc`
+# binary — never a hand-written mock of prc's grammar. A mock would only
+# ever encode the SAME wrong assumption that caused the bug this test
+# guards: `--format json` placed AFTER the `list` subcommand token, which
+# prc's global-flag-before-subcommand grammar (`--format` is registered on
+# prc's top-level parser, before any subparser exists) rejects outright with
+# "unrecognized arguments". Only the real, installed binary can adjudicate
+# a mismatch with its own grammar.
+#
+# `--help` alone cannot be used to prove this for the `list` invocation: once
+# `-h`/`--help` is reached anywhere in the token stream, argparse fires its
+# help action immediately and exits 0 — even when earlier tokens (like a
+# misplaced `--format`) would otherwise have been rejected as unrecognized
+# at the end of parsing. Confirmed empirically: both the correct and the
+# broken token order print identical help text and exit 0 when `--help` is
+# appended. So the `list` check below drives the invocation past argument
+# parsing for real, substituting a PR value that is neither all-digits nor
+# a GitHub PR URL — `get_pr_info` (`claude_tooling.py:104-132`) rejects that
+# locally via `arg.isdigit()`/regex with ZERO subprocess calls, so a
+# successfully-parsed invocation still never touches the network.
+# `reply`/`resolve` cannot use the same trick (both resolve their PR from
+# the current branch unconditionally, via a real `gh api graphql`
+# connectivity check, before ever inspecting the ids passed) so they are
+# verified via the real `prc reply --help` / `prc resolve --help` usage
+# line instead — parse-level, no network, no mutation.
+# ---------------------------------------------------------------------------
+
+# Neither all-digits nor a GitHub PR URL, so `get_pr_info`'s own local check
+# (`claude_tooling.py:104,130-132`) fails immediately and locally if prc's
+# real argparse accepted everything ahead of it.
+_INVALID_PR_SENTINEL = "NOT-A-REAL-PR-INVALID-SENTINEL"
+
+
+def _prc_list_invocation_is_accepted(cmd):
+    """Run the EXACT `prc list` invocation smithers constructed against the
+    real, installed `prc` binary (never a mock of it), substituting the PR
+    value for `_INVALID_PR_SENTINEL` so a successfully-parsed invocation
+    fails fast and locally instead of making any network call. Returns
+    False only when prc's own argparse rejected the arguments outright —
+    "unrecognized arguments" is its exact, distinguishing error text for
+    this bug class."""
+    modified = [_INVALID_PR_SENTINEL if tok == "123" else tok for tok in cmd]
+    result = subprocess.run(modified, capture_output=True, text=True, timeout=15)
+    return "unrecognized arguments" not in result.stderr
+
+
+def _prc_subcommand_positional_count(subcommand: str) -> int:
+    """Ask the REAL installed prc how many positional arguments a
+    subcommand's own argparse declares, read straight from its live --help
+    usage line — never a hard-coded assumption about prc's grammar."""
+    result = subprocess.run(["prc", subcommand, "--help"], capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, f"prc {subcommand} --help failed: {result.stderr}"
+    usage_line = result.stdout.splitlines()[0]
+    tokens = usage_line.split()
+    assert tokens[:3] == ["usage:", "prc", subcommand], f"unexpected usage line: {usage_line}"
+    return len([t for t in tokens[3:] if not t.startswith("[")])
+
+
+class TestPrcInvocationsParse:
+    """Drives the check from smithers' own invocation-construction code
+    (`fetch_pr_snapshot` / `replied_and_resolved`), never from a
+    hand-copied literal argv list, so this test keeps tracking the real
+    construction sites as they change."""
+
+    def test_prc_invocations_parse(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        captured_prc_cmds = []
+        gh_side_effect = make_gh_side_effect()
+
+        def capturing_side_effect(cmd, **kwargs):
+            if cmd and cmd[0] == "prc":
+                captured_prc_cmds.append(list(cmd))
+            return gh_side_effect(cmd, **kwargs)
+
+        with patch("subprocess.run", side_effect=capturing_side_effect):
+            snapshot, failure = fetch_pr_snapshot("123", log_path)
+            assert failure is None
+
+            thread = _bot_thread(comment_id=42, thread_id="T_1")
+            replied = smithers_module.replied_and_resolved(thread, "ack", log_path)
+            assert replied is True
+
+        list_cmds = [c for c in captured_prc_cmds if "list" in c]
+        reply_cmds = [c for c in captured_prc_cmds if "reply" in c]
+        resolve_cmds = [c for c in captured_prc_cmds if "resolve" in c]
+
+        assert list_cmds, "expected fetch_pr_snapshot to construct a `prc list` invocation"
+        assert reply_cmds, "expected replied_and_resolved to construct a `prc reply` invocation"
+        assert resolve_cmds, "expected replied_and_resolved to construct a `prc resolve` invocation"
+
+        for cmd in list_cmds:
+            assert _prc_list_invocation_is_accepted(cmd), (
+                f"the real installed prc rejected the `list` invocation smithers constructed: {cmd}"
+            )
+
+        for cmd in reply_cmds + resolve_cmds:
+            assert "--format" not in cmd, (
+                f"{cmd} carries --format, a flag neither `prc reply --help` nor "
+                "`prc resolve --help` declares for its subcommand — it would be "
+                "rejected exactly like the `list` invocation this card fixes"
+            )
+            subcommand = cmd[1]
+            positional_count = len([tok for tok in cmd[2:] if not tok.startswith("-")])
+            assert positional_count == _prc_subcommand_positional_count(subcommand), (
+                f"{cmd} does not match the positional arity the real installed "
+                f"`prc {subcommand} --help` declares"
+            )
