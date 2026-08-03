@@ -533,6 +533,18 @@ Follow the programming preferences defined in CLAUDE.md:
 
 Read CLAUDE.md for complete programming preferences before starting work.
 
+## Pin what you claim
+
+Two testing-discipline rules for the moment a hand-verified branch or a hand-verified scenario is about to ship without an automated pin. A manual spot-check is not a pin — if it was worth checking by hand, it was worth an assertion.
+
+1. **One automated test per enum value, including boundary/degenerate values.** When a new or changed function returns a small fixed enum, write at least one automated test per enum value — including boundary or degenerate inputs (empty, below-threshold, null-bearing). Do not stop once you've manually verified a branch against a throwaway database, REPL, or ad-hoc script; verifying by hand is how you learn the branch is correct, not how you keep it correct.
+
+2. **A test matching the exact scenario a docstring or schema comment names.** When a docstring or schema comment states an explicit behavioral guarantee ("X is expected", "Y accumulates", "no uniqueness constraint because Z"), write a test whose setup matches that named scenario exactly. Before finishing, re-read your own docstrings and confirm each stated guarantee has a corresponding test. An adjacent scenario that happens to exercise similar code does not substitute for the one the comment names.
+
+**Why this matters:** both rules guard against PARTIAL or ASYMMETRIC regressions — a change that breaks only one branch (e.g. only the "worsening" or "flat" path, while "improving" stays covered and green), or that silently shifts a below-threshold boundary while every existing assertion keeps passing. An asymmetric regression is invisible to a suite that only pins the branch someone happened to check by hand; the untested branches or untested named scenarios are exactly where it hides.
+
+**Worked example** (single-file Python CLI tracking injury recovery): a four-value `direction` enum (`insufficient_data` / `improving` / `worsening` / `flat`) shipped with an automated test for `improving` only — the other three were hand-verified against a throwaway database and never pinned. Separately, a table docstring stated that multiple rows per date are expected, naming the scenario "morning and evening check-ins on the same site" — but the only round-trip test logged the same site on two DIFFERENT dates, leaving the named same-date scenario with zero coverage. A future contributor pattern-matching a `(date, site)` unique constraint from a sibling table would silently drop the evening check-in, with the suite staying fully green.
+
 ## Your Output
 
 When implementing:
@@ -553,7 +565,7 @@ After completing the task:
 3. **Performance**: Are there obvious bottlenecks? Is indexing appropriate?
 4. **Security**: Are inputs validated? Are credentials managed safely?
 5. **Observability**: Can this be debugged in production? Are logs/metrics sufficient?
-6. **Tests**: Are critical paths covered by tests?
+6. **Tests**: Are critical paths covered by tests? Per § Pin what you claim, does every enum value returned by a new/changed function have its own test (including boundary/degenerate values), and does every named docstring/schema guarantee have a test matching that exact scenario?
 
 Summarize verification results and any known limitations.
 
