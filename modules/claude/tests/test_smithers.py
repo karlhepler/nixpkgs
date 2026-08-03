@@ -1946,6 +1946,32 @@ class TestNotifyMacosAdapter:
         assert not os.path.exists(log_path)
 
 
+class TestNotifyPaneAdapter:
+    """The foreground-pane presenter — the channel that actually appears in
+    the tmux pane an operator is watching, unlike a macOS notification
+    bubble or a Slack post (neither of which prints anything into the
+    process's own stdout/stderr)."""
+
+    def test_notify_message_prints_to_stderr(self, tmp_path, capsys):
+        log_path = str(tmp_path / "smithers.jsonl")
+        smithers_module.notify_pane(Notify(title="Smithers", body="something failed", sound=True), log_path)
+
+        captured = capsys.readouterr()
+        assert "something failed" in captured.err
+        assert "Smithers" in captured.err
+
+        log_contents = open(log_path).read()
+        assert "notify_pane" in log_contents
+
+    def test_non_notify_message_is_a_no_op(self, tmp_path, capsys):
+        log_path = str(tmp_path / "smithers.jsonl")
+        smithers_module.notify_pane(NoWorkNeeded(), log_path)
+
+        captured = capsys.readouterr()
+        assert captured.err == ""
+        assert not os.path.exists(log_path)
+
+
 def fake_dedup_run(claude_result="NOT_DUPLICATE", calls=None):
     """Build a subprocess.run side_effect that answers a `claude -p` dedup
     invocation with a canned verdict token and passes any other command
@@ -2260,6 +2286,22 @@ class TestCompositionRootSmoke:
 
         assert any(cmd[0] == "osascript" for cmd in calls), "macOS notify adapter never fired"
         assert any(cmd[0] == "smithers-post" for cmd in calls), "Slack notify adapter never fired"
+
+    def test_real_entry_point_also_fires_the_pane_notify_adapter(self, tmp_path, capsys):
+        """Proves `notify_pane` is actually wired into `build_send`'s real
+        fan-out list, not merely defined and unit-tested in isolation (§
+        composition-root testing corollary) — the exact defect class this
+        card exists to close: a poll loop that kept failing while printing
+        nothing to the pane it was running in."""
+        log_path = str(tmp_path / "smithers.jsonl")
+
+        send = build_send(pr_number="123", log_path=log_path)
+
+        with patch("subprocess.run", side_effect=_fake_run_with_slack_dedup()):
+            send(Notify(title="Smithers", body="pane visibility check", sound=False))
+
+        captured = capsys.readouterr()
+        assert "pane visibility check" in captured.err, "build_send did not wire notify_pane into the real fan-out"
 
     def test_tick_itself_emits_notify_for_a_clean_awaiting_review_pr_and_it_reaches_the_adapters(self, tmp_path):
         """The complementary direction to the fan-out test above
@@ -2935,9 +2977,14 @@ class TestPollLoopBackoffOnRepeatedFetchFailure:
                 poll_loop("123", config, sent.append, log_path)
 
         # Exponential 300 -> 900 -> 1800, then capped at 1800 — never a
-        # spin, and `tick` never ran so no message was ever sent.
+        # spin, and `tick` never ran so the only messages ever sent are the
+        # pane-surfacing Notifys for the 2nd, 3rd, and 4th CONSECUTIVE
+        # identical failures (§ test_repeated_fetch_failure_surfaces_to_pane
+        # below covers that surfacing behavior directly) — a single,
+        # isolated failure (cycle 1) stays quiet.
         assert mock_sleep.call_args_list == [call(300), call(900), call(1800), call(1800)]
-        assert sent == []
+        assert len(sent) == 3
+        assert all(isinstance(msg, Notify) for msg in sent)
 
     def test_fix_trigger_still_reaches_the_real_fix_invocation(self, tmp_path):
         """A failing check IS actionable (§ The gate, trigger 1) — confirms
@@ -2963,6 +3010,153 @@ class TestPollLoopBackoffOnRepeatedFetchFailure:
         # passed straight through to _invoke_fix_session, which is the one
         # that filters it down before the subprocess ever sees it.
         assert mock_invoke.call_args.kwargs.get("env") == config.env
+
+
+# ---------------------------------------------------------------------------
+# Fetch-failure classification (§ _is_non_retryable_fetch_failure) — direct
+# unit tests for the classifier `poll_loop` consults ahead of ever entering
+# exponential backoff.
+# ---------------------------------------------------------------------------
+
+class TestIsNonRetryableFetchFailure:
+    def test_missing_executable_is_non_retryable(self):
+        failure = FetchFailure(source="prc list", message="prc not found on PATH")
+        assert smithers_module._is_non_retryable_fetch_failure(failure) is True
+
+    def test_argparse_usage_error_is_non_retryable(self):
+        """The exact shape the real installed `prc` produced for the bug
+        this card closes (verified via `prc list 123 --unresolved --format
+        json`): lowercase "usage:" followed by argparse's fixed
+        "<prog>: error: <message>" line."""
+        failure = FetchFailure(
+            source="prc list",
+            message=(
+                "usage: prc [-h] [--format {xml,json,human}]\n"
+                "           {list,reply,resolve,unresolve,collapse} ...\n"
+                "prc: error: unrecognized arguments: --format json"
+            ),
+        )
+        assert smithers_module._is_non_retryable_fetch_failure(failure) is True
+
+    def test_network_style_failure_is_retryable_not_permanent(self):
+        failure = FetchFailure(source="gh pr view", message="rate limited")
+        assert smithers_module._is_non_retryable_fetch_failure(failure) is False
+
+    def test_empty_output_failure_is_retryable_not_permanent(self):
+        failure = FetchFailure(source="gh pr checks", message="exited 1 with no output")
+        assert smithers_module._is_non_retryable_fetch_failure(failure) is False
+
+    def test_gh_cobra_style_usage_error_is_retryable_not_permanent(self):
+        """`gh`'s own usage-error shape (confirmed via `gh pr view
+        --nonexistentflag`) is capital-U "Usage:" with no "<prog>: error: "
+        line at all — a materially different shape from argparse's, and
+        must not be misclassified as permanent."""
+        failure = FetchFailure(
+            source="gh pr view",
+            message="unknown flag: --nonexistentflag\n\nUsage:  gh pr view [<number> | <url> | <branch>] [flags]",
+        )
+        assert smithers_module._is_non_retryable_fetch_failure(failure) is False
+
+
+# ---------------------------------------------------------------------------
+# Non-retryable fetch failures fail loudly and promptly instead of entering
+# backoff (card fixing the second, independent defect exposed alongside the
+# `prc --format json` argument-order bug, card 3205). `time.sleep` is always
+# faked here, never a real sleep.
+# ---------------------------------------------------------------------------
+
+class TestPollLoopNonRetryableFetchFailure:
+    @staticmethod
+    def _argparse_error_side_effect(prc_stderr):
+        def side_effect(cmd, **kwargs):
+            if cmd[:3] == ["gh", "pr", "view"]:
+                return fake_run_result(stdout=GH_VIEW_FIXTURE)
+            if cmd[:3] == ["gh", "pr", "checks"]:
+                return fake_run_result(stdout=GH_CHECKS_FIXTURE)
+            if cmd[0] == "prc":
+                # A malformed prc invocation — argparse rejects it outright
+                # and can never succeed no matter how long the loop waits.
+                return fake_run_result(stdout="", stderr=prc_stderr, returncode=2)
+            raise AssertionError(f"unexpected command in test: {cmd}")
+
+        return side_effect
+
+    def test_permanent_fetch_failure_does_not_backoff(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        sent = []
+        prc_stderr = (
+            "usage: prc [-h] [--format {xml,json,human}]\n"
+            "           {list,reply,resolve,unresolve,collapse} ...\n"
+            "prc: error: unrecognized arguments: --format json"
+        )
+
+        with patch("subprocess.run", side_effect=self._argparse_error_side_effect(prc_stderr)):
+            with patch("time.sleep") as mock_sleep:
+                config = PollLoopConfig(max_cycles=5, env={}, accept_api_billing=True)
+                poll_loop("123", config, sent.append, log_path)
+
+        # A permanently-unrecoverable command must never enter exponential
+        # backoff — no sleep call happens at all, and the loop stops itself
+        # outright (one cycle only) rather than burning cycles retrying a
+        # command that can never succeed.
+        assert mock_sleep.call_args_list == []
+        assert any(isinstance(msg, Stop) for msg in sent)
+        stop_msg = next(msg for msg in sent if isinstance(msg, Stop))
+        assert stop_msg.reason == "non_retryable_fetch_failure"
+        assert any(isinstance(msg, Disarm) for msg in sent)
+        assert any(isinstance(msg, Notify) for msg in sent)
+
+        log_contents = open(log_path).read()
+        assert '"event": "poll_fetch_failed_permanent"' in log_contents
+        assert '"event": "poll_fetch_failed"' not in log_contents
+
+    def test_retryable_looking_failure_still_backs_off_normally(self, tmp_path):
+        """The complementary direction: swap the exact same test shape's
+        `prc` stderr for a retryable-looking message (no argparse "usage:"/
+        ": error: " shape at all) and confirm the loop falls through to the
+        ordinary exponential-backoff path instead — proving the test above
+        is actually sensitive to the classifier's verdict, not merely to
+        "some prc command failed"."""
+        log_path = str(tmp_path / "smithers.jsonl")
+        sent = []
+
+        with patch("subprocess.run", side_effect=self._argparse_error_side_effect("connection reset by peer")):
+            with patch("time.sleep") as mock_sleep:
+                config = PollLoopConfig(max_cycles=2, env={}, accept_api_billing=True)
+                poll_loop("123", config, sent.append, log_path)
+
+        assert mock_sleep.call_args_list == [call(300), call(900)]
+        assert not any(isinstance(msg, Stop) for msg in sent)
+
+
+# ---------------------------------------------------------------------------
+# Repeated retryable fetch failures surface to the operator's pane (same
+# card as above) — asserted against a test double bound to `send`, exactly
+# what that port exists for (§ card constraints: route pane-visible output
+# through the EXISTING send port, never a second, parallel print).
+# ---------------------------------------------------------------------------
+
+class TestPollLoopSurfacesRepeatedFetchFailure:
+    def test_repeated_fetch_failure_surfaces_to_pane(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        sent = []
+
+        def always_rate_limited(cmd, **kwargs):
+            return fake_run_result(stdout="", stderr="rate limited", returncode=1)
+
+        with patch("subprocess.run", side_effect=always_rate_limited):
+            with patch("time.sleep"):
+                config = PollLoopConfig(max_cycles=3, env={}, accept_api_billing=True)
+                poll_loop("123", config, sent.append, log_path)
+
+        # A single, isolated fetch failure (cycle 1) stays quiet — but the
+        # SECOND and every later CONSECUTIVE identical failure (cycles 2
+        # and 3 of 3) reaches the send port as a pane-visible Notify, not
+        # only the JSONL log.
+        notify_messages = [msg for msg in sent if isinstance(msg, Notify)]
+        assert len(notify_messages) == 2
+        assert all("rate limited" in msg.body for msg in notify_messages)
+        assert all(msg.sound is False for msg in notify_messages)
 
 
 # ---------------------------------------------------------------------------

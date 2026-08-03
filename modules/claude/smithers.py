@@ -1683,6 +1683,30 @@ def notify_slack(
     log_event(log_path, "notify_slack", pr=pr_number, title=msg.title)
 
 
+def notify_pane(msg: Message, log_path: str) -> None:
+    """The foreground-pane presenter — binds to `Notify` messages and prints
+    them directly to THIS process's own stderr, the one channel guaranteed
+    to land in the tmux pane an operator is actually watching in real time.
+
+    Closes the defect where a repeatedly-failing poll loop sat in
+    `time.sleep(backoff_seconds)` printing nothing at all: to an operator
+    watching the pane, a permanently-broken poller was indistinguishable
+    from a healthy quiet one. Neither `notify_macos` (a macOS notification-
+    center bubble) nor `notify_slack` (a Slack post) appears in the
+    foreground terminal itself — this is the missing third channel, added
+    alongside them at the composition root (`build_send`), never in place
+    of either.
+
+    Unconditional, like `notify_macos`/`notify_slack`: the CLI's one
+    dry-run mechanism is `cmd_watch`'s own early return before `build_send`
+    is ever constructed (§ card 3035 Fix 3) — this adapter carries no
+    second, unreachable dry-run branch of its own."""
+    if not isinstance(msg, Notify):
+        return
+    print(f"[smithers] {msg.title}: {msg.body}", file=sys.stderr)
+    log_event(log_path, "notify_pane", title=msg.title, body=msg.body)
+
+
 # ---------------------------------------------------------------------------
 # Structured log adapter (§ Ports and adapters) — receives every message
 # unconditionally, regardless of type, for post-hoc debugging.
@@ -1736,7 +1760,7 @@ def build_send(
 
     No `dry_run` parameter: the CLI's one dry-run mechanism is `cmd_watch`'s
     own early return before this composition root is ever constructed
-    (§ card 3035 Fix 3) — see `notify_macos`/`notify_slack`."""
+    (§ card 3035 Fix 3) — see `notify_macos`/`notify_slack`/`notify_pane`."""
     if already_posted is None:
         already_posted = {}
     armed: Dict[str, bool] = {"armed": True}
@@ -1747,6 +1771,7 @@ def build_send(
             lambda msg: execute_disarm(msg, log_path, armed),
             lambda msg: notify_macos(msg, log_path),
             lambda msg: notify_slack(msg, pr_number, log_path, already_posted),
+            lambda msg: notify_pane(msg, log_path),
             lambda msg: log_adapter(msg, log_path),
         ]
     )
@@ -2086,6 +2111,52 @@ def _invoke_fix_session(
     return FixAttemptResult(outcome="completed", returncode=0, **envelope)
 
 
+# ---------------------------------------------------------------------------
+# Fetch-failure classification (§ Failure and retry) — distinguishes a
+# DETERMINISTICALLY unrecoverable fetch failure from a merely transient one,
+# closing the defect where a permanently-broken command (a malformed `prc
+# --format json` invocation, prior to card 3205's fix) kept escalating an
+# exponential backoff — 300s, then 900s, then capping at 1800s — against a
+# command that could never succeed no matter how long the loop waited.
+# ---------------------------------------------------------------------------
+
+def _is_non_retryable_fetch_failure(failure: FetchFailure) -> bool:
+    """True only for a fetch failure shape that is DETERMINISTICALLY
+    unrecoverable — retrying it, on any delay however long, cannot ever
+    succeed. Classified narrowly, on purpose: a false "permanent" verdict on
+    a genuinely transient error (a network blip, a rate limit, a momentary
+    empty response) would make `poll_loop` give up on a healthy PR outright
+    — a worse failure than the silent-forever-backoff bug this function
+    exists to close. When a failure shape is ambiguous, this returns False
+    (retryable) and leaves it to the existing exponential backoff.
+
+    Exactly two shapes qualify:
+
+      - A missing executable — `_run_json_command`'s own
+        `f"{cmd[0]} not found on PATH"` message (its `FileNotFoundError`
+        branch). No amount of waiting puts a Nix-guaranteed binary on PATH
+        that genuinely isn't there.
+      - A Python argparse usage/argument error in the command line smithers
+        itself constructed — argparse's own FIXED two-part error shape,
+        `"usage: <prog> ...\\n<prog>: error: <message>"` (verified against
+        the real installed `prc`'s output for exactly the bug this card
+        closes: `usage: prc [-h] ...` / `prc: error: unrecognized
+        arguments: --format json`). A constructed argv that argparse itself
+        rejects can never start parsing successfully on a later attempt
+        with that same argv — the command line, not the network, is wrong.
+
+    Every other shape is retryable by design: empty output, a JSON parse
+    failure, an HTTP/rate-limit message from `gh` (which uses a DIFFERENT,
+    Cobra-based "Usage:"/capital-U shape with no "<prog>: error: " line at
+    all — confirmed via `gh pr view --nonexistentflag`), a timeout, or
+    anything unrecognized.
+    """
+    message = failure.message
+    if message.endswith("not found on PATH"):
+        return True
+    return "usage:" in message and ": error: " in message
+
+
 def poll_loop(pr: str, config: PollLoopConfig, send: Callable[[Message], None], log_path: str) -> None:
     """The in-process poll loop — foreground, owns its own cadence, does not
     exit between polls (§ Process model, § Poll loop and cadence).
@@ -2111,12 +2182,21 @@ def poll_loop(pr: str, config: PollLoopConfig, send: Callable[[Message], None], 
 
     A GitHub fetch failure never reaches `tick` at all — no GitHub read (it
     already failed), no gate evaluation, no fix invocation (§ Failure and
-    retry) — the loop backs off instead (exponential, capped at
-    `config.backoff_intervals_seconds[-1]`) and retries next cycle. A
-    legitimately empty result (e.g. zero checks, zero comments) is never
-    treated as a failure — `fetch_pr_snapshot`'s own typed
-    `(snapshot, FetchFailure)` contract already makes that distinction; this
-    loop just acts on it.
+    retry). `_is_non_retryable_fetch_failure` classifies it first: a
+    RETRYABLE failure (network blip, rate limit, momentary empty response)
+    backs off exponentially, capped at `config.backoff_intervals_seconds[-1]`,
+    and retries next cycle — the second and every later CONSECUTIVE
+    identical failure also sends a `Notify` through `send`, so an operator
+    watching the pane sees that the loop is failing repeatedly rather than
+    inferring health from silence. A NON-RETRYABLE failure (a missing
+    executable, or an argparse/usage error in a command smithers itself
+    constructed — deterministically unrecoverable, no matter the delay)
+    instead sends a loud `Notify`, then `Stop`, then `Disarm`, and returns
+    immediately — no backoff sleep at all, since waiting can never help a
+    command that will never succeed. A legitimately empty result (e.g. zero
+    checks, zero comments) is never treated as a failure —
+    `fetch_pr_snapshot`'s own typed `(snapshot, FetchFailure)` contract
+    already makes that distinction; this loop just acts on it.
 
     A `Stop` message (a TERMINAL suppressor tripped — § classification above
     `_terminal_suppression_reason`) ends the loop immediately: `send` still
@@ -2179,6 +2259,35 @@ def poll_loop(pr: str, config: PollLoopConfig, send: Callable[[Message], None], 
         snapshot, failure = fetch_pr_snapshot(pr, log_path)
 
         if failure is not None:
+            if _is_non_retryable_fetch_failure(failure):
+                # Deterministically unrecoverable — no delay, however long,
+                # makes this succeed. Fail loudly and promptly instead of
+                # entering backoff: surface it to the operator's pane, stop
+                # the watch, and disarm merge authority for the rest of this
+                # process, exactly like every other terminal path (§ tick
+                # docstring, "every terminal path ... also emits Disarm").
+                log_event(
+                    log_path,
+                    "poll_fetch_failed_permanent",
+                    source=failure.source,
+                    message=failure.message,
+                )
+                send(
+                    Notify(
+                        title="Smithers",
+                        body=(
+                            f"PR #{pr}: {failure.source} failed with a "
+                            f"non-retryable error and can never succeed on "
+                            f"retry — stopping this watch: {failure.message}"
+                        ),
+                        sound=True,
+                    )
+                )
+                send(Stop(reason="non_retryable_fetch_failure"))
+                send(Disarm(reason="non_retryable_fetch_failure"))
+                log_event(log_path, "poll_loop_stopped", cycle=cycle)
+                return
+
             consecutive_failures += 1
             backoff_index = min(consecutive_failures - 1, len(config.backoff_intervals_seconds) - 1)
             backoff_seconds = config.backoff_intervals_seconds[backoff_index]
@@ -2189,6 +2298,25 @@ def poll_loop(pr: str, config: PollLoopConfig, send: Callable[[Message], None], 
                 message=failure.message,
                 backoff_seconds=backoff_seconds,
             )
+            if consecutive_failures >= 2:
+                # A single, isolated failure is unremarkable — but the
+                # SECOND (and every later) consecutive identical failure
+                # means the loop is stuck, not merely unlucky once. Surface
+                # it through the same `send` port every other message uses,
+                # so a bound pane presenter (`notify_pane`, § build_send)
+                # makes this visible to an operator watching the pane —
+                # never only the JSONL log.
+                send(
+                    Notify(
+                        title="Smithers",
+                        body=(
+                            f"PR #{pr}: {failure.source} has failed "
+                            f"{consecutive_failures} consecutive polls "
+                            f"({failure.message}); backing off {backoff_seconds}s"
+                        ),
+                        sound=False,
+                    )
+                )
             time.sleep(backoff_seconds)
             continue
 
