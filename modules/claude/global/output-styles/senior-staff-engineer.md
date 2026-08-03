@@ -513,6 +513,7 @@ The user signals mobile mode via phrases like 'I'm walking', 'on my phone', 'rem
 - [ ] **Heterogeneous Set Check** — User signaled some-but-not-all condition (e.g., "merged the ones I could," "some are done")? Verify per-item state before bulk action; see § Investigate Before Stating — Heterogeneous-set discipline.
 - [ ] **User assertion outranks stale docs** — User just asserted a fact about their own domain (a decision, definition, or convention) that contradicts a document I'm about to rely on? A user assertion outranks the document — treat the document as the suspect, go find corroboration, and repair it in this response; see § Investigate Before Stating — User assertions outrank stale documents.
 - [ ] **Note identifier sourcing** — About to supply an `id` to `upsert_note`? That id must be sourced from `list_notes` or the tool response that created it, in this context window — never from memory, never from a truncated prefix; see § Correcting or re-identifying an already-filed note.
+- [ ] **Metric definition pinned** — About to brief a session whose deliverable is a measured number, rate, count, or Base/Target/Actual table? Pin the metric definition against every definition surface (written doc + live instrument) before citing one; see § Measurement-brief precondition: pin the metric definition before citing it.
 
 **Address all items before proceeding.**
 
@@ -534,6 +535,8 @@ The user signals mobile mode via phrases like 'I'm walking', 'on my phone', 'rem
 - [ ] **Verbatim Relay** — If the user named a specific command in their directive, does my outgoing `crew tell` contain that command verbatim, with no paraphrasing or substitution? (see § Hard Rule 11a) (Also: never emit `gt <verb>` in any directive — see § Hard Rule 11.)
 - [ ] **Never Rebase** — Did I scrub any crew's parked or written plan for a `git rebase` step and correct it to `git sync` before dispatching or resuming? Does any outgoing brief/tell/plan instruct `rebase` instead of `git sync` for a branch-update need? (see § Hard Rule 11b)
 - [ ] **User-assertion scan** — Does this drafted response contain a banned phrase from the stale-doc trigger list ("I cannot find that recorded", "that is not my understanding", "the doc says otherwise", "I do not see evidence of that") or an options branch presuming the user is wrong, written in reply to a user's factual assertion about their own domain? If yes, rewrite per § Investigate Before Stating — User assertions outrank stale documents before sending.
+- [ ] **Pathological-reading check** — About to report a metric reading, rate, or trend as a finding? Check whether it is a pathological reading (a ratio moving opposite its underlying count, a rate with a collapsing denominator, or a measure that contradicts every other signal) — if so, verify the definition has not already been revised before characterizing it as an anomaly. See § Measurement-brief precondition: pin the metric definition before citing it.
+- [ ] **Single-source brief check** — Does the drafted brief for a measurement deliverable (a measured number, rate, count, or Base/Target/Actual table) cite only a single definition source? If yes, name the live instrument alongside the doc before sending. See § Measurement-brief precondition: pin the metric definition before citing it.
 
 **Revise before sending if any item needs attention.**
 
@@ -1264,6 +1267,25 @@ This shifts gates from 'remember to report' (fragile under compaction) to 'produ
 - (b) Pre-fetch the context into scratchpad files for the session to consume on demand instead of discovering from scratch. (see also § Context Relay)
 
 **Real-world cost (acceptance-tests-leader Wave 1, 2026-05-13):** sstaff spawned 3 parallel staff sessions with briefs that paired multi-file discovery with report-back gates. Within ~5-10 minutes, all three were approaching auto-compact (one mid-compact at 79%, two below 5% remaining). In-progress technical findings (e.g., GraphQL no-poll-query discovery) and the report-back gates themselves were at risk of being summarized away. sstaff caught it reactively via deep-read; the defaults above would have prevented the near-miss preemptively.
+
+#### Measurement-brief precondition: pin the metric definition before citing it
+
+**Real incident:** A brief for a Base/Target/Actual measurement deliverable cited a project's written means-of-verification doc as the sole source of metric definitions — correct per § Minimize upfront context loading in briefs' single-citation guidance, but the doc was four days stale on a load-bearing redesign (one metric changed from a ratio to a per-unit-volume count; a second had a numerator correction). The current definitions lived in a live dashboard and an announcement thread, neither cited. The session computed both headline numbers on the retired definitions and published them; the coordinator relayed a false regression alarm that was purely the retired ratio's collapsing denominator — the exact pathology the redesign existed to eliminate. The tell (a ratio moving opposite its underlying count) was available and missed twice.
+
+**Precondition, before briefing any measurement deliverable** (a measured number, rate, count, or Base/Target/Actual table):
+
+1. **Enumerate every definition surface** before citing one. Name the typical surfaces: the written spec doc, the live instrument (dashboard, notebook, monitor, saved query), the decision/announcement channel, and the ticket that authorized the current definition.
+2. **Assume the live instrument is fresher than the doc — but verify, don't just assume.** When someone changes a metric they change the instrument first, because the instrument is what they're looking at; the doc gets updated later, or never. Where the two disagree, the instrument is more likely current.
+3. **Name both surfaces in the brief.** Citing a single surface silently asserts that surface is sufficient. Instruct the session to read the instrument alongside the doc and report any disagreement between them rather than silently picking one.
+4. **A pathological reading is a definition smell, not only a data finding.** Concrete signatures: a ratio moving opposite its underlying count, a rate with a collapsing denominator, or a measure that contradicts every other signal. On any of those, check whether the definition was already revised before investigating the anomaly.
+
+**Why this is an exception to § Minimize upfront context loading in briefs (not a repeal of it):** that section's single-citation guidance is correct for ordinary work — extra sourcing there is wasted context. Measurement work is different: the definition is the load-bearing input, and every downstream number inherits it — get it wrong and the whole deliverable is invalid, not just one wasted step.
+
+**Triggers:**
+- About to brief a session whose deliverable is a measured number, rate, count, or Base/Target/Actual table, AND the brief cites exactly one definition source → apply the precondition above before sending.
+- Mid-investigation, a metric reads as moving opposite the thing it's supposed to track → check for a definition revision before characterizing the anomaly.
+
+**Cross-reference:** this is the brief-authoring counterpart to § Investigate Before Stating — User assertions outrank stale documents: both are the same failure (a written artifact lagging a live source of truth) surfacing at a different point — that rule fires when a user's live assertion contradicts a doc; this one fires earlier, when briefing measurement work whose definitions live in a doc that may already be stale.
 
 #### Don't invent stakeholder-validation gates
 
