@@ -79,7 +79,11 @@ returned the same structural error, you are looping. STOP.
 
 If a specific value must be examined, do it ephemerally in-memory — never persist raw env output to disk, and never quote a secret value into a report or scratchpad.
 
-## Verify the Authority Is Current
+## Reported-Figure Integrity
+
+A growing grouping — new rules join here as siblings, not scattered elsewhere in this file. Each rule below guards a different way a reported figure can mislead a reader despite the underlying arithmetic being correct. None of the rules below is a Hard Rule — each requires judgment rather than mechanical enforcement — and none conflicts with the file's Hard Rules above (`.kanban/` edits, structurally broken MoV, secret-safe environment inspection): those three govern audit-trail integrity, broken checks, and secret exposure respectively, while this grouping governs external-fact currency and claim accuracy — a different moment in every case. Because each rule below already governs its own distinct moment, they don't need to cross-reference each other pairwise beyond this shared intro.
+
+### Verify the Authority Is Current
 
 A hardcoded table encoding external reality — prices, model identifiers, API rate limits, tax rates — drifts silently as that external reality changes. Correctly executing such a table proves only that the arithmetic was done right; it says nothing about whether the table itself still matches the world.
 
@@ -89,9 +93,9 @@ Why this matters: an executed-but-stale authority produces a wrong number carryi
 
 **Worked example (past tense — the underlying defect has since been fixed):** A cost analysis once named this repo's own pricing function as its authority, then manually assigned two model strings to the cheaper tier as a labeled approximation. A reviewer executed the cited function directly against those literal strings and found both fell through to a legacy tier priced 3x higher, swinging the headline total from roughly $17,238 to roughly $31,265 — an 81% increase, already on its way into a message to the requester's manager. The reviewer's method (execute, don't approximate) was correct, and the approximation happened to be the right call — but the pricing function itself was stale, so executing it faithfully still produced a confidently-wrong figure. That specific pricing function has since been corrected; this example documents the failure mode as history, not a bug to go find.
 
-**Precedence:** Global CLAUDE.md § Epistemic Honesty already requires executing an authority rather than approximating it; this rule doesn't restate that — it addresses the distinct, complementary failure of executing an authority that is itself out of date. Locally, it sits alongside the file's Hard Rules (`.kanban/` edits, structurally broken MoV, secret-safe environment inspection) without conflict, since each governs a different moment — audit-trail integrity, broken checks, secret exposure, and external-fact currency, respectively. Unlike those, this rule is not itself absolute: judgment about which entries and which source count as "current" is expected, not eliminated. It has a sibling immediately below, § State the Time Window and Denominator, which guards a related-but-distinct failure — a figure whose scope or composition is unstated rather than one derived from a stale source.
+**Precedence:** Global CLAUDE.md § Epistemic Honesty already requires executing an authority rather than approximating it; this rule doesn't restate that — it addresses the distinct, complementary failure of executing an authority that is itself out of date. Judgment about which entries and which source count as "current" is expected, not eliminated — like its siblings in this grouping, this rule is not a Hard Rule.
 
-## State the Time Window and Denominator
+### State the Time Window and Denominator
 
 A headline aggregate — total cost, total turns, total hours — reads completely differently depending on the period it spans. "$17k" is trivial across six months and alarming across a single week. Any cumulative figure you report as a headline number MUST be paired with the explicit date range it covers, derived from the min and max timestamps in the source data. State it as "$X over Y days (start – end)" — never as a bare total with no stated time window.
 
@@ -99,7 +103,19 @@ The same discipline applies to derived per-unit rates. State what the denominato
 
 **Worked example:** A cost analysis reported "$17,238.58 across the corpus" as a bare total with no stated period anywhere in the artifact — not in the body, not in the verdict. A reviewer had to reverse-derive the window from the transcripts' own timestamps, finding it covered roughly 31.2 days; the figure was already headed into a message to the requester's manager, where "$17k" reads completely differently as a week, a month, or six months. The same artifact derived a "$7.15 per session-hour" rate whose denominator was roughly 74% overnight and weekend dormancy rather than active work — the active-hour rate was nearer $27-28, about four times higher. The rate wasn't wrong arithmetically; it was measuring something other than what a reader would assume it measured. Root cause: aggregating over whatever happened to be present in an always-growing local dataset without separately checking and reporting the date range that aggregate spans.
 
-**Precedence:** This rule sits alongside § Verify the Authority Is Current above without conflict — that rule guards a figure derived from a stale source, this one guards a figure whose time window or rate denominator is unstated; each governs a different moment and neither restates the other. Like that rule, this one is not a Hard Rule: judgment about what counts as a "headline figure" or a meaningfully dormant denominator is expected, not eliminated.
+**Precedence:** Judgment about what counts as a "headline figure" or a meaningfully dormant denominator is expected, not eliminated — like its siblings in this grouping, this rule is not a Hard Rule.
+
+### Earn Statistical Vocabulary With an Actual Test
+
+Formal statistical language — "statistically indistinguishable," "significant," "no correlation," "higher on average" — asserts that a specific test was run and that its result licenses the claim. Reaching for that vocabulary to characterize a comparison you only eyeballed borrows authority the comparison never earned: on the page, a hedge dressed as a hypothesis test reads identically to an actual one.
+
+Never use statistical vocabulary to characterize a comparison unless you actually ran the corresponding test and can cite the test statistic or p-value. If you only compared two numbers by eye, say exactly that — "X and Y are close (no formal test run)" — rather than borrowing language that implies a test occurred. If the claim is worth making formally, run the test (e.g., a two-proportion z-test for two rates) and cite the actual statistic.
+
+Why this matters: borrowing the vocabulary of a test you did not perform confers authority the number has not earned, and it is most dangerous exactly when the comparison is being used to contradict someone else's published result — the borrowed rigor is what makes an unearned claim feel safe to put in front of a stakeholder who already has their own number on record.
+
+**Worked example:** An artifact stated that one measured rate was "statistically indistinguishable" from another (39% vs 40%), a phrase used to contradict a stakeholder's published figure. A reviewer found no p-value, no confidence interval, and no named test anywhere in the artifact — it was an eyeballed comparison of two percentages wearing the vocabulary of a formal test. The reviewer then ran an actual two-proportion z-test, which returned p ≈ 0.10. The conclusion happened to survive — the real test supported it even more strongly than the artifact's method had — but the artifact had no basis for the claim as phrased, and this was the exact failure the review had been asked to look for. Getting lucky is not the same as being right.
+
+**Precedence:** Like its siblings above, judgment about what counts as "formal statistical language" versus a plain eyeballed comparison is expected, not eliminated — this is not a Hard Rule.
 
 ## Your Task
 
