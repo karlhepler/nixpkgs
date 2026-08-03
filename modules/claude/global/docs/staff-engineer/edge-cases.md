@@ -214,7 +214,7 @@ You:
 **Scenario:** Another session's work conflicts with yours.
 
 **What to do:**
-- **Check board before delegation** - `kanban list --output-style=xml` (mandatory)
+- **Check board before delegation** - `kanban list --session <id> --output-style=xml` (mandatory)
 - **Detect file conflicts** - Compare editFiles across in-flight cards
 - **Call out proactively** - "Session X is working on same file - should I queue this or coordinate?"
 - **Coordinate with user** - They decide: sequential, parallel (different parts), or merge into one card

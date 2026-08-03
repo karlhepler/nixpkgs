@@ -461,7 +461,21 @@ def is_my_card(card: dict, current_session: str | None) -> bool:
     card_session = card.get("session")
     if current_session:
         return card_session == current_session or card_session is None
-    return True  # No session detected — all cards are "mine"
+    return True  # No session detected — ownership is unknowable from this helper alone; callers must not treat this as a "mine" claim
+
+
+def _ses_attr(card: dict) -> str:
+    """Return a leading-space `ses="..."` XML attribute for a card's session.
+
+    Emitted unconditionally on every <c> element in list XML output — mine,
+    others, and unknown alike — since session attribution is coordination-
+    critical regardless of which bucket a card lands in. Returns an empty
+    string when the card carries no session.
+    """
+    card_session = card.get("session")
+    if card_session:
+        return f' ses="{html.escape(card_session)}"'
+    return ""
 
 
 # =============================================================================
@@ -3161,7 +3175,7 @@ def cmd_list(args) -> None:
     # INCLUDED:
     #   n   (attr)  — card number (required for all follow-up commands)
     #   s   (attr)  — status/column (doing/review/todo/done/canceled)
-    #   ses (attr)  — session, only on <others> cards (omitted on <mine>)
+    #   ses (attr)  — session, emitted on every card (mine, others, unknown alike)
     #   <i>         — intent, truncated to 200 chars + "..." marker if longer.
     #                 Intent is used instead of action: it is the "why" (concise
     #                 by design), whereas action can be 2-3K chars of instructions.
@@ -3200,7 +3214,7 @@ def cmd_list(args) -> None:
         def _render_terse_card(num, card, col, ses_attr=""):
             """Render one terse <c> element for list XML output.
 
-            Includes: card number (n), status (s), session (ses, others only),
+            Includes: card number (n), status (s), session (ses, always emitted),
             intent <i> (truncated), editFiles <e>.
             Excludes: readFiles, action, criteria, and all other metadata.
             """
@@ -3233,19 +3247,21 @@ def cmd_list(args) -> None:
             if mine_cards:
                 print("<mine>")
                 for num, card, col in mine_cards:
-                    print(_render_terse_card(num, card, col))
+                    ses_attr = _ses_attr(card)
+                    print(_render_terse_card(num, card, col, ses_attr=ses_attr))
                 print("</mine>")
 
             # Output <others> section
             if others_cards:
                 print("<others>")
                 for num, card, col in others_cards:
-                    card_session = card.get("session", "")
-                    ses_attr = f' ses="{esc(card_session)}"' if card_session else ""
+                    ses_attr = _ses_attr(card)
                     print(_render_terse_card(num, card, col, ses_attr=ses_attr))
                 print("</others>")
         else:
-            # No session arg - treat all as mine
+            # No session arg supplied — ownership is unknowable without a
+            # session to compare against, so cards are bucketed as <unknown>
+            # rather than falsely claimed as <mine>.
             has_cards = False
             for col in columns_to_show:
                 cards = all_cards_by_column[col]
@@ -3254,11 +3270,12 @@ def cmd_list(args) -> None:
                     break
 
             if has_cards:
-                print("<mine>")
+                print("<unknown>")
                 for col in columns_to_show:
                     for num, card in all_cards_by_column[col]:
-                        print(_render_terse_card(num, card, col))
-                print("</mine>")
+                        ses_attr = _ses_attr(card)
+                        print(_render_terse_card(num, card, col, ses_attr=ses_attr))
+                print("</unknown>")
 
         print("</board>")
         return

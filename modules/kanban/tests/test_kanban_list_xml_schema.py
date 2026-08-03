@@ -8,7 +8,7 @@ files are they editing, what is each card roughly about).
 Schema under test:
   <board session="...">
     <mine>
-      <c n="NNN" s="status">
+      <c n="NNN" s="status" ses="session-name">
         <i>intent truncated to 200 chars...</i>
         <e>editFile1,editFile2</e>
       </c>
@@ -18,6 +18,13 @@ Schema under test:
         ...
       </c>
     </others>
+    <unknown>
+      <c n="NNN" s="status">
+        ... (no session argument supplied for comparison, so ownership is
+        unknowable — cards land here instead of being falsely claimed as
+        <mine>)
+      </c>
+    </unknown>
   </board>
 
 EXCLUDED from list XML (use kanban show for these):
@@ -30,9 +37,14 @@ EXCLUDED from list XML (use kanban show for these):
 
 INCLUDED:
   - n (card number), s (status) attributes
-  - ses attribute on <others> cards only
+  - ses attribute emitted on every card (mine, others, and unknown alike);
+    empty when the card itself carries no session
   - <i> intent (truncated at 200 chars with "..." ellipsis)
   - <e> editFiles (comma-separated, coordination-critical for conflict detection)
+
+The <unknown> bucket only appears when cmd_list is invoked without a session
+argument to compare against. This file's _make_args helper always supplies an
+explicit session, so these tests never exercise the <unknown> branch directly.
 
 The constant _INTENT_MAX in kanban.py governs the truncation length (200).
 """

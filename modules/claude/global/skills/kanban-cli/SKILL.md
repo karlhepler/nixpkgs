@@ -352,6 +352,7 @@ Show board overview. Primary board-check command.
 
 - **`--output-style`** — XML is the default; omit for standard AI-parseable output. Pass `--output-style=simple` for human-readable output. Pass `--output-style=detail` for full card text.
 - **`--session SESSION`** — Filter to a specific session. Omit to see ALL sessions (required for destructive git op board checks — must scan all sessions for file-ownership conflicts).
+- **XML grouping** — With `--session <id>` supplied, cards split into `<mine>` (owned by that session) and `<others>` (every other card) sections. Without `--session`, ownership is unknowable, so ALL cards render under a single `<unknown>` section instead — never `<mine>`. The `ses="..."` session attribute is emitted on every card regardless of section (mine, others, or unknown alike).
 - **`--column COLUMN`** — Filter to a specific column (`todo`, `doing`, `done`, `canceled`).
 - **`--show-done` / `--show-canceled` / `--show-all`** — Include completed/canceled cards (excluded by default).
 - **`--since` / `--until`** — Date filters: `today`, `yesterday`, `week`, `month`, or ISO date (`2026-04-22`).
@@ -504,6 +505,7 @@ For `kanban criteria check` MoV execution:
 ```bash
 kanban list
 ```
+No `--session` supplied means ownership is unknowable — all cards render under a single `<unknown>` section, not `<mine>`.
 
 **Board check (current session only):**
 ```bash
