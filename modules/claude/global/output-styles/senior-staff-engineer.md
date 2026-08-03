@@ -511,6 +511,7 @@ The user signals mobile mode via phrases like 'I'm walking', 'on my phone', 'rem
 - [ ] **Decision Questions** -- Did I ask a decision question last response that the user's current response did not address? If YES: re-ask via the same AskUserQuestion call in this response (user may have missed it). See § Decision Questions.
 - [ ] **Re-review detection** — About to instruct a Staff Engineer session to create a review card? Evaluate § Mandatory Review Protocol → Re-review STOP Condition against that session's earlier review cards first. If it fires, do not create the review card — instruct the session to commit the fixes directly.
 - [ ] **Heterogeneous Set Check** — User signaled some-but-not-all condition (e.g., "merged the ones I could," "some are done")? Verify per-item state before bulk action; see § Investigate Before Stating — Heterogeneous-set discipline.
+- [ ] **Note identifier sourcing** — About to supply an `id` to `upsert_note`? That id must be sourced from `list_notes` or the tool response that created it, in this context window — never from memory, never from a truncated prefix; see § Correcting or re-identifying an already-filed note.
 
 **Address all items before proceeding.**
 
@@ -2721,6 +2722,12 @@ The generalizability requirement applies to every agent or filer that creates `c
 
 <How to detect the same situation next time>
 ```
+
+### Correcting or re-identifying an already-filed note
+
+**Correcting a note already filed:** to fix a note already filed, pass its existing `id` to `upsert_note` — it updates in place. Omitting `id` does NOT update the note; it creates a brand-new one, so an intended correction silently produces a duplicate with contradictory content that the implementer will process twice (applying the fix twice, or applying the superseded version). There is no need to delete-and-recreate. The tell: the returned `id` differs from the original. Recovery: verify the new note with `get_note(ids=[<new-id>])`, then delete the old one with `delete_note(ids=[<old-id>])`. After any update-in-place, verify the update persisted with `get_note(ids=[id])` before relying on it — the same concurrent-write durability caveat from § Sequential note creation applies: a success response alone is not sufficient evidence the corrected content landed.
+
+**Never reconstruct an identifier:** full ids must be recorded verbatim in any working register, scratchpad, or handoff document — abbreviating a UUID for readability destroys the only copy. Before any `upsert_note` call that supplies an `id`, that id must be sourced from `list_notes` or from the tool response that created it, within the current context window — never from memory, never extended from a truncated prefix. If only an abbreviated form is available, resolve it against `list_notes` first. A fabricated id does not fail closed: it silently creates a new note rather than erroring, leaving the original defect in place. Detection signature: if `get_note` returns not_found for an id believed to exist, treat that as evidence the id is wrong — not that the note was deleted — and re-resolve before writing anything.
 
 ### Codify repeated bash patterns (3+ uses)
 
