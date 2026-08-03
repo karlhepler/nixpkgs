@@ -1984,6 +1984,7 @@ RESILIENCE DIRECTIVES (review/research cards):
 - GREP-FIRST investigation. Use `rg` to locate relevant code paths; read only hit locations in full. Preserve context budget for writing, not exploring.
 - Every finding must include `file:line` citations. Hedged claims ("conceptually", "effectively", "appears to") without citations will trigger re-verification and card reopening — see § Hedge-Word Auto-Reject Trigger.
 - A COMPLETENESS/COVERAGE claim — e.g. "grepped everywhere", "all callsites updated", "no other usages", "no residual references", "every case tested", "fully retired/removed" — MUST be backed by actually running that exact broad check, with the command and its output cited as evidence. A coverage claim not backed by the actual broad check is an unverified assertion, not a verification, even when phrased with total confidence rather than a hedge. This is the review-layer sibling of § Hedge-Word Auto-Reject Trigger (same remediation: spin a verification card, do not brief the user on the unconfirmed claim) and of global CLAUDE.md § Epistemic Honesty (cite the command + its output, not the intent). Where feasible, encode the coverage claim as a programmatic MoV (the actual command as an acceptance criterion) instead of asserting it in prose — see § Findings-quality AC must be programmatic, not semantic for canonical patterns. See also § Understanding Requirements (Before Delegating) → Post-retirement completeness check (blind repo-root grep) — the coordinator-facing, pre-delegation sibling of this same principle; this bullet is its sub-agent-facing, in-flight counterpart.
+- Record inputs you could not obtain (distinct from the completeness-claim bullet above — that one requires you to BACK a claim you've made; this one requires you to disclose a gap you could not fill). If a file was missing, a read was truncated, a source was unreachable, or an instruction blocked you from checking something, write it in a `## Coverage Gaps` section of your deliverable rather than silently working around it. An absent input that is never named becomes an unknown unknown for every downstream consumer.
 - If scope is too broad to fit in one pass, STOP and return "scope too broad; recommend split into phases A/B/C" — do not push through and exhaust context.
 - PRIMARY vs OPTIONAL experiments: when the action enumerates multiple experiments, the first is PRIMARY. Each subsequent experiment is OPTIONAL — run it ONLY if the primary was inconclusive. AC pattern: "AC N (primary experiment): X. AC N+1 (optional — only if AC N is inconclusive): Y." In the criterion's `text` field, prefix with `(primary experiment)` or `(optional — only if AC N inconclusive)` as applicable — the v5 criterion schema has no `primary` boolean field, so the label belongs in `text`. Never execute a second experiment when the first already answered the question.
 - Do NOT spawn `claude` as part of an experiment. Running Claude inside a sub-agent creates a nested session that is tool-use-expensive and hard to interact with non-interactively. If the question requires Claude-specific behavior, use static analysis: `rg` on the installed binary, inspect installed JS, or reason from Node.js defaults.
@@ -2052,6 +2053,16 @@ If any are missing, add them before creating the card.
    }
    ```
    Enforces Block A's CLOCK-DISCONTINUITY directive for time-based-state cards.
+
+**Additional standard AC (applies to every review/research card, not just time-based-state ones):**
+4. Coverage Gaps section present in scratchpad:
+   ```json
+   {
+     "text": "Coverage Gaps section present in scratchpad",
+     "mov_commands": [{"cmd": "rg -qi 'Coverage Gaps' .scratchpad/<card>-<agent>.md", "timeout": 10}]
+   }
+   ```
+   Enforces Block A's coverage-gaps directive (record inputs you could not obtain rather than silently working around them).
 
 #### Findings-quality AC must be programmatic, not semantic
 
@@ -2192,7 +2203,19 @@ Proceed?
 - Card #25 — ~669 line sweep → exhausted twice
 - Card #958 (review session) — 11 evaluation dimensions across 1147 lines → Opus context-exhausted mid-stream with 0 AC checked
 
+**Multi-card audit partitioning (when splitting a corpus-wide audit/inventory across multiple parallel cards):**
+
+A confirmed post-mortem: a coordinator partitioned a whole-repo prompt-corpus census across seven parallel inventory cards, deriving the partition from ONE hand-written multi-path `wc -l` glob rooted at subdirectories (23,402 lines / 40 files), with no independent enumeration ever run against it. Four separate downstream passes each corrected the census upward; the true figure was 24,210 lines across 44 files — the hand-written glob understated the corpus by 808 lines across 4 files, and each miss cost a full extra research or inventory round.
+
+- **Pre-partition enumeration gate.** Before creating any MULTI-CARD audit of a file corpus, run ONE authoritative repo-wide enumeration of the artifact class (`fd`, or `git ls-files`) rather than a hand-written glob, then diff that enumeration against the union of all the cards' scopes — the diff must be empty before launch. In the source incident, that diff would have had four entries. Perform the enumerate-and-diff as a single piped call (e.g., `fd ... | diff - <(cat card-scopes)`) — § Context Relay's hard cap already counts "piped chains" as one lookup, so this satisfies the one-discovery-lookup cap rather than conflicting with it.
+- **Hand-written glob as a scoping smell.** A hand-authored multi-path glob is a smell when scoping an audit — for two structural reasons: a `*/SKILL.md`-style pattern cannot match sibling files in the same directory, and a glob rooted at a subdirectory cannot see the rest of the repo. Enumerate blind, then narrow — start from the unfiltered enumeration and narrow deliberately, rather than hand-assembling scope paths from memory.
+- **Census internal-consistency check.** Before treating any census carrying subtotals as authoritative, verify subtotals sum to the total — a seconds-long arithmetic check. In the source incident, the grand total excluded a file its own subtotal table counted, and three separate downstream passes consumed the mismatched total without noticing. For a paginated source, drain to the final page and reconcile the reported total against the count actually assigned before treating the collection as complete.
+- **Derive research scope from the planned work order.** When research supports a staged rewrite, dedicate a research pass to whatever artifact class is scheduled first in the plan — a gap in the artifact class scheduled first is the worst possible placement, since every downstream stage inherits it. In the source incident, the follow-up pass that closed this exact gap returned the single most actionable number in the corpus.
+
 **Pre-creation gate checklist (evaluate BEFORE `kanban do` on every card):**
+- [ ] **Multi-card partition enumeration** — If this card is one of several created by splitting a single corpus-wide audit/inventory, has an authoritative repo-wide enumeration (`fd`, `git ls-files`) been diffed against the union of all the cards' scopes, with the diff empty? See "Multi-card audit partitioning" above.
+- [ ] **Census subtotal consistency** — If this card's action relies on a census/inventory carrying subtotals, do the subtotals sum to the stated grand total, with any paginated source drained to its final page before the total is treated as authoritative? See "Census internal-consistency check" above.
+- [ ] **Research scope covers work scheduled first** — If this card is part of a research phase supporting a staged rewrite, does the research scope include the artifact class scheduled first in the plan? See "Derive research scope from the planned work order" above.
 - [ ] Thresholds not exceeded (or split proposed to user) — see table above
 - [ ] ≤3 non-trivial files AND ≤200 expected changes (hard caps for work cards)
 - [ ] Audit/plan/findings referenced by `path + section`, not inlined as prose — restating audit prose in the action field means every sub-agent turn pays that cost
