@@ -353,6 +353,7 @@ Before reporting findings:
 - [ ] Found 3+ independent sources (or documented why not possible)
 - [ ] Applied GRADE confidence levels with justification
 - [ ] Traced citations upstream to originals, per claim where one citation is invoked for multiple claims
+- [ ] Any line numbers cited from a gutter-less git extraction (`git show <sha>:<path>`, `git cat-file -p <sha>:<path>`, or any other command that prints raw content with no line-number gutter) were derived mechanically (`rg -n` / `cat -n`), re-derived fresh per citation — not hand-counted (see § Line Numbers from Git-Historical Blobs)
 - [ ] Documented contradictions and limitations
 - [ ] Assessed source credibility (primary/secondary/tertiary, recency, expertise, bias)
 - [ ] Every factual claim has an inline named source citation
@@ -388,6 +389,21 @@ Before reporting findings:
 
 **If a claim cannot be tied to a named source, it must be labeled as unverified:**
 > [Claim] *(unverified - no source found)*
+
+### Line Numbers from Git-Historical Blobs (MANDATORY)
+
+When investigating git history — reconstructing a deleted file, tracing an old function, or citing any content extracted via a gutter-less method such as `git show <sha>:<path>` or `git cat-file -p <sha>:<path>` — every line number must be **derived mechanically**, never hand-counted from the terminal output. The test generalizes beyond either named command: if the extraction method emits raw content with no line-number gutter, hand-counting from its output is invalid and every citation must be derived mechanically. This sits alongside the general citation rule above at equal MANDATORY weight: both must hold at once (a citation tied to a named source that also carries a wrong line number is still a defective citation), so there is no precedence conflict to resolve between them.
+
+**Why this matters:** Commands like `git show <sha>:<path>` and `git cat-file -p <sha>:<path>` print the raw file content for that commit. Neither has **a line-number gutter** — unlike `cat -n`, a diff view, or an editor, nothing in the output itself tells you what line you're looking at. Scrolling and counting by eye is exactly how citations go wrong, regardless of which gutter-less command produced the output.
+
+**The rule:**
+- Never hand-count line numbers from the output of a gutter-less extraction command — `git show <sha>:<path>`, `git cat-file -p <sha>:<path>`, or any other command that prints raw content with no line-number gutter.
+- Derive every line-number citation mechanically: pipe the extracted blob through `rg -n '<pattern>'` to find the exact line, or through `cat -n` to get a real gutter, then read the number off that output — not off memory or estimation.
+- **Re-derive fresh for each citation.** Do not reuse a line number recalled from a different read of the same file — a diff view, the live working tree, or a different historical commit than the one being cited. The same symbol commonly sits at a different line in each of those views; a number correct for one is not presumed correct for another.
+
+**Diagnostic fingerprint (recognize this pattern in your own or another agent's work):** exact, verbatim-correct quoted content paired with wrong line-number citations whose offsets from the true line are NOT constant across citations (e.g., one citation off by 1 line, others off by 205, 204, and 269 lines, with two spans not overlapping the real function at all). A constant offset across every citation would suggest a simple off-by-N indexing error; varying, unrelated offsets are inconsistent with that and instead point toward the numbers having been estimated rather than read off a gutter.
+
+**Epistemic caveat:** that link — varying offsets implying hand-counted-without-a-gutter — is an inference from the symptom pattern, not a confirmed root cause: you generally cannot inspect another agent's tool-call trace to confirm how a citation was actually produced. State it as "this pattern is consistent with reading content through a method that emits no line numbers and then estimating spans," not as a certainty that this is what happened. The remedy (derive mechanically, re-derive per citation) holds regardless of the true root cause, so an unconfirmed diagnosis is not a reason to discard the rule.
 
 ## Output Format
 
