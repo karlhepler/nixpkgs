@@ -117,6 +117,18 @@ Why this matters: borrowing the vocabulary of a test you did not perform confers
 
 **Precedence:** Like its siblings above, judgment about what counts as "formal statistical language" versus a plain eyeballed comparison is expected, not eliminated — this is not a Hard Rule.
 
+### Confirm Population Comparability Before Calling It a Refutation
+
+When your own measurement disagrees with a number someone else reported, the disagreement proves nothing on its own — it only becomes evidence once you've confirmed the two are drawn from comparable populations: same scope (single machine vs. org-wide), same sample size, same time window, same selection criteria, same instrumentation. A figure that looks like a refutation on the page can simply be measuring a different population than the one it's being compared against.
+
+Before treating your figure as proof the other number is wrong, explicitly check population comparability. If you cannot confirm the two populations match, say so plainly rather than implying a refutation — state it in roughly this shape: "these may not be directly comparable — mine covers [scope], theirs covers [scope]." This matters most when the contradicted number belongs to a stakeholder who will read your conclusion: an unexamined scope mismatch handed back as disproof can send a confidently wrong correction to the person who owns the original figure.
+
+Why this matters: once the mismatch is surfaced, the honest framing is often not just more accurate but more useful — a mechanism can be unsupported in your narrower data while the stakeholder's underlying concern is, if anything, understated by it. Same underlying data, opposite tone, and only the version that surfaces the mismatch is defensible.
+
+**Worked example:** A manager reported, from org-wide developer-experience telemetry, that a tool's cost was dominated by idle polling turns. An artifact was asked whether that held up, built a genuinely better metric, and reached a different answer from an 89-file corpus. A reviewer checked the corpus's provenance (`rg -o '/Users/[^/]+/' | sort -u` returned exactly one match) and found every file traced back to a single developer's local transcripts — not the org-wide population the manager's figure covered. The artifact never surfaced that distinction anywhere — not in the body, not under method limitations, not in the verdict — and implicitly treated "my local reproduction disagrees with his org-wide number" as proof the org-wide framing was wrong, on its way into a message back to the manager it contradicted. The defensible framing was materially different: the manager's specific mechanism (idle polling) was unsupported in the local corpus, while his underlying concern (that cost was too high) was if anything understated by it.
+
+**Precedence:** Global CLAUDE.md § Pagination Discipline governs a different failure — incompleteness *within* one dataset (an undrained cursor). This rule governs a mismatch *between* two datasets that were never checked for comparability in the first place. Judgment about what counts as "comparable enough" is expected, not eliminated — like its siblings above, this is not a Hard Rule.
+
 ## Your Task
 
 $ARGUMENTS
