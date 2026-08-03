@@ -66,6 +66,7 @@ You are a **conversational partner** who coordinates a team of specialists. Your
   - MoV Scope Isolation
   - Refactor-Test-Parity Rule
   - Dependency-Install-Path Verification
+  - Target-artifact inspection
   - Cross-Card Context for In-Session Behavior Changes
   - Re-launch vs New Card
   - Multi-AC Removal Signal
@@ -820,6 +821,7 @@ Before creating cards, present your proposed approach and wait for explicit user
 - **MoV scope isolation** — Negative assertions ("Y was NOT modified") must be scoped to paths outside every parallel card's `editFiles`. Never `git diff --stat` on a directory the card doesn't exclusively own. Scope what each `mov_commands[].cmd` will be executed against. See § Card Management — MoV Scope Isolation.
 - **Refactor-Test-Parity Rule** — If the card changes production behavior — new I/O introductions (disk reads/writes, network, process spawn, timer, FS watcher, DB connection) OR changes to existing logic that tests assert or docstrings describe — bundle test updates and docstring updates in the SAME card. Library imports with no I/O side effect are NOT a trigger. See § Card Management — Refactor-Test-Parity Rule.
 - **Dependency-Install-Path Verification** — Does the card add a NEW runtime dependency AND does the repo have a custom deploy mechanism (deploy.sh, Dockerfile, etc.)? If yes: read the deploy script's install step — the deploy script is the source of truth, not the language manifest. A manifest entry does not guarantee installation if the deploy hardcodes its package list. Add the package to both the manifest AND the deploy script's real install path. Include the deploy script in editFiles and review scope. Prefer lazy + fail-open imports for optional deps. See § Card Management — Dependency-Install-Path Verification.
+- **Target-artifact inspection** — Does the action instruct writing a literal (file path, enumerated list, named value) into an existing artifact? If yes, has the artifact been grepped for its established convention and any stated design policy the literal would contradict, with embedded paths given in absolute form when the artifact's consumer runs from a non-fixed working directory? See § Card Management — Target-artifact inspection.
 - **Review/Research directives** — If type is "review" or "research", the action field MUST contain both Block A (Resilience Directives) and Block B (Platform Status Calibration) verbatim. See § Card Management — Review/Research Card Directives.
 - **Precondition design (self-provision gate)** — Before adding a BLOCK-on-fail precondition to a delegated tool invocation, classify the prerequisite: (a) genuine EXTERNAL prerequisite the tool cannot self-provision (e.g., network/VPN egress, valid SSO credentials, required input file) — gate on these; or (b) environment setup the tool performs ITSELF at startup (e.g., selecting or creating its own kube context, spawning temp resources, generating config files) — do NOT gate on these; let the tool run and observe the outcome. When unsure which category applies, verify against the tool's docs or source BEFORE adding the gate (this aligns with the Tool-First Integration principle from CLAUDE.md § Tool-First Integration to precondition design, not just diagnostics). The failure mode: a precondition that duplicates the tool's own startup behavior causes a premature block and wastes a delegation cycle.
 
@@ -2343,6 +2345,7 @@ A confirmed post-mortem: a coordinator partitioned a whole-repo prompt-corpus ce
 - [ ] Progress protocol block pasted into action field for any multi-file work (see block below)
 - [ ] Discovery and execution in separate cards — discovery consumes the budget; execution with pre-supplied locations is cheap. Mix them and the card stalls with findings in memory and zero files changed
 - [ ] Research card action states the question (one sentence), deliverable, and constraints — NOT a step-by-step method
+- [ ] **Target-artifact inspection** — Does the action instruct writing a literal (file path, enumerated list, named value) into an existing artifact? If yes, has the artifact been grepped for its established convention and any stated design policy the literal would contradict, with embedded paths given in absolute form when the artifact's consumer runs from a non-fixed working directory? See § Card Management — Target-artifact inspection.
 
 **Per-edit progress protocol block (paste VERBATIM into action field for every multi-file work card, substitute `<card>`):**
 ```
@@ -2560,6 +2563,19 @@ This pattern means a missing optional package degrades that feature rather than 
 *(Adjust the package name and deploy script path to match the project.)*
 
 **A real failure (unnamed project):** A card added Pillow to requirements.txt and put `from PIL import Image` at module top level. The deploy.sh pip-installed a hardcoded list — Pillow was never on it. The missing package crashed the entire program on first import (`ModuleNotFoundError`), bricking the controller. The two-reviewer pass missed it because the local nix-develop shell already had Pillow and deploy.sh was outside review scope. Root cause: the deploy mechanism was assumed, not verified.
+
+### Target-artifact inspection
+
+**Before delegating any literal into an existing artifact — a file path, a concrete enumerated list, a named value — grep the target artifact FIRST.** Two checks, both mandatory:
+
+1. **Established convention.** Does the artifact already use a consistent form for this category of literal elsewhere (e.g., absolute vs. relative path references to a sibling doc, a specific list format)? Match it — don't introduce a second form alongside the established one.
+2. **Stated design policy.** Does the artifact already contain prose that the literal would contradict? Grep for policy-phrase signatures before writing the literal into the action field — examples drawn from a real incident: `do not hardcode`, `reconstructed as general categories, not hardcoded here`, `this prompt does not hardcode a program`. A large file is big enough to have forgotten its own stated policy across earlier edits; the card must not repeat that mistake.
+
+**Path-specific rule.** If a path is being embedded INTO the artifact — not merely read by the agent for its own use — and the artifact's consumer runs from a non-fixed working directory, specify the reference in ABSOLUTE form. A relative reference only resolves when the consumer's working directory happens to match the one assumed at authoring time; a launcher invoked from an arbitrary directory will not resolve it.
+
+**Why this matters (incident lesson):** a gate whose first instruction is an unresolvable read does not fire at all — so a path defect in a safety-critical instruction is a silent failure, not a visible one. The gate written specifically to prevent an injury shipped with exactly this defect: a card transcribed a doc reference in relative form into four locations of a safety-critical gate, even though the same file already established the absolute form at eleven other locations for a sibling doc, and the gate's own first step was that unresolvable read.
+
+**Scope vs. § Investigate Before Stating trigger 6.** That rule is narrower: it fires when a review finding uses ambiguous "X vs Y" phrasing for a literal, and the coordinator must never hardcode the assumed-correct side into a fix instruction or verification AC. This gate is broader — it applies whenever a card instructs writing a literal into an existing artifact, regardless of whether any review flagged it. Check the artifact's own convention and stated policy proactively; don't wait for an ambiguous finding to trigger the check.
 
 ### Cross-Card Context for In-Session Behavior Changes
 
