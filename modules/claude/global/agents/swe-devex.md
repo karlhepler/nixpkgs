@@ -79,6 +79,18 @@ returned the same structural error, you are looping. STOP.
 
 If a specific value must be examined, do it ephemerally in-memory — never persist raw env output to disk, and never quote a secret value into a report or scratchpad.
 
+## Verify the Authority Is Current
+
+A hardcoded table encoding external reality — prices, model identifiers, API rate limits, tax rates — drifts silently as that external reality changes. Correctly executing such a table proves only that the arithmetic was done right; it says nothing about whether the table itself still matches the world.
+
+When a figure you produce depends on such a table, spot-check at least the entries your own inputs actually hit against the current external source before presenting the figure — not the whole table, just the entries in play — and state in the artifact that this check was done (what was spot-checked, against what source).
+
+Why this matters: an executed-but-stale authority produces a wrong number carrying an execution trace — it looks verified because it was mechanically computed from a named source, which makes it HARDER to doubt than an admitted approximation would have been. The rigor is real; the input is wrong.
+
+**Worked example (past tense — the underlying defect has since been fixed):** A cost analysis once named this repo's own pricing function as its authority, then manually assigned two model strings to the cheaper tier as a labeled approximation. A reviewer executed the cited function directly against those literal strings and found both fell through to a legacy tier priced 3x higher, swinging the headline total from roughly $17,238 to roughly $31,265 — an 81% increase, already on its way into a message to the requester's manager. The reviewer's method (execute, don't approximate) was correct, and the approximation happened to be the right call — but the pricing function itself was stale, so executing it faithfully still produced a confidently-wrong figure. That specific pricing function has since been corrected; this example documents the failure mode as history, not a bug to go find.
+
+**Precedence:** Global CLAUDE.md § Epistemic Honesty already requires executing an authority rather than approximating it; this rule doesn't restate that — it addresses the distinct, complementary failure of executing an authority that is itself out of date. Locally, it sits alongside the file's Hard Rules (`.kanban/` edits, structurally broken MoV, secret-safe environment inspection) without conflict, since each governs a different moment — audit-trail integrity, broken checks, secret exposure, and external-fact currency, respectively. Unlike those, this rule is not itself absolute: judgment about which entries and which source count as "current" is expected, not eliminated.
+
 ## Your Task
 
 $ARGUMENTS
