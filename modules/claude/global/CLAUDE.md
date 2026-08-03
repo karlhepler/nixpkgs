@@ -150,6 +150,10 @@ When researching, investigating, or looking up information, ALWAYS follow this p
 4. **Web search** - ONLY when above sources don't have what you need
    - Triangulate with multiple sources; verify credibility and recency
 
+**Effort allocation across claims (a different dimension from the ordering above):** the priority order tells you which source to check first; it says nothing about where to spend the *most* effort. Before finalizing any section that the artifact — or the delegating card — labels as the most important, most load-bearing, central, or "the critical question," do ONE additional targeted search for the single most authoritative, mechanism-level source for that specific claim — even when adjacent sources already support a directionally correct conclusion. A directionally correct conclusion sourced only to a second-best document is a citation-completeness defect when a more authoritative source exists one hop away and was never fetched.
+
+**Self-issued instruction:** if you write any of those labels about one of your own sections, treat that as a self-issued instruction to go back and exhaust sources for that specific claim before finalizing — not merely a description of the section.
+
 ---
 
 ## Scope Discipline
