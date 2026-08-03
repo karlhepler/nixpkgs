@@ -32,6 +32,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 import traceback
 import warnings
 from datetime import datetime, timezone
@@ -1134,6 +1135,221 @@ def get_all_criteria_numbers(card_number: str, session: str) -> list[int]:
         return []
 
 
+# ---------------------------------------------------------------------------
+# Auto-attempt: run each unmet criterion's mov_commands before block/retry
+# ---------------------------------------------------------------------------
+#
+# `kanban criteria check <card> <n>` is the single source of truth for running
+# a criterion's mov_commands — see cmd_criteria_check() in kanban.py. It already
+# iterates mov_commands in order, short-circuits on the first failure, and
+# rejects a criterion with empty/missing mov_commands ("invalid AC ... no
+# programmatic verification provided"), never marking it met.
+#
+# The functions below simply INVOKE that same CLI command proactively, for
+# every criterion still unmet, instead of waiting for the agent to remember to
+# run it. This is not a new verification path and does not relax the gate —
+# it removes a dependency on agent memory. A criterion with no mov_commands is
+# never vacuously passed: the CLI itself rejects it with a non-zero exit,
+# exactly as it would if the agent had run the same command by hand.
+
+# Matches an entire <ac ...>...</ac> block (attributes + body), used to find
+# the `met` attribute and any nested <command timeout="..."/> children.
+_AC_BLOCK_PATTERN = re.compile(r'<ac\b([^>]*)>(.*?)</ac>', re.DOTALL | re.IGNORECASE)
+_AC_MET_ATTR_PATTERN = re.compile(r'\bmet="([^"]*)"', re.IGNORECASE)
+# Matches every <command .../> element regardless of whether it declares a
+# timeout attribute, so each one can be counted toward the budget even when
+# it has none (see _MOV_COMMAND_TIMEOUT_ATTR_PATTERN, applied per-match below).
+# A pattern that required the timeout attribute to match at all would silently
+# contribute zero for commands lacking one, instead of the intended default.
+_MOV_COMMAND_PATTERN = re.compile(r'<command\b([^>]*)>', re.IGNORECASE)
+_MOV_COMMAND_TIMEOUT_ATTR_PATTERN = re.compile(r'\btimeout="([^"]*)"', re.IGNORECASE)
+
+# Fixed overhead added on top of the sum of a criterion's own declared
+# mov_commands timeouts, to account for kanban CLI startup/write overhead when
+# sizing the outer subprocess timeout for `kanban criteria check`.
+_AUTO_ATTEMPT_TIMEOUT_BUFFER_SECONDS = 30
+
+# Fallback per-command timeout budget when a <command> timeout attribute is
+# missing or unparsable (mirrors kanban.py's own mov_commands default).
+_MOV_COMMAND_DEFAULT_TIMEOUT_SECONDS = 30
+
+# Hard ceiling on any single criterion's computed timeout_budget. Without this,
+# a single typo'd timeout attribute (e.g. "300000" instead of "30") would
+# inflate the outer `kanban criteria check` subprocess timeout without limit.
+# Set generously above the longest MoV timeout declared anywhere in this repo
+# (~300s) so no legitimate criterion is ever clamped.
+_AUTO_ATTEMPT_MAX_TIMEOUT_SECONDS = 600
+
+# Hard ceiling on the TOTAL wall-clock time auto_attempt_unmet_criteria spends
+# across all unmet criteria on one card. Each criterion is individually
+# timeout-bounded, but without an aggregate cap a card with many unmet
+# criteria could add many minutes to the SubagentStop completion path before
+# Step 4 (`kanban done`) ever runs. Once exceeded, remaining criteria are left
+# unattempted this cycle — they simply stay unmet, which is the safe
+# degradation (Step 4 still proceeds normally).
+_AUTO_ATTEMPT_TOTAL_BUDGET_SECONDS = 900
+
+# Hard ceiling on how many characters of a failing mov_command's stdout/stderr
+# are relayed into the block reason and log line, so a pathological command
+# emitting megabytes of output cannot bloat the hook's response payload or log
+# file. See _truncate_output below.
+_AUTO_ATTEMPT_MAX_OUTPUT_CHARS = 2000
+
+
+def _truncate_output(text: str) -> str:
+    """Truncate relayed subprocess output to _AUTO_ATTEMPT_MAX_OUTPUT_CHARS.
+
+    Appends a clear elision marker when truncation occurs, so a reader of the
+    block reason or log knows the text was cut rather than assuming it's the
+    command's entire output.
+    """
+    if len(text) <= _AUTO_ATTEMPT_MAX_OUTPUT_CHARS:
+        return text
+    return text[:_AUTO_ATTEMPT_MAX_OUTPUT_CHARS] + f"... [truncated, {len(text)} chars total]"
+
+
+def get_unmet_criteria(card_number: str, session: str) -> list[dict]:
+    """Return every acceptance criterion currently unmet (met != "true").
+
+    Reads the card XML (same source `get_all_criteria_numbers` reads) and
+    returns, in document order, one dict per unmet criterion:
+        {"index": <1-based int>, "timeout_budget": <int seconds>}
+
+    `timeout_budget` is the sum of that criterion's own declared mov_commands
+    timeouts (as authored on the card, defaulting missing/unparsable ones to
+    _MOV_COMMAND_DEFAULT_TIMEOUT_SECONDS) plus a fixed overhead buffer — sized
+    so the outer `kanban criteria check` call (which itself runs those
+    commands) cannot time out before the commands it wraps legitimately would.
+    A criterion with no mov_commands still gets the buffer alone, which is
+    ample for the CLI's immediate "invalid AC" rejection. The result is
+    clamped to _AUTO_ATTEMPT_MAX_TIMEOUT_SECONDS so a single mistyped timeout
+    attribute cannot inflate the outer timeout without bound.
+
+    Returns an empty list on any error — fails open, leaving the auto-attempt
+    step a no-op and the existing kanban-done-based flow entirely unchanged.
+    """
+    try:
+        result = run_kanban(["show", card_number, "--output-style=xml", "--session", session])
+        if result.returncode != 0:
+            return []
+
+        unmet: list[dict] = []
+        for idx, m in enumerate(_AC_BLOCK_PATTERN.finditer(result.stdout), start=1):
+            attrs, body = m.group(1), m.group(2)
+            met_match = _AC_MET_ATTR_PATTERN.search(attrs)
+            met = met_match.group(1).strip().lower() if met_match else "false"
+            if met == "true":
+                continue
+
+            timeouts: list[int] = []
+            for cmd_m in _MOV_COMMAND_PATTERN.finditer(body):
+                timeout_m = _MOV_COMMAND_TIMEOUT_ATTR_PATTERN.search(cmd_m.group(1))
+                if timeout_m is None:
+                    # No timeout attribute at all — apply the default rather
+                    # than silently contributing zero (see comment above
+                    # _MOV_COMMAND_PATTERN).
+                    timeouts.append(_MOV_COMMAND_DEFAULT_TIMEOUT_SECONDS)
+                    continue
+                try:
+                    timeouts.append(int(timeout_m.group(1)))
+                except (TypeError, ValueError):
+                    timeouts.append(_MOV_COMMAND_DEFAULT_TIMEOUT_SECONDS)
+
+            timeout_budget = min(
+                sum(timeouts) + _AUTO_ATTEMPT_TIMEOUT_BUFFER_SECONDS,
+                _AUTO_ATTEMPT_MAX_TIMEOUT_SECONDS,
+            )
+            unmet.append({"index": idx, "timeout_budget": timeout_budget})
+
+        return unmet
+    except Exception as exc:
+        log_error(f"get_unmet_criteria for card #{card_number}: {exc}")
+        return []
+
+
+def auto_attempt_unmet_criteria(card_number: str, session: str) -> list[str]:
+    """Proactively run `kanban criteria check` for every currently-unmet criterion.
+
+    For each unmet criterion:
+      - All of its mov_commands exit 0 → kanban marks it met (exit 0); no
+        further action needed here.
+      - Any mov_command fails, or mov_commands is empty/missing → kanban
+        itself returns non-zero with a diagnostic (the specific failing
+        command, its exit code, and stdout/stderr, OR the "invalid AC ... no
+        programmatic verification provided" message) — that diagnostic is
+        collected verbatim into the returned list.
+
+    Returns a list of human-readable failure descriptions for criteria that
+    remain unmet after this attempt (empty if everything got marked met, or if
+    there was nothing to attempt). Fails open: any error while listing unmet
+    criteria returns an empty list, leaving the existing kanban-done-based
+    flow entirely unchanged.
+
+    Each criterion's `kanban criteria check` invocation is individually
+    contained in its own try/except — mirroring the containment already
+    applied to the anti-gaming uncheck loop and to this function's own call to
+    get_unmet_criteria above — so a single criterion whose mov_command output
+    triggers an unexpected exception (e.g. non-UTF-8 subprocess output
+    raising UnicodeDecodeError) cannot cascade out of this function and cause
+    Step 4 (`kanban done`, the authoritative check) to be skipped entirely.
+    That criterion is simply treated as still-unmet and the loop continues.
+
+    The loop also enforces an aggregate wall-clock budget
+    (_AUTO_ATTEMPT_TOTAL_BUDGET_SECONDS) across all unmet criteria on the
+    card: once exceeded, remaining criteria are left unattempted this cycle
+    rather than letting a card with many unmet criteria stall the
+    SubagentStop completion path indefinitely.
+    """
+    try:
+        unmet = get_unmet_criteria(card_number, session)
+    except Exception as exc:
+        log_error(f"auto_attempt_unmet_criteria: failed to list unmet criteria for card #{card_number}: {exc}")
+        return []
+
+    failures: list[str] = []
+    started_at = time.monotonic()
+    for criterion in unmet:
+        if time.monotonic() - started_at > _AUTO_ATTEMPT_TOTAL_BUDGET_SECONDS:
+            log_info(
+                f"Auto-attempt: aggregate time budget "
+                f"({_AUTO_ATTEMPT_TOTAL_BUDGET_SECONDS}s) exceeded for card "
+                f"#{card_number} — leaving remaining unmet criteria "
+                f"unattempted this cycle; Step 4 proceeds normally."
+            )
+            break
+
+        index = criterion["index"]
+        timeout = criterion["timeout_budget"]
+        try:
+            result = run_kanban(
+                ["criteria", "check", card_number, str(index), "--session", session],
+                timeout=timeout,
+            )
+        except Exception as exc:
+            # Contained: one criterion's unexpected failure (e.g. malformed
+            # subprocess output) must not cascade into skipping Step 4 for
+            # the whole card. Treat as still-unmet and move on.
+            log_error(
+                f"auto_attempt_unmet_criteria: criterion {index} for card "
+                f"#{card_number} raised unexpectedly (contained, treated as "
+                f"still unmet): {exc}"
+            )
+            failures.append(f"Criterion {index}: auto-attempt raised an unexpected error: {exc}")
+            continue
+
+        if result.returncode == 0:
+            log_info(f"Auto-attempt: criterion {index} passed for card #{card_number}")
+        else:
+            output = _truncate_output(result.stderr.strip() or result.stdout.strip())
+            failures.append(f"Criterion {index}: {output}")
+            log_info(
+                f"Auto-attempt: criterion {index} still unmet for card #{card_number} "
+                f"(exit {result.returncode}): {output}"
+            )
+
+    return failures
+
+
 def get_deferred_cards(session: str) -> list[str]:
     """Get list of card numbers in the todo column for this session."""
     try:
@@ -1265,6 +1481,14 @@ def process_subagent_stop(payload: dict) -> dict:
         log_info(f"Card #{card_number} already in done state — skipping kanban done call")
         return allow()
 
+    # Step 3.5: Auto-attempt every unmet criterion by running `kanban criteria
+    # check` directly, before falling back to the block/retry decision below.
+    # This is not a relaxation of the quality gate — mov_commands are executed
+    # by the same CLI command either way (see auto_attempt_unmet_criteria's
+    # docstring) — it just removes the dependency on the agent remembering to
+    # invoke the check after finishing real work.
+    auto_attempt_failures = auto_attempt_unmet_criteria(card_number, session)
+
     # Step 4: Call kanban done and map exit code.
     log_info(f"Calling kanban done for card #{card_number}")
     done_result = run_kanban(
@@ -1304,9 +1528,25 @@ def process_subagent_stop(payload: dict) -> dict:
     if exit_code == 1:
         # Retryable failure — block agent with kanban's feedback verbatim
         kanban_output = done_result.stderr.strip() or done_result.stdout.strip()
+
+        # Auto-attempt feedback: the specific failing command(s) and their exit
+        # code/stderr for criteria the hook already tried and could not resolve
+        # (Step 3.5 above). Appended as its own section — kept separate from
+        # kanban_output so detect_stuck_criteria's regex scan below still parses
+        # kanban done's own output only.
+        auto_attempt_section = ""
+        if auto_attempt_failures:
+            auto_attempt_detail = "\n".join(f"  - {f}" for f in auto_attempt_failures)
+            auto_attempt_section = (
+                f"\n\nAuto-attempt results (the hook already ran `kanban criteria check` "
+                f"for each unmet criterion before this check — no need to re-run these "
+                f"exact commands again until you've made a change):\n{auto_attempt_detail}"
+            )
+
         reason = (
             f"kanban done failed for card #{card_number}:\n\n"
-            f"{kanban_output}\n\n"
+            f"{kanban_output}"
+            f"{auto_attempt_section}\n\n"
             f"Investigate each unchecked criterion, do the work to satisfy it, verify "
             f"your fix is correct, and only THEN run `kanban criteria check`. "
             f"The SubagentStop hook will call `kanban done` again automatically "
