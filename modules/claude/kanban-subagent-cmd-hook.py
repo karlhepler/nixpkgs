@@ -1,11 +1,33 @@
 #!/usr/bin/env python3
 """
-kanban-subagent-cmd-hook: PreToolUse(Bash) hook that restricts kanban CLI usage
-inside sub-agents to only `kanban criteria check` and `kanban criteria uncheck`.
+kanban-subagent-cmd-hook: PreToolUse(Bash) hook enforcing two distinct prohibitions
+on Bash tool calls made from inside a sub-agent.
 
-All other kanban subcommands (do, start, done, cancel, defer, criteria add/remove,
-list, show, etc.) are denied when called from a sub-agent context. Coordinators
-(main session, no agent_id) are unaffected.
+Despite the name, this hook does not merely gate kanban CLI subcommands — it also
+independently denies an entire class of shell-wrapper invocations, whether or not
+the command mentions kanban at all. A reader who enumerates hooks by name alone
+will underestimate what this module restricts for sub-agents; both prohibitions
+below apply regardless of which one the module name evokes.
+
+PROHIBITION 1 — kanban CLI subcommand allowlist:
+  Sub-agent kanban CLI usage is restricted to only `kanban criteria check` and
+  `kanban criteria uncheck` (plus `kanban --help` / `kanban help`, read-only and
+  harmless). All other kanban subcommands (do, start, done, cancel, defer,
+  criteria add/remove, list, show, session-hook, etc.) are denied when called
+  from a sub-agent context.
+
+PROHIBITION 2 — shell-wrapper denial:
+  Sub-agents are denied outright, independent of whether kanban is invoked at
+  all, for any shell-runner or script-runner segment carrying an inline -c/-e
+  flag. Shell runners (bash, sh, zsh, dash, ksh, fish) are matched on -c; script
+  runners (python, python3, perl, ruby) are matched on -c or -e. Examples:
+  `bash -c '...'`, `sh -c '...'`, `zsh -c '...'`, `python3 -c '...'`,
+  `perl -e '...'`, `ruby -e '...'`. These are blocked entirely because static
+  analysis cannot inspect the inline script's content, making them equivalent
+  to unrestricted shell access from the guard's perspective — sub-agents have
+  direct Bash tool access and never need a shell-runner -c/-e layer.
+
+Coordinators (main session, no agent_id) are unaffected by either prohibition.
 
 Output format (PreToolUse hook — documented hookSpecificOutput format):
   {"continue": False, "suppressOutput": False, "hookSpecificOutput": {
