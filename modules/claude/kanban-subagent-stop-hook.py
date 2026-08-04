@@ -1391,8 +1391,33 @@ def process_subagent_stop(payload: dict) -> dict:
     # which is a trusted internal process on this single-user system. Deferred —
     # revisit if this hook is ever exposed to multi-user or network-delivered input.
 
-    if not transcript_path or not os.path.exists(transcript_path):
-        log_info("No transcript path or file not found — allowing stop")
+    # These two early-exit cases are deliberately NOT logged identically.
+    # An empty transcript_path is the common, benign case — many Task calls
+    # (lightweight lookups, non-kanban-managed agents) never carry one. A
+    # NON-EMPTY path whose file does not exist is a different, anomalous
+    # signal: the daemon told us to look at something specific and it was
+    # not there. Collapsing both into one log_info line makes the anomalous
+    # case indistinguishable from routine noise — see card #3312's
+    # determination (.scratchpad/3312-hook-determination.md) for the
+    # evidence this exact silent branch is what stranded cards #3292 and
+    # #3305 at status=doing with every criterion met: card identification,
+    # and therefore `kanban done`, was never attempted for either card
+    # because this guard fired first. Surfacing it via log_error (rather
+    # than retrying) is the fix — see the determination's "Fix implemented"
+    # section for why a retry was not chosen.
+    if not transcript_path:
+        log_info("No transcript path provided — allowing stop (not kanban-managed)")
+        return allow()
+
+    if not os.path.exists(transcript_path):
+        log_error(
+            f"SubagentStop received a non-empty transcript_path that does not "
+            f"exist on disk: {transcript_path!r}. The card this stop belonged "
+            f"to could not be identified, so kanban done was never attempted "
+            f"— the card may be silently stranded in 'doing'. This may "
+            f"indicate a race (transcript not yet flushed/moved to its final "
+            f"path) or a stale/incorrect path from the daemon."
+        )
         return allow()
 
     # Step 1: Identify the card

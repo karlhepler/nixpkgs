@@ -656,6 +656,63 @@ class TestFailOpenBehavior:
 
 
 # ---------------------------------------------------------------------------
+# Card #3312 regression: a non-empty-but-missing transcript_path must be
+# surfaced distinctly from an empty transcript_path, not lumped into the
+# same silent log_info branch. See .scratchpad/3312-hook-determination.md —
+# this exact silent branch is what stranded cards #3292 and #3305 in
+# 'doing' with every criterion met: card identification (and therefore
+# `kanban done`) was never attempted because this guard fired first, and
+# the failure was indistinguishable from the routine, benign "no path at
+# all" case in the logs.
+# ---------------------------------------------------------------------------
+
+class TestMissingTranscriptPathSurfacing:
+    """A non-empty transcript_path pointing to a missing file must be logged
+    via log_error (an anomaly — the daemon told us to look at something
+    specific and it wasn't there), never silently folded into the same
+    log_info branch as a plain empty transcript_path (the benign, common
+    case for non-kanban-managed Task calls).
+    """
+
+    def test_nonexistent_nonempty_path_logs_error(self, hook):
+        """Non-empty transcript_path + missing file → log_error is called,
+        with the offending path present in the message."""
+        payload = make_stop_payload(transcript_path="/tmp/does-not-exist-transcript-xyz.jsonl")
+
+        with patch.object(hook, "log_error") as mock_error:
+            with patch.object(hook, "log_info"):
+                result = hook.process_subagent_stop(payload)
+
+        assert_allow(result)
+        assert mock_error.call_count >= 1, (
+            "Expected log_error to be called for a non-empty, nonexistent "
+            "transcript_path — this is the exact silent failure that "
+            "stranded cards #3292 and #3305 (see "
+            ".scratchpad/3312-hook-determination.md)."
+        )
+        logged_messages = " ".join(str(call.args[0]) for call in mock_error.call_args_list)
+        assert "does-not-exist-transcript-xyz.jsonl" in logged_messages, (
+            f"Expected the offending path in the log_error message. Got: {logged_messages!r}"
+        )
+
+    def test_empty_path_does_not_log_error(self, hook):
+        """A plain empty transcript_path is the benign case — must NOT
+        trigger log_error (only log_info), so it stays out of the
+        low-volume error log that the missing-file anomaly now uses."""
+        payload = make_stop_payload(transcript_path="")
+
+        with patch.object(hook, "log_error") as mock_error:
+            with patch.object(hook, "log_info"):
+                result = hook.process_subagent_stop(payload)
+
+        assert_allow(result)
+        assert mock_error.call_count == 0, (
+            f"Expected log_error NOT to be called for an empty transcript_path "
+            f"(benign case). Got calls: {mock_error.call_args_list}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Card already done
 # ---------------------------------------------------------------------------
 
