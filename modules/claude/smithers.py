@@ -204,8 +204,9 @@ FIX_INVOCATION_TIMEOUT_SECONDS = int(os.environ.get("SMITHERS_FIX_INVOCATION_TIM
 # `--model sonnet`, `--effort high`, and `--permission-mode dontAsk` are
 # explicit user decisions — not defaults this module infers — and must never
 # be substituted. `staff.bash` execs `claude ... "$@"`, so these, appended
-# last, cleanly override its own `opus[1m]`/`xhigh`/`auto` defaults
-# (`modules/claude/staff.bash:12-17`) with no change to `staff.bash` itself.
+# last, cleanly override whatever model, effort, and permission-mode defaults
+# that launcher sets (see `modules/claude/staff.bash`) with no change to
+# `staff.bash` itself.
 # `--output-format json` is layered on top so the cost estimate and session
 # id can be logged (§ Output parsing and trust) — it is not one of the four
 # settled tokens above, and nothing in its payload is ever allowed to drive
