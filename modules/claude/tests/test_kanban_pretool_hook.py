@@ -149,6 +149,39 @@ class TestMissingRunInBackground:
         assert updated_input.get("subagent_type") == "swe-devex"
 
 
+class TestAffirmativeRunInBackgroundStringForms:
+    """String forms of 'true' (case-insensitive) must be treated as affirmative,
+    matching boolean True — decision must be 'allow'.
+
+    Ported from the deleted top-level duplicate
+    modules/claude/test_kanban_pretool_hook.py, whose equivalent
+    '*_is_permitted' tests still passed against current hook behavior (only
+    that file's '*_is_denied' tests were stale, per commit 15bd48c's
+    self-heal-instead-of-deny change). This preserves that still-valid
+    coverage of the case-insensitive string comparison in the canonical
+    suite.
+    """
+
+    @staticmethod
+    def _fake_subprocess_run(cmd, **kwargs):
+        card_xml = KanbanMockResponses.card_xml()
+        if cmd[0] == "kanban" and cmd[1] == "show":
+            return KanbanMockResponses.success(stdout=card_xml)
+        if cmd[0] == "kanban" and cmd[1] == "agent":
+            return KanbanMockResponses.success()
+        return KanbanMockResponses.failure()
+
+    @pytest.mark.parametrize("value", ["true", "True", "TRUE"])
+    def test_string_true_variants_are_permitted(self, hook, value):
+        """String 'true' (any case) must be permitted (decision='allow'),
+        equivalent to boolean True.
+        """
+        payload = make_pretool_payload(run_in_background=value)
+        with patch("subprocess.run", side_effect=self._fake_subprocess_run):
+            result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+
 class TestMissingDescription:
     """Agent call missing or empty description → denied."""
 

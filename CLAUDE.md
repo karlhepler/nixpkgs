@@ -216,6 +216,8 @@ brew install colima  # ❌ FORBIDDEN
 
 For exception/workflow skills (invoked via Skill tool), create at `modules/claude/global/skills/<name>/SKILL.md` instead. See § Team Member Terminology for the full distinction.
 
+**Add or edit a hook test:** Hook tests live **exclusively** in `modules/claude/tests/`. Never place a `test_*hook*.py` file at the `modules/claude/` top level — a depth-limited lookup finds the shallower path first, so a stale copy there gets cited as "the convention" and reproduces itself into new files. `modules/claude/tests/test_hook_test_location_guard.py` fails the suite if one reappears. When citing an existing suite as a pattern to follow, cite one from `modules/claude/tests/` — and confirm it is the maintained copy, since the guard enforces location only, not content.
+
 **Update Nix dependencies:**
 1. `nix flake update` (updates flake.lock)
 2. `hms` to apply
