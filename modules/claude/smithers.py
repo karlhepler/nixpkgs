@@ -150,6 +150,50 @@ SLACK_SEARCH_TOOL = "mcp__claude_ai_Slack__slack_search_public"
 # block the poll loop indefinitely.
 SLACK_DEDUP_TIMEOUT_SECONDS = int(os.environ.get("SMITHERS_SLACK_DEDUP_TIMEOUT_SECONDS", "45"))
 
+# Wall-clock bound on every plain `gh`/`git`/`prc` subprocess call this file
+# issues — `_run` (§ `resolve_pr`'s git/gh auto-detect calls, `execute_land`'s
+# `gh pr merge`, `replied_and_resolved`'s `prc reply`/`prc resolve`,
+# `notify_macos`'s `osascript`, `notify_slack`'s `smithers-post`) and
+# `_run_json_command` (§ `fetch_pr_snapshot`'s `gh pr view`/`gh pr checks`/
+# `prc list` calls). Closes a real gap: `SLACK_DEDUP_TIMEOUT_SECONDS` and
+# `FIX_INVOCATION_TIMEOUT_SECONDS` already bound their own subprocess calls,
+# but nothing bounded these — a hung `gh` process blocked the poll loop
+# indefinitely with zero `Notify`, zero new log line, and no external signal
+# (the exact silent-stalling failure mode this module's own docstring history
+# warns about). One shared constant covers every call site bounded here
+# rather than two separate ones, because every one of them is a single,
+# synchronous `gh`/`git`/`prc` CLI invocation with no agentic work behind it —
+# a materially different shape from `FIX_INVOCATION_TIMEOUT_SECONDS` (a full
+# `staff -p` session, 1200s) or `SLACK_DEDUP_TIMEOUT_SECONDS` (a scoped Claude
+# invocation, 45s), so borrowing either of those would be either far too
+# generous or, for the fix-invocation case, wildly too short.
+GH_SUBPROCESS_TIMEOUT_SECONDS = int(os.environ.get("SMITHERS_GH_SUBPROCESS_TIMEOUT_SECONDS", "30"))
+
+# Synthetic returncode `_run` assigns to a timed-out subprocess (§ `_run`'s
+# own docstring) — the conventional GNU `timeout` exit code. Named here,
+# rather than left as a bare 124 at each call site, so `execute_land`'s
+# timeout-visibility check (§ card 3271 Finding 1) reads as "the same
+# convention `_run` documents", not an unrelated magic number.
+SUBPROCESS_TIMEOUT_RETURNCODE = 124
+
+# Known limitation (§ card 3271 Finding 3 — documented, not engineered
+# around): `subprocess.run(timeout=...)` measures its deadline against
+# `time.monotonic`, which correctly pauses across a WHOLE-MACHINE sleep on
+# macOS — verified, so a laptop lid closing mid-poll never produces a
+# spurious timeout. The one case this does NOT cover is the parent smithers
+# process alone being suspended (e.g. a targeted SIGSTOP delivered to just
+# this PID, not the whole machine) while a child `gh`/`git`/`prc` process
+# keeps running underneath it: on resume, the elapsed wall-clock time can
+# already exceed `GH_SUBPROCESS_TIMEOUT_SECONDS`, so `subprocess.run` raises
+# `TimeoutExpired` immediately rather than after a genuine hang. This is a
+# narrow, low-likelihood edge case — a targeted SIGSTOP of this one process
+# is a far less common occurrence than the whole-machine sleep already
+# verified safe — and the failure direction is a spurious "timed out"
+# classification of a call that was actually still progressing, never a
+# missed timeout that leaves a genuine hang undetected. Proportionate
+# response is to document it here, not to add retry logic or an alternate
+# clock source to a tool that merges pull requests.
+
 # Approval-watch cadence (card 3052, § APPROVAL-WATCH CADENCE;
 # `_is_approval_watch_cadence`, `poll_loop`) — the slower polling interval
 # used while a PR is clean and merely waiting on a human reviewer
@@ -441,13 +485,37 @@ class ResolutionFailure:
     message: str
 
 
-def _run(cmd: List[str]) -> subprocess.CompletedProcess:
+def _run(cmd: List[str], timeout: int = GH_SUBPROCESS_TIMEOUT_SECONDS) -> subprocess.CompletedProcess:
     """Thin subprocess.run wrapper: capture output as text, never raise on a
     non-zero exit (the caller inspects returncode itself). Deliberately does
     NOT catch FileNotFoundError — callers that need to distinguish "binary
     not on PATH" from any other failure do that at the call site (see
-    resolve_pr's gh auth status call)."""
-    return subprocess.run(cmd, capture_output=True, text=True, check=False)
+    resolve_pr's gh auth status call).
+
+    Bounded by `GH_SUBPROCESS_TIMEOUT_SECONDS` (§ that constant's own
+    comment) so a hung `gh`/`git`/`prc`/`osascript`/`smithers-post` process
+    can never block a caller — and, transitively, the poll loop that calls
+    it via `execute_land`/`replied_and_resolved`/`notify_macos`/
+    `notify_slack` — indefinitely. A `subprocess.TimeoutExpired` is caught
+    here and turned into an ordinary-looking failed `CompletedProcess`
+    (`returncode=124`, the conventional GNU-`timeout` exit code, with the
+    reason in `stderr`) rather than left to propagate: every existing
+    caller already inspects `.returncode`/`.stderr` for a non-zero exit as
+    its own failure path (`execute_land`'s `land_failed` log event,
+    `replied_and_resolved`'s `thread_sweep_reply_failed`/
+    `thread_sweep_resolve_failed_after_reply` log events, `resolve_pr`'s own
+    per-step failures), so a timeout is classified and logged through that
+    SAME existing machinery — never a new, parallel one — and never crashes
+    the process the way an unhandled `TimeoutExpired` would."""
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(
+            args=cmd,
+            returncode=SUBPROCESS_TIMEOUT_RETURNCODE,
+            stdout="",
+            stderr=f"{cmd[0]} timed out after {timeout}s",
+        )
 
 
 def _resolution_failed(reason: str, message: str, log_path: str) -> ResolutionFailure:
@@ -563,14 +631,36 @@ def _run_json_command(cmd: List[str], source: str, log_path: str) -> Tuple[Optio
     A non-zero exit code alone is NOT treated as a failure: e.g. `gh pr
     checks` legitimately exits non-zero when checks are pending or failing,
     and that is real PRSnapshot data, not an adapter error. Only a missing
-    executable, or stdout that isn't valid non-empty JSON, becomes a
-    FetchFailure — this is what keeps a genuine API/tool failure
-    distinguishable from a legitimate "nothing found" result.
+    executable, stdout that isn't valid non-empty JSON, or a call that
+    exceeded `GH_SUBPROCESS_TIMEOUT_SECONDS`, becomes a FetchFailure — this
+    is what keeps a genuine API/tool failure distinguishable from a
+    legitimate "nothing found" result.
+
+    A timeout (§ `GH_SUBPROCESS_TIMEOUT_SECONDS`) is caught here and folded
+    into the SAME typed `FetchFailure` + `"fetch_failed"` log event the
+    missing-executable branch immediately below already produces — never a
+    second, parallel failure path. From there it flows through
+    `fetch_pr_snapshot`'s caller (`poll_loop`) exactly like any other fetch
+    failure: `_is_non_retryable_fetch_failure` classifies a bare "timed out
+    after Ns" message as retryable (it matches neither of that function's
+    two non-retryable shapes), so `poll_loop` backs off exponentially and
+    escalates to a `Notify` on the second and every later consecutive
+    failure — the existing policy for a transient-looking failure, not a
+    new one invented for this case.
     """
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, check=False, timeout=GH_SUBPROCESS_TIMEOUT_SECONDS
+        )
     except FileNotFoundError:
         failure = FetchFailure(source=source, message=f"{cmd[0]} not found on PATH")
+        log_event(log_path, "fetch_failed", source=source, message=failure.message)
+        return None, failure
+    except subprocess.TimeoutExpired:
+        failure = FetchFailure(
+            source=source,
+            message=f"{cmd[0]} timed out after {GH_SUBPROCESS_TIMEOUT_SECONDS}s",
+        )
         log_event(log_path, "fetch_failed", source=source, message=failure.message)
         return None, failure
 
@@ -1108,9 +1198,15 @@ def _terminal_stop_notify(snapshot: PRSnapshot, reason: str) -> Notify:
     (§ Feature parity checklist row 44: "keep the distinct sounds per
     terminal state"). Safe to fire unconditionally here: every TERMINAL
     suppressor already halts the watch for real (`poll_loop` returns on
-    `Stop`), unlike a hypothetical Land-time notification, which would be
-    premature today since no adapter yet performs the real GitHub mutation
-    (§ Feature parity checklist row 13 — a later phase)."""
+    `Stop`).
+
+    Distinct from a Land-time notification, which is no longer hypothetical
+    (§ card 3271 Finding 2): `execute_land` DOES perform the real GitHub
+    mutation, as of card 3046, and — as of card 3271 Finding 1 — notifies
+    the operator itself on a timed-out merge attempt, through its own
+    narrow notify-only port bound at `build_send`'s composition root. That
+    Land-side visibility belongs to `execute_land`, not here; this function
+    covers only the Stop side of a terminal transition."""
     return Notify(
         title="Smithers",
         body=f"PR #{snapshot.pr_number} watch stopped: {reason}",
@@ -1254,7 +1350,22 @@ LAND_METHOD_FLAGS: Dict[str, str] = {
 }
 
 
-def execute_land(msg: Message, pr_number: Optional[str], log_path: str, armed: Dict[str, bool]) -> None:
+def _default_notify(_msg: Message) -> None:
+    """No-op default for `execute_land`'s `notify` parameter (§ card 3271
+    Finding 1). Existing direct-unit-test callers that construct
+    `execute_land` without wiring a real notify port (§ `TestExecuteLand`)
+    keep working unchanged; only the real composition root (`build_send`)
+    passes something that actually reaches an operator."""
+    return None
+
+
+def execute_land(
+    msg: Message,
+    pr_number: Optional[str],
+    log_path: str,
+    armed: Dict[str, bool],
+    notify: Callable[[Message], None] = _default_notify,
+) -> None:
     """The GitHub mutation adapter — binds to `Land` messages and performs
     the real merge via `gh pr merge <pr> <method-flag>` (§ Ports and adapters
     table: "GitHub mutation | Land | gh pr merge"). Reuses the `_run`
@@ -1271,6 +1382,33 @@ def execute_land(msg: Message, pr_number: Optional[str], log_path: str, armed: D
     docstring) — an absent, Nix-guaranteed dependency is an environment
     fault this adapter is intended to surface, not swallow (§ CLAUDE.md §
     Scripting Principles).
+
+    A hung `gh pr merge` is now bounded too (§ `GH_SUBPROCESS_TIMEOUT_
+    SECONDS`, `_run`'s own docstring): `_run` turns a `TimeoutExpired` into
+    a synthetic non-zero-returncode `CompletedProcess`, so a timeout reaches
+    the exact same "log `land_failed` and return" branch below as every
+    other `gh pr merge` refusal — correct and final for this cycle, never
+    retried with an escalated flag, and re-derived fresh from the next
+    poll's own snapshot like any other missed Land.
+
+    `notify` (§ card 3271 Finding 1 — HIGH): a land-path timeout used to be
+    visible ONLY as the `land_failed` log line below — no adapter ever saw
+    it, unlike a fetch-path timeout, which already reaches the operator via
+    the existing retryable-fetch-failure `Notify` path. That silence is
+    worse here than it looks: `tick` unconditionally emits `Disarm`
+    immediately after any single `Land` attempt, with no retry (§ `tick`
+    docstring, "every terminal path ... also emits Disarm"), so a
+    timed-out land is not a transient miss — it is permanent for the rest
+    of this watch. `notify` is a NARROW, notify-adapters-only port — never
+    the full `send` bus — bound in at `build_send`'s composition root (§
+    that function) specifically to avoid this adapter re-entering `send`
+    and risking recursion; the default above is a no-op so every existing
+    direct call to this function keeps working unchanged. On a timed-out
+    merge specifically (`result.returncode == SUBPROCESS_TIMEOUT_
+    RETURNCODE`) this now also calls `notify` with an audible `Notify`
+    naming the timeout and that the watch will not retry — reaching the
+    operator through the same macOS/Slack/pane surface as every other
+    `Notify` in this file, not only the JSONL log.
 
     HARD PROHIBITION: never passes a force-merge flag, GitHub's
     administrator-override flag, or any other branch-protection-bypass flag
@@ -1303,6 +1441,19 @@ def execute_land(msg: Message, pr_number: Optional[str], log_path: str, armed: D
             method=msg.method,
             message=(result.stderr or "").strip()[:500],
         )
+        if result.returncode == SUBPROCESS_TIMEOUT_RETURNCODE:
+            notify(
+                Notify(
+                    title="Smithers",
+                    body=(
+                        f"PR #{pr_number}: gh pr merge timed out after "
+                        f"{GH_SUBPROCESS_TIMEOUT_SECONDS}s — this land attempt "
+                        "failed and the watch will not retry it; check the PR "
+                        "and merge manually if it is still ready"
+                    ),
+                    sound=True,
+                )
+            )
         return
 
     log_event(log_path, "land_succeeded", pr=pr_number, method=msg.method)
@@ -1761,14 +1912,34 @@ def build_send(
 
     No `dry_run` parameter: the CLI's one dry-run mechanism is `cmd_watch`'s
     own early return before this composition root is ever constructed
-    (§ card 3035 Fix 3) — see `notify_macos`/`notify_slack`/`notify_pane`."""
+    (§ card 3035 Fix 3) — see `notify_macos`/`notify_slack`/`notify_pane`.
+
+    `notify_only` (§ card 3271 Finding 1) is a SECOND, narrower `fan_out`
+    built here alongside the real `send` it is bound into `execute_land`
+    with — the composition root already has every notify adapter in hand,
+    so it binds a notify-only callable directly rather than letting
+    `execute_land` (an adapter, not a bus participant) re-enter the full
+    `send` it is itself one branch of. It fans out to exactly the three
+    notify adapters plus the structured log adapter — never `execute_land`
+    or `execute_disarm` themselves — so a land-path timeout's own `Notify`
+    can never recurse back into this function or double-invoke `gh pr
+    merge`."""
     if already_posted is None:
         already_posted = {}
     armed: Dict[str, bool] = {"armed": True}
 
+    notify_only = fan_out(
+        [
+            lambda msg: notify_macos(msg, log_path),
+            lambda msg: notify_slack(msg, pr_number, log_path, already_posted),
+            lambda msg: notify_pane(msg, log_path),
+            lambda msg: log_adapter(msg, log_path),
+        ]
+    )
+
     return fan_out(
         [
-            lambda msg: execute_land(msg, pr_number, log_path, armed),
+            lambda msg: execute_land(msg, pr_number, log_path, armed, notify_only),
             lambda msg: execute_disarm(msg, log_path, armed),
             lambda msg: notify_macos(msg, log_path),
             lambda msg: notify_slack(msg, pr_number, log_path, already_posted),

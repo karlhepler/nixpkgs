@@ -1310,6 +1310,118 @@ class TestCmdWatch:
         assert result == 0
 
 
+# ---------------------------------------------------------------------------
+# End-to-end composition-root test (§ audit — closes the "built-but-unwired"
+# gap class, after Notify/Land/sweep_threads). Every `cmd_watch` test above
+# mocks `poll_loop` outright (e.g. `test_non_dry_run_wires_and_invokes_
+# poll_loop`), and every real-`poll_loop` test elsewhere in this file
+# (e.g. `TestNoMergeFlag.test_no_merge_flag_blocks_land`) starts from
+# `poll_loop` directly, never from `cmd_watch`. Nothing joins the two: a
+# regression that broke only the `cmd_watch` -> `poll_loop` wire (wrong
+# `send`, wrong `log_path`, `build_send` never actually called) would pass
+# every one of those tests and still be dead in production — the exact
+# mechanism by which three components previously shipped fully unit-tested
+# and never called from anywhere real.
+# ---------------------------------------------------------------------------
+
+def _end_to_end_subprocess_fake(cmd, **kwargs):
+    """Fakes ONLY the subprocess boundary for
+    `test_cmd_watch_drives_real_poll_loop_and_build_send` below — every
+    Python call above this line (`cmd_watch`, `resolve_pr`, `build_send`,
+    `poll_loop`, `tick`) runs for real and unmocked.
+
+    Modeled on `make_gh_side_effect` above, but also answers `osascript`
+    (`notify_macos`) and `claude` (`notify_slack`'s `query_slack_dedup`) —
+    both real, unmocked adapters that the REAL `build_send` wires and that
+    fire for the terminal `Notify` this scenario's non-retryable fetch
+    failure emits. Answering the Slack dedup probe DUPLICATE short-circuits
+    `notify_slack` before it would otherwise invoke `smithers-post`, keeping
+    this fake's surface to exactly the commands this one scenario reaches.
+    """
+    if cmd[:3] == ["gh", "pr", "view"]:
+        return fake_run_result(stdout=GH_VIEW_FIXTURE)
+    if cmd[:3] == ["gh", "pr", "checks"]:
+        return fake_run_result(stdout=GH_CHECKS_FIXTURE)
+    if cmd[0] == "prc" and _prc_subcommand(cmd) == "list":
+        # A permanently-broken argparse invocation (§
+        # TestPollLoopNonRetryableFetchFailure) — deliberately makes the
+        # REAL poll_loop return after exactly one cycle with no max_cycles
+        # bound and no patched time.sleep, since cmd_watch's own
+        # PollLoopConfig always has max_cycles=None in production.
+        return fake_run_result(
+            stdout="",
+            stderr=(
+                "usage: prc [-h] [--format {xml,json,human}]\n"
+                "           {list,reply,resolve,unresolve,collapse} ...\n"
+                "prc: error: unrecognized arguments: --format json"
+            ),
+            returncode=2,
+        )
+    if cmd[:1] == ["osascript"]:
+        return fake_run_result()
+    if cmd[:1] == ["claude"]:
+        return fake_run_result(stdout=json.dumps({"result": "DUPLICATE"}))
+    raise AssertionError(f"unexpected command in test: {cmd}")
+
+
+class TestCmdWatchEndToEnd:
+    def test_cmd_watch_drives_real_poll_loop_and_build_send(self, tmp_path):
+        """Starts at `cmd_watch` (the real entry point `main` dispatches to)
+        and traverses the REAL chain: `cmd_watch` -> `resolve_pr` ->
+        `build_send` -> `poll_loop` -> `tick` -> `send` -> every real
+        adapter `build_send` wires (`execute_land`, `execute_disarm`,
+        `notify_macos`, `notify_slack`, `notify_pane`, `log_adapter`).
+        `poll_loop`, `build_send`, and `tick` are never mocked — only
+        `subprocess.run` is faked, via `_end_to_end_subprocess_fake` above.
+
+        An explicit PR number (`"123"`) keeps `resolve_pr` a same-value
+        pass-through with zero git/gh calls, and `--i-accept-api-billing`
+        keeps the billing preflight hermetic regardless of this process's
+        real environment.
+
+        Asserts on a `"disarmed"` log record — the log line only
+        `execute_disarm` (bound EXCLUSIVELY inside the REAL `build_send`,
+        never invoked directly by this test) can produce. A test double
+        standing in for `send` (as most other `poll_loop` tests in this file
+        use) could never produce this record; only the real composition
+        root, actually driven end to end, can. A `cmd_watch` -> `poll_loop`
+        wiring break (wrong `send` passed, or `build_send` never actually
+        called) would leave this record absent even though `cmd_watch`
+        itself still returned 0 — which is exactly the gap this test
+        closes."""
+        log_path = str(tmp_path / "smithers.jsonl")
+        parser = build_parser()
+        args = parser.parse_args(["123", "--log-file", log_path, "--i-accept-api-billing"])
+
+        with patch("subprocess.run", side_effect=_end_to_end_subprocess_fake):
+            result = cmd_watch(args)
+
+        assert result == 0
+
+        log_records = [json.loads(line) for line in open(log_path).read().splitlines()]
+
+        disarmed_records = [rec for rec in log_records if rec.get("event") == "disarmed"]
+        assert disarmed_records, (
+            "expected a 'disarmed' log record — only execute_disarm, wired "
+            "exclusively inside the REAL build_send, can produce it. Its "
+            "absence means the real chain from cmd_watch through poll_loop "
+            "to the composition root's adapters was never actually "
+            "traversed."
+        )
+        assert disarmed_records[0]["reason"] == "non_retryable_fetch_failure"
+
+        stop_message_records = [
+            rec for rec in log_records
+            if rec.get("event") == "message" and rec.get("type") == "Stop"
+        ]
+        assert stop_message_records, (
+            "expected a 'message'-typed log record for the Stop message the "
+            "real poll_loop emitted, written by log_adapter — also wired "
+            "only inside the real build_send"
+        )
+        assert stop_message_records[0]["reason"] == "non_retryable_fetch_failure"
+
+
 class TestMain:
     def test_main_dispatches_to_cmd_watch(self, tmp_path, capsys):
         log_path = str(tmp_path / "smithers.jsonl")
@@ -3010,6 +3122,144 @@ class TestPollLoopBackoffOnRepeatedFetchFailure:
         # passed straight through to _invoke_fix_session, which is the one
         # that filters it down before the subprocess ever sees it.
         assert mock_invoke.call_args.kwargs.get("env") == config.env
+
+
+# ---------------------------------------------------------------------------
+# GH_SUBPROCESS_TIMEOUT_SECONDS (§ audit — a hung `gh` process previously
+# blocked the poll loop indefinitely, emitting zero Notify, zero new log
+# line, and no external signal). `subprocess.run` is faked here to RAISE
+# `subprocess.TimeoutExpired` directly — the standard way to simulate "the
+# real subprocess hung past its wall-clock ceiling" under mocking, without
+# actually waiting out that ceiling in the test. `time.sleep` is always
+# faked here too, never a real sleep.
+# ---------------------------------------------------------------------------
+
+class TestGhSubprocessTimeout:
+    def test_run_json_command_timeout_is_caught_and_classified_as_retryable(self, tmp_path):
+        """A hung `prc list` call (§ `_run_json_command`, used by
+        `fetch_pr_snapshot`) is caught, turned into a `FetchFailure` via the
+        SAME machinery the missing-executable branch already uses, and
+        classified as RETRYABLE — `_is_non_retryable_fetch_failure` matches
+        neither of its two non-retryable shapes against a bare "timed out
+        after Ns" message — so `poll_loop` backs off exponentially exactly
+        like any other transient fetch failure, and surfaces a `Notify` on
+        the second consecutive occurrence, rather than crashing or Stopping
+        the watch outright."""
+        log_path = str(tmp_path / "smithers.jsonl")
+        sent = []
+
+        def side_effect(cmd, **kwargs):
+            if cmd[:3] == ["gh", "pr", "view"]:
+                return fake_run_result(stdout=GH_VIEW_FIXTURE)
+            if cmd[:3] == ["gh", "pr", "checks"]:
+                return fake_run_result(stdout=GH_CHECKS_FIXTURE)
+            if cmd[0] == "prc":
+                # The faked hang: simulates prc's process exceeding
+                # GH_SUBPROCESS_TIMEOUT_SECONDS, exactly as subprocess.run
+                # itself would raise after a real hang that long.
+                raise subprocess.TimeoutExpired(cmd=cmd, timeout=smithers_module.GH_SUBPROCESS_TIMEOUT_SECONDS)
+            raise AssertionError(f"unexpected command in test: {cmd}")
+
+        with patch("subprocess.run", side_effect=side_effect):
+            with patch("time.sleep") as mock_sleep:
+                config = PollLoopConfig(max_cycles=2, env={}, accept_api_billing=True)
+                poll_loop("123", config, sent.append, log_path)
+
+        # Retryable, not permanent: normal exponential backoff, no Stop/Disarm.
+        assert mock_sleep.call_args_list == [call(300), call(900)]
+        assert not any(isinstance(msg, Stop) for msg in sent)
+        assert not any(isinstance(msg, Disarm) for msg in sent)
+
+        # Externally visible: the second consecutive identical failure
+        # reaches the send port as a pane-visible Notify whose body names
+        # the timeout explicitly.
+        notify_messages = [msg for msg in sent if isinstance(msg, Notify)]
+        assert len(notify_messages) == 1
+        assert "timed out after" in notify_messages[0].body
+
+        log_contents = open(log_path).read()
+        assert '"event": "fetch_failed"' in log_contents
+        assert "timed out after" in log_contents
+
+    def test_run_wrapper_timeout_yields_a_synthetic_failed_result_not_a_crash(self):
+        """`_run` (used by `execute_land`/`resolve_pr`/`replied_and_resolved`
+        /`notify_macos`/`notify_slack`) never lets `subprocess.TimeoutExpired`
+        propagate — it is caught and turned into an ordinary-looking failed
+        `CompletedProcess` (§ `_run`'s own docstring), so every existing
+        returncode-checking caller classifies a timeout exactly like any
+        other command failure, with no new exception type for any of them
+        to handle."""
+        def side_effect(cmd, **kwargs):
+            raise subprocess.TimeoutExpired(cmd=cmd, timeout=smithers_module.GH_SUBPROCESS_TIMEOUT_SECONDS)
+
+        with patch("subprocess.run", side_effect=side_effect):
+            result = smithers_module._run(["gh", "pr", "merge", "123", "--squash"])
+
+        assert result.returncode != 0
+        assert "timed out after" in result.stderr
+
+
+class TestLandTimeoutVisibility:
+    def test_land_timeout_is_externally_visible(self, tmp_path, capsys):
+        """§ card 3271 Finding 1 (HIGH): before this card, a land-path
+        timeout was visible ONLY as `execute_land`'s own `land_failed` log
+        line — no adapter ever saw it, unlike a fetch-path timeout, which
+        already reaches the operator via the existing retryable-fetch-
+        failure `Notify` path (§ `TestGhSubprocessTimeout` above). That
+        silence mattered because `tick` unconditionally `Disarm`s
+        immediately after any single `Land` attempt with no retry, so a
+        timed-out land was not a transient miss — it was permanent for the
+        rest of the watch, with the pane looking healthy the whole time.
+
+        Drives the REAL composition root built by `build_send` (never a
+        hand-constructed fake `send`, never a mocked `execute_land` — §
+        composition-root testing corollary: mocking the composition root is
+        exactly how dead wiring shipped here three times before) and fakes
+        ONLY the subprocess boundary: `gh pr merge` raises
+        `subprocess.TimeoutExpired` exactly as a real hang past
+        `GH_SUBPROCESS_TIMEOUT_SECONDS` would, and `_run` turns that into
+        the synthetic `SUBPROCESS_TIMEOUT_RETURNCODE` `CompletedProcess` it
+        always does. Asserts the operator-visible notify adapters
+        (macOS/Slack/pane) actually fired, not merely that `execute_land`
+        returned or that some internal call count incremented."""
+        log_path = str(tmp_path / "smithers.jsonl")
+        calls = []
+
+        def side_effect(cmd, **kwargs):
+            calls.append(cmd)
+            if cmd[:3] == ["gh", "pr", "merge"]:
+                raise subprocess.TimeoutExpired(
+                    cmd=cmd, timeout=smithers_module.GH_SUBPROCESS_TIMEOUT_SECONDS
+                )
+            if cmd[0] == "claude":
+                return fake_run_result(stdout=json.dumps({"result": "NOT_DUPLICATE"}))
+            return fake_run_result()
+
+        send = build_send(pr_number="123", log_path=log_path)
+
+        with patch("subprocess.run", side_effect=side_effect):
+            send(Land(method="squash"))
+
+        assert any(cmd[:3] == ["gh", "pr", "merge"] for cmd in calls), (
+            "the fake never actually reached the gh pr merge call site"
+        )
+
+        # Operator-visible: all three real notify adapters fired, reached
+        # through execute_land's own narrow notify port — not only the
+        # JSONL `land_failed` line that already existed before this card.
+        assert any(cmd[0] == "osascript" for cmd in calls), (
+            "a land-path timeout never reached the macOS notify adapter"
+        )
+        assert any(cmd[0] == "smithers-post" for cmd in calls), (
+            "a land-path timeout never reached the Slack notify adapter"
+        )
+        captured = capsys.readouterr()
+        assert "timed out" in captured.err, (
+            "a land-path timeout never reached the foreground-pane notify adapter"
+        )
+
+        log_contents = open(log_path).read()
+        assert "land_failed" in log_contents
 
 
 # ---------------------------------------------------------------------------
