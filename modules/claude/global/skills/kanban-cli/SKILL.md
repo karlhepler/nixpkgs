@@ -230,6 +230,30 @@ A bare contiguous-character-count regex (e.g., `! rg -q '[A-Za-z0-9_-]{32,}' <fi
 
 **Completeness limit:** even a structural anchor assumes the secret appears WITH structural context. When a secret can appear with no structural context — a raw key or token pasted with no `KEY=` assignment and no header/prefix nearby — neither a length threshold nor a structural anchor reliably catches it; no single-regex MoV can. Treat the structural-anchor MoV as a tripwire for the common structured case only, and lean on the sub-agent's stop-on-broken-MoV behavior plus human review for the context-free case (or scope the check to where the secret would actually carry structural context).
 
+### `actionlint` cannot lint a composite action file
+
+`actionlint` validates WORKFLOW schema (`on:`/`jobs:`) only. A composite action file (`.github/actions/*/action.yml`, which uses the `runs:`/`inputs:` schema) has neither key, so `actionlint` fails on it regardless of content — the MoV is structurally broken from the moment it is written.
+
+- ❌ `actionlint .github/actions/my-action/action.yml` — fails complaining about missing `jobs`/`on`, even against the unmodified HEAD version of the file
+- ✅ `zizmor` for composite-action lint/security checks (confirm invocation via `zizmor --help` first)
+- ✅ Skip the local MoV entirely when the repo's CI already runs a Zizmor-equivalent check against the same file
+
+**Detection signature:** the command fails IDENTICALLY against HEAD, before any edit — a strong signal the MoV targets the wrong tool rather than a real defect.
+
+**Recurrence indicator:** a card whose `editFiles` includes `.github/actions/*/action.yml` with a `mov_commands` entry starting with `actionlint`. Distinct from § `mise exec -- <tool>` above, which concerns `mise exec` resolving `actionlint` on demand against WORKFLOW files — a separate concern.
+
+### Section-window (`rg -A N`) MoVs without measuring anchor-to-target distance
+
+A section-scoped window (`rg -F -A N '<anchor>' <file> | rg -q '<target>'`) is only valid if the target actually falls inside the window. Before authoring one, measure the gap.
+
+- ❌ `rg -F -A 70 '<anchor>' file | rg -q '<target>'` — authored without checking the gap; if anchor and target are more than 70 lines apart, the MoV is unsatisfiable, and the only way to pass it is to move content closer to the anchor (usually forbidden by the same card)
+- ✅ Run `rg -n '<anchor>' file` and `rg -n '<target>' file`, subtract the line numbers, and confirm the gap is within N before writing the MoV
+- ✅ Prefer a location-agnostic assertion instead: assert the content exists anywhere in the file, plus — where placement genuinely matters — that it lands on a line of the expected shape. Neither form depends on distance.
+
+**Companion caution — bullet format:** check the target list's bullet format before asserting on it. Sibling checklists in one file may use different conventions — plain bold-label bullets versus checkbox bullets. A checkbox-marker assertion silently skips plain-bullet entries, making an occurrence count come out lower than expected and pointing diagnosis at the wrong entry.
+
+**Evidence:** an anchor and its target were 124 lines apart with `-A 70`, falling 54 lines short. Cost three agent cycles; every content assertion on the card was already true and only the arithmetic was wrong.
+
 ### Pre-`kanban do --file` lint (mandatory before every CLI invocation)
 
 Before invoking the kanban CLI, scan every `mov_commands[].cmd` field for these banned patterns:
@@ -248,6 +272,8 @@ Before invoking the kanban CLI, scan every `mov_commands[].cmd` field for these 
 - `sed`/`awk` range extraction (`/^name()/,/^}/p`) on a mandated ONE-LINE function — the range never closes and spills to EOF; use `rg -m1 '^name' file` or `awk '/^pattern/{print; exit}' file` to match the single line directly.
 - `eval` to define/invoke a dynamically-extracted function before testing — trips the trust-scorer gate (`Score 0 — subshell-expansion, eval`); write the extracted line to a temp file and `source` it instead.
 - Length-based secret-detection heuristics (bare `{32,}` character-count regex) — unreliable when domain data (paths, identifiers, hashes) can legitimately be as long as or longer than the secret; prefer structural anchors (`DD_PAT=`, `Authorization: Bearer`) and sample the domain data's max legitimate length before authoring. See full entry above.
+- `actionlint` against a composite action file (`.github/actions/*/action.yml`) — actionlint validates the WORKFLOW schema, so it fails on the composite-action `runs:`/`inputs:` wrong schema; use `zizmor` for composite-action lint/security checks instead. See § `actionlint` cannot lint a composite action file above.
+- Section-window (`rg -A N`) MoV without measuring anchor-to-target distance — the window is unsatisfiable if the gap exceeds N; run `rg -n` on both anchor and target and subtract before authoring. See § Section-window (`rg -A N`) MoVs without measuring anchor-to-target distance above.
 
 The kanban CLI lint hook is the second-line defense. Every catch is an authoring failure.
 
