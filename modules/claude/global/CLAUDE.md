@@ -66,6 +66,28 @@ Explain what the command will do, ask for confirmation, only proceed after appro
 
 ---
 
+## Tool-Block Recovery
+
+A denied, blocked, or errored tool call is never a silent turn-ending event — the agent always speaks. But not every denial calls for a retry: before reacting, classify it as a **mechanical denial** or a **prohibition denial**.
+
+**Front-door test — apply this first, straight from the denial message, before any judgment call.** Two clauses, both required:
+
+1. The message names a permitted alternative — a specific corrected form of the same action, not just "this is blocked."
+2. **Self-authorization exclusion (non-negotiable):** a route that changes YOUR OWN AUTHORIZATION is never a permitted alternative, no matter how explicitly the message names it. Setting an environment variable that grants approval you didn't have, asking a human to run the blocked command instead, or editing config/settings to permit it — these change what you're allowed to do, not how you do it, so they are self-authorization, not correction. If the only named route is self-authorization, clause 1 does not count and the denial is a **prohibition** regardless of what else the message names.
+
+If both clauses pass (an alternative is named, and it isn't self-authorization), treat it as mechanical. Checked against the two named examples plus the two mechanical examples below: `--no-verify`'s denial names `CLAUDE_NOVERIFY_AUTHORIZED=1` as its route — clause 2 excludes it, so despite naming something it is still a prohibition. `git stash`'s denial names no alternative form at all — clause 1 fails, prohibition. The `cd X && Y` and `-c`/`-e` wrapper denials each name a direct-invocation or subshell form that was already within your authority — clause 1 passes, clause 2 doesn't exclude it, so both are mechanical.
+
+- **Mechanical denial** — the block message names the correct invocation form (wrong flag, a `cd X && Y` compound, a `-c`/`-e` inline-code wrapper, a wrong path-handling idiom). The ACTION was legitimate; only the FORM was wrong. Apply the correction stated in the message and re-issue the corrected call **in the same turn**, then continue the turn's remaining planned work.
+- **Prohibition denial** — the block forbids the ACTION itself, in any form (`--no-verify` and every hook-skip variant, `perm purge`, a kanban subcommand a sub-agent may not run, `git restore`/`reset`/`clean`/`stash` from a sub-agent). Here **the denial is the answer**: report which command was denied and why, then stop the attempt — that report is how you **escalate the root-cause fix** to whoever can act on it (the coordinator, for a sub-agent — see § Dangerous Operations → NEVER skip hooks, which names this as the sub-agent's only valid response besides fixing the root cause directly). There is no corrected re-issue and no alternative route — searching for one is the exact route-around behavior § Dangerous Operations → **NEVER skip hooks** already forbids, human-delegated bypass included.
+- **Discriminator — fallback, only when the front-door test above doesn't settle it:** ask whether the correction **accomplishes the same thing the denial blocked**, or a different, permitted thing. Passing a path as an argument instead of `cd`-ing to it reaches the same legitimate goal by a permitted route — mechanical, re-issue it. Committing without the hook, or having someone else run it instead, accomplishes the same thing the denial blocked — prohibition, do not do it under any framing.
+- **Hook wording note:** hook source and this section can describe the same denial in different words without conflict. `kanban-subagent-cmd-hook.py` labels the same denial "PROHIBITION 2" for the `-c`/`-e` wrapper block — that label describes what the HOOK refuses outright, not this section's taxonomy, which turns on whether a permitted alternative form exists (here it does: "Use direct command invocation instead"), so this section still classifies it mechanical. Likewise `bash-cd-compound-hook.py`'s denial text ends "This is a hard block with no bypass — use the subshell form or remove the cd" — that sentence means the FLAG has no override, not that the action is forbidden; the same message supplies the corrected form in its own next clause, so it stays mechanical.
+- Never leave a bare tool-block message as the last output of a turn. A blocked call is not a deliverable. Silence is never the correct terminal state, because the user cannot distinguish "blocked and gave up" from "still thinking" from "crashed." A prohibition denial ends the attempt, not the turn: the agent still names the block and stops there, in prose.
+- This binds every agent tier — coordinators and specialist sub-agents alike — because every tier hits `PreToolUse` hooks and the failure mode is tier-independent.
+
+**Recurrence signature:** a turn whose final output is a tool-block system message with no subsequent assistant prose and no retry call — **both prongs** (no prose, no retry) must be absent for the signature to match. A correctly-handled prohibition denial has prose (naming the block), even though it deliberately has no retry, so it satisfies the prose prong and does not match this signature; do not manufacture a retry-shaped action just to avoid resembling it. The user asking a variant of "why did you stop?" immediately after a hook block is the same failure.
+
+---
+
 ## AWS Credentials (SSO Assume-Role Chains)
 
 **When running IaC/CLI tooling locally against an SSO-based cloud org, understand the credential-assumption chain before overriding a profile env var — NEVER blind-set `AWS_PROFILE`.** Worked example below: AWS + Terraform.
