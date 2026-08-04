@@ -68,6 +68,35 @@ Detailed guidance for mandatory reviews, review workflows, and approval criteria
 
 ---
 
+## Composition Wiring Check for Review Cards (Cross-Cutting, All Tiers)
+
+**When authoring an internal review card for a diff that adds a new adapter, handler, or DI-injected dependency, include [`review-domains.md`](../../skills/pr-review/review-domains.md) § Cross-Cutting: Composition Wiring and Lifecycle by direct reference in the review card's `action` field. Do not re-derive the wiring-reachability instruction from memory — reference it, don't restate it, so the two documents cannot drift apart.**
+
+### Why this exists
+
+`review-domains.md` § Cross-Cutting: Composition Wiring and Lifecycle carries unusually forceful language inside the `/pr-review` skill: the orchestrator MUST append it to every specialist's prompt, and it must not be omitted for any specialist. Its content describes the unwired-component defect class exactly — a green unit test injecting a mock is not evidence a feature works end to end.
+
+That check's only delivery vehicle is `/pr-review`, which orchestrates review of a GitHub pull request. This repository forbids branches, worktrees, and pull requests outright (see project `CLAUDE.md`), so `/pr-review` is structurally un-invokable here. The check is not skipped by choice — its only delivery vehicle does not exist in this repo. This section is the bridge: an internal review card authored under this protocol is the only path by which the check can reach a diff in this repository.
+
+### When to attach it
+
+Attach the reference whenever the reviewed diff adds any of:
+- A new adapter (client, repository, service wrapper)
+- A new handler (endpoint, command handler, event handler)
+- A new DI-injected dependency (constructor-injected capability, wired via composition root or container)
+
+### How to attach it
+
+Add a line to the review card's `action` field pointing to the section by path and heading — do not paste or paraphrase its content into the card:
+
+> Also apply `modules/claude/global/skills/pr-review/review-domains.md` § Cross-Cutting: Composition Wiring and Lifecycle to this diff's new `NotificationService` client — that section's own checklist covers what to verify, don't restate it here.
+
+Two generalizable lessons this section exists to preserve:
+1. A correct rule in a location nobody consults at the decision moment is indistinguishable from a missing rule.
+2. Guidance marked mandatory must not be reachable through exactly one invocation path — ask which invocation paths deliver it, and whether every repo can reach at least one.
+
+---
+
 ## Mandatory Review Deep Dive
 
 ### Why These Require Reviews
@@ -123,6 +152,8 @@ kanban todo '{"action":"Review IAM policy (Security)","intent":"Validate securit
 
 # Step 2: Launch BOTH reviewers in parallel (same message)
 ```
+
+**Composition wiring bridge:** if this diff also introduces a new dependency (e.g., a client the IAM-governed Lambda now invokes), append the reference line from § Composition Wiring Check for Review Cards → "How to attach it" to the Infra peer review card's `action` field, following that section's pattern rather than restating it here.
 
 **Review Criteria - Infrastructure Peer:**
 - Technical correctness (valid IAM syntax, resource references)
