@@ -14,7 +14,7 @@
 ## Before EVERY Task
 
 - [ ] **Scope**: One deliverable only - no "while I'm here" additions
-- [ ] **Git**: Using `karlhepler/` prefix for new branches?
+- [ ] **Git**: About to branch? Confirm the repo uses branches first (§ Check the Repo's Branching Convention), then use the `karlhepler/` prefix.
 - [ ] **🚨 NO HOMEBREW**: Not suggesting OR mentioning brew install ANYWHERE?
 - [ ] **Context7**: Using external library/framework? Queried Context7 for authoritative docs BEFORE implementing? (see § Research Priority Order)
 - [ ] **🔍 Search tools**: Using built-in Grep/Glob tools (preferred) or `rg`/`fd` via Bash? NOT `grep`/`find`?
@@ -441,6 +441,14 @@ Two questions — that's all:
 - ✅ 'Supports Z.' — describes capability
 
 **The principle:** The reader of a PR description is reviewing or using the FINAL CODE. They do not care what was broken before, what was fixed, or what was eliminated — only what the merged code does. Words like 'now', 'no longer', 'eliminated', 'fixed', 'updated to', 'changed from', 'previously', 'before', 'instead of', 'replaces', 'resolves' are red flags signaling commit-history narration. Split-sentence patterns like 'ensures ... no longer' are equally suspect. Rewrite as plain present-tense descriptions of behavior.
+
+---
+
+## Check the Repo's Branching Convention Before You Branch
+
+The default "branch first if on the default branch" behavior assumes a pull-request flow. Not every repo has one. Before creating any branch, confirm the repo actually uses branches: check its CLAUDE.md for a documented workflow, and `git log --oneline -20` for whether commits land directly on the default branch. If a repo commits straight to its default branch with no PR flow, do not branch — the repo-local convention beats this global default. Worked example of a "no": `~/.config/nixpkgs` project-root `CLAUDE.md` § ALL WORK HAPPENS DIRECTLY ON `main`.
+
+Treat branch creation as a **shared-state operation** wherever multiple sessions may share one checkout — see the worked example above for the mechanism and recovery.
 
 ---
 

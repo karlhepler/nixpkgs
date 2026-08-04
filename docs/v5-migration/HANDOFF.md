@@ -123,11 +123,11 @@ Row 6's git-alias block measured **16–17 lines, not 49**, so verified-safe dro
 
 | File | Original | Cap | Status |
 |---|---|---|---|
-| `modules/claude/global/CLAUDE.md` | 530 | **450** | ✅ reviewed, deployed, committed |
-| `CLAUDE.md` (project root) | 387 | ~~314~~ ~~338~~ → **310** | ✅ Tier-1 reviewed (#3024 + #3025), 11 findings applied, committed `dc8eba5`, live |
-| Aggregate | 917 | ~~764~~ ~~788~~ → **760** | **157-line reduction — exceeds Stage 1's 153 while fully preserving `82160b4`'s +24** |
+| `modules/claude/global/CLAUDE.md` | 530 | ~~450~~ → **485** | ✅ Stage 1 milestone met and deployed at 450; NOT an enforced cap (no test/lint/hook checks it — verified 2026-08-04, card #3294, see `.scratchpad/3294-cap-determination.md`) — post-migration content (a `## Tool-Block Recovery` section, then card #3294's branching-convention check) grew it to 485 |
+| `CLAUDE.md` (project root) | 387 | ~~314~~ ~~338~~ ~~310~~ → **312** | ✅ Tier-1 reviewed (#3024 + #3025), 11 findings applied, committed `dc8eba5`; grew to 312 after `6a655cd` relocated hook tests and added 2 lines, live |
+| Aggregate | 917 | ~~764~~ ~~788~~ ~~760~~ ~~795~~ → **797** | Stage 1's 157-line reduction remains the historical achievement; current aggregate reflects legitimate post-migration content added to both files (450→485 above; project file's `82160b4` +24 and `6a655cd` +2 already reflected in its 312) |
 
-> **The Tier-1 review made the file both better and smaller.** Sequence: 387 → 314 (unit 1.5) → 338 (owner's `82160b4`, +24) → **310** (review fixes, −28). The −28 is F10's relocation of three Nix code blocks into `docs/nixpkgs-repo-reference.md` plus F12's removal of a duplicated procedure, against six additions that each add arbitration or routing. **No rule was removed or weakened to get there, and the owner's section is byte-for-byte untouched.** Current aggregate 450 + 310 = 760, a 157-line reduction from 917 — 4 lines better than Stage 1's close despite carrying 24 lines of content Stage 1 never had.
+> **The Tier-1 review made the file both better and smaller.** Sequence: 387 → 314 (unit 1.5) → 338 (owner's `82160b4`, +24) → **310** (review fixes, −28). The −28 is F10's relocation of three Nix code blocks into `docs/nixpkgs-repo-reference.md` plus F12's removal of a duplicated procedure, against six additions that each add arbitration or routing. **No rule was removed or weakened to get there, and the owner's section is byte-for-byte untouched.** At Stage 1's close, aggregate was 450 + 310 = 760, a 157-line reduction from 917. **This is now historical** — the global file grew past 450 afterward (see § Stage 1 numbers table); current aggregate is 797.
 
 > **This table was itself stale until 2026-07-28.** It said 291 / 741 / 176 after the cap correction had already been recorded elsewhere in this same document — exactly the failure this document warns about two sections down. Caught on re-read at resume. If you find another stale figure here, fix it and do not assume the rest are right.
 
