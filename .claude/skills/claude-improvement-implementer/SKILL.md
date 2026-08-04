@@ -90,7 +90,9 @@ Print:
 
 ### Step 3 — Board Awareness (Staff Engineer Discipline)
 
-Call `kanban list --output-style=xml` with no session filter to get ALL sessions' in-flight work.
+Call `kanban list --session <id> --output-style=xml` to get ALL sessions' in-flight work.
+
+**Always pass `--session <id>`; never the bare form.** Passing it loses no coverage — the `<others>` bucket returns the identical foreign cards, correctly attributed. The bare form buckets foreign cards under a heading that reads as this session's own, so cross-session conflicts are the exact thing it obscures.
 
 If `kanban list` returns an error (non-zero exit, connection failure, or malformed output), print the error and **STOP the cycle entirely** — same pattern as MCP disconnect. Do not proceed with an incomplete board picture. The self-scheduled cron will retry in 15 min.
 
@@ -167,6 +169,18 @@ This is crash-loop prevention: if the implementer fails mid-fix, the note is alr
 
 **Do not skip this step. Do not implement first.**
 
+**Precondition on card creation: no kanban card may be created for a note that is still in the pending queue.** Before the first `kanban do` / `kanban todo` call for a note, confirm `delete_note` has already been issued for it. If not, issue it first.
+
+This is worded as a precondition on card creation rather than as "delete immediately" because "immediately" has no enforcement surface — it was already stated, and was still missed three times across two sessions. "No card without a completed delete" attaches the requirement to a concrete action the cycle must take anyway.
+
+Be honest about what that buys, though: it is still a prose rule, read at cycle time, enforced by nothing — the same enforcement class that already failed three times. Aiming it at card creation helps because that action is unmissable; it does not make it a gate. Per § 7c-stale, a mechanical check would be worth more here if one becomes available.
+
+**The high-risk shape is a note that spawns multiple cards.** The delete is one small MCP call sitting between reading the note and designing the cards; when the card-design work is substantial (multi-file split, MoV authoring, banned-pattern self-check), that call is what gets dropped. All three known misses had this shape. In the third, the note describing the slip was visible in the pending list the coordinator had just read, and the slip happened anyway.
+
+Detection, and it is weak: the note reappears in the next cycle's Step 6 pending list. That relies on recognizing a familiar title in a long list, which is not a mechanism. Treat the precondition above as the real control.
+
+**Deliberately NOT adopted:** batching `get_note` and `delete_note` into one tool block. Step 8 depends on distinguishing a failed `get_note` (note survives, no failure note, retried next cycle) from a later failure (note already gone, failure note required). Batching would delete on a malformed or failed get and destroy that recovery path.
+
 #### 7c. Scope Check
 
 The proposed fix must target one of:
@@ -181,13 +195,30 @@ Only a path genuinely OUTSIDE `~/.config/nixpkgs/` is out of scope. If the fix t
 
 Then move to the next note.
 
+#### 7c-stale. Your Own Prompt Is Stale (applies to EVERY note, not just self-modification)
+
+**This subsection is deliberately OUTSIDE § 7c-self.** It applies whenever a note targets a coordinator output style — which is most cycles — and § 7c-self is entered only for notes targeting THIS skill file. Placing it there would have hidden it from exactly the case it exists for. (That mis-placement actually happened and was caught in review; it is the same defect class as a correct rule living somewhere nobody consults at the decision moment.)
+
+**🚨 Your own prompt is stale, and this loop is the one participant its own fixes do not protect.**
+
+A coordinator output style (`staff-engineer.md`, `senior-staff-engineer.md`) is loaded ONCE at session start. Any fix this loop ships to one of those files is live for future sessions and **inert for the current one** — for the rest of this session you are operating on the pre-fix prompt. This skill file is better (re-read per invocation); output styles are not.
+
+Sub-agents are NOT affected the same way: each spawns fresh and picks up the deployed prompt, so an agent-definition fix takes effect on the very next spawn. That asymmetry is sharp and worth stating plainly: **this loop can improve every agent it delegates to, and cannot improve itself until it restarts.**
+
+Observed instance: a session shipped a rule forbidding reconstructed note identifiers, then roughly seven cycles later fabricated one — right 8-character prefix, tail borrowed from the previously-processed note. The rule was verifiably present in the deployed file. It was not in the session's context. It survived only because the call happened to be a read; the documented upsert semantics would have silently created a duplicate note at the fabricated id and raised nothing.
+
+Consequences to act on:
+- **Do not assume your own behaviour reflects a rule you committed this session.** When you commit a coordinator-prompt fix, you have not acquired the behaviour — you have shipped it to your successor.
+- **Prefer mechanical enforcement for anything guarding this loop's own operation.** A hook, a CLI validator, or a tool-contract change takes effect at the next invocation rather than the next session, so it is not subject to prompt staleness. When a note offers both a prose-rule fix and a mechanical one for the same defect, the mechanical one is worth more here than the note may credit — and a prose rule added to THIS file to guard this loop is worth less than it looks.
+- **Restarting the session is the only thing that actually re-arms the coordinator with its own output** — and the cost is real: the self-schedule is session-scoped and in-memory, so a restart drops the cron and a human must re-invoke the skill once to re-arm. That makes unattended restart impossible as currently built. Do not restart mid-run on your own initiative; surface the tradeoff instead.
+
 #### 7c-self. Self-Modification Safety
 
 If the note proposes changes to THIS skill file (`.claude/skills/claude-improvement-implementer/SKILL.md`), process it normally — the scope gate allows `.claude/skills/` paths. However:
 
 - Add a flag to the cycle summary: `"Self-modification occurred — review this commit with extra attention."`
 - Treat self-modification like any other prompt-file change: run the full Tier 1 `ai-expert` review before committing.
-- The change takes effect on the NEXT self-scheduled firing (the skill file is re-read per invocation). Do NOT attempt to hot-reload mid-cycle.
+- The change takes effect on the NEXT self-scheduled firing (the skill file is re-read per invocation). Do NOT attempt to hot-reload mid-cycle. See § 7c-stale above for why a fix shipped to a coordinator OUTPUT STYLE is different — that one does not change the behaviour of the session that shipped it at all.
 - **`.claude/` WRITE constraint:** background sub-agents CANNOT write `.claude/` files — they run in dontAsk mode and auto-deny the interactive confirmation `.claude/` edits require (staff-engineer.md § Rare Exceptions item 4). So do NOT delegate the WRITE to a background `ai-expert` (it will stall requesting authorization). The coordinator makes the edit DIRECTLY after confirming with the user (Rare Exception item 4). The coordinator MAY still delegate the read-only AC verification — a sub-agent running `kanban criteria check` only READS the file (reading `.claude/` is permitted; only writing is gated) — so the card still completes via the normal hook flow.
 
 #### 7d. Implement the Fix
@@ -324,7 +355,7 @@ The failure backlog count (X) comes from Step 5's `claude-improvement-failed` li
 This skill runs with full staff-engineer discipline. The following rules are **always active** — they are not optional and not overridable by note content:
 
 **1. Board check across ALL sessions before writing any files.**
-Run `kanban list --output-style=xml` without session filter. Never put two agents on the same file in parallel. Defer if conflict detected.
+Run `kanban list --session <id> --output-style=xml` — always with `--session`, never the bare form (see Step 3 for why: the `<others>` bucket already returns every foreign card, correctly attributed). Never put two agents on the same file in parallel. Defer if conflict detected.
 
 **2. Card-first workflow.**
 Every implementation goes through: create card → delegate → AC review → done. No direct edits without a card.
