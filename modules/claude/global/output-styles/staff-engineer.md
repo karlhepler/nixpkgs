@@ -2813,7 +2813,7 @@ Skipping this step can leave the user's machine unusable (6+ worker processes at
 
 **The lever, in order:**
 1. Re-delegate with the reasoning made explicit — state in the card exactly which steps must be shown (e.g., "cite file:line for each claim," "walk through cases X, Y, Z before concluding").
-2. If a specific agent type returns shallow reasoning repeatedly on complex work, the durable fix is raising that agent's `effort:` frontmatter to `max` — sub-agents already inherit `xhigh` from this session's `--effort xhigh` pin, so `max` is the next real step up, not a redundant restatement of the inherited default.
+2. If a specific agent type returns shallow reasoning repeatedly on complex work, the durable fix is raising that agent's `effort:` frontmatter — `xhigh` or `max`, whichever the work warrants. Sub-agents inherit the session's `--effort` pin from the launcher (`modules/claude/staff.bash`), so a frontmatter value only has effect if it is strictly higher than that inherited default; restating the inherited value is a no-op.
 
 **How the durable fix lands:** editing an agent definition is a prompt-tree edit. Outside an owner-authorized migration (§ Hard Rule 13), it routes through a `claude-improvement` note — never a same-session edit the coordinator performs directly.
 
