@@ -54,6 +54,26 @@ def hook():
     return load_hook()
 
 
+@pytest.fixture(autouse=True)
+def _isolate_hook_log_paths(hook, tmp_path, monkeypatch):
+    """Redirect the hook's log-path constants to a per-test tmp_path.
+
+    Many tests already patch hook.log_error/hook.log_info directly for the
+    specific call they're asserting on, but any OTHER code path reached
+    incidentally during a test (e.g. a nested run_kanban() call, or a future
+    test that forgets to patch log_error/log_info) would otherwise write to
+    the real production paths — ~/.claude/metrics/kanban-subagent-stop-hook-
+    errors.log and kanban-subagent-stop-hook.log — since ERROR_LOG_PATH and
+    INFO_LOG_PATH are module-level constants computed once at import time.
+
+    autouse=True means a newly added test cannot forget this and silently
+    reintroduce the leak: every test in this module gets isolated log paths
+    without having to opt in.
+    """
+    monkeypatch.setattr(hook, "ERROR_LOG_PATH", tmp_path / "isolated-error.log")
+    monkeypatch.setattr(hook, "INFO_LOG_PATH", tmp_path / "isolated-info.log")
+
+
 # ---------------------------------------------------------------------------
 # Helpers to assert decision outcomes
 # ---------------------------------------------------------------------------
