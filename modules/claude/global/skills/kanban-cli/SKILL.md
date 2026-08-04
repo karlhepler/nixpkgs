@@ -81,6 +81,37 @@ In ripgrep, `-E` means `--encoding`. The default regex engine already handles PC
 - ✅ `rg -q 'A|try \{|B' file` — escaped
 - ✅ Better: separate `mov_commands` entries (one per term)
 
+### Unescaped `(` in a regex MoV pattern — unclosed group
+
+An unescaped `(` opens a regex GROUP that never closes. `rg` exits 2 with `regex parse error: unclosed group` for EVERY input regardless of content — the criterion can never pass. Escape it (`\(`) or use fixed-strings mode (`-F`).
+
+- ❌ `rg -q 'Symbol(' file` — measured this session against a fixture containing `x = Symbol(1)`: exit 2, `regex parse error: unclosed group`
+- ✅ `rg -q 'Symbol\(' file` — measured: exit 0
+- ✅ `rg -qF 'Symbol(' file` — measured: exit 0 (fixed-strings mode)
+
+**High-frequency trap, not exotic:** `Symbol(` is the single most common shape for an "is this function called anywhere" check, so this recurs often rather than being a corner case.
+
+### A card can never functionally verify a Nix-packaged CLI's NEW behavior
+
+In this repo, `crew`, `kanban`, `perm`, `prc`, `smithers`, and every other shellapp resolve to a Nix store path (measured this session: `which crew` → `~/.nix-profile/bin/crew`, resolving to `/nix/store/<hash>-crew/bin/crew`) that only changes when `hms` runs — and `hms` is the coordinator's deploy gate, never a sub-agent's to run. Any MoV that invokes the CLI under test to observe behavior a card just changed in source is structurally unsatisfiable from inside that card, no matter how correct the source edit is: the Bash shell the check runs in still resolves the OLD store path.
+
+**Resolution rule:** cards verify SOURCE (the edited script/module); the coordinator verifies deployed behavior after running `hms`. This is a genuine, narrow exception to the general prefer-functional-over-existence-layer MoV guidance — call it out explicitly when it applies, since the function under test lives in an artifact the card cannot refresh, and an author following the general guidance blindly walks straight into this trap.
+
+- ❌ `crew --help 2>&1 | rg -q smithers` authored as a "functional" replacement for a broken grep against `crew`'s NEW help text — unsatisfiable until `hms` redeploys the store path
+- ✅ `rg -q 'smithers' modules/git/crew.bash` — verify the SOURCE change directly; leave deployed-behavior verification to the coordinator's post-`hms` check
+
+**Worked evidence:** a MoV `crew --help 2>&1 | rg -q smithers` was authored as a supposedly-better functional replacement for a broken grep. The agent correctly diagnosed the store-path staleness, reported it, and refused to retry — costing a full delegation cycle.
+
+**Recurrence indicator:** any `mov_commands[].cmd` whose first token is a shellapp name (`crew`, `kanban`, `perm`, `prc`, `smithers`, or any other Nix-packaged CLI in this repo) AND whose expected NEW behavior was introduced by the SAME card.
+
+### Numeric ceiling MoV (`wc -w`/`wc -l`) carried forward onto an add-content card
+
+A `wc -w` / `wc -l` / size-ceiling criterion MUST NOT be carried forward unchanged onto a card that ALSO mandates adding required content. Before reusing a ceiling criterion on an edit/add card, compute whether the required new content actually fits — carrying the number forward without doing the arithmetic is how a card ends up with two individually-reasonable criteria that are jointly impossible to satisfy without cutting protected content. If the content doesn't fit, raise the ceiling in the same card or drop the criterion.
+
+A size ceiling like this is usually a coordinator convenience rather than a real external constraint (a CMS field limit, a print-space cap) — verify a real limit exists before encoding one as a gate at all.
+
+**Worked evidence:** a 277-word draft carried a coordinator-invented 300-word ceiling; a follow-up card required replacing one paragraph with a longer one while declaring the opening and closing paragraphs byte-identical to the original. The constraints were mutually unsatisfiable, and the agent silently deleted a clause from the protected opening paragraph — the clause that actually answered the question — to turn the check green, reporting it as a "conservative trim."
+
 ### Self-reference trap (searching for literal banned-pattern text)
 
 When authoring a MoV that needs to search for the literal text of a banned pattern in a file (e.g., to verify a review's scratchpad covers the `rg -E` flag confusion), the lint hook cannot distinguish flag USAGE from text SEARCH. Authoring `rg -qi 'rg -E|encoding...' .scratchpad/...` triggers a false-positive rejection because the cmd literally contains `rg -E` as a substring. Or, similarly, `rg -qi 'AND-chain|backslash.pipe' .scratchpad/...` triggers rejection on the literal `&&` if you wrote that as part of the search keyword set.
@@ -274,6 +305,9 @@ Before invoking the kanban CLI, scan every `mov_commands[].cmd` field for these 
 - Length-based secret-detection heuristics (bare `{32,}` character-count regex) — unreliable when domain data (paths, identifiers, hashes) can legitimately be as long as or longer than the secret; prefer structural anchors (`DD_PAT=`, `Authorization: Bearer`) and sample the domain data's max legitimate length before authoring. See full entry above.
 - `actionlint` against a composite action file (`.github/actions/*/action.yml`) — actionlint validates the WORKFLOW schema, so it fails on the composite-action `runs:`/`inputs:` wrong schema; use `zizmor` for composite-action lint/security checks instead. See § `actionlint` cannot lint a composite action file above.
 - Section-window (`rg -A N`) MoV without measuring anchor-to-target distance — the window is unsatisfiable if the gap exceeds N; run `rg -n` on both anchor and target and subtract before authoring. See § Section-window (`rg -A N`) MoVs without measuring anchor-to-target distance above.
+- Unescaped `(` in a regex MoV pattern — opens a regex group that never closes; exits 2 with `regex parse error: unclosed group` regardless of content. Escape it (`\(`) or use `-F` fixed-strings mode. See § Unescaped `(` in a regex MoV pattern — unclosed group above.
+- Nix-packaged CLI (`crew`, `kanban`, `perm`, `prc`, `smithers`, etc.) invoked in a MoV to observe NEW behavior — resolves to a stale Nix store path until `hms` runs (the coordinator's deploy gate, never a sub-agent's); cards can verify only SOURCE. See § A card can never functionally verify a Nix-packaged CLI's NEW behavior above.
+- `wc -w`/`wc -l` size-ceiling carried forward unchanged onto a card that also requires ADDING content — compute whether the new content fits before reusing the ceiling (do the arithmetic); verify a real external limit exists before encoding one as a gate. See § Numeric ceiling MoV (`wc -w`/`wc -l`) carried forward onto an add-content card above.
 
 The kanban CLI lint hook is the second-line defense. Every catch is an authoring failure.
 

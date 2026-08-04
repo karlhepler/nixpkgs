@@ -17,6 +17,8 @@ Every AC criterion makes a claim. The MoV's job is to prove that claim — not j
 
 **Rule of thumb: match the deepest layer to what the criterion actually claims.**
 
+**Exception:** a card cannot refresh a store-path binary — for a Nix-packaged shellapp in this repo whose behavior THIS card just changed, functional-layer verification is structurally unsatisfiable from inside the card, no matter how deep the layer would otherwise need to go. See staff-engineer.md § Banned MoV patterns → "MoV that invokes a Nix-packaged shellapp under test to observe its NEW behavior" for the narrow exception this creates to the rule of thumb above.
+
 - AC says "add a constant" → existence layer is sufficient.
 - AC says "the file is valid JSON" → static layer (schema probe with `jq`).
 - AC says "the command works" → functional layer (run the command, check exit code).
