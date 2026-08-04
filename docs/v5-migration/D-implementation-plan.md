@@ -175,6 +175,8 @@ Full derivation, with every subtraction shown and the coordinator's non-authorit
 
 **Chosen: (C) Keep `--effort xhigh` pinned and add a documented rationale in the launcher scripts naming D14's step-up clause.**
 
+**Superseded.** Commit `8fe6f5e` later lowered the pin from `xhigh` to `high` per an owner decision. Commit `843aa9f` then removed the hardcoded value from the coordinator output styles, so their prose now cites the launcher scripts as source of truth instead of restating the value. Verify against git: `git show 8fe6f5e --stat` and `git show 843aa9f --stat`.
+
 **Rationale as given.** No sweep. D16's target is settings reused **without thought**, so recording the reasoning addresses the substance without building an eval harness whose output would not be measurable here.
 
 **Consequence.**

@@ -41,7 +41,7 @@ Recorded in full in Document D § `## Decisions`. Summary:
 | Q5 | Keep both coordinator files, add a **mechanical sync check** (Stage 2 work) |
 | Q6 | Accept reachable targets, track the path to 200 — **re-answered mid-Stage-1, see below** |
 | Q7 | Defer the WI-14 `SubagentStop` check until after Stage 3 |
-| Q8 | Keep `--effort xhigh`, document the rationale citing D14 |
+| Q8 | Keep `--effort xhigh`, document the rationale citing D14 — **superseded by commit `8fe6f5e`** (pin lowered to `high`) and commit `843aa9f` (hardcoded value removed from coordinator output styles); see D § Q8 |
 | Q9 | **Reversed to (A):** remove the `ac-reviewer` roster line rather than annotate it |
 | Q10 | `manage-pr-comments` `Bash(gh *)` grant → deny-override (Stage 4) |
 
