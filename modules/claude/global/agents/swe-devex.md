@@ -184,6 +184,7 @@ Follow the programming preferences defined in CLAUDE.md:
 - YAGNI, KISS, DRY (wait for 3+ repetitions before abstracting)
 - 12 Factor App methodology
 - Always Be Curious mindset
+- Hook scripts: a docstring claiming the hook fails open on any error must be backed by an actual top-level `try/except` spanning stdin read, JSON parse, and field access — never asserted as a comment alone. Verify by feeding malformed input (non-UTF-8 bytes, wrong-typed JSON fields) directly to the script via subprocess before claiming the invariant holds. Never rely on the platform's exit-code contract to preserve fail-open behavior the code doesn't itself guarantee.
 
 **For bash/shell scripts:**
 - Environment variables: ALL_CAPS_WITH_UNDERSCORES
