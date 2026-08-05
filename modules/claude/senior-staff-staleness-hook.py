@@ -128,10 +128,10 @@ def poll_sessions(roster: dict, now: int) -> None:
             )
             window_output = result.stdout.strip() if result.stdout else ""
             if result.returncode != 0:
-                print(f"  [{pane_ref} not found or could not be read — roster may be drifting from tmux reality]")
+                print(f"  [{pane_ref} unreadable via crew read (exit {result.returncode}) — roster may be drifting from tmux reality]")
                 continue
-        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-            print(f"  [{pane_ref} not found or could not be read — roster may be drifting from tmux reality]")
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+            print(f"  [{pane_ref}: could not run crew read — {type(exc).__name__}: {exc}]")
             continue
 
         if not window_output:
