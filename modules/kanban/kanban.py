@@ -1748,6 +1748,357 @@ def warn_unmatched_card_identifiers(card_json) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Non-discriminating MoV warning (non-blocking)
+#
+# Three cards in one cycle shipped acceptance criteria whose mov_commands
+# already exited 0 against the tree BEFORE any work was done — a criterion
+# that structurally cannot fail is not a check at all. None of the three used
+# banned syntax (see validate_mov_commands_content above), so the existing
+# banned-pattern validator never caught them; they were only caught because a
+# verification grep happened to be run for an unrelated reason afterward.
+#
+# This check is WARN-ONLY, never block — mirroring
+# warn_unmatched_card_identifiers immediately above. The same textual signal
+# — "this MoV already passes" — is produced by two cases needing opposite
+# treatment: a genuinely non-discriminating criterion (the defect), and a
+# deliberate survival guard whose entire purpose is to assert that existing
+# content must REMAIN (expected to pass before AND after the work). No
+# syntactic heuristic reliably tells these apart, so printing the finding and
+# letting the reader (coordinator) judge is the only sound response —
+# blocking would misfire on every correct survival-guard criterion ever
+# written.
+#
+# Cost bound: this runs every mov_commands[].cmd in the card at creation
+# time, so it must never approach the cost of the real check it is warning
+# about. MOV_PREPASS_TIMEOUT_SECS below is a short HARD cap used instead of
+# each command's own declared `timeout` (which can run to 180s+ for
+# test-runner MoVs) — cheap existence checks (rg, test -f), the only kind
+# observed across all three documented incidents, finish comfortably inside
+# it, while expensive commands simply time out and are treated as
+# inconclusive (never warned on). Re-running a MoV this early is otherwise
+# consistent with the existing contract: every MoV already runs at least
+# twice — once when the agent runs `kanban criteria check`, again when the
+# SubagentStop hook re-verifies — which is precisely why MoVs are already
+# required to be idempotent.
+#
+# Execution-safety note: unlike the other two executions (both of which
+# happen AFTER an agent has taken ownership of the card and started the
+# work), this pre-pass runs at card-CREATION time, before any agent exists
+# and with no human/agent decision point — a genuinely new execution moment,
+# not just a third repeat. The idempotency contract above is a documentation
+# convention, not something code-enforced anywhere in this file, so this
+# pre-pass does not lean on it implicitly: see _mov_prepass_command_is_safe
+# below for the execution ALLOWLIST that gates every command this function
+# actually runs.
+# ---------------------------------------------------------------------------
+
+# Hard cap for the pre-pass dry run. Deliberately NOT derived from any
+# criterion's own declared per-command timeout — see module rationale above.
+MOV_PREPASS_TIMEOUT_SECS = 5
+
+# ---------------------------------------------------------------------------
+# Pre-pass execution safety guard (EXACT-SHAPE ALLOWLIST, not a denylist and
+# NOT a first-token-name allowlist)
+#
+# _mov_prepass_run_criterion executes criterion.mov_commands[].cmd via
+# `subprocess.run(cmd, shell=True, ...)` at card-CREATION time — before any
+# agent has taken ownership of the card and with no human/agent decision
+# point. A denylist of destructive commands (rm, mv, git restore, sed -i,
+# redirection, ...) is an arms race that loses to a single omission.
+#
+# Superseded design: a first-token NAME allowlist (rg/test/wc/cat/head/tail/
+# sort/uniq/awk/sed/git/ls/printf/echo/true/false/jq/yq), with one narrow
+# extra check each for git (subcommand only) and sed (in-place flag only). A
+# security review (.scratchpad/review-movguard-security.md) found 6 confirmed
+# bypasses where an allowlisted tool's OWN flag or script-language builtin
+# executes code or overwrites a file, none using a banned shell
+# metacharacter: `awk 'BEGIN{system(...)}'`, `rg --pre COMMAND`, `sed
+# 'e ...'`/`sed 'w ...'` (defeating the sed-specific in-place check itself),
+# `sort -o FILE`/`--output=FILE`, `yq -i`/`--inplace`, and `git
+# diff|log|show --output=FILE` (subcommand-allowlisted but flag-unchecked).
+# Root cause: "first token is a name I recognize" was treated as proof that
+# "the whole invocation is read-only" — false for all six once the tool's
+# own flags or script-language builtins are considered.
+#
+# Current design: deny by default on the WHOLE invocation, not the first
+# token. A command is executable only when its complete shape — command,
+# every flag, and its positional arity — matches one of the small number of
+# shapes in _mov_prepass_shape_is_exact below, each manually verified
+# read-only against the tool's own --help/--version output. Anything that
+# doesn't match a known shape — including an otherwise-known command
+# followed by a single unrecognized flag — returns False: the same verdict
+# as a timeout or malformed input (inconclusive, never executed, never
+# warned on). This is deliberately not phrased as a formal proof of read-only
+# behavior (see .scratchpad/review-movguard-security.md § Trade-off comment
+# accuracy for why the superseded design's wording overstated its actual
+# guarantee): it means "matches a shape whose read-only behavior was manually verified as
+# of the date this allowlist was written," not a formal proof about the
+# tool's entire flag surface for all time.
+#
+# Admitted shapes (surveyed against this repo's actual mov_commands[].cmd
+# corpus for card #3400 — see this card's final return for the survey
+# method):
+#   - `test -f|-d|-e PATH` — existence checks; one of the two shapes that
+#     cover the original 3 non-discriminating-MoV incidents this whole
+#     feature exists to catch.
+#   - `rg [-q/-i/-F in any combination] PATTERN PATH` — grep checks; the
+#     other covering shape for the same 3 incidents. Only -q/-i/-F
+#     (query-behavior flags with no write or exec capability) are admitted;
+#     any other rg flag — including `--pre`/`--pre-glob`, the confirmed
+#     code-execution bypass — is rejected.
+#   - `true` / `false`, with ANY arguments — the only two admitted commands
+#     whose FULL argument space is provably safe: both coreutils ignore
+#     every argument except --help/--version (which only print to stdout),
+#     so no arity restriction is needed or meaningful to add.
+#
+# Deliberately excluded (present in the superseded allowlist, removed here):
+#   - `sed`, `awk` — both take a script/program argument whose OWN language
+#     contains exec/write builtins (sed's `e`/`w` commands, awk's
+#     `system()`). No flag-level check can make an arbitrary script safe —
+#     this is the review's blocking findings #1 and #6 — so rather than
+#     attempting to parse a script language, both are excluded outright.
+#   - `git` — the subcommand-allowlist-without-flag-check pattern is exactly
+#     the review's blocking finding #4 (`--output=FILE` on diff/log/show).
+#     Enumerating a safe flag/positional matrix per subcommand is high
+#     complexity for only 6 corpus usages; excluded outright rather than
+#     partially guarded.
+#   - `sort`, `yq` — each has its own write/in-place flag (`sort -o`/
+#     `--output=`, `yq -i`/`--inplace`, the review's blocking findings #2
+#     and #3) with zero corpus usage to justify a flag-level carve-out.
+#   - `wc`, `cat`, `head`, `tail`, `uniq`, `ls`, `printf`, `echo`, `jq` —
+#     zero or near-zero corpus usage. `uniq` in particular has a second
+#     positional OUTPUT-file argument (`uniq IN OUT`) — an unguarded write
+#     vector of the exact same shape as the confirmed `sort -o` bypass, just
+#     via arity instead of a flag. Excluded for minimalism rather than
+#     individually re-verified and re-admitted.
+#
+# Accepted trade-off (unchanged from the superseded design, now narrower in
+# scope): a genuinely non-discriminating MoV built from a non-admitted shape
+# (any of the excluded tools above, command substitution, or an rg/test
+# invocation outside the exact shapes above) is no longer caught by this
+# pre-pass. That is the correct trade — silently failing to warn is
+# recoverable, destroying uncommitted working-tree content is not.
+# ---------------------------------------------------------------------------
+
+# Shell metacharacters that could chain, substitute, or redirect. `shell=True`
+# hands the WHOLE cmd string to /bin/sh, so checking only the first token is
+# not sufficient — `rg -q x; rm -rf y` has an admitted first token and still
+# runs `rm`. Checked as substrings against the raw cmd string, before any
+# tokenization.
+_MOV_PREPASS_SHELL_METACHARS: tuple[str, ...] = (
+    ";", "|", "&", ">", "<", "`", "$(", "\n",
+)
+
+# rg flag characters with no known write or exec capability: -q (quiet),
+# -i (case-insensitive), -F (fixed-string). Any other rg flag — including
+# --pre/--pre-glob, ripgrep's own preprocessor and the confirmed
+# arbitrary-code-execution bypass — is rejected by _mov_prepass_shape_is_exact.
+_MOV_PREPASS_RG_SAFE_FLAG_CHARS: frozenset[str] = frozenset({"q", "i", "F"})
+
+
+def _mov_prepass_rg_flag_token_is_safe(tok: str) -> bool:
+    """True if `tok` is a single combined short-flag token built ONLY from
+    _MOV_PREPASS_RG_SAFE_FLAG_CHARS, each character at most once (e.g. "-q",
+    "-i", "-qi", "-Fiq"). Long-form flags (anything starting with "--") and
+    any character outside the safe set are rejected.
+    """
+    if not tok.startswith("-") or tok.startswith("--"):
+        return False
+    chars = tok[1:]
+    if not chars:
+        return False
+    return len(set(chars)) == len(chars) and all(
+        c in _MOV_PREPASS_RG_SAFE_FLAG_CHARS for c in chars
+    )
+
+
+def _mov_prepass_shape_is_exact(tokens: list[str]) -> bool:
+    """True if `tokens` (already shlex-split, already metachar-clean) match
+    one of the small number of exact, manually-verified-read-only shapes
+    this pre-pass admits. See the module comment above for the full
+    admitted list, the rationale for each entry, and the full excluded
+    list. Any shape not explicitly matched below — including a recognized
+    command followed by one unrecognized flag — falls through to `False`.
+    """
+    if not tokens:
+        return False
+
+    first = tokens[0]
+
+    if first in ("true", "false"):
+        return True  # Any arguments — see module comment: provably safe.
+
+    if first == "test":
+        return (
+            len(tokens) == 3
+            and tokens[1] in ("-f", "-d", "-e")
+            and not tokens[2].startswith("-")
+        )
+
+    if first == "rg":
+        rest = tokens[1:]
+        if rest and rest[0].startswith("-"):
+            if not _mov_prepass_rg_flag_token_is_safe(rest[0]):
+                return False
+            rest = rest[1:]
+        return (
+            len(rest) == 2
+            and not rest[0].startswith("-")
+            and not rest[1].startswith("-")
+        )
+
+    return False
+
+
+def _mov_prepass_command_is_safe(cmd: str) -> bool:
+    """Decide whether `cmd` matches one of the small number of exact,
+    manually-verified-read-only shapes this pre-pass admits (see the module
+    comment above — this is deliberately not a formal proof about the
+    tool's entire flag surface, only about the specific shapes enumerated
+    there). Two independent gates, BOTH must pass:
+
+      1. `cmd` contains none of _MOV_PREPASS_SHELL_METACHARS — no chaining,
+         piping, redirection, or substitution anywhere in the string.
+      2. The full shlex-tokenized shape matches _mov_prepass_shape_is_exact.
+
+    Returns False on ANY doubt, including a shlex parse failure on malformed
+    quoting. False is never a verdict about the command's correctness — it
+    only means the pre-pass will not execute it (caller treats this the
+    same as a timeout: inconclusive, no warning, never run).
+    """
+    if any(bad in cmd for bad in _MOV_PREPASS_SHELL_METACHARS):
+        return False
+
+    try:
+        tokens = shlex.split(cmd)
+    except ValueError:
+        return False  # Malformed quoting — treat as unsafe, not executable.
+
+    return _mov_prepass_shape_is_exact(tokens)
+
+
+def _mov_prepass_run_criterion(criterion: dict, working_dir: str) -> bool | None:
+    """Run every mov_commands[].cmd in `criterion`, in declared order, against
+    the current tree — mirroring cmd_criteria_check's short-circuit-on-first-
+    failure semantics, but capped at MOV_PREPASS_TIMEOUT_SECS instead of the
+    criterion's own declared timeout.
+
+    Returns:
+      True  — every command in the array already exits 0 right now (the
+              criterion's MoV already passes, before any work has been done).
+      False — at least one command exits non-zero (the normal, expected case
+              for a not-yet-done criterion).
+      None  — inconclusive: no mov_commands to run, a malformed entry, a
+              command the safety guard refuses to execute, a pre-pass
+              timeout, or any other subprocess/OS error. Callers MUST treat
+              None as "do not warn" — never surfaces as a finding.
+    """
+    mov_commands = criterion.get("mov_commands") or []
+    if not isinstance(mov_commands, list) or not mov_commands:
+        return None  # Semantic criteria (no mov_commands) have nothing to run.
+
+    for entry in mov_commands:
+        if not isinstance(entry, dict):
+            return None
+        cmd = entry.get("cmd", "")
+        if not cmd or not isinstance(cmd, str):
+            return None
+        if not _mov_prepass_command_is_safe(cmd):
+            # Does not match an admitted exact shape — never execute. Same
+            # verdict as a timeout: inconclusive, no warning. See guard
+            # rationale above.
+            return None
+        try:
+            result = subprocess.run(
+                cmd,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=MOV_PREPASS_TIMEOUT_SECS,
+                cwd=working_dir,
+                env=os.environ.copy(),
+            )
+        except (subprocess.TimeoutExpired, OSError, ValueError):
+            # Inconclusive on a pre-pass hiccup or a genuinely slow command —
+            # never let a tooling hiccup or an expensive MoV masquerade as
+            # either a false warning or a false all-clear.
+            return None
+        if result.returncode != 0:
+            return False  # Not yet satisfied — the normal, healthy case.
+    return True  # Every command in the array already exits 0.
+
+
+def warn_nondiscriminating_movs(card_json) -> None:
+    """Print a non-blocking warning for any acceptance criterion whose full
+    mov_commands chain ALREADY exits 0 against the current tree, before any
+    work has been done.
+
+    Accepts a single card dict or a list of card dicts, mirroring
+    warn_unmatched_card_identifiers / validate_mov_commands_content. NEVER
+    calls sys.exit and NEVER raises — see module-level rationale above for
+    why this check is warn-only and fail-open. Card creation always proceeds
+    regardless of what this function finds.
+    """
+    try:
+        if isinstance(card_json, dict):
+            cards = [card_json]
+        elif isinstance(card_json, list):
+            cards = [c for c in card_json if isinstance(c, dict)]
+        else:
+            return  # Not a card — nothing to check
+
+        working_dir = os.getcwd()
+        is_bulk = len(cards) > 1
+
+        for idx, card in enumerate(cards):
+            criteria = card.get("criteria") or card.get("ac") or []
+            if not isinstance(criteria, list):
+                continue
+
+            already_passing: list[tuple[int, str, list[str]]] = []
+            for ac_idx, criterion in enumerate(criteria):
+                if not isinstance(criterion, dict):
+                    continue
+                if _mov_prepass_run_criterion(criterion, working_dir) is not True:
+                    continue
+                text = criterion.get("text", "")
+                cmds = [
+                    e.get("cmd", "")
+                    for e in (criterion.get("mov_commands") or [])
+                    if isinstance(e, dict)
+                ]
+                already_passing.append((ac_idx, text, cmds))
+
+            if not already_passing:
+                continue
+
+            card_label = f"card[{idx}] " if is_bulk else ""
+            print(
+                f"Warning: {card_label}{len(already_passing)} acceptance criterion(s) "
+                f"already pass their MoV against the current tree, before any work has "
+                f"been done:",
+                file=sys.stderr,
+            )
+            for ac_idx, text, cmds in already_passing:
+                cmd_desc = "; ".join(cmds) if cmds else "(no cmd)"
+                print(f"  AC #{ac_idx + 1} ({text[:60]!r}): {cmd_desc}", file=sys.stderr)
+            print(
+                "  This is expected and safe to ignore for a survival-guard criterion — one "
+                "that deliberately asserts existing content must REMAIN, and so is supposed "
+                "to pass before AND after the work. For any other criterion, a MoV that "
+                "already passes with zero changes cannot discriminate done from not-done — "
+                "verify the command actually exercises the work this card is asking for. "
+                "This is a warning only — card creation is NOT blocked.",
+                file=sys.stderr,
+            )
+    except Exception:
+        # Fail open: an internal error in this check must never block card
+        # creation or crash the CLI — mirrors warn_unmatched_card_identifiers'
+        # fail-open contract (see _identifier_exists_in_repo).
+        return
+
+
+# ---------------------------------------------------------------------------
 # Cross-card MoV scope-isolation validation
 #
 # A modification-emptiness MoV (e.g. `test -z "$(git diff ... -- <path>)"`)
@@ -2152,6 +2503,12 @@ def validate_and_build_card(data: dict, session: str | None) -> dict:
     # in the repo. Warn-only — see § Identifier-existence warning above for
     # why this never raises SystemExit.
     warn_unmatched_card_identifiers(card)
+
+    # Non-blocking non-discriminating-MoV warning: flag acceptance criteria
+    # whose mov_commands already exit 0 against the current tree, before any
+    # work has been done. Warn-only — see § Non-discriminating MoV warning
+    # above for why this never raises SystemExit.
+    warn_nondiscriminating_movs(card)
 
     return card
 
