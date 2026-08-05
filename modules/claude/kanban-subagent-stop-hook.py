@@ -1431,6 +1431,82 @@ def format_deferred_notification(session: str) -> str:
     return ""
 
 
+def cards_in_doing_for_session(session_id: str) -> list[str] | None:
+    """Return card numbers in the 'doing' column for a session, or None.
+
+    Used only by process_subagent_stop's missing-transcript-path branch, to
+    decide whether a "transcript_path not found" event can actually strand a
+    card (see that call site). Mirrors get_deferred_cards' regex-based
+    extraction from `kanban list --output-style=xml` above, for consistency
+    with the rest of this file.
+
+    Returns:
+      - []            : the read succeeded (exit 0, stdout structurally
+                         matches kanban's board XML) and no card is in
+                         'doing' for this session — a normal, successful
+                         result, NOT a failure.
+      - [<num>, ...]   : the read succeeded and these cards are in 'doing'.
+      - None           : the read could not be completed OR could not be
+                         trusted: no session_id, a non-zero exit from
+                         run_kanban (which already collapses subprocess
+                         timeouts/FileNotFoundError to a non-zero
+                         returncode), any unexpected exception, OR an exit-0
+                         response whose stdout does not structurally look
+                         like kanban's board XML at all (see the "<board"
+                         check below) — exit 0 with garbled/empty/truncated
+                         output is an UNKNOWN, not a confirmed-empty board,
+                         and must not be silently downgraded to "no card is
+                         stranded". Callers MUST treat None as "unknown, not
+                         'no cards'" and fall back to the pre-existing
+                         ERROR-level report unchanged (fail-open).
+
+    Deliberately does not itself call log_error on failure: the caller is
+    the single point of truth for what gets logged when this returns None,
+    so a failed read here does not ALSO produce a second, differently-worded
+    error line alongside the caller's own fallback report.
+
+    Never raises.
+    """
+    if not session_id:
+        return None
+    try:
+        result = run_kanban(
+            ["list", "--column", "doing", "--output-style=xml", "--session", session_id],
+            timeout=10,
+        )
+        if result.returncode != 0:
+            return None
+        stdout = result.stdout
+        # Distinguish a genuinely successful, confirmed-empty parse from an
+        # exit-0-but-unparseable response. `cmd_list`'s xml branch
+        # (modules/kanban/kanban.py) prints the opening `<board...>` tag
+        # unconditionally, before it ever checks whether any column has
+        # cards — so every real, successful `kanban list --output-style=xml`
+        # invocation's stdout contains the literal substring "<board",
+        # whether or not the 'doing' column is actually empty (verified
+        # against modules/kanban/tests/test_kanban_list_xml_schema.py's
+        # documented schema, which this file is prohibited from executing
+        # directly). An exit-0 response that lacks that root element
+        # entirely (empty stdout, truncated output, or anything else that
+        # did not come from a real board read) is not a confirmed-empty
+        # board — it is unknown, and must fall back to the caller's
+        # existing None/ERROR path rather than being silently treated as
+        # "no card is stranded".
+        if "<board" not in stdout:
+            return None
+        # kanban's real `kanban list --output-style=xml` card element is
+        # `<c n="N" ses="..." s="...">` — a different attribute name than the
+        # PreToolUse-injected transcript XML format (see _CARD_XML_PATTERN
+        # above), which is a different schema entirely. Anchor on the `<c `
+        # element itself so this cannot match an unrelated attribute
+        # elsewhere in the payload (e.g. a numeric session name inside
+        # `ses="..."` or `session="..."` would otherwise satisfy a bare
+        # `n="(\d+)"` pattern).
+        return re.findall(r'<c n="(\d+)"', stdout)
+    except Exception:
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Main hook logic
 # ---------------------------------------------------------------------------
@@ -1470,19 +1546,76 @@ def process_subagent_stop(payload: dict) -> dict:
         return allow()
 
     if not os.path.exists(transcript_path):
-        log_error(
-            f"SubagentStop received a non-empty transcript_path that does not "
-            f"exist on disk: {transcript_path!r}. The card this stop belonged "
-            f"to could not be identified, so kanban done was never attempted "
-            f"— the card may be silently stranded in 'doing'. This may "
-            f"indicate a race (transcript not yet flushed/moved to its final "
-            f"path) or a stale/incorrect path from the daemon. "
-            f"session_id={payload.get('session_id', '')!r} "
-            f"agent_id={payload.get('agent_id', '')!r} "
-            f"agent_type={payload.get('agent_type', '')!r} "
-            f"cwd={payload.get('cwd', '')!r} "
-            f"tool_use_id={payload.get('tool_use_id', '')!r}"
-        )
+        # Discriminator: whether a card can actually be stranded by this
+        # event depends on whether any card for this session is currently
+        # in 'doing'. This states a per-occurrence verifiable fact rather
+        # than a conclusion about the population of all such events — see
+        # card #3421's investigation (cards #3408, #3410) for why a blanket
+        # "these are phantom" claim is not warranted: the producer of these
+        # events was never identified. FAIL OPEN: any failure to read the
+        # board (no session_id, non-zero exit, timeout, or exception) falls
+        # back to today's ERROR-level report unchanged — see
+        # cards_in_doing_for_session's docstring.
+        session_id_for_check = payload.get('session_id', '')
+        cards_in_doing = cards_in_doing_for_session(session_id_for_check)
+
+        if cards_in_doing is None:
+            # Board read failed (or no session_id available) — cannot
+            # determine whether a card is at risk. Fall back to the
+            # original, unconditional stranding-risk report (unchanged from
+            # before this discriminator existed).
+            log_error(
+                f"SubagentStop received a non-empty transcript_path that does not "
+                f"exist on disk: {transcript_path!r}. The card this stop belonged "
+                f"to could not be identified, so kanban done was never attempted "
+                f"— the card may be silently stranded in 'doing'. This may "
+                f"indicate a race (transcript not yet flushed/moved to its final "
+                f"path) or a stale/incorrect path from the daemon. "
+                f"session_id={payload.get('session_id', '')!r} "
+                f"agent_id={payload.get('agent_id', '')!r} "
+                f"agent_type={payload.get('agent_type', '')!r} "
+                f"cwd={payload.get('cwd', '')!r} "
+                f"tool_use_id={payload.get('tool_use_id', '')!r}"
+            )
+        elif cards_in_doing:
+            # One or more cards ARE in 'doing' for this session — one of
+            # them may genuinely be the card this stop belonged to. Keep
+            # ERROR and name the card(s) so the reader has something
+            # concrete to check.
+            card_list = ", ".join(f"#{c}" for c in cards_in_doing)
+            log_error(
+                f"SubagentStop received a non-empty transcript_path that does not "
+                f"exist on disk: {transcript_path!r}. The card this stop belonged "
+                f"to could not be identified, so kanban done was never attempted. "
+                f"Session {session_id_for_check!r} has card(s) {card_list} in "
+                f"'doing' right now — one of these may be silently stranded by "
+                f"this event. This may indicate a race (transcript not yet "
+                f"flushed/moved to its final path) or a stale/incorrect path "
+                f"from the daemon. "
+                f"session_id={payload.get('session_id', '')!r} "
+                f"agent_id={payload.get('agent_id', '')!r} "
+                f"agent_type={payload.get('agent_type', '')!r} "
+                f"cwd={payload.get('cwd', '')!r} "
+                f"tool_use_id={payload.get('tool_use_id', '')!r}"
+            )
+        else:
+            # No card for this session is in 'doing' — no card can be
+            # stranded by this occurrence. Logged below error level
+            # (log_info, not log_error): a per-occurrence fact, not a
+            # generalization that this class of event is spurious.
+            log_info(
+                f"SubagentStop received a non-empty transcript_path that does not "
+                f"exist on disk: {transcript_path!r}. No card for session "
+                f"{session_id_for_check!r} is currently in 'doing', so no card "
+                f"is stranded by this occurrence. This may still indicate a "
+                f"race (transcript not yet flushed/moved to its final path) "
+                f"or a stale/incorrect path from the daemon. "
+                f"session_id={payload.get('session_id', '')!r} "
+                f"agent_id={payload.get('agent_id', '')!r} "
+                f"agent_type={payload.get('agent_type', '')!r} "
+                f"cwd={payload.get('cwd', '')!r} "
+                f"tool_use_id={payload.get('tool_use_id', '')!r}"
+            )
         return allow()
 
     # Step 1: Identify the card

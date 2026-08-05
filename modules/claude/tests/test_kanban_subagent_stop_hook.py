@@ -19,6 +19,7 @@ import importlib.util
 import json
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -694,21 +695,58 @@ class TestMissingTranscriptPathSurfacing:
     case for non-kanban-managed Task calls).
     """
 
+    def _fake_list_doing(self, card_nums: list[str]):
+        """Build a fake subprocess.run side_effect for `kanban list --column
+        doing ...`, returning the given card numbers (possibly empty) via the
+        REAL `kanban list --output-style=xml` element shape:
+        `<board session="...">`, a `<mine>` wrapper, and one `<c n="NN"
+        ses="..." s="doing">...</c>` per card — captured live against this
+        exact invocation for card #3425 (see that card's action text for the
+        verbatim sample). Card #3424 built this fixture with a `num="N"`
+        attribute that the real CLI never emits, which is why
+        cards_in_doing_for_session's `num="(\\d+)"` regex could never match
+        any real board output — the tests stayed green while the production
+        code path was dead. Fixed as part of card #3425 alongside the
+        production regex itself (now anchored on `<c n="(\\d+)"`).
+
+        Still wrapped in `<board>...</board>` (not `<cards>...</cards>`) so
+        the `<board` structural check in `cards_in_doing_for_session`
+        (kanban-subagent-stop-hook.py) continues to see a well-formed,
+        successfully-parsed response rather than routing to the ERROR
+        fallback."""
+        cards_xml = "".join(
+            f'<c n="{n}" ses="fake-session" s="doing"><i></i><e></e></c>' for n in card_nums
+        )
+
+        def fake_subprocess_run(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd[0] == "kanban" and len(cmd) > 1 and cmd[1] == "list":
+                return KanbanMockResponses.success(
+                    stdout=f'<board session="fake-session"><mine>{cards_xml}</mine></board>'
+                )
+            return KanbanMockResponses.success()
+
+        return fake_subprocess_run
+
     def test_nonexistent_nonempty_path_logs_error(self, hook):
-        """Non-empty transcript_path + missing file → log_error is called,
-        with the offending path present in the message."""
+        """Non-empty transcript_path + missing file, with a card IN 'doing'
+        for this session → log_error is called, with the offending path
+        present in the message. (A card in 'doing' means the stranding-risk
+        report is warranted — see test_phantom_event_logs_below_error_when_
+        no_card_in_doing below for the no-card-in-doing case, which now
+        logs below error level.)"""
         payload = make_stop_payload(transcript_path="/tmp/does-not-exist-transcript-xyz.jsonl")
 
         with patch.object(hook, "log_error") as mock_error:
             with patch.object(hook, "log_info"):
-                result = hook.process_subagent_stop(payload)
+                with patch("subprocess.run", side_effect=self._fake_list_doing(["77"])):
+                    result = hook.process_subagent_stop(payload)
 
         assert_allow(result)
         assert mock_error.call_count >= 1, (
             "Expected log_error to be called for a non-empty, nonexistent "
-            "transcript_path — this is the exact silent failure that "
-            "stranded cards #3292 and #3305 (see "
-            ".scratchpad/3312-hook-determination.md)."
+            "transcript_path when a card IS in 'doing' for this session — "
+            "this is the exact silent failure that stranded cards #3292 "
+            "and #3305 (see .scratchpad/3312-hook-determination.md)."
         )
         logged_messages = " ".join(str(call.args[0]) for call in mock_error.call_args_list)
         assert "does-not-exist-transcript-xyz.jsonl" in logged_messages, (
@@ -725,7 +763,9 @@ class TestMissingTranscriptPathSurfacing:
         agent_type/tool_use_id since they may be absent from a given payload
         — this test asserts they still appear (as empty-string reprs) rather
         than raising, and does not alter the branch's existing control flow
-        (still returns allow(), still logs via log_error).
+        (still returns allow(), still logs via log_error). A card in 'doing'
+        is mocked for this session so the ERROR branch (not the below-error
+        branch) is the one exercised.
 
         Each assertion checks the FIELD-PREFIXED form (`<field>=<repr(value)>`)
         rather than a bare value substring — a bare substring can be
@@ -742,7 +782,8 @@ class TestMissingTranscriptPathSurfacing:
 
         with patch.object(hook, "log_error") as mock_error:
             with patch.object(hook, "log_info"):
-                result = hook.process_subagent_stop(payload)
+                with patch("subprocess.run", side_effect=self._fake_list_doing(["77"])):
+                    result = hook.process_subagent_stop(payload)
 
         assert_allow(result)
         assert mock_error.call_count >= 1
@@ -777,6 +818,254 @@ class TestMissingTranscriptPathSurfacing:
         assert mock_error.call_count == 0, (
             f"Expected log_error NOT to be called for an empty transcript_path "
             f"(benign case). Got calls: {mock_error.call_args_list}"
+        )
+
+    def test_phantom_event_logs_below_error_when_no_card_in_doing(self, hook):
+        """Card #3421's discriminator: no card for this session is in
+        'doing' → this occurrence cannot strand anything, so it must be
+        logged BELOW error level (log_info, not log_error) — and the
+        message must state the per-occurrence fact (no card in doing, so
+        nothing is stranded), never a blanket claim that the whole class of
+        event is spurious/phantom (the investigation's verdict explicitly
+        declined to close that question — the producer was never
+        identified)."""
+        payload = make_stop_payload(transcript_path="/tmp/does-not-exist-nocard-xyz.jsonl")
+
+        with patch.object(hook, "log_error") as mock_error:
+            with patch.object(hook, "log_info") as mock_info:
+                with patch("subprocess.run", side_effect=self._fake_list_doing([])):
+                    result = hook.process_subagent_stop(payload)
+
+        assert_allow(result)
+        assert mock_error.call_count == 0, (
+            f"Expected log_error NOT to be called when no card is in 'doing' "
+            f"for this session. Got calls: {mock_error.call_args_list}"
+        )
+        assert mock_info.call_count >= 1, (
+            "Expected log_info to be called (below-error report) when no "
+            "card is in 'doing' for this session."
+        )
+        logged_messages = " ".join(str(call.args[0]) for call in mock_info.call_args_list)
+        assert "does-not-exist-nocard-xyz.jsonl" in logged_messages, (
+            f"Expected the offending path in the log_info message. Got: {logged_messages!r}"
+        )
+        assert "no card is stranded by this occurrence" in logged_messages, (
+            f"Expected a per-occurrence fact statement, not a population-wide "
+            f"'phantom' claim. Got: {logged_messages!r}"
+        )
+        # "phantom" as a standalone word must never appear -- checked as a
+        # whole word (not substring) so this assertion is not incidentally
+        # satisfied/defeated by unrelated text (e.g. a file path) containing
+        # the same letters as a substring.
+        assert not re.search(r"\bphantom\b", logged_messages, re.IGNORECASE), (
+            f"Must not assert these ARE phantom events — the investigation's "
+            f"verdict declined to close this question. Got: {logged_messages!r}"
+        )
+
+    def test_stranding_risk_logs_error_when_card_in_doing(self, hook):
+        """Card #3421's discriminator: one or more cards ARE in 'doing' for
+        this session → keep ERROR, and name the card number(s) so the
+        reader has something concrete to check."""
+        payload = make_stop_payload(transcript_path="/tmp/does-not-exist-stranding-xyz.jsonl")
+
+        with patch.object(hook, "log_error") as mock_error:
+            with patch.object(hook, "log_info") as mock_info:
+                with patch("subprocess.run", side_effect=self._fake_list_doing(["55"])):
+                    result = hook.process_subagent_stop(payload)
+
+        assert_allow(result)
+        assert mock_error.call_count >= 1, (
+            "Expected log_error to be called when a card IS in 'doing' for "
+            "this session."
+        )
+        logged_messages = " ".join(str(call.args[0]) for call in mock_error.call_args_list)
+        assert "does-not-exist-stranding-xyz.jsonl" in logged_messages, (
+            f"Expected the offending path in the log_error message. Got: {logged_messages!r}"
+        )
+        assert "#55" in logged_messages, (
+            f"Expected the in-doing card number named concretely. Got: {logged_messages!r}"
+        )
+        assert "stranded" in logged_messages, (
+            f"Expected stranding-risk wording to be kept for this branch. "
+            f"Got: {logged_messages!r}"
+        )
+        assert mock_info.call_count == 0, (
+            f"Expected log_info NOT to be called for this event when a card "
+            f"is in 'doing' (the report goes to log_error only). Got calls: "
+            f"{mock_info.call_args_list}"
+        )
+
+    @staticmethod
+    def _doing_read_calls(mock_run):
+        """Filter a MagicMock(side_effect=...)'s call_args_list down to the
+        calls that actually invoked `kanban list --column doing ...`. Used
+        to assert the discriminator subprocess was genuinely INVOKED, not
+        merely that some fallback wording happened to survive — see card
+        #3424 MEDIUM 2."""
+        return [
+            call
+            for call in mock_run.call_args_list
+            if isinstance(call.args[0], list)
+            and call.args[0][:2] == ["kanban", "list"]
+            and "doing" in call.args[0]
+        ]
+
+    def test_board_read_failure_falls_back_to_error_log(self, hook):
+        """Card #3421's FAIL OPEN constraint: if the board read itself fails
+        (kanban CLI returns non-zero), the discriminator cannot determine
+        whether a card is at risk — fall back to the original,
+        unconditional stranding-risk report, unchanged from before the
+        discriminator existed.
+
+        Strengthened per card #3424 MEDIUM 2: also asserts the discriminator's
+        `kanban list --column doing` subprocess call was actually attempted,
+        not merely that the fallback wording survived. Under the PRE-CHANGE
+        code, `process_subagent_stop`'s missing-transcript-path branch
+        returned allow() immediately after a single unconditional log_error
+        call and never invoked any subprocess in that branch at all — so a
+        mocked board-read failure was never exercised, and the wording
+        assertions below were satisfied trivially by the pre-existing,
+        unchanged message text. The `_doing_read_calls` assertion is what
+        distinguishes "the discriminator is wired in" from "the discriminator
+        is absent"."""
+        payload = make_stop_payload(transcript_path="/tmp/does-not-exist-boardfail-xyz.jsonl")
+
+        def fake_subprocess_run(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd[0] == "kanban" and len(cmd) > 1 and cmd[1] == "list":
+                return KanbanMockResponses.failure(stderr="kanban: board read failed", returncode=1)
+            return KanbanMockResponses.success()
+
+        mock_run = MagicMock(side_effect=fake_subprocess_run)
+
+        # Note: run_kanban() itself calls log_info on any non-zero exit
+        # (pre-existing, unrelated behavior — see run_kanban's own
+        # "kanban {args} failed (exit {rc}): {stderr}" log line) — so
+        # log_info is NOT asserted to be zero here; only that log_error
+        # carries the correct fallback report is asserted.
+        with patch.object(hook, "log_error") as mock_error:
+            with patch.object(hook, "log_info"):
+                with patch("subprocess.run", mock_run):
+                    result = hook.process_subagent_stop(payload)
+
+        assert_allow(result)
+
+        assert len(self._doing_read_calls(mock_run)) >= 1, (
+            f"Expected the discriminator to actually invoke "
+            f"`kanban list --column doing ...` before falling back. Got "
+            f"subprocess.run calls: {mock_run.call_args_list!r}"
+        )
+
+        assert mock_error.call_count >= 1, (
+            "Expected log_error to be called (fail-open fallback) when the "
+            "board read itself fails."
+        )
+        logged_messages = " ".join(str(call.args[0]) for call in mock_error.call_args_list)
+        assert "does-not-exist-boardfail-xyz.jsonl" in logged_messages, (
+            f"Expected the offending path in the log_error message. Got: {logged_messages!r}"
+        )
+        assert "may be silently stranded in 'doing'" in logged_messages, (
+            f"Expected the original, unconditional stranding-risk wording "
+            f"(unchanged fail-open fallback). Got: {logged_messages!r}"
+        )
+
+    def test_timeout_on_board_read_falls_back_to_error_log(self, hook):
+        """Card #3424 MEDIUM 2: covers the *timeout* route to None
+        specifically, distinct from test_board_read_failure_falls_back_to_
+        error_log's non-zero-exit route. `run_kanban` (kanban-subagent-
+        stop-hook.py) catches `subprocess.TimeoutExpired` internally and
+        converts it to a synthetic returncode=124 CompletedProcess;
+        `cards_in_doing_for_session` then sees that as a non-zero exit and
+        returns None, reaching the same fail-open fallback as any other
+        read failure. Also asserts the discriminator was actually invoked,
+        for the same reason as the strengthened test above."""
+        payload = make_stop_payload(transcript_path="/tmp/does-not-exist-boardtimeout-xyz.jsonl")
+
+        def fake_subprocess_run(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd[0] == "kanban" and len(cmd) > 1 and cmd[1] == "list":
+                raise subprocess.TimeoutExpired(cmd=cmd, timeout=kwargs.get("timeout", 10))
+            return KanbanMockResponses.success()
+
+        mock_run = MagicMock(side_effect=fake_subprocess_run)
+
+        with patch.object(hook, "log_error") as mock_error:
+            with patch.object(hook, "log_info"):
+                with patch("subprocess.run", mock_run):
+                    result = hook.process_subagent_stop(payload)
+
+        assert_allow(result)
+
+        assert len(self._doing_read_calls(mock_run)) >= 1, (
+            f"Expected the discriminator to actually invoke "
+            f"`kanban list --column doing ...` before falling back. Got "
+            f"subprocess.run calls: {mock_run.call_args_list!r}"
+        )
+
+        assert mock_error.call_count >= 1, (
+            "Expected log_error to be called (fail-open fallback) when the "
+            "board read times out."
+        )
+        logged_messages = " ".join(str(call.args[0]) for call in mock_error.call_args_list)
+        assert "does-not-exist-boardtimeout-xyz.jsonl" in logged_messages, (
+            f"Expected the offending path in the log_error message. Got: {logged_messages!r}"
+        )
+        assert "may be silently stranded in 'doing'" in logged_messages, (
+            f"Expected the original, unconditional stranding-risk wording "
+            f"(unchanged fail-open fallback) for a timed-out board read. "
+            f"Got: {logged_messages!r}"
+        )
+
+    def test_unparseable_board_output_falls_back_to_error_log(self, hook):
+        """Card #3424 MEDIUM 1: exit code 0 with unparseable/garbled stdout
+        (never containing kanban's `<board` root element) must reach the
+        ERROR fallback branch — the same branch a genuine read failure
+        reaches — NOT the below-ERROR log_info branch that a confirmed,
+        successfully-parsed, genuinely-empty 'doing' column reaches. Before
+        card #3424's fix, `re.findall(r'num="(\\d+)"', result.stdout)`
+        returning `[]` was indistinguishable between "truly empty board" and
+        "garbled/truncated output" — both silently routed to log_info. See
+        cards_in_doing_for_session's updated docstring in
+        kanban-subagent-stop-hook.py."""
+        payload = make_stop_payload(transcript_path="/tmp/does-not-exist-boardgarbled-xyz.jsonl")
+
+        def fake_subprocess_run(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd[0] == "kanban" and len(cmd) > 1 and cmd[1] == "list":
+                return KanbanMockResponses.success(stdout="not xml at all, definitely not a board\n")
+            return KanbanMockResponses.success()
+
+        mock_run = MagicMock(side_effect=fake_subprocess_run)
+
+        with patch.object(hook, "log_error") as mock_error:
+            with patch.object(hook, "log_info") as mock_info:
+                with patch("subprocess.run", mock_run):
+                    result = hook.process_subagent_stop(payload)
+
+        assert_allow(result)
+
+        assert len(self._doing_read_calls(mock_run)) >= 1, (
+            f"Expected the discriminator to actually invoke "
+            f"`kanban list --column doing ...`. Got subprocess.run calls: "
+            f"{mock_run.call_args_list!r}"
+        )
+
+        assert mock_error.call_count >= 1, (
+            "Expected log_error (ERROR fallback) when kanban list exits 0 "
+            "but returns unparseable stdout — this must NOT be treated the "
+            "same as a genuinely empty 'doing' column."
+        )
+        logged_messages = " ".join(str(call.args[0]) for call in mock_error.call_args_list)
+        assert "does-not-exist-boardgarbled-xyz.jsonl" in logged_messages, (
+            f"Expected the offending path in the log_error message. Got: {logged_messages!r}"
+        )
+        assert "may be silently stranded in 'doing'" in logged_messages, (
+            f"Expected the original, unconditional stranding-risk wording "
+            f"(unchanged fail-open fallback) for unparseable board output. "
+            f"Got: {logged_messages!r}"
+        )
+        assert mock_info.call_count == 0, (
+            f"Expected log_info NOT to be used for unparseable board output "
+            f"— that below-ERROR branch is reserved for a confirmed-empty, "
+            f"successfully-parsed board read. Got calls: "
+            f"{mock_info.call_args_list!r}"
         )
 
 
