@@ -1416,7 +1416,12 @@ def process_subagent_stop(payload: dict) -> dict:
             f"to could not be identified, so kanban done was never attempted "
             f"— the card may be silently stranded in 'doing'. This may "
             f"indicate a race (transcript not yet flushed/moved to its final "
-            f"path) or a stale/incorrect path from the daemon."
+            f"path) or a stale/incorrect path from the daemon. "
+            f"session_id={payload.get('session_id', '')!r} "
+            f"agent_id={payload.get('agent_id', '')!r} "
+            f"agent_type={payload.get('agent_type', '')!r} "
+            f"cwd={payload.get('cwd', '')!r} "
+            f"tool_use_id={payload.get('tool_use_id', '')!r}"
         )
         return allow()
 

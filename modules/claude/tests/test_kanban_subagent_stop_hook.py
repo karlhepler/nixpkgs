@@ -715,6 +715,54 @@ class TestMissingTranscriptPathSurfacing:
             f"Expected the offending path in the log_error message. Got: {logged_messages!r}"
         )
 
+    def test_nonexistent_nonempty_path_logs_agent_identity_fields(self, hook):
+        """The missing-path log_error message names the agent: session_id,
+        agent_id, agent_type, cwd, and tool_use_id from the payload must all
+        appear, so the question of which agent (and which specific Task
+        invocation) hit this defect becomes answerable.
+
+        Uses a defaulting read (payload.get with a default) for agent_id/
+        agent_type/tool_use_id since they may be absent from a given payload
+        — this test asserts they still appear (as empty-string reprs) rather
+        than raising, and does not alter the branch's existing control flow
+        (still returns allow(), still logs via log_error).
+
+        Each assertion checks the FIELD-PREFIXED form (`<field>=<repr(value)>`)
+        rather than a bare value substring — a bare substring can be
+        satisfied incidentally by the pre-existing part of the message (see
+        the cwd default '/tmp' being a substring of the transcript_path
+        fixture below), which would let the assertion pass even if the field
+        were never appended. See .scratchpad/verify-field-discrimination.py
+        for a standalone proof that each field-prefixed assertion actually
+        discriminates."""
+        payload = make_stop_payload(transcript_path="/tmp/does-not-exist-transcript-xyz.jsonl")
+        payload["agent_id"] = "agent-a1b2c3d4e5f6789"
+        payload["agent_type"] = "swe-backend"
+        payload["tool_use_id"] = "toolu_01a1b2c3d4e5f6g7h8"
+
+        with patch.object(hook, "log_error") as mock_error:
+            with patch.object(hook, "log_info"):
+                result = hook.process_subagent_stop(payload)
+
+        assert_allow(result)
+        assert mock_error.call_count >= 1
+        logged_messages = " ".join(str(call.args[0]) for call in mock_error.call_args_list)
+        assert f"session_id={payload['session_id']!r}" in logged_messages, (
+            f"Expected session_id= field in the log_error message. Got: {logged_messages!r}"
+        )
+        assert f"agent_id={payload['agent_id']!r}" in logged_messages, (
+            f"Expected agent_id= field in the log_error message. Got: {logged_messages!r}"
+        )
+        assert f"agent_type={payload['agent_type']!r}" in logged_messages, (
+            f"Expected agent_type= field in the log_error message. Got: {logged_messages!r}"
+        )
+        assert f"cwd={payload['cwd']!r}" in logged_messages, (
+            f"Expected cwd= field in the log_error message. Got: {logged_messages!r}"
+        )
+        assert f"tool_use_id={payload['tool_use_id']!r}" in logged_messages, (
+            f"Expected tool_use_id= field in the log_error message. Got: {logged_messages!r}"
+        )
+
     def test_empty_path_does_not_log_error(self, hook):
         """A plain empty transcript_path is the benign case — must NOT
         trigger log_error (only log_info), so it stays out of the
