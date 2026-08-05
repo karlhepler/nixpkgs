@@ -592,7 +592,20 @@ def _fetch_doing_card_for_session(session_id: str) -> "tuple[str, list[str]] | N
             text=True,
             timeout=10,
         )
-        if result.returncode != 0 or not result.stdout.strip():
+        if result.returncode != 0:
+            # ANOMALOUS: the kanban CLI itself failed (crash, outage, etc).
+            # Distinct from the benign "no card in doing" case below — an
+            # operator needs to know infrastructure is failing, not just that
+            # a lookup came back empty.
+            log_error(
+                f"kanban CLI failed for session={session_id}: "
+                f"kanban list exited {result.returncode}, "
+                f"stderr={result.stderr.strip()[:500]!r}"
+            )
+            return None
+        if not result.stdout.strip():
+            # BENIGN: the session genuinely has no card in 'doing'. Common,
+            # expected, and not worth error-log noise.
             return None
         root = ET.fromstring(result.stdout.strip())
         # Find the first card element anywhere in the XML
@@ -621,7 +634,20 @@ def _fetch_card_editfiles(card_number: str, session_id: str) -> "tuple[str, list
             text=True,
             timeout=10,
         )
-        if result.returncode != 0 or not result.stdout.strip():
+        if result.returncode != 0:
+            # ANOMALOUS: the kanban CLI itself failed (crash, outage, etc).
+            # Distinct from the benign "card has no edit-files" case below —
+            # an operator needs to know infrastructure is failing, not just
+            # that a lookup came back empty.
+            log_error(
+                f"kanban CLI failed for card={card_number}: "
+                f"kanban show exited {result.returncode}, "
+                f"stderr={result.stderr.strip()[:500]!r}"
+            )
+            return None
+        if not result.stdout.strip():
+            # BENIGN: the card lookup returned nothing to parse. Common,
+            # expected, and not worth error-log noise.
             return None
         root = ET.fromstring(result.stdout.strip())
         ef_el = root.find("edit-files")

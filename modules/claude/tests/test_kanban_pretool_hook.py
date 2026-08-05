@@ -913,6 +913,38 @@ class TestDestructiveGitSafeguard:
             result = run_hook_main(hook, payload)
         assert_allowed(result)
 
+    def test_fetch_doing_card_anomalous_cli_failure_logs_error(self, hook):
+        """kanban CLI non-zero exit is ANOMALOUS — must log_error naming the failure.
+
+        Distinct from the benign 'no card in doing' case: an operator needs to
+        know infrastructure failed, not just that a lookup came back empty.
+        """
+        mock_result = KanbanMockResponses.failure(returncode=1, stderr="kanban: connection refused")
+        with patch("subprocess.run", return_value=mock_result):
+            with patch.object(hook, "log_error") as mock_log_error:
+                with patch.object(hook, "log_info") as mock_log_info:
+                    result = hook._fetch_doing_card_for_session("test-session")
+        assert result is None  # still fails open
+        mock_log_error.assert_called_once()
+        logged_message = mock_log_error.call_args[0][0]
+        assert "kanban CLI failed" in logged_message
+        assert "1" in logged_message  # exit code surfaced
+        mock_log_info.assert_not_called()
+
+    def test_fetch_doing_card_benign_no_card_does_not_log_error(self, hook):
+        """kanban CLI success with empty stdout is BENIGN — no card in doing.
+
+        Must NOT call log_error: this is a routine, expected state (a session
+        with no card in 'doing') and error-log noise here would bury genuine
+        CLI-failure signals.
+        """
+        mock_result = KanbanMockResponses.success(stdout="")
+        with patch("subprocess.run", return_value=mock_result):
+            with patch.object(hook, "log_error") as mock_log_error:
+                result = hook._fetch_doing_card_for_session("test-session")
+        assert result is None  # still fails open
+        mock_log_error.assert_not_called()
+
     # 15. Card with empty editFiles → DENY all destructive ops
     def test_empty_edit_files_denies_all_destructive(self, hook):
         """A card with no editFiles must deny all destructive git ops."""
