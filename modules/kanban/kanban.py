@@ -2304,8 +2304,14 @@ def _print_ampersand_chain_errors(violations: list, card_label: str | None = Non
 
 _KNOWN_CARD_FIELDS = frozenset({
     "action", "intent", "type", "criteria", "ac",
-    "editFiles", "readFiles", "agent", "model",
+    "editFiles", "readFiles", "agent", "model", "column",
 })
+
+# Recognized values for the optional per-entry "column" field. When present,
+# it overrides the column the invoking verb (`kanban do` -> doing, `kanban
+# todo` -> todo) would otherwise imply for that single card. See
+# validate_card_column and _route_card_to_column.
+_VALID_CARD_COLUMNS = frozenset({"doing", "todo"})
 
 _KNOWN_CRITERION_FIELDS = frozenset({
     "text", "mov_commands", "mov_type", "met",
@@ -2377,12 +2383,39 @@ def validate_no_unknown_fields(data: dict) -> None:
         sys.exit(1)
 
 
+def validate_card_column(data: dict) -> None:
+    """Validate the optional per-entry 'column' field, if present.
+
+    'column' lets a single card in a `kanban do`/`kanban todo` JSON array (or
+    single-object input) declare its own target column, overriding the
+    column the invoking verb would otherwise imply. Absent is valid — it
+    means "use whatever the verb implies", preserving today's behavior
+    exactly. Recognized values are "doing" and "todo"; anything else is
+    rejected with a clear error rather than silently defaulted (a silent
+    default would recreate the exact class of surprise this field exists to
+    remove — see card #3349).
+
+    Raises SystemExit on an unrecognized value. Does not mutate `data`.
+    """
+    column = data.get("column")
+    if column is None:
+        return
+    if column not in _VALID_CARD_COLUMNS:
+        print(
+            f"Error: Invalid 'column' value {column!r}. "
+            f"Must be one of: {', '.join(sorted(_VALID_CARD_COLUMNS))}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+
 def validate_and_build_card(data: dict, session: str | None) -> dict:
     """Validate card data and build card dict.
 
     Raises SystemExit on validation failure.
     """
     validate_no_unknown_fields(data)
+    validate_card_column(data)
 
     if "action" not in data:
         print("Error: JSON must include 'action' field", file=sys.stderr)
@@ -2700,6 +2733,79 @@ def _load_all_doing_cards(root: Path) -> list[dict]:
     return doing_cards
 
 
+def _route_card_to_column(
+    root: Path,
+    card: dict,
+    requested_column: str | None,
+    default_column: str,
+    doing_cards: list[dict],
+    force: bool,
+    git_project: str | None,
+) -> tuple[int, bool]:
+    """Create one card in the column implied by its verb, or its own explicit override.
+
+    Both `kanban do` (default_column="doing") and `kanban todo`
+    (default_column="todo") route every card through this single function so
+    an explicit per-entry "column" field behaves identically regardless of
+    which verb invoked it — the field, not the verb, decides where the card
+    that carries it lands. requested_column is the card's own "column" value
+    (already validated by validate_card_column via validate_and_build_card),
+    or None to fall back to default_column — this is what keeps every
+    existing call site with no "column" field byte-for-byte unaffected.
+
+    Routing to "doing" runs the same editFiles overlap check `kanban do` has
+    always run, deferring to "todo" on conflict (unless force). Routing to
+    "todo" is a plain, unconditional creation — todo never conflicts.
+
+    Behavior extension: because `kanban todo` now shares this same routing
+    function with `kanban do`, editFiles conflict deferral and `--force` are
+    reachable from a todo invocation for the first time — a `kanban todo`
+    entry that explicitly requests "column": "doing" now runs the same
+    conflict check a `kanban do` call would, and can be forced past a
+    conflict the same way. This follows from unifying the two verbs' routing
+    through one function, rather than being a separate feature in its own
+    right, and it only applies when an entry explicitly requests the doing
+    column: a todo entry with no "column" override, or one that explicitly
+    requests "todo", is unaffected and behaves exactly as before.
+
+    Returns (card_number, had_conflict). had_conflict is True only when a
+    "doing"-bound card was deferred to "todo" because of an editFiles
+    conflict — callers use it to decide whether to exit non-zero, matching
+    `kanban do`'s pre-existing conflict-signal behavior.
+    """
+    target = requested_column or default_column
+
+    if target == "todo":
+        num = create_card_in_column(root, "todo", card)
+        write_kanban_event(card, str(num), "create", to_column="todo", git_project=git_project)
+        print(num)
+        return num, False
+
+    # target == "doing": conflict-checked placement (mirrors `kanban do`).
+    edit_files = card.get("editFiles") or []
+    # New cards have no ID yet; pass '' so check_editfiles_overlap doesn't try to self-exclude.
+    overlap_conflicts = check_editfiles_overlap("", edit_files, doing_cards)
+    if overlap_conflicts and not force:
+        inflight_num, inflight_session, conflict_files = overlap_conflicts[0]
+        conflict_path = conflict_files[0] if conflict_files else "(unknown)"
+        num = create_card_in_column(root, "todo", card)
+        write_kanban_event(card, str(num), "create", to_column="todo", git_project=git_project)
+        print(num)
+        print(
+            f"Card #{num} deferred to todo: editFiles conflict with card #{inflight_num} "
+            f"(session {inflight_session}) on path {conflict_path}",
+            file=sys.stderr,
+        )
+        return num, True
+    if overlap_conflicts and force:
+        card["forced"] = True
+    card["agent_launch_pending"] = True
+    num = create_card_in_column(root, "doing", card)
+    write_kanban_event(card, str(num), "create", to_column="doing", git_project=git_project)
+    print(num)
+    return num, False
+
+
 def cmd_do(args) -> None:
     """Create card(s) directly in the doing column from JSON input.
 
@@ -2759,60 +2865,44 @@ def cmd_do(args) -> None:
                 print(f"Error: Array element {i} must be a JSON object, got {type(card_data).__name__}", file=sys.stderr)
                 sys.exit(1)
             card = validate_and_build_card(card_data, session)
-            cards.append(card)
+            # Carry the entry's own "column" override alongside its built card —
+            # validate_and_build_card's returned dict never contains "column"
+            # (make_card doesn't accept it), so it must be read from the raw
+            # input here, one entry at a time.
+            cards.append((card, card_data.get("column")))
 
-        # All validation passed — create cards, checking conflicts per card
+        # All validation passed — create cards, routing each to its own column
+        # (explicit per-entry override, falling back to "doing" when absent —
+        # see _route_card_to_column), checking conflicts per card landing in doing.
         force = getattr(args, "force", False)
         doing_cards = _load_all_doing_cards(root)
         had_conflict = False
-        for card in cards:
-            edit_files = card.get("editFiles") or []
-            # New cards have no ID yet; pass '' so check_editfiles_overlap doesn't try to self-exclude.
-            overlap_conflicts = check_editfiles_overlap("", edit_files, doing_cards)
-            if overlap_conflicts and not force:
-                inflight_num, inflight_session, conflict_files = overlap_conflicts[0]
-                conflict_path = conflict_files[0] if conflict_files else "(unknown)"
-                num = create_card_in_column(root, "todo", card)
-                write_kanban_event(card, str(num), "create", to_column="todo", git_project=git_project)
-                print(num)
-                print(f"Card #{num} deferred to todo: editFiles conflict with card #{inflight_num} (session {inflight_session}) on path {conflict_path}", file=sys.stderr)
-                had_conflict = True
-                continue
-            if overlap_conflicts and force:
-                card["forced"] = True
-            card["agent_launch_pending"] = True
-            num = create_card_in_column(root, "doing", card)
-            write_kanban_event(card, str(num), "create", to_column="doing", git_project=git_project)
-            print(num)
+        for card, requested_column in cards:
+            _, conflicted = _route_card_to_column(
+                root, card, requested_column, "doing", doing_cards, force, git_project,
+            )
+            had_conflict = had_conflict or conflicted
         if had_conflict:
             sys.exit(1)
     elif isinstance(data, dict):
-        # Single card creation with conflict detection
+        # Single card creation with conflict detection. The optional "column"
+        # field is honored here too, for consistency with the array path —
+        # see card #3349: a single-object `kanban do --file` call with
+        # "column": "todo" queues the card instead of starting it, exactly as
+        # that same object would inside an array.
         force = getattr(args, "force", False)
         card = validate_and_build_card(data, session)
-        edit_files = card.get("editFiles") or []
-        read_files = card.get("readFiles") or []
         doing_cards = _load_all_doing_cards(root)
-        # New cards have no ID yet; pass '' so check_editfiles_overlap doesn't try to self-exclude.
-        overlap_conflicts = check_editfiles_overlap("", edit_files, doing_cards)
-        if overlap_conflicts and not force:
-            inflight_num, inflight_session, conflict_files = overlap_conflicts[0]
-            conflict_path = conflict_files[0] if conflict_files else "(unknown)"
-            num = create_card_in_column(root, "todo", card)
-            write_kanban_event(card, str(num), "create", to_column="todo", git_project=git_project)
-            print(num)
+        requested_column = data.get("column")
+        _, conflicted = _route_card_to_column(
+            root, card, requested_column, "doing", doing_cards, force, git_project,
+        )
+        if conflicted:
             # Clean up --file before exiting so it never pre-exists on next use
             json_file = getattr(args, "json_file", None)
             if json_file:
                 os.remove(json_file)
-            print(f"Card #{num} deferred to todo: editFiles conflict with card #{inflight_num} (session {inflight_session}) on path {conflict_path}", file=sys.stderr)
             sys.exit(1)
-        if overlap_conflicts and force:
-            card["forced"] = True
-        card["agent_launch_pending"] = True
-        num = create_card_in_column(root, "doing", card)
-        write_kanban_event(card, str(num), "create", to_column="doing", git_project=git_project)
-        print(num)
     else:
         print(f"Error: JSON must be an object or array, got {type(data).__name__}", file=sys.stderr)
         sys.exit(1)
@@ -4410,19 +4500,41 @@ def cmd_todo(args) -> None:
                 print(f"Error: Array element {i} must be a JSON object, got {type(card_data).__name__}", file=sys.stderr)
                 sys.exit(1)
             card = validate_and_build_card(card_data, session)
-            cards.append(card)
+            # Carry the entry's own "column" override alongside its built card —
+            # see the matching comment in cmd_do's bulk branch.
+            cards.append((card, card_data.get("column")))
 
-        # All validation passed — create all cards
-        for card in cards:
-            num = create_card_in_column(root, "todo", card)
-            write_kanban_event(card, str(num), "create", to_column="todo", git_project=git_project)
-            print(num)
+        # All validation passed — create all cards, routing each to its own
+        # column (explicit per-entry override, falling back to "todo" when
+        # absent — see _route_card_to_column). A "doing"-bound entry runs the
+        # same editFiles conflict check `kanban do` runs.
+        force = getattr(args, "force", False)
+        doing_cards = _load_all_doing_cards(root)
+        had_conflict = False
+        for card, requested_column in cards:
+            _, conflicted = _route_card_to_column(
+                root, card, requested_column, "todo", doing_cards, force, git_project,
+            )
+            had_conflict = had_conflict or conflicted
+        if had_conflict:
+            sys.exit(1)
     elif isinstance(data, dict):
-        # Single card creation (existing behavior)
+        # Single card creation (existing behavior). The optional "column"
+        # field is honored here too, for consistency with the array path —
+        # see the matching comment in cmd_do's single-object branch.
+        force = getattr(args, "force", False)
         card = validate_and_build_card(data, session)
-        num = create_card_in_column(root, "todo", card)
-        write_kanban_event(card, str(num), "create", to_column="todo", git_project=git_project)
-        print(num)
+        doing_cards = _load_all_doing_cards(root)
+        requested_column = data.get("column")
+        _, conflicted = _route_card_to_column(
+            root, card, requested_column, "todo", doing_cards, force, git_project,
+        )
+        if conflicted:
+            # Clean up --file before exiting so it never pre-exists on next use
+            json_file = getattr(args, "json_file", None)
+            if json_file:
+                os.remove(json_file)
+            sys.exit(1)
     else:
         print(f"Error: JSON must be an object or array, got {type(data).__name__}", file=sys.stderr)
         sys.exit(1)
