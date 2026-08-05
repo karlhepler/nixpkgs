@@ -168,15 +168,36 @@ def _unmet_ac(text: str, commands: list[tuple[str, int]] | None = None) -> str:
     return f'    <ac met="false">{text}<movCommands>{cmd_entries}</movCommands></ac>'
 
 
-def _fake_kanban_env(bin_dir: Path, scenario_path: Path, call_log_path: Path) -> dict:
-    """Build the subprocess env: fake kanban dir prepended to PATH, scenario/log wired up."""
+def _fake_home_env(home_dir: Path, env: dict) -> dict:
+    """Redirect HOME to an isolated directory so the hook's log writes
+    (ERROR_LOG_PATH / INFO_LOG_PATH, both resolved via Path.home()) land
+    outside the real ~/.claude/metrics/ production log.
+
+    The hook is launched as a real OS subprocess (see _run_hook), so an
+    in-process monkeypatch of the hook module's ERROR_LOG_PATH/INFO_LOG_PATH
+    constants (as used by the sibling in-process test file) cannot reach it —
+    the child process never sees the parent's monkeypatched module attribute.
+    Overriding the HOME env var the child inherits is the one lever that
+    reaches across the subprocess boundary: Path.home() consults HOME on
+    POSIX, so every log path the hook computes gets rebased under home_dir.
+    """
+    home_dir.mkdir(parents=True, exist_ok=True)
+    env["HOME"] = str(home_dir)
+    return env
+
+
+def _fake_kanban_env(bin_dir: Path, scenario_path: Path, call_log_path: Path, home_dir: Path) -> dict:
+    """Build the subprocess env: fake kanban dir prepended to PATH, scenario/log wired up.
+
+    home_dir: isolated HOME for this subprocess — see _fake_home_env.
+    """
     env = os.environ.copy()
     env["PATH"] = f"{bin_dir}{os.pathsep}{env.get('PATH', '')}"
     env["FAKE_KANBAN_SCENARIO"] = str(scenario_path)
     env["FAKE_KANBAN_CALL_LOG"] = str(call_log_path)
     # Ensure the hook doesn't skip AC review as a non-coordinator session.
     env.pop("PERSONAL_TRAINER_SESSION", None)
-    return env
+    return _fake_home_env(home_dir, env)
 
 
 def _run_hook(payload: dict, env: dict) -> dict:
@@ -265,7 +286,7 @@ def test_criterion_with_passing_mov_commands_is_auto_marked_met_and_allows(tmp_p
     scenario_path.write_text(json.dumps(scenario), encoding="utf-8")
 
     transcript_path = _write_transcript(tmp_path, card_number, session)
-    env = _fake_kanban_env(bin_dir, scenario_path, call_log_path)
+    env = _fake_kanban_env(bin_dir, scenario_path, call_log_path, tmp_path / "home")
 
     result = _run_hook(_build_stop_payload(transcript_path), env)
 
@@ -319,7 +340,7 @@ def test_criterion_with_failing_mov_commands_blocks_with_command_in_feedback(tmp
     scenario_path.write_text(json.dumps(scenario), encoding="utf-8")
 
     transcript_path = _write_transcript(tmp_path, card_number, session)
-    env = _fake_kanban_env(bin_dir, scenario_path, call_log_path)
+    env = _fake_kanban_env(bin_dir, scenario_path, call_log_path, tmp_path / "home")
 
     result = _run_hook(_build_stop_payload(transcript_path), env)
 
@@ -381,7 +402,7 @@ def test_criterion_with_no_mov_commands_still_auto_fails_not_vacuously_passed(tm
     scenario_path.write_text(json.dumps(scenario), encoding="utf-8")
 
     transcript_path = _write_transcript(tmp_path, card_number, session)
-    env = _fake_kanban_env(bin_dir, scenario_path, call_log_path)
+    env = _fake_kanban_env(bin_dir, scenario_path, call_log_path, tmp_path / "home")
 
     result = _run_hook(_build_stop_payload(transcript_path), env)
 
@@ -450,7 +471,7 @@ def test_mixed_one_passes_one_fails_still_blocks_and_both_attempted(tmp_path):
     scenario_path.write_text(json.dumps(scenario), encoding="utf-8")
 
     transcript_path = _write_transcript(tmp_path, card_number, session)
-    env = _fake_kanban_env(bin_dir, scenario_path, call_log_path)
+    env = _fake_kanban_env(bin_dir, scenario_path, call_log_path, tmp_path / "home")
 
     result = _run_hook(_build_stop_payload(transcript_path), env)
 
@@ -495,7 +516,7 @@ def test_no_unmet_criteria_does_not_call_criteria_check(tmp_path):
     scenario_path.write_text(json.dumps(scenario), encoding="utf-8")
 
     transcript_path = _write_transcript(tmp_path, card_number, session)
-    env = _fake_kanban_env(bin_dir, scenario_path, call_log_path)
+    env = _fake_kanban_env(bin_dir, scenario_path, call_log_path, tmp_path / "home")
 
     result = _run_hook(_build_stop_payload(transcript_path), env)
 
@@ -555,7 +576,7 @@ def test_non_utf8_criteria_check_output_is_contained_and_still_reaches_done(tmp_
     scenario_path.write_text(json.dumps(scenario), encoding="utf-8")
 
     transcript_path = _write_transcript(tmp_path, card_number, session)
-    env = _fake_kanban_env(bin_dir, scenario_path, call_log_path)
+    env = _fake_kanban_env(bin_dir, scenario_path, call_log_path, tmp_path / "home")
 
     result = _run_hook(_build_stop_payload(transcript_path), env)
 
@@ -625,7 +646,7 @@ def test_negative_timeout_budget_still_reaches_done(tmp_path):
     scenario_path.write_text(json.dumps(scenario), encoding="utf-8")
 
     transcript_path = _write_transcript(tmp_path, card_number, session)
-    env = _fake_kanban_env(bin_dir, scenario_path, call_log_path)
+    env = _fake_kanban_env(bin_dir, scenario_path, call_log_path, tmp_path / "home")
 
     result = _run_hook(_build_stop_payload(transcript_path), env)
 
@@ -655,6 +676,11 @@ def test_missing_kanban_binary_degrades_gracefully(tmp_path):
     env = os.environ.copy()
     env["PATH"] = str(empty_bin_dir)  # No `kanban` binary anywhere on PATH.
     env.pop("PERSONAL_TRAINER_SESSION", None)
+    # This is the specific scenario that used to write "kanban CLI not found
+    # in PATH" and "Card #9008 kanban done exit 127" lines into the real
+    # ~/.claude/metrics/kanban-subagent-stop-hook-errors.log on every run —
+    # redirect HOME so those log_error() calls land in an isolated directory.
+    env = _fake_home_env(tmp_path / "home", env)
 
     result = _run_hook(_build_stop_payload(transcript_path), env)
 
