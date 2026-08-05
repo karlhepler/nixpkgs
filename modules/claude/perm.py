@@ -15,7 +15,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 # ---------------------------------------------------------------------------
 # Pattern validation
@@ -39,22 +39,65 @@ def validate_pattern(pattern: str) -> bool:
 _repo_root: Optional[Path] = None
 _settings_file: Optional[Path] = None
 _tracking_file: Optional[Path] = None
+_used_cwd_fallback: bool = False
+
+
+def _resolve_root(cwd: Optional[str] = None) -> Tuple[Path, bool]:
+    """Resolve the permission root with NO side effects (no mkdir, no globals).
+
+    Mirrors ONE of Claude Code's three documented cwd-fallback cases for
+    `.claude/settings.local.json`: the git repo top-level when inside a git
+    repository, else the current (or given) working directory
+    (https://code.claude.com/docs/en/settings — "The file stays in the
+    directory you start Claude Code from ... outside a git repository").
+    It does NOT mirror the other two documented cases — a repository rooted
+    at $HOME, or Agent SDK sessions — the former doesn't apply to this repo
+    and the latter doesn't apply to a CLI.
+
+    Returns (root, used_cwd_fallback). `cwd`, when given, scopes the git
+    lookup the way `git -C <cwd>` does (used by cmd_hook, which resolves a
+    caller-supplied cwd from a hook payload rather than this process's own
+    cwd); when omitted, resolution uses this process's own cwd.
+
+    Shared by ensure_repo() (the mutating, memoized entry point used by
+    allow/always/cleanup) and by cmd_hook()/cmd_check()/cmd_cleanup_stale(),
+    so all call sites agree on where the fallback lands instead of each
+    reimplementing (and potentially diverging on) the same git lookup.
+    """
+    args = ["git"]
+    if cwd:
+        args += ["-C", cwd]
+    args += ["rev-parse", "--show-toplevel"]
+    result = subprocess.run(args, capture_output=True, text=True, check=False)
+    if result.returncode == 0 and result.stdout.strip():
+        return Path(result.stdout.strip()), False
+    return (Path(cwd) if cwd else Path.cwd()), True
 
 
 def ensure_repo() -> None:
-    """Resolve git repo root and set module-level path variables."""
-    global _repo_root, _settings_file, _tracking_file
+    """Resolve the permission root and set module-level path variables.
+
+    See _resolve_root() for what is and isn't mirrored from Claude Code's
+    own documented fallback behaviour.
+
+    CONSTRAINT when the fallback fires (no git repository found): `allow`
+    and `cleanup` are always separate `perm` process invocations, and each
+    resolves this root fresh from the CURRENT working directory — there is
+    no cross-process anchor once there is no git root to normalize on (this
+    is also true of Claude Code's own native resolution). If the invoking
+    shell's cwd differs between an `allow` call and the later `cleanup`
+    call, the two calls read and write DIFFERENT `<cwd>/.claude/` files, and
+    `cleanup` will not find — and cannot revoke — a grant registered from a
+    different directory. Keep cwd stable across an allow/cleanup pair when
+    working outside a git repository. `cmd_cleanup()` detects this case (via
+    `_used_cwd_fallback` below) and warns loudly + exits non-zero instead of
+    reporting success silently; it cannot repair the drift itself, only
+    surface it.
+    """
+    global _repo_root, _settings_file, _tracking_file, _used_cwd_fallback
     if _repo_root is not None:
         return
-    result = subprocess.run(
-        ["git", "rev-parse", "--show-toplevel"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        raise RuntimeError("Not in a git repository")
-    _repo_root = Path(result.stdout.strip())
+    _repo_root, _used_cwd_fallback = _resolve_root()
     _settings_file = _repo_root / ".claude" / "settings.local.json"
     _tracking_file = _repo_root / ".claude" / ".perm-tracking.json"
     (_repo_root / ".claude").mkdir(parents=True, exist_ok=True)
@@ -228,6 +271,47 @@ def cmd_always(patterns: List[str], verbose: bool) -> None:
             print(f"Allowed (permanent): {pattern}")
 
 
+def _report_nothing_to_clean(session: str, verbose: bool, quiet_message: str) -> None:
+    """Report that `cleanup` found no claims to release for `session`.
+
+    In-repo (the ordinary case): finding nothing is expected and unremarkable
+    — e.g. cleanup run after a prior cleanup already succeeded, or before any
+    `allow` was ever issued. Stay quiet unless --verbose, exactly as before
+    this change; do not make in-repo cleanup noisy.
+
+    Outside a git repository (the fallback case, `_used_cwd_fallback` is
+    True): ensure_repo() resolved via cwd, and allow/cleanup only share a
+    tracking file when invoked from the IDENTICAL cwd (see ensure_repo()'s
+    docstring for why this can't be fixed here). Finding nothing in THAT
+    case is suspicious rather than routine — the only reason to run cleanup
+    at all is that something was registered — so this warns loudly on
+    stderr and exits non-zero instead of silently reporting success, in
+    case the grant is stranded in a DIFFERENT directory's
+    .claude/settings.local.json that nothing else will ever revisit.
+    """
+    if _used_cwd_fallback:
+        print(
+            f"Warning: cleanup found no temporary permissions owned by "
+            f"session '{session}' in {_repo_root} (non-git cwd fallback "
+            f"location).",
+            file=sys.stderr,
+        )
+        print(
+            "Outside a git repository, 'perm allow' and 'perm cleanup' each "
+            "resolve their working directory independently — if the cwd "
+            "changed between the two calls, the grant may be stranded in a "
+            "DIFFERENT directory's .claude/settings.local.json rather than "
+            "actually released. Re-run 'cleanup' from the exact directory "
+            "used for 'allow', or inspect that directory's "
+            ".claude/.perm-tracking.json directly.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    if verbose:
+        print(quiet_message)
+
+
 def cmd_cleanup(session: str, verbose: bool) -> None:
     if not session:
         print("Error: --session <id> is required for 'cleanup'", file=sys.stderr)
@@ -241,16 +325,14 @@ def cmd_cleanup(session: str, verbose: bool) -> None:
     temp = data.get("temporary", {})
 
     if not temp:
-        if verbose:
-            print("No temporary permissions to clean up.")
+        _report_nothing_to_clean(session, verbose, "No temporary permissions to clean up.")
         return
 
     # Find patterns that have a claim from this session
     owned_patterns = [p for p, claims in temp.items() if session in claims]
 
     if not owned_patterns:
-        if verbose:
-            print(f"No temporary permissions owned by session '{session}'.")
+        _report_nothing_to_clean(session, verbose, f"No temporary permissions owned by session '{session}'.")
         return
 
     removed_count = 0
@@ -288,14 +370,19 @@ def cmd_cleanup(session: str, verbose: bool) -> None:
 
 
 def cmd_cleanup_stale(max_age_hours: int) -> None:
-    """Remove temporary permissions older than max_age_hours. Background safety net — graceful on errors."""
-    try:
-        ensure_repo()
-    except RuntimeError:
-        return  # Gracefully exit if not in a git repo
+    """Remove temporary permissions older than max_age_hours. Background safety net — graceful on errors.
 
-    assert _tracking_file is not None
-    if not _tracking_file.exists():
+    Invoked unconditionally on every SessionStart, from whatever cwd the
+    session happens to start in — including non-git directories. Resolves
+    the root and checks for an existing tracking file BEFORE calling
+    ensure_repo(), because ensure_repo() has the side effect of creating
+    `.claude/` if it is absent: a janitor that runs on every session start
+    must not itself create the directory it exists to tidy in every non-git
+    cwd a session is ever started from.
+    """
+    root, _ = _resolve_root()
+    tracking_file = root / ".claude" / ".perm-tracking.json"
+    if not tracking_file.exists():
         return
 
     try:
@@ -398,17 +485,13 @@ def cmd_hook() -> None:
     else:
         content = json.dumps(tool_input)
 
-    # Resolve repo root — bail silently on failure
-    result = subprocess.run(
-        ["git", "-C", cwd, "rev-parse", "--show-toplevel"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0 or not result.stdout.strip():
-        sys.exit(0)
-
-    repo_root = Path(result.stdout.strip())
+    # Resolve the settings root the same way ensure_repo() does — git root,
+    # or the payload's cwd when there is no git repository — so this hook
+    # and the file `perm allow`/`perm always` actually write to never
+    # diverge. (Previously this resolved independently and bailed silently
+    # whenever the payload's cwd had no git repository, even after `perm
+    # allow` started succeeding there via ensure_repo()'s own fallback.)
+    repo_root, _ = _resolve_root(cwd)
     settings_file = repo_root / ".claude" / "settings.local.json"
 
     if not settings_file.exists():
@@ -527,16 +610,12 @@ def cmd_check(pattern: str, verbose: bool) -> None:
     found_allow = False
     found_deny = False
 
-    # Determine git repo root (gracefully handle non-repo context)
-    repo_root_str = ""
-    result = subprocess.run(
-        ["git", "rev-parse", "--show-toplevel"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode == 0:
-        repo_root_str = result.stdout.strip()
+    # Resolve the settings root the same way ensure_repo()/cmd_hook() do —
+    # git root, or cwd when there is no git repository — so `check` reports
+    # against the same location `allow`/`always` actually wrote to, instead
+    # of unconditionally reporting "not in a git repo" and skipping the
+    # local/project files outside a repo even when a fallback grant exists.
+    repo_root, _ = _resolve_root()
 
     output_lines: List[str] = []
     output_lines.append(f"Checking: {pattern}")
@@ -565,13 +644,8 @@ def cmd_check(pattern: str, verbose: bool) -> None:
         else:
             output_lines.append(f"  - {label} [not found]")
 
-    if repo_root_str:
-        repo_root = Path(repo_root_str)
-        check_file(repo_root / ".claude" / "settings.local.json", "local   .claude/settings.local.json")
-        check_file(repo_root / ".claude" / "settings.json", "project .claude/settings.json")
-    else:
-        output_lines.append("  - local   .claude/settings.local.json [not in a git repo]")
-        output_lines.append("  - project .claude/settings.json [not in a git repo]")
+    check_file(repo_root / ".claude" / "settings.local.json", "local   .claude/settings.local.json")
+    check_file(repo_root / ".claude" / "settings.json", "project .claude/settings.json")
 
     home = Path.home()
     check_file(home / ".claude" / "settings.json", "global  ~/.claude/settings.json")
@@ -663,7 +737,13 @@ def build_parser() -> argparse.ArgumentParser:
     # cleanup
     subparsers.add_parser(
         "cleanup",
-        help="Remove temporary permissions owned by the given session",
+        help=(
+            "Remove temporary permissions owned by the given session. "
+            "Outside a git repository, run this from the EXACT SAME cwd used "
+            "for 'allow' — cwd is the only anchor once there is no git root, "
+            "so a drifted cwd finds nothing and warns loudly + exits "
+            "non-zero rather than reporting a false success."
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
