@@ -55,6 +55,23 @@ COLUMNS = ["todo", "doing", "done", "canceled"]
 ARCHIVE_DAYS_THRESHOLD = int(os.environ.get("KANBAN_ARCHIVE_DAYS", "30"))
 MAX_CYCLES = 3
 
+# Stranded-card detection threshold (see is_card_stranded / cmd_list).
+#
+# A "stranded" card sits in `doing` with every acceptance criterion already
+# met, but was never advanced to `done` — the hedge is against
+# kanban-subagent-stop-hook.py silently no-op'ing when it receives a
+# non-existent agent_transcript_path (see anthropics/claude-code#7881: the
+# SubagentStop hook cannot reliably identify which sub-agent finished when
+# session IDs are shared). Without an age gate this would fire constantly on
+# perfectly healthy in-flight cards — an agent can legitimately finish
+# checking its last criterion a few seconds before SubagentStop actually
+# fires and the card transitions. A warning that is usually wrong gets
+# ignored, which is worse than no warning at all. Ten minutes is generous
+# enough that a still-running agent has almost certainly progressed or
+# stopped by then, while still surfacing a real stranding within the very
+# next coordinator turn (coordinators run `kanban list` every turn).
+STRANDED_CARD_THRESHOLD_MINUTES = 10
+
 # Word lists for friendly session names (adjective-noun, Docker-style)
 _ADJECTIVES = [
     "bold", "brave", "bright", "brisk", "calm", "clear", "cool", "crisp",
@@ -423,6 +440,47 @@ def card_in_date_range(card: dict, since: datetime | None, until: datetime | Non
 
 
 # =============================================================================
+# Stranded-card detection
+# =============================================================================
+
+def is_card_stranded(
+    card: dict,
+    now: datetime | None = None,
+    threshold_minutes: int = STRANDED_CARD_THRESHOLD_MINUTES,
+) -> bool:
+    """True if `card` looks stranded: every acceptance criterion is met, but
+    the card has had no activity for at least `threshold_minutes`.
+
+    Callers are expected to only pass cards already known to be in the
+    `doing` column — this function has no column awareness of its own and
+    checks criteria-met + staleness only.
+
+    Fails closed (returns False) on ANY malformed input — missing/empty
+    criteria, non-dict criterion entries, a missing or unparseable `updated`
+    timestamp — rather than raising. `kanban list` must keep working even
+    when a card is corrupt; a detector that can crash the command it is
+    attached to is worse than one that occasionally misses a stranding.
+    """
+    try:
+        criteria = card.get("criteria") or []
+        if not criteria:
+            return False
+        for criterion in criteria:
+            if not isinstance(criterion, dict) or not criterion.get("met"):
+                return False
+
+        updated_str = card.get("updated")
+        if not updated_str:
+            return False
+        updated = parse_iso(updated_str)
+
+        reference_now = now if now is not None else datetime.now(timezone.utc)
+        return (reference_now - updated) >= timedelta(minutes=threshold_minutes)
+    except Exception:
+        return False
+
+
+# =============================================================================
 # Session filtering helpers
 # =============================================================================
 
@@ -471,9 +529,19 @@ def _ses_attr(card: dict) -> str:
     others, and unknown alike — since session attribution is coordination-
     critical regardless of which bucket a card lands in. Returns an empty
     string when the card carries no session.
+
+    Rejects a non-string `session` value (int/list/dict — plausible for a
+    hand-edited or historically-drifted card file) by treating it the same
+    as "no session" rather than passing it to `html.escape()`, which
+    requires a `str` and raises `AttributeError` on anything else. This
+    helper has exactly four call sites, all inside `cmd_list` in this file
+    (mine/others/unknown card rendering plus the stranded-card warning
+    section) — audited at card #3364 — so hardening it here fixes the
+    non-string-`session` crash class at its root for every caller at once,
+    rather than only at the stranded-card call site.
     """
     card_session = card.get("session")
-    if card_session:
+    if card_session and isinstance(card_session, str):
         return f' ses="{html.escape(card_session)}"'
     return ""
 
@@ -3686,6 +3754,30 @@ def cmd_list(args) -> None:
             else:
                 other_cards[col].append((num, card))
 
+    # Stranded-card detection (SURFACE ONLY — never mutates a card, never
+    # calls `kanban done`). See STRANDED_CARD_THRESHOLD_MINUTES for why this
+    # exists and why it is age-gated. Detection lives here — in the one
+    # command every coordinator already runs every turn — rather than in a
+    # new hook, so the warning reaches a coordinator with zero new wiring.
+    #
+    # Scoped to whatever "doing" cards this invocation already fetched
+    # (respecting --column/--session/--since/--until filters); if the
+    # caller excluded "doing" from columns_to_show, detection simply does
+    # not run rather than performing a second, unfiltered scan.
+    #
+    # Wrapped in try/except so a malformed card or clock error can never
+    # break `kanban list` itself — this command is load-bearing for every
+    # coordinator turn, and detection is a bonus signal, not a required part
+    # of it (see card #3348 § Fail open).
+    stranded_cards: list[tuple[str, dict]] = []
+    try:
+        _now = datetime.now(timezone.utc)
+        for _num, _card in all_cards_by_column.get("doing", []):
+            if is_card_stranded(_card, now=_now):
+                stranded_cards.append((_num, _card))
+    except Exception:
+        stranded_cards = []
+
     # XML output: terse format for coordinator board awareness.
     #
     # Terse list schema (per <c> element) — designed for fast coordination
@@ -3798,6 +3890,36 @@ def cmd_list(args) -> None:
                         print(_render_terse_card(num, card, col, ses_attr=ses_attr))
                 print("</unknown>")
 
+        # Stranded-card warning section. Deliberately uses <card> rather than
+        # <c> so existing consumers that scan for `<c>` elements (e.g.
+        # ElementTree `.iter("c")` / `.find(".//c")` in
+        # kanban-pretool-hook.py and modules/claude/default.nix's
+        # find-orphaned-cards.py) cannot mistake a stranded-card entry for a
+        # normal board card, and existing <c>-count assertions in
+        # test_kanban_list_xml_schema.py are unaffected.
+        #
+        # Guarded end-to-end: rendering is computed into a buffer first and
+        # only printed if the whole section built without raising. This is
+        # deliberate — `_ses_attr()` calls `html.escape()` on a card's
+        # `session` field, which raises `AttributeError` if that field is a
+        # non-string JSON value (int/list/dict), a plausible state for a
+        # hand-edited or historically-drifted card file. `is_card_stranded()`
+        # never validates `session` (only `criteria`/`updated`), so a card
+        # can reach this point with an untouched malformed `session`. Buffer-
+        # then-print avoids emitting a truncated `<stranded>` opening tag
+        # with no matching close if a later card in the loop raises.
+        if stranded_cards:
+            try:
+                _stranded_lines = ["<stranded>"]
+                for num, card in stranded_cards:
+                    ses_attr = _ses_attr(card)
+                    _stranded_lines.append(f'<card n="{esc(num)}"{ses_attr}/>')
+                _stranded_lines.append("</stranded>")
+            except Exception:
+                _stranded_lines = []
+            for _line in _stranded_lines:
+                print(_line)
+
         print("</board>")
         return
 
@@ -3832,6 +3954,27 @@ def cmd_list(args) -> None:
                 for i, (num, card) in enumerate(cards):
                     print(format_card_line(card, num, show_session=True, output_style=output_style, is_first_card=(i == 0), column=col))
                 print()
+
+    # Stranded-card warning (SURFACE ONLY — see stranded_cards computation
+    # above for why this is gated on STRANDED_CARD_THRESHOLD_MINUTES).
+    # Guarded end-to-end for the same reason as the XML branch above: this
+    # code is not vulnerable to today's known malformed-`session` input (an
+    # f-string never calls `html.escape`), but it is unguarded in principle —
+    # a future edit that adds any escaping/validation here would reintroduce
+    # the same failure class with no test to catch it. Buffer-then-print
+    # avoids emitting a partial header with no cards if a later card raises.
+    if stranded_cards:
+        try:
+            _stranded_output_lines = [f"⚠ STRANDED CARDS (all AC met, no activity for {STRANDED_CARD_THRESHOLD_MINUTES}+ min):"]
+            for num, card in stranded_cards:
+                session_label = card.get("session") or "unknown"
+                _stranded_output_lines.append(f"  #{num} (session: {session_label})")
+        except Exception:
+            _stranded_output_lines = []
+        for _line in _stranded_output_lines:
+            print(_line)
+        if _stranded_output_lines:
+            print()
 
     # Show metrics summary (not in XML mode)
     metrics = calculate_throughput_metrics(root)
