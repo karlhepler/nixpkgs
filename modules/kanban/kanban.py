@@ -1455,6 +1455,231 @@ def validate_mov_commands_content(card_json) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Identifier-existence warning (non-blocking)
+#
+# A card's `action` text sometimes names a specific code identifier in
+# backticks (e.g. "the caller `_some_function_name`"). If that name was
+# never verified against the actual repo, it can be a hallucination — and
+# hallucinated identifiers have propagated across multiple cards in the past
+# (one audit's invented function name was copied into a fix card and two
+# review cards before a reviewer caught it via `rg`). Deliberately, this
+# comment does not spell out that invented name literally — doing so would
+# plant it in this file's own source, where an un-excluded existence check
+# would then find it and treat it as "real". See the test suite for the
+# concrete true-positive/true-negative pair used to prove this behaviour.
+#
+# This check is WARN-ONLY, never block. The same textual signal — a
+# backtick-quoted identifier that doesn't exist in the repo — is produced by
+# two cases needing opposite responses: a hallucinated reference to code
+# that should exist but doesn't (the defect), and a card legitimately asking
+# an agent to CREATE that identifier (e.g. "add a function `_new_helper`"),
+# which correctly does not exist yet. No verb-based heuristic reliably tells
+# these apart, so blocking would misfire on ordinary "create X" cards.
+# Printing the unmatched names and letting creation proceed tolerates false
+# positives while still surfacing the signal for the reader (coordinator) to
+# judge.
+#
+# Inclusion rule — what counts as "identifier-shaped" (see
+# _card_identifier_is_shaped): a backtick-quoted span must (1) be a bare
+# identifier token — letters/digits/underscores only, starting with a letter
+# or underscore, no spaces/dots/slashes/dashes/quotes/parens — which already
+# excludes file paths ("modules/kanban/kanban.py"), shell commands/flags
+# ("git commit -n", "--no-verify"), and multi-word log fragments; and (2) be
+# "compound" — contain an underscore OR mix upper/lower case. Compoundness
+# is the deliberate anti-noise filter: real function/constant/variable names
+# are overwhelmingly multi-word by convention (snake_case, camelCase,
+# PascalCase, SCREAMING_SNAKE_CASE), so requiring it excludes bare English
+# words that appear in prose but aren't identifiers ("criteria", "warn",
+# "pytest") while still catching realistic identifiers shaped like the real
+# incident's invented name (see above — not spelled out here on purpose).
+# JSON field names typed in backticks (e.g. `mov_commands`) are compound
+# too, but since they exist verbatim in this file's source they are never
+# flagged — the existence check, not the shape check, is what keeps them
+# silent.
+# ---------------------------------------------------------------------------
+
+_MOV_IDENTIFIER_BACKTICK_RE = re.compile(r'`([^`]+)`')
+_MOV_IDENTIFIER_SHAPE_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+_MOV_IDENTIFIER_MIN_LEN = 4
+
+# MCP tool identifiers (e.g. `mcp__notes__delete_note`, `mcp__claude_ai_Slack__authenticate`)
+# are registered by external MCP servers at runtime and, by construction, never appear as
+# literal strings in this repo's own source. Without this exclusion every legitimate MCP
+# tool reference would warn forever — a whole recurring identifier class that can never
+# clear the check (see review finding Q2, card #3344). Excluded at extraction time, not at
+# the existence-check level, so they never even become candidates.
+_MOV_IDENTIFIER_MCP_PREFIX = "mcp__"
+
+
+def _card_identifier_is_mcp_tool_name(token: str) -> bool:
+    """True if token has the double-underscore-prefixed shape of an MCP tool name."""
+    return token.startswith(_MOV_IDENTIFIER_MCP_PREFIX)
+
+
+def _card_identifier_is_shaped(token: str) -> bool:
+    """True if token is a bare, compound identifier (see module rationale above)."""
+    token = token.strip()
+    if len(token) < _MOV_IDENTIFIER_MIN_LEN:
+        return False
+    if not _MOV_IDENTIFIER_SHAPE_RE.match(token):
+        return False
+    has_underscore = "_" in token
+    has_mixed_case = token.lower() != token and token.upper() != token
+    return has_underscore or has_mixed_case
+
+
+def extract_identifier_candidates(action: str) -> list[str]:
+    """Return de-duplicated, identifier-shaped backtick-quoted tokens from action text.
+
+    MCP tool names (see _card_identifier_is_mcp_tool_name) are excluded here, before
+    they ever become candidates — they are a whole identifier class this check can
+    never usefully evaluate (review finding Q2, card #3344).
+    """
+    if not isinstance(action, str) or not action:
+        return []
+    seen: set[str] = set()
+    candidates: list[str] = []
+    for raw in _MOV_IDENTIFIER_BACKTICK_RE.findall(action):
+        token = raw.strip()
+        if token in seen:
+            continue
+        if _card_identifier_is_mcp_tool_name(token):
+            continue
+        if _card_identifier_is_shaped(token):
+            seen.add(token)
+            candidates.append(token)
+    return candidates
+
+
+_MOV_IDENTIFIER_CAMEL_BOUNDARY_RE = re.compile(r'(?<=[a-z0-9])(?=[A-Z])')
+
+
+def _mov_identifier_case_variants(identifier: str) -> list[str]:
+    """Return [identifier] plus its camelCase<->snake_case counterpart (deduplicated,
+    order-preserving), so a candidate written in one naming convention can still match
+    a repo definition written in the other convention (review finding Q2, card #3344).
+
+    Deliberately narrow: pure case/underscore normalization only, never substring,
+    prefix, or edit-distance matching. Fuzzier matching would let a hallucinated name
+    match a merely-similar real one, defeating the whole point of this check.
+    """
+    variants = [identifier]
+    if "_" in identifier:
+        parts = [p for p in identifier.split("_") if p]
+        if len(parts) > 1:
+            camel = parts[0].lower() + "".join(p.capitalize() for p in parts[1:])
+            if camel != identifier:
+                variants.append(camel)
+    else:
+        snake = _MOV_IDENTIFIER_CAMEL_BOUNDARY_RE.sub("_", identifier).lower()
+        if snake != identifier:
+            variants.append(snake)
+    seen: set[str] = set()
+    out: list[str] = []
+    for v in variants:
+        if v not in seen:
+            seen.add(v)
+            out.append(v)
+    return out
+
+
+# `.kanban/` is always excluded from the identifier-existence search: once a
+# hallucinated name has been written into one card's JSON, an un-excluded search
+# would find it THERE on the next card's check and treat it as "existing" —
+# silently defeating the exact propagation failure this check exists to catch.
+_MOV_IDENTIFIER_SEARCH_EXCLUDE_GLOBS = ("!.kanban/**",)
+
+# `modules/kanban/tests/` is excluded from the search ONLY for the specific literal(s)
+# below, not for the whole directory. The test suite deliberately writes the real
+# historical incident's invented identifier as a literal true-positive fixture (see
+# test_kanban_mov_validation.py) — without excluding it, that fixture's own presence
+# would make the identifier appear to "exist," self-defeating the true-positive test.
+# A blanket directory exclusion was tried first and rejected: it also hid every
+# legitimate identifier defined ONLY inside modules/kanban/tests/ (e.g.
+# make_kanban_root, run_kanban_subprocess), producing false "unmatched" warnings for
+# any card that legitimately asks to touch the kanban test suite itself (review
+# finding Q3, card #3344). Narrowing to an allowlist of known fixture literals fixes
+# that blind spot while still shielding the one string that needs shielding.
+#
+# The literal below is built via concatenation, not written as one contiguous string
+# literal: writing it whole would make THIS line itself a real occurrence of the
+# fixture identifier in kanban.py's own source (outside modules/kanban/tests/, so not
+# covered by the glob exclusion above) — self-defeating the exact thing this
+# allowlist exists to shield against.
+_MOV_IDENTIFIER_TEST_FIXTURE_LITERALS = frozenset({"_check_destructive" + "_git_ops"})
+
+
+def _identifier_exists_in_repo(identifier: str) -> bool:
+    """True if identifier — or a camelCase/snake_case case-variant of it (see
+    _mov_identifier_case_variants) — appears anywhere in the repo, excluding the
+    kanban board and (for known test-fixture literals only) this check's own test
+    fixtures.
+
+    Fails open (treats identifier as found, so no warning is printed) on any
+    subprocess error or timeout — this check must never turn a tooling hiccup
+    into either a false warning or, worse, a hard failure of card creation.
+    """
+    search_root = get_git_root() or Path.cwd()
+    glob_args = []
+    for glob in _MOV_IDENTIFIER_SEARCH_EXCLUDE_GLOBS:
+        glob_args += ["-g", glob]
+    if identifier in _MOV_IDENTIFIER_TEST_FIXTURE_LITERALS:
+        glob_args += ["-g", "!modules/kanban/tests/**"]
+    for variant in _mov_identifier_case_variants(identifier):
+        try:
+            result = subprocess.run(
+                ["rg", "-qF"] + glob_args + ["--", variant, str(search_root)],
+                capture_output=True,
+                timeout=10,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            return True
+        if result.returncode == 0:
+            return True
+    return False
+
+
+def warn_unmatched_card_identifiers(card_json) -> None:
+    """Print a non-blocking warning for backtick-quoted identifiers in `action`
+    that don't appear anywhere in the repo (outside `.kanban/`).
+
+    Accepts a single card dict or a list of card dicts, mirroring
+    validate_mov_commands_content. NEVER calls sys.exit — see module-level
+    rationale above for why this check is warn-only. Card creation always
+    proceeds regardless of what this function finds.
+    """
+    if isinstance(card_json, dict):
+        cards = [card_json]
+    elif isinstance(card_json, list):
+        cards = [c for c in card_json if isinstance(c, dict)]
+    else:
+        return  # Not a card — nothing to check
+
+    is_bulk = len(cards) > 1
+    for idx, card in enumerate(cards):
+        candidates = extract_identifier_candidates(card.get("action", ""))
+        if not candidates:
+            continue
+        unmatched = [tok for tok in candidates if not _identifier_exists_in_repo(tok)]
+        if not unmatched:
+            continue
+        card_label = f"card[{idx}] " if is_bulk else ""
+        unmatched_list = ", ".join(repr(t) for t in unmatched)
+        print(
+            f"Warning: {card_label}action references identifier(s) not found anywhere in "
+            f"the repo (outside .kanban/): {unmatched_list}.",
+            file=sys.stderr,
+        )
+        print(
+            "  This may be a hallucinated reference to code that should exist but doesn't — "
+            "verify with `rg` before trusting it. It may also be a card legitimately asking "
+            "an agent to CREATE this identifier, in which case this warning is expected and "
+            "safe to ignore. This is a warning only — card creation is NOT blocked.",
+            file=sys.stderr,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Cross-card MoV scope-isolation validation
 #
 # A modification-emptiness MoV (e.g. `test -z "$(git diff ... -- <path>)"`)
@@ -1853,6 +2078,12 @@ def validate_and_build_card(data: dict, session: str | None) -> dict:
     read_files = card.get("readFiles", [])
     if edit_files and read_files:
         card["readFiles"] = [f for f in read_files if f not in edit_files]
+
+    # Non-blocking identifier-existence warning: flag backtick-quoted,
+    # identifier-shaped tokens in the action text that don't appear anywhere
+    # in the repo. Warn-only — see § Identifier-existence warning above for
+    # why this never raises SystemExit.
+    warn_unmatched_card_identifiers(card)
 
     return card
 

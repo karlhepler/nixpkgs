@@ -15,6 +15,11 @@ Covered patterns:
 - Multiple violations across multiple ACs → all reported
 - inline-JSON code path: subprocess-based integration via `kanban do` / `kanban todo`
 - --file code path: subprocess-based integration via `kanban do --file`
+
+Also covers warn_unmatched_card_identifiers (identifier-existence warning):
+- real nonexistent identifier from the historical incident → flagged
+- real existing identifier (_validate_bash_destructive_git) → NOT flagged
+- unmatched identifier still allows card creation to succeed (warn, not block)
 """
 
 import importlib.util
@@ -555,3 +560,291 @@ class TestCardTypeValidation:
             kanban.validate_mov_commands_content(review_card)
         except SystemExit as e:
             pytest.fail(f"Clean review card raised SystemExit({e.code})")
+
+
+# ---------------------------------------------------------------------------
+# Tests for the identifier-existence warning (non-blocking)
+#
+# `_check_destructive_git_ops` is the real, invented function name from the
+# historical incident (an audit hallucinated it; it was then propagated,
+# unverified, into a fix card and two review cards). It genuinely does not
+# exist anywhere in this repo as actual source — outside `.kanban/` and
+# outside this test module's own fixtures.
+#
+# Both this file's directory (modules/kanban/tests/) and `.kanban/` are
+# excluded from `_identifier_exists_in_repo`'s search (see kanban.py). This
+# fixture literal has to live somewhere in this file's text to drive the
+# true-positive assertion below — without that exclusion, the mere presence
+# of this literal in the test suite would make the production check treat
+# the identifier as "found," self-defeating the very test proving it is
+# correctly flagged as unmatched when genuinely absent from real source.
+#
+# `_validate_bash_destructive_git` is the real function that DOES exist
+# (modules/claude/kanban-pretool-hook.py) — used as the true-negative.
+# ---------------------------------------------------------------------------
+
+_REAL_NONEXISTENT_IDENTIFIER = "_check_destructive_git_ops"
+_REAL_EXISTING_IDENTIFIER = "_validate_bash_destructive_git"
+
+
+class TestIdentifierExistenceWarningUnit:
+    """Direct unit tests for extract_identifier_candidates / warn_unmatched_card_identifiers."""
+
+    def test_true_positive_nonexistent_identifier_is_flagged(self, kanban, capsys):
+        """The real invented identifier from the incident is flagged as unmatched.
+
+        Relies on `_identifier_exists_in_repo` excluding this file's own
+        directory (modules/kanban/tests/) from its search — see module
+        comment above and kanban.py's _MOV_IDENTIFIER_SEARCH_EXCLUDE_GLOBS.
+        Without that exclusion, this fixture's own literal presence in this
+        file would make the identifier appear to "exist," self-defeating
+        this assertion.
+        """
+        card = make_card(action=f"Fix the caller `{_REAL_NONEXISTENT_IDENTIFIER}`")
+        kanban.warn_unmatched_card_identifiers(card)
+        captured = capsys.readouterr()
+        assert "Warning" in captured.err
+        assert _REAL_NONEXISTENT_IDENTIFIER in captured.err
+
+    def test_true_negative_existing_identifier_is_not_flagged(self, kanban, capsys):
+        """A real, existing identifier is NOT flagged — no warning at all."""
+        card = make_card(action=f"Fix the caller `{_REAL_EXISTING_IDENTIFIER}`")
+        kanban.warn_unmatched_card_identifiers(card)
+        captured = capsys.readouterr()
+        assert captured.err == ""
+        assert _REAL_EXISTING_IDENTIFIER not in captured.err
+
+    def test_warn_only_never_raises_systemexit(self, kanban):
+        """warn_unmatched_card_identifiers never blocks — no SystemExit, ever."""
+        card = make_card(action=f"Fix the caller `{_REAL_NONEXISTENT_IDENTIFIER}`")
+        try:
+            kanban.warn_unmatched_card_identifiers(card)
+        except SystemExit as e:
+            pytest.fail(f"warn_unmatched_card_identifiers raised SystemExit({e.code}) — must be warn-only")
+
+    def test_card_with_unmatched_identifier_still_validates_successfully(self, kanban, capsys):
+        """A card whose action references an unmatched identifier still builds/validates
+        successfully via validate_and_build_card — warn, never block.
+
+        This is the behavioural decision most likely to be silently inverted by a
+        later edit, so it gets its own explicit assertion.
+        """
+        data = make_card(action=f"Fix the caller `{_REAL_NONEXISTENT_IDENTIFIER}`")
+        try:
+            built_card = kanban.validate_and_build_card(data, session="test-session")
+        except SystemExit as e:
+            pytest.fail(
+                f"Card with unmatched identifier raised SystemExit({e.code}) — "
+                f"identifier-existence check must warn, not block"
+            )
+        assert built_card["action"] == data["action"]
+        captured = capsys.readouterr()
+        assert "Warning" in captured.err
+        assert _REAL_NONEXISTENT_IDENTIFIER in captured.err
+
+    def test_extract_identifier_candidates_excludes_file_paths(self, kanban):
+        """A backtick-quoted file path is not identifier-shaped (contains '/' and '.')."""
+        candidates = kanban.extract_identifier_candidates(
+            "Edit `modules/kanban/kanban.py` to fix the bug"
+        )
+        assert candidates == []
+
+    def test_extract_identifier_candidates_excludes_shell_commands(self, kanban):
+        """A backtick-quoted shell command/flag (contains spaces or a leading dash)
+        is not identifier-shaped."""
+        candidates = kanban.extract_identifier_candidates(
+            "Run `git commit -n` and check for `--no-verify`"
+        )
+        assert candidates == []
+
+    def test_extract_identifier_candidates_excludes_bare_english_words(self, kanban):
+        """A bare, non-compound lowercase word (no underscore, no case mixing) is
+        excluded even though it is technically a valid identifier — it is far more
+        likely to be prose than a real code reference."""
+        candidates = kanban.extract_identifier_candidates(
+            "Update the `criteria` and re-run `pytest`"
+        )
+        assert candidates == []
+
+    def test_extract_identifier_candidates_includes_snake_case(self, kanban):
+        """A snake_case backtick-quoted token (contains an underscore) is identifier-shaped."""
+        candidates = kanban.extract_identifier_candidates(
+            f"The caller `{_REAL_NONEXISTENT_IDENTIFIER}` is invoked here"
+        )
+        assert candidates == [_REAL_NONEXISTENT_IDENTIFIER]
+
+    def test_extract_identifier_candidates_includes_camel_case(self, kanban):
+        """A camelCase backtick-quoted token (mixed case, no underscore) is identifier-shaped."""
+        candidates = kanban.extract_identifier_candidates(
+            "The field `movCommands` is a typo of mov_commands"
+        )
+        assert candidates == ["movCommands"]
+
+    def test_extract_identifier_candidates_includes_json_field_name_that_exists(self, kanban, capsys):
+        """A compound JSON field name that genuinely exists in the repo (mov_commands)
+        is identifier-shaped but is NOT flagged, since it exists in kanban.py's own source."""
+        card = make_card(action="Add a `mov_commands` entry to the criterion")
+        kanban.warn_unmatched_card_identifiers(card)
+        captured = capsys.readouterr()
+        assert captured.err == ""
+
+    def test_multiple_cards_bulk_array_reports_correct_card_index(self, kanban, capsys):
+        """Bulk array input: an unmatched identifier in card[1] is reported with that index."""
+        cards = [
+            make_card(action="Card A: nothing special here"),
+            make_card(action=f"Card B: fix `{_REAL_NONEXISTENT_IDENTIFIER}`"),
+        ]
+        kanban.warn_unmatched_card_identifiers(cards)
+        captured = capsys.readouterr()
+        assert "card[1]" in captured.err
+        assert _REAL_NONEXISTENT_IDENTIFIER in captured.err
+
+
+# ---------------------------------------------------------------------------
+# Tests for the noise-reduction fixes from the Tier 2 review (card #3344):
+# MCP tool name exclusion, camelCase/snake_case cross-matching, and the
+# narrowed modules/kanban/tests/** exclusion. See review at
+# .scratchpad/review-identgate.md.
+# ---------------------------------------------------------------------------
+
+class TestIdentifierExistenceMcpToolExclusion:
+    """MCP tool identifiers (mcp__server__tool) are never real repo source and are
+    excluded from candidates entirely — review finding Q2."""
+
+    def test_extract_identifier_candidates_excludes_mcp_tool_names(self, kanban):
+        """A backtick-quoted MCP tool name is not identifier-shaped for this check's
+        purposes — it is filtered out before shape-checking, not merely unmatched."""
+        candidates = kanban.extract_identifier_candidates(
+            "Call `mcp__notes__delete_note` and also `mcp__claude_ai_Slack__authenticate`"
+        )
+        assert candidates == []
+
+    def test_mcp_tool_name_reference_is_not_flagged(self, kanban, capsys):
+        """A card legitimately referencing a real MCP tool never warns, since MCP tool
+        names can never appear as literal strings in this repo's own source."""
+        card = make_card(action="Use `mcp__notes__delete_note` to remove the stale note")
+        kanban.warn_unmatched_card_identifiers(card)
+        captured = capsys.readouterr()
+        assert captured.err == ""
+
+    def test_extract_identifier_candidates_mcp_exclusion_does_not_hide_other_tokens(self, kanban):
+        """The MCP exclusion only removes the mcp__ prefixed token — other identifier-shaped
+        tokens on the same line are still extracted normally."""
+        candidates = kanban.extract_identifier_candidates(
+            f"Call `mcp__notes__delete_note` then fix `{_REAL_NONEXISTENT_IDENTIFIER}`"
+        )
+        assert candidates == [_REAL_NONEXISTENT_IDENTIFIER]
+
+
+class TestIdentifierExistenceCaseVariantMatching:
+    """A candidate written in one naming convention (camelCase/snake_case) still
+    matches a real repo identifier written in the other convention — review finding Q2.
+    """
+
+    def test_case_variants_helper_generates_snake_from_camel(self, kanban):
+        assert kanban._mov_identifier_case_variants("outputStyle") == [
+            "outputStyle",
+            "output_style",
+        ]
+
+    def test_case_variants_helper_generates_camel_from_snake(self, kanban):
+        assert kanban._mov_identifier_case_variants("output_style") == [
+            "output_style",
+            "outputStyle",
+        ]
+
+    def test_case_variants_helper_handles_screaming_snake_case(self, kanban):
+        """SCREAMING_SNAKE_CASE constants still take the underscore branch and get a
+        lowercase-first-word camelCase variant, same as any other snake_case token."""
+        assert kanban._mov_identifier_case_variants("MAX_RETRIES") == [
+            "MAX_RETRIES",
+            "maxRetries",
+        ]
+
+    def test_camel_case_candidate_matches_existing_snake_case_identifier(self, kanban, capsys):
+        """`outputStyle` (camelCase, not itself present in the repo) is NOT flagged,
+        because its snake_case counterpart `output_style` is a real, existing identifier
+        (kanban.py's own CLI option)."""
+        card = make_card(action="Check the `outputStyle` flag behavior")
+        kanban.warn_unmatched_card_identifiers(card)
+        captured = capsys.readouterr()
+        assert captured.err == ""
+
+    def test_case_variant_matching_does_not_reintroduce_the_motivating_false_negative(self, kanban, capsys):
+        """Case/underscore normalization must not make the real historical incident's
+        hallucinated identifier collide with the real identifier that does exist —
+        confirms the two do not accidentally match after normalization."""
+        assert (
+            kanban._mov_identifier_case_variants(_REAL_NONEXISTENT_IDENTIFIER)
+            != kanban._mov_identifier_case_variants(_REAL_EXISTING_IDENTIFIER)
+        )
+        card = make_card(action=f"Fix the caller `{_REAL_NONEXISTENT_IDENTIFIER}`")
+        kanban.warn_unmatched_card_identifiers(card)
+        captured = capsys.readouterr()
+        assert "Warning" in captured.err
+        assert _REAL_NONEXISTENT_IDENTIFIER in captured.err
+
+
+class TestIdentifierExistenceNarrowedTestDirExclusion:
+    """The modules/kanban/tests/** exclusion applies only to the known fixture
+    literal(s), not the whole directory — review finding Q3. Real identifiers that
+    happen to be defined only in that directory must still be found."""
+
+    def test_helper_defined_only_in_tests_dir_is_not_flagged(self, kanban, capsys):
+        """`make_kanban_root` is a real, existing helper defined only in
+        modules/kanban/tests/test_kanban_mov_validation.py (this file) and nowhere
+        else in the repo. Before the Q3 fix, the blanket directory exclusion made it
+        appear unmatched; after the fix, it is found because only the known fixture
+        literal(s) are excluded from that directory, not the whole tree."""
+        card = make_card(action="Extend `make_kanban_root` to support a new fixture shape")
+        kanban.warn_unmatched_card_identifiers(card)
+        captured = capsys.readouterr()
+        assert captured.err == ""
+
+    def test_another_helper_defined_only_in_tests_dir_is_not_flagged(self, kanban, capsys):
+        """`run_kanban_subprocess` is likewise real, existing, and defined only in this
+        test file — must not be flagged."""
+        card = make_card(action="Add a fixture using `run_kanban_subprocess`")
+        kanban.warn_unmatched_card_identifiers(card)
+        captured = capsys.readouterr()
+        assert captured.err == ""
+
+    def test_fixture_literal_is_still_shielded_from_self_match(self, kanban, capsys):
+        """The known fixture literal is still excluded from modules/kanban/tests/** —
+        without this, its own presence in this test file's text would make the check
+        treat it as 'existing,' self-defeating the true-positive test that proves this
+        check works. This test is a duplicate-intent guard on top of
+        test_true_positive_nonexistent_identifier_is_flagged above, specific to the
+        narrowed (allowlist-based) exclusion mechanism."""
+        assert _REAL_NONEXISTENT_IDENTIFIER in kanban._MOV_IDENTIFIER_TEST_FIXTURE_LITERALS
+        card = make_card(action=f"Fix the caller `{_REAL_NONEXISTENT_IDENTIFIER}`")
+        kanban.warn_unmatched_card_identifiers(card)
+        captured = capsys.readouterr()
+        assert "Warning" in captured.err
+        assert _REAL_NONEXISTENT_IDENTIFIER in captured.err
+
+
+# ---------------------------------------------------------------------------
+# Integration test: identifier-existence warning via subprocess (kanban do)
+# ---------------------------------------------------------------------------
+
+class TestIdentifierExistenceWarningSubprocess:
+    """End-to-end test that `kanban do` warns but still creates the card."""
+
+    def test_kanban_do_with_unmatched_identifier_warns_but_succeeds(self, tmp_path):
+        """kanban do with an action referencing an unmatched identifier exits 0,
+        creates the card, and prints a warning to stderr."""
+        make_kanban_root(tmp_path)
+        card = make_card(
+            action=f"Fix the caller `{_REAL_NONEXISTENT_IDENTIFIER}`",
+            criteria=[make_criterion(cmd="rg -q X")],
+        )
+        returncode, stdout, stderr = run_kanban_subprocess(
+            ["--root", str(tmp_path), "do", json.dumps(card)],
+            cwd=str(_KANBAN_PATH.parent.parent.parent),  # repo root, so rg search covers real source
+        )
+        assert returncode == 0, f"Expected exit 0 (warn, not block), got {returncode}. stderr: {stderr}"
+        assert "Warning" in stderr
+        assert _REAL_NONEXISTENT_IDENTIFIER in stderr
+        created = list((tmp_path / "doing").glob("*.json"))
+        assert len(created) == 1, f"Expected 1 card created despite the warning, found {len(created)}"
