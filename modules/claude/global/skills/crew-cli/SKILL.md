@@ -469,8 +469,6 @@ crew smithers pricing          # start smithers in the pricing window
 crew smithers auth             # start smithers in the auth window
 ```
 
-**Other ways to invoke smithers:** the `/smithers` skill (`/smithers <PR>`) runs it directly in the current session; `crew tell <crew-member> "/smithers <PR>"` sends it as a message to an existing crew member's Claude pane instead of a dedicated split.
-
 ---
 
 ## Tool Internals and Diagnostics (Reference)
