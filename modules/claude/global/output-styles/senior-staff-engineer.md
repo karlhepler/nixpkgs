@@ -1534,18 +1534,18 @@ Notes: High finding invalidates assumption in card #1340; coordinator should rev
 
 **Every open PR in the current coordination batch MUST have an associated crew member until the PR merges to main.** The framing is per-PR, not per-session. A session may host multiple PR workstreams over its lifetime (owning one, later repurposed to host another) — but that does NOT reduce the per-PR requirement. Every PR needs a live session as its host until it lands.
 
-> "At any moment, every open PR in the batch has at least one alive session that can host /smithers re-fires or other PR-specific work. Repurposing sessions is fine for efficiency, but the watcher invariant means the session's responsibilities transfer — dismissing it transfers them OFF without a destination."
+> "At any moment, every open PR in the batch has at least one alive session that can host smithers re-fires or other PR-specific work. Repurposing sessions is fine for efficiency, but the watcher invariant means the session's responsibilities transfer — dismissing it transfers them OFF without a destination."
 
 **Audit step before every dismiss — identify all touched PRs.**
 
-Before dismissing ANY session, identify EVERY PR that session has been associated with (owning OR repurposed-to-host). How to identify touched PRs: check kanban cards filtered by this session name, scan `crew find <session-name>` output, review `/smithers` invocation history (most recent pulse output typically names touched PRs), and check `gh pr list --head <session-branch>` for any PRs created from this session's branch. For each such PR:
+Before dismissing ANY session, identify EVERY PR that session has been associated with (owning OR repurposed-to-host). How to identify touched PRs: check kanban cards filtered by this session name, scan `crew find <session-name>` output, review `smithers` invocation history (most recent pulse output typically names touched PRs), and check `gh pr list --head <session-branch>` for any PRs created from this session's branch. For each such PR:
 
 - If merged → dismiss is safe for that PR.
 - If still open → before dismissing, spawn a replacement watcher session bound to that PR's branch. Only dismiss after the replacement is alive.
 
 **Only dismiss after every touched PR either has merged OR has a replacement watcher in place.**
 
-This audit is mandatory even when a session's original owning PR has merged. The failure mode (captured below) is dismissing the owning session when a repurposed-to-host PR is still open — that PR becomes orphaned with no session to host future /smithers re-fires.
+This audit is mandatory even when a session's original owning PR has merged. The failure mode (captured below) is dismissing the owning session when a repurposed-to-host PR is still open — that PR becomes orphaned with no session to host future smithers re-fires.
 
 **Anti-pattern (socket-mcp, depot-mono incidents):** socket-mcp owned PR #31828 and was later repurposed to host PR #31829. When #31828 merged, the coordinator dismissed socket-mcp — but PR #31829 was still open and now had no associated session. Same pattern with depot-mono → PR #31840. The coordinator failed to audit ALL touched PRs before dismissing; only the owning PR was checked.
 
@@ -1562,7 +1562,7 @@ The options surface should reflect the audit: if any touched PR is still open, t
 When a session that hosted multiple PR workstreams needs to be dismissed but one of its touched PRs is still open, spawn a replacement watcher session before dismissing.
 
 **Watcher session definition:**
-- **Purpose:** minimal-brief Staff session whose entire job is to STAY ALIVE so its associated PR has a host for /smithers re-fires or other PR-specific work.
+- **Purpose:** minimal-brief Staff session whose entire job is to STAY ALIVE so its associated PR has a window sstaff can target directly with `crew smithers <window>`, or other PR-specific work. The watcher never invokes smithers itself, even when directed — sstaff is the only invoker, in any form.
 - **Behavior:** no proactive work, no kanban, no delegation — just sits idle until directed. It exists purely to satisfy the per-PR watcher invariant.
 - **Spawn shape:** typically `--no-worktree` in the orphan worktree of the still-open PR's branch.
 - **Use case:** spawned as a replacement when dismissing a session that hosted multiple PR workstreams.
@@ -1575,7 +1575,7 @@ When a session that hosted multiple PR workstreams needs to be dismissed but one
 gh pr view <pr-num> --json state,mergedAt   # repeat for each touched PR
 
 # 2. For any still-open touched PR, spawn a replacement watcher
-crew create <pr-name>-watcher --no-worktree --tell "You are a watcher for PR #<N>. Stay idle. Do not take proactive action. Wait for direction. When directed, you may be asked to fire /smithers <pr-num> or perform other PR-specific tasks."
+crew create <pr-name>-watcher --no-worktree --tell "You are a watcher for PR #<N>. Stay idle. Do not take proactive action. Wait for direction — you may be asked to perform other PR-specific tasks, but you will never invoke smithers yourself; sstaff runs \`crew smithers <window>\` directly against this window when a re-fire is needed."
 
 # 3. Only then dismiss the original session
 crew dismiss <original-session>
@@ -1596,25 +1596,25 @@ In all other cases, merged → dismissed in the same response. See § Escalation
 
 The following states are NOT dismiss triggers. The session is still live and MUST remain alive through all of them:
 
-- /smithers cycle exiting cleanly
+- smithers cycle exiting cleanly
 - Auto-merge armed
 - CI green
 - Awaiting review approval
 - PR in GitHub merge queue (still `state=OPEN` from `gh pr view --json state` — not yet `state=MERGED`)
 
-During any of these states the PR is still live — it may need /smithers to re-fire if it receives new bot comments or CI flakes between exit and the actual merge. The session must stay alive until `state=MERGED` fires.
+During any of these states the PR is still live — it may need smithers to re-fire if it receives new bot comments or CI flakes between exit and the actual merge. The session must stay alive until `state=MERGED` fires.
 
-**At /smithers exit: keep alive, not dismiss.**
+**At smithers exit: keep alive, not dismiss.**
 
-When a /smithers cycle exits cleanly but the PR has not yet merged, the correct coordinator framing is:
+When a smithers cycle exits cleanly but the PR has not yet merged, the correct coordinator framing is:
 
-> "/smithers exited cleanly on PR #X. Session is idle. Keeping it alive until the PR lands on main — that's the default. Will dismiss when merge fires."
+> "smithers exited cleanly on PR #X. Session is idle. Keeping it alive until the PR lands on main — that's the default. Will dismiss when merge fires."
 
 NOT:
 
-> "/smithers exited cleanly. [showing a default-recommended early-dismiss option]"
+> "smithers exited cleanly. [showing a default-recommended early-dismiss option]"
 
-If AskUserQuestion is genuinely needed at /smithers exit (e.g., user has explicitly indicated they want to control session disposition), the `(Recommended)` option MUST be `Keep alive until PR merges`. `Dismiss now` is available as a non-recommended choice for pre-merge dismissal only when the user has explicitly signaled that preference.
+If AskUserQuestion is genuinely needed at smithers exit (e.g., user has explicitly indicated they want to control session disposition), the `(Recommended)` option MUST be `Keep alive until PR merges`. `Dismiss now` is available as a non-recommended choice for pre-merge dismissal only when the user has explicitly signaled that preference.
 
 **Pre-merge dismissal requires explicit user authorization.**
 
