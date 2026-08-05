@@ -246,12 +246,22 @@ def fetch_card_xml(card_number: str, session: str) -> str | None:
 # Prompt injection
 # ---------------------------------------------------------------------------
 
-def inject_card_into_prompt(prompt: str, card_xml: str, card_number: str, session: str) -> str:
+def inject_card_into_prompt(
+    prompt: str,
+    card_xml: str,
+    card_number: str,
+    session: str,
+    progress_protocol_block: "str | None" = None,
+) -> str:
     """
     Prepend the card XML to the agent prompt, separated by a clear boundary.
 
     The injected block is placed BEFORE the original prompt so the agent
     sees the card details immediately without having to call kanban show.
+
+    progress_protocol_block, when provided (non-None, non-empty), is appended
+    immediately after the card XML boundary and before the original prompt —
+    see build_progress_protocol_block() for when this is populated.
     """
     header = (
         f"<!-- Kanban card #{card_number} (session: {session}) "
@@ -259,7 +269,99 @@ def inject_card_into_prompt(prompt: str, card_xml: str, card_number: str, sessio
         f"{card_xml}\n"
         f"<!-- End of injected card content -->\n\n"
     )
+    if progress_protocol_block:
+        header += progress_protocol_block + "\n\n"
     return header + prompt
+
+
+# Minimum number of <edit-files><f> entries required to trigger automatic
+# progress-protocol injection. "More than one" per card #3428's design —
+# a single-file card doesn't need cross-edit resumption bookkeeping.
+_PROGRESS_PROTOCOL_MIN_EDIT_FILES = 2
+
+
+def _count_edit_files_in_card_xml(card_xml: str) -> int:
+    """
+    Parse card_xml for <edit-files><f>...</f></edit-files> entries and
+    return the count of non-empty entries, summed across every sibling
+    <edit-files> element (card XML can carry more than one).
+
+    Fails open: any parse failure (malformed XML, missing element, wrong
+    type) returns 0 rather than raising. A 0 result simply means the
+    progress-protocol block is not injected — this function must never be
+    the reason an Agent launch is blocked or a hook crashes.
+    """
+    try:
+        if not card_xml or not isinstance(card_xml, str):
+            return 0
+        root = ET.fromstring(card_xml)
+        ef_els = root.findall("edit-files")
+        if not ef_els:
+            return 0
+        return sum(
+            len([f for f in ef_el.findall("f") if f.text and f.text.strip()])
+            for ef_el in ef_els
+        )
+    except Exception as exc:
+        # Fail-open is the design here, not an error condition — parse
+        # failures simply mean no injection. Logged at INFO (not ERROR) so
+        # this never pollutes the operator-facing error digest.
+        log_info(f"_count_edit_files_in_card_xml: parse failure: {exc!r}")
+        return 0
+
+
+def build_progress_protocol_block(card_number: str) -> str:
+    """
+    Return the per-edit progress protocol block for card_number, with the
+    card number substituted into the .scratchpad/<card>-progress.md path.
+
+    Wording is sourced from
+    modules/claude/global/output-styles/staff-engineer.md
+    § Card Sizing and Scope ("Per-edit progress protocol block") — keep the
+    two in sync if the wording ever changes; that section documents the
+    manual-paste fallback for single-file cards, this function is the
+    automatic-injection path for multi-file cards (see
+    _PROGRESS_PROTOCOL_MIN_EDIT_FILES).
+    """
+    return (
+        "PROGRESS PROTOCOL (mandatory):\n"
+        f"Before starting each file edit, read .scratchpad/{card_number}-progress.md.\n"
+        "If the file exists and lists files as DONE, skip those — resume at the\n"
+        "next un-DONE target.\n"
+        "\n"
+        "After completing each file edit, IMMEDIATELY append `DONE: <file-path>` to\n"
+        f".scratchpad/{card_number}-progress.md BEFORE starting the next edit. Every single\n"
+        "edit. Not at milestones. Not at section boundaries. Not at \"natural break\n"
+        "points.\" Per-edit, no exceptions.\n"
+        "\n"
+        "If you stall or context-exhausts mid-turn, the continuation agent reads\n"
+        "this file and resumes from the next un-DONE path. Missing a progress write\n"
+        "means duplicated work at best, lost work at worst."
+    )
+
+
+def _resolve_progress_protocol_block(card_xml: str, card_number: str) -> "str | None":
+    """
+    Decide whether to inject the automatic progress-protocol block for this
+    card, and return it (or None).
+
+    Returns None when either:
+    - card_xml already contains the literal string "PROGRESS PROTOCOL" —
+      the coordinator hand-pasted the block into the card's action text
+      already, so injecting again would duplicate the instructions; or
+    - fewer than _PROGRESS_PROTOCOL_MIN_EDIT_FILES <edit-files><f> entries
+      are present (see _count_edit_files_in_card_xml).
+
+    This is the sole decision boundary main() consults — tests exercise it
+    directly rather than only through the end-to-end main() path, so that
+    removing or weakening the threshold check fails a test.
+    """
+    if "PROGRESS PROTOCOL" in card_xml:
+        return None
+    edit_files_count = _count_edit_files_in_card_xml(card_xml)
+    if edit_files_count < _PROGRESS_PROTOCOL_MIN_EDIT_FILES:
+        return None
+    return build_progress_protocol_block(card_number)
 
 
 # ---------------------------------------------------------------------------
@@ -1190,8 +1292,19 @@ def main() -> None:
         return
     log_info(f"card XML fetched successfully for #{card_number}")
 
+    # Automatic per-edit progress-protocol injection for multi-file work cards
+    # (card #3428): more than one <edit-files><f> entry means partial progress
+    # can be lost on a mid-turn strand, so the block is injected without the
+    # coordinator having to remember to paste it. Fails open via
+    # _count_edit_files_in_card_xml — a parse failure yields 0 and no injection,
+    # never a blocked launch. See _resolve_progress_protocol_block() for the
+    # full decision (threshold + already-present guard).
+    progress_protocol_block = _resolve_progress_protocol_block(card_xml, card_number)
+
     # Inject card content into the prompt
-    new_prompt = inject_card_into_prompt(prompt, card_xml, card_number, session)
+    new_prompt = inject_card_into_prompt(
+        prompt, card_xml, card_number, session, progress_protocol_block
+    )
 
     # Clear agent_launch_pending flag — confirms the agent was actually launched.
     # Invokes: kanban clear-agent-launch-pending (cmd_clear_agent_launch_pending in kanban.py).

@@ -415,6 +415,217 @@ class TestCardInjection:
         assert_allowed(result)
 
 
+def _card_xml_with_editfiles(
+    card_number: str = "42",
+    session: str = "test-session",
+    edit_files: "list[str] | None" = None,
+) -> str:
+    """Build a minimal card XML string with an <edit-files> block.
+
+    Local to this test module (not conftest.py — conftest.py is out of this
+    card's editFiles scope). Mirrors the <edit-files><f>...</f></edit-files>
+    structure the real kanban CLI emits; see KanbanMockResponses.card_xml in
+    conftest.py for the sibling fixture that omits edit-files entirely.
+    """
+    if edit_files is None:
+        edit_files = []
+    ef_xml = "".join(f"<f>{f}</f>" for f in edit_files)
+    return (
+        f'<card num="{card_number}" session="{session}" status="doing" cycles="0">\n'
+        f'  <intent>Test card intent</intent>\n'
+        f'  <acceptance-criteria>\n'
+        f'    <ac met="false">Some criterion</ac>\n'
+        f'  </acceptance-criteria>\n'
+        f'  <edit-files>{ef_xml}</edit-files>\n'
+        f'</card>'
+    )
+
+
+class TestProgressProtocolInjection:
+    """Automatic per-edit progress-protocol injection for multi-file work cards.
+
+    Card #3428: when a card lists 2+ <edit-files><f> entries, the hook
+    injects a PROGRESS PROTOCOL block into the agent prompt automatically —
+    see build_progress_protocol_block() and _count_edit_files_in_card_xml()
+    in kanban-pretool-hook.py.
+    """
+
+    def test_progress_protocol_injected_for_multi_file_card(self, hook):
+        """A card with 2+ edit-files entries gets the PROGRESS PROTOCOL block injected."""
+        payload = make_pretool_payload(
+            prompt="KANBAN CARD #42 | Session: test-session\nDo some work.",
+        )
+        card_xml = _card_xml_with_editfiles(
+            card_number="42",
+            session="test-session",
+            edit_files=["src/a.py", "src/b.py"],
+        )
+
+        def fake_subprocess_run(cmd, **kwargs):
+            if cmd[0] == "kanban" and cmd[1] == "show":
+                return KanbanMockResponses.success(stdout=card_xml)
+            if cmd[0] == "kanban" and cmd[1] == "agent":
+                return KanbanMockResponses.success()
+            return KanbanMockResponses.failure()
+
+        with patch("subprocess.run", side_effect=fake_subprocess_run):
+            result = run_hook_main(hook, payload)
+
+        assert_allowed(result)
+        updated_input = result.get("hookSpecificOutput", {}).get("updatedInput", {})
+        new_prompt = updated_input.get("prompt", "")
+        assert "PROGRESS PROTOCOL" in new_prompt
+        assert ".scratchpad/42-progress.md" in new_prompt
+
+    def test_progress_protocol_not_injected_for_single_file_card(self, hook):
+        """A card with 0 or 1 edit-files entries does NOT get the block injected.
+
+        Re-anchored at the function boundary (_resolve_progress_protocol_block)
+        rather than only through main(): asserting via the full main() pipeline
+        exercises this branch without being able to detect its absence,
+        because a correctly-gated single-file card and a fully-disabled
+        feature produce the same observable main()-level output. Driving the
+        decision function directly and asserting its return value fails if
+        the threshold check inside it is weakened or removed — see the
+        perturbation demo in .scratchpad/progress-protocol-demo.md.
+        """
+        card_xml = _card_xml_with_editfiles(
+            card_number="42",
+            session="test-session",
+            edit_files=["src/a.py"],
+        )
+
+        result = hook._resolve_progress_protocol_block(card_xml, "42")
+
+        assert result is None
+
+    def test_progress_protocol_counts_duplicate_edit_files_siblings(self, hook):
+        """Non-empty <f> entries are summed across ALL sibling <edit-files> blocks.
+
+        Card XML with two sibling <edit-files> elements (1 <f> + 2 <f>) must
+        count 3 total, not just the first sibling's 1.
+        """
+        card_xml = (
+            '<card num="42" session="test-session" status="doing" cycles="0">\n'
+            '  <intent>Test card intent</intent>\n'
+            '  <acceptance-criteria>\n'
+            '    <ac met="false">Some criterion</ac>\n'
+            '  </acceptance-criteria>\n'
+            '  <edit-files><f>src/a.py</f></edit-files>\n'
+            '  <edit-files><f>src/b.py</f><f>src/c.py</f></edit-files>\n'
+            '</card>'
+        )
+
+        assert hook._count_edit_files_in_card_xml(card_xml) == 3
+
+    def test_progress_protocol_skipped_when_already_present(self, hook):
+        """No second copy is injected when the card action already contains
+        the literal string "PROGRESS PROTOCOL" (coordinator hand-pasted it)."""
+        payload = make_pretool_payload(
+            prompt="KANBAN CARD #42 | Session: test-session\nDo some work.",
+        )
+        # Card XML whose <action> already carries the block — mirrors a
+        # coordinator having hand-pasted it into the card action text.
+        card_xml = (
+            '<card num="42" session="test-session" status="doing" cycles="0">\n'
+            '  <action>Do the work. PROGRESS PROTOCOL (mandatory): ...</action>\n'
+            '  <intent>Test card intent</intent>\n'
+            '  <acceptance-criteria>\n'
+            '    <ac met="false">Some criterion</ac>\n'
+            '  </acceptance-criteria>\n'
+            '  <edit-files><f>src/a.py</f><f>src/b.py</f></edit-files>\n'
+            '</card>'
+        )
+
+        def fake_subprocess_run(cmd, **kwargs):
+            if cmd[0] == "kanban" and cmd[1] == "show":
+                return KanbanMockResponses.success(stdout=card_xml)
+            if cmd[0] == "kanban" and cmd[1] == "agent":
+                return KanbanMockResponses.success()
+            return KanbanMockResponses.failure()
+
+        with patch("subprocess.run", side_effect=fake_subprocess_run):
+            result = run_hook_main(hook, payload)
+
+        assert_allowed(result)
+        updated_input = result.get("hookSpecificOutput", {}).get("updatedInput", {})
+        new_prompt = updated_input.get("prompt", "")
+        # Exactly one copy — the hand-pasted one already inside the injected
+        # card XML — not two.
+        assert new_prompt.count("PROGRESS PROTOCOL") == 1
+
+    def test_progress_protocol_block_matches_output_style_canonical_copy(self, hook):
+        """The injected block is byte-identical to the canonical copy documented
+        in staff-engineer.md § "Per-edit progress protocol block".
+
+        Anchored on the heading text, never a line number, so the extraction
+        survives unrelated edits to the surrounding output style file.
+        """
+        output_style_path = (
+            Path(__file__).parent.parent
+            / "global"
+            / "output-styles"
+            / "staff-engineer.md"
+        )
+        content = output_style_path.read_text(encoding="utf-8")
+
+        heading = "Per-edit progress protocol block"
+        heading_idx = content.index(heading)
+        after_heading = content[heading_idx:]
+
+        # First fenced code block after the heading.
+        fence_start = after_heading.index("```", after_heading.index("\n"))
+        fence_start = after_heading.index("\n", fence_start) + 1
+        fence_end = after_heading.index("```", fence_start)
+        canonical_block = after_heading[fence_start:fence_end]
+        # Normalize a single trailing newline the fence markup introduces —
+        # the source function returns no trailing newline.
+        canonical_block = canonical_block.rstrip("\n")
+
+        # The doc's canonical copy uses the literal placeholder "<card>"
+        # (for manual substitution by a human); passing that same literal
+        # string as card_number reproduces byte-identical output without
+        # a second substitution step.
+        injected_block = hook.build_progress_protocol_block("<card>")
+
+        assert canonical_block == injected_block, (
+            "Canonical block in staff-engineer.md has drifted from "
+            "build_progress_protocol_block()'s output — do not edit "
+            "staff-engineer.md to force agreement; report the difference."
+        )
+
+    def test_progress_protocol_injection_fails_open_on_malformed_editfiles(self, hook):
+        """Missing/malformed edit-files must not raise and must not inject the block."""
+        payload = make_pretool_payload(
+            prompt="KANBAN CARD #42 | Session: test-session\nDo some work.",
+        )
+        # Card XML entirely lacking an <edit-files> element (the conftest
+        # fixture's default shape) — this is the "missing" case.
+        card_xml_no_editfiles = KanbanMockResponses.card_xml(card_number="42", session="test-session")
+
+        def fake_subprocess_run(cmd, **kwargs):
+            if cmd[0] == "kanban" and cmd[1] == "show":
+                return KanbanMockResponses.success(stdout=card_xml_no_editfiles)
+            if cmd[0] == "kanban" and cmd[1] == "agent":
+                return KanbanMockResponses.success()
+            return KanbanMockResponses.failure()
+
+        with patch("subprocess.run", side_effect=fake_subprocess_run):
+            # Must not raise — fail-open is the whole point of this test.
+            result = run_hook_main(hook, payload)
+
+        assert_allowed(result)
+        updated_input = result.get("hookSpecificOutput", {}).get("updatedInput", {})
+        new_prompt = updated_input.get("prompt", "")
+        assert "PROGRESS PROTOCOL" not in new_prompt
+
+        # Directly exercise the parser against malformed/absent input —
+        # none of these may raise; all must resolve to a count of 0.
+        assert hook._count_edit_files_in_card_xml("<not><valid xml") == 0
+        assert hook._count_edit_files_in_card_xml("") == 0
+        assert hook._count_edit_files_in_card_xml(None) == 0
+
+
 class TestNoCardReference:
     """Agent call without card number → denied unless SKILL_AGENT_BYPASS."""
 

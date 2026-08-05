@@ -2600,12 +2600,12 @@ A confirmed post-mortem: a coordinator partitioned a whole-repo prompt-corpus ce
 
   **Detection tell:** a card whose deliverable is prose ABOUT a pattern rather than the pattern itself. The agent will quote the pattern verbatim — the correct instinct, and the thing that breaks.
 
-- [ ] Progress protocol block pasted into action field for any multi-file work (see block below)
+- [ ] Progress protocol block: injected automatically by `kanban-pretool-hook.py` for any card with more than one entry in `editFiles` (see `build_progress_protocol_block()` / `_count_edit_files_in_card_xml()`) — no coordinator action needed. Manual pasting of the block below into the action field is only for a single-file card where the coordinator still wants the per-edit checkpoint discipline.
 - [ ] Discovery and execution in separate cards — discovery consumes the budget; execution with pre-supplied locations is cheap. Mix them and the card stalls with findings in memory and zero files changed
 - [ ] Research card action states the question (one sentence), deliverable, and constraints — NOT a step-by-step method
 - [ ] **Target-artifact inspection** — Does the action instruct writing a literal (file path, enumerated list, named value) into an existing artifact? If yes, has the artifact been grepped for its established convention and any stated design policy the literal would contradict, with embedded paths given in absolute form when the artifact's consumer runs from a non-fixed working directory? See § Card Management — Target-artifact inspection.
 
-**Per-edit progress protocol block (paste VERBATIM into action field for every multi-file work card, substitute `<card>`):**
+**Per-edit progress protocol block — injected automatically for any card with more than one entry in `editFiles`.** `modules/claude/kanban-pretool-hook.py` sources this exact wording (via `build_progress_protocol_block()`) and prepends it to the sub-agent's prompt when the card's `<edit-files>` lists 2+ files — the coordinator does not need to paste it. Manual paste (substitute `<card>`) is needed only for a single-file card where the coordinator still wants the per-edit checkpoint discipline:
 ```
 PROGRESS PROTOCOL (mandatory):
 Before starting each file edit, read .scratchpad/<card>-progress.md.
