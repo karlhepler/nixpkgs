@@ -26,6 +26,31 @@ directions —
 
 Fixtures are built under tmp_path — never against the real .kanban/
 directory, which holds live cards from concurrently-running sessions.
+
+Card #3350 extends this same file with a SECOND, weaker anomaly class:
+abandoned-card detection. An "abandoned" card sits in `doing` with NO
+acceptance criterion met and no recorded activity for a long time. Unlike
+stranding, this is genuinely ambiguous — it could be a dead card nobody is
+working, or a live agent deep in a long investigation that has not yet
+reached its first criterion check — so detection uses a much looser,
+separately-named threshold (ABANDONED_CARD_THRESHOLD_MINUTES) and is
+rendered in its own `<possibly-abandoned>` / "POSSIBLY ABANDONED CARDS" section,
+never folded into `<stranded>`. Required coverage (per card #3350):
+  - TestAbandonedDetectionFires::test_abandoned_card_with_stale_activity_and_no_ac_met_is_detected
+    constructs a doing card with no criteria met and activity older than
+    the threshold and asserts detection FIRES.
+  - TestAbandonedDetectionStaysQuiet::test_recently_active_card_with_no_ac_met_is_not_flagged_abandoned
+    constructs the same shape with RECENT activity and asserts detection
+    does NOT fire.
+  - TestAbandonedDoesNotOverlapWithStranded::test_stranded_card_never_also_reported_as_abandoned
+    pins the design decision that a card already flagged stranded is never
+    ALSO reported as abandoned: the two predicates are mutually exclusive
+    by construction for any card with at least one criterion (every
+    criterion met vs. no criterion met cannot both hold), so a stranded
+    card can never satisfy is_card_abandoned's "no criterion met"
+    requirement — no overlap-suppression logic is needed for correctness,
+    only defensively present (see kanban.py's abandoned_cards computation
+    in cmd_list) as a guard against that invariant weakening later.
 """
 
 import importlib.util
@@ -587,3 +612,326 @@ class TestStrandedDetectionNonStringSessionFailsOpen:
             f"Healthy card #2 must still render even though card #1 has a "
             f"non-string session, got:\n{output}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: is_card_abandoned (pure function, no board I/O)
+#
+# Mirrors TestIsCardStrandedUnit above, but every "met" polarity is flipped:
+# is_card_abandoned requires NO criterion met (vs. is_card_stranded's ALL
+# criteria met), and uses the far looser ABANDONED_CARD_THRESHOLD_MINUTES.
+# ---------------------------------------------------------------------------
+
+class TestIsCardAbandonedUnit:
+    """Direct unit tests of the is_card_abandoned predicate."""
+
+    def test_no_criteria_met_and_stale_is_abandoned(self, kanban):
+        now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        stale_updated = now - timedelta(minutes=kanban.ABANDONED_CARD_THRESHOLD_MINUTES + 5)
+        card = _make_card(
+            criteria=[{"text": "AC1", "met": False}, {"text": "AC2", "met": False}],
+            updated=_iso(stale_updated),
+        )
+        assert kanban.is_card_abandoned(card, now=now) is True
+
+    def test_no_criteria_met_but_recent_is_not_abandoned(self, kanban):
+        now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        recent_updated = now - timedelta(minutes=1)
+        card = _make_card(
+            criteria=[{"text": "AC1", "met": False}],
+            updated=_iso(recent_updated),
+        )
+        assert kanban.is_card_abandoned(card, now=now) is False
+
+    def test_some_criteria_met_is_never_abandoned_even_if_stale(self, kanban):
+        """A card with a MIX of met/unmet criteria is neither fully worked
+        nor fully untouched — it falls in the deliberate gap between the
+        stranded and abandoned classes, so it must never be flagged
+        abandoned regardless of staleness.
+        """
+        now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        stale_updated = now - timedelta(minutes=kanban.ABANDONED_CARD_THRESHOLD_MINUTES + 60)
+        card = _make_card(
+            criteria=[{"text": "AC1", "met": True}, {"text": "AC2", "met": False}],
+            updated=_iso(stale_updated),
+        )
+        assert kanban.is_card_abandoned(card, now=now) is False
+
+    def test_all_criteria_met_is_never_abandoned_even_if_stale(self, kanban):
+        """The mirror-image sanity check: a fully-met (stranded) card must
+        never also satisfy is_card_abandoned's "no criterion met"
+        requirement — the two predicates are mutually exclusive.
+        """
+        now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        stale_updated = now - timedelta(minutes=kanban.ABANDONED_CARD_THRESHOLD_MINUTES + 60)
+        card = _make_card(
+            criteria=[{"text": "AC1", "met": True}, {"text": "AC2", "met": True}],
+            updated=_iso(stale_updated),
+        )
+        assert kanban.is_card_abandoned(card, now=now) is False
+
+    def test_no_criteria_is_never_abandoned(self, kanban):
+        now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        stale_updated = now - timedelta(minutes=kanban.ABANDONED_CARD_THRESHOLD_MINUTES + 60)
+        card = _make_card(criteria=[], updated=_iso(stale_updated))
+        assert kanban.is_card_abandoned(card, now=now) is False
+
+    def test_missing_updated_field_fails_closed(self, kanban):
+        """No `updated` timestamp — cannot determine staleness, so not
+        abandoned."""
+        now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        card = _make_card(criteria=[{"text": "AC1", "met": False}])
+        del card["updated"]
+        assert kanban.is_card_abandoned(card, now=now) is False
+
+    def test_malformed_updated_field_fails_closed(self, kanban):
+        """Unparseable `updated` timestamp must not raise — fails closed to
+        False."""
+        now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        card = _make_card(
+            criteria=[{"text": "AC1", "met": False}],
+            updated="not-a-real-timestamp",
+        )
+        assert kanban.is_card_abandoned(card, now=now) is False
+
+    def test_non_dict_criterion_entry_fails_closed(self, kanban):
+        """A malformed (non-dict) criterion entry must not raise or
+        false-positive."""
+        now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        stale_updated = now - timedelta(minutes=kanban.ABANDONED_CARD_THRESHOLD_MINUTES + 60)
+        card = _make_card(criteria=["not-a-dict"], updated=_iso(stale_updated))
+        assert kanban.is_card_abandoned(card, now=now) is False
+
+    def test_exactly_at_threshold_boundary_is_abandoned(self, kanban):
+        """Age exactly equal to the threshold counts as abandoned (>=, not
+        >) — same boundary convention as is_card_stranded."""
+        now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        boundary_updated = now - timedelta(minutes=kanban.ABANDONED_CARD_THRESHOLD_MINUTES)
+        card = _make_card(
+            criteria=[{"text": "AC1", "met": False}],
+            updated=_iso(boundary_updated),
+        )
+        assert kanban.is_card_abandoned(card, now=now) is True
+
+    def test_abandoned_threshold_is_much_looser_than_stranded_threshold(self, kanban):
+        """Pins the card's core requirement: abandoned detection MUST use a
+        deliberately looser threshold than stranded detection, because
+        no-criteria-met + stale is weaker, more ambiguous evidence than
+        all-criteria-met + stale. A warning that fires on healthy
+        long-running work at the same cadence as the near-certain stranded
+        signal would be noise.
+        """
+        assert kanban.ABANDONED_CARD_THRESHOLD_MINUTES > kanban.STRANDED_CARD_THRESHOLD_MINUTES
+
+
+# ---------------------------------------------------------------------------
+# Integration tests: abandoned-card detection fires in BOTH directions via
+# cmd_list, and never overlaps with the stranded class.
+# ---------------------------------------------------------------------------
+
+class TestAbandonedDetectionFires:
+    """Positive case: a deliberately abandoned fixture must be detected."""
+
+    def test_abandoned_card_with_stale_activity_and_no_ac_met_is_detected(self, kanban, tmp_path):
+        """A doing card with NO AC met and activity older than the
+        (looser) abandoned threshold must appear in the <possibly-abandoned> section
+        of `kanban list` XML output.
+        """
+        board = _setup_board(tmp_path)
+        stale_updated = datetime.now(timezone.utc) - timedelta(
+            minutes=kanban.ABANDONED_CARD_THRESHOLD_MINUTES + 30
+        )
+        _write_card(board, "doing", "60", _make_card(
+            session="sweet-otter",
+            criteria=[
+                {"text": "AC1", "met": False},
+                {"text": "AC2", "met": False},
+            ],
+            updated=_iso(stale_updated),
+        ))
+        args = _make_args(board, session="sweet-otter")
+        output = _run_cmd_list(kanban, args, board)
+
+        assert "<possibly-abandoned" in output, (
+            f"Expected a <possibly-abandoned> section for card #60, got:\n{output}"
+        )
+        _abandoned_start = output.index("<possibly-abandoned")
+        _abandoned_end = output.index("</possibly-abandoned>")
+        assert 'n="60"' in output[_abandoned_start:_abandoned_end], (
+            "Card #60 must be listed inside the <possibly-abandoned> section"
+        )
+
+    def test_non_xml_output_style_includes_abandoned_warning(self, kanban, tmp_path):
+        """--output-style=simple must also surface the heuristic warning
+        (plain text), phrased to hedge rather than assert certainty."""
+        board = _setup_board(tmp_path)
+        stale_updated = datetime.now(timezone.utc) - timedelta(
+            minutes=kanban.ABANDONED_CARD_THRESHOLD_MINUTES + 30
+        )
+        _write_card(board, "doing", "61", _make_card(
+            session="sweet-otter",
+            criteria=[{"text": "AC1", "met": False}],
+            updated=_iso(stale_updated),
+        ))
+        args = _make_args(board, session="sweet-otter")
+        args.output_style = "simple"
+        output = _run_cmd_list(kanban, args, board)
+
+        assert "ABANDONED CARDS" in output.upper()
+        assert "#61" in output
+
+
+class TestAbandonedDetectionStaysQuiet:
+    """Negative case: recent activity must suppress the abandoned warning
+    entirely — same rationale as the stranded class's quiet-case coverage.
+    """
+
+    def test_recently_active_card_with_no_ac_met_is_not_flagged_abandoned(self, kanban, tmp_path):
+        """A doing card with no AC met but RECENT activity must NOT appear
+        in the <possibly-abandoned> section — it may simply be a healthy agent still
+        working toward its first criterion check.
+        """
+        board = _setup_board(tmp_path)
+        recent_updated = datetime.now(timezone.utc) - timedelta(seconds=5)
+        _write_card(board, "doing", "62", _make_card(
+            session="sweet-otter",
+            criteria=[
+                {"text": "AC1", "met": False},
+                {"text": "AC2", "met": False},
+            ],
+            updated=_iso(recent_updated),
+        ))
+        args = _make_args(board, session="sweet-otter")
+        output = _run_cmd_list(kanban, args, board)
+
+        assert "<possibly-abandoned" not in output, (
+            f"A recently-active card with no AC met must not be flagged "
+            f"abandoned, got:\n{output}"
+        )
+
+    def test_no_abandoned_cards_omits_section_entirely(self, kanban, tmp_path):
+        """A clean board produces no <possibly-abandoned> section at all (XML) and
+        no warning text (non-XML) — the feature is silent by default.
+
+        Uses an explicit RECENT `updated` timestamp rather than
+        `_make_card`'s fixed-past-date default — unlike the analogous
+        stranded-class test, a card with an unmet criterion and the
+        default 2026-01-01 timestamp WOULD satisfy is_card_abandoned's
+        "no criterion met + stale" test against a real wall clock, since
+        abandoned detection (unlike stranded detection) does not require
+        every criterion met.
+        """
+        board = _setup_board(tmp_path)
+        recent_updated = datetime.now(timezone.utc) - timedelta(seconds=5)
+        _write_card(board, "doing", "63", _make_card(
+            session="sweet-otter",
+            criteria=[{"text": "AC1", "met": False}],
+            updated=_iso(recent_updated),
+        ))
+        args = _make_args(board, session="sweet-otter")
+        xml_output = _run_cmd_list(kanban, args, board)
+        assert "<possibly-abandoned" not in xml_output
+
+        args.output_style = "simple"
+        simple_output = _run_cmd_list(kanban, args, board)
+        assert "ABANDONED CARDS" not in simple_output.upper()
+
+
+class TestAbandonedDoesNotOverlapWithStranded:
+    """Design decision (card #3350): a card already flagged stranded must
+    never ALSO be reported as abandoned. The two predicates are mutually
+    exclusive by construction for any card with at least one criterion —
+    is_card_stranded requires every criterion met, is_card_abandoned
+    requires none met.
+
+    test_stranded_card_never_also_reported_as_abandoned below is an
+    end-to-end regression check with built-in redundancy, NOT a unit-level
+    guard of the cmd_list exclusion filter's necessity in isolation. For its
+    fixture, the filter's `continue` fires before is_card_abandoned is ever
+    reached, and — independently — is_card_abandoned's own met-check would
+    also return False for the same fixture. So the test is decisive against
+    a JOINT failure of both mechanisms (and against a regression in
+    is_card_stranded's own membership check), but it cannot isolate a solo
+    failure of the filter from a solo failure of the predicate's met-check,
+    because each one masks the other: removing just the filter leaves the
+    predicate's met-check able to produce the identical correct result, and
+    a regression that broke only the met-check would be silently masked by
+    the filter's `continue`. This is not a tautology, though — a joint failure
+    of both mechanisms together would still be caught.
+
+    The met-check itself IS fully decisive on its own, independent of this
+    joint-failure gap: see test_all_criteria_met_is_never_abandoned_even_if_stale
+    above, which calls is_card_abandoned directly, bypassing cmd_list and
+    the exclusion filter entirely.
+    """
+
+    def test_stranded_card_never_also_reported_as_abandoned(self, kanban, tmp_path):
+        board = _setup_board(tmp_path)
+        # Stale beyond BOTH thresholds, so if the mutual-exclusion invariant
+        # were ever weakened, this test would still catch a double-report.
+        very_stale_updated = datetime.now(timezone.utc) - timedelta(
+            minutes=kanban.ABANDONED_CARD_THRESHOLD_MINUTES + 30
+        )
+        _write_card(board, "doing", "64", _make_card(
+            session="sweet-otter",
+            criteria=[
+                {"text": "AC1", "met": True},
+                {"text": "AC2", "met": True},
+            ],
+            updated=_iso(very_stale_updated),
+        ))
+        args = _make_args(board, session="sweet-otter")
+        output = _run_cmd_list(kanban, args, board)
+
+        assert "<stranded>" in output, (
+            f"Card #64 is genuinely stranded and must be flagged, got:\n{output}"
+        )
+        assert 'n="64"' in output.split("<stranded>")[1].split("</stranded>")[0]
+        assert "<possibly-abandoned" not in output, (
+            f"A stranded card must never also be reported as abandoned, "
+            f"got:\n{output}"
+        )
+
+    def test_mixed_board_flags_each_card_in_exactly_one_class(self, kanban, tmp_path):
+        """A board with one stranded card, one abandoned card, and one
+        healthy (recently-active) card partitions cleanly: each of the
+        first two appears in exactly one section, and the healthy card
+        appears in neither.
+        """
+        board = _setup_board(tmp_path)
+        stale = datetime.now(timezone.utc) - timedelta(
+            minutes=kanban.ABANDONED_CARD_THRESHOLD_MINUTES + 30
+        )
+        recent = datetime.now(timezone.utc) - timedelta(seconds=10)
+
+        _write_card(board, "doing", "70", _make_card(  # stranded
+            session="sweet-otter",
+            criteria=[{"text": "AC1", "met": True}],
+            updated=_iso(stale),
+        ))
+        _write_card(board, "doing", "71", _make_card(  # abandoned
+            session="sweet-otter",
+            criteria=[{"text": "AC1", "met": False}],
+            updated=_iso(stale),
+        ))
+        _write_card(board, "doing", "72", _make_card(  # healthy
+            session="sweet-otter",
+            criteria=[{"text": "AC1", "met": False}],
+            updated=_iso(recent),
+        ))
+        args = _make_args(board, session="sweet-otter")
+        output = _run_cmd_list(kanban, args, board)
+
+        stranded_section = output.split("<stranded>")[1].split("</stranded>")[0]
+        _abandoned_start = output.index("<possibly-abandoned")
+        _abandoned_end = output.index("</possibly-abandoned>")
+        abandoned_section = output[_abandoned_start:_abandoned_end]
+
+        assert 'n="70"' in stranded_section
+        assert 'n="70"' not in abandoned_section
+
+        assert 'n="71"' in abandoned_section
+        assert 'n="71"' not in stranded_section
+
+        assert 'n="72"' not in stranded_section
+        assert 'n="72"' not in abandoned_section

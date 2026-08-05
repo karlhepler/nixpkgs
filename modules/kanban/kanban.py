@@ -72,6 +72,30 @@ MAX_CYCLES = 3
 # next coordinator turn (coordinators run `kanban list` every turn).
 STRANDED_CARD_THRESHOLD_MINUTES = 10
 
+# Abandoned-card detection threshold (see is_card_abandoned / cmd_list).
+#
+# Deliberately much LOOSER than STRANDED_CARD_THRESHOLD_MINUTES above, and
+# for a different reason. A stranded card (every AC met, no activity) is
+# near-certain evidence the stop hook failed to advance a finished card —
+# there is essentially no legitimate reason for that state to persist. An
+# abandoned card (NO AC met, no activity) is genuinely ambiguous: it could
+# be a card nobody is working anymore (the owning agent died, was killed, or
+# never actually started), or it could be a live, healthy agent deep in a
+# long investigation that has not yet reached its first criterion check.
+# Nothing in this repo can distinguish those two cases — `kanban agent`
+# records the specialist TYPE assigned to a card (e.g. "swe-backend"), not a
+# live agent-instance handle, so there is no way to ask "is anything still
+# working this?" directly. Elapsed time since the card's last recorded
+# update is therefore the ONLY discriminator available, and it is a weak
+# one. Setting this threshold as low as the stranded one would fire on
+# perfectly healthy long-running investigations constantly, and a warning
+# that regularly fires on healthy work trains coordinators to ignore it —
+# worse than not having it at all. 240 minutes (4 hours, ~24x the stranded
+# threshold) is chosen to make that false-positive rate rare while still
+# surfacing genuinely dead cards within a reasonable number of coordinator
+# turns. Callers must present this as a heuristic hint, never a certainty.
+ABANDONED_CARD_THRESHOLD_MINUTES = 240
+
 # Word lists for friendly session names (adjective-noun, Docker-style)
 _ADJECTIVES = [
     "bold", "brave", "bright", "brisk", "calm", "clear", "cool", "crisp",
@@ -467,6 +491,53 @@ def is_card_stranded(
             return False
         for criterion in criteria:
             if not isinstance(criterion, dict) or not criterion.get("met"):
+                return False
+
+        updated_str = card.get("updated")
+        if not updated_str:
+            return False
+        updated = parse_iso(updated_str)
+
+        reference_now = now if now is not None else datetime.now(timezone.utc)
+        return (reference_now - updated) >= timedelta(minutes=threshold_minutes)
+    except Exception:
+        return False
+
+
+def is_card_abandoned(
+    card: dict,
+    now: datetime | None = None,
+    threshold_minutes: int = ABANDONED_CARD_THRESHOLD_MINUTES,
+) -> bool:
+    """True if `card` looks abandoned: it has at least one acceptance
+    criterion, NONE of them are met, and the card has had no activity for
+    at least `threshold_minutes`.
+
+    This is the mirror-opposite membership test of `is_card_stranded`
+    (which requires ALL criteria met). For any card with at least one
+    criterion, the two predicates are mutually exclusive by construction —
+    a card cannot simultaneously have every criterion met (stranded) and no
+    criterion met (abandoned) — so a card flagged by one is never also
+    flagged by the other. See ABANDONED_CARD_THRESHOLD_MINUTES for why this
+    is a much weaker, purely heuristic signal than stranding: this repo has
+    no way to tell a dead card apart from a live agent deep in a long
+    investigation that has not yet reached its first criterion check.
+    Callers must present this as a heuristic hint, never a certainty.
+
+    Fails closed (returns False) on ANY malformed input — missing/empty
+    criteria, non-dict criterion entries, a missing or unparseable
+    `updated` timestamp — mirroring `is_card_stranded`'s fail-closed
+    behavior for the same reason: `kanban list` must keep working even when
+    a card is corrupt.
+    """
+    try:
+        criteria = card.get("criteria") or []
+        if not criteria:
+            return False
+        for criterion in criteria:
+            if not isinstance(criterion, dict):
+                return False
+            if criterion.get("met"):
                 return False
 
         updated_str = card.get("updated")
@@ -4225,6 +4296,31 @@ def cmd_list(args) -> None:
     except Exception:
         stranded_cards = []
 
+    # Abandoned-card detection (SURFACE ONLY — same fail-open contract as
+    # stranded-card detection above). See ABANDONED_CARD_THRESHOLD_MINUTES
+    # for why this is a much weaker, purely heuristic signal than
+    # stranding: elapsed time since last activity is the only discriminator
+    # available, and it cannot tell a dead card from a live long-running
+    # investigation.
+    #
+    # Excludes cards already flagged stranded by number, defensively — the
+    # two predicates are mutually exclusive by construction for any card
+    # with at least one criterion (ALL met vs. NONE met cannot both hold),
+    # so this filter should never actually remove anything; it exists only
+    # to guarantee no card is ever double-reported if that invariant is
+    # ever weakened by a future edit to either predicate.
+    abandoned_cards: list[tuple[str, dict]] = []
+    try:
+        _stranded_nums = {_num for _num, _ in stranded_cards}
+        _now_abandoned = datetime.now(timezone.utc)
+        for _num, _card in all_cards_by_column.get("doing", []):
+            if _num in _stranded_nums:
+                continue
+            if is_card_abandoned(_card, now=_now_abandoned):
+                abandoned_cards.append((_num, _card))
+    except Exception:
+        abandoned_cards = []
+
     # XML output: terse format for coordinator board awareness.
     #
     # Terse list schema (per <c> element) — designed for fast coordination
@@ -4367,6 +4463,39 @@ def cmd_list(args) -> None:
             for _line in _stranded_lines:
                 print(_line)
 
+        # Abandoned-card warning section. Same tag rationale and same
+        # guarded buffer-then-print discipline as the <stranded> section
+        # above — see its comment for why. This is a WEAKER, purely
+        # heuristic signal (see ABANDONED_CARD_THRESHOLD_MINUTES) so it is
+        # deliberately kept in its own separate section rather than folded
+        # into <stranded>, so a consumer can tell certain-looking evidence
+        # apart from a heuristic hint.
+        #
+        # Element name is <possibly-abandoned>, not a bare "abandoned" tag —
+        # the tag name is the first thing a consumer weighs, and an
+        # unqualified determination-style name would read as a certainty,
+        # structurally identical to the near-certain <stranded> signal. The
+        # container element also carries
+        # a heuristic="true" attribute and a note attribute spelling out the
+        # counter-hypothesis once (not per-card), so a consumer parsing XML
+        # alone gets the same caveat the plain-text reader already gets.
+        if abandoned_cards:
+            try:
+                _abandoned_lines = [
+                    '<possibly-abandoned heuristic="true" '
+                    f'note="no AC met and no activity for '
+                    f'{ABANDONED_CARD_THRESHOLD_MINUTES}+ min; could be dead '
+                    'or a healthy long-running investigation">'
+                ]
+                for num, card in abandoned_cards:
+                    ses_attr = _ses_attr(card)
+                    _abandoned_lines.append(f'<card n="{esc(num)}"{ses_attr}/>')
+                _abandoned_lines.append("</possibly-abandoned>")
+            except Exception:
+                _abandoned_lines = []
+            for _line in _abandoned_lines:
+                print(_line)
+
         print("</board>")
         return
 
@@ -4421,6 +4550,32 @@ def cmd_list(args) -> None:
         for _line in _stranded_output_lines:
             print(_line)
         if _stranded_output_lines:
+            print()
+
+    # Abandoned-card warning (SURFACE ONLY — see abandoned_cards computation
+    # above for why this is gated on ABANDONED_CARD_THRESHOLD_MINUTES, and
+    # why it is a weaker, purely heuristic signal than the stranded warning
+    # above). Same guarded buffer-then-print discipline for the same reason.
+    # The wording deliberately hedges ("possibly abandoned") rather than
+    # asserting certainty — this repo cannot tell a dead card from a live,
+    # long-running investigation, only that no activity has been recorded
+    # for a long time.
+    if abandoned_cards:
+        try:
+            _abandoned_output_lines = [
+                f"⚠ POSSIBLY ABANDONED CARDS (heuristic — no AC met, no "
+                f"activity for {ABANDONED_CARD_THRESHOLD_MINUTES}+ min; "
+                f"could be dead, could be a healthy long-running "
+                f"investigation):"
+            ]
+            for num, card in abandoned_cards:
+                session_label = card.get("session") or "unknown"
+                _abandoned_output_lines.append(f"  #{num} (session: {session_label})")
+        except Exception:
+            _abandoned_output_lines = []
+        for _line in _abandoned_output_lines:
+            print(_line)
+        if _abandoned_output_lines:
             print()
 
     # Show metrics summary (not in XML mode)
