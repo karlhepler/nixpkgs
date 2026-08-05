@@ -1526,3 +1526,76 @@ class TestAgentLaunchPendingClear:
             f"clear-agent-launch-pending must be called during agent launch processing; "
             f"call_order: {call_order}"
         )
+
+
+class TestExceptionReprLogging:
+    """Caught exceptions interpolated into log_error() messages must use !r.
+
+    A bare str(e) can embed a raw newline (or other delimiter-confusing
+    characters) verbatim, fragmenting one logged entry into two for
+    hook-error-digest-hook.py's line-based classification. Every log_error()
+    call site that interpolates a caught exception must render it via
+    repr() (the !r conversion), matching the session_id!r treatment already
+    applied on the same lines.
+    """
+
+    def test_fetch_doing_card_session_id_logged_in_quoted_repr_form(self, hook):
+        """session_id must render as session='...' (quoted), not bare session=....
+
+        Guards against a regression back to bare {session_id} interpolation,
+        which would let a session_id containing a colon or newline corrupt
+        the digest's line-based parsing.
+        """
+        with patch("subprocess.run", side_effect=RuntimeError("boom")):
+            with patch.object(hook, "log_error") as mock_log_error:
+                result = hook._fetch_doing_card_for_session("test-session")
+        assert result is None  # still fails open
+        mock_log_error.assert_called_once()
+        logged_message = mock_log_error.call_args[0][0]
+        assert "session='test-session'" in logged_message
+
+    def test_fetch_doing_card_caught_exception_logged_via_repr(self, hook):
+        """The caught exception itself must render via repr(), not bare str().
+
+        repr() on an exception surfaces its type alongside its message
+        (e.g. RuntimeError('boom with\\nnewline')), and critically escapes
+        any raw newline in the message body to the two-character sequence
+        \\n rather than reproducing it verbatim — which would otherwise
+        split one logged line into two.
+        """
+        with patch("subprocess.run", side_effect=RuntimeError("boom with\nnewline")):
+            with patch.object(hook, "log_error") as mock_log_error:
+                result = hook._fetch_doing_card_for_session("test-session")
+        assert result is None
+        mock_log_error.assert_called_once()
+        logged_message = mock_log_error.call_args[0][0]
+        assert "RuntimeError('boom with\\nnewline')" in logged_message
+        assert "\n" not in logged_message
+
+
+class TestWriteLogLineCap:
+    """_write_log() must cap a single oversized line before writing to disk.
+
+    Without a per-line cap, hook-error-digest-hook.py's PER_RUN_LINE_CAP (a
+    per-run line-count cap, not a byte cap) would re-read one pathologically
+    long line whole on every digest run until the next 10 MB file rotation.
+    """
+
+    def test_write_log_caps_overlong_line(self, hook, tmp_path):
+        """A message longer than _LOG_MAX_LINE_CHARS is truncated with a marker."""
+        log_path = tmp_path / "test-pretool-errors.log"
+        unique_tail_marker = "UNIQUE_TAIL_MARKER_ZZZ"
+        long_message = ("A" * (hook._LOG_MAX_LINE_CHARS + 1000)) + unique_tail_marker
+        hook._write_log(log_path, long_message)
+        logged = log_path.read_text(encoding="utf-8")
+        assert unique_tail_marker not in logged
+        assert "truncated" in logged
+
+    def test_write_log_leaves_short_line_untouched(self, hook, tmp_path):
+        """A message at or under the cap is written verbatim, with no marker."""
+        log_path = tmp_path / "test-pretool-errors.log"
+        short_message = "short benign message"
+        hook._write_log(log_path, short_message)
+        logged = log_path.read_text(encoding="utf-8")
+        assert short_message in logged
+        assert "truncated" not in logged

@@ -83,6 +83,28 @@ _FOREGROUND_AUTHORIZED_RE = re.compile(r'^\s*FOREGROUND_AUTHORIZED\s*$', re.MULT
 
 _LOG_MAX_BYTES = 10 * 1024 * 1024  # 10 MB cap before rotation
 
+# Hard ceiling on the length of a SINGLE logged line, applied before it is
+# written to disk. Distinct from _LOG_MAX_BYTES above, which rotates the
+# WHOLE FILE once its total size crosses a threshold — this one caps a
+# single line.
+#
+# Note this is NOT primarily a classification-integrity fix (unlike the
+# sibling cap in kanban-subagent-stop-hook.py's log_error()):
+# hook-error-digest-hook.py's _CURATED_CLASSIFIERS_BY_FILENAME maps
+# "kanban-pretool-hook-errors.log" to an EMPTY classifier list, so every
+# line from this file already resolves via the generic fallback classifier
+# regardless of truncation — there is no curated anchor phrase here that
+# truncation could sever. The reason to cap is the whole-LINE re-read cost:
+# hook-error-digest-hook.py aggregates this log under the same per-run
+# PER_RUN_LINE_CAP (a per-run *line-count* cap, not a byte cap) as its
+# siblings, so one pathological line (e.g. an oversized interpolated
+# stderr/cwd/path field) would otherwise be re-read whole on every digest
+# run until the next 10 MB rotation. Capped here, applied inside
+# _write_log() so it covers both log_error() and log_info() in one place —
+# _write_log() is this file's single shared writer, unlike
+# kanban-subagent-stop-hook.py, which has two independent writer functions.
+_LOG_MAX_LINE_CHARS = 4000
+
 
 def _rotate_log_if_needed(path: Path) -> None:
     """Rotate path → path.1 when the file exceeds _LOG_MAX_BYTES. Never raises."""
@@ -94,19 +116,36 @@ def _rotate_log_if_needed(path: Path) -> None:
         pass
 
 
+def _truncate_log_line(message: str) -> str:
+    """Truncate a single log message to _LOG_MAX_LINE_CHARS.
+
+    Appends an elision marker with the original length so a reader of the
+    log knows the message was cut rather than assuming it is complete.
+    Truncates the TAIL (keeps the first _LOG_MAX_LINE_CHARS characters) —
+    see _LOG_MAX_LINE_CHARS above for why this file has no anchor-position
+    concern to preserve.
+    """
+    if len(message) <= _LOG_MAX_LINE_CHARS:
+        return message
+    return message[:_LOG_MAX_LINE_CHARS] + f"... [truncated, {len(message)} chars total]"
+
+
 def _write_log(path: Path, message: str) -> None:
     """Append a timestamped message to a log file. Never raises.
 
     Rotates the log file to <path>.1 when it exceeds _LOG_MAX_BYTES,
-    then starts a fresh file (one backup generation kept).
+    then starts a fresh file (one backup generation kept). The message
+    itself is capped to _LOG_MAX_LINE_CHARS before being written — see
+    _truncate_log_line.
     """
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         _rotate_log_if_needed(path)
         from datetime import datetime, timezone
         timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+        capped_message = _truncate_log_line(message)
         with open(path, "a", encoding="utf-8") as fh:
-            fh.write(f"[{timestamp}] {message}\n")
+            fh.write(f"[{timestamp}] {capped_message}\n")
     except Exception:  # intentional: last-resort log utility must never raise
         pass
 
@@ -573,7 +612,7 @@ def _parse_destructive_git_ops(command: str) -> list:
             if result is not None:
                 findings.append((seg, result))
     except Exception as e:
-        log_error(f"destructive-git parse failure: {e}")
+        log_error(f"destructive-git parse failure: {e!r}")
         return []
     return findings
 
@@ -598,7 +637,7 @@ def _fetch_doing_card_for_session(session_id: str) -> "tuple[str, list[str]] | N
             # operator needs to know infrastructure is failing, not just that
             # a lookup came back empty.
             log_error(
-                f"kanban CLI failed for session={session_id}: "
+                f"kanban CLI failed for session={session_id!r}: "
                 f"kanban list exited {result.returncode}, "
                 f"stderr={result.stderr.strip()[:500]!r}"
             )
@@ -618,7 +657,7 @@ def _fetch_doing_card_for_session(session_id: str) -> "tuple[str, list[str]] | N
         # The list output doesn't include edit-files — fetch the full card
         return _fetch_card_editfiles(card_number, session_id)
     except Exception as e:
-        log_error(f"_fetch_doing_card_for_session failed for session={session_id}: {e}")
+        log_error(f"_fetch_doing_card_for_session failed for session={session_id!r}: {e!r}")
         return None
 
 
@@ -656,7 +695,7 @@ def _fetch_card_editfiles(card_number: str, session_id: str) -> "tuple[str, list
         files = [f.text.strip() for f in ef_el.findall("f") if f.text and f.text.strip()]
         return (card_number, files)
     except Exception as e:
-        log_error(f"_fetch_card_editfiles failed for card={card_number}: {e}")
+        log_error(f"_fetch_card_editfiles failed for card={card_number}: {e!r}")
         return None
 
 
@@ -781,7 +820,7 @@ def _validate_bash_destructive_git(payload: dict) -> "dict | None":
                 "If a stash is blocking you, STOP and report the issue in your final return — "
                 "do not destroy stash contents outside your card's scope."
             )
-            log_info(f"Bash denied — git stash drop from sub-agent session={session_id}")
+            log_info(f"Bash denied — git stash drop from sub-agent session={session_id!r}")
             return deny_with_reason(reason)
 
         if result == "stash_push":
@@ -794,7 +833,7 @@ def _validate_bash_destructive_git(payload: dict) -> "dict | None":
                 "If an AC failure seems to require stashing, STOP and report in your final return — "
                 "the MoV is the issue, not the working tree."
             )
-            log_info(f"Bash denied — git stash push/save/bare from sub-agent session={session_id}")
+            log_info(f"Bash denied — git stash push/save/bare from sub-agent session={session_id!r}")
             return deny_with_reason(reason)
 
         # result is a list of file paths (possibly with sentinel values)
@@ -812,7 +851,7 @@ def _validate_bash_destructive_git(payload: dict) -> "dict | None":
                 "Interactive sessions cannot run inside a sub-agent. Surface the underlying scope "
                 "issue in your final return instead of reverting."
             )
-            log_info(f"Bash denied — git checkout -p (interactive) from sub-agent session={session_id}")
+            log_info(f"Bash denied — git checkout -p (interactive) from sub-agent session={session_id!r}")
             return deny_with_reason(reason)
 
         # Handle <all-tracked> sentinel: git reset --hard reverts ALL tracked files.
@@ -827,7 +866,7 @@ def _validate_bash_destructive_git(payload: dict) -> "dict | None":
                 "If an AC is failing, STOP and report the broken AC in your final return — "
                 "do not revert the entire working tree."
             )
-            log_info(f"Bash denied — git reset --hard from sub-agent session={session_id}")
+            log_info(f"Bash denied — git reset --hard from sub-agent session={session_id!r}")
             return deny_with_reason(reason)
 
         if not file_targets:
@@ -842,13 +881,13 @@ def _validate_bash_destructive_git(payload: dict) -> "dict | None":
                 "If an AC is failing, STOP and report the broken AC in your final return — "
                 "do not attempt to revert or clean files outside your card's scope."
             )
-            log_info(f"Bash denied — destructive git op (no file target) from sub-agent session={session_id}")
+            log_info(f"Bash denied — destructive git op (no file target) from sub-agent session={session_id!r}")
             return deny_with_reason(reason)
 
         # Check each file against editFiles
         if card_info is None:
             # Could not fetch card info — fail open (do not block)
-            log_error(f"Could not fetch card for session={session_id} — skipping destructive git check")
+            log_error(f"Could not fetch card for session={session_id!r} — skipping destructive git check")
             return None
 
         card_num, edit_files = card_info
@@ -864,7 +903,7 @@ def _validate_bash_destructive_git(payload: dict) -> "dict | None":
                 "If an AC is failing because of this file's state, STOP and report the broken AC in your "
                 "final return — do not revert files outside your card's scope."
             )
-            log_info(f"Bash denied — destructive git op on {file_targets}, card #{card_num} has no editFiles, session={session_id}")
+            log_info(f"Bash denied — destructive git op on {file_targets}, card #{card_num} has no editFiles, session={session_id!r}")
             return deny_with_reason(reason)
 
         out_of_scope = [
@@ -881,7 +920,7 @@ def _validate_bash_destructive_git(payload: dict) -> "dict | None":
                 "If an AC is failing because of this file's state, STOP and report the broken AC in your "
                 "final return — do not revert files outside your card's scope."
             )
-            log_info(f"Bash denied — destructive git op on out-of-scope files {out_of_scope}, card #{card_num}, session={session_id}")
+            log_info(f"Bash denied — destructive git op on out-of-scope files {out_of_scope}, card #{card_num}, session={session_id!r}")
             return deny_with_reason(reason)
 
     return None  # All checks passed — allow

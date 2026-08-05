@@ -153,6 +153,28 @@ _KANBAN_CRITERIA_BASH: re.Pattern[str] = re.compile(
 
 _LOG_MAX_BYTES = 10 * 1024 * 1024  # 10 MB cap before rotation
 
+# Hard ceiling on the length of a SINGLE log_error() message, applied before
+# it is written to disk. Distinct from the other two length-related limits
+# in this file: _LOG_MAX_BYTES (above) rotates the WHOLE FILE once its total
+# size crosses a threshold; _AUTO_ATTEMPT_MAX_OUTPUT_CHARS (near
+# _truncate_output, below) caps relayed subprocess stdout/stderr text. This
+# one caps a single log LINE. Without it, one pathological interpolated
+# value (e.g. an oversized cwd or a large nested payload field logged via
+# !r) can produce a single line large enough that
+# hook-error-digest-hook.py's PER_RUN_LINE_CAP (a per-run *line-count* cap,
+# not a byte cap — see that module's CAPS section) re-reads the same
+# enormous line, whole, on every digest run until the next rotation.
+#
+# Applied universally inside log_error() below (every call site), not just
+# the diagnostic-fields call site that surfaced the gap (card #3384, see
+# .scratchpad/review-payload-security.md § 3). The same unbounded pattern
+# was already accepted for `transcript_path` at this file's oldest
+# log_error() call site (line ~1413) before this change — capping only the
+# newly-added fields would draw an arbitrary line between "old" and "new"
+# interpolated content on the exact same message. Capping once, inside
+# log_error(), fixes the whole class consistently.
+_LOG_MAX_LINE_CHARS = 4000
+
 
 def _rotate_log_if_needed(path: Path) -> None:
     """Rotate path → path.1 when the file exceeds _LOG_MAX_BYTES. Never raises."""
@@ -164,18 +186,56 @@ def _rotate_log_if_needed(path: Path) -> None:
         pass
 
 
+def _truncate_log_line(message: str) -> str:
+    """Truncate a log_error() message to _LOG_MAX_LINE_CHARS.
+
+    Appends an elision marker with the original length — same shape as
+    _truncate_output/_truncate_intent below — so a reader of the log knows
+    the message was cut rather than assuming it is complete.
+
+    Truncates the TAIL (keeps the first _LOG_MAX_LINE_CHARS characters).
+    This is safe for hook-error-digest-hook.py's classification for five of
+    the six _HOT_LOG_CLASSIFIERS patterns: each of those five matches text at
+    or very near the START of the message — e.g. the "transcript-path-missing"
+    classifier matches "non-empty transcript_path that does not exist", the
+    fixed preamble text this file writes BEFORE the appended session_id/
+    agent_id/agent_type/cwd/tool_use_id fields (kanban-subagent-stop-hook.py:
+    1413-1414, hook-error-digest-hook.py:154) — so cutting the tail never
+    removes the anchor phrase those classifiers search for.
+
+    Known exception: "kanban-command-timeout"
+    (hook-error-digest-hook.py:159, r"kanban .+ timed out after \\d+s") anchors
+    on a SUFFIX — "timed out after Ns" — that comes AFTER the unbounded
+    `' '.join(args)` field in this file's `f"kanban {' '.join(args)} timed out
+    after {timeout}s"` message (kanban-subagent-stop-hook.py:965). If that
+    joined `args` string ever grew past ~3990 characters, tail-truncation
+    would cut the required suffix away and this entry would fall through to
+    the generic fallback classifier instead of matching
+    "kanban-command-timeout". Not currently reachable: every run_kanban()
+    call site in this file passes a short, bounded argument list (subcommand
+    name, card number, --session, session name), never free-text content —
+    but this is an unenforced invariant, not a structural guarantee.
+    """
+    if len(message) <= _LOG_MAX_LINE_CHARS:
+        return message
+    return message[:_LOG_MAX_LINE_CHARS] + f"... [truncated, {len(message)} chars total]"
+
+
 def log_error(message: str) -> None:
     """Append an error to the hook error log. Never raises.
 
     Rotates the log file to <path>.1 when it exceeds _LOG_MAX_BYTES,
-    then starts a fresh file (one backup generation kept).
+    then starts a fresh file (one backup generation kept). The message
+    itself is capped to _LOG_MAX_LINE_CHARS before being written — see
+    _truncate_log_line.
     """
     try:
         ERROR_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         _rotate_log_if_needed(ERROR_LOG_PATH)
         timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+        capped_message = _truncate_log_line(message)
         with open(ERROR_LOG_PATH, "a", encoding="utf-8") as fh:
-            fh.write(f"[{timestamp}] {message}\n")
+            fh.write(f"[{timestamp}] {capped_message}\n")
     except Exception:
         pass
 

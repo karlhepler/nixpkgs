@@ -1936,3 +1936,124 @@ class TestStuckCriterionWarningWiring:
         assert len(logged_warnings) == 0, (
             f"Expected no WARNING for first failure, got: {logged_warnings}"
         )
+
+
+# ---------------------------------------------------------------------------
+# log_error() per-line length cap (card #3384)
+# ---------------------------------------------------------------------------
+
+_DIGEST_HOOK_PATH = Path(__file__).parent.parent / "hook-error-digest-hook.py"
+
+
+def load_digest_hook():
+    """Import hook-error-digest-hook.py as a module, for classifier reuse.
+
+    Used only to verify a truncated log_error() line still lands in the same
+    classifier bucket as its untruncated counterpart -- see
+    TestLogErrorLineCap.test_capped_line_still_classifiable_by_digest_hook.
+    """
+    spec = importlib.util.spec_from_file_location("hook_error_digest_hook", _DIGEST_HOOK_PATH)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class TestLogErrorLineCap:
+    """log_error() caps a single message to _LOG_MAX_LINE_CHARS before writing.
+
+    Guards against one pathological interpolated value (e.g. an oversized
+    cwd) producing a single log line large enough for
+    hook-error-digest-hook.py's PER_RUN_LINE_CAP (a line-COUNT cap, not a
+    byte cap) to re-read whole on every digest run until rotation.
+    """
+
+    def test_log_error_caps_overlong_line(self, hook, tmp_path, monkeypatch):
+        """An over-long log_error() message is truncated on disk, with an
+        elision marker naming the original length -- and the assertion is
+        shown to discriminate: the tail marker is reconstructed here, in the
+        test's own scope, and its ABSENCE from the on-disk line is what is
+        asserted. If the cap were not applied, the tail marker (part of the
+        message's un-capped tail) would end up in the file and this
+        assertion would fail -- without ever removing the cap from the hook
+        itself.
+        """
+        log_path = tmp_path / "overlong-error.log"
+        monkeypatch.setattr(hook, "ERROR_LOG_PATH", log_path)
+
+        # Shape mirrors the real diagnostic-fields call site
+        # (kanban-subagent-stop-hook.py:1413-1424 as of this change): a fixed
+        # preamble, followed by a pathologically long interpolated field (a
+        # giant cwd value), ending in a marker that only survives on disk if
+        # no truncation is applied at all.
+        unique_tail_marker = "UNIQUE_TAIL_MARKER_zzz999"
+        oversized_cwd = "A" * (hook._LOG_MAX_LINE_CHARS + 500)
+        message = (
+            "SubagentStop received a non-empty transcript_path that does not "
+            "exist on disk: '/tmp/x.jsonl'. "
+            f"cwd={oversized_cwd!r} "
+            f"{unique_tail_marker}"
+        )
+        # Precondition: the message genuinely exceeds the cap, and genuinely
+        # contains the tail marker -- otherwise this test proves nothing.
+        assert len(message) > hook._LOG_MAX_LINE_CHARS, (
+            "Precondition failed: message must exceed _LOG_MAX_LINE_CHARS "
+            "for this test to exercise truncation at all."
+        )
+        assert unique_tail_marker in message
+
+        hook.log_error(message)
+
+        logged = log_path.read_text(encoding="utf-8")
+
+        assert unique_tail_marker not in logged, (
+            "Expected the tail marker to be truncated away. Its presence "
+            "would mean log_error() wrote the message uncapped -- this is "
+            "the exact condition that would make this assertion fail if the "
+            "cap were removed."
+        )
+        assert "truncated" in logged and str(len(message)) in logged, (
+            f"Expected an elision marker naming the original message length "
+            f"({len(message)}). Got: {logged!r}"
+        )
+
+    def test_capped_line_still_classifiable_by_digest_hook(self, hook, tmp_path, monkeypatch):
+        """A truncated line must still land in the SAME digest classifier
+        bucket as its untruncated counterpart.
+
+        hook-error-digest-hook.py's _HOT_LOG_CLASSIFIERS[0]
+        ("transcript-path-missing", matched against
+        "non-empty transcript_path that does not exist" --
+        hook-error-digest-hook.py:154) matches the fixed preamble text this
+        hook writes BEFORE any of the appended, potentially-long fields
+        (kanban-subagent-stop-hook.py:1413-1414) -- so truncating the TAIL
+        of an over-long message must not change the classification.
+        """
+        log_path = tmp_path / "classify-error.log"
+        monkeypatch.setattr(hook, "ERROR_LOG_PATH", log_path)
+
+        oversized_cwd = "B" * (hook._LOG_MAX_LINE_CHARS + 1000)
+        message = (
+            "SubagentStop received a non-empty transcript_path that does not "
+            "exist on disk: '/tmp/y.jsonl'. session_id='sess' agent_id='' "
+            f"agent_type='' cwd={oversized_cwd!r} tool_use_id=''"
+        )
+        assert len(message) > hook._LOG_MAX_LINE_CHARS, (
+            "Precondition failed: message must exceed _LOG_MAX_LINE_CHARS "
+            "for this test to exercise truncation at all."
+        )
+
+        hook.log_error(message)
+        logged_line = log_path.read_text(encoding="utf-8").splitlines()[0]
+        assert "truncated" in logged_line, (
+            "Precondition failed: expected the written line to actually be "
+            "truncated (i.e. shorter than the original message) for this "
+            "classifiability check to be meaningful."
+        )
+
+        digest_hook = load_digest_hook()
+        classify = digest_hook.make_log_classifier(digest_hook._HOT_LOG_CLASSIFIERS)
+        assert classify(logged_line) == "transcript-path-missing", (
+            f"Expected the truncated line to still classify as "
+            f"'transcript-path-missing'. Got a different classification for: "
+            f"{logged_line[:120]!r}"
+        )
