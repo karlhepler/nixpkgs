@@ -1182,39 +1182,22 @@ Five heuristics for context-efficient briefs:
 
 #### Lifecycle endpoint discipline
 
-**Rule:** When a brief ends with a `/smithers` handoff or a "ready for /smithers" signal, enumerate EVERY discrete step explicitly. Compound phrasing like "commit, push, and report done so I can fire /smithers" is interpreted by sessions as ending at push — they will not run `gh pr create --draft` unless told to. `/smithers` will then fail without a PR to operate on.
+**Rule:** When a brief ends with a `smithers` handoff or a "ready for smithers" signal, enumerate EVERY discrete step explicitly. Compound phrasing like "commit, push, and report done so I can fire smithers" is interpreted by sessions as ending at push — they will not run `gh pr create --draft` unless told to. `smithers` will then fail without a PR to operate on.
 
 **Scope boundary (reconciliation with § Hard Rule 12):** The steps below belong in the brief to the Staff session — they are for the Staff session to execute in its own worktree. sstaff does NOT run `gh pr create` directly; per § Hard Rule 12 (Zero Raw Mutating Git Operations from the Coordinator), `gh pr create` is delegated to Staff sessions via the brief. § Hard Rule 12 prohibits sstaff from running mutating gh commands; it does not prohibit sstaff from authoring a brief that instructs a Staff session to run them.
 
-Required brief shape for /smithers handoffs (the Staff session executes these steps in its own worktree):
+Required brief shape for smithers handoffs (the Staff session executes these steps in its own worktree):
 
 1. Commit
 2. Push
 3. **Open a draft PR via `gh pr create --draft ...`** (per global CLAUDE.md PR Creation policy, all PRs MUST be created in draft mode) — name this step explicitly; do NOT assume push implies PR creation
 4. Report the PR number back
 
-**Anti-pattern:** `"commit, push, and report done so I can fire /smithers"` — the "done" verb is ambiguous; sessions interpret it as "pushed."
+**Anti-pattern:** `"commit, push, and report done so I can fire smithers"` — the "done" verb is ambiguous; sessions interpret it as "pushed."
 
-**Correct:** `"commit, push, open a draft PR (`gh pr create --draft`), then report the PR number — I will fire /smithers from there."`
+**Correct:** `"commit, push, open a draft PR (`gh pr create --draft`), then report the PR number — I will fire smithers from there."`
 
-The root cause is that push and PR creation are separate `gh` CLI invocations. Nothing in `git push` opens a PR. Any brief that collapses them into a compound "push and report done" will produce a pushed branch with no PR — and `/smithers` cannot operate on it.
-
-**Ownership-claim warning (autonomous-tool context):** When the brief will later be driven by an autonomous tool such as /smithers, avoid ownership-claim phrasing — phrases where the coordinator asserts possession of the next action (`"I handle X from there"`, `"I'll take it from here"`, `"it's mine from here"`). An autonomous classifier reading the pane interprets such ownership-claim phrases as a standing prohibition against that tool's documented actions (CI babysit, undraft, bot-comment handling) — even though the phrase was intended only to tell the Staff session not to self-invoke coordinator-level actions.
-
-The distinction is the verb, not the locator `"from there"`:
-
-- ❌ `"I handle the PR-watch from there."` — coordinator **claims ownership** of the action; an autonomous classifier reads this as a user prohibition against the tool acting.
-- ✅ `"I will fire /smithers from there."` — names the tool invocation; this is an authorization, not a prohibition. The `"from there"` locator is fine; the ownership-claim verb (`"I handle X"`, `"I'll take it"`, `"it's mine"`) is the problem.
-
-**Safe alternative:** Phrase the handoff by naming the tool invocation rather than claiming coordinator ownership. Instead of:
-
-❌ `"commit, push, open a draft PR (\`gh pr create --draft\`), and report the PR number back to me. I handle the PR-watch from there."`
-
-Use:
-
-✅ `"commit, push, open a draft PR (\`gh pr create --draft\`), then report the PR number — I will fire /smithers from there."`
-
-The Staff session's scope boundary (don't self-invoke coordinator actions) is implied by the explicit enumeration of steps. Avoid ownership-claim clauses (`"I handle X"`, `"I'll take it from here"`) in briefs an autonomous tool will read; locator phrases that name the tool invocation (`"I will fire /smithers from there"`) are fine.
+The root cause is that push and PR creation are separate `gh` CLI invocations. Nothing in `git push` opens a PR. Any brief that collapses them into a compound "push and report done" will produce a pushed branch with no PR — and `smithers` cannot operate on it.
 
 #### Treat staff as a parallel coordinator, not a senior engineer
 
@@ -1666,22 +1649,22 @@ The new session is named with a version suffix or a fresh descriptive name — n
 
 ### Winding Down Sessions
 
-When a session's work is complete, choose the wind-down path based on whether `/smithers` is the next step:
+When a session's work is complete, choose the wind-down path based on whether `smithers` is the next step:
 
 For the timing trigger — specifically, when to reach the wind-down step (PR-merge as the canonical signal) — see § One PR = one dismiss above. This section owns the HOW for single-PR sessions; for sessions that touched multiple PRs, see § One PR = one dismiss above for the audit-before-dismiss and watcher-spawn protocol.
 
-**Standard wind-down (no /smithers handoff):**
+**Standard wind-down (no smithers handoff):**
 
 1. `crew tell <window> "Work is complete. Commit your changes, push, and summarize what you shipped."`
 2. `crew read <window>` to confirm the session has finished
 3. `crew dismiss <window>` to clean up the tmux window (see § crew dismiss — Mandatory post-completion dismiss)
 4. Inform the user: "The auth session finished. [summary of what shipped] — dismissed."
 
-**When /smithers is the next step (PR-required handoff):** Do NOT use the standard wind-down tell above — it does not include PR creation and `/smithers` will fail without a PR. Use the lifecycle endpoint pattern instead:
+**When smithers is the next step (PR-required handoff):** Do NOT use the standard wind-down tell above — it does not include PR creation and `smithers` will fail without a PR. Use the lifecycle endpoint pattern instead:
 
-1. `crew tell <window> "Work is complete. Commit, push, open a draft PR via \`gh pr create --draft\`, and report the PR number — I will fire /smithers from there."`
+1. `crew tell <window> "Work is complete. Commit, push, open a draft PR via \`gh pr create --draft\`, and report the PR number — I will fire smithers from there."`
 2. `crew read <window>` to confirm the PR number is reported back
-3. Invoke `/smithers` via `crew tell <window> "/smithers <pr_num>"` (see § PR-review workflow below)
+3. Run `crew smithers <window>` directly against the PR's owning window — never relayed via `crew tell` (see § PR-review workflow below)
 
 See § Lifecycle endpoint discipline for the full brief shape and anti-patterns.
 
