@@ -411,6 +411,10 @@ $orphan_warning"
       flakeIgnore = [ "E265" "E501" "W503" "W504" ];
     } (builtins.readFile ./senior-staff-cron-hook.py);
 
+    hook-error-digest-hook = pkgs.writers.writePython3Bin "hook-error-digest-hook" {
+      flakeIgnore = [ "E265" "E501" "W503" "W504" ];
+    } (builtins.readFile ./hook-error-digest-hook.py);
+
     crew-lifecycle-hook = pkgs.writers.writePython3Bin "crew-lifecycle-hook" {
       flakeIgnore = [ "E265" "E501" "W503" "W504" ];
     } (builtins.readFile ./crew-lifecycle-hook.py);
@@ -1141,6 +1145,16 @@ $orphan_warning"
                 type = "command";
                 timeout = 5000;
                 command = "${shellapps.skill-autoload-hook}/bin/skill-autoload-hook";
+              }
+              {
+                # Aggregates the four hook error logs under ~/.claude/metrics/ into
+                # a short ranked digest so a latent failure class announces itself
+                # instead of accumulating silently. Fails open: no stdout, exit 0
+                # on error or when there is nothing to report. Independent timeout
+                # since this is a standalone additive concern (see card #3335).
+                type = "command";
+                timeout = 10000;
+                command = "${shellapps.hook-error-digest-hook}/bin/hook-error-digest-hook";
               }
             ];
           }];
