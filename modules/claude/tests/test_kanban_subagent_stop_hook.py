@@ -76,6 +76,19 @@ def _isolate_hook_log_paths(hook, tmp_path, monkeypatch):
     monkeypatch.setattr(hook, "INFO_LOG_PATH", tmp_path / "isolated-info.log")
 
 
+@pytest.fixture(autouse=True)
+def _no_real_self_heal_sleep(hook, monkeypatch):
+    """Card #3446: the SELF-HEAL recheck (process_subagent_stop's
+    missing-transcript-path + cards-in-doing branch) calls
+    `_self_heal_sleep(_SELF_HEAL_RECHECK_DELAY_SECONDS)` before re-reading
+    board state. Patched to a no-op for every test in this module (not just
+    the tests that specifically exercise the recheck) so that pre-existing
+    tests exercising that branch (e.g. TestMissingTranscriptPathSurfacing's
+    stranding-risk tests) do not incur a real multi-second sleep, and so no
+    test in this suite ever sleeps in real time for this reason."""
+    monkeypatch.setattr(hook, "_self_heal_sleep", lambda delay_seconds: None)
+
+
 # ---------------------------------------------------------------------------
 # Helpers to assert decision outcomes
 # ---------------------------------------------------------------------------
@@ -1068,6 +1081,177 @@ class TestMissingTranscriptPathSurfacing:
             f"successfully-parsed board read. Got calls: "
             f"{mock_info.call_args_list!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Card #3446: SELF-HEAL recheck for the missing-transcript-path branch.
+#
+# The `elif cards_in_doing:` branch above now re-reads board state a short,
+# bounded delay after the first check (via `_self_heal_sleep`, patched to a
+# no-op for this whole test module by `_no_real_self_heal_sleep` above).
+# This mechanism is DISTINCT from the unrelated `recheck` helpers inside
+# detect_criteria_gaming's anti-gaming detection elsewhere in the hook — do
+# not conflate the two names.
+# ---------------------------------------------------------------------------
+
+class TestSelfHealRecheck:
+    """A phantom missing-transcript-path event that later SELF-HEALS (the
+    named card reaches 'done' via a separate, real SubagentStop event
+    before the recheck fires) downgrades to INFO. One that does NOT
+    self-heal stays ERROR — that is the regression this class exists to
+    guard against. See .scratchpad/transcript-missing-agentid-ledger.md
+    Q2 for the traced evidence motivating this recheck."""
+
+    @staticmethod
+    def _fake_list_doing_sequence(sequences: list[list[str]]):
+        """Like TestMissingTranscriptPathSurfacing._fake_list_doing, but
+        returns a DIFFERENT set of 'doing' card numbers on each successive
+        `kanban list --column doing ...` call, following `sequences` in
+        call order (repeating the final entry if called more times than
+        provided). This simulates the SELF-HEAL recheck: the first check
+        finds a card in 'doing'; the second (recheck) call finds it gone
+        (self-heal) or still there (does not self-heal)."""
+        call_count = {"n": 0}
+
+        def fake_subprocess_run(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd[0] == "kanban" and len(cmd) > 1 and cmd[1] == "list":
+                idx = min(call_count["n"], len(sequences) - 1)
+                card_nums = sequences[idx]
+                call_count["n"] += 1
+                cards_xml = "".join(
+                    f'<c n="{n}" ses="fake-session" s="doing"><i></i><e></e></c>' for n in card_nums
+                )
+                return KanbanMockResponses.success(
+                    stdout=f'<board session="fake-session"><mine>{cards_xml}</mine></board>'
+                )
+            return KanbanMockResponses.success()
+
+        return fake_subprocess_run
+
+    def test_self_heal_downgrades_to_info(self, hook):
+        """Card #91 is in 'doing' at the first check; the recheck finds no
+        card in 'doing' at all (it reached 'done' in the meantime, via a
+        separate real SubagentStop event) — downgraded to INFO, log_error
+        NOT called."""
+        payload = make_stop_payload(transcript_path="/tmp/does-not-exist-selfheal-xyz.jsonl")
+
+        with patch.object(hook, "log_error") as mock_error:
+            with patch.object(hook, "log_info") as mock_info:
+                with patch(
+                    "subprocess.run",
+                    side_effect=self._fake_list_doing_sequence([["91"], []]),
+                ):
+                    result = hook.process_subagent_stop(payload)
+
+        assert_allow(result)
+        assert mock_error.call_count == 0, (
+            f"Expected log_error NOT to be called once the recheck finds no "
+            f"card still in 'doing' (self-heal). Got: {mock_error.call_args_list}"
+        )
+        assert mock_info.call_count >= 1, "Expected log_info for the self-heal downgrade."
+        logged_messages = " ".join(str(call.args[0]) for call in mock_info.call_args_list)
+        assert "self-heal" in logged_messages.lower(), (
+            f"Expected self-heal wording in the downgraded log_info message. "
+            f"Got: {logged_messages!r}"
+        )
+        assert "#91" in logged_messages, (
+            f"Expected the originally-named card in the self-heal message. "
+            f"Got: {logged_messages!r}"
+        )
+
+    def test_does_not_self_heal_stays_error(self, hook):
+        """Card #92 is in 'doing' at the first check AND still in 'doing'
+        at the recheck (no self-healing second event followed) — stays
+        ERROR, with wording explicitly stating the occurrence does not
+        self-heal. This is the regression case the note explicitly warns
+        against: a blanket downgrade would silence a genuine stranding
+        like #3322/#3337."""
+        payload = make_stop_payload(transcript_path="/tmp/does-not-exist-nohealthere-xyz.jsonl")
+
+        with patch.object(hook, "log_error") as mock_error:
+            with patch.object(hook, "log_info"):
+                with patch(
+                    "subprocess.run",
+                    side_effect=self._fake_list_doing_sequence([["92"], ["92"]]),
+                ):
+                    result = hook.process_subagent_stop(payload)
+
+        assert_allow(result)
+        assert mock_error.call_count >= 1, (
+            "Expected log_error to stay when the recheck still finds the "
+            "card in 'doing' (does not self-heal)."
+        )
+        logged_messages = " ".join(str(call.args[0]) for call in mock_error.call_args_list)
+        assert "#92" in logged_messages, (
+            f"Expected the still-in-doing card named in the ERROR message. "
+            f"Got: {logged_messages!r}"
+        )
+        assert "does not self-heal" in logged_messages.lower(), (
+            f"Expected 'does not self-heal' wording in the still-ERROR "
+            f"message. Got: {logged_messages!r}"
+        )
+
+    def test_board_read_failure_on_recheck_fails_open_to_error(self, hook):
+        """If the recheck's own board read fails/times out, the recheck
+        cannot confirm self-heal — fail open and keep ERROR, naming the
+        originally-found card(s), rather than silently treating an
+        untrustworthy recheck as evidence of healing."""
+        payload = make_stop_payload(transcript_path="/tmp/does-not-exist-recheckfail-xyz.jsonl")
+
+        call_count = {"n": 0}
+
+        def fake_subprocess_run(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd[0] == "kanban" and len(cmd) > 1 and cmd[1] == "list":
+                call_count["n"] += 1
+                if call_count["n"] == 1:
+                    return KanbanMockResponses.success(
+                        stdout='<board session="fake-session"><mine>'
+                        '<c n="93" ses="fake-session" s="doing"><i></i><e></e></c>'
+                        '</mine></board>'
+                    )
+                return KanbanMockResponses.failure(stderr="kanban: board read failed", returncode=1)
+            return KanbanMockResponses.success()
+
+        with patch.object(hook, "log_error") as mock_error:
+            with patch.object(hook, "log_info"):
+                with patch("subprocess.run", side_effect=fake_subprocess_run):
+                    result = hook.process_subagent_stop(payload)
+
+        assert_allow(result)
+        assert mock_error.call_count >= 1, (
+            "Expected log_error to be called (fail-open) when the recheck's "
+            "own board read fails."
+        )
+        logged_messages = " ".join(str(call.args[0]) for call in mock_error.call_args_list)
+        assert "#93" in logged_messages, (
+            f"Expected the originally-found card named in the fail-open "
+            f"ERROR message. Got: {logged_messages!r}"
+        )
+
+    def test_self_heal_sleep_invoked_with_configured_delay(self, hook):
+        """Regression guard, NOT a discriminator: `_self_heal_sleep(...)`
+        is called in the recheck branch in pre-change code too, so this
+        test passes identically before and after this card's changes —
+        see .scratchpad/selfheal-followup-demo.md for the honest
+        discrimination analysis. What it DOES guard: a future edit that
+        silently deletes the `_self_heal_sleep(_SELF_HEAL_RECHECK_DELAY_
+        SECONDS)` call while leaving the rest of the recheck logic intact
+        would otherwise pass the entire suite unnoticed, since the
+        autouse `_no_real_self_heal_sleep` fixture only patches the seam
+        to a no-op — it never asserts the seam is actually called."""
+        payload = make_stop_payload(transcript_path="/tmp/does-not-exist-sleepcheck-xyz.jsonl")
+
+        with patch.object(hook, "log_error"):
+            with patch.object(hook, "log_info"):
+                with patch.object(hook, "_self_heal_sleep") as mock_sleep:
+                    with patch(
+                        "subprocess.run",
+                        side_effect=self._fake_list_doing_sequence([["94"], []]),
+                    ):
+                        result = hook.process_subagent_stop(payload)
+
+        assert_allow(result)
+        mock_sleep.assert_called_once_with(hook._SELF_HEAL_RECHECK_DELAY_SECONDS)
 
 
 # ---------------------------------------------------------------------------

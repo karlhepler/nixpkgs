@@ -1529,6 +1529,115 @@ def cards_in_doing_for_session(session_id: str) -> list[str] | None:
 
 
 # ---------------------------------------------------------------------------
+# SELF-HEAL recheck for the missing-transcript-path discriminator
+# ---------------------------------------------------------------------------
+#
+# NOTE ON NAMING: "recheck" already appears elsewhere in this file (inside
+# detect_criteria_gaming's anti-gaming detection, ~line 609-727) — that is
+# an entirely unrelated mechanism (re-verifying criteria state to catch
+# gaming). The SELF-HEAL recheck below is named distinctly (self_heal_*,
+# SELF_HEAL_*) specifically so a future reader cannot confuse the two.
+#
+# Investigation: .scratchpad/transcript-missing-agentid-ledger.md (card
+# #3432). Q2's verdict: six ERROR-logged occurrences that named cards
+# #3429/#3430/#3431 as "in doing, may be stranded" were all six, in fact,
+# safely completed seconds-to-minutes later by a SEPARATE, real SubagentStop
+# event for the actual working agent — a self-healing phantom. But that
+# six-for-six outcome is empirical, not structural: cards #3322 and #3337
+# (same investigation, Q2) are documented cases where the identical
+# discriminator state (transcript missing, card in doing) did NOT self-heal
+# and required manual recovery. This recheck distinguishes the two instead
+# of assuming either outcome.
+
+# Bounded delay before the SELF-HEAL recheck fires. Chosen from the
+# ledger's own timing evidence (Q2): the fast self-healing cases (#3429
+# ~1-2s, #3430 ~5s exactly — phantom 21:25:27Z to real 21:25:32Z — after
+# the phantom event) are the cases this recheck exists to catch; the slow
+# case (#3431, ~5-6 minutes later) is deliberately NOT caught by any delay
+# this hook can afford to block on synchronously, and will still report
+# ERROR once — a false negative (one extra, later-superseded-in-spirit
+# ERROR line) is the safer failure direction than a false positive that
+# could silence a genuine, non-self-healing stranding (#3322, #3337).
+#
+# The constant below is 8.0s, not the #3430 delta's literal ~5s: a value
+# equal to the motivating evidence sits exactly ON the boundary of the one
+# case it exists to catch, so any fraction of a second of the hook's own
+# dispatch/processing overhead beyond the raw sleep could still miss it.
+# 8.0s gives the #3430-shaped case (~5s) a ~3s margin without chasing the
+# #3431-shaped multi-minute case, which stays out of scope by design (see
+# above). This margin is cheap: the branch this delay gates fires on
+# ~1.7% of all SubagentStop events, averaging ~1.9 times/day on this
+# machine (measured over 141 days of production logs — see
+# .scratchpad/3446-review-ai-expert.md Q1) — added latency on an
+# already-rare, already-anomalous branch.
+#
+# Worst-case synchronous latency for this branch: the first board read
+# (cards_in_doing_for_session, whose own subprocess call bounds at 10
+# seconds) can block up to 10s, this delay adds up to 8.0s, and the
+# recheck's board read (same function, same 10-second bound) can block
+# up to another 10s — a pathological worst case of ~28s if both reads
+# individually time out. This only compounds
+# an already-rare (~1.7% of events) and already-degraded case (the first
+# board read timing out at all is itself anomalous); a future reader
+# raising this constant further should recompute this sum.
+#
+# This delay only ever runs on the already-anomalous branch (non-empty
+# transcript_path missing from disk AND at least one card in 'doing') —
+# never on the fast/happy path the overwhelming majority of SubagentStop
+# events take.
+#
+# Known residual race (not fixed — narrow and low-probability under
+# single-operator use, and closing it would cost more than the race):
+# if the SAME session's card is moved out of 'doing' and back into
+# 'doing' again within this delay window (e.g. an operator churns the
+# card, or a documented manual `kanban done`/`kanban cancel` recovery
+# runs mid-window), the recheck can see it absent at recheck time and
+# report SELF-HEAL even though it is back in 'doing' a moment later.
+# Cross-session corruption is structurally closed — the `--session`
+# flag buckets the board and cards_in_doing_for_session reads only the
+# `<mine>` bucket — so this residual race is same-session churn only.
+_SELF_HEAL_RECHECK_DELAY_SECONDS = 8.0
+
+
+def _self_heal_sleep(delay_seconds: float) -> None:
+    """Isolated seam around the SELF-HEAL recheck's delay.
+
+    Production calls real time.sleep(). Tests monkeypatch this function
+    directly (rather than patching the stdlib time module globally) so the
+    recheck delay never actually blocks the test suite in real time.
+
+    Note: this is a fixed-duration sleep, not an elapsed-time-bounded wait
+    loop, so the open question tracked on card #3435 (session sweet-otter)
+    about whether CPython's time.monotonic() advances during macOS
+    sleep/suspend does not bear on this delay directly — this function does
+    not measure elapsed time against a budget, it simply waits a fixed
+    amount before the caller re-reads board state. Resolving that open
+    question is out of scope here; see card #3435, not this hook, for it.
+    """
+    time.sleep(delay_seconds)
+
+
+def self_heal_recheck_note(transcript_path: str) -> str:
+    """Describe whether the transcript's absence looks like a delayed
+    write (a flush/move RACE) or a permanent absence (NEVER EXISTED), by
+    re-stat'ing the same path the first check already found missing.
+
+    These are different causes with different fixes, and previously
+    produced identical log lines regardless of which was true. Called only
+    from the SELF-HEAL recheck branch, after the bounded delay above.
+    """
+    if os.path.exists(transcript_path):
+        return (
+            "the transcript now exists on disk (written late — a "
+            "flush/move race, not a permanent absence)"
+        )
+    return (
+        "the transcript still does not exist on disk (never existed — "
+        "not a timing race)"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Main hook logic
 # ---------------------------------------------------------------------------
 
@@ -1600,25 +1709,77 @@ def process_subagent_stop(payload: dict) -> dict:
             )
         elif cards_in_doing:
             # One or more cards ARE in 'doing' for this session — one of
-            # them may genuinely be the card this stop belonged to. Keep
-            # ERROR and name the card(s) so the reader has something
-            # concrete to check.
-            card_list = ", ".join(f"#{c}" for c in cards_in_doing)
-            log_error(
-                f"SubagentStop received a non-empty transcript_path that does not "
-                f"exist on disk: {transcript_path!r}. The card this stop belonged "
-                f"to could not be identified, so kanban done was never attempted. "
-                f"Session {session_id_for_check!r} has card(s) {card_list} in "
-                f"'doing' right now — one of these may be silently stranded by "
-                f"this event. This may indicate a race (transcript not yet "
-                f"flushed/moved to its final path) or a stale/incorrect path "
-                f"from the daemon. "
-                f"session_id={payload.get('session_id', '')!r} "
-                f"agent_id={payload.get('agent_id', '')!r} "
-                f"agent_type={payload.get('agent_type', '')!r} "
-                f"cwd={payload.get('cwd', '')!r} "
-                f"tool_use_id={payload.get('tool_use_id', '')!r}"
-            )
+            # them may genuinely be the card this stop belonged to. Before
+            # finalizing the log level, run a SELF-HEAL recheck: most of
+            # these events turn out to be phantoms that self-heal via a
+            # separate, real SubagentStop event completing the card
+            # seconds-to-minutes later (see the SELF-HEAL recheck section
+            # above and .scratchpad/transcript-missing-agentid-ledger.md
+            # Q2). A card that has since reached 'done' downgrades to INFO;
+            # one that has not stays ERROR — genuine stranding (#3322,
+            # #3337) must keep surfacing at ERROR.
+            _self_heal_sleep(_SELF_HEAL_RECHECK_DELAY_SECONDS)
+            recheck = cards_in_doing_for_session(session_id_for_check)
+            transcript_note = self_heal_recheck_note(transcript_path)
+
+            if recheck is not None:
+                still_in_doing = [c for c in cards_in_doing if c in recheck]
+            else:
+                # Recheck board read itself failed/untrusted — fail open:
+                # cannot confirm self-heal, so treat every originally-named
+                # card as still at risk (same fail-open posture as the
+                # `cards_in_doing is None` branch above).
+                still_in_doing = list(cards_in_doing)
+
+            if not still_in_doing:
+                # SELF-HEAL: every originally-named card is no longer in
+                # 'doing' at recheck time. This is what the recheck actually
+                # observed — it does NOT confirm the mechanism by which the
+                # card(s) left. The absence is consistent with a self-heal
+                # (a separate, real SubagentStop event completing the card
+                # normally) but is not proof of one: a coordinator's manual
+                # `kanban done`/`kanban cancel` rescue — a documented,
+                # actively-used recovery path for this exact defect class,
+                # see .scratchpad/transcript-missing-agentid-ledger.md:34 —
+                # would look identical here. Either way, no card is at risk
+                # from THIS occurrence: a card still in 'doing' always stays
+                # ERROR (see the else branch below).
+                healed_list = ", ".join(f"#{c}" for c in cards_in_doing)
+                log_info(
+                    f"SubagentStop received a non-empty transcript_path that does not "
+                    f"exist on disk: {transcript_path!r}. Card(s) {healed_list} were in "
+                    f"'doing' at first check, but a self-heal recheck "
+                    f"{_SELF_HEAL_RECHECK_DELAY_SECONDS}s later found them "
+                    f"no longer in 'doing' — consistent with a self-heal (a separate "
+                    f"SubagentStop event completing them normally) but not proof of "
+                    f"one; a manual recovery action would look identical. No card "
+                    f"was stranded requiring ERROR-level attention by this occurrence: "
+                    f"{transcript_note}. "
+                    f"session_id={payload.get('session_id', '')!r} "
+                    f"agent_id={payload.get('agent_id', '')!r} "
+                    f"agent_type={payload.get('agent_type', '')!r} "
+                    f"cwd={payload.get('cwd', '')!r} "
+                    f"tool_use_id={payload.get('tool_use_id', '')!r}"
+                )
+            else:
+                card_list = ", ".join(f"#{c}" for c in still_in_doing)
+                log_error(
+                    f"SubagentStop received a non-empty transcript_path that does not "
+                    f"exist on disk: {transcript_path!r}. The card this stop belonged "
+                    f"to could not be identified, so kanban done was never attempted. "
+                    f"Session {session_id_for_check!r} has card(s) {card_list} in "
+                    f"'doing' right now — one of these may be silently stranded by "
+                    f"this event. A self-heal recheck "
+                    f"{_SELF_HEAL_RECHECK_DELAY_SECONDS}s later found this occurrence "
+                    f"does not self-heal: {transcript_note}. This may indicate a race "
+                    f"(transcript not yet flushed/moved to its final path) or a "
+                    f"stale/incorrect path from the daemon. "
+                    f"session_id={payload.get('session_id', '')!r} "
+                    f"agent_id={payload.get('agent_id', '')!r} "
+                    f"agent_type={payload.get('agent_type', '')!r} "
+                    f"cwd={payload.get('cwd', '')!r} "
+                    f"tool_use_id={payload.get('tool_use_id', '')!r}"
+                )
         else:
             # No card for this session is in 'doing' — no card can be
             # stranded by this occurrence. Logged below error level
