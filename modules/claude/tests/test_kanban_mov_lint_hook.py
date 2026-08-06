@@ -212,6 +212,13 @@ class TestUnfailablePipeDetection:
         assert hook_output.get("permissionDecision") == "deny", (
             f"Expected deny, got: {result}"
         )
+        assert "continue" not in result, (
+            "Deny response must not carry a top-level 'continue' key — per "
+            "CLAUDE.md's Tool-Block Recovery policy, a mechanical denial "
+            "must not halt the agent turn; only "
+            "hookSpecificOutput.permissionDecision may deny the single "
+            f"offending call. Got: {result}"
+        )
 
     def test_final_stage_rejection_names_cause_and_fix(self, hook):
         """The deny reason must name the cause (exit code/status discarded)

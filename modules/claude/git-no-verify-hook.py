@@ -13,9 +13,11 @@ Output format (PreToolUse hook):
                             "permissionDecisionReason": "..."}} — block the command
     (exit 0 with no output)                                     — allow (fail open)
 
-A deny response also emits "continue": false, which per the Claude Code hooks
-docs halts the entire agent turn (not just this single tool call) — an
-intentional defense-in-depth hard-stop on a guardrail violation.
+A deny response denies only the offending Bash call — it does not halt the
+surrounding agent turn. This is a prohibition (the bypass action itself is
+forbidden in any form): the agent is expected to stop attempting the bypass
+and report the block in its own final return rather than retry it, but the
+turn itself must remain free to produce that report.
 
 Fails open: any error (JSON parse failure, shlex error, missing fields) results
 in allowing. Never accidentally block innocent commands.
@@ -215,13 +217,12 @@ def _check_subcommand_flags(flags: list[str]) -> bool:
 def deny_with_reason(reason: str) -> dict:
     """Return a permissionDecision=deny response with a reason message.
 
-    stopReason is set at the top level (sibling of continue/hookSpecificOutput)
-    because Claude Code displays it to the USER when continue is false, while
-    permissionDecisionReason is directed at Claude.
+    Only hookSpecificOutput.permissionDecision/permissionDecisionReason are
+    emitted — no top-level turn-halting fields. This is a prohibition denial
+    (see module docstring): it denies just the offending Bash call and leaves
+    the agent's turn free to name the block in its own final return.
     """
     return {
-        "continue": False,
-        "stopReason": reason,
         "suppressOutput": False,
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
@@ -329,8 +330,13 @@ def main() -> None:
     # Block the command
     print(json.dumps(deny_with_reason(
         "git --no-verify / --no-gpg-sign requires explicit user approval per CLAUDE.md. "
-        "Set CLAUDE_NOVERIFY_AUTHORIZED=1 in environment to opt in, "
-        "or remove the flag and fix the underlying hook failure."
+        "This is a prohibition, not a form to correct — there is no retry that "
+        "makes this action permitted. CLAUDE_NOVERIFY_AUTHORIZED=1 is a human-only "
+        "opt-in: only the user may set it in their own environment, typed themselves. "
+        "You must never set it, suggest it be set, or route around this block through "
+        "any other actor. Stop attempting the bypass, diagnose and fix the underlying "
+        "hook failure instead, and report this block in your final return — do not "
+        "attempt any workaround."
     ), separators=(",", ":")))
     sys.exit(0)
 

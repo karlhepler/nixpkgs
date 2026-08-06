@@ -439,7 +439,13 @@ class TestDenyFormatSmokeTest:
 
         assert result is not None, "Expected a deny response, got silent exit (allow)"
 
-        assert result.get("continue") is False
+        # Top-level "continue" must NOT be present — a prohibition denial denies
+        # only the offending Bash call and leaves the agent's turn free to
+        # report the block in its own final return. See CLAUDE.md § Tool-Block
+        # Recovery and modules/claude/bash-cd-compound-hook.py's identical shape.
+        assert "continue" not in result, (
+            f"Top-level 'continue' must not be present: {result}"
+        )
         hook_specific = result.get("hookSpecificOutput")
         assert hook_specific is not None, (
             f"Expected top-level 'hookSpecificOutput' key, got: {result}"
@@ -448,10 +454,10 @@ class TestDenyFormatSmokeTest:
         assert hook_specific.get("permissionDecision") == "deny"
         assert len(hook_specific.get("permissionDecisionReason", "")) > 0
 
-        # Top-level stopReason must be present (user-facing halt message) and
-        # non-empty — see card #2905.
-        assert len(result.get("stopReason", "")) > 0, (
-            f"Expected non-empty top-level stopReason: {result}"
+        # Top-level stopReason must NOT be present — the turn must not be
+        # halted by this hook.
+        assert "stopReason" not in result, (
+            f"Top-level 'stopReason' must not be present: {result}"
         )
 
         assert "decision" not in result

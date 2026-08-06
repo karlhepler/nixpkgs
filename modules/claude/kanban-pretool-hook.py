@@ -1071,14 +1071,18 @@ def allow_with_updated_prompt(original_input: dict, new_prompt: str) -> dict:
 def deny_with_reason(reason: str) -> dict:
     """Return a permissionDecision=deny response with a reason message.
 
-    stopReason is set at the top level (sibling of continue/hookSpecificOutput)
-    because Claude Code displays it to the USER when continue is false, while
-    permissionDecisionReason is directed at Claude. Without stopReason, a deny
-    can halt the turn with a blank/default message to the user.
+    Only hookSpecificOutput.permissionDecision = "deny" (with
+    permissionDecisionReason carrying the message for Claude) is emitted at
+    the top level. Per ~/.claude/CLAUDE.md section "Tool-Block Recovery", a
+    denial is either MECHANICAL (the rejection text names a corrected form of
+    the same action — apply it and retry in the same turn) or a PROHIBITION
+    (the action itself is forbidden in any form, and the agent must stop and
+    report the block in its own final return). Both classes require the
+    agent's turn to survive the denial so it can either retry or emit that
+    report; halting the turn at this hook would make either recovery path
+    structurally impossible, so no turn-halting field is emitted here.
     """
     return {
-        "continue": False,
-        "stopReason": reason,
         "suppressOutput": False,
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",

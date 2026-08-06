@@ -30,14 +30,20 @@ PROHIBITION 2 — shell-wrapper denial:
 Coordinators (main session, no agent_id) are unaffected by either prohibition.
 
 Output format (PreToolUse hook — documented hookSpecificOutput format):
-  {"continue": False, "suppressOutput": False, "hookSpecificOutput": {
+  {"suppressOutput": False, "hookSpecificOutput": {
       "hookEventName": "PreToolUse", "permissionDecision": "deny",
       "permissionDecisionReason": "..."}}  — deny
   (exit 0 with no output)                  — allow (fail open)
 
-A deny response emits "continue": False, which per the Claude Code hooks docs
-halts the entire agent turn (not just this single tool call) — an intentional
-defense-in-depth hard-stop on a guardrail violation.
+A deny response denies only the single offending Bash call. Per the deployed
+global policy at ~/.claude/CLAUDE.md section "Tool-Block Recovery," a denial
+is either MECHANICAL (the rejection message names a corrected form of the
+same action — apply the correction and re-issue it in the same turn) or a
+PROHIBITION (the action itself is forbidden in any form; the sub-agent must
+stop and report the block in its own final return, not attempt a workaround).
+Neither class halts the surrounding agent turn: doing so would make same-turn
+recovery (mechanical) or the sub-agent's own final-return escalation
+(prohibition) structurally impossible.
 
 Fails open: any error (JSON parse failure, empty stdin, shlex error) results in
 allowing. Never accidentally block innocent commands.
@@ -717,13 +723,14 @@ def _deny_response(reason: str) -> dict:
     documented PreToolUse deny shape (hookSpecificOutput.permissionDecision),
     not the legacy top-level {"decision": "block", ...} format.
 
-    stopReason is set at the top level (sibling of continue/hookSpecificOutput)
-    because Claude Code displays it to the USER when continue is false, while
-    permissionDecisionReason is directed at Claude.
+    Deliberately omits the top-level turn-halting pair (see module
+    docstring's "Tool-Block Recovery" reference) — do not re-add it: this denies only the single
+    offending Bash call, leaving the sub-agent's turn free to either retry a
+    corrected form (mechanical) or compose its own "stop and report" final
+    return (prohibition) — both of which a turn-halting response would
+    foreclose.
     """
     return {
-        "continue": False,
-        "stopReason": reason,
         "suppressOutput": False,
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
@@ -744,7 +751,10 @@ def _deny(command: str) -> None:
         "'kanban criteria uncheck'. "
         f"Attempted: {safe_cmd!r}. "
         "The coordinator handles all other lifecycle commands "
-        "(do/start/done/cancel/defer/criteria add/remove)."
+        "(do/start/done/cancel/defer/criteria add/remove). "
+        "This command is blocked in any form — do not attempt a workaround. "
+        "Stop and report this block in your own final return so the "
+        "coordinator can run the needed command instead."
     )
     print(json.dumps(_deny_response(reason), separators=(",", ":")))
 

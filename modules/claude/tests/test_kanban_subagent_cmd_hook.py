@@ -837,7 +837,12 @@ class TestCompositionRootDenyFormat:
         result = run_hook_main(hook, payload)
 
         assert result is not None, "Expected a deny response, got silent exit (allow)"
-        assert result.get("continue") is False
+        assert "continue" not in result, (
+            f"Top-level 'continue' key must not be present — a prohibition "
+            f"denial must not halt the turn; the sub-agent needs the turn "
+            f"to survive so it can report the block in its own final "
+            f"return: {result}"
+        )
         assert "decision" not in result, (
             f"Legacy top-level 'decision' key must not be present: {result}"
         )
@@ -847,10 +852,11 @@ class TestCompositionRootDenyFormat:
         assert hook_output.get("permissionDecision") == "deny"
         assert "kanban done 5" in hook_output.get("permissionDecisionReason", "")
 
-        # Top-level stopReason must be present (user-facing halt message) and
-        # non-empty — see card #2905.
-        assert len(result.get("stopReason", "")) > 0, (
-            f"Expected non-empty top-level stopReason: {result}"
+        # Top-level stopReason must be ABSENT — see card #3490. Emitting it
+        # would set "continue": False, halting the turn before the
+        # sub-agent can compose its own "stop and report" final return.
+        assert "stopReason" not in result, (
+            f"Top-level 'stopReason' key must not be present: {result}"
         )
 
     def test_shell_wrapper_invocation_emits_permission_decision_deny(self, hook):
@@ -862,6 +868,12 @@ class TestCompositionRootDenyFormat:
         result = run_hook_main(hook, payload)
 
         assert result is not None, "Expected a deny response, got silent exit (allow)"
+        assert "continue" not in result, (
+            f"Top-level 'continue' key must not be present — a mechanical "
+            f"denial must not halt the turn; the sub-agent needs the turn "
+            f"to survive so it can retry the corrected form immediately: "
+            f"{result}"
+        )
         assert "decision" not in result, (
             f"Legacy top-level 'decision' key must not be present: {result}"
         )
@@ -872,8 +884,7 @@ class TestCompositionRootDenyFormat:
         reason = hook_output.get("permissionDecisionReason", "")
         assert "shell-wrapper" in reason.lower() or "bash -c" in reason
 
-        # Top-level stopReason must be present (user-facing halt message) and
-        # non-empty — see card #2905.
-        assert len(result.get("stopReason", "")) > 0, (
-            f"Expected non-empty top-level stopReason: {result}"
+        # Top-level stopReason must be ABSENT — see card #3490.
+        assert "stopReason" not in result, (
+            f"Top-level 'stopReason' key must not be present: {result}"
         )

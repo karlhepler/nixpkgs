@@ -868,15 +868,17 @@ class TestResponseStructure:
         # run_in_background=False no longer denies (see TestMissingRunInBackground).
         payload = make_pretool_payload(description="")
         result = run_hook_main(hook, payload)
-        assert result["continue"] is False
+        # No top-level "continue" field — a turn-halting deny would make the
+        # agent's own same-turn recovery (retry or stop-and-report) structurally
+        # impossible. See CLAUDE.md § Tool-Block Recovery and card #3487.
+        assert "continue" not in result
         hook_out = result["hookSpecificOutput"]
         assert hook_out["permissionDecision"] == "deny"
         assert "permissionDecisionReason" in hook_out
 
-        # Top-level stopReason must be present (user-facing halt message) and
-        # non-empty — see card #2905.
-        assert len(result.get("stopReason", "")) > 0, (
-            f"Expected non-empty top-level stopReason: {result}"
+        # Top-level stopReason must be absent — see card #3487.
+        assert "stopReason" not in result, (
+            f"Expected no top-level stopReason: {result}"
         )
 
 

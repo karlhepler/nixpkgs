@@ -51,10 +51,18 @@ positional argument or the file at --file) is inspected, and only that card
 JSON's mov_commands[].cmd strings are passed to find_unfailable_pipe_reason.
 
 Output format (PreToolUse hook — documented hookSpecificOutput format):
-  {"continue": False, "suppressOutput": False, "hookSpecificOutput": {
+  {"suppressOutput": False, "hookSpecificOutput": {
       "hookEventName": "PreToolUse", "permissionDecision": "deny",
       "permissionDecisionReason": "..."}}  — deny
   (exit 0 with no output)                  — allow (fail open)
+
+This hook intentionally omits any top-level turn-halting field. Per the
+deployed global policy at ~/.claude/CLAUDE.md section "Tool-Block Recovery",
+this hook's one real denial site is mechanical — the rejection text names a
+corrected form of the same MoV command — so only
+hookSpecificOutput.permissionDecision = deny is emitted, denying just the
+offending `kanban do`/`kanban todo` call and leaving the coordinator free to
+retry the corrected form in the same turn.
 
 Fails open: any error (JSON parse failure, empty stdin, non-UTF-8 stdin
 bytes, missing fields, a non-dict tool_input, shlex error, unreadable
@@ -414,8 +422,6 @@ def _deny_response(reason: str) -> dict:
     not the legacy top-level {"decision": "block", ...} format.
     """
     return {
-        "continue": False,
-        "stopReason": reason,
         "suppressOutput": False,
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
