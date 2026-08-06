@@ -1410,13 +1410,36 @@ def auto_attempt_unmet_criteria(card_number: str, session: str) -> list[str]:
     return failures
 
 
+def _card_numbers_in_mine_bucket(stdout: str) -> list[str]:
+    r"""Extract card numbers from ONLY the `<mine>...</mine>` bucket of a
+    `kanban list --output-style=xml --session <s>` response.
+
+    `--session` does not filter the payload down to that session's cards —
+    it buckets the FULL board into `<mine>` (cards owned by the given
+    session) and `<others>` (every other session's cards), per
+    modules/kanban/kanban.py's cmd_list and
+    modules/kanban/tests/test_kanban_list_xml_schema.py's documented schema.
+    Matching `<c n="(\d+)"` against the whole response (as both callers of
+    this helper originally did) matches straight through the `<others>`
+    bucket too, attributing a foreign session's cards to this one. Scope to
+    `<mine>` first, and only search for `<c ` elements inside that slice.
+
+    `<mine>` is emitted only when non-empty (cmd_list: `if mine_cards:
+    print("<mine>")`) — no `<mine>` tag in stdout means this session owns no
+    cards in the queried column, and the correct result is `[]`.
+    """
+    mine_match = re.search(r'<mine>(.*?)</mine>', stdout, re.DOTALL)
+    if not mine_match:
+        return []
+    return re.findall(r'<c n="(\d+)"', mine_match.group(1))
+
+
 def get_deferred_cards(session: str) -> list[str]:
     """Get list of card numbers in the todo column for this session."""
     try:
         result = run_kanban(["list", "--column", "todo", "--output-style=xml", "--session", session])
         if result.returncode == 0 and result.stdout.strip():
-            # Extract card numbers from XML output
-            return re.findall(r'num="(\d+)"', result.stdout)
+            return _card_numbers_in_mine_bucket(result.stdout)
     except Exception:
         pass
     return []
@@ -1494,15 +1517,13 @@ def cards_in_doing_for_session(session_id: str) -> list[str] | None:
         # "no card is stranded".
         if "<board" not in stdout:
             return None
-        # kanban's real `kanban list --output-style=xml` card element is
-        # `<c n="N" ses="..." s="...">` — a different attribute name than the
-        # PreToolUse-injected transcript XML format (see _CARD_XML_PATTERN
-        # above), which is a different schema entirely. Anchor on the `<c `
-        # element itself so this cannot match an unrelated attribute
-        # elsewhere in the payload (e.g. a numeric session name inside
-        # `ses="..."` or `session="..."` would otherwise satisfy a bare
-        # `n="(\d+)"` pattern).
-        return re.findall(r'<c n="(\d+)"', stdout)
+        # Scope to the `<mine>` bucket only — see _card_numbers_in_mine_bucket
+        # above for why: `--session` buckets the FULL board into `<mine>`
+        # (this session's cards) and `<others>` (every other session's
+        # cards); matching `<c n="(\d+)"` against the whole response matches
+        # straight through `<others>` too, wrongly attributing a foreign
+        # session's doing-card to this one.
+        return _card_numbers_in_mine_bucket(stdout)
     except Exception:
         return None
 

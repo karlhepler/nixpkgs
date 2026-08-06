@@ -15,6 +15,7 @@ All kanban CLI and subprocess calls are monkeypatched — no real
 kanban cards are created or read during these tests.
 """
 
+import html
 import importlib.util
 import json
 import os
@@ -2345,4 +2346,248 @@ class TestLogErrorLineCap:
             f"Expected the truncated line to still classify as "
             f"'transcript-path-missing'. Got a different classification for: "
             f"{logged_line[:120]!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Card #3442: get_deferred_cards / cards_in_doing_for_session must scope to
+# the <mine> bucket, never matching through <others>.
+#
+# `--session <s>` does NOT filter kanban's board XML down to that session's
+# cards -- it buckets the FULL board into <mine> (cards owned by <s>) and
+# <others> (every other session's cards), per modules/kanban/kanban.py's
+# cmd_list and modules/kanban/tests/test_kanban_list_xml_schema.py's
+# documented schema. A bare `<c n="(\d+)"` match against the whole response
+# matches straight through <others> too, attributing a foreign session's
+# card to the queried session.
+#
+# Fixtures below are REAL captures of `kanban list --output-style=xml
+# --session trim-oak`, taken live against card #3442's own board state (see
+# .scratchpad/deferred-parse-demo.md and .scratchpad/3442-fixture-{todo,
+# doing}.xml for the raw bytes as originally saved):
+#   - _REAL_TODO_XML_OTHERS_ONLY: `--column todo` -- trim-oak owned zero
+#     todo cards; two OTHER sessions' cards (#3352, #3435, session
+#     sweet-otter) were in the todo column, landing in <others> only.
+#   - _REAL_DOING_XML_MINE_ONLY: `--column doing` -- trim-oak's own card
+#     (#3442) was the only card in doing, landing in <mine> only.
+# No single live capture exists with cards in BOTH <mine> and <others>
+# simultaneously in the same column (kanban's schema puts either bucket in
+# only when non-empty, and no such board state was observed during this
+# card's work). _COMPOSED_DOING_XML_MINE_AND_OTHERS below is explicitly a
+# COMPOSITION of the two real captures' own <mine>/<others> element bytes
+# into one <board> -- not itself a single live capture. This is noted
+# explicitly here, and in .scratchpad/deferred-parse-demo.md, rather than
+# being presented as a live capture.
+#
+# One attribute was changed from the real capture bytes: the <others>
+# card's (n="3352") `s` attribute was changed from "todo" (its real,
+# observed value in _REAL_TODO_XML_OTHERS_ONLY above) to "doing" (in the
+# composed fixture below), so the composed <others> card is internally
+# consistent with a doing-column board response -- an <others> card
+# claiming s="todo" while embedded in a doing-column response would be a
+# lie about which column was queried. This is the only edited byte; every
+# other byte in both the <mine> and <others> elements below is reused
+# verbatim from the two real captures.
+# ---------------------------------------------------------------------------
+
+_REAL_TODO_XML_OTHERS_ONLY = (
+    '<board session="trim-oak">\n'
+    '<others>\n'
+    '<c n="3352" ses="sweet-otter" s="todo"><i>No coordinator prompt reads as authorising a coordinator to merge, now that smithers is the only thing permitted to.</i><e>modules/claude/global/output-styles/senior-staff-engineer.md,modules/claude/global/output-styles/staff-engineer.md</e></c>\n'
+    '<c n="3435" ses="sweet-otter" s="todo"><i>It is known, from authoritative sources, whether a macOS sleep/wake cycle can make CPython&#x27;s subprocess timeout fire spuriously, so the hook&#x27;s 10-second board read can be judged sleep-safe or not.</i><e>.scratchpad/monotonic-clock-research.md</e></c>\n'
+    '</others>\n'
+    '</board>\n'
+)
+
+_REAL_DOING_XML_MINE_ONLY = (
+    '<board session="trim-oak">\n'
+    '<mine>\n'
+    '<c n="3442" ses="trim-oak" s="doing"><i>get_deferred_cards returns the card numbers actually present in the board output it parses, and a test built from a real capture fails if that parse regresses.</i><e>modules/claude/kanban-subagent-stop-hook.py,modules/claude/tests/*</e></c>\n'
+    '</mine>\n'
+    '</board>\n'
+)
+
+# COMPOSED, not a single live capture -- see comment block above.
+_COMPOSED_DOING_XML_MINE_AND_OTHERS = (
+    '<board session="trim-oak">\n'
+    '<mine>\n'
+    '<c n="3442" ses="trim-oak" s="doing"><i>get_deferred_cards returns the card numbers actually present in the board output it parses, and a test built from a real capture fails if that parse regresses.</i><e>modules/claude/kanban-subagent-stop-hook.py,modules/claude/tests/*</e></c>\n'
+    '</mine>\n'
+    '<others>\n'
+    '<c n="3352" ses="sweet-otter" s="doing"><i>No coordinator prompt reads as authorising a coordinator to merge, now that smithers is the only thing permitted to.</i><e>modules/claude/global/output-styles/senior-staff-engineer.md,modules/claude/global/output-styles/staff-engineer.md</e></c>\n'
+    '</others>\n'
+    '</board>\n'
+)
+
+
+class TestMineOthersBucketScoping:
+    """Card #3442: get_deferred_cards and cards_in_doing_for_session must
+    only ever attribute cards inside <mine> to the queried session, never
+    cards inside <others>."""
+
+    @staticmethod
+    def _fake_run(stdout: str):
+        def fake_subprocess_run(cmd, **kwargs):
+            return KanbanMockResponses.success(stdout=stdout)
+        return fake_subprocess_run
+
+    # --- get_deferred_cards --------------------------------------------
+
+    def test_get_deferred_cards_excludes_others_bucket(self, hook):
+        """Real capture: trim-oak owns zero todo cards; two OTHER sessions'
+        cards are in <others>. Correct result is [], not the two foreign
+        card numbers ('3352', '3435').
+
+        This is a positive sanity check, not a regression gate for the
+        bucket-scoping bug: the pre-change code returned [] for this exact
+        input too, but for the WRONG reason -- bug #1 (matching `num="`
+        instead of the real `n="` attribute) made get_deferred_cards return
+        [] unconditionally for every input, including this one. The
+        regression gate for get_deferred_cards is
+        test_get_deferred_cards_mine_and_others_returns_only_mine, which
+        uses a fixture where the pre-change code's actual bug (matching
+        through <others>) would have produced a wrong, non-empty answer."""
+        with patch("subprocess.run", side_effect=self._fake_run(_REAL_TODO_XML_OTHERS_ONLY)):
+            result = hook.get_deferred_cards("trim-oak")
+        assert result == [], (
+            f"Expected no deferred cards for a session with no <mine> "
+            f"bucket in its todo-column response (only foreign <others> "
+            f"cards present). Got: {result!r}"
+        )
+
+    def test_get_deferred_cards_includes_mine_bucket(self, hook):
+        """Real capture: trim-oak's own card is in the <mine> bucket --
+        confirms the positive case still matches after the bucket scoping."""
+        with patch("subprocess.run", side_effect=self._fake_run(_REAL_DOING_XML_MINE_ONLY)):
+            result = hook.get_deferred_cards("trim-oak")
+        assert result == ["3442"], f"Expected ['3442']. Got: {result!r}"
+
+    def test_get_deferred_cards_mine_and_others_returns_only_mine(self, hook):
+        """Composed fixture (real <mine>/<others> bytes, synthetic
+        combination): both buckets present. Only the <mine> card number
+        must be returned."""
+        with patch("subprocess.run", side_effect=self._fake_run(_COMPOSED_DOING_XML_MINE_AND_OTHERS)):
+            result = hook.get_deferred_cards("trim-oak")
+        assert result == ["3442"], (
+            f"Expected only the <mine> card ('3442'), excluding the "
+            f"<others> card ('3352'). Got: {result!r}"
+        )
+
+    # --- cards_in_doing_for_session --------------------------------------
+
+    def test_cards_in_doing_excludes_others_bucket(self, hook):
+        """A foreign session's doing-card (in <others>) must never be
+        attributed to the queried session_id."""
+        with patch("subprocess.run", side_effect=self._fake_run(_REAL_TODO_XML_OTHERS_ONLY)):
+            result = hook.cards_in_doing_for_session("trim-oak")
+        assert result == [], (
+            f"Expected no doing-cards attributed to 'trim-oak' when the "
+            f"response has no <mine> bucket, only foreign <others> cards. "
+            f"Got: {result!r}"
+        )
+
+    def test_cards_in_doing_includes_mine_bucket(self, hook):
+        """Real capture: trim-oak's own card is in the <mine> bucket --
+        confirms the positive case still matches after the bucket scoping.
+
+        This is a positive sanity check, not a regression gate for the
+        bucket-scoping bug: a <mine>-only input (no <others> bucket at all
+        in this fixture) was already handled correctly by the OLD, unscoped
+        `<c n="(\\d+)"` regex -- the old bug is only observable when
+        <others> is also present in the response. The regression gate for
+        cards_in_doing_for_session is
+        test_cards_in_doing_mine_and_others_returns_only_mine, which uses a
+        fixture with both buckets present."""
+        with patch("subprocess.run", side_effect=self._fake_run(_REAL_DOING_XML_MINE_ONLY)):
+            result = hook.cards_in_doing_for_session("trim-oak")
+        assert result == ["3442"], f"Expected ['3442']. Got: {result!r}"
+
+    def test_cards_in_doing_mine_and_others_returns_only_mine(self, hook):
+        with patch("subprocess.run", side_effect=self._fake_run(_COMPOSED_DOING_XML_MINE_AND_OTHERS)):
+            result = hook.cards_in_doing_for_session("trim-oak")
+        assert result == ["3442"], (
+            f"Expected only the <mine> card ('3442'), excluding the "
+            f"<others> card ('3352'). Got: {result!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Card #3445 (swe-security finding on card #3442's review): pins the
+# cross-file escaping contract that _card_numbers_in_mine_bucket's safety
+# against adversarial-ish intent text depends on.
+#
+# `_card_numbers_in_mine_bucket` is only safe against a crafted intent
+# string containing literal `<mine>`, `</mine>`, or `<c n="` because
+# modules/kanban/kanban.py HTML-escapes intent/editFiles/session text
+# before ever writing it to the `kanban list --output-style=xml` stdout
+# this hook parses: `esc = html.escape` at kanban.py:4352, applied inside
+# `_terse_intent()` (kanban.py:4363-4368) and `_render_terse_card()`
+# (kanban.py:4370-4387). Nothing in THIS suite pinned that contract before
+# this card -- if a future kanban.py change ever dropped the `esc()` call,
+# a crafted intent could mis-slice the <mine> bucket boundary again, and
+# no test in this file would catch it. This test exercises the real
+# `html.escape` call (not a hand-written "already escaped" fixture
+# string), so it fails if that specific invariant regresses.
+# ---------------------------------------------------------------------------
+
+class TestEscapingContractTripwire:
+    """Card #3445: pins kanban.py's HTML-escaping invariant from within
+    this hook's own test suite, independent of kanban.py's own tests.
+
+    See .scratchpad/escaping-contract-demo.md for the recorded proof that
+    this test (a) actually fails when fed the unescaped adversarial text
+    it is designed to guard against, and (b) states which real kanban.py
+    call its failure would indicate has regressed.
+    """
+
+    def test_escaping_contract_holds_against_adversarial_intent(self, hook):
+        """Run adversarial intent text (containing literal `<mine>`,
+        `</mine>`, and `<c n="9999"` substrings) through the SAME
+        `html.escape` call kanban.py uses, embed the escaped result inside
+        a real-shaped board payload alongside one legitimate card, and
+        assert `_card_numbers_in_mine_bucket` returns ONLY the legitimate
+        card number.
+
+        If this test ever fails, kanban.py's escaping invariant
+        (`esc = html.escape` at modules/kanban/kanban.py:4352, applied via
+        `_terse_intent()` at kanban.py:4363-4368 and `_render_terse_card()`
+        at kanban.py:4370-4387) appears to have regressed -- intent text is
+        no longer being HTML-escaped before this hook's `<mine>`-scoping
+        regex parses it, which is exactly the cross-file coupling flagged
+        as a MEDIUM finding in card #3444's review of card #3442.
+        """
+        # Order matters: the injected fake card (`<c n="9999"`) sits BEFORE
+        # the injected `<mine>...</mine>` pair, so if this text ever reaches
+        # the parser unescaped, the injected `</mine>` becomes the FIRST
+        # `</mine>` found after the real, legitimate `<mine>` tag -- pulling
+        # the injected `<c n="9999"` INSIDE the captured bucket slice
+        # alongside the real card (over-attribution: the same direction as
+        # the original bug this hook fixes). See
+        # .scratchpad/escaping-contract-demo.md for the probe confirming
+        # this ordering is what makes the test discriminate.
+        adversarial_intent = (
+            '<c n="9999" ses="attacker" s="doing"><i>fake</i></c>'
+            '<mine>injected nested</mine> - end'
+        )
+        # The same html.escape() call kanban.py itself invokes at
+        # modules/kanban/kanban.py:4352 (`esc = html.escape`), used here
+        # exactly as _terse_intent() (kanban.py:4363-4368) uses it.
+        escaped_intent = html.escape(adversarial_intent)
+
+        board = (
+            '<board session="trim-oak">\n'
+            '<mine>\n'
+            f'<c n="42" ses="trim-oak" s="doing"><i>{escaped_intent}</i></c>\n'
+            '</mine>\n'
+            '</board>\n'
+        )
+
+        result = hook._card_numbers_in_mine_bucket(board)
+        assert result == ["42"], (
+            f"Expected only the legitimate card ('42') to be extracted from "
+            f"escaped adversarial intent text. If this fails, kanban.py's "
+            f"html.escape() invariant (modules/kanban/kanban.py:4352, "
+            f"applied via _terse_intent/_render_terse_card) appears to have "
+            f"regressed -- intent text is no longer being HTML-escaped "
+            f"before this hook's regex parses it. Got: {result!r}"
         )
