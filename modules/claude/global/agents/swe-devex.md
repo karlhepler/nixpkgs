@@ -351,6 +351,24 @@ Read CLAUDE.md for complete programming preferences before starting work.
 - Self-service over ticket-driven workflows
 - Context preserved across tools (IDE → CLI → CI)
 
+## Parsing external command output
+
+Applies whenever you write code that parses output from an external command — a regex extracting a field, a `JSON.parse` call, a field-access into a subprocess/CLI result. This comes up constantly in hook and CLI-wrapper work: parsing `kanban` output, `git` output, `gh` output, tmux/session output, any subprocess result a hook or shellapp reads.
+
+**The rule:** run the command yourself once, and diff its real output against both the parsing pattern you're about to write AND any test fixture you author for it. Do not write a parser by reasoning only from a `--help` string, documentation, or the shape you expect — capture the real output first. A parser whose author never quoted a live capture is exactly the shape that ships the defect this rule exists to catch.
+
+**Why a passing test proves nothing here:** a hand-authored fixture that agrees with the parsing code proves self-consistency between two artifacts you wrote together in the same sitting — it says nothing about whether either matches reality. Only a fixture captured from the real producer of that data proves the parse.
+
+**Verifying that a pattern MATCHES is not sufficient. Assert the parsed result against what the command actually returned for that input.** A pattern that matches nothing can silently return an empty result that looks like a legitimate empty board or clean state. A pattern that matches successfully can still return data from the wrong scope. Only asserting the parsed result — not just that the regex compiled or the parse call didn't throw — catches both.
+
+**Watch for partition-vs-filter CLIs.** When a CLI's `--session`/`--scope`-style flag PARTITIONS its output into labeled buckets (e.g., `<mine>...</mine><others>...</others>`) rather than FILTERING the returned set down to just the requested scope, a parser that ignores the bucket wrapper and pattern-matches across the whole output silently widens scope — and the widened result still looks structurally valid, which is why it survives casual review. Confirm which behavior the flag actually has before writing the parser, not after.
+
+**The fallback:** if you cannot run the command in your environment, say so explicitly and record it as a coverage gap in your handoff — never present an assumed or documented shape as if it were a captured one.
+
+**Worked example:** `cards_in_doing_for_session()` in `modules/claude/kanban-subagent-stop-hook.py` pulled card numbers via `re.findall(r'num="(\d+)"', result.stdout)`. The real `kanban list --column doing --output-style=xml` output uses the attribute `n`, not `num` — a live capture reads `<c n="3437" ses="trim-oak" s="doing">`. The regex matched zero cards for any board state, so the function returned `[]` unconditionally, silently reporting "no card is stranded" when one genuinely was. A second pattern in the same file matched successfully but ignored the `<mine>`/`<others>` bucket wrapper the CLI's `--session` flag emits, returning other sessions' card numbers as if they belonged to the current session — a partition-vs-filter mistake. Both defects were fixed in the same commit (`e5e2855`); a result assertion against a live capture, rather than a match-only check, would have caught either one instantly.
+
+**Precedence:** This is not a Hard Rule — it's a parsing discipline, not an audit-trail, broken-check, or secret-exposure guard like this file's three Hard Rules above (`.kanban/` edits, structurally broken MoV, secret-safe environment inspection). It also doesn't restate global CLAUDE.md § Epistemic Honesty's general call to verify a claim before making it; it applies that principle specifically to parsing external command output, and adds the partition-vs-filter distinction — a bucketed response matched indiscriminately — as a concrete failure shape to check for, alongside the more familiar missing-match case.
+
 ## AI-Assisted Development Tooling
 
 **When this section applies:** A developer wants to add AI assistance to their IDE, is setting up Copilot in VS Code, needs to evaluate GitHub Copilot vs Cursor, is measuring developer AI tool impact, or needs help with AI code completion setup.
@@ -435,6 +453,7 @@ After completing the task, verify success by checking:
 - [ ] Tool provides clear error messages and help text
 - [ ] Documentation includes quick start and common tasks
 - [ ] Local development parity with CI verified
+- [ ] **Parsing (must-check when a hook/CLI parses external command output):** Per § Parsing external command output, the real output was captured and diffed against the pattern and fixture, and a test asserts the parsed result — not just that the pattern matched
 
 **For build optimizations:**
 - [ ] Build time improvement quantified (before/after)

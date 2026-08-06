@@ -122,6 +122,24 @@ Special hazards:
   does NOT match inside `claude_pane_target` because there's no boundary
   at `e_` (both are word chars).
 
+## Parsing external command output
+
+Applies whenever you write code that parses output from an external command, API response, or database result — a regex extracting a field, a `JSON.parse` call, a field-access into a subprocess/CLI/API/database result.
+
+**The rule:** run the command or call yourself once, and diff its real output against both the parsing pattern you're about to write AND any test fixture you author for it. Do not write a parser by reasoning only from documentation, a schema you assume is current, or the shape you expect — capture the real output first. A parser whose author never quoted a live capture is exactly the shape that ships the defect this rule exists to catch.
+
+**Why a passing test proves nothing here:** a hand-authored fixture that agrees with the parsing code proves self-consistency between two artifacts you wrote together in the same sitting — it says nothing about whether either matches reality. Only a fixture captured from the real producer of that data proves the parse.
+
+**Verifying that a pattern MATCHES is not sufficient. Assert the parsed result against what the command actually returned for that input.** A pattern that matches nothing can silently return an empty result that looks like a legitimate empty case. A pattern that matches successfully can still return data from the wrong scope. Only asserting the parsed result — not just that the regex compiled or the parse call didn't throw — catches both.
+
+**Watch for partition-vs-filter CLIs and APIs.** When a `--session`/`--scope`-style flag or query parameter PARTITIONS the response into labeled buckets (e.g., `<mine>...</mine><others>...</others>`) rather than FILTERING the returned set down to just the requested scope, a parser that ignores the bucket wrapper and pattern-matches across the whole payload silently widens scope — and the widened result still looks structurally valid, which is why it survives casual review. Confirm which behavior the flag actually has before writing the parser, not after.
+
+**The fallback:** if you cannot run the command or call in your environment, say so explicitly and record it as a coverage gap in your handoff — never present an assumed or documented shape as if it were a captured one.
+
+**Worked example:** `cards_in_doing_for_session()` in `modules/claude/kanban-subagent-stop-hook.py` pulled card numbers via `re.findall(r'num="(\d+)"', result.stdout)`. The real `kanban list --column doing --output-style=xml` output uses the attribute `n`, not `num` — a live capture reads `<c n="3437" ses="trim-oak" s="doing">`. The regex matched zero cards for any board state, so the function returned `[]` unconditionally, silently reporting "no card is stranded" when one genuinely was. A second pattern in the same file matched successfully but ignored the `<mine>`/`<others>` bucket wrapper the CLI's `--session` flag emits, returning other sessions' card numbers as if they belonged to the current session — a partition-vs-filter mistake. Both defects were fixed in the same commit (`e5e2855`); a result assertion against a live capture, rather than a match-only check, would have caught either one instantly.
+
+**Worked example — API response:** A billing dashboard's `fetch_invoices_for_customer()` parsed a payments API response via `response.json()["invoices"]`, written against the vendor's published schema rather than a captured response. A live capture (`curl -s "$API_URL/v1/invoices?customer=cus_123"`) showed the deployed API actually nests results under `data.invoices`, not a top-level `invoices` key — the published schema documented a different API version than the one live in production. The field-access raised `KeyError` against the real endpoint; against the hand-authored test fixture, which had been written to match the code's assumed shape rather than a capture, it passed cleanly — fixture and code agreed with each other and both disagreed with the deployed API. A second, subtler defect lived in the same endpoint: its `customer` query parameter turned out to PARTITION the response into `{"data": {"mine": [...], "shared": [...]}}` rather than FILTERING it down to just that customer's invoices. A parser that flattened `data` before extracting `invoices` matched successfully and returned structurally valid records — but silently included another customer's shared invoices in the total, a partition-vs-filter mistake indistinguishable from correct output without diffing against the live capture.
+
 ## Your Expertise
 
 **API Design:**
@@ -566,6 +584,7 @@ After completing the task:
 4. **Security**: Are inputs validated? Are credentials managed safely?
 5. **Observability**: Can this be debugged in production? Are logs/metrics sufficient?
 6. **Tests**: Are critical paths covered by tests? Per § Pin what you claim, does every enum value returned by a new/changed function have its own test (including boundary/degenerate values), and does every named docstring/schema guarantee have a test matching that exact scenario?
+7. **Parsing**: Does any new/changed code parse output from an external command, API, or database? Per § Parsing external command output, has the real output been captured and diffed against the pattern and fixture, and does a test assert the parsed result — not just that the pattern matched?
 
 Summarize verification results and any known limitations.
 
