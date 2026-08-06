@@ -19,19 +19,38 @@ BLOCKED (persistent cd):
   cd $VAR && cmd
 
 Output format (PreToolUse hook — documented hookSpecificOutput format):
-  {"continue": false, "suppressOutput": false, "hookSpecificOutput": {
+  {"suppressOutput": false, "hookSpecificOutput": {
      "hookEventName": "PreToolUse",
      "permissionDecision": "deny",
      "permissionDecisionReason": "..."
   }}                                       — block
   (exit 0 with no output)                 — allow (fail open)
 
-A deny response emits "continue": false, which per the Claude Code hooks docs
-halts the entire agent turn (not just this single tool call) — an intentional
-defense-in-depth hard-stop on a guardrail violation.
+This hook intentionally omits the top-level "continue": false / "stopReason"
+fields. Per the deployed global policy at ~/.claude/CLAUDE.md section
+"Tool-Block Recovery", a denial is either MECHANICAL (the rejection message
+names a corrected form of the same action — apply the correction and
+re-issue it in the same turn) or a PROHIBITION (the action itself is
+forbidden in any form). The cd-compound block is mechanical: the rejection
+text supplies the corrected invocation (drop the `cd` prefix, or use the
+`(cd X && cmd)` subshell form). Emitting "continue": false would halt the
+entire agent turn and make that same-turn recovery impossible — so only
+hookSpecificOutput.permissionDecision = deny is emitted, which denies just
+the offending Bash call and leaves the agent free to retry the corrected
+form immediately.
+
+This hook is deliberately stateless — each invocation reads one JSON payload
+from stdin and exits, with no counter, cache, or state file carried between
+invocations. It therefore places no bound of its own on how many times an
+agent may re-issue the identical blocked cd-compound form; that bounding is
+left, intentionally, to the calling layer — agent-session maxTurns ceilings
+and per-card tool-use budgets — where turn and tool budgets are conventionally
+enforced, not inside PreToolUse hooks. A denied command never executes, so a
+repeated denial costs turns but cannot mutate any shared state.
 
 Fails open: any error (JSON parse failure, shlex error) results in allowing.
-No bypass mechanism — use subshell form (cd X && cmd) instead.
+No bypass mechanism for the cd-compound form itself — use the subshell form
+or remove the `cd` prefix instead.
 """
 
 import json
@@ -59,7 +78,9 @@ _REJECTION_REASON = (
     "If you genuinely need an isolated cd that does NOT affect subsequent Bash calls, "
     "use a subshell:\n"
     "  ALLOWED: (cd /tmp && some-command)\n\n"
-    "This is a hard block with no bypass — use the subshell form or remove the cd."
+    "This cd-compound form itself has no bypass flag or override — but this only "
+    "blocks this one Bash call. Retry immediately in this same turn using the "
+    "subshell form or by removing the cd prefix."
 )
 
 
@@ -196,13 +217,11 @@ def main() -> None:
     if not is_cd_compound(command):
         sys.exit(0)
 
-    # Block the command
-    # stopReason is set at the top level (sibling of continue/hookSpecificOutput)
-    # because Claude Code displays it to the USER when continue is false, while
-    # permissionDecisionReason is directed at Claude.
+    # Block the command. No top-level "continue"/"stopReason" — this is a
+    # mechanical denial (see module docstring's "Tool-Block Recovery"
+    # reference), so only the single offending Bash call is denied; the
+    # agent remains free to retry the corrected form in the same turn.
     print(json.dumps({
-        "continue": False,
-        "stopReason": _REJECTION_REASON,
         "suppressOutput": False,
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",

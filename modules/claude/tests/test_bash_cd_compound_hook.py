@@ -404,6 +404,15 @@ class TestFailOpen:
 # shape rather than the legacy top-level {"decision": "block"} format. This
 # is the regression guard for card #2894 — it fails if a future change
 # reintroduces the legacy format.
+#
+# It also asserts the deny payload does NOT carry a turn-halting top-level
+# "continue"/"stopReason" pair (card #3458). Per the deployed global policy
+# at ~/.claude/CLAUDE.md section "Tool-Block Recovery", the cd-compound
+# block is a MECHANICAL denial (its rejection text names the corrected
+# form), so it must deny only the single offending Bash call and leave the
+# agent free to retry the corrected form in the same turn — a top-level
+# "continue": false would halt the entire agent turn and make that same-turn
+# recovery impossible.
 # ---------------------------------------------------------------------------
 
 class TestPermissionDecisionDenyFormat:
@@ -417,17 +426,21 @@ class TestPermissionDecisionDenyFormat:
         assert result is not None, "Expected a block response, got silent exit (allow)"
 
         # New documented format must be present.
-        assert result.get("continue") is False
         hook_specific = result.get("hookSpecificOutput")
         assert hook_specific is not None, f"Missing hookSpecificOutput: {result}"
         assert hook_specific.get("hookEventName") == "PreToolUse"
         assert hook_specific.get("permissionDecision") == "deny"
         assert len(hook_specific.get("permissionDecisionReason", "")) > 0
 
-        # Top-level stopReason must be present (user-facing halt message) and
-        # non-empty — see card #2905.
-        assert len(result.get("stopReason", "")) > 0, (
-            f"Expected non-empty top-level stopReason: {result}"
+        # This is a mechanical denial (card #3458) — it must NOT carry a
+        # turn-halting top-level "continue"/"stopReason" pair, which would
+        # block the same-turn recovery the Tool-Block Recovery policy
+        # mandates.
+        assert "continue" not in result, (
+            f"Mechanical denial must not carry top-level 'continue': {result}"
+        )
+        assert "stopReason" not in result, (
+            f"Mechanical denial must not carry top-level 'stopReason': {result}"
         )
 
         # Legacy top-level format must be fully removed, not just supplemented.
