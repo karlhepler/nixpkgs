@@ -22,6 +22,7 @@ import importlib.util
 import io
 import json
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -251,6 +252,42 @@ class TestDeniedSubagentCommands:
         assert_blocked(result)
         assert "kanban done 5" in block_reason(result)
 
+    def test_kanban_done_multiline_quoted_arg_denied(self, hook):
+        """Regression (card #3468): kanban done 5 "summary\ntext" — a
+        quoted trailing argument that spans two PHYSICAL lines — must
+        still be DENIED. Before the fix, _tokenize_command's per-line
+        shlex.split() raised ValueError on the first physical line
+        ('kanban done 5 "summary') because its quote is unterminated on
+        that line alone; the bare `except ValueError: continue` silently
+        discarded the line instead of forming a segment, so
+        _find_kanban_segment() never saw a 'kanban' token and the kanban
+        subcommand allowlist (PROHIBITION 1) never ran against this
+        command, allowing it through."""
+        payload = make_bash_payload('kanban done 5 "summary\ntext"')
+        result = run_hook_main(hook, payload)
+        assert_blocked(result)
+        assert "criteria check" in block_reason(result)
+        assert "criteria uncheck" in block_reason(result)
+
+    def test_kanban_done_backslash_newline_continuation_denied(self, hook):
+        """Regression (card #3474, finding F3): 'kanban\\\n done 5' — a
+        real bash backslash-newline LINE CONTINUATION between the binary
+        and its subcommand — must still be DENIED. Real bash elides the
+        backslash and the newline entirely and executes this literally as
+        `kanban done 5`. Before this fix, _tokenize_command handed the
+        raw text straight to shlex.split(), which does NOT elide
+        backslash-newline as a continuation — it treats the backslash as
+        "escape the next character," corrupting the binary token to
+        'kanban\\n' (embedded newline). 'kanban\\n' != 'kanban', so
+        _is_kanban_binary()'s exact-string match failed and
+        _find_kanban_segment() returned None, allowing the command
+        through with PROHIBITION 1 never seeing it."""
+        payload = make_bash_payload("kanban\\\n done 5")
+        result = run_hook_main(hook, payload)
+        assert_blocked(result)
+        assert "criteria check" in block_reason(result)
+        assert "criteria uncheck" in block_reason(result)
+
     def test_criteria_with_no_subcommand_denied(self, hook):
         """Sub-agent calls `kanban criteria` alone → DENY."""
         payload = make_bash_payload("kanban criteria")
@@ -332,6 +369,23 @@ class TestNonKanbanCommands:
     def test_pytest_allowed(self, hook):
         """Sub-agent calls pytest → ALLOW."""
         payload = make_bash_payload("pytest modules/claude/tests/")
+        result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+    def test_git_commit_multiline_message_allowed(self, hook):
+        """Survival guard (card #3468): a benign multi-line quoted commit
+        message — git commit -m "line one\nline two" — must remain
+        ALLOWED. The multi-line-quote fix must not over-correct into
+        denying ordinary multi-line arguments that have nothing to do with
+        kanban or shell-wrapper -c/-e invocations."""
+        payload = make_bash_payload('git commit -m "line one\nline two"')
+        result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+    def test_echo_multiline_quoted_allowed(self, hook):
+        """Survival guard (card #3468): echo "a\nb" — a benign multi-line
+        quoted argument — must remain ALLOWED."""
+        payload = make_bash_payload('echo "a\nb"')
         result = run_hook_main(hook, payload)
         assert_allowed(result)
 
@@ -459,6 +513,85 @@ class TestEdgeCases:
         payload = make_bash_payload("/nix/store/abc123-kanban-1.0/bin/kanban done 5")
         result = run_hook_main(hook, payload)
         assert_blocked(result)
+
+    def test_fused_quote_binary_fallback_denied(self, hook):
+        """Regression (card #3474, finding [medium] from review #3470):
+        '"kanban done 5' — an unterminated quote character fused
+        directly onto the front of the 'kanban' binary token, with no
+        closing quote anywhere in the command — must still be DENIED.
+        This never balances, so it reaches _tokenize_command's
+        whitespace-split fallback. Before this fix, the fallback's naive
+        `.split()` produced the token '"kanban' (quote still attached),
+        which matched neither the exact 'kanban' string nor a
+        '/bin/kanban' path suffix in _is_kanban_binary(), so
+        _find_kanban_segment() returned None and the command was
+        allowed through with PROHIBITION 1 never seeing it."""
+        payload = make_bash_payload('"kanban done 5')
+        result = run_hook_main(hook, payload)
+        assert_blocked(result)
+        assert "criteria check" in block_reason(result)
+        assert "criteria uncheck" in block_reason(result)
+
+    def test_single_quote_backslash_newline_continuation_subcommand_denied(self, hook):
+        """Regression (card #3477, Finding 1 from the #3474 review):
+        `kanban criteria 'chec\\\n k' 5 1` — a backslash-newline pair
+        spliced INSIDE a single-quoted subcommand argument — must still be
+        DENIED. Real bash treats backslash as a plain literal character
+        inside single quotes, so it never escapes a following newline
+        there; the actual argv bash passes is the 6-character literal
+        'chec\\<newline>k', not the clean 5-character string 'check'.
+        Before this fix, _join_continuation_lines elided the
+        backslash-newline unconditionally (quote-blind), welding the two
+        physical lines into the allowlisted keyword 'check' and flipping
+        a real DENY into a wrongly-granted ALLOW. Also covers the
+        'criteria' token itself splicing the same way
+        (`kanban 'criteri\\\n a' check 5 1`).
+
+        A third payload, `'kan\\\n ban' done 5` — the same single-quote
+        weld landing on the BINARY token instead of a subcommand keyword —
+        is asserted ALLOWED (card #3482): real bash reports "command not found"
+        for this literal argv[0], so kanban never executes and the hook has
+        nothing to guard. Verified against real bash (see
+        .scratchpad/realbash-divergence-check.py). This is not a
+        regression: the now-removed legacy quote-blind tokenizer variant
+        used to weld this into the allowlisted 'kanban' binary token and
+        deny it, but that denial guarded an input bash itself can never
+        run, so dropping it costs nothing."""
+        payload = make_bash_payload("kanban criteria 'chec\\\nk' 5 1")
+        result = run_hook_main(hook, payload)
+        assert_blocked(result)
+        assert "criteria check" in block_reason(result)
+        assert "criteria uncheck" in block_reason(result)
+
+        payload2 = make_bash_payload("kanban 'criteri\\\na' check 5 1")
+        result2 = run_hook_main(hook, payload2)
+        assert_blocked(result2)
+
+        payload3 = make_bash_payload("'kan\\\nban' done 5")
+        result3 = run_hook_main(hook, payload3)
+        assert_allowed(result3)
+
+    def test_tokenizer_never_closes_fallback_denied(self, hook):
+        """Regression (card #3477, Finding 3 from the #3474 review): a
+        quote that opens and then NEVER closes at all — as opposed to the
+        checked-in perf probe (tokenizer-hardening-probe.py), which only
+        exercises a quote that closes on the very last line — takes a
+        different code path (the fail-closed whitespace-split fallback in
+        _tokenize_command, reached only once input is fully exhausted with
+        an unresolved buffer) and previously had no permanent regression
+        guard. Must still be DENIED (the fallback's naive `.split()` still
+        exposes the 'kanban'/'done' tokens to the downstream checks), and
+        must complete in roughly linear time — a modest line count with a
+        generous time budget, since this guards against an O(n^2)
+        reintroduction rather than measuring an exact benchmark."""
+        lines = 300
+        filler = "\n".join(f"filler line {i}" for i in range(lines))
+        payload = make_bash_payload(f'kanban done 5 "never closes\n{filler}')
+        start = time.monotonic()
+        result = run_hook_main(hook, payload)
+        elapsed = time.monotonic() - start
+        assert_blocked(result)
+        assert elapsed < 5.0, f"never-closes fallback took {elapsed:.2f}s for {lines} lines"
 
 
 # ---------------------------------------------------------------------------
@@ -591,6 +724,39 @@ class TestShellWrapperDenial:
         payload = make_bash_payload("python -c 'import subprocess; subprocess.run([\"kanban\",\"done\",\"5\"])'")
         result = run_hook_main(hook, payload)
         assert_blocked(result)
+
+    def test_python3_c_multiline_quoted_arg_denied(self, hook):
+        """Regression (card #3468): python3 -c "import x\nprint(1)" — a
+        quoted -c script argument that spans two PHYSICAL lines — must
+        still be DENIED. Before the fix, _tokenize_command called
+        shlex.split() per physical line; the first line ('python3 -c
+        "import x') has an unterminated quote, shlex.split raised
+        ValueError, and the bare `except ValueError: continue` silently
+        dropped the line. No segment was ever formed, so
+        _is_shell_wrapper_invocation() never ran against it and the
+        command was allowed through."""
+        payload = make_bash_payload('python3 -c "import x\nprint(1)"')
+        result = run_hook_main(hook, payload)
+        assert_blocked(result)
+        reason = block_reason(result)
+        assert "shell-wrapper" in reason.lower() or "python3 -c" in reason
+
+    def test_python3_c_backslash_newline_continuation_denied(self, hook):
+        """Regression (card #3474, finding F3): 'python3 \\\n-c "import
+        x"' — a real bash backslash-newline LINE CONTINUATION between the
+        interpreter name and its -c flag — must still be DENIED. Real
+        bash elides the backslash and the newline and executes this
+        literally as `python3 -c "import x"`. Before this fix,
+        shlex.split() on the raw (un-elided) text corrupted the flag
+        token to '\\n-c' (embedded newline prefix), which failed the
+        exact `tok in inline_flags` check in
+        _is_shell_wrapper_invocation() and let the shell-wrapper
+        invocation through unchecked."""
+        payload = make_bash_payload('python3 \\\n-c "import x"')
+        result = run_hook_main(hook, payload)
+        assert_blocked(result)
+        reason = block_reason(result)
+        assert "shell-wrapper" in reason.lower() or "python3 -c" in reason
 
 
 # ---------------------------------------------------------------------------

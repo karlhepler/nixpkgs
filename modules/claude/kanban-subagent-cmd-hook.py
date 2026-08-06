@@ -171,27 +171,252 @@ def _split_on_shell_ops(tokens: list) -> list:
     return segments
 
 
-def _tokenize_command(command: str) -> list:
-    """Tokenize a shell command string using shlex, splitting on operators.
+def _join_continuation_lines(command: str) -> list:
+    """Elide real shell backslash-newline continuations before tokenizing.
+
+    Real bash removes a backslash immediately followed by a newline
+    entirely (both characters vanish, joining the two physical lines with
+    NO separator) whenever that backslash is the line's ODD-numbered
+    trailing backslash AND that backslash is not inside a single-quoted
+    region — an even trailing count, or a backslash inside single quotes,
+    means the newline stands on its own as a real separator (or, inside
+    single quotes, the backslash-newline pair is literal DATA, since bash
+    gives backslash no special meaning there at all). Python's shlex does
+    not model line-continuation at all: it treats a lone backslash as
+    "escape the next character," which stops the newline from acting as a
+    token SEPARATOR but leaves it embedded INSIDE the resulting token
+    (e.g. shlex.split('kanban\\\n done 5') corrupts the binary token to
+    'kanban\n', which then fails _is_kanban_binary's exact-string check).
+    Eliding real continuations here, before any shlex call, keeps tokens
+    clean and matches real shell execution:
+
+      'kanban\\\n done 5'          -> ['kanban done 5']
+      'python3 \\\n-c "import x"'  -> ['python3 -c "import x"']
+
+    Returns a list of LOGICAL lines. Non-continued lines remain separate
+    entries so the caller can still join them with a real embedded newline
+    character, preserving support for multi-line quoted arguments (e.g.
+    `kanban done 5 "summary\ntext"`).
+
+    Single-quote awareness: this function tracks quote/escape state via
+    the same _scan_quote_state used for balance detection, rather than a
+    second, divergent backslash-counting model — reusing the model that
+    already gates its escape branch on `not state["in_single"]`
+    (kanban-subagent-cmd-hook.py's _scan_quote_state). A trailing
+    backslash run only sets state["escaped"] when it appears outside a
+    single-quoted region, exactly matching real bash. Without this, a
+    backslash-newline spliced INSIDE a single-quoted kanban subcommand
+    argument (e.g. `kanban criteria 'chec\\<NL>k' 5 1`) would elide into
+    the allowlisted keyword "check", flipping a real DENY into an ALLOW.
+    """
+    logical: list = []
+    current = ""
+    state = _fresh_quote_state()
+    lines = command.splitlines()
+    last_index = len(lines) - 1
+    for i, line in enumerate(lines):
+        # Scan this physical line's characters into the running quote/escape
+        # state (persists across lines, since a single-quoted region can
+        # legitimately span several physical lines).
+        _scan_quote_state(line, state)
+        if state["escaped"] and i < last_index:
+            # This line's trailing (odd-count, non-single-quoted) backslash
+            # escapes its terminating newline, AND a further physical line
+            # exists to actually absorb it — elide both, keep accumulating
+            # into the same logical line. The escape is fully resolved by
+            # the elided newline, so reset it before scanning the next
+            # line's first character.
+            current += line[:-1]
+            state["escaped"] = False
+            continue
+        # Either this line ends balanced, or it is the LAST physical line
+        # and ends in a dangling escape with no further newline to elide
+        # (a genuinely incomplete/malformed command, not a continuation —
+        # there is nothing after it to weld with). In the dangling case the
+        # trailing backslash is left untouched here (never stripped), so
+        # the quote/escape scan in _tokenize_command still sees it as an
+        # unresolved trailing escape and correctly keeps buffering
+        # (fail-closed) instead of this function silently discarding it.
+        current += line
+        logical.append(current)
+        current = ""
+    return logical
+
+
+def _fresh_quote_state() -> dict:
+    """Return a fresh incremental quote/escape scan state."""
+    return {"in_single": False, "in_double": False, "escaped": False}
+
+
+def _scan_quote_state(text: str, state: dict) -> None:
+    """Advance the incremental quote/escape state by scanning `text`.
+
+    Mutates `state` in place. Mirrors just enough of shlex's posix-mode
+    quoting rules — backslash escapes the next character everywhere
+    except inside single quotes; a quote character only toggles its own
+    quote mode when not already inside the OTHER quote type — to cheaply
+    detect whether the accumulated buffer is still inside an open quote or
+    a dangling escape: the two conditions that make shlex.split() raise
+    ValueError.
+
+    This is an O(len(text)) pre-check that scans only the NEW text added
+    since the last call rather than the whole growing buffer, so the
+    caller can skip the expensive shlex.split() call on every line and
+    invoke it only when this scan suggests the buffer might already be
+    balanced. Being imprecise never trades correctness for speed:
+    shlex.split() remains the sole authority on whether a candidate is
+    actually a complete, valid token stream — if this scan under-reports
+    balance, the caller just waits for more input before retrying shlex,
+    never wrongly resolving a segment early.
+    """
+    for ch in text:
+        if state["escaped"]:
+            state["escaped"] = False
+            continue
+        if ch == "\\" and not state["in_single"]:
+            state["escaped"] = True
+            continue
+        if ch == "'" and not state["in_double"]:
+            state["in_single"] = not state["in_single"]
+            continue
+        if ch == '"' and not state["in_single"]:
+            state["in_double"] = not state["in_double"]
+            continue
+
+
+def _quote_state_balanced(state: dict) -> bool:
+    """Return True if the scan state represents a closed, non-escaping point."""
+    return not state["in_single"] and not state["in_double"] and not state["escaped"]
+
+
+def _strip_stray_quote_chars(token: str) -> str:
+    """Strip leading/trailing quote characters from a fallback token.
+
+    Only reached for genuinely malformed input that never balances (see
+    _tokenize_command's fallback branch) — its naive whitespace `.split()`
+    has no shlex-style quote awareness, so an unterminated quote fused
+    directly onto a security-relevant token (e.g. '"kanban', with no
+    closing quote anywhere in the command) would otherwise survive as
+    part of the token and defeat the exact-string matches in
+    _is_kanban_binary() / _is_shell_wrapper_invocation(). Stripping stray
+    leading/trailing quote characters only ever makes token
+    identification MORE likely to recognize kanban/-c/-e — it strengthens
+    rather than weakens the downstream exact-match checks, so it cannot
+    introduce a new bypass.
+    """
+    return token.strip("'\"")
+
+
+def _segments_from_logical_lines(logical_lines: list) -> list:
+    """Tokenize an already backslash-newline-elided logical-line list.
 
     Returns a list of segments where each segment is a list of tokens.
-    Fails open (returns empty list) on shlex errors.
+    Shared buffering/shlex core for _tokenize_command — factored out from
+    the continuation-line elision itself so the buffering logic lives in
+    one place.
+
+    A single logical shell command can span multiple PHYSICAL lines when a
+    quoted argument embeds a literal newline, e.g.:
+
+        kanban done 5 "summary
+        text"
+
+    shlex.split() on the first physical line alone sees an unterminated
+    quote and raises ValueError. The previous implementation caught that
+    ValueError and silently `continue`d past the line — discarding it
+    entirely, so no segment was ever produced and neither prohibition ever
+    saw the command. That is a fail-OPEN outcome for a security guard: a
+    sub-agent could bypass either prohibition (the shell-wrapper -c/-e
+    denial, or the kanban subcommand allowlist) simply by splitting the
+    interesting quoted argument across two lines.
+
+    To fail CLOSED instead, physical lines are accumulated into a buffer.
+    An incremental quote/escape scan (_scan_quote_state) decides cheaply,
+    in O(line length) per line, whether the buffer LOOKS balanced; only
+    then is the buffer joined and handed to the authoritative
+    shlex.split():
+      - If the scan says "not yet balanced" (inside an open quote or a
+        dangling escape), keep buffering without paying for a join or a
+        shlex call — this is what keeps the loop O(n) instead of O(n^2)
+        for a quote that only closes on the very last of many lines.
+      - If the scan says "looks balanced" and shlex.split() agrees, the
+        buffer was a complete, balanced logical unit. Emit its segments
+        and start a fresh buffer.
+      - If shlex still raises ValueError despite the scan saying balanced
+        (a rare escaping edge case the simplified scan doesn't model
+        exactly), keep buffering — shlex is always the final word, never
+        the cheap scan.
+      - If input is exhausted with an unresolved buffer, the text was
+        genuinely malformed (no continuation would ever balance it). Fail
+        CLOSED: fall back to a naive whitespace split (with stray quote
+        characters stripped from each token — see
+        _strip_stray_quote_chars) so the downstream substring/token
+        checks still get a chance to see this text, rather than the
+        content vanishing with no segment formed at all.
     """
-    if not command or not command.strip():
-        return []
     segments_out = []
-    for line in command.splitlines():
-        line = line.strip()
-        if not line:
+    buffer_lines: list = []
+    quote_state = _fresh_quote_state()
+    for line in logical_lines:
+        buffer_lines.append(line)
+        if len(buffer_lines) > 1:
+            _scan_quote_state("\n", quote_state)
+        _scan_quote_state(line, quote_state)
+        if not _quote_state_balanced(quote_state):
+            # Still inside an open quote or a dangling escape — the
+            # logical unit may continue on the next physical line. Keep
+            # buffering; skip the join + shlex call entirely.
+            continue
+
+        candidate = "\n".join(buffer_lines).strip()
+        if not candidate:
+            buffer_lines = []
+            quote_state = _fresh_quote_state()
             continue
         try:
-            tokens = shlex.split(line)
+            tokens = shlex.split(candidate)
         except ValueError:
-            # Unterminated quotes or other shlex error — fail open
+            # The cheap scan said "balanced" but shlex disagrees (a rare
+            # escaping edge case the simplified scan doesn't model
+            # exactly) — keep buffering; shlex is always the final
+            # authority.
             continue
         tokens = _normalize_semicolons(tokens)
         segments_out.extend(_split_on_shell_ops(tokens))
+        buffer_lines = []
+        quote_state = _fresh_quote_state()
+
+    # Anything left in the buffer never became a balanced shlex unit, even
+    # after consuming every remaining line — genuinely malformed input.
+    # Fail CLOSED rather than discarding it.
+    if buffer_lines:
+        remainder = "\n".join(buffer_lines).strip()
+        if remainder:
+            raw_tokens = [_strip_stray_quote_chars(tok) for tok in remainder.split()]
+            tokens = _normalize_semicolons(raw_tokens)
+            segments_out.extend(_split_on_shell_ops(tokens))
+
     return segments_out
+
+
+def _tokenize_command(command: str) -> list:
+    """Tokenize a shell command string into shell-operator-delimited segments.
+
+    Returns a list of segments where each segment is a list of tokens.
+
+    Elides real backslash-newline continuations with the single-quote-aware
+    _join_continuation_lines (the bash-accurate reading — see its docstring
+    for why single-quote awareness matters: a quote-blind elision would weld
+    a single-quote-corrupted subcommand argument like 'chec\\<NL>k' into the
+    allowlisted keyword "check", flipping a real DENY into a wrongly-granted
+    ALLOW), then hands the resulting logical lines to
+    _segments_from_logical_lines for shlex-based tokenization.
+    """
+    if not command or not command.strip():
+        return []
+
+    logical_lines = _join_continuation_lines(command)
+    return _segments_from_logical_lines(logical_lines)
 
 
 # ---------------------------------------------------------------------------
