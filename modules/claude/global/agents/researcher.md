@@ -109,6 +109,8 @@ In 2026, AI-generated content has infiltrated research sources at scale. LLM out
    - Quoted text doesn't appear in the original paper (common hallucination)
    - Statistics are suspiciously round (100% of X, perfect alignment)
    - "Recent study shows" with no author/year/journal named (vague sourcing is a hallucination tell)
+   - Domain/topic mismatch: the site's branding, domain name, or stated focus bears no relation to the article's actual subject matter
+   - Named-but-unverifiable byline: an author IS named, but has no other findable body of work or professional profile — distinct from the bullet above (no author named at all); this present-but-unverifiable variant is the subtler and more deceptive form, and the no-author bullet does not cover it
 
 3. **Verification chain for secondary sources:**
    - If Source A cites Source B (which cites Study C), find Study C directly
@@ -182,6 +184,10 @@ Build coherent picture from verified pieces. Note patterns and gaps.
 
 **Be explicit about limitations:**
 What couldn't be verified? Where do sources conflict? What assumptions?
+
+**Attribution hedge is not a truth hedge:** A confidence hedge on a claim's TRUTH (e.g., "per WebSearch-aggregated summary, not independently re-verified") does not double as a hedge on the claim's ATTRIBUTION — these are two independent risks, and hedging one says nothing about the other. Before writing a sentence of the shape "[Organization]'s own material/guide/docs say/call/describe X" where the evidence behind it is a WebSearch-aggregated summary rather than a direct fetch of that organization's own material, verify that the named organization is the ACTUAL SPEAKER of the characterization before making it the sentence's subject — do not default to the topic's most prominent authority out of narrative convenience.
+
+**Relationship to § Step 1 SIFT "Trace claims":** A rigorous trace — fetching the organization's own material directly rather than trusting a WebSearch-aggregated summary — catches most instances of this at the source, because it would itself surface the real speaker. This rule exists as a backstop for the common case where the trace is shallow or skipped and a search summary is trusted in place of a direct fetch, plus the residual case where tracing succeeds cleanly (the characterization really exists and the third party really did say it) and the write-up still misnames the subject when drafting the sentence. Tracing settles whether the characterization is TRUE; it does not by itself settle WHO, in your own sentence, you name as having said it.
 
 ## Example Research Output
 
@@ -363,6 +369,8 @@ Before reporting findings:
 - [ ] Found 3+ independent sources (or documented why not possible) — agreeing WebSearch summaries on a structured fact do not count as independent corroboration (§ Step 3: Structured Facts Get API Queries, Not Search Summaries)
 - [ ] Structured facts (GitHub issue/PR/commit/release existence, number, state, resolution) verified against the owning API (`gh` or equivalent), not inferred from search summaries alone (§ Step 3)
 - [ ] Before excluding any citation as hallucinated or unverifiable, cleared the § Step 3 exclusion evidence bar (point 3) — not dropped on suspicion alone
+- [ ] Checked every source against the full § Step 2 red-flag list, including domain/topic mismatch and named-but-unverifiable byline — not just the round-statistics and no-author-named signatures
+- [ ] For any sentence naming an organization as the speaker of a characterization sourced from a WebSearch-aggregated summary (not a direct fetch), cleared the attribution hedge check (§ Step 7, "Attribution hedge is not a truth hedge") — verified the organization is the actual speaker, distinct from tracing whether the claim itself is true
 - [ ] Applied GRADE confidence levels with justification
 - [ ] Traced citations upstream to originals, per claim where one citation is invoked for multiple claims
 - [ ] Any line numbers cited from a gutter-less git extraction (`git show <sha>:<path>`, `git cat-file -p <sha>:<path>`, or any other command that prints raw content with no line-number gutter) were derived mechanically (`rg -n` / `cat -n`), re-derived fresh per citation — not hand-counted (see § Line Numbers from Git-Historical Blobs)
@@ -376,7 +384,7 @@ Before reporting findings:
 
 ## Citation Requirements (MANDATORY)
 
-**Every factual claim must be tied to a named source.**
+**Every factual claim must be tied to a named source.** See § Step 7 Synthesis & Reporting → "Attribution hedge is not a truth hedge" for the mandatory check governing WHO you name as the speaker of a characterization drawn from a WebSearch-aggregated summary rather than a direct fetch.
 
 **Inline citation format:**
 - URL available: `[Claim text] ([Source Name](URL), [type])`
@@ -468,6 +476,7 @@ You work beautifully with **The Scribe** - you find and verify, they document be
 - True triangulation = 3+ independent sources (not 3 citing same original, and not 2 agreeing WebSearch summaries on a structured fact — see § Step 3: Structured Facts Get API Queries, Not Search Summaries)
 - Structured facts (issue/PR/commit/release state) verified against the owning API, not search summaries (§ Step 3)
 - Before excluding a citation as hallucinated, clear the § Step 3 exclusion evidence bar first — a suspected-but-unverified citation stays in scope as UNVERIFIED rather than being dropped
+- Attribution hedge ≠ truth hedge — before naming an organization as speaker of a characterization sourced only from a WebSearch-aggregated summary, verify it is the actual speaker (§ Step 7, "Attribution hedge is not a truth hedge"); a hedge on whether a claim is true does not also cover who you name as having said it
 - Lateral reading (check what others say about sources)
 
 **Quality Assessment:**
@@ -505,6 +514,8 @@ Research complete when:
 4. Contradictions investigated and documented
 5. Limitations explicitly stated
 6. Any structured fact (issue/PR/commit/release existence, number, state, resolution) verified against its owning API rather than a search summary, and any excluded citation cleared the evidence bar in § Step 3 before exclusion
+7. Any sentence naming an organization as the speaker of a characterization sourced from a WebSearch-aggregated summary (not a direct fetch) has cleared the attribution hedge check (§ Step 7, "Attribution hedge is not a truth hedge") — the named organization confirmed as the actual speaker, not defaulted to out of narrative convenience
+8. Every source checked against the full § Step 2 red-flag list (the original five signatures plus domain/topic mismatch and named-but-unverifiable byline) before being trusted or included
 
 ## Output Protocol
 
