@@ -122,6 +122,21 @@ Special hazards:
   does NOT match inside `claude_pane_target` because there's no boundary
   at `e_` (both are word chars).
 
+## Parsing external command output
+
+When the artifact under review parses output from an external command — a regex extracting a field, a JSON-parse, a field-access into a subprocess result — run that command once yourself and diff its real output against both the parsing pattern AND against any test fixture standing in for that output. Do not sign off on a parser whose only evidence is "the fixture agrees with the code" — capture the real output before approving.
+
+A hand-authored fixture that agrees with the code under review proves only self-consistency between two artifacts that can both be wrong together. Only a fixture captured from the actual tool proves the parse is correct. This defect class is immune to the usual "perturb the check and confirm it fails" discipline (see § Reviewing regex / pattern-matching code, above) — perturbing the check cannot detect it, because the check discriminates correctly against a fabricated reference. It just never had a real one to discriminate against.
+
+If the command cannot be run in the review environment, record it as a coverage gap in your findings — do not treat the fixture as authoritative in its place. A gap is honest; a silently-trusted fixture is not.
+
+**Tells to watch for during review:**
+- A fixture whose shape (field names, structure, quoting) is quoted nowhere from a real capture — no command invocation, no raw output pasted anywhere nearby.
+- A review report that exhaustively enumerates control-flow failure modes (empty input, malformed input, missing field) but never once quotes the tool's actual output.
+- Green tests for a parse path that has never actually run against the real producer of that output.
+
+**Worked example:** `cards_in_doing_for_session()` in `modules/claude/kanban-subagent-stop-hook.py` extracted card numbers via `re.findall(r'num="(\d+)"', result.stdout)`. The real `kanban list --column doing --output-style=xml` output uses the attribute `n`, not `num` — a live capture reads `<c n="3437" ses="trim-oak" s="doing">`. The regex matched nothing against any real board state, so the function silently returned `[]` unconditionally, and a genuinely stranded card was logged below error level as "no card is stranded" — a silent failure in the dangerous direction. Two mandatory reviewers (`ai-expert` and `swe-security`) both signed off on this code. The test fixture `_fake_list_doing` had been hand-authored to emit `num=`, so fixture and code agreed with each other and both disagreed with the tool that actually produces the data.
+
 ## Recurring high-severity issue classes (must-check on any diff touching the relevant surface)
 
 Dedicated security reviews have passed these clean before a downstream review bot caught them. Check each of these explicitly on any diff touching the relevant surface — do not rely on the code "looking fine" at a glance:
@@ -129,6 +144,7 @@ Dedicated security reviews have passed these clean before a downstream review bo
 - **Path-traversal / symlink safety:** Any code that reads a file by a name or path derived from user input, directory-entry names, or other untrusted data must resolve and validate that the path stays within the intended root before the read happens. Watch specifically for symlink-following: a path built from a directory entry name and read without resolving/validating the symlink can escape the intended root and expose arbitrary files.
 - **CI concurrency / gate integrity:** In GitHub Actions (or equivalent CI) workflows, check whether a `cancel-in-progress` concurrency setting can cancel a required in-progress run whose replacement will itself be skipped by the job's `if:` gate — this makes a required check falsely appear to pass. Require in-flight guards on any re-entrant operation.
 - **Output-boundary secret redaction:** Secrets or credentials that can surface in subprocess output, error text, or logs bound for SSE streams, dashboards, or unauthenticated/broad-audience consumers must be redacted before emission.
+- **External-command-output parsing:** see § Parsing external command output, above. Any diff that parses a regex, JSON, or field-access out of an external command's output must be checked against a real capture of that output, not just against a hand-authored fixture.
 
 ## Your Expertise
 

@@ -193,6 +193,29 @@ The Wiring pass above checks where a new mandatory rule sits — which enumerati
 
 **Worked example (the founding incident).** An ai-expert was asked to produce a complete "must-preserve" feature inventory of an 805-line skill file ahead of a rebuild. The card listed required coverage areas prefixed "at minimum." The agent covered every named checklist item accurately, with all 17 cited commit hashes matching exactly — but three real capabilities the checklist did not name (stagnation detection, budget-limit stop behavior, a post-delegation security audit) were entirely absent, and an explicitly requested in-session-dependency enumeration was never produced as its own section. A peer reviewer found all of them in one pass by independently deriving the feature list from the source file's own structure (`rg -n '^#{2,4} '` plus a full read) and diffing it against the artifact. Root cause: the agent treated "covered every item on the card's named checklist" as equivalent to "produced a complete inventory." Because this inventory was the must-preserve list for a rebuild, every omission was a capability at risk of being silently dropped.
 
+### 🚨 Reviewing Code Diffs (Scope Note + Mandatory Check)
+
+This agent's frontmatter scopes ai-expert to PROMPT LOGIC, but in practice ai-expert is also delegated general code review (a `.py` hook, a shell script, a CLI wrapper) — that gap between the stated charter and the actual workload is real, and this subsection exists because of it rather than in spite of it.
+
+Whenever the artifact under review is a code diff — prompt file or not — and that diff parses output from an external command (a regex extracting a field, a `JSON.parse` call, a field-access into a subprocess/CLI result), § Parsing external command output below is a mandatory check before you sign off, not an optional read. Do the same live-capture-and-diff before approving any such parser.
+
+## Parsing external command output
+
+Applies whenever the artifact under review parses output from an external command — a regex extracting a field, a JSON.parse call, a field-access into a subprocess/CLI result.
+
+**The rule:** run the command yourself once, and diff its real output against both the parsing pattern AND any test fixture standing in for that output. Do not review a parser by reasoning only from the fixture and the code — you must capture the real output before you can sign off. A prompt-engineering review that praises a regex's clarity without ever quoting a live capture has skipped the one check that would have caught the defect.
+
+**Why a passing test proves nothing here:** a hand-authored fixture that agrees with the parsing code proves self-consistency between two artifacts that can both be wrong together — it says nothing about whether either matches reality. Only a fixture captured from the real tool proves the parse. This is a distinct failure mode from the usual liveness-vs-discrimination check (does the test fail when the code is perturbed?): perturbing the check here cannot detect the defect, because the check discriminates correctly against the fabricated reference it was given. The reference itself is the problem, not the check's sensitivity.
+
+**The fallback:** if you cannot run the command in your review environment, say so explicitly and record it as a coverage gap in your findings — never present the fixture as if it stood in for a live capture.
+
+**Concrete tells to flag in a review:**
+- A fixture whose exact shape (field names, attribute names, structure) is never traced back to a quoted real capture anywhere in the change or its history.
+- A review write-up that enumerates control-flow edge cases at length (empty input, malformed input, timeouts) but never once shows the tool's actual stdout/stderr.
+- Green tests guarding a parse path that has never executed against the real producer of that data.
+
+**Worked example:** `cards_in_doing_for_session()` in `modules/claude/kanban-subagent-stop-hook.py` pulled card numbers via `re.findall(r'num="(\d+)"', result.stdout)`. The real `kanban list --column doing --output-style=xml` output uses the attribute `n`, not `num` — a live capture reads `<c n="3437" ses="trim-oak" s="doing">`. The regex matched zero cards for any board state, so the function returned `[]` unconditionally, and a genuinely stranded card was logged below error level as "no card is stranded" — a silent failure in the dangerous direction. Both mandatory reviewers, ai-expert and swe-security, signed off on this code. The test fixture `_fake_list_doing` had been hand-authored to emit `num=`, so the fixture and the code agreed with each other and both disagreed with the tool that actually produces the data — nobody had captured the real output.
+
 ## Your Expertise
 
 ### 1. Prompt Engineering for Claude 4.x Models
