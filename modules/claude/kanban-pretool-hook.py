@@ -1029,6 +1029,241 @@ def _validate_bash_destructive_git(payload: dict) -> "dict | None":
 
 
 # ---------------------------------------------------------------------------
+# rm safety guard (Bash tool calls from sub-agents)
+# ---------------------------------------------------------------------------
+#
+# GitHub issue #17. Two confirmed occurrences of a sub-agent deleting its own
+# scratchpad file mid-card; the second happened despite an explicit prose
+# no-rm restriction in that card's prompt. This is an additional check in the
+# existing Bash-validation shape (see "Destructive git operation validation"
+# above), reusing the same tokenizer and the same agent_id gating via
+# _is_sub_agent — not new infrastructure.
+#
+# SCOPE (decided — see card #3535, do not re-litigate):
+#   DENY (a) any `rm` whose target path touches .scratchpad/, and
+#   DENY (b) any RECURSIVE `rm` (-r, -R, -rf, --recursive, and combined
+#            short-flag spellings) regardless of target.
+#   ALLOW non-recursive `rm` of a named file that is not under .scratchpad/ —
+#   an implementation agent legitimately deletes a deprecated file; a blanket
+#   deny would break that and push agents toward workarounds.
+#
+# Deliberately OUT OF SCOPE for this check: `find -delete`, `truncate`, and
+# clobbering shell redirection. Omitted by decision, not oversight.
+
+_SCRATCHPAD_DIR = ".scratchpad"
+
+_RM_SCRATCHPAD_DENY_MESSAGE = (
+    "DENIED: `rm` targeting .scratchpad/ is blocked for sub-agents.\n"
+    ".scratchpad/ is auto-pruned (entries older than 90 days) by the "
+    "SessionStart hook, so deleting from it buys nothing — and it is shared "
+    "across concurrent sessions, so the file you're targeting may belong to "
+    "another card's in-flight findings.\n"
+    "Leave the file in place. If you believe it is genuinely blocking your "
+    "work, STOP and report the conflict in your final return instead of "
+    "deleting it."
+)
+
+_RM_RECURSIVE_DENY_MESSAGE = (
+    "DENIED: recursive `rm` (-r, -R, -rf, --recursive, or a combined "
+    "short-flag spelling) is blocked for sub-agents.\n"
+    "Recursive delete is denied outright — a single recursive rm can erase "
+    "an entire directory tree in one shot with no confirmation step and no "
+    "undo, which is too large a blast radius for an agent operating without "
+    "an interactive user to catch a mistake.\n"
+    "This is not a signal to work around it by deleting the same files one "
+    "at a time — if a directory genuinely needs to go, STOP and report the "
+    "conflict in your final return instead of finding another way to delete it."
+)
+
+
+def _is_under_scratchpad_dir(path_str: str) -> bool:
+    """Return True if path_str is under the .scratchpad/ directory.
+
+    Handles both absolute paths and relative paths, mirroring
+    _is_under_kanban_dir. Does not resolve symlinks — the literal path the
+    tool was given is what matters here.
+    """
+    if not path_str:
+        return False
+    p = Path(path_str)
+    parts = p.parts
+    return _SCRATCHPAD_DIR in parts or (len(parts) > 0 and parts[0] == _SCRATCHPAD_DIR)
+
+
+def _rm_segment_is_recursive(segment: list) -> bool:
+    """Return True if an `rm` command segment carries a recursive flag.
+
+    Detects `-r`, `-R`, `--recursive` (with or without `=value`), and any
+    combined short-flag cluster containing `r`/`R` (e.g. `-rf`, `-fr`, `-Rf`).
+    `rm`'s short options are limited to the letters f, i, I, r, R, d, v — so
+    checking for `r`/`R` anywhere in a single-dash cluster is safe and cannot
+    false-positive on an unrelated long-flag word.
+
+    Stops scanning a segment once a bare `--` end-of-options marker is seen,
+    since everything after that is a filename, not a flag.
+    """
+    for tok in segment[1:]:
+        if tok == "--":
+            break
+        if tok == "--recursive" or tok.startswith("--recursive="):
+            return True
+        if tok.startswith("--"):
+            continue  # other long flags — not recursive unless matched above
+        if tok.startswith("-") and len(tok) > 1:
+            if "r" in tok[1:].lower():
+                return True
+    return False
+
+
+def _rm_segment_targets(segment: list) -> list:
+    """Return the non-flag target tokens (file paths) from an `rm` segment.
+
+    Everything after a bare `--` is treated as a target regardless of its
+    leading character. Before `--`, any token starting with `-` (and longer
+    than just `-`) is treated as a flag, not a target.
+    """
+    targets = []
+    seen_dashdash = False
+    for tok in segment[1:]:
+        if tok == "--":
+            seen_dashdash = True
+            continue
+        if not seen_dashdash and tok.startswith("-") and tok != "-":
+            continue
+        targets.append(tok)
+    return targets
+
+
+def _is_assignment_token(tok: str) -> bool:
+    """Return True if tok looks like a shell VAR=VALUE assignment.
+
+    Used to skip `env`'s own leading assignment tokens (e.g. `env FOO=bar rm
+    ...`) so the wrapper-stripping walk reaches the real command.
+    """
+    if "=" not in tok:
+        return False
+    name = tok.split("=", 1)[0]
+    return bool(name) and (name[0].isalpha() or name[0] == "_") and all(
+        c.isalnum() or c == "_" for c in name
+    )
+
+
+def _strip_command_wrappers(segment: list) -> list:
+    """Strip leading shell-wrapper tokens so the real command lands at seg[0].
+
+    Handles, in any combination and repetition: `env` (and its leading
+    VAR=VAL assignment tokens), `command`, `xargs` (and its leading flag
+    tokens, e.g. -0, -n1, -I{}), the block keywords `do`/`then`/`else`, and
+    shell-grouping artifacts `(` / `{` that shlex leaves either standalone
+    (space before the wrapped command, e.g. `{ rm ...`) or attached to the
+    first token (no space, e.g. `(rm ...`).
+
+    FALSE-POSITIVE GUARD: `command -v rm` / `command -V rm` are lookups, not
+    deletions. When `command` is immediately followed by -v or -V, this
+    returns the segment UNCHANGED so seg[0] stays "command" and the caller's
+    `seg[0] != "rm"` check allows it through.
+
+    This only closes evasions decidable from the tokenized segment itself —
+    see "Known residual limits" above _validate_bash_rm_guard for the forms
+    that remain out of reach (variable expansion, pipe-fed xargs, symlinks).
+    """
+    seg = list(segment)
+    while seg:
+        tok = seg[0]
+
+        if tok in ("(", "{"):
+            seg = seg[1:]
+            continue
+        if tok and tok[0] in ("(", "{"):
+            rest = tok.lstrip("({")
+            seg = ([rest] if rest else []) + seg[1:]
+            continue
+
+        if tok == "command":
+            if len(seg) > 1 and seg[1] in ("-v", "-V"):
+                return segment  # lookup, not deletion — leave untouched
+            seg = seg[1:]
+            continue
+
+        if tok == "env":
+            seg = seg[1:]
+            while seg and _is_assignment_token(seg[0]):
+                seg = seg[1:]
+            continue
+
+        if tok == "xargs":
+            seg = seg[1:]
+            while seg and seg[0] != "-" and seg[0].startswith("-"):
+                seg = seg[1:]
+            continue
+
+        if tok in ("do", "then", "else"):
+            seg = seg[1:]
+            continue
+
+        break
+
+    return seg
+
+
+# Known residual limits — this guard is defense-in-depth behind the global
+# CLAUDE.md § Scratchpad prose rule, not an exhaustive control. Three
+# evasions are not decidable from the pre-expansion command string this hook
+# receives, and are not attempted here:
+#   1. Shell-variable expansion, e.g. `S=.scratchpad; rm $S/foo.md` — the
+#      literal path never appears in the command text the hook sees.
+#   2. Pipe-fed xargs where targets arrive on stdin, e.g.
+#      `find .scratchpad -type f | xargs rm` — the rm segment carries no
+#      target operand for _rm_segment_targets to inspect.
+#   3. Symlink indirection — a symlink pointing into .scratchpad/ lets `rm`
+#      delete real scratchpad content via a path that never contains the
+#      literal string ".scratchpad".
+def _validate_bash_rm_guard(payload: dict) -> "dict | None":
+    """Validate a Bash tool call for unsafe `rm` invocations from sub-agents.
+
+    Returns a deny response dict if the command should be blocked, or None
+    to allow. Only applies inside a sub-agent (agent_id present in payload) —
+    the coordinator is never gated by this check.
+
+    Fails open: any tokenizer error is logged and treated as allow, matching
+    the fail-open design of _validate_bash_destructive_git above.
+    """
+    if not _is_sub_agent(payload):
+        return None  # Main session — bypass
+
+    command = payload.get("tool_input", {}).get("command", "")
+    if not command:
+        return None
+
+    try:
+        segments = _tokenize_command(command)
+    except Exception as e:
+        log_error(f"rm-guard parse failure: {e!r}")
+        return None
+
+    for seg in segments:
+        if not seg:
+            continue
+
+        real = _strip_command_wrappers(seg)
+        if not real or real[0] != "rm":
+            continue
+
+        cmd_repr = " ".join(seg)  # log the original, wrapped form for context
+
+        if _rm_segment_is_recursive(real):
+            log_info(f"Bash denied — recursive rm from sub-agent: {cmd_repr}")
+            return deny_with_reason(_RM_RECURSIVE_DENY_MESSAGE)
+
+        targets = _rm_segment_targets(real)
+        if any(_is_under_scratchpad_dir(t) for t in targets):
+            log_info(f"Bash denied — rm targeting .scratchpad/ from sub-agent: {cmd_repr}")
+            return deny_with_reason(_RM_SCRATCHPAD_DENY_MESSAGE)
+
+    return None  # No unsafe rm detected — allow
+
+
+# ---------------------------------------------------------------------------
 # Allow response helpers
 # ---------------------------------------------------------------------------
 
@@ -1139,6 +1374,10 @@ def main() -> None:
     # This fires after the .kanban/ path guard (which handles kanban CLI allowlist).
     if tool_name == "Bash":
         denial = _validate_bash_destructive_git(payload)
+        if denial is not None:
+            print(json.dumps(denial))
+            return
+        denial = _validate_bash_rm_guard(payload)
         if denial is not None:
             print(json.dumps(denial))
             return

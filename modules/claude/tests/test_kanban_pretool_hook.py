@@ -1812,3 +1812,190 @@ class TestWriteLogLineCap:
         logged = log_path.read_text(encoding="utf-8")
         assert short_message in logged
         assert "truncated" not in logged
+
+
+# ---------------------------------------------------------------------------
+# Tests: rm safety guard (card #3535 / GitHub issue #17)
+# ---------------------------------------------------------------------------
+
+class TestRmGuard:
+    """Tests for _validate_bash_rm_guard.
+
+    Scope (decided on card #3535, not re-litigated here):
+      - DENY any rm targeting .scratchpad/ (any target under that directory).
+      - DENY any recursive rm (-r, -R, -rf, --recursive, combined short flags)
+        regardless of target.
+      - ALLOW non-recursive rm of an ordinary named file (regression guard).
+      - The coordinator (no agent_id) is never gated by this check.
+
+    All tests below carry 'rmguard' in their name per card instructions.
+    """
+
+    # 1. Sub-agent + rm targeting .scratchpad/ → DENY
+    def test_rmguard_scratchpad_target_denied(self, hook):
+        """rm on a file under .scratchpad/ must be denied for a sub-agent."""
+        payload = make_bash_payload("rm .scratchpad/3535-progress.md")
+        result = run_hook_main(hook, payload)
+        assert_denied(result)
+        reason = result["hookSpecificOutput"]["permissionDecisionReason"]
+        assert "auto-pruned" in reason
+
+    # 2. Sub-agent + rm -rf <ordinary target> → DENY (short recursive flag)
+    def test_rmguard_recursive_short_flag_denied(self, hook):
+        """rm -rf on an ordinary (non-.scratchpad) target must be denied."""
+        payload = make_bash_payload("rm -rf build/")
+        result = run_hook_main(hook, payload)
+        assert_denied(result)
+        reason = result["hookSpecificOutput"]["permissionDecisionReason"]
+        assert "recursive" in reason.lower()
+
+    # 3. Sub-agent + rm --recursive <ordinary target> → DENY (long recursive flag)
+    def test_rmguard_recursive_long_flag_denied(self, hook):
+        """rm --recursive must be denied — exercises the long-flag branch."""
+        payload = make_bash_payload("rm --recursive some_dir")
+        result = run_hook_main(hook, payload)
+        assert_denied(result)
+        reason = result["hookSpecificOutput"]["permissionDecisionReason"]
+        assert "recursive" in reason.lower()
+
+    # 4. Sub-agent + rm -fr <ordinary target> → DENY (combined short-flag cluster)
+    def test_rmguard_combined_short_flags_denied(self, hook):
+        """rm -fr (force+recursive combined, 'r' not first) must be denied —
+        exercises the combined short-flag-cluster detection branch.
+        """
+        payload = make_bash_payload("rm -fr some_dir")
+        result = run_hook_main(hook, payload)
+        assert_denied(result)
+
+    # 5. Sub-agent + non-recursive rm of an ordinary named file → ALLOW
+    #    (regression guard for the scope decision). Called directly rather
+    #    than through the full main() flow because the end-to-end decision
+    #    is identical before and after this change (both allow) — see
+    #    rmguard-demo.md DISCRIMINATES note for why the direct call still
+    #    discriminates via AttributeError on the pre-change hook module.
+    def test_rmguard_named_file_allowed(self, hook):
+        """Non-recursive rm of a named file outside .scratchpad/ must be
+        permitted — sub-agents legitimately delete deprecated files.
+        """
+        payload = make_bash_payload("rm deprecated_module.py")
+        result = hook._validate_bash_rm_guard(payload)
+        assert result is None, (
+            "non-recursive rm of an ordinary named file must not be denied"
+        )
+
+    # 6. Coordinator (no agent_id) + rm targeting .scratchpad/ → ALLOW (bypass)
+    def test_rmguard_coordinator_scratchpad_bypassed(self, hook):
+        """The coordinator (no agent_id) is never gated — even for .scratchpad/."""
+        payload = make_bash_payload("rm .scratchpad/foo.md", agent_id=None)
+        result = hook._validate_bash_rm_guard(payload)
+        assert result is None, "coordinator (no agent_id) must bypass rm-guard"
+
+    # 7. Coordinator (no agent_id) + recursive rm → ALLOW (bypass)
+    def test_rmguard_coordinator_recursive_bypassed(self, hook):
+        """The coordinator (no agent_id) is never gated — even for recursive rm."""
+        payload = make_bash_payload("rm -rf build/", agent_id=None)
+        result = hook._validate_bash_rm_guard(payload)
+        assert result is None, "coordinator (no agent_id) must bypass rm-guard"
+
+
+# ---------------------------------------------------------------------------
+# Tests: rm safety guard wrapper-stripping (card #3540)
+# ---------------------------------------------------------------------------
+
+class TestRmGuardWrapperStripping:
+    """Tests for _strip_command_wrappers as applied inside _validate_bash_rm_guard.
+
+    Card #3540 closed the gap where a wrapped `rm` (env rm, command rm,
+    xargs rm, a for-loop's `do rm`, a subshell, a brace group) evaded
+    detection because the guard only inspected seg[0] of each tokenized
+    segment. Every test name below carries 'rmguard_wrapper' per card
+    instructions.
+    """
+
+    # --- Deny-side: each wrapper form must still be caught ---
+
+    def test_rmguard_wrapper_env_denied(self, hook):
+        """`env rm .scratchpad/x` must be denied — env wrapper stripped."""
+        payload = make_bash_payload("env rm .scratchpad/foo.md")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "auto-pruned")
+
+    def test_rmguard_wrapper_env_with_assignment_denied(self, hook):
+        """`env FOO=bar rm .scratchpad/x` — env's own VAR=VAL token is also skipped."""
+        payload = make_bash_payload("env FOO=bar rm .scratchpad/foo.md")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "auto-pruned")
+
+    def test_rmguard_wrapper_command_denied(self, hook):
+        """`command rm .scratchpad/x` must be denied — command wrapper stripped."""
+        payload = make_bash_payload("command rm .scratchpad/foo.md")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "auto-pruned")
+
+    def test_rmguard_wrapper_xargs_literal_target_denied(self, hook):
+        """`xargs rm .scratchpad/x` with a literal target must be denied."""
+        payload = make_bash_payload("xargs rm .scratchpad/foo.md")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "auto-pruned")
+
+    def test_rmguard_wrapper_xargs_leading_flag_denied(self, hook):
+        """`xargs -n1 rm .scratchpad/x` — xargs's own leading flag is skipped too."""
+        payload = make_bash_payload("xargs -n1 rm .scratchpad/foo.md")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "auto-pruned")
+
+    def test_rmguard_wrapper_for_loop_do_denied(self, hook):
+        """A for-loop's `do rm <literal target>` segment must be denied."""
+        payload = make_bash_payload("for f in x; do rm .scratchpad/foo.md; done")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "auto-pruned")
+
+    def test_rmguard_wrapper_subshell_denied(self, hook):
+        """`(rm .scratchpad/x)` — shlex-attached leading paren must be stripped."""
+        payload = make_bash_payload("(rm .scratchpad/foo.md)")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "auto-pruned")
+
+    def test_rmguard_wrapper_brace_group_denied(self, hook):
+        """`{ rm .scratchpad/x; }` — standalone leading brace must be stripped."""
+        payload = make_bash_payload("{ rm .scratchpad/foo.md; }")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "auto-pruned")
+
+    def test_rmguard_wrapper_env_recursive_denied(self, hook):
+        """A wrapped recursive rm (env rm -rf ...) must hit the recursive branch."""
+        payload = make_bash_payload("env rm -rf .scratchpad")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "blast radius")
+
+    # --- Allow-side: the false-positive guard and pre-existing allows survive ---
+
+    def test_rmguard_wrapper_command_dash_v_allowed(self, hook):
+        """`command -v rm` is a lookup, not a deletion — must remain allowed."""
+        payload = make_bash_payload("command -v rm")
+        result = hook._validate_bash_rm_guard(payload)
+        assert result is None, "`command -v rm` must not be denied"
+
+    def test_rmguard_wrapper_command_dash_V_allowed(self, hook):
+        """`command -V rm` is also a lookup — must remain allowed."""
+        payload = make_bash_payload("command -V rm")
+        result = hook._validate_bash_rm_guard(payload)
+        assert result is None, "`command -V rm` must not be denied"
+
+    def test_rmguard_wrapper_git_rm_allowed(self, hook):
+        """`git rm --cached foo.py` must remain allowed — not the coreutils rm."""
+        payload = make_bash_payload("git rm --cached foo.py")
+        result = hook._validate_bash_rm_guard(payload)
+        assert result is None, "`git rm` must not be denied"
+
+    def test_rmguard_wrapper_npm_rm_allowed(self, hook):
+        """`npm rm some-package` must remain allowed — not the coreutils rm."""
+        payload = make_bash_payload("npm rm some-package")
+        result = hook._validate_bash_rm_guard(payload)
+        assert result is None, "`npm rm` must not be denied"
+
+    def test_rmguard_wrapper_rmdir_allowed(self, hook):
+        """`rmdir .scratchpad/emptydir` must remain allowed — distinct token from `rm`."""
+        payload = make_bash_payload("rmdir .scratchpad/emptydir")
+        result = hook._validate_bash_rm_guard(payload)
+        assert result is None, "`rmdir` must not be denied"
