@@ -2926,7 +2926,11 @@ If matches are found, add the matching files to `editFiles` and bundle test upda
 
 **Pre-creation discovery step:** grep the target file for its enumerated checklists, trigger lists, command references, and everything-you-need enumerations, and identify which ones claim to cover the moment the new rule fires:
 - `rg -n '^#{1,4} ' <target-file>` — enumerate every heading and existing checklist section
-- `rg -ni '<trigger-keyword>' <target-file>` — locate enumerations already touching the new rule's firing moment
+- `rg -ni '<trigger-keyword>' <target-file>` — locate enumerations already touching the new rule's firing moment. `<trigger-keyword>` MUST be the trigger condition's own wording — the exact phrase the rule's Trigger paragraph uses to describe when it fires — and specifically not the rule name or its section heading.
+
+**Why the two greps differ:** a grep on the rule's name surfaces cross-references and counterpart mentions, while a grep on the trigger condition's wording surfaces the places the firing test is actually written down — and only the second set is what the reachability obligation is about. Grepping the rule's name feels like compliance, because it is the natural way to find the rule you are editing and it does surface the checklist bullet discussed most in the surrounding prose — but it is not the same search, and relying on it alone can leave other restatements of the trigger unwired. Measured evidence: for the Hazard-Sweep Parity Rule, a grep on its wired qualifier phrase ("BAN a shape") returns exactly the four restatements actually wired, while a grep on its name ("Hazard-Sweep") returns four hits too — but only one of those four is in both sets. Two under-wired restatements would still produce a name-grep count of 4, because wiring inserts the qualifier and does not raise the name count at all. The name count is insensitive to whether the qualifier was actually inserted, which is exactly why it cannot serve as the discriminator.
+
+Not every rule labels its trigger with an explicit **Trigger:** paragraph; when none exists, use the wording the rule's opening sentence uses to describe when it fires.
 
 **Bundling mandate (required in the same card):** those enumeration updates land in the SAME card, never a follow-up. A rule shipped unwired reads as compliance and behaves as absence.
 
@@ -2935,16 +2939,18 @@ If matches are found, add the matching files to `editFiles` and bundle test upda
 - When a stated count describes the set the new rule joins, the count must be updated.
 - When the new rule fits no existing bullet because the list's scoping excludes it, the SCOPING must be widened rather than an anomalous bullet appended.
 
+**Discharge check (run after the edit):** after making the wiring edits, grep the target file for the wiring qualifier text you just inserted — the same text the worked `mov_commands` example below asserts — and confirm it goes from zero to the number of restatements discovery found, AND that every one of those hits actually carries the change. This is the same check the acceptance criterion runs; the discharge step is a confirmation that it already passes, not a second, separate mechanism. Judging that a hit "carries the change" (rather than merely containing the qualifier text by coincidence) remains a manual read — the grep only counts occurrences, it does not verify what surrounds them.
+
 **Acceptance criterion:** assert the new rule is reachable from each affected enumeration, using location-agnostic greps (`rg -c`/`rg -q` without `-A`/`-B` window flags) rather than window-scoped checks that only prove local placement. **Card is not done if the wiring is missing, regardless of AC state.**
 
-**Worked `mov_commands` example (copy-paste ready):** a location-agnostic reachability assertion — proving the new rule's distinctive name appears at least twice: once in its own section, once in the enumeration it now reaches:
+**Worked `mov_commands` example (copy-paste ready):** a location-agnostic reachability assertion — counting occurrences of the text the wiring adds, the qualifier phrase the wiring edit newly inserts into each restatement, not the rule's distinctive name. Grepping the name instead is the mismatch this section warns against above: the name grep returns cross-references and counterpart mentions that exist whether or not any wiring happened, so it cannot detect a partially-wired rule. The asserted count is a floor (`-ge`, not `-eq`) equal to the number of restatements discovery found — do not hardcode a fixed 2. A rule with two restatements asserts `-ge 2`; a rule with four restatements asserts `-ge 4`. A floor still catches the founding defect (2 of 4 wired fails `-ge 4`) while tolerating a later legitimate reuse of the same qualifier phrase elsewhere in the file:
 ```json
 {
   "text": "New rule is reachable from the affected enumeration",
-  "mov_commands": [{"cmd": "test $(rg -ci '<rule-distinctive-name>' <target-file>) -ge 2", "timeout": 10}]
+  "mov_commands": [{"cmd": "test $(rg -ci '<wiring-qualifier>' <target-file>) -ge <restatement-count>", "timeout": 10}]
 }
 ```
-(This card's own AC2 is a live instance of this exact shape, checking for `Prompt-Rule-Wiring Parity`.)
+(An earlier version of this card's own AC2 used this template in its older name-grep form, checking for `Prompt-Rule-Wiring Parity` rather than a wiring qualifier — that earlier instance does not match the current template above.)
 
 **The question before creating such a card:** "Does this card add, widen, tighten, or re-scope a mandatory rule in a prompt file — and if so, is that rule reachable from every enumeration that claims to cover the moment it fires, checked in the SAME card?"
 
