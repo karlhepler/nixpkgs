@@ -1452,7 +1452,17 @@ def _mov_check_cmd(cmd: str) -> "list[tuple[str, str]]":
             (
                 "This idiom is fragile — `rg -c` emits NO stdout when zero matches, "
                 "breaking `test` structurally with exit 2. "
-                "For pattern-absence assertions, use: `! rg -q 'pattern' file`"
+                "For pattern-absence assertions, use: `! rg -q 'pattern' file`. "
+                "For exactly-N or at-most-N intent (e.g. an anti-duplication guard "
+                "pairing an ordering/presence regex with a uniqueness check), this "
+                "banned shape cannot express it either — even guarding the "
+                "substitution with `|| echo 0` does not exempt it, because this "
+                "check does not inspect guard placement at all. Split into two "
+                "separate mov_commands entries instead: a presence check "
+                "(`rg -q 'pattern' file`) plus a no-duplicate check that never "
+                "counts: `! rg -U -q '(?s)PHRASE.*PHRASE' <file>` asserts PHRASE "
+                "does not occur twice anywhere in the file — together they assert "
+                "exactly-one; the no-duplicate check alone asserts at-most-N (N=1)."
             ),
         ))
 

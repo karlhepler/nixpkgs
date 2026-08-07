@@ -65,6 +65,13 @@ In ripgrep, `-E` means `--encoding`. The default regex engine already handles PC
 - ❌ `test $(rg -c 'pattern' file) -le 0` — exit 2 when no matches present
 - ✅ `! rg -q 'pattern' file` — exit 0 if absent, 1 if present
 
+**Exactly-N / at-most-N intent (e.g. an anti-duplication guard pairing an ordering/presence regex with a uniqueness check) is a DIFFERENT intent from absence, and the banned shape cannot express it either** — even guarding the substitution with `|| echo 0` does not exempt it, because the validator does not inspect guard placement at all. Split into two separate `mov_commands` entries instead:
+
+- A presence check: `rg -q 'pattern' file`
+- A no-duplicate check that never counts: `! rg -U -q '(?s)PHRASE.*PHRASE' <file>` — asserts PHRASE does not occur twice anywhere in the file (the `(?s)` flag lets `.` match newlines, so the duplicate can be found across lines)
+
+Together the two entries assert exactly-one; the no-duplicate check alone asserts at-most-N (N=1).
+
 ### Dash-leading patterns need `--` or `-e` separator
 
 `rg` parses leading `-` as a flag. For literal patterns starting with `-`, use the end-of-flags marker.
@@ -123,7 +130,7 @@ When authoring a MoV that needs to search for the literal text of a banned patte
 | `rg -E` | `encoding flag`, `not extended regex` |
 | `\|` (literal pipe) | `literal pipe`, `backslash.pipe`, `alternation trap` |
 | `&&` (AND-chain) | `AND-chain`, `chained command`, `compound shell` |
-| `test $(rg -c) -le 0` | `pattern-absence anti-pattern`, `absence-via-count`, `absence test idiom` |
+| `test $(rg -c) -le 0` (also rejected when guarded, e.g. `test $(rg -c 'pattern' file \|\| echo 0) -eq 1` — the validator does not inspect guard placement) | `pattern-absence anti-pattern`, `absence-via-count`, `absence test idiom`, `exactly-N count guard` |
 | dash-leading patterns (`--watch`, `-pattern`) | `dash-leading pattern`, `flag-prefixed pattern`, `leading-dash literal` |
 | backtick in `-c`/`-e` source | `backtick in inner source`, `shell-expansion trap`, `inner-source backtick` |
 | `rg -o` on directory + sort -u | `directory filename prefix`, `unfiltered match prefix`, `sort -u uniqueness break` |
@@ -291,7 +298,7 @@ Before invoking the kanban CLI, scan every `mov_commands[].cmd` field for these 
 - `&&` (AND-chain) — split into separate array entries
 - `\|` (literal pipe in rg) — use bare `|` for alternation, OR split into separate entries
 - `rg -E` (means --encoding, not extended regex) — use `rg -q` or `rg -qi`
-- `test $(rg -c pattern) -le 0` for absence — use `! rg -q 'pattern' file`
+- `test $(rg -c pattern) -le 0` for absence — use `! rg -q 'pattern' file`; for exactly-N/at-most-N intent, split into a presence check plus `! rg -U -q '(?s)PHRASE.*PHRASE' file` (see § Pattern-absence above)
 - Dash-leading patterns without `--` or `-e` separator
 - Backtick in double-quoted `-c`/`-e` source — backticks expand BEFORE inner language runs
 - Standalone Nix-managed lint tool (`flake8`, `black`, `shellcheck`, `prettier`, `mypy`, `isort`, etc.) in `~/.config/nixpkgs` — exits 127 (NOT in agent's PATH); use `hms` as the lint MoV

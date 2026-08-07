@@ -207,6 +207,26 @@ class TestValidateMovCommandsContentUnit:
         captured = capsys.readouterr()
         assert "absence" in captured.err.lower() or "rg -c" in captured.err
 
+    def test_rg_count_eqn_guarded_still_rejected_with_exactlyN_guidance(self, kanban, capsys):
+        """test $(rg -c ... || echo 0) -eq 1 (a guarded exactly-one assertion,
+        not an absence assertion) is still rejected — this validator does not
+        key on `|| echo 0` guard placement at all, only on the structural
+        `test $(rg -c` prefix plus a comparison to a small N (see kanban.py
+        _MOV_ZERO_COMPARE_RE). The rejection message must now carry exactly-N
+        guidance and a working alternative (the `rg -U -q` multiline
+        duplicate-detection idiom), so an author with a legitimate exactly-N
+        or at-most-N intent has somewhere to go instead of reverse-engineering
+        one."""
+        card = make_card(criteria=[make_criterion(
+            cmd="test $(rg -c 'pattern' file || echo 0) -eq 1"
+        )])
+        with pytest.raises(SystemExit) as exc_info:
+            kanban.validate_mov_commands_content(card)
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "exactly-N" in captured.err
+        assert "rg -U -q" in captured.err
+
     def test_no_verify_hook_skip_rejected(self, kanban, capsys):
         """--no-verify hook-skip flag is rejected with exit 1."""
         card = make_card(criteria=[make_criterion(cmd="git commit --no-verify -m 'msg'")])
