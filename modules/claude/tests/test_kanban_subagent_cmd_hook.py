@@ -888,3 +888,133 @@ class TestCompositionRootDenyFormat:
         assert "stopReason" not in result, (
             f"Top-level 'stopReason' key must not be present: {result}"
         )
+
+
+# ---------------------------------------------------------------------------
+# TestInlineFlagScan — card #3543: confirmed evasion via a value-consuming
+# flag placed before -c/-e, and the removal of the early break that caused
+# it. See .scratchpad/3542-probe-findings.md for the empirical probe that
+# confirmed this bypass, and .scratchpad/inline-scan-demo.md for the
+# liveness/discrimination demonstration.
+# ---------------------------------------------------------------------------
+
+class TestInlineFlagScan:
+    """_is_shell_wrapper_invocation must scan every token in the segment for
+    the inline flag, not stop at the first token that doesn't start with
+    '-' — that early-exit assumption is false for value-consuming flags
+    whose own argument token does not itself start with '-' (e.g. python3's
+    `-W <value>`)."""
+
+    def test_inline_flag_scan_value_consuming_flag_evasion_denied(self, hook):
+        """Confirmed evasion (card #3542 probe #1): `python3 -W
+        error::SyntaxWarning -c "print(1)"` — `-W` consumes
+        'error::SyntaxWarning' as a separate argument token that does not
+        itself start with '-'. Before the fix, the scan loop broke on that
+        argument token (misclassifying it as the 'script argument' and
+        ending flag-scanning) before ever reaching `-c` two tokens later,
+        and the inline code executed unguarded. Must now DENY."""
+        payload = make_bash_payload('python3 -W error::SyntaxWarning -c "print(1)"')
+        result = run_hook_main(hook, payload)
+        assert_blocked(result)
+        reason = block_reason(result)
+        assert "shell-wrapper" in reason.lower() or "python3" in reason
+
+    def test_inline_flag_scan_second_value_consuming_flag_shape_denied(self, hook):
+        """Second value-consuming-flag shape (per probe findings' coverage
+        gap, now closed): `python3 -X importtime -c "print(1)"` — `-X`
+        consumes 'importtime' as a separate argument token not starting
+        with '-'. Same mechanism as the confirmed evasion above. Must
+        DENY."""
+        payload = make_bash_payload('python3 -X importtime -c "print(1)"')
+        result = run_hook_main(hook, payload)
+        assert_blocked(result)
+        reason = block_reason(result)
+        assert "shell-wrapper" in reason.lower() or "python3" in reason
+
+    def test_inline_flag_scan_boolean_flag_python3_B_still_denied(self, hook):
+        """Boolean-flag control: `python3 -B -c "print(1)"` — `-B` consumes
+        no separate argument, so the scan already reached `-c` correctly
+        even before the fix. Must remain DENIED after the fix (regression
+        guard, not a new behavior)."""
+        payload = make_bash_payload('python3 -B -c "print(1)"')
+        result = run_hook_main(hook, payload)
+        assert_blocked(result)
+
+    def test_inline_flag_scan_boolean_flag_python3_u_still_denied(self, hook):
+        """Boolean-flag control: `python3 -u -c "print(1)"`. Must remain
+        DENIED after the fix."""
+        payload = make_bash_payload('python3 -u -c "print(1)"')
+        result = run_hook_main(hook, payload)
+        assert_blocked(result)
+
+    def test_inline_flag_scan_boolean_flag_bash_norc_still_denied(self, hook):
+        """Boolean-flag control: `bash --norc -c "echo 1"`. Must remain
+        DENIED after the fix."""
+        payload = make_bash_payload('bash --norc -c "echo 1"')
+        result = run_hook_main(hook, payload)
+        assert_blocked(result)
+
+    def test_inline_flag_scan_boolean_flag_sh_x_still_denied(self, hook):
+        """Boolean-flag control: `sh -x -c "echo 1"`. Must remain DENIED
+        after the fix."""
+        payload = make_bash_payload('sh -x -c "echo 1"')
+        result = run_hook_main(hook, payload)
+        assert_blocked(result)
+
+    def test_inline_flag_scan_boolean_flag_perl_w_still_denied(self, hook):
+        """Boolean-flag control: `perl -w -e "print 1"`. Must remain DENIED
+        after the fix."""
+        payload = make_bash_payload('perl -w -e "print 1"')
+        result = run_hook_main(hook, payload)
+        assert_blocked(result)
+
+    def test_inline_flag_scan_bare_control_still_denied(self, hook):
+        """Bare control: `python3 -c "print(1)"` with no intervening flag
+        at all. Must remain DENIED after the fix."""
+        payload = make_bash_payload('python3 -c "print(1)"')
+        result = run_hook_main(hook, payload)
+        assert_blocked(result)
+
+    def test_inline_flag_scan_accepted_false_positive_script_arg_denied(self, hook):
+        """Accepted, deliberate false positive (documented in the fix's
+        source comment, not an oversight): `python3 script.py -c
+        config.ini` — here `-c` is an argument belonging to the SCRIPT
+        (e.g. a '-c config.ini' flag the script itself parses), not to the
+        python3 interpreter. Because the scan now checks every token for
+        exact membership in inline_flags with no early exit, this is
+        DENIED even though the '-c' token doesn't belong to python3 itself.
+
+        This is the accepted cost of closing the bypass: a false deny is
+        loud and recoverable (the agent reports it and stops); a bypass is
+        silent. That asymmetry is why the trade is accepted, and this test
+        pins it so a future reader who sees this DENY does not read it as
+        a regression to 'fix' by reintroducing the early break."""
+        payload = make_bash_payload('python3 script.py -c config.ini')
+        result = run_hook_main(hook, payload)
+        assert_blocked(result)
+
+    def test_inline_flag_scan_deny_message_forecloses_workaround(self, hook):
+        """Card #3548, finding 3 (from .scratchpad/3546-ai-expert.md): the
+        deny message an agent actually sees for the accepted false-positive
+        shape (`python3 script.py -c config.ini`) must not read as "this
+        might be a bug" — that framing would invite the agent to rephrase
+        or retry to route around the deny, undoing the foreclosure work
+        already done for the sibling recursive-delete deny message. The
+        message must instead name the collision (the -c/-e token belongs
+        to the script's/command's own arguments, not the runner) and
+        direct the agent to report it in its final return rather than work
+        around it, in the same breath.
+
+        This test pins the foreclosure clause so a future edit that softens
+        the message back into an invitation ("might be a false positive")
+        fails the suite."""
+        payload = make_bash_payload('python3 script.py -c config.ini')
+        result = run_hook_main(hook, payload)
+        assert_blocked(result)
+        reason = block_reason(result)
+        assert "report it in your final return" in reason, (
+            f"Deny message must foreclose the workaround, not invite one: {reason!r}"
+        )
+        assert "might be" not in reason.lower(), (
+            f"Deny message must not hedge with 'might be' framing: {reason!r}"
+        )

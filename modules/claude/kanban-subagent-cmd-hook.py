@@ -473,7 +473,16 @@ def _is_shell_wrapper_invocation(segment: list) -> bool:
     access and never need to wrap commands in shell-runner -c layers.
 
     Does NOT block:
-      bash some-script.sh          (script-file invocation, not -c)
+      bash some-script.sh          (script-file invocation, not -c — but this
+                                     is only true when some-script.sh's OWN
+                                     arguments never include a literal -c/-e
+                                     token; a shell runner invoked with a
+                                     script file whose own args collide with
+                                     -c, e.g. `bash deploy.sh -c prod`, IS
+                                     denied by the scan below. See the
+                                     accepted-trade note in the loop's
+                                     comment for the full false-positive
+                                     surface this covers.)
       bash                         (interactive shell, no -c)
     """
     if not segment:
@@ -486,13 +495,42 @@ def _is_shell_wrapper_invocation(segment: list) -> bool:
         inline_flags = _SHELL_INLINE_FLAGS
     else:
         inline_flags = _SCRIPT_INLINE_FLAGS
-    # Scan remaining tokens for the inline flag
+    # Root cause of a confirmed bypass: this loop used to stop scanning at the
+    # first token that did not start with "-", on the assumption that such a
+    # token must be the script argument and that flag territory had ended.
+    # That assumption is false for any value-consuming flag whose own
+    # argument token does not itself start with "-" (e.g. python3's
+    # `-W error::SyntaxWarning`) — the scan would break on the flag's VALUE
+    # before ever reaching a later `-c`/`-e`, silently allowing the inline
+    # code to run. The fix: this loop now scans every token in the segment
+    # for exact membership in inline_flags, with no early exit.
+    #
+    # An alternative fix was considered and rejected: a per-runner table of
+    # "flags that consume a following argument token" (mirroring the
+    # existing _skip_flags_with_args elsewhere in this module), used to skip
+    # past a value-consuming flag's argument instead of scanning every
+    # token unconditionally. That approach is the SAME defect class as the
+    # early-break assumption above: any per-runner flag table is an
+    # enumerable list of "flags that consume an argument," and enumerable
+    # lists are inherently incomplete — the bypass that motivated this fix
+    # was found by probing only two value-consuming flags out of an
+    # open-ended set for a single runner. Do not reintroduce a per-runner
+    # flag-skip table to make this scan "smarter"; it would just move the
+    # same incompleteness one layer down.
+    #
+    # Accepted trade, deliberate and pinned by tests, not an oversight: this
+    # unconditional scan now also denies any shell runner or script runner
+    # whose OWN script/command arguments happen to contain a literal -c or
+    # -e token — e.g. `python3 script.py -c config.ini` (script's own -c,
+    # not the interpreter's) or `bash deploy.sh -c prod` (a shell runner's
+    # script-file argument, not the runner's own -c) — as a false positive.
+    # A false deny is loud and recoverable (the agent reports it and stops);
+    # a bypass is silent. For a control whose entire job is resisting bypass,
+    # that asymmetry decides it — do not reintroduce the early break to
+    # "fix" this false positive.
     for tok in segment[1:]:
         if tok in inline_flags:
             return True
-        # Stop scanning at the first non-flag token (i.e., the script argument)
-        if not tok.startswith("-"):
-            break
     return False
 
 
@@ -775,6 +813,11 @@ def _deny_shell_wrapper(command: str) -> None:
         "Sub-agents may not use shell-wrapper invocations "
         "(bash -c, sh -c, zsh -c, python -c, python3 -c, perl -e, ruby -e, etc.). "
         "Use direct command invocation instead. "
+        "If the -c/-e token above actually belongs to your own script's or "
+        "command's arguments rather than to the runner itself, this is a "
+        "known, accepted false-positive trade-off, not a bug — do not "
+        "rephrase or retry to work around it; "
+        "report it in your final return instead. "
         f"Attempted: {safe_cmd!r}."
     )
     print(json.dumps(_deny_response(reason), separators=(",", ":")))
