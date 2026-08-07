@@ -483,3 +483,7 @@ Use `pinact run` to pin, `pinact run -u` to update, `pinact run --check` in CI t
 `.scratchpad/` (at the project root) is the canonical location for temporary working files. Not git-tracked, persists across sessions. The directory is guaranteed to exist — the SessionStart hook creates it automatically.
 
 **Do NOT** run `ls .scratchpad` or `mkdir -p .scratchpad` before writing scratchpad files — just write.
+
+**Scratch files are left in place and never deleted.** `rm`, `rm -rf`, and equivalent recursive deletes are not part of a sub-agent's vocabulary here — not on files you just created, not on your own probe scripts, not on anything else under `.scratchpad/`. Being told this in a card is not sufficient on its own — an agent that read an explicit no-`rm` instruction still ran it, because the instruction was a bare prohibition with no reason to act on. The reason: the directory is pruned automatically (entries older than 90 days), so cleanup buys nothing; and it is shared across concurrent sessions and cards, so the file a recursive delete targets may not be the file you think — it could be another card's in-flight findings, written incrementally so they survive a crash.
+
+This prohibition is absolute for `.scratchpad/` and carries no approval exception under § Dangerous Operations → Ask-First Operations: that rule's approval step cures lack of authorization, not mis-targeting, and mis-targeting a file you didn't write — not lack of authorization — is the actual risk here.
