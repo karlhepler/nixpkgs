@@ -911,3 +911,70 @@ class TestFailsOpenByDesign:
         payload = json.dumps({"tool_name": "Bash", "tool_input": "not-a-dict"})
         result = run_hook_main(hook, payload)
         assert result is None, f"Expected allow (None), got: {result}"
+
+
+class TestCommandLengthGuard:
+    """`_MAX_COMMAND_BYTES` (card #3526 / GitHub issue #12) makes
+    `_extract_kanban_do_todo_json` return None BEFORE paying the
+    `shlex.split()` tokenization cost on a pathologically large command
+    string — regardless of whether that string would otherwise be a fully
+    valid `kanban do`/`kanban todo` invocation. Tokenization cost is
+    super-linear (600KB -> 0.415s, 2.4MB -> 4.137s) and this hook is
+    registered on matcher="Bash", so it is paid on every Bash tool call from
+    every session sharing this checkout, kanban-related or not. See the
+    `_MAX_COMMAND_BYTES` rationale comment in kanban-mov-lint-hook.py for the
+    byte-budget derivation.
+
+    Both tests in this class contain "lenguard" per the card's test naming
+    requirement.
+    """
+
+    def test_oversized_valid_kanban_do_returns_none_lenguard(self, hook):
+        """A `kanban do '<json>'` command that is otherwise a perfectly
+        well-formed card-creation invocation — but whose total command
+        length exceeds `_MAX_COMMAND_BYTES` — must return None. This is the
+        load-bearing direction: it proves the guard fires BEFORE
+        `shlex.split()` is ever called, because a valid oversized `kanban
+        do` would return its real card JSON text (not None) if the guard
+        were absent or placed after the parse."""
+        padding = "x" * (hook._MAX_COMMAND_BYTES + 1000)
+        card = {
+            "title": "t",
+            "action": padding,
+            "intent": "i",
+            "criteria": [
+                {
+                    "text": "c1",
+                    "mov_commands": [{"cmd": "rg -q 'pattern' file", "timeout": 10}],
+                },
+            ],
+        }
+        card_json = json.dumps(card)
+        command = f"kanban do {shlex.quote(card_json)}"
+        assert len(command) > hook._MAX_COMMAND_BYTES, (
+            "Test setup invariant violated: command must exceed the guard "
+            f"threshold ({hook._MAX_COMMAND_BYTES} bytes), got {len(command)}"
+        )
+        result = hook._extract_kanban_do_todo_json(command)
+        assert result is None, (
+            f"Expected None (guard should skip the parse before it ever "
+            f"runs), got JSON of length {len(result) if result else 0}"
+        )
+
+    def test_under_threshold_valid_kanban_do_still_parses_lenguard(self, hook):
+        """A normal, well-under-threshold `kanban do '<json>'` command must
+        still return its real card JSON unchanged — the guard must not
+        regress the ordinary case."""
+        mov_cmd = "rg -q 'pattern' file"
+        command = _kanban_do_command(mov_cmd)
+        assert len(command) < hook._MAX_COMMAND_BYTES, (
+            "Test setup invariant violated: command must stay under the "
+            f"guard threshold ({hook._MAX_COMMAND_BYTES} bytes), got "
+            f"{len(command)}"
+        )
+        result = hook._extract_kanban_do_todo_json(command)
+        assert result is not None, "Expected parsed JSON, got None"
+        parsed = json.loads(result)
+        assert parsed["criteria"][0]["mov_commands"][0]["cmd"] == mov_cmd, (
+            f"Expected round-tripped mov_cmd {mov_cmd!r}, got: {parsed!r}"
+        )

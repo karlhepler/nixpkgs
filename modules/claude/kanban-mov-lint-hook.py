@@ -579,6 +579,30 @@ def find_abutted_quote_path_reason(cmd: str) -> "str | None":
 # via `kanban do` / `kanban todo` — never the raw Bash command line.
 # ---------------------------------------------------------------------------
 
+# This hook runs on the *full text* of every Bash tool call from every
+# session sharing this checkout (matcher = "Bash" in default.nix), so the
+# shlex.split() tokenization cost below is paid even for commands that have
+# nothing to do with kanban — this guard's performance benefit applies to
+# every oversized Bash command, kanban-related or not. Measured
+# tokenization cost is super-linear: 600KB -> 0.415s, 2.4MB -> 4.137s. The
+# largest card JSON ever created anywhere in this board's history (checked
+# across .kanban/done/, doing/, canceled/, and todo/ — not just done/) is
+# 21,760 bytes, in .kanban/done/. Wrapping that exact card in shlex.quote()
+# (it contains 68 embedded single-quote characters, a realistic worst case)
+# measures a 1.013x quoting multiplier, i.e. 22,034 quoted bytes and a
+# 22,044-byte full command line — not the ~2x a naive doubling estimate
+# would suggest. 100_000 gives ~4.5x headroom over that measured worst case
+# while staying an order of magnitude below the 600KB point where
+# tokenization cost turns super-linear.
+#
+# Only an INLINE-JSON `kanban do`/`kanban todo` invocation can trip this
+# guard's lint-skip consequence: a `--file <path>` invocation passes just
+# the path on the command line, so the referenced card JSON never appears
+# in the command string and can be any size without ever approaching this
+# threshold.
+_MAX_COMMAND_BYTES = 100_000
+
+
 def _extract_kanban_do_todo_json(command: str) -> "str | None":
     """If `command` is a `kanban do` / `kanban todo` invocation, return the
     raw card JSON text it carries (from --file content, or the inline
@@ -587,6 +611,8 @@ def _extract_kanban_do_todo_json(command: str) -> "str | None":
     determined or read — callers must treat None as "nothing to check here",
     not as an error.
     """
+    if len(command) > _MAX_COMMAND_BYTES:
+        return None  # pathologically large command — fail open, skip parse
     try:
         tokens = shlex.split(command)
     except ValueError:
