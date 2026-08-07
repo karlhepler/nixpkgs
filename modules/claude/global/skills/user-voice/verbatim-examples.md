@@ -158,7 +158,7 @@ What makes this the wrong voice:
 
 #### Broadcast / Channel Post Template
 
-Broadcast posts come in several shapes. Pick the shape that matches the post's purpose. All shapes share the section-header conventions and no-greeting opener.
+Broadcast posts come in several shapes. **Selection step (do this first, before reaching for the structured template):** is this a formal announcement of completed or in-flight work, or is it a short, exploratory peer post floating an idea or proposal? The structured shapes below (milestone announcement, weekly update, blocker call-out, decision broadcast, progress/status update) share the section-header conventions and no-greeting opener. The exploratory peer post shape, at the end of this list, does NOT — it is headerless and shorter. Do not default to a structured shape just because the audience type is "broadcast"; pick the shape that matches the post's actual purpose.
 
 **Milestone announcement shape** (use when announcing a completed merge, fix, or release):
 
@@ -203,6 +203,15 @@ Broadcast posts come in several shapes. Pick the shape that matches the post's p
 6. What's next (open hedging — "I might wait", "I'm not 100% sure", "a few things on my radar include...", "possibly X, and possibly Y")
 7. Feedback invitation + emoji close — e.g., "I'm happy to incorporate any thoughts and feedback before or during planning. Just let me know. :smile:"
 
-See also: § Verbatim Examples (above) — Broadcast / Channel Post (Project Update — engineering channel, progress/status shape)
+**Exploratory peer post shape** (use for a short, exploratory peer post floating an idea or proposal — not a formal announcement of completed or in-flight work; no verbatim example is included here, this repo is public and the source message contains internal identifiers — see structural description below):
 
-Note: broadcast posts open with the section header itself — not with `Hey`, `Thanks!`, or any greeting. Greetings are reserved for DMs.
+1. No section header, no greeting — opens directly with linked evidence compressed into a clause, then goes straight to the proposal: `Given [link] and [link], I am thinking of [proposal].`
+2. Substantiate with one concrete external fact that changed (not abstract strategic reasoning) — a sentence or two.
+3. World-referential hedges only — a named technical unknown, an organizational reason, each stated once, flatly, no elaboration. No self-referential doubt: no hedges that rehearse the author's own credibility, no paragraph that pre-argues the reader out of the proposal, no doubt-labelled section headers, no framing the change as a net loss (see `SKILL.md` § Hard Avoids → Self-referential doubt).
+4. No eulogy, no positioning — do not defend, credit, or frame the thing being retired/changed, and do not marshal counter-evidence to establish the call as considered. Link the evidence and let it stand.
+5. No `Up Next` block, no feedback-invitation close, no emoji. Posting it in the channel is the invitation.
+6. Length: roughly two short paragraphs, 110-150 words total.
+
+Note: broadcast posts (the structured shapes above) open with the section header itself — not with `Hey`, `Thanks!`, or any greeting. Greetings are reserved for DMs. The exploratory peer post shape is also headerless and greeting-free, but for a different reason: it is not a formal announcement at all.
+
+See also: § Verbatim Examples (above) — Broadcast / Channel Post (Project Update — engineering channel, progress/status shape)
