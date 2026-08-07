@@ -1148,20 +1148,168 @@ def _is_assignment_token(tok: str) -> bool:
     )
 
 
+# ---------------------------------------------------------------------------
+# Wrapper-own-flag handling (GitHub issue #29 / card #3550)
+#
+# DESIGN DECISION (do not re-propose the rejected alternative below without
+# re-reading this comment first):
+#
+# Chosen shape — (a) enumerate each wrapper's own flags explicitly, mirroring
+# how the xargs branch already skips its leading dash-prefixed tokens.
+#
+# Rejected alternative: (b) invert the test — instead of naming each
+# wrapper's flags, scan forward for the first token that is *not* a known
+# wrapper name, *not* dash-prefixed, and *not* a VAR=VAL assignment, and
+# treat THAT as the real command. This looks more general (closes the whole
+# class instead of one flag at a time) but was rejected because `env` has
+# flags that consume a FOLLOWING token as their argument (`-u NAME`,
+# `-C DIR`, `-a ARGV0`, `-S STRING` — confirmed via `env --help`, GNU
+# coreutils). A "skip leading dash-tokens" loop stops at `VARNAME` in
+# `env -u VARNAME rm ...` because `VARNAME` does not start with a dash — it
+# lands on `VARNAME` as the supposed real command, not `rm`, which is just a
+# different flavor of the same evasion this fix exists to close. Closing
+# that gap requires knowing WHICH flags consume a following argument, which
+# is exactly the per-flag enumeration (a) already requires. Since (b) cannot
+# be implemented correctly without the same enumeration, it is (a) wearing a
+# more-general-looking shape, not a cheaper alternative — so (a) was kept
+# for its directness and auditability.
+# ---------------------------------------------------------------------------
+
+# env's short flags that consume the NEXT token as a separate argument (per
+# `env --help`, GNU coreutils): -a ARGV0, -u NAME, -C DIR, -S STRING. Every
+# other env flag (-i, -0, -v, bare `-`, and all --long forms) is either
+# argument-free or carries its argument attached via `=` in the same token
+# (e.g. `--unset=NAME`), so none of those need a following token skipped.
+_ENV_ARG_TAKING_SHORT_FLAGS = frozenset(["-a", "-u", "-C", "-S"])
+
+
+def _strip_env_flags(seg: list) -> list:
+    """Skip env's own flags and VAR=VAL assignments, landing on the real command.
+
+    Called with the tokens AFTER the leading `env` token already removed.
+    Handles:
+      - VAR=VAL assignments (delegates to _is_assignment_token)
+      - `--` end-of-options marker (consumed, then stop scanning)
+      - any `--long` form (bare or =value-attached): a single token, skipped
+      - bare `-` (implies -i): a single token, skipped
+      - Bundled short-flag clusters — a single dash-prefixed token may pack
+        several of env's short flags together (POSIX-style bundling, e.g.
+        `-iu`, `-ia`, `-i0u`), and GNU env genuinely parses them that way
+        (confirmed against the real binary: `env -iu FOO echo x` and
+        `env -iuFOO echo x` both ran `echo x`, GNU coreutils 9.8). This
+        function walks each character of the cluster left to right:
+          - a char whose flag (-a, -u, -C, -S) takes an argument consumes
+            everything remaining IN THE SAME TOKEN as its attached argument
+            (e.g. the `FOO` in `-iuFOO`); if nothing remains in the token,
+            the NEXT token is consumed as its separate-token argument
+            (e.g. the `FOO` in `-iu FOO`) — either way parsing of the
+            cluster stops there, since GNU env's own bundling stops at the
+            first arg-taking flag too
+          - every other char (-i, -0, -v) is a no-arg flag and simply
+            advances to the next character in the same token
+        This single code path also covers the single-flag case (e.g. `-u`,
+        `-C`) — a one-character cluster — so no separate exact-match branch
+        is needed for the unbundled forms.
+    Stops at the first token that is none of the above — that token is the
+    real command (or a further wrapper, handled by the outer loop).
+    """
+    while seg:
+        tok = seg[0]
+        if _is_assignment_token(tok):
+            seg = seg[1:]
+            continue
+        if tok == "--":
+            seg = seg[1:]
+            break
+        if tok == "-":
+            seg = seg[1:]
+            continue
+        if tok.startswith("--"):
+            seg = seg[1:]
+            continue
+        if tok.startswith("-") and len(tok) > 1:
+            # Bundled short-flag cluster (see docstring). Walk the chars
+            # after the leading '-' to find whether an arg-taking flag
+            # appears, and whether its argument is attached in this same
+            # token or must be pulled from the next token.
+            consume_next_token = False
+            chars = tok[1:]
+            for i, ch in enumerate(chars):
+                if ("-" + ch) in _ENV_ARG_TAKING_SHORT_FLAGS:
+                    consume_next_token = not chars[i + 1:]
+                    break
+            seg = seg[1:]
+            if consume_next_token and seg:
+                seg = seg[1:]
+            continue
+        break
+    return seg
+
+
+# DECISION (GitHub issue #29 / card #3554, corrected by card #3556) —
+# Bundled command flags: `command` recognizes exactly three flags total
+# (-p, -v, -V — see docstring below), so the only possible bundles are
+# combinations of those three characters. A bundle containing `v` or `V`
+# is inherently a lookup regardless of what else is bundled with it, so a
+# form like `-pv`/`-vp` is safe to leave unrecognized — it becomes
+# `real[0]` itself (`!= "rm"`), an accidental-but-correct ALLOW, exactly
+# like the pre-existing `command -p -v` unbundled case. That is NOT true of
+# a **p-only bundle** (`-pp`, `-ppp`, any token whose characters after the
+# leading `-` are all `p`): card #3556's live probe against the real bash
+# builtin confirmed `command -pp echo hi` and `command -ppp echo hi2` both
+# perform a REAL INVOCATION (print `hi`/`hi2`, rc=0) — unlike a `v`/`V`-
+# containing bundle, which stays lookup-only. A p-only bundle therefore had
+# to be stripped the same way repeated exact `-p` tokens already were,
+# because leaving it as an unrecognized token lets it become `real[0]`
+# instead of the real command hiding behind it, silently skipping the rm
+# guard entirely. (An unrecognized-character bundle like `-pw` is a
+# separate case: bash's own getopts rejects it outright — `command -pw echo
+# hi` errors `command: -w: invalid option`, rc=2, no invocation — so no
+# fix is needed there; it never reaches an executable command at all.)
+def _strip_command_own_flags_for_lookup_check(seg: list) -> "tuple[list, bool]":
+    """Skip `command`'s own -p flag(s) (bundled or not); report whether
+    -v/-V follows.
+
+    Called with the tokens AFTER the leading `command` token already
+    removed. bash's `command` builtin recognizes exactly three flags
+    (POSIX: `command [-p] [-v|-V] name`): -p (use default PATH, still a real
+    invocation) and -v/-V (lookup only, no invocation). Returns
+    (remaining_tokens, is_lookup) — the caller must leave the ORIGINAL
+    segment untouched when is_lookup is True (see FALSE-POSITIVE GUARD on
+    _strip_command_wrappers).
+
+    Strips a **p-only bundle** — a token whose characters after the leading
+    `-` are ALL `p` (e.g. `-p`, `-pp`, `-ppp`) — the same way repeated exact
+    `-p` tokens were already stripped, because bash performs a real
+    invocation for that shape (see the decision comment immediately above
+    this function). Does NOT parse a bundle containing `v`/`V` (e.g.
+    `-pv`/`-vp`) as a single token — any such bundle is inherently a
+    lookup, so leaving it unrecognized still lands on the correct ALLOW via
+    the accidental-but-safe path documented above.
+    """
+    rest = seg
+    while rest and rest[0].startswith("-") and set(rest[0][1:]) == {"p"}:
+        rest = rest[1:]
+    if rest and rest[0] in ("-v", "-V"):
+        return (rest, True)
+    return (rest, False)
+
+
 def _strip_command_wrappers(segment: list) -> list:
     """Strip leading shell-wrapper tokens so the real command lands at seg[0].
 
-    Handles, in any combination and repetition: `env` (and its leading
-    VAR=VAL assignment tokens), `command`, `xargs` (and its leading flag
-    tokens, e.g. -0, -n1, -I{}), the block keywords `do`/`then`/`else`, and
-    shell-grouping artifacts `(` / `{` that shlex leaves either standalone
-    (space before the wrapped command, e.g. `{ rm ...`) or attached to the
-    first token (no space, e.g. `(rm ...`).
+    Handles, in any combination and repetition: `env` (its leading VAR=VAL
+    assignment tokens AND its own flags — see _strip_env_flags), `command`
+    (its own -p flag — see _strip_command_own_flags_for_lookup_check),
+    `xargs` (and its leading flag tokens, e.g. -0, -n1, -I{}), the block
+    keywords `do`/`then`/`else`, and shell-grouping artifacts `(` / `{` that
+    shlex leaves either standalone (space before the wrapped command, e.g.
+    `{ rm ...`) or attached to the first token (no space, e.g. `(rm ...`).
 
-    FALSE-POSITIVE GUARD: `command -v rm` / `command -V rm` are lookups, not
-    deletions. When `command` is immediately followed by -v or -V, this
-    returns the segment UNCHANGED so seg[0] stays "command" and the caller's
-    `seg[0] != "rm"` check allows it through.
+    FALSE-POSITIVE GUARD: `command -v rm` / `command -V rm` (with or without
+    a leading `-p`) are lookups, not deletions. When `command`'s own flags
+    resolve to -v or -V, this returns the segment UNCHANGED so seg[0] stays
+    "command" and the caller's `seg[0] != "rm"` check allows it through.
 
     This only closes evasions decidable from the tokenized segment itself —
     see "Known residual limits" above _validate_bash_rm_guard for the forms
@@ -1180,15 +1328,14 @@ def _strip_command_wrappers(segment: list) -> list:
             continue
 
         if tok == "command":
-            if len(seg) > 1 and seg[1] in ("-v", "-V"):
+            rest, is_lookup = _strip_command_own_flags_for_lookup_check(seg[1:])
+            if is_lookup:
                 return segment  # lookup, not deletion — leave untouched
-            seg = seg[1:]
+            seg = rest
             continue
 
         if tok == "env":
-            seg = seg[1:]
-            while seg and _is_assignment_token(seg[0]):
-                seg = seg[1:]
+            seg = _strip_env_flags(seg[1:])
             continue
 
         if tok == "xargs":

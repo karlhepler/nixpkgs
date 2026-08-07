@@ -1999,3 +1999,158 @@ class TestRmGuardWrapperStripping:
         payload = make_bash_payload("rmdir .scratchpad/emptydir")
         result = hook._validate_bash_rm_guard(payload)
         assert result is None, "`rmdir` must not be denied"
+
+
+# ---------------------------------------------------------------------------
+# Tests: wrapper's own flags no longer hide the real command (card #3550)
+# ---------------------------------------------------------------------------
+
+class TestRmGuardWrapperOwnFlags:
+    """Tests for _strip_command_wrappers handling of `command`'s and `env`'s
+    OWN flags, closing the gap GitHub issue #29 (and the security review at
+    .scratchpad/3541-swe-security.md §2 F3) documented: `command -p rm ...`
+    and `env -u VARNAME rm ...` previously evaded detection because only
+    `command -v`/`-V` and env's VAR=VAL assignment tokens were special-cased.
+
+    Every test name below carries 'wrapper_own_flags' per card instructions.
+    """
+
+    # --- Deny-side: flags that do NOT turn the wrapper into a lookup ---
+
+    def test_wrapper_own_flags_command_dash_p_denied(self, hook):
+        """`command -p rm .scratchpad/x` — command's own -p flag must be
+        skipped, not mistaken for the real command."""
+        payload = make_bash_payload("command -p rm .scratchpad/foo.md")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "auto-pruned")
+
+    def test_wrapper_own_flags_env_dash_u_denied(self, hook):
+        """`env -u VARNAME rm .scratchpad/x` — env's own -u flag AND its
+        separate-token argument (VARNAME) must both be skipped."""
+        payload = make_bash_payload("env -u VARNAME rm .scratchpad/foo.md")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "auto-pruned")
+
+    def test_wrapper_own_flags_env_dash_C_denied(self, hook):
+        """`env -C /tmp rm .scratchpad/x` — env's -C flag takes a
+        separate-token DIR argument that must also be skipped."""
+        payload = make_bash_payload("env -C /tmp rm .scratchpad/foo.md")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "auto-pruned")
+
+    def test_wrapper_own_flags_env_dash_i_denied(self, hook):
+        """`env -i rm .scratchpad/x` — env's no-arg -i flag must be skipped."""
+        payload = make_bash_payload("env -i rm .scratchpad/foo.md")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "auto-pruned")
+
+    def test_wrapper_own_flags_env_attached_value_denied(self, hook):
+        """`env -uVARNAME rm .scratchpad/x` — an attached-value short flag
+        (no space before the value) must be skipped as a single token."""
+        payload = make_bash_payload("env -uVARNAME rm .scratchpad/foo.md")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "auto-pruned")
+
+    def test_wrapper_own_flags_env_long_flag_denied(self, hook):
+        """`env --ignore-environment rm .scratchpad/x` — env's long-form
+        flags must be skipped too, not just the short forms."""
+        payload = make_bash_payload("env --ignore-environment rm .scratchpad/foo.md")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "auto-pruned")
+
+    def test_wrapper_own_flags_env_bare_dash_denied(self, hook):
+        """`env - rm .scratchpad/x` — env's bare `-` (implies -i) must be
+        skipped as a single token."""
+        payload = make_bash_payload("env - rm .scratchpad/foo.md")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "auto-pruned")
+
+    def test_wrapper_own_flags_env_recursive_via_dash_u_denied(self, hook):
+        """A recursive rm hidden behind env's -u flag must still hit the
+        recursive branch, not just the scratchpad branch."""
+        payload = make_bash_payload("env -u VARNAME rm -rf .scratchpad")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "blast radius")
+
+    # --- Allow-side: the existing lookup guard and unrelated wrappers survive ---
+
+    def test_wrapper_own_flags_command_dash_p_dash_v_lookup_allowed(self, hook):
+        """`command -p -v rm` combines command's own -p with -v — still a
+        lookup, must remain allowed."""
+        payload = make_bash_payload("command -p -v rm")
+        result = hook._validate_bash_rm_guard(payload)
+        assert result is None, "`command -p -v rm` (lookup) must not be denied"
+
+    def test_wrapper_own_flags_command_dash_v_dash_p_lookup_allowed(self, hook):
+        """`command -v -p rm` — -v ordered before -p — is still a lookup."""
+        payload = make_bash_payload("command -v -p rm")
+        result = hook._validate_bash_rm_guard(payload)
+        assert result is None, "`command -v -p rm` (lookup) must not be denied"
+
+
+# ---------------------------------------------------------------------------
+# Tests: `command`'s p-only bundled flags no longer hide the real command
+# (GitHub issue #29, card #3556)
+# ---------------------------------------------------------------------------
+
+class TestRmGuardCommandPOnlyBundle:
+    """`command -pp rm ...` / `command -ppp rm ...` — a bundle whose
+    characters are ALL `p` — must be stripped the same way repeated exact
+    `-p` tokens already were. Confirmed live against real bash:
+    `command -pp echo hi` performs a REAL invocation (prints `hi`, rc=0),
+    unlike a `v`/`V`-containing bundle, which stays lookup-only.
+    """
+
+    # --- Deny-side: a p-only bundle must not hide the real `rm` ---
+
+    def test_command_p_only_bundle_double_p_scratchpad_denied(self, hook):
+        """`command -pp rm .scratchpad/x` — bundled `-pp` must be skipped,
+        landing the guard on the real `rm` target."""
+        payload = make_bash_payload("command -pp rm .scratchpad/foo.md")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "auto-pruned")
+
+    def test_command_p_only_bundle_triple_p_scratchpad_denied(self, hook):
+        """`command -ppp rm .scratchpad/x` — same as above with a
+        three-`p` bundle."""
+        payload = make_bash_payload("command -ppp rm .scratchpad/foo.md")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "auto-pruned")
+
+    def test_command_p_only_bundle_recursive_denied(self, hook):
+        """`command -pp rm -rf .scratchpad` — the p-only bundle must not
+        hide a recursive whole-directory delete either."""
+        payload = make_bash_payload("command -pp rm -rf .scratchpad")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "blast radius")
+
+    # --- Allow-side: lookups and unrelated commands survive ---
+
+    def test_command_p_only_bundle_ls_allowed(self, hook):
+        """`command -pp ls -la` — a p-only bundle in front of a non-`rm`
+        command remains allowed."""
+        payload = make_bash_payload("command -pp ls -la")
+        result = hook._validate_bash_rm_guard(payload)
+        assert result is None, "`command -pp ls -la` must not be denied"
+
+    def test_command_p_only_bundle_with_v_lookup_allowed(self, hook):
+        """`command -ppv rm` — a bundle that ALSO contains `v` is
+        inherently a lookup and must remain allowed, even though it packs
+        multiple `p` characters with the `v`."""
+        payload = make_bash_payload("command -ppv rm")
+        result = hook._validate_bash_rm_guard(payload)
+        assert result is None, "`command -ppv rm` (lookup) must not be denied"
+
+    def test_command_dash_v_lookup_still_allowed(self, hook):
+        """`command -v rm` — the pre-existing unbundled lookup case must
+        survive the p-only bundle fix unchanged."""
+        payload = make_bash_payload("command -v rm")
+        result = hook._validate_bash_rm_guard(payload)
+        assert result is None, "`command -v rm` (lookup) must not be denied"
+
+    def test_command_dash_V_lookup_still_allowed(self, hook):
+        """`command -V rm` — same as above for the uppercase `-V` form."""
+        payload = make_bash_payload("command -V rm")
+        result = hook._validate_bash_rm_guard(payload)
+        assert result is None, "`command -V rm` (lookup) must not be denied"
+
