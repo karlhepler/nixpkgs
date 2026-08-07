@@ -50,6 +50,14 @@ alone by this hook regardless of its own final pipe stage. Only a
 positional argument or the file at --file) is inspected, and only that card
 JSON's mov_commands[].cmd strings are passed to find_unfailable_pipe_reason.
 
+This hook ALSO checks, on the same mov_commands[].cmd strings, for a quoted
+pattern fused onto its very next path-like token with no separating
+whitespace (e.g. `rg -q 'pattern'modules/foo.nix`) — see the "Abutted
+quote/path detection" section below and find_abutted_quote_path_reason.
+Bash tokenizes that as ONE shell word, so the tool receives no path
+argument at all and the check fails identically regardless of file
+content, unconditionally.
+
 Output format (PreToolUse hook — documented hookSpecificOutput format):
   {"suppressOutput": False, "hookSpecificOutput": {
       "hookEventName": "PreToolUse", "permissionDecision": "deny",
@@ -311,6 +319,262 @@ def find_unfailable_pipe_reason(cmd: str) -> "str | None":
 
 
 # ---------------------------------------------------------------------------
+# Abutted quote/path detection
+# ---------------------------------------------------------------------------
+#
+# Defect this catches (issue #6, following #5's five-broken-MoV incident): a
+# quoted pattern fused onto its very next path argument with no separating
+# whitespace, e.g.
+#
+#     rg -q 'anything'modules/claude/default.nix
+#
+# Bash tokenizes the closing quote and the immediately-following text as ONE
+# shell word, so the pattern-matching tool receives a single garbled
+# argument and no path — it reads stdin instead of the file, and the check
+# fails identically regardless of file content, every single time,
+# regardless of whether the work is correct. A real incident produced five
+# such commands across three sibling cards from a single `replace_all` edit
+# that dropped one trailing space.
+#
+# Detection works by computing the FULL EXTENT of the single Bash word that
+# begins immediately after a closing quote (_scan_abutted_word), then
+# checking whether that word's raw text contains a literal '/' anywhere.
+# Getting the word's extent right matters: a backslash-escape, a further
+# quoted segment, a $(...) / `...` command substitution, or a ${...}
+# parameter expansion all extend the current word rather than ending it —
+# none of them is a shell operator the way `&&`/`|`/`;` are. An earlier
+# version of this code (card #3518 review) treated all of those characters
+# as if they were operators that ended the word, which let the exact defect
+# this rule exists to catch slip through undetected whenever one of them
+# immediately followed the closing quote (e.g.
+# `'pattern'$(echo x)/foo.nix` fuses into ONE shell word in real Bash, but
+# was allowed). Only real Bash word separators — whitespace, and the
+# |&;()<> operator characters — actually end a word; everything else
+# extends the current word, and _scan_abutted_word walks past all of it
+# (including nested quoted segments and balanced $(...)/`...`/${...}
+# groups) to find the word's true end before checking for a '/'.
+#
+# False positives this deliberately does NOT flag (verified against real
+# Bash tokenization, not assumed — see card #3512, and re-verified for card
+# #3518):
+#
+#   1. The embedded-single-quote idiom: closing a single-quoted string,
+#      immediately opening a double-quoted one containing a literal
+#      apostrophe, then closing that and reopening the single-quoted string
+#      — e.g. 'don'"'"'t'. This is NOT special-cased as "any quote
+#      immediately following a quote is exempt" — that blanket exemption
+#      was too broad: it also waved through two independently-quoted
+#      adjacent strings whose fused result is itself path-like (e.g.
+#      'pattern'"/file", which collapses to the single word `pattern/file`
+#      in real Bash and IS the defect). Instead the idiom is allowed
+#      because it falls out naturally from the word-extent scan: the
+#      concatenated content of 'don'"'"'t' is "don't", which contains no
+#      '/', so it is correctly not path-like regardless of how many quoted
+#      segments it is built from — while 'pattern'"/file" is still denied,
+#      because ITS concatenated content does contain '/'.
+#   2. Deliberate short token concatenation with no path semantics, e.g.
+#      'foo'bar file (searches for the literal string "foobar"), or
+#      'foo'.bar file (searches for the literal string "foo.bar"). Rare,
+#      but valid shell and not an error. A bare '.' immediately after the
+#      closing quote is NOT unconditionally treated as path-like — like
+#      every other starting character, it only qualifies if the word it
+#      starts actually contains a '/' (verified: real Bash tokenizes
+#      `rg -q 'foo'.bar file` into 4 correct, separate arguments — not the
+#      fused defect at all — so denying it was itself a false positive,
+#      fixed here). The rule only fires when the abutting word actually
+#      contains a '/' — a bare word with no slash never qualifies.
+#   3. Brace expansion, e.g. 'pattern'{a,b}/file. Bash expands a bare
+#      {x,y,...} group (distinct from a $-prefixed ${...} parameter
+#      expansion) into MULTIPLE separate shell words at this position —
+#      verified live: 'pattern'{a,b}/file becomes the two words
+#      `patterna/file` and `patternb/file`, not one fused word with no path
+#      argument at all. This is a real, sanctioned Bash mechanism distinct
+#      from string concatenation, and _scan_abutted_word detects it (a bare
+#      '{' whose balanced '}' group contains a top-level ',') and exempts
+#      the whole word rather than flagging it.
+#
+# A candidate FOURTH false-positive shape was considered and deliberately
+# NOT exempted: `"$VAR"/path/suffix` (expand a quoted variable, then
+# concatenate a literal path suffix with no intended space — a real,
+# recognized shell idiom for building paths from an env var). It was not
+# given a carve-out because it is exactly as ambiguous, in shape, as the
+# actual defect this rule exists to catch: `"$PATTERN"/some/broken/path`
+# with a missing space is indistinguishable from the legitimate idiom by
+# this simple a lint, and this hook is not a full shell interpreter that
+# could tell "used as an expanded path" apart from "meant to be a separate
+# argument". No instance of the legitimate idiom was found anywhere in this
+# repository's actual MoV commands (checked via rg across modules/claude
+# and modules/kanban) — so a carve-out here would trade a real, catchable
+# defect for a false-positive class that has never actually occurred.
+# Erring toward catching the bug is the safer default for a gate whose job
+# is precisely to catch commands that "fail identically regardless of file
+# content".
+#
+# KNOWN RESIDUAL GAP (card #3518 review; not fixed here — there is no
+# reliable fix for a lint this simple): a fused bare word with NEITHER a
+# leading '/' or '.' NOR any '/' anywhere in it — e.g. `rg -q 'pattern'file`
+# against a real bare filename `file` that happens to exist in cwd — is
+# indistinguishable, by this check, from the deliberate literal-string
+# concatenation named in false-positive #2 above. Both produce the
+# identical shape: "closing quote immediately followed by a run of
+# non-separator characters with no slash anywhere in it." This residual gap
+# cannot be closed without either a filesystem existence check against the
+# actual working directory at lint time (fragile, environment-dependent,
+# and wrong for a MoV that will run somewhere else entirely) or banning
+# bare-word concatenation outright (which would reject the legitimate,
+# documented idiom in #2). It is accepted as a known limitation, not
+# silently assumed away.
+# ---------------------------------------------------------------------------
+
+_ABUT_TRUE_SEPARATORS = frozenset(" \t\n\r|&;()<>")
+
+
+def _scan_abutted_word(cmd: str, start: int) -> "tuple[int, bool]":
+    """Return (end, saw_brace_expansion) describing the single Bash word
+    that begins at cmd[start] (start itself must not be a separator —
+    callers check that via _ABUT_TRUE_SEPARATORS before calling).
+
+    Backslash-escapes, further quoted segments, $(...) / `...` command
+    substitutions, and ${...} parameter expansions all extend the current
+    word rather than ending it — none of them is a shell operator the way
+    `&&`/`|`/`;` are, so this scan walks past all of them (mirroring
+    _find_top_level_operators's own quote/substitution skipping, applied to
+    one word instead of a whole command line) rather than stopping at the
+    first one encountered. Only a real Bash word separator — whitespace, or
+    one of the |&;()<> operator characters — ends the word.
+
+    A bare `{x,y,...}` group (brace expansion, distinct from a $-prefixed
+    `${...}` parameter expansion) sets saw_brace_expansion=True: Bash
+    expands that group into MULTIPLE separate words at this position, so
+    the caller must not treat whatever surrounds it as fused into one
+    argument.
+    """
+    n = len(cmd)
+    i = start
+    saw_brace_expansion = False
+    while i < n:
+        c = cmd[i]
+        if c in _ABUT_TRUE_SEPARATORS:
+            break
+        if c == "\\" and i + 1 < n:
+            i += 2  # backslash-escape: extends the current word
+            continue
+        if c == "'":
+            i += 1
+            while i < n and cmd[i] != "'":
+                i += 1
+            i += 1
+            continue
+        if c == '"':
+            i += 1
+            while i < n and cmd[i] != '"':
+                if cmd[i] == "\\" and i + 1 < n:
+                    i += 1
+                i += 1
+            i += 1
+            continue
+        if c == "$" and i + 1 < n and cmd[i + 1] == "(":
+            i = _skip_balanced_group(cmd, i + 1, "(", ")")
+            continue
+        if c == "$" and i + 1 < n and cmd[i + 1] == "{":
+            i = _skip_balanced_group(cmd, i + 1, "{", "}")
+            continue
+        if c == "`":
+            i += 1
+            while i < n and cmd[i] != "`":
+                i += 1
+            i += 1
+            continue
+        if c == "{":
+            group_end = _skip_balanced_group(cmd, i, "{", "}")
+            if "," in cmd[i + 1:group_end - 1]:
+                saw_brace_expansion = True
+            i = group_end
+            continue
+        i += 1
+    return i, saw_brace_expansion
+
+
+def _abutted_path_reason_at(cmd: str, close_idx: int) -> "str | None":
+    """cmd[close_idx] is a closing quote character. Return a deny reason if
+    the token immediately following it (no separating whitespace) is
+    path-like, else None. See the module-level comment above this function
+    for the false-positive shapes this deliberately excludes and the one
+    known residual gap.
+    """
+    n = len(cmd)
+    nxt = close_idx + 1
+    if nxt >= n:
+        return None  # closing quote is the last character — nothing abuts it
+
+    if cmd[nxt] in _ABUT_TRUE_SEPARATORS:
+        # Whitespace, or a real shell operator (`&&`, `|`, `;`, ...): the
+        # quote is properly separated from whatever follows it — the
+        # common, correct case.
+        return None
+
+    run_end, saw_brace_expansion = _scan_abutted_word(cmd, nxt)
+    if saw_brace_expansion:
+        # Bash expands {a,b} into multiple separate words at this position
+        # — not the "one fused word, no separate path" defect at all.
+        return None
+
+    is_path_like = "/" in cmd[nxt:run_end]
+    if not is_path_like:
+        return None  # e.g. 'foo'bar or 'foo'.bar — concatenation, not a path
+
+    context_start = max(0, close_idx - 20)
+    fused = cmd[context_start:run_end]
+    fixed = cmd[context_start:close_idx + 1] + " " + cmd[nxt:run_end]
+    return (
+        f"This command fuses a quoted pattern directly onto the very next "
+        f"token with no separating space (`...{fused}...`) — Bash "
+        "tokenizes the closing quote and the following text as ONE shell "
+        "word, so the tool receives a single garbled argument and no path "
+        "at all; it reads stdin instead of the file. This check fails "
+        "identically regardless of file content. Fix: add a space after "
+        f"the closing quote so the path is its own argument "
+        f"(`...{fixed}...`)."
+    )
+
+
+def find_abutted_quote_path_reason(cmd: str) -> "str | None":
+    """Scan cmd for a closing quote (single or double) immediately followed
+    (no whitespace) by a path-like token, and return a deny reason for the
+    first such occurrence, or None if cmd is clean.
+
+    Deliberately narrow, matching the "closing quote -> path-like token"
+    shape only — see the module-level comment above this section for the
+    false positives this must not flag and the one candidate shape
+    considered and rejected.
+    """
+    n = len(cmd)
+    i = 0
+    in_quote = None  # "'" or '"' or None
+    while i < n:
+        c = cmd[i]
+        if in_quote is None:
+            if c in ("'", '"'):
+                in_quote = c
+            elif c == "\\" and i + 1 < n:
+                i += 1  # skip the escaped character too
+            i += 1
+            continue
+
+        if in_quote == '"' and c == "\\" and i + 1 < n:
+            i += 2  # backslash-escape inside a double-quoted string
+            continue
+
+        if c == in_quote:
+            reason = _abutted_path_reason_at(cmd, i)
+            if reason is not None:
+                return reason
+            in_quote = None
+        i += 1
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Scope narrowing: only inspect mov_commands[].cmd of a card being created
 # via `kanban do` / `kanban todo` — never the raw Bash command line.
 # ---------------------------------------------------------------------------
@@ -372,10 +636,12 @@ def _extract_kanban_do_todo_json(command: str) -> "str | None":
 def find_unfailable_mov_reason(raw_card_json: str) -> "str | None":
     """Parse raw_card_json as a card (dict) or bulk-create (list of dicts)
     payload and return a deny reason if any criterion's mov_commands[].cmd
-    contains an unfailable final-stage pipe. Returns None if the JSON doesn't
-    parse, isn't a card shape, or is clean — mirrors the card-shape handling
-    in kanban.py's validate_mov_commands_content (criteria key is "criteria"
-    or its legacy alias "ac"; mov_commands entries are objects with "cmd").
+    contains an unfailable final-stage pipe, OR a quoted pattern abutting a
+    path-like token with no separating whitespace (see "Abutted quote/path
+    detection" above). Returns None if the JSON doesn't parse, isn't a card
+    shape, or is clean — mirrors the card-shape handling in kanban.py's
+    validate_mov_commands_content (criteria key is "criteria" or its legacy
+    alias "ac"; mov_commands entries are objects with "cmd").
     """
     try:
         parsed = json.loads(raw_card_json)
@@ -405,7 +671,7 @@ def find_unfailable_mov_reason(raw_card_json: str) -> "str | None":
                 cmd = entry.get("cmd")
                 if not isinstance(cmd, str) or not cmd:
                     continue
-                reason = find_unfailable_pipe_reason(cmd)
+                reason = find_unfailable_pipe_reason(cmd) or find_abutted_quote_path_reason(cmd)
                 if reason is not None:
                     return reason
     return None
