@@ -2154,3 +2154,84 @@ class TestRmGuardCommandPOnlyBundle:
         result = hook._validate_bash_rm_guard(payload)
         assert result is None, "`command -V rm` (lookup) must not be denied"
 
+
+# ---------------------------------------------------------------------------
+# Tests: `env`'s bundled short-flag clusters no longer hide the real command
+# (GitHub issue #44, card #3560; original fix landed in commit 7b7f61d)
+# ---------------------------------------------------------------------------
+
+class TestRmGuardEnvBundledCluster:
+    """`env -ui rm ...` / `env -ia FOO rm ...` / `env -i0u FOO rm -rf ...` —
+    a bundled short-flag cluster on `env` must not hide the real command
+    behind it. GNU env genuinely parses these as bundles (confirmed against
+    the real binary: `env -iu FOO echo x` and `env -iuFOO echo x` both ran
+    `echo x`, GNU coreutils 9.8). Pre-fix, `_strip_command_wrappers` removed
+    only the leading `env` token and any `VAR=VAL` assignment tokens after
+    it — a flag cluster like `-ui` or `-i0u` was left as `seg[0]`, which is
+    never `rm`, so the guard fell through to ALLOW regardless of what the
+    cluster was hiding.
+    """
+
+    # --- Deny-side: a bundled cluster must not hide the real `rm` ---
+
+    def test_env_bundle_ui_scratchpad_denied(self, hook):
+        """`env -ui rm .scratchpad/foo.md` — `u` is visited first, at index 0
+        of the cluster; `u` takes an arg, so the remaining char `i` is
+        consumed as `u`'s attached argument value rather than being
+        processed as its own no-arg flag; the whole cluster token is
+        discarded and the guard lands on the real `rm`."""
+        payload = make_bash_payload("env -ui rm .scratchpad/foo.md")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "auto-pruned")
+
+    def test_env_bundle_ia_scratchpad_denied(self, hook):
+        """`env -ia FOO rm .scratchpad/foo.md` — arg-taking `-a` is last in
+        the cluster with nothing attached, so it consumes the separate next
+        token (`FOO`) as its argument, and the guard lands on the real
+        `rm` two tokens later."""
+        payload = make_bash_payload("env -ia FOO rm .scratchpad/foo.md")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "auto-pruned")
+
+    def test_env_bundle_i0u_recursive_denied(self, hook):
+        """`env -i0u FOO rm -rf .scratchpad` — a three-character cluster
+        (`i`, `0`, then arg-taking `u` last) must not hide a recursive
+        whole-directory delete."""
+        payload = make_bash_payload("env -i0u FOO rm -rf .scratchpad")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "blast radius")
+
+    def test_env_bundle_iu_attached_value_recursive_denied(self, hook):
+        """`env -iuFOO rm -rf .scratchpad` — `-u`'s argument (`FOO`) is
+        ATTACHED to the same token, not a separate token; the whole
+        `-iuFOO` token is discarded and the guard still lands on the real
+        `rm -rf .scratchpad`."""
+        payload = make_bash_payload("env -iuFOO rm -rf .scratchpad")
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "blast radius")
+
+    # --- Allow-side: unrelated commands and coincidental "rm" values survive ---
+
+    def test_env_bundle_iu_npm_test_allowed(self, hook):
+        """`env -iu FOO npm test` — a bundled cluster in front of a
+        non-`rm` command remains allowed."""
+        payload = make_bash_payload("env -iu FOO npm test")
+        result = hook._validate_bash_rm_guard(payload)
+        assert result is None, "`env -iu FOO npm test` must not be denied"
+
+    def test_env_dash_a_value_literally_rm_allowed(self, hook):
+        """`env -a rm /usr/bin/true` — `-a`'s argument VALUE is literally
+        the word `rm`, but it is `-a`'s argument, not the invoked command
+        (`/usr/bin/true` is); must not be denied."""
+        payload = make_bash_payload("env -a rm /usr/bin/true")
+        result = hook._validate_bash_rm_guard(payload)
+        assert result is None, "`env -a rm /usr/bin/true` must not be denied"
+
+    def test_env_dash_u_name_literally_rm_allowed(self, hook):
+        """`env -u rm ls` — `-u`'s argument NAME is literally the word
+        `rm`, but it is the variable being unset, not the invoked command
+        (`ls` is); must not be denied."""
+        payload = make_bash_payload("env -u rm ls")
+        result = hook._validate_bash_rm_guard(payload)
+        assert result is None, "`env -u rm ls` must not be denied"
+
