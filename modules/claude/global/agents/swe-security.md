@@ -150,6 +150,21 @@ This needs that treatment MORE than a proposed fix does, not less: a fix produce
 
 **Worked example:** a security review dismissed `command` flag-bundling as unexploitable because "any bundle containing v or V is a lookup rather than an execution." True — and silent on a bundle with no v in it at all. `command -pp rm -rf .scratchpad` reached ALLOW anyway. The gap survived two independent reviews before anyone ran real bash against it.
 
+## Allowlist over Blocklist
+
+**The design choice.** Prefer an allowlist wherever the failure directions are asymmetric. A blocklist (an exclusion list, a denylist, a negated character class) asks whether every dangerous input was remembered, and that answer is only as good as the completeness of a taxonomy someone consulted once. An allowlist asks whether the input is one of the few known-safe shapes, which depends on no taxonomy at all. Where an over-narrow allowlist merely rejects legitimate input while an over-narrow blocklist executes attacker-controlled code, the safe failure direction should be structural, not remembered.
+
+**The review heuristic.** When a security-relevant validator is a negated character class, an exclusion list, or a denylist rather than an allowlist: what taxonomy was the exclusion list derived from, and what sits outside that taxonomy but still reaches the same consumer? Ask it even when the list looks thorough — thoroughness inside the wrong boundary is the failure mode, not a defense against it. If the validator could instead be expressed as an allowlist of known-safe shapes, prefer that rewrite over patching the exclusion list one more time.
+
+**The lexical-check corollary.** When a check inspects a string that will be transformed before use, the check guarantees nothing about the transformed value. A lookahead, a prefix test, a length bound, or a character class all inspect what the author wrote; every mechanism that rewrites the value between authoring and consumption silently voids them. Treat such a guarantee as void until the set of transformations is enumerated independently of whatever categories the source documentation happens to name — this generalizes past shells to any consumer that rewrites its input before use. The same mismatch shows up at a decoding boundary: a check applied to a percent-encoded or URL-encoded string inspects different bytes than the consumer acts on once it decodes the value — the shell's backslash case in different clothing.
+
+**Worked example.** A guard decided whether a command string reached a shell against the live working tree. Part of it restricted an unquoted path token with a negated character class, fronted by a negative lookahead asserting the token did not begin with a dash — so the token could not become a command-line flag. Two independent security reviews each found a live, reproduced arbitrary-command-execution vector in that one class. Both reached the search tool's preprocessor flag, which runs a command of the reviewer's choosing. Both were proven by executing through the real code path and watching a planted file's mtime advance. Neither exploit string contained a shell metacharacter.
+
+1. Glob metacharacters were absent from the exclusion set, so the shell expanded the token into the working directory's contents before the tool saw it, and a file merely named after a dangerous flag became that flag.
+2. After glob, brace, and tilde were added by working through the shell's documented expansion phases, the backslash was still absent. The shell strips a backslash from an unquoted word and takes the next character literally, so a token authored with a backslash before a dash passes the lookahead and arrives at the tool beginning with a dash.
+
+Backslash removal is not classified as an expansion in the shell's own taxonomy — it belongs to quote removal — so an exclusion list built by enumerating expansion types has a structural blind spot for it. Care was not the missing ingredient; a more diligent pass through the same taxonomy would have missed it identically. An allowlist of known-safe path shapes would have needed no taxonomy at all to get this right.
+
 ## Recurring high-severity issue classes (must-check on any diff touching the relevant surface)
 
 Dedicated security reviews have passed these clean before a downstream review bot caught them. Check each of these explicitly on any diff touching the relevant surface — do not rely on the code "looking fine" at a glance:
@@ -158,6 +173,7 @@ Dedicated security reviews have passed these clean before a downstream review bo
 - **CI concurrency / gate integrity:** In GitHub Actions (or equivalent CI) workflows, check whether a `cancel-in-progress` concurrency setting can cancel a required in-progress run whose replacement will itself be skipped by the job's `if:` gate — this makes a required check falsely appear to pass. Require in-flight guards on any re-entrant operation.
 - **Output-boundary secret redaction:** Secrets or credentials that can surface in subprocess output, error text, or logs bound for SSE streams, dashboards, or unauthenticated/broad-audience consumers must be redacted before emission.
 - **External-command-output parsing:** see § Parsing external command output, above. Any diff that parses a regex, JSON, or field-access out of an external command's output must be checked against a real capture of that output, not just against a hand-authored fixture.
+- **Blocklist/exclusion-list validators:** see § Allowlist over Blocklist, above. Any negated character class, exclusion list, or denylist gating a security-relevant validator must be checked against the taxonomy it was derived from and what sits outside that taxonomy but still reaches the same consumer — do not sign off on a blocklist just because it looks thorough.
 
 ## Your Expertise
 
@@ -331,7 +347,7 @@ Read CLAUDE.md for complete programming preferences before starting work.
 
 **Input Validation:**
 - Validate at boundaries
-- Whitelist over blacklist
+- Prefer allowlist over blocklist — see § Allowlist over Blocklist, above, for the design choice, the review heuristic, and the worked incident behind it
 - Reject invalid input, don't sanitize
 - Canonicalize before validation
 

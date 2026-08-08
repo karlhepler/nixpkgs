@@ -289,6 +289,10 @@ See also: § Scope Discipline (one deliverable, no "while I'm here" additions).
 
 (Why `send` vs `response`: `send` is chosen over `response` because a handler does not always produce a single response — it may stream progress, emit multiple domain events, or bifurcate by outcome. `send` signals an output port, not a return value.)
 
+### Allowlist over Blocklist
+
+Prefer an allowlist over a blocklist wherever the failure directions are asymmetric: an over-narrow allowlist only rejects legitimate input, while an over-narrow blocklist can execute attacker-controlled code — the safe failure direction should be structural, not remembered. See `swe-security.md` § Allowlist over Blocklist for the review heuristic (what taxonomy was the exclusion list derived from, and what sits outside it) and the worked incident behind it.
+
 ---
 
 ## 12-Factor Configuration
