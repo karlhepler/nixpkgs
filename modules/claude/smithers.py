@@ -863,6 +863,26 @@ class Notify:
 
 
 @dataclass(frozen=True)
+class PaneStatus:
+    """A pane-only status line (§ card 3604) — reaches `notify_pane`
+    exclusively, never `notify_slack` or `notify_macos`. Exists for
+    informational, non-actionable announcements — e.g. the watch-loop
+    startup line (§ `_emit_watch_startup`) — that an operator watching the
+    tmux pane should see, but that carry no event worth a Slack post or a
+    macOS notification-center bubble, and that must never consume
+    `notify_slack`'s cross-restart dedup budget (`already_posted`): that
+    budget is a deliberate one-post-per-PR-per-run allowance, and a
+    startup line carries no event information, so routing it through
+    `Notify` would burn the slot and suppress the actually-meaningful later
+    post. A new type, not a `pane_only` flag on `Notify` — binding by type
+    fails safe: a future adapter added to the fan-out that binds to `Notify`
+    never sees a `PaneStatus` message, with nothing for it to remember to
+    check."""
+
+    body: str
+
+
+@dataclass(frozen=True)
 class Stop:
     reason: str
 
@@ -884,6 +904,7 @@ Message = Union[
     Land,
     Disarm,
     Notify,
+    PaneStatus,
     Stop,
     UpdateState,
     Reschedule,
@@ -1836,9 +1857,13 @@ def notify_slack(
 
 
 def notify_pane(msg: Message, log_path: str) -> None:
-    """The foreground-pane presenter — binds to `Notify` messages and prints
-    them directly to THIS process's own stderr, the one channel guaranteed
-    to land in the tmux pane an operator is actually watching in real time.
+    """The foreground-pane presenter — binds to `Notify` AND `PaneStatus`
+    messages (§ card 3604) and prints them directly to THIS process's own
+    stderr, the one channel guaranteed to land in the tmux pane an operator
+    is actually watching in real time. The only adapter either binds to:
+    `notify_macos`/`notify_slack` still gate exclusively on `Notify` (§
+    `PaneStatus`'s own docstring) — a `PaneStatus` message is never a macOS
+    bubble or a Slack post.
 
     Closes the defect where a repeatedly-failing poll loop sat in
     `time.sleep(backoff_seconds)` printing nothing at all: to an operator
@@ -1853,6 +1878,10 @@ def notify_pane(msg: Message, log_path: str) -> None:
     dry-run mechanism is `cmd_watch`'s own early return before `build_send`
     is ever constructed (§ card 3035 Fix 3) — this adapter carries no
     second, unreachable dry-run branch of its own."""
+    if isinstance(msg, PaneStatus):
+        print(f"[smithers] {msg.body}", file=sys.stderr)
+        log_event(log_path, "notify_pane", body=msg.body)
+        return
     if not isinstance(msg, Notify):
         return
     print(f"[smithers] {msg.title}: {msg.body}", file=sys.stderr)
@@ -1977,6 +2006,7 @@ class PollLoopConfig:
     accept_api_billing: bool = False
     env: Optional[Dict[str, str]] = None  # override for tests; live os.environ read fresh every tick otherwise
     manual_merge_opt_out: bool = False  # the operator's --no-merge flag (§ card 3068 Fix 2)
+    branch: Optional[str] = None  # current git branch, for the startup announcement only (§ card 3603)
 
 
 # Bound on any single externally-sourced field once run through
@@ -2329,6 +2359,69 @@ def _is_non_retryable_fetch_failure(failure: FetchFailure) -> bool:
     return "usage:" in message and ": error: " in message
 
 
+def _emit_watch_startup(
+    send: Callable[[Message], None],
+    pr: str,
+    branch: Optional[str],
+    poll_interval_seconds: int,
+    backoff_intervals_seconds: Tuple[int, ...],
+) -> None:
+    """Emit the watch-loop startup announcement through the injected `send`
+    port, before `poll_loop`'s first sleep (§ card 3603).
+
+    Closes the "it is just sitting there doing absolutely nothing" defect:
+    an operator ran bare `smithers`, watched a PR get resolved, and then saw
+    zero output while the process sat in `time.sleep(...)` inside
+    `poll_loop` — indistinguishable, from the tmux pane, from a hung
+    process. `Ctrl+C` proved it was working (`main` -> `cmd_watch` ->
+    `poll_loop` -> `time.sleep(...)`), it just never said so.
+
+    Names the resolved PR, the branch it was resolved from, and the BASE
+    poll interval currently in effect (`branch` is best-effort and may be
+    `None` — `git rev-parse --abbrev-ref HEAD` on a detached HEAD
+    resolves to the literal ref name `HEAD` with exit 0, so the
+    placeholder does NOT fire for that case; it fires only when `git`
+    reports a non-zero exit, e.g. the current working directory is not a
+    git repository at all — in which case an explicit placeholder is
+    printed rather than silently omitting the field). Deliberately does
+    NOT claim a single fixed interval: `poll_loop`'s own end-of-cycle sleep
+    alternates between this base interval and the slower
+    `APPROVAL_WATCH_POLL_SECONDS` cadence whenever `_is_approval_watch_cadence`
+    holds for the snapshot just fetched (§ APPROVAL-WATCH CADENCE), and
+    separately names the exponential fetch-failure backoff ceiling
+    (`max(backoff_intervals_seconds)`, § Failure and retry) — a gap a
+    working-as-designed backoff would otherwise reproduce, one layer down,
+    as the exact "silent gap indistinguishable from a hang" defect this
+    function exists to close in the first place. A startup line that named
+    only a single fixed number, or omitted this third cadence, would be a
+    new instance of that same defect.
+
+    Uses `PaneStatus` (§ card 3604) — pane-only, routed through the same
+    `send` port every other message uses, never a new output path, but
+    reaching `notify_pane` exclusively rather than fanning out to
+    `notify_slack`/`notify_macos` the way `Notify` does. This line carries
+    no event information, so posting it to Slack would consume
+    `notify_slack`'s one-post-per-PR-per-run dedup budget
+    (`already_posted`) and suppress the actually-meaningful later
+    notification (approval landed, CI failed, merge completed) — the exact
+    regression a startup `Notify` would have caused (§ `PaneStatus`'s own
+    docstring)."""
+    branch_desc = branch if branch else "<unknown branch>"
+    backoff_ceiling_seconds = max(backoff_intervals_seconds)
+    send(
+        PaneStatus(
+            body=(
+                f"Watching PR #{pr} (branch: {branch_desc}). Polling every "
+                f"{poll_interval_seconds}s baseline (may slow to "
+                f"{APPROVAL_WATCH_POLL_SECONDS}s while clean and awaiting "
+                f"human review, or back off up to {backoff_ceiling_seconds}s "
+                "on repeated GitHub fetch failures). Staying resident — this "
+                "pane will not exit on its own."
+            ),
+        )
+    )
+
+
 def poll_loop(pr: str, config: PollLoopConfig, send: Callable[[Message], None], log_path: str) -> None:
     """The in-process poll loop — foreground, owns its own cadence, does not
     exit between polls (§ Process model, § Poll loop and cadence).
@@ -2409,6 +2502,8 @@ def poll_loop(pr: str, config: PollLoopConfig, send: Callable[[Message], None], 
     active_fix_session: Optional[str] = None
     stopped = False
     snapshot: Optional[PRSnapshot] = None  # rebound each cycle; only ever read inside _handle
+
+    _emit_watch_startup(send, pr, config.branch, config.poll_interval_seconds, config.backoff_intervals_seconds)
 
     def _handle(msg: Message) -> None:
         nonlocal stopped, fix_count, last_fix_attempt_head_sha, stagnation_check_pending
@@ -2638,6 +2733,25 @@ def build_parser() -> argparse.ArgumentParser:
 # Command dispatch
 # ---------------------------------------------------------------------------
 
+def _current_git_branch(log_path: str) -> Optional[str]:
+    """Best-effort current branch name for the startup announcement
+    (§ card 3603, `_emit_watch_startup`) — informational only, never a
+    resolution dependency. Unlike `resolve_pr`, a failure here never blocks
+    the watch from starting: it only means the startup line falls back to
+    an explicit "<unknown branch>" placeholder instead of a real name. A
+    detached HEAD resolves to the literal ref name `HEAD` (exit 0) and is
+    NOT this failure case — this function returns `None`, triggering the
+    placeholder, only when `git` reports a non-zero exit, which is what
+    happens when the current working directory is not a git repository at
+    all."""
+    result = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+    if result.returncode != 0:
+        log_event(log_path, "current_branch_unresolved", message=result.stderr.strip())
+        return None
+    branch = result.stdout.strip()
+    return branch or None
+
+
 def cmd_watch(args: argparse.Namespace) -> int:
     billing_preflight(dict(os.environ), args.accept_api_billing, args.log_file)
 
@@ -2659,6 +2773,7 @@ def cmd_watch(args: argparse.Namespace) -> int:
             args.informational_bot_authors, dict(os.environ)
         ),
         manual_merge_opt_out=args.no_merge,
+        branch=_current_git_branch(args.log_file),
     )
     poll_loop(pr, config, send, args.log_file)
     return 0

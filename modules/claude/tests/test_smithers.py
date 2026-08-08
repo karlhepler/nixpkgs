@@ -28,6 +28,7 @@ from smithers import (
     Land,
     Notify,
     NoWorkNeeded,
+    PaneStatus,
     PollLoopConfig,
     PRSnapshot,
     ResolutionFailure,
@@ -57,6 +58,23 @@ def fake_run_result(stdout: str = "", stderr: str = "", returncode: int = 0) -> 
     m.stderr = stderr
     m.returncode = returncode
     return m
+
+
+def _is_startup_pane_status(msg) -> bool:
+    """§ card 3603/3604 — every real `poll_loop` run now sends exactly one
+    of these before its first sleep (`_emit_watch_startup`), routed as a
+    pane-only `PaneStatus` rather than a `Notify` (§ card 3604 — a startup
+    `Notify` would consume `notify_slack`'s one-post-per-PR-per-run dedup
+    budget). Tests that assert exact counts/contents of the raw `sent` list
+    still need to filter this message out — it still flows through `send`,
+    just under a different type — via this helper rather than
+    special-casing an index, since the startup announcement is always the
+    first message sent but several of these tests already slice/index
+    `sent` for their own reasons. Tests that instead filter `sent` down to
+    `Notify` instances specifically (`notify_messages`) need no such filter
+    at all: a `PaneStatus` message already fails that `isinstance` check on
+    its own."""
+    return isinstance(msg, PaneStatus) and msg.body.startswith("Watching PR #")
 
 
 # ---------------------------------------------------------------------------
@@ -1338,6 +1356,12 @@ def _end_to_end_subprocess_fake(cmd, **kwargs):
     `notify_slack` before it would otherwise invoke `smithers-post`, keeping
     this fake's surface to exactly the commands this one scenario reaches.
     """
+    if cmd == ["git", "rev-parse", "--abbrev-ref", "HEAD"]:
+        # `cmd_watch`'s own best-effort startup-announcement branch lookup
+        # (§ card 3603, `_current_git_branch`) — informational only, never a
+        # resolution dependency for the explicit PR number this scenario
+        # passes on the command line.
+        return fake_run_result(stdout="karlhepler/some-branch\n")
     if cmd[:3] == ["gh", "pr", "view"]:
         return fake_run_result(stdout=GH_VIEW_FIXTURE)
     if cmd[:3] == ["gh", "pr", "checks"]:
@@ -2933,6 +2957,7 @@ class TestNoMergeFlag:
                 )
                 poll_loop("123", config, sent.append, log_path)
 
+        sent = [msg for msg in sent if not _is_startup_pane_status(msg)]
         assert not any(isinstance(msg, Land) for msg in sent), (
             "--no-merge must block Land even against a fully ready-to-land snapshot"
         )
@@ -2974,6 +2999,7 @@ class TestPollLoopTerminatesOnBound:
                 config = PollLoopConfig(max_cycles=3, env={}, accept_api_billing=True)
                 poll_loop("123", config, sent.append, log_path)
 
+        sent = [msg for msg in sent if not _is_startup_pane_status(msg)]
         # Three ticks, nothing actionable each time -> three NoWorkNeeded
         # messages, and the loop returns instead of looping forever.
         assert len(sent) == 3
@@ -3026,6 +3052,7 @@ class TestPollLoopTerminatesOnStop:
                     )
                     poll_loop("123", config, sent.append, log_path)
 
+        sent = [msg for msg in sent if not _is_startup_pane_status(msg)]
         # Nine fix-triggering ticks (a failing check fires every cycle, no
         # suppressor active yet — HEAD advances every cycle so neither the
         # fix budget nor stagnation trips first), then a tenth tick where
@@ -3088,6 +3115,7 @@ class TestPollLoopBackoffOnRepeatedFetchFailure:
                 config = PollLoopConfig(max_cycles=4, env={}, accept_api_billing=True)
                 poll_loop("123", config, sent.append, log_path)
 
+        sent = [msg for msg in sent if not _is_startup_pane_status(msg)]
         # Exponential 300 -> 900 -> 1800, then capped at 1800 — never a
         # spin, and `tick` never ran so the only messages ever sent are the
         # pane-surfacing Notifys for the 2nd, 3rd, and 4th CONSECUTIVE
@@ -3165,6 +3193,7 @@ class TestGhSubprocessTimeout:
                 config = PollLoopConfig(max_cycles=2, env={}, accept_api_billing=True)
                 poll_loop("123", config, sent.append, log_path)
 
+        sent = [msg for msg in sent if not _is_startup_pane_status(msg)]
         # Retryable, not permanent: normal exponential backoff, no Stop/Disarm.
         assert mock_sleep.call_args_list == [call(300), call(900)]
         assert not any(isinstance(msg, Stop) for msg in sent)
@@ -3403,6 +3432,9 @@ class TestPollLoopSurfacesRepeatedFetchFailure:
         # SECOND and every later CONSECUTIVE identical failure (cycles 2
         # and 3 of 3) reaches the send port as a pane-visible Notify, not
         # only the JSONL log.
+        # No filtering for the startup announcement needed here (§ card
+        # 3604) — it is a `PaneStatus`, not a `Notify`, so it already fails
+        # this isinstance check on its own.
         notify_messages = [msg for msg in sent if isinstance(msg, Notify)]
         assert len(notify_messages) == 2
         assert all("rate limited" in msg.body for msg in notify_messages)
@@ -3513,6 +3545,187 @@ class TestPollLoopApprovalWatchCadence:
             call(smithers_module.APPROVAL_WATCH_POLL_SECONDS),
             call(config.poll_interval_seconds),
         ]
+
+
+class TestWatchStartupAnnouncement:
+    """Card 3603: reproduces the "it is just sitting there doing absolutely
+    nothing" defect — a bare `smithers` invocation resolved a PR and entered
+    `poll_loop`'s first `time.sleep(...)` with zero output, indistinguishable
+    from a hang. `_emit_watch_startup` must fire, through the injected `send`
+    port, before that first sleep, naming the resolved PR and the branch it
+    was resolved from."""
+
+    def test_watch_startup_announces_before_first_sleep(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        events = []
+
+        def recording_send(msg):
+            events.append(("send", msg))
+
+        def recording_sleep(seconds):
+            events.append(("sleep", seconds))
+
+        with patch(
+            "subprocess.run",
+            side_effect=make_gh_side_effect(
+                view=NOTHING_ACTIONABLE_VIEW,
+                checks=NOTHING_ACTIONABLE_CHECKS,
+                prc=NOTHING_ACTIONABLE_PRC,
+            ),
+        ):
+            with patch("time.sleep", side_effect=recording_sleep):
+                config = PollLoopConfig(
+                    max_cycles=1, env={}, accept_api_billing=True, branch="karlhepler/feature-x"
+                )
+                poll_loop("123", config, recording_send, log_path)
+
+        sleep_indices = [i for i, (kind, _) in enumerate(events) if kind == "sleep"]
+        assert sleep_indices, "expected at least one sleep call"
+        first_sleep_index = sleep_indices[0]
+
+        # A startup announcement must have been sent BEFORE the first sleep
+        # — ordering is the point, not merely "the message appears somewhere
+        # in the run" (§ card 3603). It is a PaneStatus, not a Notify
+        # (§ card 3604).
+        prior_sends = [msg for kind, msg in events[:first_sleep_index] if kind == "send"]
+        assert any(
+            isinstance(msg, PaneStatus) and "watching" in msg.body.lower() for msg in prior_sends
+        ), f"expected a startup PaneStatus before the first sleep, got: {events[:first_sleep_index + 1]}"
+
+    def test_watch_startup_names_resolved_pr_and_branch(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        sent = []
+
+        with patch(
+            "subprocess.run",
+            side_effect=make_gh_side_effect(
+                view=NOTHING_ACTIONABLE_VIEW,
+                checks=NOTHING_ACTIONABLE_CHECKS,
+                prc=NOTHING_ACTIONABLE_PRC,
+            ),
+        ):
+            with patch("time.sleep"):
+                config = PollLoopConfig(
+                    max_cycles=1, env={}, accept_api_billing=True, branch="karlhepler/feature-x"
+                )
+                poll_loop("456", config, sent.append, log_path)
+
+        startup_notices = [
+            msg
+            for msg in sent
+            if isinstance(msg, PaneStatus) and "456" in msg.body and "karlhepler/feature-x" in msg.body
+        ]
+        assert startup_notices, (
+            "expected a startup PaneStatus naming PR 456 and branch "
+            f"karlhepler/feature-x, got: {sent}"
+        )
+
+    def test_watch_startup_names_backoff_ceiling(self):
+        """The startup line names the exponential fetch-failure backoff
+        ceiling, not just the baseline/approval-watch alternation — a
+        working-as-designed backoff during a GitHub API outage is a silent
+        multi-hundred-second gap that reproduces, one layer down, the exact
+        "indistinguishable from a hang" defect this function exists to
+        close (§ swe-devex review, Finding 2). Asserts against a value
+        computed from the input sequence, not a literal typed into the
+        test, so a hardcoded number in the message can't slip past."""
+        sent = []
+        backoff_intervals_seconds = (7, 42, 613)
+        expected_ceiling = max(backoff_intervals_seconds)
+
+        smithers_module._emit_watch_startup(
+            sent.append, "789", "karlhepler/some-branch", 60, backoff_intervals_seconds
+        )
+
+        startup_msg = sent[0]
+        assert isinstance(startup_msg, PaneStatus)
+        assert str(expected_ceiling) in startup_msg.body, (
+            f"expected the backoff ceiling {expected_ceiling} to appear in the startup "
+            f"message, got: {startup_msg.body!r}"
+        )
+
+
+class TestWatchStartupPaneRouting:
+    """§ card 3604 — the startup announcement must reach the pane
+    exclusively, never Slack or macOS. This line carries no event
+    information, so routing it through `Notify` (as `_emit_watch_startup`
+    did before this card) would fan out to `notify_slack` and
+    `notify_macos` too: `notify_slack` would consume the one-post-per-PR-
+    per-run dedup slot (`already_posted`) for a message with nothing worth
+    posting, silently suppressing whatever genuinely-meaningful
+    notification comes later in the same run, and `notify_macos` would
+    raise a notification-center bubble on every `smithers` start."""
+
+    def test_watch_startup_reaches_pane(self, tmp_path, capsys):
+        log_path = str(tmp_path / "smithers.jsonl")
+        sent = []
+        smithers_module._emit_watch_startup(
+            sent.append, "789", "karlhepler/some-branch", 60, (300, 900, 1800)
+        )
+        startup_msg = sent[0]
+        assert isinstance(startup_msg, PaneStatus)
+
+        smithers_module.notify_pane(startup_msg, log_path)
+
+        captured = capsys.readouterr()
+        assert "789" in captured.err
+        assert "karlhepler/some-branch" in captured.err
+
+        log_contents = open(log_path).read()
+        assert "notify_pane" in log_contents
+
+    def test_watch_startup_does_not_consume_slack_dedup_slot(self, tmp_path):
+        """The important one. Before this card, `_emit_watch_startup` sent a
+        `Notify` here, which passed `notify_slack`'s
+        `isinstance(msg, Notify)` guard, ran the (here, faked)
+        `query_slack_dedup` probe, and — once it answered NOT_DUPLICATE —
+        reached the `already_posted[pr_number] = True` assignment,
+        silently consuming the one-post-per-PR-per-run dedup slot for a
+        message carrying no event information at all. Asserting only
+        "smithers-post never ran" would still pass if `already_posted`
+        were being mutated some other way; the unmutated-dict assertion
+        below is what actually guards the regression. `fake_dedup_run`
+        answers NOT_DUPLICATE (a real, non-raising response) rather than
+        raising outright, so a reverted `notify_slack` would run to
+        completion and genuinely mutate `already_posted`, not merely
+        error out early."""
+        log_path = str(tmp_path / "smithers.jsonl")
+        sent = []
+        smithers_module._emit_watch_startup(
+            sent.append, "789", "karlhepler/some-branch", 60, (300, 900, 1800)
+        )
+        startup_msg = sent[0]
+
+        calls = []
+        already_posted = {}
+        with patch("subprocess.run", side_effect=fake_dedup_run("NOT_DUPLICATE", calls)):
+            smithers_module.notify_slack(
+                startup_msg, "789", log_path=log_path, already_posted=already_posted
+            )
+
+        assert calls == [], (
+            "smithers-post (and the Slack dedup query) must never run for a pane-only startup message"
+        )
+        assert already_posted == {}, (
+            "the startup message must never set already_posted — doing so would silently consume "
+            "the one-post-per-PR-per-run dedup slot and suppress a later, genuinely meaningful post"
+        )
+
+    def test_watch_startup_skips_macos_notification(self, tmp_path):
+        log_path = str(tmp_path / "smithers.jsonl")
+        sent = []
+        smithers_module._emit_watch_startup(
+            sent.append, "789", "karlhepler/some-branch", 60, (300, 900, 1800)
+        )
+        startup_msg = sent[0]
+
+        with patch(
+            "subprocess.run",
+            side_effect=AssertionError("osascript must never run for a pane-only startup message"),
+        ):
+            smithers_module.notify_macos(startup_msg, log_path=log_path)
+
+        assert not os.path.exists(log_path)
 
 
 # ---------------------------------------------------------------------------
