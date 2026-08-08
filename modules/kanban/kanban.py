@@ -1955,10 +1955,40 @@ MOV_PREPASS_TIMEOUT_SECS = 5
 #
 # Accepted trade-off (unchanged from the superseded design, now narrower in
 # scope): a genuinely non-discriminating MoV built from a non-admitted shape
-# (any of the excluded tools above, command substitution, or an rg/test
-# invocation outside the exact shapes above) is no longer caught by this
-# pre-pass. That is the correct trade — silently failing to warn is
-# recoverable, destroying uncommitted working-tree content is not.
+# (any of the excluded tools above, or an rg/test invocation outside the
+# exact shapes above) is no longer caught by this pre-pass. That is the
+# correct trade — silently failing to warn is recoverable, destroying
+# uncommitted working-tree content is not.
+#
+# Two narrow exceptions to "no command substitution, no piping, ever" (issue
+# #55): this repo's own card corpus uses two compound-but-read-only idioms
+# constantly for survival-guard criteria — an "at least N occurrences"
+# count-threshold check and a "range contains X" check — and the blanket
+# metachar veto above silently dropped BOTH from the already-passing warning
+# even when their full command chain already exited 0, defeating the
+# warning's own stated purpose of naming every criterion that cannot
+# discriminate done from not-done. See _MOV_PREPASS_COUNT_THRESHOLD_RE and
+# _MOV_PREPASS_SED_RANGE_PIPE_RG_RE below for the exact, anchored shapes
+# admitted, and see _MOV_PREPASS_PATH_TOKEN's own comment for the actual
+# guarantee this admits: NOT that containing `$(` / `|` can never run an
+# arbitrary command in general, but that the unquoted PATH position is
+# restricted to a PERMITTED-character allowlist — ASCII letters, digits,
+# `/`, `.`, `-`, `_` — every one of them inert in an unquoted shell word,
+# rather than to a hand-enumerated list of excluded shell metacharacters.
+# An earlier revision of that token tried the exclusion-list approach and
+# was defeated twice by shell transformations a taxonomy of "expansion
+# mechanisms" doesn't cover: pathname/glob expansion, and then backslash
+# removal (escape processing — bash's own "quote removal" grammar, not
+# counted as an "expansion" at all, so a list built by naming expansion
+# types had a structural blind spot for it). The allowlist has no such
+# blind spot: nothing outside the permitted set can reach the shell in
+# that position, so no future transformation — enumerated or not — can
+# substitute a different command for what the MoV author wrote. The two
+# QUOTED spans (rg's PATTERN, sed's two addresses) remain negated
+# exclusion classes deliberately, not for consistency's sake: inside a
+# POSIX single quote there is no escape mechanism at all, so a negated
+# class there genuinely models the shell's own quote-termination rule,
+# and those spans need real regex metacharacters an allowlist would break.
 # ---------------------------------------------------------------------------
 
 # Shell metacharacters that could chain, substitute, or redirect. `shell=True`
@@ -2031,15 +2061,132 @@ def _mov_prepass_shape_is_exact(tokens: list[str]) -> bool:
     return False
 
 
+# ---------------------------------------------------------------------------
+# Narrow admission for two compound-but-read-only idioms (issue #55).
+#
+# The exact-shape allowlist above rejects EVERY command containing a shell
+# metacharacter, with no exceptions — so two idioms this repo's own
+# survival-guard criteria use constantly were silently never executed by
+# the pre-pass, even though both are structurally incapable of chaining an
+# arbitrary command:
+#
+#   1. `test $(rg -c 'PATTERN' PATH || echo 0) -ge N` — an "at least N
+#      occurrences" count-threshold check. The `|| echo 0` fallback exists
+#      because `rg -c` exits non-zero when the count is zero. The ENTIRE
+#      command substitution is pinned to a single admitted `rg -c`
+#      invocation plus that fallback; nothing else can occupy the position.
+#   2. `sed -n '/START/,/END/p' PATH | rg [-qiF]* 'PATTERN'` — a "range
+#      contains X" check. sed's script argument is restricted to EXACTLY a
+#      two-address range ending in a bare `p` — no `;`, `w`, `e`, or any
+#      further sed command can appear, closing off review-movguard-
+#      security.md bypass #6 (sed's own `w`/`e` script builtins) even
+#      though sed is otherwise excluded outright above. The pipe's only
+#      possible destination is a single admitted `rg` invocation.
+#
+# Both regexes are anchored front-to-back (`^...$`) against the RAW cmd
+# string, not the shlex-tokenized form, specifically so any deviation — an
+# extra `;`, an unexpected flag, content escaping past the intended quote
+# boundary — fails the match and falls through to the strict metachar-veto
+# + exact-shape check, never silently admitted. Quoted content uses
+# `[^']*` (no embedded single quote): POSIX shell single quotes cannot
+# themselves contain a literal `'`, so this char class is not an
+# approximation of the shell's own quote parsing — it IS the shell's own
+# quote parsing for this quote type, there is no other way for a `'...'`
+# argument to end early. sed's own address content additionally excludes
+# `;`, `$`, backtick, `|`, `&`, `<`, `>` (on top of the mandatory `/`) so no
+# sed-DSL command separator or shell metacharacter can hide inside the
+# quoted script even though the shell itself treats it as inert.
+# ---------------------------------------------------------------------------
+
+# A single non-flag argument: no whitespace, no quote, no metacharacter, and
+# (via the negative lookahead) no leading `-` that could be mistaken for a
+# flag by the command it's passed to.
+#
+# This is a PERMITTED-character allowlist (ASCII letters, digits, `/`, `.`,
+# `-`, `_`), not a negated exclusion class, and that distinction is the
+# fix for a real bypass, not stylistic. A prior revision of this token
+# excluded characters by naming shell EXPANSION MECHANISMS one at a time —
+# glob, brace, tilde, parameter, command substitution — and that approach
+# was defeated twice: first by pathname/glob expansion (a bare `*`
+# expanding into a planted `--pre=COMMAND` filename), then by backslash
+# removal — bash's own "quote removal" grammar, not filed under
+# "expansion" in the bash manual at all, so a list built by enumerating
+# expansion *types* had a structural blind spot for it. `\-\-pre=touch`
+# contained zero characters from that exclusion set yet was stripped by
+# the shell to `--pre=touch` before `rg` ever saw it, handing `rg` its own
+# arbitrary-command preprocessor flag with no adversarial file needed at
+# all (`.scratchpad/issue55-reverify-security.md` § Q2, live-confirmed via
+# mtime change). The `(?!-)` lookahead below is a purely LEXICAL check
+# against the characters the MoV author literally typed — it only
+# guarantees "not a flag" if the token the shell hands to the downstream
+# command is byte-identical to the token admitted here, and escape
+# processing is exactly the kind of shell transformation a blocklist can
+# silently fail to enumerate.
+#
+# An allowlist has no taxonomy to be incomplete against: every character
+# in the permitted set is inert in an unquoted shell word — none of them
+# is a quote, a metacharacter, or the escape character itself — so no
+# future shell mechanism outside whatever list someone happened to
+# enumerate can transform an admitted token into something else. The
+# failure directions are asymmetric, which is why erring narrow is the
+# right default: a token that is legitimate but NOT in this allowlist
+# simply falls through to the general metachar veto below and is never
+# pre-evaluated — identical to this pre-pass's behavior before any of this
+# admission logic existed, and harmless. A token that IS admitted but
+# should not have been is arbitrary command execution against the live
+# working tree. Widen this allowlist only after confirming, character by
+# character, that the shell cannot transform an admitted token in an
+# unquoted word — do not widen it by re-deriving another exclusion list.
+#
+# The two QUOTED-content classes below (`_MOV_PREPASS_COUNT_THRESHOLD_RE`'s
+# rg-PATTERN span, `_MOV_PREPASS_SED_RANGE_PIPE_RG_RE`'s sed-address spans)
+# deliberately remain negated exclusion classes, not allowlists, and that
+# is not an inconsistency to "fix" for uniformity. Inside a POSIX single
+# quote there is no escape mechanism at all — a single-quoted string
+# cannot contain even a literal `'` — so a negated class genuinely models
+# the shell's own quote-termination rule there, and re-verification found
+# no bypass against either quoted span. Those spans also need real regex
+# metacharacters (a sed address like `/^## Critical Anti-Patterns/`) that
+# an allowlist would break. This unquoted PATH token is the only position
+# where shell word processing (including escape processing) applies to an
+# admitted token, and it is the only one converted here.
+_MOV_PREPASS_PATH_TOKEN = r"(?!-)[A-Za-z0-9/._-]+"
+
+# Every quoted-content character class below additionally excludes `\n`
+# and `\r`: a negated Python character class matches a literal newline
+# unless it is explicitly excluded, and a step-0 regex match here returns
+# True BEFORE the general metachar veto (which does ban `"\n"`) ever runs.
+# Without this exclusion these classes would be a hole straight through
+# that ban, safe today only by incidental downstream behavior (a newline
+# is literal inside single quotes to the shell; sed's own address parser
+# happens to reject one) rather than by the regex's own design.
+_MOV_PREPASS_COUNT_THRESHOLD_RE = re.compile(
+    r"^test \$\(rg -c '[^'\n\r]*' " + _MOV_PREPASS_PATH_TOKEN +
+    r" \|\| echo 0\) -(?:eq|ne|gt|ge|lt|le) [0-9]+$"
+)
+
+_MOV_PREPASS_SED_RANGE_PIPE_RG_RE = re.compile(
+    r"^sed -n '/[^'/;$`|&<>\n\r]+/,/[^'/;$`|&<>\n\r]+/p' " + _MOV_PREPASS_PATH_TOKEN +
+    r" \| rg (?:-[qiF]+ )?'[^'\n\r]*'$"
+)
+
+
 def _mov_prepass_command_is_safe(cmd: str) -> bool:
     """Decide whether `cmd` matches one of the small number of exact,
     manually-verified-read-only shapes this pre-pass admits (see the module
     comment above — this is deliberately not a formal proof about the
     tool's entire flag surface, only about the specific shapes enumerated
-    there). Two independent gates, BOTH must pass:
+    there).
 
-      1. `cmd` contains none of _MOV_PREPASS_SHELL_METACHARS — no chaining,
-         piping, redirection, or substitution anywhere in the string.
+    Checked in order:
+
+      0. `cmd` matches one of the two narrowly-admitted compound idioms
+         (_MOV_PREPASS_COUNT_THRESHOLD_RE / _MOV_PREPASS_SED_RANGE_PIPE_RG_RE
+         — see the comment above them) — if so, safe, regardless of the
+         `$(`/`|` it necessarily contains.
+      1. Otherwise, `cmd` contains none of _MOV_PREPASS_SHELL_METACHARS — no
+         chaining, piping, redirection, or substitution anywhere in the
+         string.
       2. The full shlex-tokenized shape matches _mov_prepass_shape_is_exact.
 
     Returns False on ANY doubt, including a shlex parse failure on malformed
@@ -2047,6 +2194,9 @@ def _mov_prepass_command_is_safe(cmd: str) -> bool:
     only means the pre-pass will not execute it (caller treats this the
     same as a timeout: inconclusive, no warning, never run).
     """
+    if _MOV_PREPASS_COUNT_THRESHOLD_RE.match(cmd) or _MOV_PREPASS_SED_RANGE_PIPE_RG_RE.match(cmd):
+        return True
+
     if any(bad in cmd for bad in _MOV_PREPASS_SHELL_METACHARS):
         return False
 

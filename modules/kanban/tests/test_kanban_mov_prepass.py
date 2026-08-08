@@ -302,6 +302,287 @@ class TestMovPrepassCommandIsSafe:
 
 
 # ---------------------------------------------------------------------------
+# Unit tests: the two narrowly-admitted compound idioms (issue #55) —
+# `test $(rg -c 'P' PATH || echo 0) -ge N` and
+# `sed -n '/A/,/B/p' PATH | rg [-qiF]* 'P'`. Both necessarily contain a
+# banned metacharacter (`$(`, `|`) yet are structurally incapable of
+# chaining an arbitrary command — see the module comment above
+# _MOV_PREPASS_COUNT_THRESHOLD_RE / _MOV_PREPASS_SED_RANGE_PIPE_RG_RE.
+# ---------------------------------------------------------------------------
+
+class TestMovPrepassCompoundIdiomAdmission:
+    def test_count_threshold_idiom_is_safe(self, kanban):
+        # DISCRIMINATES: yes. Pre-change, the blanket metachar veto
+        # (`_MOV_PREPASS_SHELL_METACHARS`, which bans `$(`) rejects every
+        # cmd here outright before the exact-shape check ever runs — the
+        # `assert ... is True` fails pre-change (verdict was False).
+        for cmd in [
+            "test $(rg -c 'alpha' existing.txt || echo 0) -ge 4",
+            "test $(rg -c '^def test_|^    def test_' modules/kanban/tests/test_kanban_mov_prepass.py || echo 0) -ge 47",
+            "test $(rg -c 'x' file.txt || echo 0) -eq 0",
+            "test $(rg -c 'x' file.txt || echo 0) -gt 1",
+        ]:
+            assert kanban._mov_prepass_command_is_safe(cmd) is True, cmd
+
+    def test_sed_range_piped_to_rg_idiom_is_safe(self, kanban):
+        # DISCRIMINATES: yes. Pre-change, the blanket metachar veto (which
+        # bans `|`) rejects every cmd here outright — the `assert ... is
+        # True` fails pre-change (verdict was False).
+        for cmd in [
+            "sed -n '/^## Section A/,/^## Section B/p' existing.txt | rg -q 'alpha'",
+            "sed -n '/^## Critical Anti-Patterns/,/^## Self-Improvement Protocol/p' file.md | rg -q 'Unit-contradiction'",
+            "sed -n '/start/,/end/p' file.txt | rg -qi 'PATTERN'",
+        ]:
+            assert kanban._mov_prepass_command_is_safe(cmd) is True, cmd
+
+    def test_count_threshold_idiom_rejects_injection_via_semicolon(self, kanban):
+        """A `;` anywhere breaks the anchored end-to-end match and falls
+        through to the strict metachar veto, regardless of where it's
+        placed inside the idiom's structure.
+
+        DISCRIMINATES: no. Every cmd here already contains a bare `;` as a
+        substring, which the PRE-EXISTING, unchanged-by-this-diff blanket
+        metachar veto (`_MOV_PREPASS_SHELL_METACHARS`) already rejects on
+        its own, regardless of the two new regexes existing at all. This
+        test passes identically before and after this diff — it guards
+        against a future loosening of the new regexes' own `;` exclusion,
+        it does not gate this diff's fix.
+        """
+        for cmd in [
+            "test $(rg -c 'x' file; touch pwned || echo 0) -ge 1",
+            "test $(rg -c 'x' file || echo 0; touch pwned) -ge 1",
+            "test $(rg -c 'x' file || echo 0) -ge 1; touch pwned",
+        ]:
+            assert kanban._mov_prepass_command_is_safe(cmd) is False, cmd
+
+    def test_count_threshold_idiom_rejects_dangerous_path_or_flags(self, kanban):
+        # DISCRIMINATES: no. Both cmds still contain `$(` as a substring
+        # (the new regex just fails to match this exact shape and falls
+        # through to the same pre-existing metachar veto that already
+        # caught `$(` before this diff existed). Passes identically before
+        # and after — guards the new regex's own precision, not this fix.
+        for cmd in [
+            "test $(rg -c 'x' --pre=evil.sh file || echo 0) -ge 1",
+            "test $(rg -c 'x' -pre file || echo 0) -ge 1",
+        ]:
+            assert kanban._mov_prepass_command_is_safe(cmd) is False, cmd
+
+    def test_sed_range_idiom_rejects_write_and_exec_script_commands(self, kanban):
+        """The sed-DSL bypasses (`w`/`e` script commands, extra `;`-chained
+        commands) must still be rejected even when embedded inside an
+        otherwise idiom-shaped quoted argument — the shell's own quote
+        parsing does not protect against sed's OWN script language.
+
+        DISCRIMINATES: no. Every cmd here contains `|` (piped to rg) as a
+        substring, already rejected by the pre-existing metachar veto
+        regardless of the new sed-range regex's own content restrictions.
+        Passes identically before and after this diff — guards the new
+        regex's own precision, not this fix.
+        """
+        for cmd in [
+            "sed -n 'w pwned.txt' file.txt | rg -q x",
+            "sed -n '/a/,/b/p;w pwned.txt' file.txt | rg -q x",
+            "sed -n '/a;touch pwned/,/b/p' file.txt | rg -q x",
+            "sed -n '/a/,/b/p' file.txt | rg --pre evil.sh -q x",
+            "sed -n 1p file.txt | rg -q x",
+        ]:
+            assert kanban._mov_prepass_command_is_safe(cmd) is False, cmd
+
+    def test_compound_idiom_shapes_are_never_actually_destructive(self, kanban, tmp_path):
+        """Live check mirroring test_all_six_bypass_shapes_are_never_actually_executed:
+        run rejected variants of both idioms through _mov_prepass_run_criterion
+        and confirm a marker file never comes into existence.
+
+        DISCRIMINATES: no. Both injected shapes contain `;`/`|`, already
+        refused (verdict None, nothing executed) by the pre-existing
+        metachar veto before this diff existed. Passes identically before
+        and after — it is a live-execution safety pin for the new regexes,
+        not a test that gates this diff's under-report fix.
+        """
+        marker = tmp_path / "marker.txt"
+        shapes = [
+            f"test $(rg -c 'x' {tmp_path} || echo 0; touch {marker}) -ge 1",
+            f"sed -n '/a/,/b/p;touch {marker}' {tmp_path} | rg -q x",
+        ]
+        for cmd in shapes:
+            marker.unlink(missing_ok=True)
+            criterion = make_criterion(cmd)
+            result = kanban._mov_prepass_run_criterion(criterion, str(tmp_path))
+            assert result is None, f"cmd should be refused (None), got {result!r}: {cmd!r}"
+            assert not marker.exists(), f"injected shape was actually executed: {cmd!r}"
+
+    def test_count_threshold_idiom_rejects_glob_in_path(self, kanban):
+        """Security review (issue55-review-security.md, Attack class 4,
+        BLOCKING): `_MOV_PREPASS_PATH_TOKEN` originally excluded only
+        whitespace/quotes/`$;|&<>`` — not shell glob/brace/tilde/paren/hash
+        metacharacters. An unquoted PATH token containing `*` is expanded
+        by the shell BEFORE rg ever sees it; a file named `--pre=<cmd>` in
+        the working directory then becomes rg's own `--pre` flag, achieving
+        arbitrary command execution with zero shell metacharacters in the
+        authored MoV string. Confirmed live in the security review via
+        `.scratchpad/3621-probe-glob-pre.py` (mtime change on a planted
+        file). This test pins that every character able to trigger a word
+        expansion is excluded from the PATH token.
+
+        DISCRIMINATES: yes, against the pre-fix-for-this-card character
+        class. Before this card's fix, `_MOV_PREPASS_PATH_TOKEN =
+        r"(?!-)[^\\s'\"$;|&<>`]+"` admits a bare `*` (and `?`, `[`, `]`,
+        `{`, `}`, `~`, `(`, `)`, `#`) as ordinary path characters, so
+        `test $(rg -c 'x' * || echo 0) -ge 1` matches
+        `_MOV_PREPASS_COUNT_THRESHOLD_RE` and `_mov_prepass_command_is_safe`
+        returns True. After this card's fix, the PATH token excludes all of
+        those characters, so the same string no longer matches either new
+        regex and falls through to the general metachar veto (which does
+        not contain `*` etc. either, so it falls through further to
+        `_mov_prepass_shape_is_exact`, which also rejects it — the overall
+        verdict is False either way, but the fix changes WHICH gate FIRST
+        refuses it, closing the specific glob-expansion admission path).
+        """
+        for cmd in [
+            "test $(rg -c 'x' * || echo 0) -ge 1",
+            "test $(rg -c 'x' fo?o || echo 0) -ge 1",
+            "test $(rg -c 'x' fo[o]o || echo 0) -ge 1",
+            "test $(rg -c 'x' fo{a,b}o || echo 0) -ge 1",
+            "test $(rg -c 'x' ~/foo || echo 0) -ge 1",
+            "test $(rg -c 'x' fo(o)o || echo 0) -ge 1",
+            "test $(rg -c 'x' fo#o || echo 0) -ge 1",
+        ]:
+            assert kanban._mov_prepass_command_is_safe(cmd) is False, cmd
+
+    def test_sed_range_idiom_rejects_glob_in_path(self, kanban):
+        """Same defect as test_count_threshold_idiom_rejects_glob_in_path,
+        reached through `_MOV_PREPASS_SED_RANGE_PIPE_RG_RE`'s PATH token —
+        the identical `_MOV_PREPASS_PATH_TOKEN` object, reused verbatim, so
+        the security review's finding applies here too (flagged in the
+        review as "not separately re-proven live... but flagging it as an
+        equally live second instance of the same defect").
+
+        DISCRIMINATES: yes, against the pre-fix-for-this-card character
+        class, for the identical reason as the count-threshold sibling
+        test above — `_MOV_PREPASS_PATH_TOKEN` is the shared object
+        imported into both regexes, so the same fix (or the same
+        pre-fix gap) applies to both call sites identically.
+        """
+        for cmd in [
+            "sed -n '/A/,/B/p' * | rg -q 'x'",
+            "sed -n '/A/,/B/p' fo?o | rg -q 'x'",
+            "sed -n '/A/,/B/p' fo[o]o | rg -q 'x'",
+            "sed -n '/A/,/B/p' fo{a,b}o | rg -q 'x'",
+            "sed -n '/A/,/B/p' ~/foo | rg -q 'x'",
+            "sed -n '/A/,/B/p' fo(o)o | rg -q 'x'",
+            "sed -n '/A/,/B/p' fo#o | rg -q 'x'",
+        ]:
+            assert kanban._mov_prepass_command_is_safe(cmd) is False, cmd
+
+    def test_count_threshold_idiom_rejects_backslash_escaped_dash(self, kanban):
+        """Re-verification (issue55-reverify-security.md § Q2, BLOCKING):
+        excluding glob/brace/tilde/paren/hash characters (the prior fix,
+        pinned above) closed pathname expansion but left backslash removal
+        open. In an unquoted shell word, a backslash is the escape
+        character: the shell strips it and takes the next character
+        literally, including a `-`. `\\-\\-pre=touch` starts with `\\`, not
+        `-`, so it passes the `(?!-)` lookahead; every character in it
+        (`\\`, `-`, `p`, `r`, `e`, `=`, `t`, `o`, `u`, `c`, `h`) was outside
+        the prior exclusion set, so the whole token matched. The shell then
+        strips both backslashes and hands `rg` the literal argument
+        `--pre=touch` — ripgrep's own preprocessor flag — achieving
+        arbitrary command execution with no adversarial file needed
+        anywhere (confirmed live via mtime change on a planted file,
+        `.scratchpad/3624-probe-backslash-detail.py`). This test pins that
+        the fix (a permitted-character allowlist, not another excluded
+        character) rejects it structurally.
+
+        Also asserts the single-backslash control (`\\-pre=touch`, which
+        the shell reduces to `-pre=touch`, a short-flag cluster `rg`'s own
+        arg parser rejects on its own) is rejected too, and that a
+        representative legitimate path is still admitted — so an
+        over-narrow allowlist would fail this test rather than silently
+        rejecting real MoVs.
+
+        DISCRIMINATES: yes, against the pre-this-card character class,
+        `_MOV_PREPASS_PATH_TOKEN = r"(?!-)[^\\s'\"$;|&<>`*?\\[\\]{}~()#]+"`
+        (the version this card's own predecessor shipped, closing only the
+        glob-expansion vector). That negated class does not list `\\`
+        among its excluded characters, so `\\-\\-pre=touch` matches it in
+        full and `_MOV_PREPASS_COUNT_THRESHOLD_RE` — built from that same
+        token — matches the whole cmd string, making
+        `_mov_prepass_command_is_safe` return True. After this card's fix,
+        `_MOV_PREPASS_PATH_TOKEN` is a positive allowlist of ASCII
+        letters/digits/`/`/`.`/`-`/`_` only; `\\` is not a member, so the
+        token fails to match at the very first character and the whole
+        regex fails, correctly returning False.
+        """
+        bypass_cmds = [
+            r"test $(rg -c 'x' \-\-pre=touch || echo 0) -ge 1",
+            r"test $(rg -c 'x' \-pre=touch || echo 0) -ge 1",
+        ]
+        for cmd in bypass_cmds:
+            assert kanban._mov_prepass_command_is_safe(cmd) is False, cmd
+
+        legitimate = (
+            "test $(rg -c 'x' modules/kanban/tests/test_kanban_mov_prepass.py"
+            " || echo 0) -ge 1"
+        )
+        assert kanban._mov_prepass_command_is_safe(legitimate) is True, legitimate
+
+    def test_sed_range_idiom_rejects_backslash_escaped_dash(self, kanban):
+        """Same defect as test_count_threshold_idiom_rejects_backslash_escaped_dash,
+        reached through `_MOV_PREPASS_SED_RANGE_PIPE_RG_RE`'s PATH token —
+        the identical `_MOV_PREPASS_PATH_TOKEN` object, reused verbatim, so
+        the re-verification's finding applies here too.
+
+        DISCRIMINATES: yes, against the pre-this-card character class, for
+        the identical reason as the count-threshold sibling test above —
+        `_MOV_PREPASS_PATH_TOKEN` is the shared object imported into both
+        regexes, so the same fix (or the same pre-fix gap) applies to both
+        call sites identically.
+        """
+        bypass_cmds = [
+            "sed -n '/A/,/B/p' \\-\\-pre=touch | rg -q 'x'",
+            "sed -n '/A/,/B/p' \\-pre=touch | rg -q 'x'",
+        ]
+        for cmd in bypass_cmds:
+            assert kanban._mov_prepass_command_is_safe(cmd) is False, cmd
+
+        legitimate = (
+            "sed -n '/A/,/B/p' modules/kanban/tests/test_kanban_mov_prepass.py"
+            " | rg -q 'x'"
+        )
+        assert kanban._mov_prepass_command_is_safe(legitimate) is True, legitimate
+
+    def test_quoted_spans_reject_embedded_newline(self, kanban):
+        """Security review (issue55-review-security.md, Attack class 3,
+        MEDIUM): a negated Python character class matches a literal
+        newline unless `\\n` is explicitly excluded. Before this card's
+        fix, neither the sed-address char class nor the rg-PATTERN char
+        class excluded `\\n`/`\\r`, so a `cmd` carrying a raw embedded
+        newline inside a quoted span could match at step 0 and return True
+        BEFORE the general metachar veto (which does ban `"\\n"`,
+        `_MOV_PREPASS_SHELL_METACHARS`) ever ran. The review confirmed this
+        was inert today only by incidental downstream behavior (a newline
+        is shell-literal inside single quotes; sed's own address parser
+        happens to reject one) — not by the regex's own design. This test
+        pins the fix so the guarantee holds by construction, not by
+        accident.
+
+        DISCRIMINATES: yes, against the pre-fix-for-this-card character
+        classes. Before this card's fix, `[^']*` (rg PATTERN, both regexes)
+        and `[^'/;$\\`|&<>]+` (sed address, both instances) each admit a
+        literal embedded newline, so all three cmds below match their
+        respective regex and `_mov_prepass_command_is_safe` returns True.
+        After this card's fix, `\\n`/`\\r` are excluded from every one of
+        those classes, so none of the three cmds match either new regex —
+        each then falls through to the general metachar veto, which
+        explicitly bans `"\\n"` and correctly returns False.
+        """
+        count_threshold_with_nl = "test $(rg -c 'x\ny' file.txt || echo 0) -ge 1"
+        sed_address_with_nl = "sed -n '/A\n/,/B/p' file.txt | rg -q 'x'"
+        sed_pattern_with_nl = "sed -n '/A/,/B/p' file.txt | rg -q 'x\ny'"
+        for cmd in (count_threshold_with_nl, sed_address_with_nl, sed_pattern_with_nl):
+            assert kanban._mov_prepass_command_is_safe(cmd) is False, cmd
+
+
+# ---------------------------------------------------------------------------
 # Unit tests: the 6 confirmed allowlist-scope bypasses from
 # .scratchpad/review-movguard-security.md § Bypass analysis, all classified
 # `safe=True` under the prior first-token-NAME allowlist despite executing
@@ -527,6 +808,58 @@ class TestWarnNondiscriminatingMovs:
         captured = capsys.readouterr()
         assert "already pass" in captured.err
         assert "Allowlisted fire case" in captured.err
+
+    def test_warn_nondiscriminating_movs_reports_every_passing_criterion(
+        self, kanban, tmp_path, monkeypatch, capsys
+    ):
+        """Issue #55 regression: the warning must enumerate EVERY criterion
+        whose full mov_commands chain already exits 0 — not a strict subset
+        of them. Constructs three passing criteria using three different
+        mov_commands shapes actually seen in this repo's own card corpus: a
+        plain `rg -q`, the `test $(rg -c ... || echo 0) -ge N`
+        count-threshold idiom, and the `sed -n '/A/,/B/p' | rg -q` range
+        idiom. Under the pre-fix code, the metachar veto in
+        _mov_prepass_command_is_safe rejected the last two outright
+        (because they contain `$(` / `|`), so _mov_prepass_run_criterion
+        returned None (inconclusive) for them regardless of the fact both
+        actually exit 0 — they would silently never reach `already_passing`
+        and never be named, even though this test's fixture makes all three
+        genuinely already-passing. Asserting all three names are present
+        (not just that the warning fired) is what makes this test capable
+        of catching that under-report; a test that only checked "some
+        warning happened" would pass identically before and after the fix.
+        """
+        monkeypatch.chdir(tmp_path)
+        fixture = tmp_path / "existing.txt"
+        fixture.write_text(
+            "## Section A\n"
+            "alpha\n"
+            "alpha\n"
+            "alpha\n"
+            "alpha\n"
+            "## Section B\n"
+        )
+        card = make_card(
+            criteria=[
+                make_criterion("rg -q alpha existing.txt", text="Plain rg AC"),
+                make_criterion(
+                    "test $(rg -c 'alpha' existing.txt || echo 0) -ge 4",
+                    text="Count threshold AC",
+                ),
+                make_criterion(
+                    "sed -n '/^## Section A/,/^## Section B/p' existing.txt | rg -q 'alpha'",
+                    text="Sed range AC",
+                ),
+            ]
+        )
+
+        kanban.warn_nondiscriminating_movs(card)
+
+        captured = capsys.readouterr()
+        assert "3 acceptance criterion(s)" in captured.err
+        assert "Plain rg AC" in captured.err
+        assert "Count threshold AC" in captured.err
+        assert "Sed range AC" in captured.err
 
 
 # ---------------------------------------------------------------------------
