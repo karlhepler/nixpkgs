@@ -254,6 +254,142 @@ class TestInvalidSubagentType:
         assert_allowed(result)
 
 
+class TestIsolationWorktreeCardGuard:
+    """Agent call pairing isolation:"worktree" with a kanban card reference
+    → denied (card #3608 / GitHub issue #39).
+
+    Covers: the deny fires for isolation-plus-card; it does NOT fire for a
+    card with no isolation; it does NOT fire for isolation with no card
+    reference (the pre-existing "no kanban card reference found" deny fires
+    instead, via a different code path).
+    """
+
+    @staticmethod
+    def _fake_subprocess_run(cmd, **kwargs):
+        card_xml = KanbanMockResponses.card_xml()
+        if cmd[0] == "kanban" and cmd[1] == "show":
+            return KanbanMockResponses.success(stdout=card_xml)
+        if cmd[0] == "kanban" and cmd[1] == "agent":
+            return KanbanMockResponses.success()
+        return KanbanMockResponses.failure()
+
+    def test_isolation_worktree_with_card_denied(self, hook):
+        """isolation:"worktree" + a card reference in the prompt → denied."""
+        payload = make_pretool_payload(extra_input={"isolation": "worktree"})
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "delegate without isolation")
+
+    def test_isolation_worktree_deny_names_corrected_form(self, hook):
+        """The deny reason must contain the literal corrected-form phrase."""
+        payload = make_pretool_payload(extra_input={"isolation": "worktree"})
+        result = run_hook_main(hook, payload)
+        reason = result.get("hookSpecificOutput", {}).get("permissionDecisionReason", "")
+        assert "delegate without isolation" in reason
+
+    def test_card_with_no_isolation_not_denied_by_this_guard(self, hook):
+        """A card reference with no `isolation` field at all → not denied
+        (falls through to the normal card-injection allow path)."""
+        payload = make_pretool_payload()  # no extra_input — isolation absent
+        with patch("subprocess.run", side_effect=self._fake_subprocess_run):
+            result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+    def test_isolation_worktree_with_no_card_not_denied_by_this_guard(self, hook):
+        """isolation:"worktree" with NO card reference in the prompt → the
+        isolation-specific deny must NOT fire (extract_card_and_session
+        returns None, so this guard's condition is false). The pre-existing
+        "no kanban card reference found in prompt" deny fires instead — a
+        different code path, confirmed by its distinct reason text."""
+        payload = make_pretool_payload(
+            prompt="Please do some work without any card reference.",
+            extra_input={"isolation": "worktree"},
+        )
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "no kanban card reference found")
+        reason = result.get("hookSpecificOutput", {}).get("permissionDecisionReason", "")
+        assert "delegate without isolation" not in reason
+
+    def test_isolation_value_other_than_worktree_not_denied(self, hook):
+        """An unrecognized isolation value (not the literal string
+        "worktree") must fail open — not denied by this guard."""
+        payload = make_pretool_payload(extra_input={"isolation": "none"})
+        with patch("subprocess.run", side_effect=self._fake_subprocess_run):
+            result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+    def test_ambiguous_card_headers_with_isolation_denied(self, hook):
+        """isolation:"worktree" + TWO full KANBAN CARD headers → denied.
+
+        Card #3612 / GitHub issue #39 (HIGH 1): the pre-fix guard delegated
+        to extract_card_and_session(), which returns None (fail-open) when
+        the full pattern matches more than once — a deliberate ambiguity
+        fail-safe for its ORIGINAL consumer, where a false "no card" result
+        is harmless. For this guard, ambiguity is not absence: two or more
+        full headers alongside isolation:"worktree" is exactly the case this
+        guard must still catch.
+        """
+        payload = make_pretool_payload(
+            prompt=(
+                "KANBAN CARD #42 | Session: test-session\n"
+                "KANBAN CARD #43 | Session: other-session\n"
+                "Do some work."
+            ),
+            extra_input={"isolation": "worktree"},
+        )
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "delegate without isolation")
+
+    def test_isolation_prose_card_mention_not_denied(self, hook):
+        """isolation:"worktree" + prose containing "card #42" and "session
+        token" but NO full "KANBAN CARD #N | Session: ..." header → allowed
+        by this guard.
+
+        Card #3612 / GitHub issue #39 (HIGH 2): the pre-fix guard's loose
+        bare-pattern fallback (card #N anywhere + session anywhere, no
+        proximity requirement) matched ordinary English prose, wrongly
+        denying a legitimate delegation whose body happens to mention a card
+        number and the word "session" in unrelated sentences.
+        """
+        payload = make_pretool_payload(
+            prompt=(
+                "Please review the auth flow — card #42 handles the retry "
+                "logic and the session token expiry needs a longer TTL. "
+                "This has nothing to do with any kanban card header."
+            ),
+            extra_input={"isolation": "worktree"},
+        )
+        with patch("subprocess.run", side_effect=self._fake_subprocess_run):
+            result = run_hook_main(hook, payload)
+        reason = result.get("hookSpecificOutput", {}).get("permissionDecisionReason", "")
+        assert "delegate without isolation" not in reason
+
+    def test_isolation_value_case_variant_denied(self, hook):
+        """A case/whitespace variant of the isolation value (e.g.
+        " Worktree ") + one full card header → denied.
+
+        Card #3612 / GitHub issue #39 (MEDIUM): normalizes the isolation
+        comparison via str(...).strip().lower() == "worktree", mirroring the
+        existing run_in_background string/bool LLM-serialization handling
+        elsewhere in this file.
+        """
+        payload = make_pretool_payload(extra_input={"isolation": " Worktree "})
+        result = run_hook_main(hook, payload)
+        assert_denied(result, "delegate without isolation")
+
+    def test_isolation_substring_value_not_denied(self, hook):
+        """isolation:"some-worktree-thing" + one full card header → allowed.
+
+        Pins the EXACT-match property of the normalized isolation
+        comparison against a plausible wrong implementation (substring
+        containment after normalization) — see
+        .scratchpad/3610-mutant-D-substring.py.
+        """
+        payload = make_pretool_payload(extra_input={"isolation": "some-worktree-thing"})
+        with patch("subprocess.run", side_effect=self._fake_subprocess_run):
+            result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+
 class TestCardInjection:
     """Agent call with card number → card XML injected into prompt."""
 

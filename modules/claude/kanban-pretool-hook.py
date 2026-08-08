@@ -1411,6 +1411,123 @@ def _validate_bash_rm_guard(payload: dict) -> "dict | None":
 
 
 # ---------------------------------------------------------------------------
+# isolation:"worktree" + kanban card guard (Agent tool calls)
+# ---------------------------------------------------------------------------
+#
+# GitHub issue #39 / card #3608. `kanban criteria check <card> <n> --session
+# <session>` (and `kanban show`, `kanban status`) fail with the literal error
+# "No card found matching '<N>'" when run from inside an isolation-spawned
+# ephemeral worktree — the kanban session cannot be resolved from that
+# directory context. Confirmed independently in two sessions on the same day,
+# on unrelated cards, with the identical error string. This affects EVERY
+# kanban-tracked card delegated with isolation on, regardless of what the
+# card touches, so the sub-agent can never check a single criterion and the
+# card can never reach done. Separately, the ephemeral worktree is
+# auto-cleaned when judged unchanged, and because .scratchpad/ is git-ignored
+# a findings file written there is invisible to that check and is destroyed
+# silently.
+#
+# Reachability of the `isolation` field on the Agent tool_input payload was
+# confirmed against a REAL captured PreToolUse-equivalent transcript entry
+# (not merely assumed from a schema doc): a live Claude Code session
+# transcript (~/.claude/projects/.../2940813f-282c-4b1c-bf5f-5b62d9730b63.jsonl)
+# contains an actual `tool_use` block with `name == "Agent"` whose `input`
+# dict carries `isolation: "worktree"` as a sibling key to `subagent_type`,
+# `description`, `run_in_background`, and `prompt` — the exact same keys this
+# hook already reads off `tool_input` elsewhere in this file (see
+# `tool_input.get("subagent_type", ...)`, `tool_input.get("description", ...)`,
+# `tool_input.get("run_in_background")` above). The PreToolUse hook's
+# `tool_input` mirrors that same `input` object, so `isolation` reaches this
+# hook the same way those other fields already do.
+#
+# Detection: this guard counts _CARD_FULL_PATTERN matches directly (see the
+# docstring on _check_isolation_worktree_card_guard below for why it does
+# NOT reuse extract_card_and_session() here, unlike the "no kanban card
+# reference found in prompt" deny (below, in main()), which still does).
+# Card #3612 / GitHub issue #39 follow-up: the original version of this
+# guard called extract_card_and_session() and inherited two behaviors that
+# invert for this consumer — ambiguity-as-absence on 2+ full headers, and a
+# loose bare-pattern fallback that matched ordinary prose. Fixed by giving
+# this guard its own direct full-pattern-only count.
+
+_ISOLATION_WORKTREE_CARD_DENY_MESSAGE = (
+    "Agent tool call denied: `isolation: \"worktree\"` cannot be paired with a "
+    "kanban card reference.\n"
+    "Running a kanban-tracked sub-agent inside an isolation-spawned ephemeral "
+    "worktree breaks kanban session resolution — `kanban criteria check`, "
+    "`kanban show`, and `kanban status` all fail with the literal error "
+    "\"No card found matching '<N>'\" from that directory context, so the "
+    "sub-agent can never check a single criterion and the card can never "
+    "reach done. Separately, the ephemeral worktree is auto-cleaned when "
+    "judged unchanged, silently destroying any .scratchpad/ findings "
+    "(git-ignored, so invisible to that unchanged-check).\n"
+    "Corrected form: delegate without isolation — drop the `isolation` "
+    "argument entirely. A kanban card's file-conflict scheduling already "
+    "comes from its declared editFiles, so isolation buys nothing here."
+)
+
+
+def _check_isolation_worktree_card_guard(tool_input: dict, prompt: str) -> "dict | None":
+    """Deny an Agent call that pairs isolation:"worktree" with a kanban card.
+
+    Returns a deny response dict if the call should be blocked, or None to
+    allow. Fails open on a missing or unrecognized `isolation` value — an
+    absent field, or any value other than "worktree" (case/whitespace
+    normalized — see below), denies nothing.
+
+    Card-reference detection (tightened by card #3612 / GitHub issue #39):
+    this guard does its OWN direct count of _CARD_FULL_PATTERN matches
+    rather than delegating to extract_card_and_session(). That function was
+    built for a different consumer (the agent_launch_pending-clearing
+    callback) where a false positive is harmless — it just skips clearing a
+    flag for one extra card. Two of its behaviors invert for this guard,
+    where a false positive means WRONGLY BLOCKING legitimate work:
+      - extract_card_and_session returns None (fail-open, i.e. "no card
+        found") when the full pattern matches MORE THAN ONCE. For its
+        original consumer that ambiguity is a deliberate mutation-safety
+        fail-safe. For this guard, ambiguity is not absence: two or more
+        full card headers alongside isolation:"worktree" is exactly the
+        dangerous case this guard exists to catch, so it must still deny.
+      - extract_card_and_session falls back to a loose bare "card #N" +
+        "session ..." pair matched independently anywhere in the prompt,
+        with no proximity requirement. That fallback turns ordinary English
+        prose (e.g. a delegation whose body happens to mention "card #42"
+        and "session token expiry" in unrelated sentences) into a false
+        "card reference found" — wrongly denying legitimate parallel-file
+        delegations that never contained an actual kanban card header.
+    This guard therefore counts only _CARD_FULL_PATTERN matches: one or
+    more full headers -> a card reference is present -> deny; zero -> no
+    card reference -> allow (fall through to the pre-existing "no kanban
+    card reference found in prompt" deny below, which still uses
+    extract_card_and_session and its loose fallback is fine there — a
+    prose-only card mention that this guard now ignores).
+
+    A card referenced ONLY in bare prose form (no full "KANBAN CARD #N |
+    Session: ..." header) will no longer trigger THIS guard — that is a
+    deliberate, accepted tradeoff, not a gap: extract_card_and_session()
+    itself is intentionally left unmodified (its ambiguity fail-safe and
+    loose fallback remain correct for its original consumer).
+    """
+    isolation_raw = tool_input.get("isolation", "")
+    # Normalized to guard against case/whitespace variance in the LLM-
+    # emitted value (e.g. " Worktree ", "WORKTREE") — same category of
+    # serialization hazard as the run_in_background string-vs-bool
+    # handling above (see "LLM serialization hazard" comment near
+    # run_in_background_raw). UNVERIFIED: no confirmed live emission of a
+    # non-canonical isolation value has been observed — the security review
+    # that raised this could not access the Agent tool's schema and
+    # explicitly declined to assert exploitability in either direction.
+    # This normalization is defense-in-depth consistent with this file's
+    # existing pattern, not a response to a confirmed bypass.
+    if str(isolation_raw).strip().lower() != "worktree":
+        return None
+    if len(_CARD_FULL_PATTERN.findall(prompt)) == 0:
+        return None
+    log_info("Agent denied — isolation=worktree paired with a kanban card reference")
+    return deny_with_reason(_ISOLATION_WORKTREE_CARD_DENY_MESSAGE)
+
+
+# ---------------------------------------------------------------------------
 # Allow response helpers
 # ---------------------------------------------------------------------------
 
@@ -1542,6 +1659,17 @@ def main() -> None:
         return
 
     prompt = tool_input.get("prompt", "")
+
+    # isolation:"worktree" + kanban card guard — see the section comment above
+    # _check_isolation_worktree_card_guard for the full rationale (card #3608
+    # / GitHub issue #39). Runs unconditionally for every Agent call, ahead of
+    # the SKILL_AGENT_BYPASS check below, because this is a mechanical
+    # incompatibility (kanban session resolution breaks inside the ephemeral
+    # worktree), not a policy check a skill-spawned bypass should skip.
+    isolation_denial = _check_isolation_worktree_card_guard(tool_input, prompt)
+    if isolation_denial is not None:
+        print(json.dumps(isolation_denial))
+        return
 
     # Extract only the pre-injection portion of the prompt for marker checks.
     # inject_card_into_prompt prepends card XML ending with
