@@ -2349,7 +2349,48 @@ def _mov_prepass_run_criterion(criterion: dict, working_dir: str) -> bool | None
     return True  # Every command in the array already exits 0.
 
 
-def warn_nondiscriminating_movs(card_json) -> None:
+def _mov_prepass_precompute_results(card_json) -> dict[int, bool | None]:
+    """Run each acceptance criterion's MoV pre-pass EXACTLY ONCE, keyed by the
+    criterion's index in the card's criteria list, so that
+    warn_nondiscriminating_movs and warn_survival_guard_failing_movs can
+    share one result instead of each independently calling
+    _mov_prepass_run_criterion on the same criterion — see GitHub issue #60.
+    Without this, any criterion carrying the '(survival guard)' label has
+    its MoV executed TWICE per `kanban do` / `kanban todo` (once by each
+    sibling warning), even though ordinary criteria are unaffected (only
+    warn_nondiscriminating_movs consumes those).
+
+    Only supports the single-card shape (`card_json` is a dict) — the only
+    shape validate_and_build_card's call site ever passes. Returns {} for
+    anything else (a bulk list, a non-dict, a non-list `criteria` field),
+    which is safe: both consumers treat a missing key exactly like an
+    inconclusive `None` result (see each function's `precomputed` parameter)
+    — no finding, no crash, no false warning.
+
+    Fails open by design: any internal error here (e.g. an unexpected
+    exception inside _mov_prepass_run_criterion) yields {} rather than
+    propagating, so a hiccup in this precompute step can never crash card
+    creation or turn into a false warning — the two consumers' own
+    "None/missing == no finding" contract absorbs it silently.
+    """
+    try:
+        if not isinstance(card_json, dict):
+            return {}
+        criteria = card_json.get("criteria") or card_json.get("ac") or []
+        if not isinstance(criteria, list):
+            return {}
+        working_dir = os.getcwd()
+        results: dict[int, bool | None] = {}
+        for ac_idx, criterion in enumerate(criteria):
+            if not isinstance(criterion, dict):
+                continue
+            results[ac_idx] = _mov_prepass_run_criterion(criterion, working_dir)
+        return results
+    except Exception:
+        return {}
+
+
+def warn_nondiscriminating_movs(card_json, precomputed: dict[int, bool | None] | None = None) -> None:
     """Print a non-blocking warning for any acceptance criterion whose full
     mov_commands chain ALREADY exits 0 against the current tree, before any
     work has been done.
@@ -2359,6 +2400,17 @@ def warn_nondiscriminating_movs(card_json) -> None:
     calls sys.exit and NEVER raises — see module-level rationale above for
     why this check is warn-only and fail-open. Card creation always proceeds
     regardless of what this function finds.
+
+    `precomputed` (optional): a {ac_idx: bool | None} map, as produced by
+    _mov_prepass_precompute_results, sharing ONE already-run pre-pass result
+    per criterion with the sibling warn_survival_guard_failing_movs instead
+    of each function calling _mov_prepass_run_criterion itself — see GitHub
+    issue #60. Only consulted for the single-card call shape (never for a
+    bulk list, whose keys precomputed does not cover); when None, or when
+    called with a bulk list, this function computes its own result exactly
+    as before. A missing key and an explicit None mean the same thing here
+    — inconclusive, no finding — so a partial/empty precomputed map is
+    exactly as safe as omitting it.
     """
     try:
         if isinstance(card_json, dict):
@@ -2370,6 +2422,7 @@ def warn_nondiscriminating_movs(card_json) -> None:
 
         working_dir = os.getcwd()
         is_bulk = len(cards) > 1
+        use_precomputed = precomputed is not None and not is_bulk
 
         for idx, card in enumerate(cards):
             criteria = card.get("criteria") or card.get("ac") or []
@@ -2380,7 +2433,11 @@ def warn_nondiscriminating_movs(card_json) -> None:
             for ac_idx, criterion in enumerate(criteria):
                 if not isinstance(criterion, dict):
                     continue
-                if _mov_prepass_run_criterion(criterion, working_dir) is not True:
+                if use_precomputed:
+                    result = precomputed.get(ac_idx)
+                else:
+                    result = _mov_prepass_run_criterion(criterion, working_dir)
+                if result is not True:
                     continue
                 text = criterion.get("text", "")
                 cmds = [
@@ -2483,7 +2540,9 @@ def _is_survival_guard(text: str) -> bool:
     )
 
 
-def warn_survival_guard_failing_movs(card_json) -> None:
+def warn_survival_guard_failing_movs(
+    card_json, precomputed: dict[int, bool | None] | None = None
+) -> None:
     """Print a non-blocking warning for any acceptance criterion labelled
     '(survival guard)' whose full mov_commands chain does NOT already exit 0
     against the current tree.
@@ -2494,12 +2553,26 @@ def warn_survival_guard_failing_movs(card_json) -> None:
     why this check is warn-only and fail-open. Card creation always proceeds
     regardless of what this function finds.
 
-    Only fires when _mov_prepass_run_criterion returns a DEFINITE False
-    (at least one command in the chain ran and exited non-zero). An
-    inconclusive result (None — no mov_commands, a malformed entry, a
-    command the pre-pass execution guard refuses to run, or a timeout) is
-    never treated as a finding, the same "no doubt, no warning" contract
-    warn_nondiscriminating_movs already follows.
+    Only fires when the pre-pass result is a DEFINITE False (at least one
+    command in the chain ran and exited non-zero). An inconclusive result
+    (None — no mov_commands, a malformed entry, a command the pre-pass
+    execution guard refuses to run, or a timeout) is never treated as a
+    finding, the same "no doubt, no warning" contract warn_nondiscriminating_movs
+    already follows. The `is not False` check below is deliberate: it is
+    the ONLY branch condition in this function, so it must never be
+    rewritten as `if not result:` — that would treat None (falsy but NOT a
+    definite failure) identically to False and turn every inconclusive
+    criterion into a spurious warning.
+
+    `precomputed` (optional): a {ac_idx: bool | None} map, as produced by
+    _mov_prepass_precompute_results, sharing ONE already-run pre-pass result
+    per criterion with the sibling warn_nondiscriminating_movs instead of
+    each function calling _mov_prepass_run_criterion itself — see GitHub
+    issue #60. Only consulted for the single-card call shape (never for a
+    bulk list); when None, or when called with a bulk list, this function
+    computes its own result exactly as before. A missing key and an
+    explicit None mean the same thing here — inconclusive, no finding — so
+    a partial/empty precomputed map is exactly as safe as omitting it.
     """
     try:
         if isinstance(card_json, dict):
@@ -2511,6 +2584,7 @@ def warn_survival_guard_failing_movs(card_json) -> None:
 
         working_dir = os.getcwd()
         is_bulk = len(cards) > 1
+        use_precomputed = precomputed is not None and not is_bulk
 
         for idx, card in enumerate(cards):
             criteria = card.get("criteria") or card.get("ac") or []
@@ -2524,7 +2598,11 @@ def warn_survival_guard_failing_movs(card_json) -> None:
                 text = criterion.get("text", "")
                 if not _is_survival_guard(text):
                     continue
-                if _mov_prepass_run_criterion(criterion, working_dir) is not False:
+                if use_precomputed:
+                    result = precomputed.get(ac_idx)
+                else:
+                    result = _mov_prepass_run_criterion(criterion, working_dir)
+                if result is not False:
                     continue  # True (as expected) or None (inconclusive) — no finding.
                 cmds = [
                     e.get("cmd", "")
@@ -3005,18 +3083,25 @@ def validate_and_build_card(data: dict, session: str | None) -> dict:
     # why this never raises SystemExit.
     warn_unmatched_card_identifiers(card)
 
+    # Run each criterion's MoV pre-pass ONCE, shared by both warnings below
+    # instead of each independently calling _mov_prepass_run_criterion on
+    # the same criterion — see GitHub issue #60. Without this, any
+    # criterion labelled '(survival guard)' had its MoV executed twice per
+    # card creation (once per warning); ordinary criteria were unaffected.
+    mov_prepass_results = _mov_prepass_precompute_results(card)
+
     # Non-blocking non-discriminating-MoV warning: flag acceptance criteria
     # whose mov_commands already exit 0 against the current tree, before any
     # work has been done. Warn-only — see § Non-discriminating MoV warning
     # above for why this never raises SystemExit.
-    warn_nondiscriminating_movs(card)
+    warn_nondiscriminating_movs(card, precomputed=mov_prepass_results)
 
     # Non-blocking survival-guard-failing-MoV warning: flag acceptance
     # criteria labelled '(survival guard)' whose mov_commands do NOT already
     # exit 0 against the current tree — the inverse of the check above. See
     # § Survival-guard-failing MoV warning above for why this never raises
     # SystemExit.
-    warn_survival_guard_failing_movs(card)
+    warn_survival_guard_failing_movs(card, precomputed=mov_prepass_results)
 
     return card
 

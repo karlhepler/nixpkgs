@@ -1164,6 +1164,50 @@ class TestWarnSurvivalGuardFailingMovs:
         assert "(survival guard) card B" in captured.err
         assert "card[0]" not in captured.err
 
+    def test_survival_guard_criterion_runs_mov_once(self, kanban, tmp_path, monkeypatch, capsys):
+        """Issue #60 regression: validate_and_build_card calls both
+        warn_nondiscriminating_movs and warn_survival_guard_failing_movs
+        unconditionally on the same card. Before the fix, each independently
+        called _mov_prepass_run_criterion on the same criterion, so any
+        criterion carrying the '(survival guard)' label had its MoV
+        executed TWICE per card creation.
+
+        DISCRIMINATION NOTE: a version of this test built with an ORDINARY
+        (unlabelled) criterion would pass identically before and after the
+        fix and prove nothing — only warn_nondiscriminating_movs consumes
+        an ordinary criterion's pre-pass result, so it already ran exactly
+        once even on the pre-fix code. This test deliberately uses a
+        '(survival guard)'-labelled criterion, the only shape both warning
+        functions independently evaluate, and is therefore the only shape
+        that actually doubles.
+        """
+        monkeypatch.chdir(tmp_path)
+        fixture = tmp_path / "existing.txt"
+        fixture.write_text("hello world\n")
+
+        real_run_criterion = kanban._mov_prepass_run_criterion
+        call_count = {"n": 0}
+
+        def counting_run_criterion(criterion, working_dir):
+            call_count["n"] += 1
+            return real_run_criterion(criterion, working_dir)
+
+        data = make_card(
+            criteria=[
+                make_criterion(
+                    "rg -qF nonexistent_anchor existing.txt",
+                    text="(survival guard) Existing anchor intact",
+                )
+            ]
+        )
+
+        with patch.object(
+            kanban, "_mov_prepass_run_criterion", side_effect=counting_run_criterion
+        ):
+            kanban.validate_and_build_card(data, session="test-session")
+
+        assert call_count["n"] == 1
+
 
 # ---------------------------------------------------------------------------
 # Integration tests: validate_and_build_card (card creation never blocks)
