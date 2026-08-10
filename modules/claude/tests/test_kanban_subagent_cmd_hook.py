@@ -21,6 +21,7 @@ Covered paths:
 import importlib.util
 import io
 import json
+import re
 import sys
 import time
 from pathlib import Path
@@ -719,6 +720,48 @@ class TestShellWrapperDenial:
         result = run_hook_main(hook, payload)
         assert_blocked(result)
 
+    def test_node_e_denied(self, hook):
+        """node -e '...' from sub-agent → DENY (issue #32, DECISION-A).
+
+        Pre-change, 'node' was absent from _SCRIPT_RUNNERS, so
+        _is_shell_wrapper_invocation() returned False at its early
+        binary-membership check and the invocation reached ALLOW."""
+        payload = make_bash_payload('node -e "console.log(1)"')
+        result = run_hook_main(hook, payload)
+        assert_blocked(result)
+
+    def test_osascript_e_denied(self, hook):
+        """osascript -e '...' from sub-agent → DENY (issue #32, DECISION-A
+        coordinator-approved extension).
+
+        Pre-change, 'osascript' was absent from _SCRIPT_RUNNERS, so
+        _is_shell_wrapper_invocation() returned False at its early
+        binary-membership check and the invocation reached ALLOW. This
+        matters because osascript -e can run `do shell script "..."`, a
+        further shell-execution vector."""
+        payload = make_bash_payload("osascript -e 'return 1'")
+        result = run_hook_main(hook, payload)
+        assert_blocked(result)
+
+    def test_perl_c_denied_documented_overmatch(self, hook):
+        """perl -c script.pl from sub-agent → DENY (issue #32, DECISION-B).
+
+        This encodes a DELIBERATE, DOCUMENTED OVER-MATCH, not desired
+        behavior: perl's own `-c` flag means "check syntax only, do not
+        execute" -- the opposite of inline-code execution -- so this is
+        one of the safest possible perl invocations, yet it is denied
+        because _SCRIPT_INLINE_FLAGS applies one flat {-e, -c} set to
+        every _SCRIPT_RUNNERS member with no per-runner semantics. This
+        test pins the accepted trade (see the over-match comment in
+        _is_shell_wrapper_invocation); it is not a bug to "fix" by making
+        this test expect ALLOW, and it is unchanged by the DECISION-A
+        runner-enumeration change above -- perl was already a
+        _SCRIPT_RUNNERS member and -c was already in
+        _SCRIPT_INLINE_FLAGS before this card's changes."""
+        payload = make_bash_payload("perl -c script.pl")
+        result = run_hook_main(hook, payload)
+        assert_blocked(result)
+
     def test_python_c_denied(self, hook):
         """python -c '...' from sub-agent → DENY."""
         payload = make_bash_payload("python -c 'import subprocess; subprocess.run([\"kanban\",\"done\",\"5\"])'")
@@ -1017,4 +1060,64 @@ class TestInlineFlagScan:
         )
         assert "might be" not in reason.lower(), (
             f"Deny message must not hedge with 'might be' framing: {reason!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# TestHonestyNoteCoverage — issue #32, card #3656 (EDIT 5(b)): structural
+# anchor for the HONESTY NOTE comment above _SHELL_RUNNERS/_SCRIPT_RUNNERS.
+# That comment's only defense against drift is being read; this test gives
+# it a second, mechanical one that fails loudly if a future editor adds a
+# runner without also naming it in the module's comment/docstring prose.
+# ---------------------------------------------------------------------------
+
+class TestHonestyNoteCoverage:
+    """A future editor who adds a 7th (8th, 9th...) member to
+    _SHELL_RUNNERS or _SCRIPT_RUNNERS without touching the HONESTY NOTE (or
+    any other comment/docstring prose) above it should fail the suite, not
+    just silently widen the enumeration past what the comment claims to
+    document."""
+
+    def test_all_runners_named_in_honesty_note(self, hook):
+        """Every member of _SHELL_RUNNERS and _SCRIPT_RUNNERS must appear
+        as a whole word somewhere in the module's comment/docstring prose.
+
+        Reads the frozensets from the LOADED MODULE itself (hook.
+        _SHELL_RUNNERS / hook._SCRIPT_RUNNERS), not a hardcoded copy of
+        their members — a hardcoded copy would not detect the exact drift
+        this test exists to catch (a runner added to the source without a
+        matching hardcoded update here would silently pass).
+
+        The two frozenset ASSIGNMENT lines themselves are excluded from
+        the prose search before checking for word-boundary matches:
+        every runner name necessarily appears in its own frozenset
+        literal, so including those two lines would make the assertion
+        vacuously true for any runner, defeating the whole point of the
+        check. Everything else in the file — the module docstring, every
+        '#' comment, docstrings, and deny-message strings — counts as
+        prose a future editor could have used to document a new runner,
+        so this deliberately does not assert exact sentence wording, only
+        word-boundary presence.
+        """
+        source = _HOOK_PATH.read_text()
+        prose_lines = [
+            line
+            for line in source.splitlines()
+            if not re.match(r'^_(SHELL|SCRIPT)_RUNNERS\s*=\s*frozenset\(', line.strip())
+        ]
+        prose_text = "\n".join(prose_lines)
+
+        all_runners = hook._SHELL_RUNNERS | hook._SCRIPT_RUNNERS
+        missing = [
+            runner
+            for runner in sorted(all_runners)
+            if not re.search(r'\b' + re.escape(runner) + r'\b', prose_text)
+        ]
+        assert not missing, (
+            f"Runner(s) {missing} are members of _SHELL_RUNNERS/"
+            f"_SCRIPT_RUNNERS but are not named anywhere in the module's "
+            f"comment/docstring prose (outside the frozenset literals "
+            f"themselves). Add them to the HONESTY NOTE above "
+            f"_SHELL_RUNNERS/_SCRIPT_RUNNERS before merging — see that "
+            f"comment (issue #32) for why this matters."
         )

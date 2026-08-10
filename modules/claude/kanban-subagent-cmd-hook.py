@@ -106,8 +106,54 @@ _ENV_ASSIGNMENT_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*=')
 # Shell runner binaries that accept -c <inline-script> arguments.
 # Sub-agents invoking these with -c are equivalent to having unrestricted shell
 # access for the purpose of kanban guard bypasses, so we deny them outright.
+#
+# HONESTY NOTE (issue #32): BEFORE adding a new runner to _SHELL_RUNNERS,
+# _SCRIPT_RUNNERS, or _ALL_INLINE_RUNNERS below -- or before treating the
+# excluded-candidates list a few lines down as a closed, fully-surveyed
+# set -- read this comment in full.
+#
+# _SHELL_RUNNERS, _SCRIPT_RUNNERS, and _ALL_INLINE_RUNNERS are
+# deliberately-incomplete, best-effort enumerations of interpreter
+# binaries confirmed reachable in this repo's Nix environment at time of
+# writing -- this is not an exhaustive taxonomy of every inline-code-
+# capable interpreter that could ever run here, and other interpreters may
+# need adding as they are discovered. `node` was added after a
+# reachability sweep (`.scratchpad/issue-32-decision.md`, DECISION-A)
+# confirmed it resolves on PATH in this Nix profile
+# (`modules/packages.nix:75` declares `nodejs_24`) and supports inline
+# execution (`node -e`/`--eval`). `osascript` was added afterward as a
+# coordinator extension to that same sweep, not analyzed in the
+# DECISION-A record itself -- it was independently confirmed to ship at
+# `/usr/bin/osascript` on macOS and to support inline execution
+# (`osascript -e`, including via `do shell script` as a further
+# shell-execution vector).
+#
+# Checked and confirmed NOT reachable on PATH in this environment, so deliberately
+# excluded: `deno`, `bun`, `php`, `lua`, `julia`, `groovy`, `elixir`, `erl`, `R` (`Rscript` also absent).
+# This excluded-candidates list reflects only the interpreters probed at
+# time of writing, not an exhaustive survey of every interpreter that
+# could exist -- absence from this list does not imply reachability, and
+# presence on it does not mean every possible candidate has been
+# considered.
+#
+# `tclsh` IS reachable (`/usr/bin/tclsh`) but was deliberately excluded
+# because it has no inline-eval flag -- it only takes a script file or
+# reads from stdin, so it is not an inline-code runner in this control's
+# sense; do not re-investigate it without new evidence that tclsh gained
+# an -e-equivalent flag.
+#
+# TAXONOMY LIMITATION (issue #32, surfaced by an independent security review
+# of this diff): not every shell-execution vector is an interpreter. This
+# enumeration and its excluded-candidates list above only ever answered
+# "what language interpreters are installed" -- but the review reproduced
+# live shell-command execution through `sed -e '.../e'`, `git -c
+# alias.x='!cmd' x`, and `awk 'BEGIN{system("cmd")}'`, none of which is an
+# interpreter by the intuition this list was built on, and the first two
+# are reached through the exact `-e`/`-c` literals this hook already scans
+# for. Closing that gap is open work tracked in issue #62, not something
+# this enumeration solves.
 _SHELL_RUNNERS = frozenset(["bash", "sh", "zsh", "dash", "ksh", "fish"])
-_SCRIPT_RUNNERS = frozenset(["python", "python3", "perl", "ruby"])
+_SCRIPT_RUNNERS = frozenset(["python", "python3", "perl", "ruby", "node", "osascript"])
 _ALL_INLINE_RUNNERS = _SHELL_RUNNERS | _SCRIPT_RUNNERS
 
 # The -c / -e flag that introduces an inline script for each runner family.
@@ -528,6 +574,30 @@ def _is_shell_wrapper_invocation(segment: list) -> bool:
     # a bypass is silent. For a control whose entire job is resisting bypass,
     # that asymmetry decides it — do not reintroduce the early break to
     # "fix" this false positive.
+    #
+    # KNOWN, DELIBERATE OVER-MATCH (issue #32): _SCRIPT_INLINE_FLAGS applies
+    # one flat {-e, -c} set to every _SCRIPT_RUNNERS member. For perl, ruby, and node, `-c` means
+    # "check syntax only, do not execute" -- the opposite of inline
+    # execution -- so `perl -c script.pl`, `ruby -c script.rb`, and `node
+    # -c script.js` are all denied here despite being among the safest
+    # possible invocations of each interpreter (verified live: `perl -h`,
+    # `ruby -h`, and `node --help` each document `-c` as syntax-check-only,
+    # not execution). This is a known, accepted
+    # over-match, not a bug to "fix" with a per-runner flag map: a
+    # dedicated per-runner override set scoped to each runner's own inline
+    # flags would be its own enumerable list, and any such list can
+    # silently omit a future inline-execution flag (e.g. a hypothetical
+    # `-E`) the same way the runner-name enumeration above can silently
+    # omit a runner -- trading a loud, recoverable false positive for a new
+    # silent-bypass surface. See the runner-enumeration honesty note above
+    # for the same trade-off reasoning applied one layer up.
+    #
+    # `osascript`'s `-c` is a fourth, differently-flavored instance of this
+    # same flat-flag-set over-match, but with no usability cost: osascript
+    # has no `-c` flag at all (confirmed live: `osascript -c 'foo'` exits 2
+    # with "illegal option -- c"), so this scan denies an invocation that
+    # would have failed on its own regardless of this hook -- unlike
+    # perl/ruby/node's `-c`, no legitimate use is lost here.
     for tok in segment[1:]:
         if tok in inline_flags:
             return True
