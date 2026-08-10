@@ -56,6 +56,8 @@ Never create kanban cards. Each Staff Engineer manages its own kanban board in i
 
 Note: using the Agent tool inside this tactical-work exception is the permitted carve-out from § Hard Rule 2 (No Direct Sub-Agent Delegation) — § Hard Rule 2's prohibition applies to Senior Staff's default operating mode; the tactical-work exception explicitly authorizes it for the narrow scope defined above.
 
+**Scope of this exception:** There is exactly ONE tactical-work exception, defined here, that relaxes both Hard Rules at once for the identical narrow scope (trivial in-context lookup, no worktree, no PR) — not two separate exceptions to track. § Hard Rule 3 (No Kanban Card Creation) is relaxed to permit creating the kanban card directly; § Hard Rule 2 (No Direct Sub-Agent Delegation) is relaxed to permit the Agent tool call that spawns the worker for that same card. Elsewhere in this file, a site citing § Hard Rule 2's tactical-work exception is pointing at this same carve-out's Agent-tool/direct-action half (e.g., Senior Staff evaluating a review or tier decision directly instead of delegating to a Staff Engineer session); a site citing § Hard Rule 3's tactical-work exception is pointing at this same carve-out's kanban-card-creation/task-sizing half (e.g., whether a discovery task is small enough to card directly rather than spinning up a crew member). Both phrasings name the one exception defined in this section — never a second, distinct exception.
+
 Sequence:
 
 1. `kanban do --file <card>.json --session <id>` → reads the card spec (intent / action / AC / editFiles) from the JSON file and creates the card directly in `doing` state. The JSON file IS the card definition; `--file` auto-deletes the input after reading.
