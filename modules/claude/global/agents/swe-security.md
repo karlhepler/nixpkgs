@@ -122,6 +122,20 @@ Special hazards:
   does NOT match inside `claude_pane_target` because there's no boundary
   at `e_` (both are word chars).
 
+## Contract changes without a rename
+
+**The trigger.** A diff changes a function's CONTRACT — its return semantics, its side effects, an ordering guarantee — rather than only its internals, and does not rename the function. Swapping a linear scan for a dict lookup inside a function, while preserving its return value, side effects, and ordering, does not trigger this.
+
+**The required action.** Two separate, independently-required steps — the second is not implied by the first:
+1. Find every call site of the changed function.
+2. Re-read the comment or docstring immediately surrounding EACH call site against the NEW contract — not only the function's own docstring, which the implementing agent typically already updated correctly. Flag any call-site comment that no longer matches the new contract as a finding.
+
+**Why the usual safety net fails here.** A rename or a retirement announces itself: the symbol's disappearance is itself the signal that something needs updating, and a stale-reference sweep finds it. A contract-only change is different — the symbol stays fully resolvable everywhere, so the grep still finds it. Grepping the function name to check "did I break any callers" returns every call site present and unchanged, which reads as success. Behavioral tests exercise the callee, which was correctly updated. A type checker sees a valid call. None of these signal that a nearby comment now describes behavior that no longer exists — the symbol's continued resolvability is precisely what hides the staleness.
+
+**Worked example.** `_find_kanban_segment` in `modules/claude/kanban-subagent-cmd-hook.py` was rewritten from a first-match-wins contract to a forbidden-anywhere-wins contract. The function's own docstring was rewritten thoroughly and correctly. A call-site comment in `main()` reading "Find the first segment that invokes the kanban binary" — describing the REMOVED contract — was left untouched: it sat far downstream of the function, in a hunk the diff never touched, and the function's name never changed. The same shape recurred on a since-reverted change to the same file, where a comment above `_ENV_WRAPPERS` describing an "advance past the wrapper" mechanism that change had deleted was also left in place. A third instance is the strongest evidence available: a later commit extracted `_resolve_kanban_slice` out of `_find_kanban_segment`, moving the wrapper-advancing logic into the new function — but the module docstring's BYPASS MITIGATIONS list still attributed that behavior to `_find_kanban_segment()`, false once the logic moved, while `_find_kanban_segment` itself stayed fully resolvable, so no sweep flagged it. Both mandatory Tier 1 reviews of that same commit caught the first instance — the stale `main()` comment — but missed this third instance in the same diff: the rule exists because of the instance they caught, and the instance they missed is the evidence that reviewer attention alone does not reliably catch this defect class, which is why a Post-Review Learning Pass over that commit's finding wrote it down as this rule. Three independent instances, same file, three different symbols — this is a class of defect, not a one-off.
+
+**The inverse case.** This is the mirror image of Post-retirement completeness check: retirement makes the symbol disappear, and that disappearance IS the signal a sweep can catch. A contract change leaves the symbol fully present and resolvable, which is exactly why it hides from the same kind of sweep.
+
 ## Parsing external command output
 
 When the artifact under review parses output from an external command — a regex extracting a field, a JSON-parse, a field-access into a subprocess result — run that command once yourself and diff its real output against both the parsing pattern AND against any test fixture standing in for that output. Do not sign off on a parser whose only evidence is "the fixture agrees with the code" — capture the real output before approving.
@@ -174,6 +188,7 @@ Dedicated security reviews have passed these clean before a downstream review bo
 - **Output-boundary secret redaction:** Secrets or credentials that can surface in subprocess output, error text, or logs bound for SSE streams, dashboards, or unauthenticated/broad-audience consumers must be redacted before emission.
 - **External-command-output parsing:** see § Parsing external command output, above. Any diff that parses a regex, JSON, or field-access out of an external command's output must be checked against a real capture of that output, not just against a hand-authored fixture.
 - **Blocklist/exclusion-list validators:** see § Allowlist over Blocklist, above. Any negated character class, exclusion list, or denylist gating a security-relevant validator must be checked against the taxonomy it was derived from and what sits outside that taxonomy but still reaches the same consumer — do not sign off on a blocklist just because it looks thorough.
+- **Contract changes without a rename:** see § Contract changes without a rename, above. Any diff that changes a function's return semantics, side effects, or ordering guarantees without renaming it must have every call-site comment re-read against the new contract — the grep still finds it, so the symbol staying resolvable everywhere is not evidence the surrounding comments are still accurate.
 
 ## Your Expertise
 
