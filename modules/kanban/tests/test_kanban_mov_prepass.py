@@ -808,6 +808,55 @@ class TestMovPrepassBypassRejection:
 
 
 # ---------------------------------------------------------------------------
+# Unit tests: _mov_prepass_precompute_results
+# ---------------------------------------------------------------------------
+
+class TestMovPrepassPrecompute:
+    def test_precompute_exception_isolated_to_one_criterion(self, kanban, tmp_path, monkeypatch):
+        """Issue #61 regression: before the fix, _mov_prepass_precompute_results
+        wrapped its ENTIRE criteria loop in one outer try/except Exception
+        that returned {} on any failure. An unexpected exception on the
+        SECOND of three criteria therefore discarded the first criterion's
+        already-computed real result and never attempted the third.
+
+        DISCRIMINATION NOTE: asserting merely that no exception escapes
+        proves nothing here — the pre-change code already returns {} without
+        crashing. What must be asserted is the SURVIVING entries: criterion
+        0 keeps its real result, criterion 1 becomes None (inconclusive),
+        and criterion 2 is still attempted and keeps its real result.
+        """
+        monkeypatch.chdir(tmp_path)
+
+        real_run_criterion = kanban._mov_prepass_run_criterion
+
+        def flaky_run_criterion(criterion, working_dir):
+            if criterion["text"] == "criterion two":
+                # RuntimeError is not TimeoutExpired/OSError/ValueError, so
+                # it is NOT caught inside _mov_prepass_run_criterion itself
+                # — it actually reaches the precompute function's own
+                # exception handling.
+                raise RuntimeError("boom")
+            return real_run_criterion(criterion, working_dir)
+
+        data = make_card(
+            criteria=[
+                make_criterion("true", text="criterion one"),
+                make_criterion("true", text="criterion two"),
+                make_criterion("true", text="criterion three"),
+            ]
+        )
+
+        with patch.object(
+            kanban, "_mov_prepass_run_criterion", side_effect=flaky_run_criterion
+        ):
+            precomputed = kanban._mov_prepass_precompute_results(data)
+
+        assert precomputed.get(0) is True, "criterion 0's real result must survive the later exception"
+        assert precomputed.get(1) is None, "criterion 1 must be recorded inconclusive (None), not crash the whole map"
+        assert precomputed.get(2) is True, "criterion 2 must still be attempted after criterion 1's exception"
+
+
+# ---------------------------------------------------------------------------
 # Unit tests: warn_nondiscriminating_movs
 # ---------------------------------------------------------------------------
 

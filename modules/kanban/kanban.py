@@ -2367,11 +2367,17 @@ def _mov_prepass_precompute_results(card_json) -> dict[int, bool | None]:
     inconclusive `None` result (see each function's `precomputed` parameter)
     — no finding, no crash, no false warning.
 
-    Fails open by design: any internal error here (e.g. an unexpected
-    exception inside _mov_prepass_run_criterion) yields {} rather than
-    propagating, so a hiccup in this precompute step can never crash card
-    creation or turn into a false warning — the two consumers' own
-    "None/missing == no finding" contract absorbs it silently.
+    Fails open by design, per criterion: an unexpected exception while
+    evaluating one criterion (e.g. inside _mov_prepass_run_criterion)
+    costs only that criterion — it is recorded as None (inconclusive) and
+    the loop continues to the remaining criteria — rather than propagating
+    or discarding results already computed. A hiccup in this precompute
+    step can never crash card creation or turn into a false warning: the
+    two consumers' own "None/missing == no finding" contract absorbs each
+    inconclusive entry silently. The setup work before the loop (shape
+    validation, resolving the criteria list, computing working_dir) is
+    guarded by its own outer try/except so that an unexpected failure
+    there ALSO yields {} instead of propagating — see GitHub issue #61.
     """
     try:
         if not isinstance(card_json, dict):
@@ -2380,14 +2386,23 @@ def _mov_prepass_precompute_results(card_json) -> dict[int, bool | None]:
         if not isinstance(criteria, list):
             return {}
         working_dir = os.getcwd()
-        results: dict[int, bool | None] = {}
-        for ac_idx, criterion in enumerate(criteria):
-            if not isinstance(criterion, dict):
-                continue
-            results[ac_idx] = _mov_prepass_run_criterion(criterion, working_dir)
-        return results
     except Exception:
         return {}
+
+    results: dict[int, bool | None] = {}
+    for ac_idx, criterion in enumerate(criteria):
+        if not isinstance(criterion, dict):
+            continue
+        try:
+            results[ac_idx] = _mov_prepass_run_criterion(criterion, working_dir)
+        except Exception:
+            # An unexpected exception while evaluating THIS criterion costs
+            # only that criterion — record it as inconclusive (None) and
+            # keep going. Results already computed for earlier criteria
+            # survive, and later criteria are still attempted. See GitHub
+            # issue #61.
+            results[ac_idx] = None
+    return results
 
 
 def warn_nondiscriminating_movs(card_json, precomputed: dict[int, bool | None] | None = None) -> None:
