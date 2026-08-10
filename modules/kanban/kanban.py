@@ -2207,7 +2207,12 @@ def _mov_prepass_has_live_metachar(cmd: str) -> bool:
     Fails closed (returns True — "has a live metachar", i.e. unsafe) on an
     unterminated single-quoted span at end-of-string, mirroring the
     existing shlex.split ValueError -> False contract in
-    _mov_prepass_command_is_safe below.
+    _mov_prepass_command_is_safe below. Also fails closed on a bare
+    trailing backslash at end-of-string outside any quote — a dangling
+    escape with no character left to escape is a sibling malformed-escape
+    case to the unterminated-quote span above, and is caught standalone
+    here rather than relying on the caller's downstream shlex.split call
+    to catch it.
 
     Deliberately single-quote-only: double-quoted spans still permit shell
     command substitution (`` ` `` / `$(`) inside them, so "skip quoted
@@ -2220,6 +2225,7 @@ def _mov_prepass_has_live_metachar(cmd: str) -> bool:
     in_quote = False
     i = 0
     n = len(cmd)
+    escape_overran_end = False
     while i < n:
         c = cmd[i]
         if in_quote:
@@ -2230,7 +2236,13 @@ def _mov_prepass_has_live_metachar(cmd: str) -> bool:
         if c == "\\":
             # Outside a quote, a backslash escapes exactly the next
             # character: never scanned, and never toggles quote state —
-            # even if that character is itself a single quote.
+            # even if that character is itself a single quote. A
+            # backslash as the FINAL character of the string has no
+            # character left to escape at all -- that dangling escape is
+            # itself malformed input, so track it and fail closed below
+            # rather than silently falling through to "no live metachar".
+            if i + 1 >= n:
+                escape_overran_end = True
             i += 2
             continue
         if c == "'":
@@ -2243,6 +2255,8 @@ def _mov_prepass_has_live_metachar(cmd: str) -> bool:
         i += 1
     if in_quote:
         return True  # Unterminated quote -- fail closed.
+    if escape_overran_end:
+        return True  # Dangling trailing escape -- fail closed.
     return False
 
 

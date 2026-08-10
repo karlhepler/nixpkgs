@@ -395,6 +395,31 @@ class TestMovPrepassCommandIsSafe:
             "rg -qF 'it'\\''s here' modules/kanban/kanban.py"
         ) is True
 
+    def test_trailing_backslash_fails_closed_standalone(self, kanban):
+        """Issue #59 / security-review finding L1: `_mov_prepass_has_live_metachar`
+        must fail closed on its OWN, called directly, when a bare backslash
+        is the FINAL character of `cmd` outside any quote — a dangling
+        escape with no character left to escape. Pre-fix, the outside-quote
+        backslash branch does `i += 2` unconditionally and walks `i` past
+        the end of the string, so the scan loop exits having never detected
+        the malformed escape or set `in_quote`, and the function falls
+        through to `return False` ("no live metachar") even though the
+        input is malformed.
+
+        This asserts on `_mov_prepass_has_live_metachar` DIRECTLY, not on
+        `_mov_prepass_command_is_safe`. A caller-level test is worthless
+        here: `_mov_prepass_command_is_safe` already returns False for this
+        exact input on the pre-fix code too, via its own downstream
+        `shlex.split(cmd)` call raising `ValueError` on the same malformed
+        trailing backslash (caught by `except ValueError: return False`) —
+        so a caller-level assertion would pass identically before and after
+        this fix and would gate nothing. Direct invocation is what makes
+        this test discriminating: pre-fix the function returns False here
+        and this assertion fails; post-fix it returns True and the
+        assertion passes.
+        """
+        assert kanban._mov_prepass_has_live_metachar("rg -q x/some/path\\") is True
+
 
 # ---------------------------------------------------------------------------
 # Unit tests: the two narrowly-admitted compound idioms (issue #55) —
