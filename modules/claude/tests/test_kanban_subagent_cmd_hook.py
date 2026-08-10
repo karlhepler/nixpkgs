@@ -1134,6 +1134,87 @@ class TestMultiSegmentForbiddenWins:
 
 
 # ---------------------------------------------------------------------------
+# TestFusedShellOperators — issue #66, card #3671: confirmed bypass where a
+# shell operator FUSED (no surrounding whitespace) onto the tail of a
+# preceding segment's own argument (e.g. '5 1&&kanban') produced a single
+# opaque shlex token, so _split_on_shell_ops never saw a second segment and
+# the trailing kanban invocation ran unguarded as extra positional args to
+# the first, already-resolved (and allowed) segment. Root cause:
+# _normalize_semicolons (pre-fix) special-cased only ';'; it had no
+# equivalent handling for '&&', '||', or '&'. '|' is deliberately deferred —
+# see the "Pipe deferral" section of .scratchpad/issue-66-demo.md.
+# ---------------------------------------------------------------------------
+
+class TestFusedShellOperators:
+    """A shell operator fused directly onto adjacent content with no
+    surrounding whitespace must still split into separate command segments,
+    so a forbidden kanban invocation hidden after it is not missed."""
+
+    def test_fused_and_operator_forbidden_second_command_denied(self, hook):
+        """`kanban criteria check 5 1&&kanban done 5` — confirmed bypass:
+        the fused '&&' merges '1' and 'kanban' into a single opaque
+        '1&&kanban' shlex token, so pre-fix the trailing `done 5` runs
+        unguarded as extra positional args to the first (allowed) segment.
+        Must DENY."""
+        payload = make_bash_payload("kanban criteria check 5 1&&kanban done 5")
+        result = run_hook_main(hook, payload)
+        assert_blocked(result)
+        assert "criteria check" in block_reason(result)
+        assert "criteria uncheck" in block_reason(result)
+
+    def test_fused_or_operator_forbidden_second_command_denied(self, hook):
+        """`kanban criteria check 5 1||kanban done 5` — same fused-operator
+        bypass shape as the '&&' case, using '||'. Must DENY."""
+        payload = make_bash_payload("kanban criteria check 5 1||kanban done 5")
+        result = run_hook_main(hook, payload)
+        assert_blocked(result)
+        assert "criteria check" in block_reason(result)
+        assert "criteria uncheck" in block_reason(result)
+
+    def test_fused_ampersand_forbidden_second_command_denied(self, hook):
+        """`kanban criteria check 5 1&kanban done 5` — same fused-operator
+        bypass shape as the '&&' case, using a single '&'. Must DENY."""
+        payload = make_bash_payload("kanban criteria check 5 1&kanban done 5")
+        result = run_hook_main(hook, payload)
+        assert_blocked(result)
+        assert "criteria check" in block_reason(result)
+        assert "criteria uncheck" in block_reason(result)
+
+    def test_fused_operator_allowed_only_still_allowed(self, hook):
+        """`kanban criteria check 5 1&&kanban criteria uncheck 5 2` — both
+        segments resolve to allowed subcommands even after fused-operator
+        splitting. Must remain ALLOWED; the fix must not turn every fused
+        compound into a blanket deny. This is a regression guard for
+        behavior that already exists (an all-allowed compound was never
+        denied, fused or not) — an honest NO on discrimination is expected
+        here, not a bypass-closing assertion."""
+        payload = make_bash_payload("kanban criteria check 5 1&&kanban criteria uncheck 5 2")
+        result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+    def test_quoted_operator_not_split(self, hook):
+        """A command whose QUOTED argument contains an operator character
+        (`rg -q 'a|b' file`, `rg -q 'foo&&bar' file`) must retain its
+        existing decision (ALLOW) — the new fused-operator splitting must
+        not turn an ordinary quoted regex/argument into a spurious
+        multi-segment command. This is a regression guard for behavior
+        that already exists for these specific, realistic inputs (neither
+        half of either quoted argument resolves to the kanban binary), not
+        a claim that the tokenizer is quote-aware in general — see the
+        QUOTE-SAFETY note on _normalize_fused_shell_operators and this
+        card's demo file for the narrower, bounded, fail-closed-only edge
+        case (a quoted operator glued directly to the substring 'kanban')
+        that this test deliberately does not exercise."""
+        payload = make_bash_payload("rg -q 'a|b' file")
+        result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+        payload2 = make_bash_payload("rg -q 'foo&&bar' file")
+        result2 = run_hook_main(hook, payload2)
+        assert_allowed(result2)
+
+
+# ---------------------------------------------------------------------------
 # TestHonestyNoteCoverage — issue #32, card #3656 (EDIT 5(b)): structural
 # anchor for the HONESTY NOTE comment above _SHELL_RUNNERS/_SCRIPT_RUNNERS.
 # That comment's only defense against drift is being read; this test gives

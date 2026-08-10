@@ -70,12 +70,15 @@ DENIED (all others):
 BYPASS MITIGATIONS:
   1. env/command/exec wrappers: `env kanban done 5`, `command kanban done 5`,
      `exec kanban done 5`, `/usr/bin/env kanban done 5` — detected by advancing
-     past wrapper tokens in _find_kanban_segment().
+     past wrapper tokens in _resolve_kanban_slice().
   2. shell -c wrappers: `bash -c 'kanban done 5'`, `sh -c '...'`, `python3 -c
      '...'`, etc. — denied entirely for sub-agents via _deny_shell_wrapper().
   3. bare shell env-var prefixes: `KANBAN_SESSION=x kanban list`,
      `FOO=1 BAR=2 kanban done 5` — detected by stripping leading
      VAR=value tokens in _strip_leading_env_assignments().
+  4. fused shell operators (no whitespace around `&&`, `||`, `;`, `&`) —
+     operator characters are split out of single shlex tokens by
+     _normalize_fused_shell_operators() before segmentation.
 """
 
 import json
@@ -185,26 +188,153 @@ def _is_sub_agent(payload: dict) -> bool:
 # Command tokenization
 # ---------------------------------------------------------------------------
 
-def _normalize_semicolons(tokens: list) -> list:
-    """Expand tokens that embed bare semicolons into separate operator tokens.
 
-    shlex.split does not treat ';' as an operator — it merges it with adjacent
-    content when there is no surrounding whitespace (e.g., 'cmd;next'). This
-    function splits those embedded semicolons so _split_on_shell_ops can
-    correctly identify command segment boundaries.
+# Shell control operators that can appear FUSED onto adjacent content (no
+# surrounding whitespace) inside a single shlex token — e.g. 'cmd;next',
+# '1&&kanban', 'kanban&done'. `|` is DELIBERATELY EXCLUDED (issue #66) — see
+# the "PIPE DEFERRAL" note on _normalize_fused_shell_operators below.
+#
+# Sorted longest-first so a two-character operator is always matched before
+# its one-character prefix: '&&' must be recognized before '&' (a
+# left-to-right, shortest-first scan would split '&&' into two spurious
+# empty-buffer '&' pieces instead of one '&&' piece). '||' is similarly
+# ordered ahead of any future single-'|' handling, though no single-'|'
+# entry exists in this set today.
+_FUSED_SHELL_OPERATORS = (";", "&&", "||", "&")
+_FUSED_SHELL_OPERATORS_BY_LENGTH = tuple(
+    sorted(_FUSED_SHELL_OPERATORS, key=len, reverse=True)
+)
+
+
+def _normalize_fused_shell_operators(tokens: list) -> list:
+    """Expand tokens that embed bare shell control operators into separate
+    operator tokens, so _split_on_shell_ops can find every segment boundary.
+
+    shlex.split does not treat ';', '&&', '||', or '&' as operators — it
+    merges each of them with adjacent content whenever there is no
+    surrounding whitespace (e.g. 'cmd;next', '1&&kanban', 'kanban&done').
+    Whitespace-surrounded operators need no help here: shlex.split already
+    emits them as their own standalone tokens (e.g. 'a && b' -> ['a', '&&',
+    'b']), which _split_on_shell_ops already recognizes via _SHELL_OPS. This
+    function exists solely for the FUSED (no-whitespace) case.
+
+    Confirmed real bug this closes (issue #66): before this function existed
+    for &&/||/&, a fused compound like
+      'kanban criteria check 5 1&&kanban done 5'
+    tokenized as a single opaque token '1&&kanban' at the point where the
+    subcommand's last argument met the operator, so _split_on_shell_ops
+    never saw a second segment and the trailing 'kanban done 5' ran
+    unguarded as extra positional arguments to the (correctly resolved)
+    first segment.
+
+    Delegates to _split_token_on_fused_operators for the actual per-token
+    scan (longest-match-first: '&&'/'||' before their '&' prefix).
+
+    PIPE DEFERRAL (issue #66, deliberate): '|' is NOT included in
+    _FUSED_SHELL_OPERATORS. See the "Pipe deferral" section of this card's
+    demo file for the full analysis; in short, '|' is regex alternation and
+    appears inside ordinary quoted patterns (`rg -q 'a|b' file`) far more
+    often than ';'/'&&'/'||'/'&' do, and by the time this function runs,
+    shlex has already irreversibly discarded quote boundary information (see
+    the QUOTE-SAFETY note below), so there is no way to tell a quoted '|'
+    from a fused, unquoted one at this layer. Adding '|' here would multiply
+    an already-nonzero false-positive surface (see this function's own
+    QUOTE-SAFETY note) specifically on the shape of command a sub-agent runs
+    constantly (grep/rg pattern searches). A DIFFERENT, previously-recorded
+    finding (kanban|cat with NO surrounding whitespace) is a distinct defect
+    from the one this function fixes: there, the kanban BINARY TOKEN ITSELF
+    becomes invisible ('kanban|cat' matches neither the exact 'kanban'
+    string nor a '/bin/kanban' path suffix in _is_kanban_binary()), whereas
+    this function's fix addresses a SECOND kanban invocation being masked as
+    trailing arguments to an already-recognized first one. This function
+    does not close that other gap, and given the quote-collision risk above,
+    doing so safely would need genuine character-level quote tracking on the
+    raw command string (see QUOTE-SAFETY note) rather than this post-shlex
+    token scan — out of scope for this card.
+
+    QUOTE-SAFETY NOTE (verified empirically, issue #66): this function runs
+    strictly AFTER shlex.split() in the caller, and by that point quote
+    boundary information has already been irreversibly discarded —
+    shlex.split("'a;b'") and shlex.split("a;b") both yield the identical
+    token ['a;b']; there is no way, at this layer, to tell a ';' (or now
+    '&&'/'||'/'&') that was originally inside quotes from one that was not.
+    This is a PRE-EXISTING characteristic of the ';'-only version of this
+    function, not something newly introduced by extending it to &&/||/&:
+    replaying `rg -q 'a;kanban' file` (a benign, single, quoted command)
+    through this module's real main() already produces a false DENY on the
+    unmodified ';'-only code, because the quote-blind split manufactures a
+    spurious ['kanban', 'file'] segment from the quoted 'a;kanban' argument.
+    Extending the same token-scan mechanism to &&/||/& inherits the
+    identical, bounded limitation — e.g. `rg -q 'foo&&kanban' file` can
+    likewise be falsely denied — but does NOT introduce a new bypass
+    (DENY-to-ALLOW) risk: _find_kanban_segment's "forbidden segment anywhere
+    wins" rule means additional splitting can only ever ADD segments to
+    scan, never remove or hide one that would otherwise have been flagged
+    forbidden (the fused-operator bypass this function fixes is exactly the
+    reverse direction — too FEW segments, not too many). The failure
+    direction this limitation can produce is over-denial of an innocent
+    quoted command whose content happens to glue an operator character
+    directly against something that resolves to a forbidden kanban
+    invocation with no separating whitespace — a fail-closed-only edge
+    case. The incidence is NOT narrow: the false deny fires whenever a
+    quoted search term ends exactly at the six letters of the kanban
+    binary name, which is the natural shape of a search someone
+    investigating this very mechanism would run over this repo's own test
+    and notes files. Appending more content after those six letters inside
+    the same quoted argument correctly stays allowed, because the
+    resulting fused token no longer equals the bare binary name. This
+    remains consistent with this file's established accepted-trade
+    philosophy elsewhere (see _is_shell_wrapper_invocation's "Accepted
+    trade" comment: a loud, recoverable false deny beats a silent bypass).
     """
     result = []
     for tok in tokens:
-        if ';' not in tok:
-            result.append(tok)
-            continue
-        parts = tok.split(';')
-        for i, part in enumerate(parts):
-            if part:
-                result.append(part)
-            if i < len(parts) - 1:
-                result.append(';')
+        result.extend(_split_token_on_fused_operators(tok))
     return result
+
+
+def _split_token_on_fused_operators(token: str) -> list:
+    """Split a single token into content pieces and operator tokens wherever
+    a member of _FUSED_SHELL_OPERATORS appears in it, longest-match-first.
+
+    Scans left to right. At each position, tries each operator in
+    _FUSED_SHELL_OPERATORS_BY_LENGTH (longest first) for a literal match at
+    that position; on a match, flushes any buffered content as its own
+    piece, emits the operator as its own piece, and advances past it.
+    Otherwise, accumulates the current character into the buffer and
+    advances by one. A token with no operator occurrence anywhere returns
+    unchanged as a single-element list.
+
+    Examples:
+      '1&&kanban'   -> ['1', '&&', 'kanban']
+      'kanban&done' -> ['kanban', '&', 'done']
+      'a;kanban'    -> ['a', ';', 'kanban']
+      'a|b'         -> ['a|b']   (lone '|' is deliberately never matched —
+                                   see PIPE DEFERRAL note above)
+      'kanban'      -> ['kanban']  (no operator present, unchanged)
+    """
+    pieces = []
+    buf = ""
+    i = 0
+    n = len(token)
+    while i < n:
+        matched_op = None
+        for op in _FUSED_SHELL_OPERATORS_BY_LENGTH:
+            if token.startswith(op, i):
+                matched_op = op
+                break
+        if matched_op:
+            if buf:
+                pieces.append(buf)
+                buf = ""
+            pieces.append(matched_op)
+            i += len(matched_op)
+        else:
+            buf += token[i]
+            i += 1
+    if buf:
+        pieces.append(buf)
+    return pieces
 
 
 def _split_on_shell_ops(tokens: list) -> list:
@@ -433,7 +563,7 @@ def _segments_from_logical_lines(logical_lines: list) -> list:
             # exactly) — keep buffering; shlex is always the final
             # authority.
             continue
-        tokens = _normalize_semicolons(tokens)
+        tokens = _normalize_fused_shell_operators(tokens)
         segments_out.extend(_split_on_shell_ops(tokens))
         buffer_lines = []
         quote_state = _fresh_quote_state()
@@ -445,7 +575,7 @@ def _segments_from_logical_lines(logical_lines: list) -> list:
         remainder = "\n".join(buffer_lines).strip()
         if remainder:
             raw_tokens = [_strip_stray_quote_chars(tok) for tok in remainder.split()]
-            tokens = _normalize_semicolons(raw_tokens)
+            tokens = _normalize_fused_shell_operators(raw_tokens)
             segments_out.extend(_split_on_shell_ops(tokens))
 
     return segments_out
