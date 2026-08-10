@@ -369,6 +369,18 @@ Applies whenever you write code that parses output from an external command — 
 
 **Precedence:** This is not a Hard Rule — it's a parsing discipline, not an audit-trail, broken-check, or secret-exposure guard like this file's three Hard Rules above (`.kanban/` edits, structurally broken MoV, secret-safe environment inspection). It also doesn't restate global CLAUDE.md § Epistemic Honesty's general call to verify a claim before making it; it applies that principle specifically to parsing external command output, and adds the partition-vs-filter distinction — a bucketed response matched indiscriminately — as a concrete failure shape to check for, alongside the more familiar missing-match case.
 
+## Claude Code Plugin Hook Timeouts
+
+Applies whenever you author a `hooks.json` entry (or any Claude Code plugin hook config), especially one distributed to a whole team via a plugin.
+
+**The rule:** every hooks.json entry whose matcher is a hot-path tool — `Bash`, `Write`, or any matcher with no narrowing filter — MUST declare an explicit `timeout`, sized to the hook's measured or reasonably-estimated runtime plus a safety margin: at least 2-3x the measured runtime, or a 5-second floor, whichever is larger, to absorb cold start, disk I/O, and (for `http` hooks) network latency variance that a single measurement won't have captured. State the value in seconds explicitly — the field's unit is seconds, not milliseconds — so a reader can't mis-scale it.
+
+**Why:** command, `http`, and `mcp_tool` hooks default to a 600-second (10-minute) timeout when `timeout` is omitted (verified against the current Claude Code Hooks reference). A matcher with no narrowing filter fires on every invocation of that tool — `Bash` and `Write` are the two most frequently invoked tools in a typical session — so a hang in an unbounded hook stalls every matching tool call, for the full platform default, for every user with the plugin installed. A hook that actually runs in 15 milliseconds provides zero protection against this if its config carries no timeout at all.
+
+**Do not trust a nearby precedent's literal value.** A sibling hooks.json entry in the same repo having a `timeout` key is not evidence its number is right — verify any timeout you copy against the platform default (600 seconds for command/http/mcp_tool hooks) and against the hook's own measured runtime before reusing it. Copying a precedent's syntax without checking its reasoning carries the same exposure forward under a different name.
+
+**Precedence:** This is not a Hard Rule — it's a config-authoring discipline, not an audit-trail, broken-check, or secret-exposure guard like this file's three Hard Rules above (`.kanban/` edits, structurally broken MoV, secret-safe environment inspection); it does not weaken or override any of them. Checked against § Verification's tooling checklist below (which this section is cross-referenced from) and § Parsing external command output (a sibling discipline for the same hook/CLI-authoring context, addressing a different failure mode — output parsing correctness rather than timeout safety) — none of the three conflict.
+
 ## AI-Assisted Development Tooling
 
 **When this section applies:** A developer wants to add AI assistance to their IDE, is setting up Copilot in VS Code, needs to evaluate GitHub Copilot vs Cursor, is measuring developer AI tool impact, or needs help with AI code completion setup.
@@ -454,6 +466,7 @@ After completing the task, verify success by checking:
 - [ ] Documentation includes quick start and common tasks
 - [ ] Local development parity with CI verified
 - [ ] **Parsing (must-check when a hook/CLI parses external command output):** Per § Parsing external command output, the real output was captured and diffed against the pattern and fixture, and a test asserts the parsed result — not just that the pattern matched
+- [ ] **Hook timeouts (must-check when authoring a Claude Code plugin `hooks.json`):** Per § Claude Code Plugin Hook Timeouts, every hot-path-matcher entry (`Bash`, `Write`, or any matcher with no narrowing filter) declares an explicit `timeout` in seconds, sized to measured runtime and checked against the 600-second platform default rather than copied from a nearby precedent
 
 **For build optimizations:**
 - [ ] Build time improvement quantified (before/after)
