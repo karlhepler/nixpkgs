@@ -2420,6 +2420,153 @@ def warn_nondiscriminating_movs(card_json) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Survival-guard-failing MoV warning (non-blocking) — GitHub issue #34
+#
+# warn_nondiscriminating_movs above already warns when a criterion's MoV
+# already passes, and exempts the survival-guard case only in the WARNING'S
+# PROSE, addressed to the human reader ("This is expected and safe to ignore
+# for a survival-guard criterion..."). There is no code-level label
+# detection anywhere in this file prior to _is_survival_guard below — the
+# exemption text is advisory, not a branch on parsed data. This section adds
+# the first such branch, rather than extending an existing one.
+#
+# The inverse defect this warns about: a criterion whose text is labelled
+# '(survival guard)' but whose MoV does NOT pass against the current tree is,
+# by definition, not a survival guard. The label asserts existing content
+# must REMAIN (so the MoV is expected to pass BEFORE and after the work); a
+# failing MoV says the content is not there right now. One of the two is
+# always wrong — either the MoV is broken (a fragile anchor: wrong text, an
+# anchor wrapped across two source lines, an escaping error) or the
+# criterion is mislabelled. Either way, an implementing agent is handed a
+# check it cannot satisfy without altering the artifact the guard was meant
+# to protect. See .kanban-referenced GitHub issue #34 for the real incident:
+# a `(survival guard)` criterion's `rg -qF` anchor was wrapped across two
+# lines, so the fixed-string match failed even though the anchor text was
+# present and correct.
+#
+# WARNING, not a hard block — deliberate choice, mirroring the sibling
+# already-passing case. The '(survival guard)' label is prose a coordinator
+# types by hand; a heuristic match on it must not become a new way to fail
+# card creation outright.
+# ---------------------------------------------------------------------------
+
+_SURVIVAL_GUARD_LABEL = "(survival guard)"
+
+
+def _is_survival_guard(text: str) -> bool:
+    """True if `text` (an acceptance criterion's `text` field) carries the
+    hand-typed '(survival guard)' label convention used across this repo's
+    card corpus to mark a criterion whose MoV is expected to pass BEFORE and
+    AFTER the work (asserting existing content must REMAIN, not be newly
+    created).
+
+    Matched as a prefix or suffix of the stripped text, case-sensitive —
+    both forms are sanctioned verbatim by
+    modules/claude/global/output-styles/staff-engineer.md, in the numbered
+    item beginning "Non-discriminating MoV check" ("mark those explicitly as
+    survival guards by prefixing (or suffixing) the criterion's `text`
+    field with `(survival guard)`"). A mid-text mention (neither prefix nor
+    suffix) deliberately does NOT match — a criterion that merely mentions
+    the label in passing is not asserting the convention, and a bare `in`
+    substring test would over-match that case. This is the ONE named helper
+    for the convention; both the already-passing exemption (advisory prose
+    only, not code, as of this writing) and this module's own
+    failing-survival-guard warning read the label through this function so
+    the two consumers cannot drift apart into independently hand-rolled
+    substring matches.
+    """
+    if not isinstance(text, str):
+        return False
+    stripped = text.strip()
+    return stripped.startswith(_SURVIVAL_GUARD_LABEL) or stripped.endswith(
+        _SURVIVAL_GUARD_LABEL
+    )
+
+
+def warn_survival_guard_failing_movs(card_json) -> None:
+    """Print a non-blocking warning for any acceptance criterion labelled
+    '(survival guard)' whose full mov_commands chain does NOT already exit 0
+    against the current tree.
+
+    Accepts a single card dict or a list of card dicts, mirroring
+    warn_nondiscriminating_movs / warn_unmatched_card_identifiers. NEVER
+    calls sys.exit and NEVER raises — see module-level rationale above for
+    why this check is warn-only and fail-open. Card creation always proceeds
+    regardless of what this function finds.
+
+    Only fires when _mov_prepass_run_criterion returns a DEFINITE False
+    (at least one command in the chain ran and exited non-zero). An
+    inconclusive result (None — no mov_commands, a malformed entry, a
+    command the pre-pass execution guard refuses to run, or a timeout) is
+    never treated as a finding, the same "no doubt, no warning" contract
+    warn_nondiscriminating_movs already follows.
+    """
+    try:
+        if isinstance(card_json, dict):
+            cards = [card_json]
+        elif isinstance(card_json, list):
+            cards = [c for c in card_json if isinstance(c, dict)]
+        else:
+            return  # Not a card — nothing to check
+
+        working_dir = os.getcwd()
+        is_bulk = len(cards) > 1
+
+        for idx, card in enumerate(cards):
+            criteria = card.get("criteria") or card.get("ac") or []
+            if not isinstance(criteria, list):
+                continue
+
+            failing: list[tuple[int, str, list[str]]] = []
+            for ac_idx, criterion in enumerate(criteria):
+                if not isinstance(criterion, dict):
+                    continue
+                text = criterion.get("text", "")
+                if not _is_survival_guard(text):
+                    continue
+                if _mov_prepass_run_criterion(criterion, working_dir) is not False:
+                    continue  # True (as expected) or None (inconclusive) — no finding.
+                cmds = [
+                    e.get("cmd", "")
+                    for e in (criterion.get("mov_commands") or [])
+                    if isinstance(e, dict)
+                ]
+                failing.append((ac_idx, text, cmds))
+
+            if not failing:
+                continue
+
+            card_label = f"card[{idx}] " if is_bulk else ""
+            print(
+                f"Warning: {card_label}{len(failing)} criterion(s) labelled "
+                f"'{_SURVIVAL_GUARD_LABEL}' do NOT pass their MoV against the "
+                f"current tree:",
+                file=sys.stderr,
+            )
+            for ac_idx, text, cmds in failing:
+                cmd_desc = "; ".join(cmds) if cmds else "(no cmd)"
+                print(f"  AC #{ac_idx + 1} ({text[:60]!r}): {cmd_desc}", file=sys.stderr)
+            print(
+                "  A survival guard asserts that existing content must REMAIN, so it "
+                "should pass BEFORE and after the work. One that fails now is either a "
+                "broken MoV (wrong anchor, wrapped text, escaping error) or a "
+                "mislabelled criterion — either way the implementing agent will be "
+                "handed a check it cannot satisfy without altering the artifact. If the "
+                "anchor text is present but wraps across two or more source lines, "
+                "replace a fixed-string match with a whitespace-tolerant pattern (e.g. "
+                "matching across `\\s+`/newlines, or `rg -U`) or a shorter single-line "
+                "anchor that cannot wrap. This is a warning only — card creation is NOT "
+                "blocked.",
+                file=sys.stderr,
+            )
+    except Exception:
+        # Fail open: an internal error in this check must never block card
+        # creation or crash the CLI — mirrors warn_nondiscriminating_movs'
+        # and warn_unmatched_card_identifiers' fail-open contract.
+        return
+
+
+# ---------------------------------------------------------------------------
 # Cross-card MoV scope-isolation validation
 #
 # A modification-emptiness MoV (e.g. `test -z "$(git diff ... -- <path>)"`)
@@ -2863,6 +3010,13 @@ def validate_and_build_card(data: dict, session: str | None) -> dict:
     # work has been done. Warn-only — see § Non-discriminating MoV warning
     # above for why this never raises SystemExit.
     warn_nondiscriminating_movs(card)
+
+    # Non-blocking survival-guard-failing-MoV warning: flag acceptance
+    # criteria labelled '(survival guard)' whose mov_commands do NOT already
+    # exit 0 against the current tree — the inverse of the check above. See
+    # § Survival-guard-failing MoV warning above for why this never raises
+    # SystemExit.
+    warn_survival_guard_failing_movs(card)
 
     return card
 

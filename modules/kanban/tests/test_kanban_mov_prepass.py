@@ -983,6 +983,189 @@ class TestWarnNondiscriminatingMovs:
 
 
 # ---------------------------------------------------------------------------
+# Unit + warning tests: survival-guard-failing MoV warning (issue #34)
+# ---------------------------------------------------------------------------
+
+class TestIsSurvivalGuard:
+    def test_labelled_text_is_detected(self, kanban):
+        assert kanban._is_survival_guard("(survival guard) Existing text intact") is True
+
+    def test_labelled_text_with_leading_whitespace_is_detected(self, kanban):
+        assert kanban._is_survival_guard("  (survival guard) Existing text intact") is True
+
+    def test_unlabelled_text_is_not_detected(self, kanban):
+        assert kanban._is_survival_guard("Add a new feature") is False
+
+    def test_label_not_at_start_is_not_detected(self, kanban):
+        assert kanban._is_survival_guard("Mentions (survival guard) mid-sentence") is False
+
+    def test_non_string_text_is_not_detected(self, kanban):
+        assert kanban._is_survival_guard(None) is False
+
+    def test_suffix_label_detected(self, kanban):
+        assert kanban._is_survival_guard("Existing text intact (survival guard)") is True
+
+    def test_suffix_label_with_trailing_whitespace_is_detected(self, kanban):
+        assert kanban._is_survival_guard("Existing text intact (survival guard)  ") is True
+
+    def test_mid_text_mention_is_not_detected(self, kanban):
+        """The label mentioned neither at the start nor the end of the
+        stripped text must NOT match — a bare `in` substring test would
+        over-match this case, which the card's action field explicitly
+        rejected as not a sanctioned form of the convention.
+        """
+        assert kanban._is_survival_guard("Text (survival guard) more text at end") is False
+
+
+class TestWarnSurvivalGuardFailingMovs:
+    def test_survival_guard_failing_mov_warns(self, kanban, tmp_path, monkeypatch, capsys):
+        """FIRE CASE (issue #34): a criterion labelled '(survival guard)'
+        whose MoV does NOT pass against the current tree produces the new
+        warning, naming the criterion and its command.
+        """
+        monkeypatch.chdir(tmp_path)
+        fixture = tmp_path / "existing.txt"
+        fixture.write_text("hello world\n")
+        card = make_card(
+            criteria=[
+                make_criterion(
+                    "rg -qF nonexistent_anchor existing.txt",
+                    text="(survival guard) Existing anchor intact",
+                )
+            ]
+        )
+
+        kanban.warn_survival_guard_failing_movs(card)
+
+        captured = capsys.readouterr()
+        assert "Warning" in captured.err
+        assert "do NOT pass their MoV" in captured.err
+        assert "whitespace-tolerant" in captured.err
+        assert "(survival guard) Existing anchor intact" in captured.err
+
+    def test_survival_guard_passing_mov_produces_no_warning(self, kanban, tmp_path, monkeypatch, capsys):
+        """SILENT CASE: a criterion labelled '(survival guard)' whose MoV
+        DOES already pass is exactly the expected, healthy state for a
+        survival guard — no warning.
+        """
+        monkeypatch.chdir(tmp_path)
+        fixture = tmp_path / "existing.txt"
+        fixture.write_text("hello world\n")
+        card = make_card(
+            criteria=[
+                make_criterion(
+                    "rg -qF hello existing.txt",
+                    text="(survival guard) Existing anchor intact",
+                )
+            ]
+        )
+
+        kanban.warn_survival_guard_failing_movs(card)
+
+        captured = capsys.readouterr()
+        assert captured.err == ""
+
+    def test_non_survival_guard_failing_mov_produces_no_warning(self, kanban, tmp_path, monkeypatch, capsys):
+        """A criterion with a normal, unlabelled, not-yet-passing MoV is the
+        ordinary not-done case — this warning must not fire for it (that is
+        warn_nondiscriminating_movs' domain, not this one's).
+        """
+        monkeypatch.chdir(tmp_path)
+        fixture = tmp_path / "existing.txt"
+        fixture.write_text("hello world\n")
+        card = make_card(
+            criteria=[make_criterion("rg -qF nonexistent_token existing.txt", text="Ordinary AC")]
+        )
+
+        kanban.warn_survival_guard_failing_movs(card)
+
+        captured = capsys.readouterr()
+        assert captured.err == ""
+
+    def test_inconclusive_result_produces_no_warning(self, kanban, tmp_path, monkeypatch, capsys):
+        """A survival-guard criterion whose MoV the pre-pass cannot safely
+        execute (e.g. a non-admitted shape) is inconclusive, not a finding —
+        mirrors warn_nondiscriminating_movs' "no doubt, no warning" contract.
+        """
+        monkeypatch.chdir(tmp_path)
+        card = make_card(
+            criteria=[
+                make_criterion(
+                    "python3 -c 'print(1)'",
+                    text="(survival guard) Not an admitted shape",
+                )
+            ]
+        )
+
+        kanban.warn_survival_guard_failing_movs(card)
+
+        captured = capsys.readouterr()
+        assert captured.err == ""
+
+    def test_warn_only_never_raises_systemexit(self, kanban, tmp_path, monkeypatch):
+        """warn_survival_guard_failing_movs never blocks — no SystemExit, ever."""
+        monkeypatch.chdir(tmp_path)
+        fixture = tmp_path / "existing.txt"
+        fixture.write_text("hello world\n")
+        card = make_card(
+            criteria=[
+                make_criterion(
+                    "rg -qF nonexistent_anchor existing.txt",
+                    text="(survival guard) Existing anchor intact",
+                )
+            ]
+        )
+        try:
+            kanban.warn_survival_guard_failing_movs(card)
+        except SystemExit as e:
+            pytest.fail(f"warn_survival_guard_failing_movs raised SystemExit({e.code}) — must be warn-only")
+
+    def test_internal_error_fails_open_no_warning(self, kanban, capsys):
+        """An internal error while running the pre-pass is swallowed — no
+        warning is printed and no exception escapes.
+        """
+        card = make_card(criteria=[make_criterion("true", text="(survival guard) x")])
+        with patch.object(kanban, "_mov_prepass_run_criterion", side_effect=RuntimeError("boom")):
+            try:
+                kanban.warn_survival_guard_failing_movs(card)
+            except Exception as e:
+                pytest.fail(f"warn_survival_guard_failing_movs raised {e!r} — must fail open")
+
+        captured = capsys.readouterr()
+        assert captured.err == ""
+
+    def test_bulk_array_reports_correct_card_index(self, kanban, tmp_path, monkeypatch, capsys):
+        """Bulk array input: a fire-case criterion in card[1] is reported
+        with that index, while card[0] (passing survival guard) produces
+        nothing.
+        """
+        monkeypatch.chdir(tmp_path)
+        fixture = tmp_path / "existing.txt"
+        fixture.write_text("hello world\n")
+        cards = [
+            make_card(
+                action="Card A: passing survival guard",
+                criteria=[make_criterion("rg -qF hello existing.txt", text="(survival guard) card A")],
+            ),
+            make_card(
+                action="Card B: failing survival guard",
+                criteria=[
+                    make_criterion(
+                        "rg -qF nonexistent_anchor existing.txt", text="(survival guard) card B"
+                    )
+                ],
+            ),
+        ]
+
+        kanban.warn_survival_guard_failing_movs(cards)
+
+        captured = capsys.readouterr()
+        assert "card[1]" in captured.err
+        assert "(survival guard) card B" in captured.err
+        assert "card[0]" not in captured.err
+
+
+# ---------------------------------------------------------------------------
 # Integration tests: validate_and_build_card (card creation never blocks)
 # ---------------------------------------------------------------------------
 
