@@ -1064,6 +1064,76 @@ class TestInlineFlagScan:
 
 
 # ---------------------------------------------------------------------------
+# TestMultiSegmentForbiddenWins — issue #65, card #3666: confirmed defect
+# where _find_kanban_segment() returned on the FIRST segment producing any
+# kanban match, whether that segment's subcommand was allowlisted or
+# forbidden, so main() never examined later segments. A forbidden segment
+# anywhere in a compound command must now win over an allowed (or absent)
+# match in an earlier segment, matching what real bash actually executes.
+# ---------------------------------------------------------------------------
+
+class TestMultiSegmentForbiddenWins:
+    """A forbidden kanban subcommand anywhere in a compound command's
+    segments must be DENIED, even when an earlier segment resolves to an
+    allowed (or no) kanban invocation."""
+
+    def test_compound_and_chain_forbidden_second_segment_denied(self, hook):
+        """`kanban criteria check 5 1 && kanban done 5` — real bash runs the
+        second command whenever the first (an allowed, legitimately
+        successful `criteria check`) exits 0. Must DENY on the forbidden
+        second segment."""
+        payload = make_bash_payload("kanban criteria check 5 1 && kanban done 5")
+        result = run_hook_main(hook, payload)
+        assert_blocked(result)
+        assert "criteria check" in block_reason(result)
+        assert "criteria uncheck" in block_reason(result)
+
+    def test_compound_semicolon_forbidden_second_segment_denied(self, hook):
+        """`kanban criteria check 5 1 ; kanban done 5` — `;` runs the second
+        command unconditionally regardless of the first's exit status. Must
+        DENY on the forbidden second segment."""
+        payload = make_bash_payload("kanban criteria check 5 1 ; kanban done 5")
+        result = run_hook_main(hook, payload)
+        assert_blocked(result)
+
+    def test_compound_or_chain_forbidden_second_segment_denied(self, hook):
+        """`kanban criteria check 5 1 || kanban done 5` — `||` runs the
+        second command only if the first fails, but the hook cannot assume
+        success and must still deny based on the forbidden segment being
+        present. Must DENY."""
+        payload = make_bash_payload("kanban criteria check 5 1 || kanban done 5")
+        result = run_hook_main(hook, payload)
+        assert_blocked(result)
+
+    def test_compound_help_then_forbidden_denied(self, hook):
+        """`kanban --help && kanban done 5` — the first segment resolves to
+        an allowed, harmless `--help` invocation with no forbidden match at
+        all; the second segment is the forbidden one. Must DENY."""
+        payload = make_bash_payload("kanban --help && kanban done 5")
+        result = run_hook_main(hook, payload)
+        assert_blocked(result)
+
+    def test_compound_allowed_only_segments_still_allowed(self, hook):
+        """`kanban criteria check 5 1 && kanban criteria uncheck 5 2` — every
+        segment resolves to an allowed subcommand. Must remain ALLOWED; the
+        multi-segment fix must not turn every compound command into a
+        blanket deny."""
+        payload = make_bash_payload("kanban criteria check 5 1 && kanban criteria uncheck 5 2")
+        result = run_hook_main(hook, payload)
+        assert_allowed(result)
+
+    def test_sanity_forbidden_first_segment_still_denied(self, hook):
+        """Sanity control: `kanban done 5 && kanban criteria check 5 1` — the
+        forbidden subcommand is in the FIRST segment. This already denied
+        correctly before this fix (the pre-existing single-segment-return
+        logic finds the forbidden match immediately) and must keep denying
+        afterward."""
+        payload = make_bash_payload("kanban done 5 && kanban criteria check 5 1")
+        result = run_hook_main(hook, payload)
+        assert_blocked(result)
+
+
+# ---------------------------------------------------------------------------
 # TestHonestyNoteCoverage — issue #32, card #3656 (EDIT 5(b)): structural
 # anchor for the HONESTY NOTE comment above _SHELL_RUNNERS/_SCRIPT_RUNNERS.
 # That comment's only defense against drift is being read; this test gives

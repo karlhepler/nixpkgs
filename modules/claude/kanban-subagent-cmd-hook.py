@@ -762,16 +762,17 @@ def _is_allowed_kanban_subcommand(tokens_after_kanban: list) -> bool:
     return False
 
 
-def _find_kanban_segment(segments: list) -> "list | None":
-    """Return the kanban portion of the first segment that invokes the kanban binary.
+def _resolve_kanban_slice(segment: list) -> "list | None":
+    """Return the kanban portion of a SINGLE segment, or None if this segment
+    does not invoke the kanban binary.
 
-    Returns the sub-slice of the segment starting at the kanban binary token,
-    or None if no kanban invocation found. The returned slice always has the
-    kanban binary as its first element, enabling callers to strip it uniformly.
+    Returns the sub-slice of the segment starting at the kanban binary token.
+    The returned slice always has the kanban binary as its first element,
+    enabling callers to strip it uniformly.
 
-    We look for kanban as the BINARY name (first non-flag token of a segment),
-    not as a substring anywhere (e.g., `cat .kanban/foo.json` is not a kanban
-    CLI invocation).
+    We look for kanban as the BINARY name (first non-flag token of the
+    segment), not as a substring anywhere (e.g., `cat .kanban/foo.json` is not
+    a kanban CLI invocation).
 
     Wrapper handling — env/command/exec prefix the real binary. When segment[0]
     is one of these known wrappers, we advance past wrapper-specific flags and
@@ -792,32 +793,83 @@ def _find_kanban_segment(segments: list) -> "list | None":
       FOO=1 BAR=2 kanban done 5      → ['kanban', 'done', '5']
       KANBAN_SESSION= kanban list    → ['kanban', 'list']
     """
-    for segment in segments:
-        if not segment:
-            continue
-        first_token = segment[0]
-        if _is_kanban_binary(first_token):
-            return segment  # starts at kanban binary already
-        # Check for wrapper prefix: advance past wrapper tokens to find real binary
-        if first_token in _ENV_WRAPPERS:
-            real_idx = _advance_past_env_wrapper(segment, 0)
-            if real_idx < len(segment) and _is_kanban_binary(segment[real_idx]):
-                return segment[real_idx:]
-        elif first_token in _COMMAND_WRAPPERS:
-            real_idx = _advance_past_command_wrapper(segment, 0)
-            if real_idx < len(segment) and _is_kanban_binary(segment[real_idx]):
-                return segment[real_idx:]
-        elif first_token in _EXEC_WRAPPERS:
-            real_idx = _advance_past_exec_wrapper(segment, 0)
-            if real_idx < len(segment) and _is_kanban_binary(segment[real_idx]):
-                return segment[real_idx:]
-        elif _ENV_ASSIGNMENT_RE.match(first_token):
-            # Bare shell env-var assignment prefix: VAR=value cmd args
-            # Strip all leading assignments to expose the real command binary.
-            stripped = _strip_leading_env_assignments(segment)
-            if stripped and _is_kanban_binary(stripped[0]):
-                return stripped
+    if not segment:
+        return None
+    first_token = segment[0]
+    if _is_kanban_binary(first_token):
+        return segment  # starts at kanban binary already
+    # Check for wrapper prefix: advance past wrapper tokens to find real binary
+    if first_token in _ENV_WRAPPERS:
+        real_idx = _advance_past_env_wrapper(segment, 0)
+        if real_idx < len(segment) and _is_kanban_binary(segment[real_idx]):
+            return segment[real_idx:]
+    elif first_token in _COMMAND_WRAPPERS:
+        real_idx = _advance_past_command_wrapper(segment, 0)
+        if real_idx < len(segment) and _is_kanban_binary(segment[real_idx]):
+            return segment[real_idx:]
+    elif first_token in _EXEC_WRAPPERS:
+        real_idx = _advance_past_exec_wrapper(segment, 0)
+        if real_idx < len(segment) and _is_kanban_binary(segment[real_idx]):
+            return segment[real_idx:]
+    elif _ENV_ASSIGNMENT_RE.match(first_token):
+        # Bare shell env-var assignment prefix: VAR=value cmd args
+        # Strip all leading assignments to expose the real command binary.
+        stripped = _strip_leading_env_assignments(segment)
+        if stripped and _is_kanban_binary(stripped[0]):
+            return stripped
     return None
+
+
+def _kanban_slice_is_forbidden(kanban_slice: list) -> bool:
+    """Return True if a resolved kanban slice's subcommand is NOT allowlisted.
+
+    Mirrors main()'s own resolution of the subcommand from a kanban slice
+    (strip the leading kanban binary token, skip any global flags-with-args,
+    then check the remaining subcommand tokens against the allowlist) so that
+    _find_kanban_segment can decide, per-segment, whether a match is a
+    forbidden invocation without duplicating a divergent copy of that logic.
+    """
+    tokens_after_binary = kanban_slice[1:]
+    start = _skip_flags_with_args(tokens_after_binary, 0)
+    subcommand_tokens = tokens_after_binary[start:]
+    return not _is_allowed_kanban_subcommand(subcommand_tokens)
+
+
+def _find_kanban_segment(segments: list) -> "list | None":
+    """Return the kanban slice that should decide this command's allow/deny
+    outcome, scanning ALL segments rather than stopping at the first match.
+
+    A compound command (`a && b`, `a ; b`, `a || b`, `a | b`, `a & b`) can
+    invoke kanban more than once across different segments, and real bash
+    executes every one of them (unconditionally for `;`/`|`/`&`, or
+    conditionally on exit status for `&&`/`||` — `kanban criteria check`
+    legitimately exits 0 on success, so the `&&` case is not a rare corner).
+    A single-segment return contract that stops at the FIRST segment
+    producing any kanban match — allowlisted or not — lets a forbidden
+    invocation in a LATER segment slip through undetected whenever an
+    earlier segment happens to resolve to an allowed `criteria check`/
+    `criteria uncheck`/`--help` shape (or nothing at all, e.g. `kanban
+    --help && kanban done 5`).
+
+    Resolution rule: scan every segment's resolved kanban slice (via
+    _resolve_kanban_slice). If ANY segment resolves to a FORBIDDEN kanban
+    invocation, return that slice — a forbidden segment anywhere wins over
+    an allowed segment earlier in the command, matching what real bash
+    would actually execute. Only when no segment resolves to a forbidden
+    invocation do we fall back to returning the first resolved match (or
+    None if there was none at all), preserving this function's original
+    single-segment return contract for the all-allowed / no-match cases.
+    """
+    first_match = None
+    for segment in segments:
+        resolved = _resolve_kanban_slice(segment)
+        if resolved is None:
+            continue
+        if first_match is None:
+            first_match = resolved
+        if _kanban_slice_is_forbidden(resolved):
+            return resolved
+    return first_match
 
 
 # ---------------------------------------------------------------------------
@@ -940,12 +992,19 @@ def main() -> None:
             _deny_shell_wrapper(command)
             sys.exit(0)
 
-    # Find the first segment that invokes the kanban binary
+    # Find the segment to decide on: the first FORBIDDEN kanban segment if one
+    # exists anywhere in the command, otherwise the first segment that invokes
+    # the kanban binary. Forbidden-anywhere-wins - see _find_kanban_segment().
     kanban_segment = _find_kanban_segment(segments)
 
     # No kanban invocation found — allow (e.g., ls, git status)
     if kanban_segment is None:
         sys.exit(0)
+
+    # NOTE: _kanban_slice_is_forbidden() carries a second copy of this same
+    # three-step resolution (see its docstring, which points back here). An
+    # edit to the steps below MUST be mirrored there, or the per-segment
+    # forbidden check and this final decision will silently disagree.
 
     # Strip the leading kanban binary token and any global flags-with-args
     # to find the subcommand
