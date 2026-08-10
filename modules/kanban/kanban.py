@@ -2171,6 +2171,81 @@ _MOV_PREPASS_SED_RANGE_PIPE_RG_RE = re.compile(
 )
 
 
+def _mov_prepass_has_live_metachar(cmd: str) -> bool:
+    """True if `cmd` contains a banned shell metacharacter
+    (_MOV_PREPASS_SHELL_METACHARS) OUTSIDE a single-quoted span, using the
+    same two POSIX lexical rules the real shell applies before deciding
+    whether a metacharacter is actually "live":
+
+      1. A bare `'` outside a quote opens a span; a `'` while inside a span
+         closes it. Inside a POSIX single-quoted span there is no escape
+         mechanism at all — `'` is the ONLY character that ends it, and
+         nothing inside is ever scanned for metachars. This is what lets
+         `rg -qF 'stakes are real; default-idle' PATH` (issue #56's
+         motivating case) through: the `;` is dead text to the real shell,
+         sitting inside the quoted PATTERN argument, so it must not trip
+         the same veto as a live command separator.
+      2. Outside a quote, `\\` escapes exactly the next character: that
+         character is never scanned as a metachar, and — this is the part
+         a naive "toggle on every apostrophe" scanner gets wrong — it never
+         toggles quote state even when the escaped character is itself a
+         `'`. Skipping this rule is live-exploitable:
+         `test -f x\\';<zero-arg-script>` real-shell-parses as `test -f x'`
+         (harmless) followed by a LIVE `;` and a bare command with no
+         arguments (so shlex's arity check does not catch it either); a
+         scanner that lets the escaped `'` open a phantom quote span hides
+         that live `;` from the scan entirely (confirmed via
+         subprocess.run marker-file execution during design review —
+         .scratchpad/issue-56-swe-security.md, Direction A Attack 3). Two
+         escaped quotes can even cancel each other's parity error and
+         leave the scanner's final state "balanced" while a metachar was
+         live in the middle — so escape-awareness on every backslash, not
+         merely an unbalanced-at-EOF check, is what actually closes the
+         hole; the unbalanced-at-EOF check below is a necessary backstop,
+         not a sufficient one.
+
+    Fails closed (returns True — "has a live metachar", i.e. unsafe) on an
+    unterminated single-quoted span at end-of-string, mirroring the
+    existing shlex.split ValueError -> False contract in
+    _mov_prepass_command_is_safe below.
+
+    Deliberately single-quote-only: double-quoted spans still permit shell
+    command substitution (`` ` `` / `$(`) inside them, so "skip quoted
+    content" is only unconditionally safe for this quote type. Content
+    inside double quotes remains subject to this same scan (i.e. still
+    vetoed if it contains a banned metacharacter) — widening this to
+    double quotes needs its own separate adversarial analysis, not a
+    mechanical extension of this function.
+    """
+    in_quote = False
+    i = 0
+    n = len(cmd)
+    while i < n:
+        c = cmd[i]
+        if in_quote:
+            if c == "'":
+                in_quote = False
+            i += 1
+            continue
+        if c == "\\":
+            # Outside a quote, a backslash escapes exactly the next
+            # character: never scanned, and never toggles quote state —
+            # even if that character is itself a single quote.
+            i += 2
+            continue
+        if c == "'":
+            in_quote = True
+            i += 1
+            continue
+        for bad in _MOV_PREPASS_SHELL_METACHARS:
+            if cmd.startswith(bad, i):
+                return True
+        i += 1
+    if in_quote:
+        return True  # Unterminated quote -- fail closed.
+    return False
+
+
 def _mov_prepass_command_is_safe(cmd: str) -> bool:
     """Decide whether `cmd` matches one of the small number of exact,
     manually-verified-read-only shapes this pre-pass admits (see the module
@@ -2184,9 +2259,10 @@ def _mov_prepass_command_is_safe(cmd: str) -> bool:
          (_MOV_PREPASS_COUNT_THRESHOLD_RE / _MOV_PREPASS_SED_RANGE_PIPE_RG_RE
          — see the comment above them) — if so, safe, regardless of the
          `$(`/`|` it necessarily contains.
-      1. Otherwise, `cmd` contains none of _MOV_PREPASS_SHELL_METACHARS — no
+      1. Otherwise, `cmd` contains none of _MOV_PREPASS_SHELL_METACHARS
+         outside a single-quoted span (_mov_prepass_has_live_metachar) — no
          chaining, piping, redirection, or substitution anywhere in the
-         string.
+         string that isn't dead text inside a single-quoted argument.
       2. The full shlex-tokenized shape matches _mov_prepass_shape_is_exact.
 
     Returns False on ANY doubt, including a shlex parse failure on malformed
@@ -2197,7 +2273,7 @@ def _mov_prepass_command_is_safe(cmd: str) -> bool:
     if _MOV_PREPASS_COUNT_THRESHOLD_RE.match(cmd) or _MOV_PREPASS_SED_RANGE_PIPE_RG_RE.match(cmd):
         return True
 
-    if any(bad in cmd for bad in _MOV_PREPASS_SHELL_METACHARS):
+    if _mov_prepass_has_live_metachar(cmd):
         return False
 
     try:

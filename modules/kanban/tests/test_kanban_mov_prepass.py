@@ -300,6 +300,101 @@ class TestMovPrepassCommandIsSafe:
     def test_empty_command_is_unsafe(self, kanban):
         assert kanban._mov_prepass_command_is_safe("") is False
 
+    # -----------------------------------------------------------------
+    # Issue #56: the metachar veto must be quote-aware (skip
+    # single-quoted spans) so a literal metacharacter sitting inside a
+    # quoted PATTERN argument doesn't trip the same veto as a live
+    # shell metacharacter — WITHOUT reopening the arbitrary-code-
+    # execution / arbitrary-file-overwrite bypasses a naive
+    # (non-escape-aware or reordered) fix would introduce. See
+    # .scratchpad/issue-56-swe-security.md for the full adversarial
+    # analysis behind every case below.
+    # -----------------------------------------------------------------
+
+    def test_quoted_metachar_in_pattern_is_admitted(self, kanban):
+        """DISCRIMINATES: YES — pre-change, _MOV_PREPASS_SHELL_METACHARS'
+        raw substring scan (kanban.py's `any(bad in cmd for bad in
+        _MOV_PREPASS_SHELL_METACHARS)`, run before any tokenization) sees
+        the `;` inside the single-quoted PATTERN argument and rejects the
+        whole cmd, even though shlex would tokenize it as a single quoted
+        argument and the exact-shape allowlist (`rg [-qiF]* PATTERN PATH`)
+        would otherwise fully admit it. This is the card's own motivating
+        example (issue #56).
+        """
+        assert kanban._mov_prepass_command_is_safe(
+            "rg -qF 'stakes are real; default-idle' modules/kanban/kanban.py"
+        ) is True
+
+    def test_unspaced_pipe_is_unsafe(self, kanban):
+        """Mirror-image coverage for test_pipe_is_unsafe: every existing
+        metachar-rejection test in this class uses a SPACED metachar
+        (`x | tee y`). A pipe glued with no surrounding whitespace
+        (`x|touch y`) must be rejected identically — a quote-aware veto
+        that only detects spaced metachars would let this glued form
+        through, since shlex (used downstream by the exact-shape check)
+        glues `x|touch` into a single ordinary-looking token with no
+        whitespace for it to split on.
+        """
+        assert kanban._mov_prepass_command_is_safe("rg -q x|touch y") is False
+
+    def test_unspaced_redirection_is_unsafe(self, kanban):
+        """Mirror-image coverage for test_redirection_is_unsafe: a redirect
+        glued with no surrounding whitespace (`x>y`) must be rejected
+        identically to the spaced form (`x > y`) already pinned above.
+        """
+        assert kanban._mov_prepass_command_is_safe("test -f x>y") is False
+
+    def test_backslash_escaped_quote_injection_is_rejected(self, kanban):
+        """Attack 3 from the design review: a single backslash-escaped
+        quote glued (no whitespace) to a zero-argument injected command,
+        in both the `test` and `rg` admitted shapes. Outside a quote, `\\'`
+        is an escaped literal quote character — it does NOT open a quoted
+        span — so the `;` immediately following it is a LIVE shell command
+        separator to the real shell. A scanner that (incorrectly) toggles
+        quote state on every raw apostrophe, escaped or not, would treat
+        the following `;` as hidden inside a phantom quoted span and admit
+        this cmd; the escape-aware scanner must reject it instead.
+        """
+        assert kanban._mov_prepass_command_is_safe("test -f x\\';touch y") is False
+        assert kanban._mov_prepass_command_is_safe("rg -q x\\';touch y") is False
+
+    def test_backslash_escaped_quote_injection_is_never_executed(self, kanban, tmp_path):
+        """SAFETY-CRITICAL, live check mirroring
+        test_destructive_command_is_not_executed /
+        test_all_six_bypass_shapes_are_never_actually_executed: a
+        classifier-return-value assertion alone would not have caught the
+        naive (non-escape-aware) scanner bypass found during design review
+        — that naive scanner's parity confusion let `shape_is_exact` see a
+        3-token `test -f PATH` shape (the injected command has zero
+        arguments, so there is no extra whitespace for shlex to split on)
+        and `_mov_prepass_command_is_safe` returned True, and the injected
+        command actually ran under subprocess.run(shell=True, ...). Only a
+        live marker-file check proves subprocess.run was never reached.
+        """
+        marker = tmp_path / "marker.txt"
+        poke = tmp_path / "poke"
+        poke.write_text(f"#!/bin/sh\ntouch {marker}\n")
+        poke.chmod(0o755)
+        cmd = f"test -f x\\';{poke}"
+        marker.unlink(missing_ok=True)
+        criterion = make_criterion(cmd)
+        result = kanban._mov_prepass_run_criterion(criterion, str(tmp_path))
+        assert result is None, f"cmd should be refused (None), got {result!r}: {cmd!r}"
+        assert not marker.exists(), f"backslash-escaped-quote injection was actually executed: {cmd!r}"
+
+    def test_apostrophe_embedding_idiom_is_not_falsely_rejected(self, kanban):
+        """The standard POSIX `'a'\\''b'` idiom for embedding a literal
+        apostrophe inside a single-quoted argument (quote-close,
+        escaped-apostrophe, quote-reopen) contains no live metacharacter at
+        all and must be admitted. An over-rejecting scanner that flags this
+        common, legitimate quoting idiom as dangerous would cost nothing in
+        security (Direction A is already the conservative side of the
+        trade-off) but would erode trust in the warning for no benefit.
+        """
+        assert kanban._mov_prepass_command_is_safe(
+            "rg -qF 'it'\\''s here' modules/kanban/kanban.py"
+        ) is True
+
 
 # ---------------------------------------------------------------------------
 # Unit tests: the two narrowly-admitted compound idioms (issue #55) —
