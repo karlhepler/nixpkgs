@@ -3,6 +3,7 @@
 let
   # Import shared shellApp helper
   shellApp = import ../lib/shellApp.nix { inherit pkgs lib; moduleDir = ./.; };
+  flags = import ../../flags.nix;
 
 in
 {
@@ -20,6 +21,7 @@ in
         # User configuration from user.nix (passed as env vars)
         export USER_NAME="${user.name}"
         export USER_EMAIL="${user.email}"
+        export CLAUDE_ENABLED="${if flags.claude.enable then "1" else "0"}"
 
         ${builtins.readFile ./hms.bash}
       '';

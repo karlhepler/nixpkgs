@@ -4,6 +4,7 @@ let
   # Import cross-cutting concerns
   user = (import ./user.nix {}).user;
   theme = (import ./modules/theme.nix { inherit lib; }).theme;
+  flags = import ./flags.nix;
 
 in {
   # Import all modules
@@ -11,15 +12,7 @@ in {
     # Complex modules (with scripts)
     ./modules/system      # System tools (hms shellapp)
     ./modules/git         # Git config + 11 git shellapps
-    ./modules/claude      # Claude hooks + 9 claude shellapps
     ./modules/neovim      # Neovim editor + 30+ plugins
-    ./modules/kanban      # Kanban CLI for agent coordination
-
-    # Claudit module (on-demand metrics viewer + claudit shellapp + metrics hook)
-    ./modules/claudit
-
-    # Agent browser (Vercel Labs AI web agent)
-    ./modules/agent-browser
 
     # Simple modules (no scripts)
     ./modules/alacritty.nix  # Alacritty terminal emulator
@@ -28,6 +21,12 @@ in {
     ./modules/packages.nix   # Packages + simple programs
     ./modules/tmux           # Tmux terminal multiplexer
     ./modules/zsh.nix        # Zsh configuration + activation
+  ] ++ lib.optionals flags.claude.enable [
+    # Claude Code configuration — gated by flags.nix claude.enable
+    ./modules/claude        # Claude hooks + ~35 claude shellapps
+    ./modules/kanban        # Kanban CLI for agent coordination
+    ./modules/claudit       # On-demand metrics viewer + claudit shellapp + metrics hook
+    ./modules/agent-browser # Agent browser (Vercel Labs AI web agent)
   ];
 
   # Aggregate shellapps from modules and pass to all modules

@@ -121,7 +121,9 @@ if [ "$EUID" -eq 0 ] || [ "$USER" = "root" ]; then
 fi
 
 # Claude Code: AI coding assistant (self-updates, just install if not present)
-if ! command -v claude &>/dev/null; then
+# Gated on CLAUDE_ENABLED (set from flags.nix claude.enable) so hms never installs
+# or re-installs it while the Claude configuration switch is off.
+if [[ "$CLAUDE_ENABLED" == "1" ]] && ! command -v claude &>/dev/null; then
   echo "Installing Claude Code..."
   curl -fsSL https://claude.ai/install.sh | bash
 fi
