@@ -8,13 +8,13 @@ Nix Home Manager configuration managing development environments with flakes. Cr
 
 **Platform**: This configuration is locked to `aarch64-darwin` (Apple Silicon Macs).
 
-**Precedence:** Where this file and global `CLAUDE.md` conflict, **this file wins** for all work in this repository. Conflicts called out explicitly below are the known ones, not the only ones — if a global rule would produce a different action here than this file's rules, follow this file.
+**Precedence:** Where this file and `~/.claude/CLAUDE.md` conflict, **this file wins** for all work in this repository. Conflicts called out explicitly below are the known ones, not the only ones — if a global rule would produce a different action here than this file's rules, follow this file.
 
 ## 🚨 ALL WORK HAPPENS DIRECTLY ON `main` — NO BRANCHES, EVER 🚨
 
 **Every change in this repository is made directly on `main`. No branches. No worktrees. No pull requests. Every single time, without exception.**
 
-**This OVERRIDES global CLAUDE.md § Git Branch Naming and any global instruction to "branch first" before committing.** Those rules exist for work repositories with a pull-request flow. This repository has no pull-request flow, and following them here causes active damage.
+**This OVERRIDES any global instruction to "branch first" before committing.** Those rules exist for work repositories with a pull-request flow. This repository has no pull-request flow, and following them here causes active damage.
 
 **Why this is absolute, not a preference:**
 
@@ -36,7 +36,7 @@ Nix Home Manager configuration managing development environments with flakes. Cr
 
 ## 🚨 NEVER HOMEBREW 🚨
 
-**Homebrew is FORBIDDEN.** See global CLAUDE.md § PACKAGE INSTALLATION for details. Use Nix (`modules/packages.nix`), direct binary downloads, or language-specific managers ONLY.
+**Homebrew is FORBIDDEN.** Use Nix (`modules/packages.nix`), direct binary downloads, or language-specific managers ONLY.
 
 ## 🚨 macOS Trash CLI — Use `pkgs.darwin.trash`, NEVER `pkgs.trash-cli` 🚨
 
@@ -135,6 +135,16 @@ Anything under `modules/claude/global/skills/` is an exception skill, **not** a 
 
 **Important:** The "Adding a team member" process (agent definition) applies to standard delegatable team members only, not these exceptions. When updating or adding capabilities, distinguish between delegatable agents and exception/workflow skills.
 
+## Legacy Claude Module — Never Use Again
+
+`modules/claude` (gated by `claude.enable` in `flags.nix`, currently `false`) is
+retired. Never set `claude.enable = true`, never import `modules/claude` from
+`home.nix`, and never copy content out of `modules/claude/global/` into a new
+artifact — not even as a wording source. `modules/claude-code` (gated by
+`claudeCode.enable`) is the only Claude Code module going forward. If a future need
+looks like something `modules/claude` used to do, write it fresh under
+`modules/claude-code/`, sized and reasoned about on its own terms.
+
 ## Quick Commands
 
 ### Configuration Management
@@ -169,7 +179,7 @@ Anything under `modules/claude/global/skills/` is an exception skill, **not** a 
 
 1. **Repository Location**: MUST be installed at `~/.config/nixpkgs`
 2. **Backup Synchronization**: Sync `~/.backup` folder with cloud storage for machine-specific configuration safety (human maintenance task — not Claude-actionable)
-3. **--purge Flag**: Claude Code must NEVER use the `--purge` flag with `hms`. **This OVERRIDES global CLAUDE.md § Ask-First Operations, which lists `hms --purge` as approvable — in this repository it is not approvable, and no user answer makes it runnable by Claude. Only the user may run it, typed themselves.** What `--purge` does: it registers an EXIT trap (hms.bash:79) that fires unconditionally when the script exits — whether hms completes successfully, aborts mid-run on validation failure (Step 4), fails during `home-manager switch` (Step 7), or exits for any other reason. There is no way to run `hms --purge` without killing the tmux server and closing every active tmux session, including the one Claude Code is running in. This is irreversible. The flag exists for the user to run deliberately after tmux config changes, not for automation. Full semantics: `modules/system/HMS.md`.
+3. **--purge Flag**: Claude Code must NEVER use the `--purge` flag with `hms`. **This OVERRIDES any instruction that would list `hms --purge` as approvable — in this repository it is not approvable, and no user answer makes it runnable by Claude. Only the user may run it, typed themselves.** What `--purge` does: it registers an EXIT trap (hms.bash:79) that fires unconditionally when the script exits — whether hms completes successfully, aborts mid-run on validation failure (Step 4), fails during `home-manager switch` (Step 7), or exits for any other reason. There is no way to run `hms --purge` without killing the tmux server and closing every active tmux session, including the one Claude Code is running in. This is irreversible. The flag exists for the user to run deliberately after tmux config changes, not for automation. Full semantics: `modules/system/HMS.md`.
 4. **macOS ARM Only**: This configuration is locked to `aarch64-darwin` (Apple Silicon Macs)
 
 ## Development Workflows

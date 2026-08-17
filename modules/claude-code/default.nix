@@ -47,4 +47,17 @@ in {
       $DRY_RUN_CMD mv ~/.claude/settings.json.tmp ~/.claude/settings.json
       $DRY_RUN_CMD chmod 644 ~/.claude/settings.json
     '';
+
+  # ==========================================================================
+  # Managed Claude Code user memory + skills
+  # ==========================================================================
+  # Plain home.file symlinks, not activation-copies — unlike settings.json, nothing
+  # writes to these paths at runtime. Verified: Claude Code's old "#"-shortcut memory
+  # append was removed upstream (replaced by auto-memory under
+  # ~/.claude/projects/<project>/memory/, which is a different path entirely); the one
+  # remaining writer, `/import --scope user`, resolves the symlink and fails loudly
+  # (EROFS/EACCES) rather than silently replacing it. ~/.claude/skills/ has no writer
+  # at all today. A read-only store symlink is therefore safe for both.
+  home.file.".claude/CLAUDE.md".source = ./claude-memory.md;
+  home.file.".claude/skills/decision-protocol/SKILL.md".source = ./decision-protocol-skill.md;
 }
