@@ -228,14 +228,12 @@ show_help() {
   echo
   echo "  Execution Context:"
   echo "    - Working directory: The worktree directory (CWD set automatically)"
-  echo "    - Arguments: \$1 = absolute worktree path, \$2 = branch name"
-  echo "    - Environment: Inherits from parent shell"
-  echo "    - Runs in subshell (cannot affect parent workout process)"
+  echo "    - Arguments: none"
+  echo "    - Environment: Inherits from parent shell (no vars injected)"
   echo
   echo "  Exit Code Handling:"
-  echo "    - Exit 0: Success, no output"
-  echo "    - Non-zero: Warning logged to stderr, navigation continues"
-  echo "    - Hook failures never prevent navigation"
+  echo "    - Not checked — a failing hook does not warn and does not block"
+  echo "      the switch"
   echo
   echo "  Example Setup (Bash):"
   echo "    mkdir -p .git/workout-hooks"
@@ -249,11 +247,8 @@ show_help() {
   echo "  Example Setup (Python):"
   echo "    cat > .git/workout-hooks/post-switch << 'EOF'"
   echo "    #!/usr/bin/env python3"
-  echo "    import sys, os"
-  echo "    worktree_path = sys.argv[1]"
-  echo "    branch_name = sys.argv[2]"
-  echo "    # Custom logic here"
-  echo "    print(f\"Switched to {branch_name}\")"
+  echo "    # No arguments are passed; CWD is the new worktree"
+  echo "    print(\"New worktree ready\")"
   echo "    EOF"
   echo "    chmod +x .git/workout-hooks/post-switch"
   echo
@@ -265,44 +260,6 @@ show_help() {
   echo "    - Send 'new worktree created' notifications"
   echo "    - Initialize IDE workspace settings"
   echo "    - Copy template files or configurations"
-}
-
-# Execute post-switch hook if it exists
-# Arguments: worktree_path branch_name
-run_post_switch_hook() {
-  local worktree_path="$1"
-  local branch_name="$2"
-
-  # Get shared .git directory (handle .git file in worktrees)
-  local git_dir
-  git_dir="$(git rev-parse --git-dir 2>/dev/null)" || return 0
-
-  if [[ -f "$git_dir" ]]; then
-    # .git is a file (worktree) - extract main git directory
-    local real_git_dir
-    real_git_dir="$(grep '^gitdir:' "$git_dir" | cut -d' ' -f2)"
-    git_dir="${real_git_dir%/worktrees/*}"
-  fi
-
-  local hook_path="$git_dir/workout-hooks/post-switch"
-
-  # Silent return if hook doesn't exist, isn't a regular file, or isn't executable
-  [[ ! -f "$hook_path" ]] && return 0
-  [[ ! -x "$hook_path" ]] && return 0
-
-  # Resolve to absolute path before cd (in case hook_path is relative)
-  hook_path="$(cd "$(dirname "$hook_path")" && pwd)/$(basename "$hook_path")"
-
-  # Execute in subshell with worktree as CWD
-  (
-    cd "$worktree_path" || exit 1
-    "$hook_path" "$worktree_path" "$branch_name"
-  ) || {
-    local exit_code=$?
-    echo "Warning: post-switch hook failed (exit code: $exit_code)" >&2
-    echo "Hook location: $hook_path" >&2
-    return 0
-  }
 }
 
 # List all worktrees in format for fzf
@@ -962,11 +919,10 @@ if [ -n "$existing_worktree" ]; then
   echo "cd '$worktree_path'"
 
   # Output hook path if it exists (new worktree, so run hook)
-  git_dir="$(git rev-parse --git-dir 2>/dev/null)"
-  if [[ -f "$git_dir" ]]; then
-    real_git_dir="$(grep '^gitdir:' "$git_dir" | cut -d' ' -f2)"
-    git_dir="${real_git_dir%/worktrees/*}"
-  fi
+  # --path-format=absolute --git-common-dir resolves the *main* .git from
+  # anywhere, including from inside a worktree — a bare --git-dir returns a
+  # worktree-local directory there and would never find the hook.
+  git_dir="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
   hook_path="$git_dir/workout-hooks/post-switch"
   if [[ -f "$hook_path" && -x "$hook_path" ]]; then
     # Resolve to absolute path
@@ -1002,11 +958,10 @@ fi
 echo "cd '$worktree_path'"
 
 # Output hook path if it exists (new worktree, so run hook)
-git_dir="$(git rev-parse --git-dir 2>/dev/null)"
-if [[ -f "$git_dir" ]]; then
-  real_git_dir="$(grep '^gitdir:' "$git_dir" | cut -d' ' -f2)"
-  git_dir="${real_git_dir%/worktrees/*}"
-fi
+# --path-format=absolute --git-common-dir resolves the *main* .git from
+# anywhere, including from inside a worktree — a bare --git-dir returns a
+# worktree-local directory there and would never find the hook.
+git_dir="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
 hook_path="$git_dir/workout-hooks/post-switch"
 if [[ -f "$hook_path" && -x "$hook_path" ]]; then
   # Resolve to absolute path

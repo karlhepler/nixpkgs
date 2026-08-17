@@ -42,3 +42,15 @@ decision. Skip jargon and initialisms where a plain phrase works just as well.
 ## Ask, Don't Assume
 When a real decision is open, use AskUserQuestion rather than guessing a preference —
 give the plain-language "why" behind each option, not just the labels.
+
+## Syncing With Main
+Bringing a branch up to date with main is always `git sync` — never a manual fetch
+and merge, and never a rebase. It merges, which means merge commits; that tradeoff
+is deliberate. If a rebase is asked for directly, say that `git sync` is the
+preferred path here and get confirmation before rebasing. Behavior, dirty-tree and
+conflict handling — see the `git-sync` skill.
+
+## Worktrees Go Through workout
+Any worktree work — creating, switching, listing, cleaning up — uses the `workout`
+CLI, never raw `git worktree`. Full command surface and hook setup — see the
+`workout` skill.
