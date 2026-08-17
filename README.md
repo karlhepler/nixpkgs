@@ -202,13 +202,13 @@ hme
 - `commit "message"` - Stage all and commit
 - `push` - Push to remote
 - `pull` - Pull from remote
-- `git-sync` - Sync with remote (stash, pull, pop)
+- `git-sync` - Fetch and merge trunk (main/master) into current branch
 - `git-trunk` - Switch to main branch
 - `git-branches` - List all branches
 - `git-kill <branch>` - Delete a branch
 - `git-resume` - Resume previous branch
 - `git-tmp` - Create temporary branch
-- `workout` - Interactive branch cleanup
+- `workout` - Create and navigate git worktrees (interactive browser, cleanup)
 
 ### Nix Development
 - `nix flake update` - Update all flake inputs

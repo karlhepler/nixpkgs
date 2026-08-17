@@ -54,10 +54,12 @@ created for it (not on later navigation to the same worktree):
   correctly from inside a worktree too; a bare `git rev-parse --git-dir` does not).
 - **Must be executable** (`chmod +x`) or it is silently skipped — no error either
   way.
-- **Runs with no arguments and no injected environment variables** — only the
-  inherited shell environment. Don't write a hook that reads `$1`/`$2` or expects
-  `WORKTREE_PATH`/`SOURCE_REPO`/`BRANCH` to be set; those aren't part of this
-  contract.
+- **Runs with no positional arguments.** Don't write a hook that reads `$1`/`$2` —
+  that isn't part of this contract.
+- **Gets three environment variables**, in addition to the inherited shell
+  environment: `WORKTREE_PATH` (absolute path of the new worktree), `BRANCH`
+  (branch checked out in it), `SOURCE_REPO` (absolute path of the primary repo).
+  They're scoped to the hook's own process, not exported into your shell.
 - **CWD is the new worktree** when the hook runs.
 - **Exit code is not checked** — a failing hook does not warn and does not block
   the switch.

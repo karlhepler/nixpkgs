@@ -229,7 +229,10 @@ show_help() {
   echo "  Execution Context:"
   echo "    - Working directory: The worktree directory (CWD set automatically)"
   echo "    - Arguments: none"
-  echo "    - Environment: Inherits from parent shell (no vars injected)"
+  echo "    - Environment: Inherits from parent shell, plus:"
+  echo "        WORKTREE_PATH - absolute path of the new worktree"
+  echo "        BRANCH        - branch checked out in the worktree"
+  echo "        SOURCE_REPO   - absolute path of the primary repo"
   echo
   echo "  Exit Code Handling:"
   echo "    - Not checked — a failing hook does not warn and does not block"
@@ -247,8 +250,8 @@ show_help() {
   echo "  Example Setup (Python):"
   echo "    cat > .git/workout-hooks/post-switch << 'EOF'"
   echo "    #!/usr/bin/env python3"
-  echo "    # No arguments are passed; CWD is the new worktree"
-  echo "    print(\"New worktree ready\")"
+  echo "    import os"
+  echo "    print(f\"Switched to {os.environ['BRANCH']}\")"
   echo "    EOF"
   echo "    chmod +x .git/workout-hooks/post-switch"
   echo
@@ -927,7 +930,10 @@ if [ -n "$existing_worktree" ]; then
   if [[ -f "$hook_path" && -x "$hook_path" ]]; then
     # Resolve to absolute path
     hook_path="$(cd "$(dirname "$hook_path")" && pwd)/$(basename "$hook_path")"
-    echo "'$hook_path'"
+    source_repo="$(dirname "$git_dir")"
+    # Env vars are scoped to this one command (temporary assignment), not
+    # exported into the parent shell that evals this line.
+    echo "WORKTREE_PATH='$worktree_path' BRANCH='$branch_name' SOURCE_REPO='$source_repo' '$hook_path'"
   fi
 
   exit 0
@@ -966,5 +972,8 @@ hook_path="$git_dir/workout-hooks/post-switch"
 if [[ -f "$hook_path" && -x "$hook_path" ]]; then
   # Resolve to absolute path
   hook_path="$(cd "$(dirname "$hook_path")" && pwd)/$(basename "$hook_path")"
-  echo "'$hook_path'"
+  source_repo="$(dirname "$git_dir")"
+  # Env vars are scoped to this one command (temporary assignment), not
+  # exported into the parent shell that evals this line.
+  echo "WORKTREE_PATH='$worktree_path' BRANCH='$branch_name' SOURCE_REPO='$source_repo' '$hook_path'"
 fi
