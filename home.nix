@@ -21,6 +21,9 @@ in {
     ./modules/packages.nix   # Packages + simple programs
     ./modules/tmux           # Tmux terminal multiplexer
     ./modules/zsh.nix        # Zsh configuration + activation
+  ] ++ lib.optionals flags.claudeCode.enable [
+    # Claude Code user settings — gated by flags.nix claudeCode.enable
+    ./modules/claude-code    # Managed keys in ~/.claude/settings.json
   ] ++ lib.optionals flags.claude.enable [
     # Claude Code configuration — gated by flags.nix claude.enable
     ./modules/claude        # Claude hooks + ~35 claude shellapps
