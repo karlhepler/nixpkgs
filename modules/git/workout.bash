@@ -521,8 +521,13 @@ clean_worktrees() {
   local git_root
   git_root="$(git worktree list --porcelain | awk '/^worktree / && !found {result=substr($0, 10); found=1} END {if (found) print result}')"
 
-  # Get current directory to exclude from deletion
-  local current_dir="$PWD"
+  # Get current directory to exclude from deletion. Resolved (pwd -P), not the
+  # logical $PWD — `git worktree list` reports resolved paths, so a symlinked
+  # ancestor (e.g. WORKTREE_ROOT under macOS's /tmp -> /private/tmp) would
+  # otherwise make the exact-match skip below silently fail, and the worktree
+  # you're sitting in right now could get trashed along with the merged ones.
+  local current_dir
+  current_dir="$(pwd -P)"
 
   # Detect default branch (only needed for non-expunge mode)
   local default_branch=""
@@ -697,8 +702,11 @@ run_fzf_selector() {
   local git_root
   git_root="$(git worktree list --porcelain | awk '/^worktree / && !found { result = substr($0, 10); found = 1 } END { if (found) print result }')"
 
-  # Get current directory to mark with arrow
-  local current_dir="$PWD"
+  # Get current directory to mark with arrow. Resolved (pwd -P) to match the
+  # resolved paths `git worktree list` reports — see clean_worktrees for why
+  # the logical $PWD can silently mismatch.
+  local current_dir
+  current_dir="$(pwd -P)"
 
   # Get list of worktrees
   local worktrees
@@ -860,8 +868,18 @@ if [ -n "$existing_worktree" ]; then
   # Branch is checked out somewhere
   worktree_root="${WORKTREE_ROOT:-$HOME/worktrees}"
 
+  # $existing_worktree comes from `git worktree list`, which reports resolved
+  # paths. Resolve $worktree_root the same way before comparing — otherwise a
+  # symlinked ancestor (e.g. WORKTREE_ROOT under macOS's /tmp -> /private/tmp)
+  # makes an already-managed worktree look unmanaged, and this re-runs the
+  # primary-repo migration below (stash + git worktree add) on a worktree
+  # that already exists. Falls back to the literal value if the root doesn't
+  # exist yet — nothing could already be managed under a root that isn't
+  # there, so the unresolved comparison is still correct in that case.
+  worktree_root_real="$( (cd "$worktree_root" 2>/dev/null && pwd -P) || echo "$worktree_root")"
+
   # Check if it's already in a managed worktree location
-  if [[ "$existing_worktree" =~ ^$worktree_root/ ]]; then
+  if [[ "$existing_worktree" =~ ^$worktree_root_real/ ]]; then
     # Already in a worktree, just navigate there
     echo "cd '$existing_worktree'"
     exit 0
