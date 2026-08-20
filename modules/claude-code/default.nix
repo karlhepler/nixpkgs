@@ -61,5 +61,4 @@ in {
   home.file.".claude/CLAUDE.md".source = ./claude-memory.md;
   home.file.".claude/skills/decision-protocol/SKILL.md".source = ./decision-protocol-skill.md;
   home.file.".claude/skills/git-sync/SKILL.md".source = ./git-sync-skill.md;
-  home.file.".claude/skills/workout/SKILL.md".source = ./workout-skill.md;
 }

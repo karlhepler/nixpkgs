@@ -59,8 +59,3 @@ plain merge commit and say which method you used and why. Never a rebase merge.
 This governs the landing direction only: a finished branch collapsing into trunk.
 Bringing trunk into your branch stays `git sync`, which makes a merge commit on
 purpose — see § Syncing With Main. Local merges outside a PR are not covered.
-
-## Worktrees Go Through workout
-Any worktree work — creating, switching, listing, cleaning up — uses the `workout`
-CLI, never raw `git worktree`. Full command surface and hook setup — see the
-`workout` skill.
