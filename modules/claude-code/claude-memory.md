@@ -50,6 +50,16 @@ is deliberate. If a rebase is asked for directly, say that `git sync` is the
 preferred path here and get confirmation before rebasing. Behavior, dirty-tree and
 conflict handling — see the `git-sync` skill.
 
+## Landing a PR Is a Squash Merge
+Merging a pull request means squashing it — `gh pr merge --squash`, or the squash
+option in GitHub's UI. Not a merge commit, not rebase-and-merge. If the repo has
+squash merging turned off, or a merge queue takes the choice away, fall back to a
+plain merge commit and say which method you used and why. Never a rebase merge.
+
+This governs the landing direction only: a finished branch collapsing into trunk.
+Bringing trunk into your branch stays `git sync`, which makes a merge commit on
+purpose — see § Syncing With Main. Local merges outside a PR are not covered.
+
 ## Worktrees Go Through workout
 Any worktree work — creating, switching, listing, cleaning up — uses the `workout`
 CLI, never raw `git worktree`. Full command surface and hook setup — see the
