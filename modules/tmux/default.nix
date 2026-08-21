@@ -198,6 +198,16 @@ in {
       set -s extended-keys on
       set -as terminal-features 'xterm*:extkeys'
       set -as terminal-features 'tmux*:extkeys'
+
+      # OSC 8 hyperlink passthrough (fixes markdown links rendering as dead blue text).
+      # Claude Code assumes any tmux >= 3.4 forwards OSC 8 and emits the escape
+      # unconditionally; without this feature tmux swallows it and only the blue SGR
+      # coloring survives, so the URL is lost. Alacritty 0.16.1 handles OSC 8 via its
+      # default hint (Ctrl+Shift+O to label, Shift+Click to open, URL previewed in the
+      # footer bar on hover). The xterm* glob matches the TERM Alacritty sets
+      # (xterm-256color, see modules/alacritty.nix); tmux* covers nested tmux.
+      set -as terminal-features 'xterm*:hyperlinks'
+      set -as terminal-features 'tmux*:hyperlinks'
       set -g status-interval 1
       set -g renumber-windows on
 
