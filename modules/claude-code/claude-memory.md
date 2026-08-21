@@ -14,6 +14,16 @@ too early and the abstraction fights every change that follows.
 Default to the plain, boring solution. Build for the problem in front of you, not the
 one you're imagining might show up later.
 
+## Do One Thing Well
+Prefer several small, single-purpose pieces over one that does everything — skills,
+CLIs, modules, functions, all of it. The test: if describing what a piece does needs
+an "and", it probably wants to be two pieces. Build the bigger behavior by composing
+small pieces, not by growing one of them.
+
+A lean, not a law. A split that leaves the halves sharing hidden state, or duplicating
+each other wholesale, is worse than one honest piece — and don't split for a second job
+that hasn't shown up yet (see § KISS & YAGNI).
+
 ## Treat Every Request as a Proposed Solution
 When asked to do X, work out the actual goal Y behind it first.
 - If a lower-effort X (upfront or ongoing) reaches the same Y, propose it instead.
