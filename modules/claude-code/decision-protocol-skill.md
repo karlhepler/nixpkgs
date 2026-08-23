@@ -47,10 +47,15 @@ harder to trust and harder to recheck later.
 
 ## 5. Corroborate before recommending
 
-For the recommendation itself (not every supporting fact along the way): find 2-3
-independent sources that support it and 2-3 that argue against it or for an
-alternative. State which way the evidence leans and how confident that leaves you.
-"I found one blog post that agrees" is not corroboration.
+For the recommendation itself: find at least 3 independent sources that support it and
+at least 3 that argue against it or for an alternative. Independent means they could
+disagree — three pages restating one upstream doc count as one. State which way the
+evidence leans and how confident that leaves you. "I found one blog post that agrees"
+is not corroboration.
+
+If you can't reach three on either side, say so explicitly and name what you did find.
+A thin evidence base is itself a finding about the recommendation, not a detail to omit.
+The general floor for all claims is § Prove It in CLAUDE.md.
 
 ## 6. Report back
 
