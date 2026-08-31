@@ -28,5 +28,15 @@ in
       description = "Apply Home Manager configuration with git handling and backups";
       sourceFile = "hms.bash";
     };
+
+    coffee = shellApp {
+      name = "coffee";
+      runtimeInputs = [ ];
+      text = ''
+        exec caffeinate -dimsu "$@"
+      '';
+      description = "Keep this Mac and its display awake until interrupted (caffeinate -dimsu)";
+      sourceFile = "default.nix";
+    };
   };
 }
