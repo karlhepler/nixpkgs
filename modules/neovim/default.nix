@@ -31,15 +31,15 @@
 
     # Load all Lua configs via concatenation (with variable substitution)
     # This ensures Nix can substitute paths in LSP configs before Neovim loads them
-    extraLuaConfig = builtins.replaceStrings
+    initLua = builtins.replaceStrings
       [
         "@typescriptLanguageServer@"
         "@bashLanguageServer@"
         "@omnisharpRoslyn@"
       ]
       [
-        "${pkgs.nodePackages.typescript-language-server}"
-        "${pkgs.nodePackages.bash-language-server}"
+        "${pkgs.typescript-language-server}"
+        "${pkgs.bash-language-server}"
         "${pkgs.omnisharp-roslyn}"
       ]
       (builtins.concatStringsSep "\n" [

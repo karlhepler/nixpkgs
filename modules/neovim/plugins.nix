@@ -26,6 +26,7 @@
 
     {
       plugin = vim-vinegar;
+      type = "viml";
       config = ''
         " hide hidden files by default
         let g:netrw_list_hide = '\(^\|\s\s\)\zs\.\S\+'
@@ -74,6 +75,7 @@
 
     {
       plugin = fzf-lsp-nvim;
+      type = "viml";
       config = ''
         nmap <c-b> :lua vim.lsp.buf.document_symbol()<cr>
         imap <c-b> <esc>:lua vim.lsp.buf.document_symbol()<cr>
@@ -97,6 +99,7 @@
 
     {
       plugin = lightline-vim;
+      type = "viml";
       config = ''
         set laststatus=2    " Always show status line
         set noshowmode      " Hide -- INSERT --
@@ -195,6 +198,7 @@
 
     {
       plugin = vim-polyglot;
+      type = "viml";
       config = ''
         let g:vim_json_syntax_conceal = 0
         let g:vim_markdown_conceal = 0
@@ -237,7 +241,8 @@
     }
 
     {
-      plugin = fzfWrapper;
+      plugin = fzf-wrapper;
+      type = "viml";
       config = ''
         function! s:build_quickfix_list(lines)
           call setqflist(map(copy(a:lines), '{ "filename": v:val }'))
@@ -258,6 +263,7 @@
 
     {
       plugin = fzf-vim;
+      type = "viml";
       config = ''
         nmap <c-p> :GFiles<cr>
         vmap <c-p> <esc>:GFiles<cr>
@@ -269,6 +275,7 @@
 
     {
       plugin = vim-prettier;
+      type = "viml";
       config = ''
         let g:prettier#autoformat = 1
         let g:prettier#autoformat_require_pragma = 0
@@ -277,6 +284,7 @@
 
     {
       plugin = vim-rooter;
+      type = "viml";
       config = ''
         let g:rooter_silent_chdir = 1
         let g:rooter_patterns = [".git"]

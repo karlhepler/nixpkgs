@@ -73,8 +73,8 @@ unstable.gh  # GitHub CLI from unstable channel
 
     # Node.js / JavaScript
     nodejs_24
-    nodePackages.typescript
-    nodePackages.typescript-language-server
+    typescript
+    typescript-language-server
     yarn
 
     # Python
@@ -110,7 +110,7 @@ unstable.gh  # GitHub CLI from unstable channel
     starpls  # Language server for Starlark
 
     # === Language Servers ===
-    nodePackages.bash-language-server
+    bash-language-server
     yaml-language-server
 
     # === Shell Tools ===
