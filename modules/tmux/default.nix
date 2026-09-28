@@ -28,6 +28,33 @@ let
     # Replace hardcoded ⋅ with #{@session_icon}, fallback to ⋅ if not set
     set -g status-left "#[fg=#3b4261,bold]#{?client_prefix,#[bg=#e0af68],#[bg=#9ece6a]} #{?@session_icon,#{@session_icon},⋅} #S #[bg=#292e42]#{?client_prefix,#[fg=#e0af68],#[fg=#9ece6a]}#{@theme_left_separator}#[none]"
   '';
+
+  # macOS's Local Network privacy exempts command-line tools launched from
+  # Terminal, INCLUDING their child processes -- but only while the process
+  # ancestry stays connected to Terminal. tmux's server detaches and gets
+  # reparented to launchd once it's running (confirmed via `ps`: tmux's own
+  # PPID is 1, not the terminal app), which breaks that exemption chain. From
+  # that point on, tmux is just another unsigned Nix-built binary whose
+  # identity changes on every rebuild -- the same disease as Alacritty's
+  # (see modules/alacritty.nix), one layer deeper and easy to miss because it
+  # only shows up when a terminal app is used *with* tmux, not without it.
+  # Give it a stable, private code-signing identifier so it isn't a brand-new
+  # unrecognized program on every version bump.
+  tmux = pkgs.symlinkJoin {
+    name = "tmux-${pkgs.tmux.version}-signed";
+    inherit (pkgs.tmux) version;
+    # pkgs.tmux is multi-output (has a separate "man" output); this wrapper
+    # only produces one output, so outputsToInstall must be trimmed to match
+    # or `home.packages` fails looking up the (now nonexistent) .man output.
+    meta = pkgs.tmux.meta // { outputsToInstall = [ "out" ]; };
+    paths = [ pkgs.tmux ];
+    postBuild = ''
+      rm $out/bin/tmux
+      cp ${pkgs.tmux}/bin/tmux $out/bin/tmux
+      chmod u+w $out/bin/tmux
+      /usr/bin/codesign --force --sign - --identifier com.karlhepler.tmux $out/bin/tmux
+    '';
+  };
 in {
   # ============================================================================
   # Tmux Configuration & Shell Applications
@@ -89,6 +116,7 @@ in {
 
   programs.tmux = {
     enable = true;
+    package = tmux;
     keyMode = "vi";
     customPaneNavigationAndResize = false;
     mouse = true;

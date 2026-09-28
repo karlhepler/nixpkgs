@@ -38,5 +38,13 @@ in
       description = "Keep this Mac and its display awake until interrupted (caffeinate -dimsu)";
       sourceFile = "default.nix";
     };
+
+    lan-run = shellApp {
+      name = "lan-run";
+      runtimeInputs = [ ];
+      text = builtins.readFile ./lan-run.bash;
+      description = "Run a command outside tmux so it can reach the LAN, bypassing macOS's post-26.7 Local Network privacy block on tmux's detached server";
+      sourceFile = "lan-run.bash";
+    };
   };
 }
