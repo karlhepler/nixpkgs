@@ -79,3 +79,16 @@ plain merge commit and say which method you used and why. Never a rebase merge.
 This governs the landing direction only: a finished branch collapsing into trunk.
 Bringing trunk into your branch stays `git sync`, which makes a merge commit on
 purpose — see § Syncing With Main. Local merges outside a PR are not covered.
+
+## SSH/LAN Commands on This Mac: Use `lan-run`
+Machine-specific, not a universal principle — applies whenever working on this Mac,
+in any project. A macOS Local Network privacy restriction (stricter since macOS
+26.7) silently blocks LAN/SSH connections made from inside tmux — the environment
+Claude Code normally runs in here — with a misleading "No route to host" error that
+looks like a network problem, not a permissions one. `lan-run` (a shellapp from
+`~/.config/nixpkgs`, always on `PATH`) routes the command around that block: prefix
+any LAN-reaching command with it, e.g. `lan-run ssh user@host "cmd"`. Known
+limitation: no controlling terminal, so a command needing live interactive input
+(a typed password) will hang — use SSH key auth instead. Full background:
+`~/.config/nixpkgs`'s `modules/system/lan-run.bash` and its own memory note under
+that project.
