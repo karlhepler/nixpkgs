@@ -2,6 +2,24 @@
 
 let
   homeDirectory = config.home.homeDirectory;
+
+  # Alacritty 0.17.0 ships without NSLocalNetworkUsageDescription, which macOS 26.7+
+  # requires before an app can reach LAN devices (alacritty#9055). Without it, LAN
+  # access can silently fail even with the Local Network toggle on. Wrap the package
+  # to add just that one Info.plist key — everything else (including the executable
+  # and its code signature) is symlinked through unchanged. Remove this wrapper once
+  # upstream ships the fix (alacritty#9056).
+  alacritty = pkgs.symlinkJoin {
+    name = "alacritty-${pkgs.alacritty.version}";
+    inherit (pkgs.alacritty) version meta;
+    paths = [ pkgs.alacritty ];
+    postBuild = ''
+      plist=$out/Applications/Alacritty.app/Contents/Info.plist
+      rm "$plist"
+      sed 's#^</dict>$#  <key>NSLocalNetworkUsageDescription</key>\n  <string>An application in Alacritty would like to access the local network.</string>\n</dict>#' \
+        ${pkgs.alacritty}/Applications/Alacritty.app/Contents/Info.plist > "$plist"
+    '';
+  };
 in {
   # ============================================================================
   # Alacritty Configuration
@@ -11,6 +29,7 @@ in {
 
   programs.alacritty = {
     enable = true;
+    package = alacritty;
     settings = {
       mouse.hide_when_typing = true;
       keyboard.bindings = [
