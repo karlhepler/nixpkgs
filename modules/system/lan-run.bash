@@ -36,6 +36,26 @@ wrapper=$(mktemp)
 {
   printf '#!/bin/sh\n'
   printf 'cd %q || exit 1\n' "$PWD"
+  # Forward the calling shell's exported environment into the job --
+  # launchd jobs do NOT inherit it otherwise (confirmed separately: this
+  # is the same reason the tmux-server launchd agent needed explicit env
+  # sourcing to find PATH). Without this, anything relying on an exported
+  # var (e.g. a deploy script's SSHPASS for non-interactive sshpass auth)
+  # would silently break only when run through lan-run, not otherwise.
+  #
+  # declare -x, not compgen -e: compgen is a completion-only builtin and
+  # is NOT present in the minimal bash writeShellApplication uses for
+  # this script's own shebang -- confirmed directly (compgen: command
+  # not found on the real deployed script, despite working when tested
+  # under macOS's own full system bash by mistake). declare -x is a core
+  # bash builtin present in any build, and its output is already
+  # properly quoted shell syntax, so it can be emitted as-is.
+  while IFS= read -r line; do
+    case "$line" in
+      "declare -x _="* | "declare -x SHLVL="* | "declare -x PWD="* | "declare -x OLDPWD="*) continue ;;
+    esac
+    printf '%s\n' "$line"
+  done < <(declare -x)
   printf '%q ' "$@"
   printf '\n'
   printf 'echo $? > %q\n' "$statusfile"
