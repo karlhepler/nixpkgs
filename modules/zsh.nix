@@ -251,8 +251,13 @@ in {
       # - First window: attach to existing session if available, or create new one
       # - Subsequent windows (Cmd+N): always create NEW independent session
       # This ensures each Alacritty window has its own tmux session
+      #
+      # -L main targets the dedicated socket the tmux-server launchd agent
+      # (modules/tmux/default.nix) owns, so every window lands on a server
+      # that was launchd-started from birth -- required for LAN/SSH to work
+      # inside tmux panes on macOS 26.7+, see that agent's comment for why.
       if [ -z "$TMUX" ]; then
-        exec ${homeDirectory}/.nix-profile/bin/tmux new-session
+        exec ${homeDirectory}/.nix-profile/bin/tmux -L main new-session
       fi
 
     '';

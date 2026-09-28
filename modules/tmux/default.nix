@@ -109,6 +109,53 @@ in {
     };
   };
 
+  # ============================================================================
+  # tmux server as a launchd agent (keeps LAN/SSH working inside tmux panes)
+  # ============================================================================
+  # Without this, the FIRST window's shell starts the tmux server itself via
+  # `exec` (see the zsh hook below), which daemonizes and gets reparented to
+  # launchd -- and macOS's Local Network privacy (stricter since macOS 26.7)
+  # does not extend Terminal's exemption to that reparented process, so any
+  # LAN/SSH command run inside ANY tmux pane fails ("No route to host").
+  # Confirmed by direct testing: a tmux server started AS a genuine launchd
+  # job (this agent) does not have that problem -- SSH inside its panes just
+  # works, no wrapper needed. See modules/system/lan-run.bash and
+  # scratchpad/alacritty-local-network-permission-bug.md for the full
+  # investigation.
+  #
+  # This starts a hidden, empty bootstrap session so the server exists
+  # (and is already launchd-owned) before any real window needs it. Uses a
+  # dedicated named socket ("main"), not tmux's default one -- a server may
+  # already be running on the default socket (e.g. pre-dating this change,
+  # or a window opened before this agent loaded), and connecting to that
+  # would silently reuse the old, non-launchd-owned server instead of this
+  # one. The zsh hook below targets this same named socket explicitly, so
+  # it's unambiguous which server every new window actually lands on.
+  #
+  # Known interaction: `hms --purge`'s EXIT trap kills the tmux server
+  # unconditionally; launchd (KeepAlive) restarts this bootstrap session
+  # right after, re-reading tmux.conf fresh. Real per-window sessions are
+  # unaffected either way -- each is independent and still needs its own
+  # window closed/reopened to pick up a config change, same as before.
+  launchd.agents.tmux-server = {
+    enable = true;
+    config = {
+      ProgramArguments = [
+        "${homeDirectory}/.nix-profile/bin/tmux"
+        "-L"
+        "main"
+        "new-session"
+        "-d"
+        "-s"
+        "_launchd-bootstrap"
+      ];
+      RunAtLoad = true;
+      KeepAlive = true;
+      StandardOutPath = "${homeDirectory}/.local/state/tmux-server.launchd.out.log";
+      StandardErrorPath = "${homeDirectory}/.local/state/tmux-server.launchd.err.log";
+    };
+  };
+
   # Link config files to home directory (using writeText to avoid Nix escaping issues with powerline chars)
   home.file.".config/tmux/separators.conf".source = separatorsConf;
   home.file.".config/tmux/bell-format.conf".source = bellFormatConf;
