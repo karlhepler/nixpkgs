@@ -87,8 +87,23 @@ in {
   fonts.fontconfig.enable = true;
 
 
-  # Automatically run the garbage collector weekly.
+  # Automatically run the garbage collector weekly. Without --delete-older-than,
+  # old Home Manager/profile generations are never removed and keep every store
+  # path they reference alive, so the store grows without bound.
   nix.gc.automatic = true;
+  launchd.agents.nix-gc.config = {
+    # Not `nix.gc.options`: on Darwin, Home Manager passes that string as ONE
+    # argv element, and nix-collect-garbage rejects '--delete-older-than 30d'
+    # (and '--delete-older-than=30d') as an unrecognised flag.
+    ProgramArguments = lib.mkForce [
+      "${pkgs.nix}/bin/nix-collect-garbage"
+      "--delete-older-than"
+      "30d"
+    ];
+    # launchd discards stdout/stderr by default, so a failed run leaves no record.
+    StandardOutPath = "${config.home.homeDirectory}/.local/state/nix-gc.launchd.out.log";
+    StandardErrorPath = "${config.home.homeDirectory}/.local/state/nix-gc.launchd.err.log";
+  };
 
   # Let Home Manager install and manage itself.
   programs.home-manager.enable = true;
