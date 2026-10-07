@@ -121,7 +121,7 @@ let
       name = "workout-autoclean";
       runtimeInputs = [ pkgs.git pkgs.gh pkgs.coreutils pkgs.darwin.trash ];
       text = builtins.readFile ./workout-autoclean.bash;
-      description = "Daily global reaper: trash clean worktrees under ~/worktrees that are >=30 days old (by birth time) OR whose branch's PR merged (no open PR, no commits beyond the merge); skips primary repos and dirty worktrees";
+      description = "Daily global reaper: trash clean, not-in-use worktrees under ~/worktrees that are >=30 days old (by birth time), OR >=7 days old with nothing beyond origin's default branch, OR whose branch's PR merged (no open PR, no commits beyond the merge); skips primary repos and dirty worktrees";
       sourceFile = "workout-autoclean.bash";
     };
   };
@@ -139,8 +139,9 @@ in {
   # Daily worktree reaper (launchd agent)
   # ============================================================================
   # Runs `workout-autoclean` once a day at 5:00pm, unconditionally sweeping
-  # every git worktree under ~/worktrees: reaps clean worktrees that are 30+
-  # days old OR whose branch's PR has merged (needs `gh` auth). This
+  # every git worktree under ~/worktrees. Reaps clean worktrees no process is
+  # using that are 30+ days old, OR 7+ days old with no commits beyond origin's
+  # default branch, OR whose branch's PR has merged (needs `gh` auth). This
   # is the ONLY trigger for workout-autoclean — the opportunistic
   # after-`workout`-command invocation has been removed (see workout.bash).
   launchd.agents.workout-autoclean = {
