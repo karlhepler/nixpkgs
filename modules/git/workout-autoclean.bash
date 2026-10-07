@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# workout-autoclean: Daily global reaper for stale git worktrees.
+# workout-autoclean: Daily global reaper for stale or merged git worktrees.
 #
 # Scheduled via launchd (modules/git/default.nix, StartCalendarInterval
 # Hour=17) to run once a day at 5:00pm, completely independent of any
-# `workout` command or shell session. Unconditionally trashes every git
-# worktree found under $WORKTREE_ROOT (default ~/worktrees) whose directory
-# BIRTH TIME is >= 30 days old — no merge check, age is the only signal.
+# `workout` command or shell session. Trashes every CLEAN git worktree found
+# under $WORKTREE_ROOT (default ~/worktrees) that matches EITHER reap rule:
+#
+#   age        The directory BIRTH TIME is >= 30 days old. Catches worktrees
+#              that never got a PR. No merge check.
+#   merged-pr  The branch's pull request has MERGED (see "Merged-PR rule").
+#              Catches the common case: worktrees are created far faster than
+#              30 days allows for, and a merged PR means the work is done.
 #
 # ~/worktrees is a HETEROGENEOUS tree: some top-level directories ARE
 # worktrees, others are plain org/repo path containers holding worktrees one
@@ -23,9 +28,28 @@ set -euo pipefail
 #   - Primary/main repo checkouts — excluded structurally: a directory with a
 #     `.git` DIRECTORY is never even considered a worktree candidate.
 #   - Any worktree with uncommitted changes — a dirty worktree must NEVER be
-#     trashed.
+#     trashed, under either rule.
 #   (No current-directory skip: this runs from launchd, which has no cwd/repo
-#   context. A just-created worktree is protected by the age threshold alone.)
+#   context. A just-created worktree is protected by being clean + having no
+#   merged PR; the age rule alone protects it from the age check.)
+#
+# Merged-PR rule — ALL of these must hold, and every error fails CLOSED:
+#   1. Clean (the dirty check above).
+#   2. No OPEN PR for the branch name, by anyone. Branch names get reused: the
+#      same name can have an old merged PR and a new open one.
+#   3. At least one MERGED PR of mine (`--author @me`) for the branch name.
+#   4. Nothing extra: the worktree's HEAD equals a merged PR's headRefOid or is
+#      an ancestor of it (`git merge-base --is-ancestor`). Commits past what
+#      was merged may exist nowhere else, so the worktree is kept. This does
+#      NOT use `git log HEAD --not --remotes`: the repos squash-merge and
+#      delete the remote branch, so that check would wrongly flag nearly every
+#      merged worktree.
+#   A detached HEAD has no branch, so it never matches. GitHub is queried
+#   lazily, TWICE per owner repo (open PRs, then my merged PRs), not once per
+#   worktree. If `gh` is unauthenticated, rate-limited or errors, the
+#   merged-PR rule is skipped (for the whole run, or for that repo) and
+#   behavior falls back to age-only — "couldn't ask GitHub" is never treated
+#   as "merged". Closed-but-unmerged PRs are deliberately NOT reaped early.
 #
 # Age is computed from macOS directory BIRTH TIME, NOT mtime — mtime is
 # unreliable (build artifacts and file edits reset it constantly). Birth time
@@ -48,11 +72,13 @@ set -euo pipefail
 # The `git worktree` "remove" subcommand is never invoked anywhere in this script.
 #
 # Flags:
-#   --dry-run   Print what WOULD be reaped (path + age) without trashing,
-#               pruning, or writing to the log.
+#   --dry-run   Print what WOULD be reaped (path, reason, age) without
+#               trashing, pruning, or writing to the log. It still calls
+#               GitHub (read-only) so the merged-PR rule can be previewed.
 #
 # Logging: every reap is appended (ISO-8601 UTC timestamp, worktree path,
-# owner repo) to "${XDG_STATE_HOME:-$HOME/.local/state}/workout-autoclean.log".
+# owner repo, reason=age|merged-pr, and pr=#N for merged-pr) to
+# "${XDG_STATE_HOME:-$HOME/.local/state}/workout-autoclean.log".
 # Dry runs never write to this log.
 
 # 30 days in seconds
@@ -117,6 +143,112 @@ add_owner_repo() {
   owner_repos_to_prune+=("$repo")
 }
 
+# --- Merged-PR rule -------------------------------------------------------
+
+# Whether the merged-PR rule is usable at all this run. `--active` so a stale
+# secondary account doesn't make the check fail; only github.com is queried.
+merged_rule_enabled=true
+if ! gh auth status --hostname github.com --active >/dev/null 2>&1; then
+  merged_rule_enabled=false
+  echo "Merged-PR rule disabled for this run (gh auth status failed); age-only" >&2
+fi
+
+# Per-owner-repo PR index, filled lazily by load_pr_index. Keys are the owner
+# repo path, or "<owner repo>|<branch>" for the per-branch maps.
+declare -A pr_index_ok=()      # repo -> 1 if loaded, 0 if the rule is skipped for it
+declare -A open_pr=()          # repo|branch -> 1 if ANY open PR has that head branch
+declare -A merged_prs=()       # repo|branch -> space-separated "<headRefOid>:<number>"
+
+# Print the GitHub "owner/name" of $1's origin remote; non-zero if it isn't GitHub.
+github_slug() {
+  local url
+  url="$(git -C "$1" remote get-url origin 2>/dev/null)" || return 1
+  if [[ "$url" =~ github\.com[:/]([^/]+/[^/]+)$ ]]; then
+    local slug="${BASH_REMATCH[1]}"
+    echo "${slug%.git}"
+    return 0
+  fi
+  return 1
+}
+
+# Fill the PR index for owner repo $1 (once). Any failure marks the repo
+# skipped: pr_index_ok[$1]=0.
+load_pr_index() {
+  local repo="$1"
+  [[ -n "${pr_index_ok[$repo]:-}" ]] && return 0
+  pr_index_ok[$repo]=0
+
+  local slug open_out merged_out
+  if ! slug="$(github_slug "$repo")"; then
+    echo "Merged-PR rule skipped for $repo (origin is not a GitHub remote); age-only" >&2
+    return 0
+  fi
+
+  # Everyone's open PRs: any open PR on a branch name blocks the reap.
+  if ! open_out="$(gh pr list -R "$slug" --state open --limit 1000 \
+      --json headRefName --jq '.[].headRefName' 2>/dev/null)"; then
+    echo "Merged-PR rule skipped for $slug (gh error listing open PRs); age-only" >&2
+    return 0
+  fi
+  # A full page may be truncated — an open PR could be missing from it.
+  if (( $(grep -c . <<<"$open_out" || true) >= 1000 )); then
+    echo "Merged-PR rule skipped for $slug (>=1000 open PRs, list may be truncated); age-only" >&2
+    return 0
+  fi
+  # Only my merged PRs. A truncated list can only make us reap LESS.
+  if ! merged_out="$(gh pr list -R "$slug" --author @me --state merged --limit 1000 \
+      --json headRefName,headRefOid,number \
+      --jq '.[] | [.headRefName, .headRefOid, (.number | tostring)] | @tsv' 2>/dev/null)"; then
+    echo "Merged-PR rule skipped for $slug (gh error listing merged PRs); age-only" >&2
+    return 0
+  fi
+
+  local branch oid num
+  while IFS= read -r branch; do
+    [[ -n "$branch" ]] && open_pr["$repo|$branch"]=1
+  done <<<"$open_out"
+  while IFS=$'\t' read -r branch oid num; do
+    [[ -n "$branch" ]] && merged_prs["$repo|$branch"]+="$oid:$num "
+  done <<<"$merged_out"
+
+  pr_index_ok[$repo]=1
+}
+
+# Does worktree $1 (owner repo $2) satisfy the merged-PR rule? On success sets
+# `matched_pr` to the merged PR number; on failure prints why to stderr.
+matched_pr=""
+merged_pr_check() {
+  local path="$1" repo="$2" branch head entry oid
+  matched_pr=""
+
+  [[ "$merged_rule_enabled" == true ]] || return 1
+
+  # A detached HEAD has no branch name to look up.
+  branch="$(git -C "$path" symbolic-ref --short -q HEAD 2>/dev/null)" || return 1
+  head="$(git -C "$path" rev-parse HEAD 2>/dev/null)" || return 1
+
+  load_pr_index "$repo"
+  [[ "${pr_index_ok[$repo]}" == 1 ]] || return 1
+
+  if [[ -n "${open_pr["$repo|$branch"]:-}" ]]; then
+    echo "Skipping (open PR on branch $branch): $path" >&2
+    return 1
+  fi
+
+  [[ -n "${merged_prs["$repo|$branch"]:-}" ]] || return 1
+
+  for entry in ${merged_prs["$repo|$branch"]}; do
+    oid="${entry%%:*}"
+    if [[ "$head" == "$oid" ]] || git -C "$path" merge-base --is-ancestor "$head" "$oid" 2>/dev/null; then
+      matched_pr="${entry#*:}"
+      return 0
+    fi
+  done
+
+  echo "Skipping (commits not in the merged PR on branch $branch): $path" >&2
+  return 1
+}
+
 for current_path in "${discovered_worktrees[@]}"; do
   # Skip: worktree has uncommitted changes — dirty worktrees must NEVER be trashed.
   # Fail CLOSED: if `git status` itself errors (corrupted index, filesystem
@@ -132,23 +264,9 @@ for current_path in "${discovered_worktrees[@]}"; do
     continue
   fi
 
-  # Compute age using macOS birth time (creation time), not mtime. See header
-  # comment for why this hardcodes /usr/bin/stat instead of relying on PATH.
-  birth_epoch=$(/usr/bin/stat -f %B "$current_path" 2>/dev/null || echo "9999999999")
-  age_seconds=$(( now_epoch - birth_epoch ))
-  age_days=$((age_seconds / 86400))
-
-  if (( age_seconds < max_age_seconds )); then
-    continue
-  fi
-
-  if [[ "$dry_run" == true ]]; then
-    echo "[dry-run] Would reap (age: ${age_days} days): $current_path" >&2
-    continue
-  fi
-
-  # Resolve the owner repo BEFORE trashing — the `.git` file (and therefore
-  # the ability to resolve it) is gone once the directory is trashed.
+  # Resolve the owner repo BEFORE anything else — the PR lookup needs it, and
+  # the `.git` file (and therefore the ability to resolve it) is gone once the
+  # directory is trashed.
   git_common_dir="$(git -C "$current_path" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
   if [[ -z "$git_common_dir" ]]; then
     echo "Skipping (could not resolve owner repo): $current_path" >&2
@@ -156,7 +274,33 @@ for current_path in "${discovered_worktrees[@]}"; do
   fi
   owner_repo="$(dirname "$git_common_dir")"
 
-  echo "Trashing stale worktree (age: ${age_days} days): $current_path" >&2
+  # Compute age using macOS birth time (creation time), not mtime. See header
+  # comment for why this hardcodes /usr/bin/stat instead of relying on PATH.
+  birth_epoch=$(/usr/bin/stat -f %B "$current_path" 2>/dev/null || echo "9999999999")
+  age_seconds=$(( now_epoch - birth_epoch ))
+  age_days=$((age_seconds / 86400))
+
+  # Decide WHY this worktree is reapable, or skip it.
+  reason=""
+  if (( age_seconds >= max_age_seconds )); then
+    reason="age"
+  elif merged_pr_check "$current_path" "$owner_repo"; then
+    reason="merged-pr"
+  fi
+  [[ -n "$reason" ]] || continue
+
+  if [[ "$reason" == "merged-pr" ]]; then
+    reason_label="reason: merged-pr, PR #${matched_pr}, age: ${age_days} days"
+  else
+    reason_label="reason: age, age: ${age_days} days"
+  fi
+
+  if [[ "$dry_run" == true ]]; then
+    echo "[dry-run] Would reap ($reason_label): $current_path" >&2
+    continue
+  fi
+
+  echo "Trashing worktree ($reason_label): $current_path" >&2
   if trash "$current_path" >&2; then
     echo "Trashed: $current_path" >&2
   else
@@ -167,8 +311,13 @@ for current_path in "${discovered_worktrees[@]}"; do
   add_owner_repo "$owner_repo"
 
   mkdir -p "$(dirname "$log_file")"
-  printf '%s\treaped\t%s\towner=%s\n' \
-    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$current_path" "$owner_repo" >> "$log_file"
+  if [[ "$reason" == "merged-pr" ]]; then
+    printf '%s\treaped\t%s\towner=%s\treason=merged-pr\tpr=#%s\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$current_path" "$owner_repo" "$matched_pr" >> "$log_file"
+  else
+    printf '%s\treaped\t%s\towner=%s\treason=age\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$current_path" "$owner_repo" >> "$log_file"
+  fi
 done
 
 # Prune each owner repo once, after all trashing is done. A single repo's
