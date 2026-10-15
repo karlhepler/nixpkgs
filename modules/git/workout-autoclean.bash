@@ -4,11 +4,14 @@ set -euo pipefail
 #
 # Scheduled via launchd (modules/git/default.nix, StartCalendarInterval
 # Hour=17) to run once a day at 5:00pm, completely independent of any
-# `workout` command or shell session. Trashes every CLEAN git worktree found
+# `workout` command or shell session. Trashes every git worktree found
 # under $WORKTREE_ROOT (default ~/worktrees) that matches ANY reap rule (checked in this order):
 #
 #   age         The directory BIRTH TIME is >= 30 days old. Catches worktrees
-#               that never got a PR. No merge check.
+#               that never got a PR. No merge check, and NO clean check:
+#               uncommitted changes do not save a 30-day-old worktree (they
+#               are labelled `dirty=yes` in the log). The in-use skip below
+#               still applies.
 #   no-commits  Birth time >= 7 days AND HEAD is already contained in the
 #               origin default branch (`git merge-base --is-ancestor HEAD
 #               refs/remotes/origin/HEAD`) — nothing in the worktree exists
@@ -33,8 +36,8 @@ set -euo pipefail
 # Skips (hard safety requirements):
 #   - Primary/main repo checkouts — excluded structurally: a directory with a
 #     `.git` DIRECTORY is never even considered a worktree candidate.
-#   - Any worktree with uncommitted changes — a dirty worktree must NEVER be
-#     trashed, under any rule.
+#   - Any worktree under 30 days old with uncommitted changes — trashed under
+#     no-commits or merged-pr, never. (Age >= 30 days overrides this.)
 #   - Any worktree a running process has as its working directory (or inside
 #     it) — found with one `lsof -d cwd` at startup. Trashing a folder out
 #     from under a live tmux pane or Claude session breaks that session even
@@ -44,7 +47,7 @@ set -euo pipefail
 #   context.)
 #
 # Merged-PR rule — ALL of these must hold, and every error fails CLOSED:
-#   1. Clean (the dirty check above).
+#   1. Clean (the dirty check in the loop below).
 #   2. No OPEN PR for the branch name, by anyone. Branch names get reused: the
 #      same name can have an old merged PR and a new open one.
 #   3. At least one MERGED PR of mine (`--author @me`) for the branch name.
@@ -322,20 +325,8 @@ path_in_use() {
 }
 
 for current_path in "${discovered_worktrees[@]}"; do
-  # Skip: worktree has uncommitted changes — dirty worktrees must NEVER be trashed.
-  # Fail CLOSED: if `git status` itself errors (corrupted index, filesystem
-  # hiccup, etc.), we cannot verify the worktree is clean, so skip it rather
-  # than assume clean. Only an empty (successful, no-output) result is treated
-  # as verified-clean.
-  if ! dirty_check=$(git -C "$current_path" status --porcelain 2>/dev/null); then
-    echo "Skipping $current_path (cannot verify clean state)" >&2
-    continue
-  fi
-  if [[ -n "$dirty_check" ]]; then
-    echo "Skipping dirty worktree (uncommitted changes): $current_path" >&2
-    continue
-  fi
-
+  # Skip: a running process is inside this worktree. Applies to every rule,
+  # including age — trashing a live session's folder breaks that session.
   if path_in_use "$current_path"; then
     echo "Skipping (in use by a running process): $current_path" >&2
     continue
@@ -357,14 +348,38 @@ for current_path in "${discovered_worktrees[@]}"; do
   age_seconds=$(( now_epoch - birth_epoch ))
   age_days=$((age_seconds / 86400))
 
+  # `git status` result, used two ways below. Not-ok (corrupted index,
+  # filesystem hiccup) means we cannot verify clean.
+  status_ok=true
+  status_out=""
+  status_out=$(git -C "$current_path" status --porcelain 2>/dev/null) || status_ok=false
+
   # Decide WHY this worktree is reapable, or skip it.
   reason=""
+  had_changes=false
   if (( age_seconds >= max_age_seconds )); then
+    # Age beats the dirty check: anything worth keeping was pushed, and a
+    # worktree this old is abandoned. Status is only read to label the log.
     reason="age"
-  elif (( age_seconds >= no_commits_min_age_seconds )) && no_commits_check "$current_path"; then
-    reason="no-commits"
-  elif merged_pr_check "$current_path" "$owner_repo"; then
-    reason="merged-pr"
+    if [[ "$status_ok" != true || -n "$status_out" ]]; then
+      had_changes=true
+    fi
+  else
+    # Under 30 days a dirty worktree must NEVER be trashed. Fail CLOSED: only
+    # an empty (successful, no-output) status counts as verified-clean.
+    if [[ "$status_ok" != true ]]; then
+      echo "Skipping $current_path (cannot verify clean state)" >&2
+      continue
+    fi
+    if [[ -n "$status_out" ]]; then
+      echo "Skipping dirty worktree (uncommitted changes): $current_path" >&2
+      continue
+    fi
+    if (( age_seconds >= no_commits_min_age_seconds )) && no_commits_check "$current_path"; then
+      reason="no-commits"
+    elif merged_pr_check "$current_path" "$owner_repo"; then
+      reason="merged-pr"
+    fi
   fi
   [[ -n "$reason" ]] || continue
 
@@ -373,6 +388,10 @@ for current_path in "${discovered_worktrees[@]}"; do
   if [[ "$reason" == "merged-pr" ]]; then
     reason_label="reason: merged-pr, PR #${matched_pr}, age: ${age_days} days"
     log_extra=$'\t'"pr=#${matched_pr}"
+  fi
+  if [[ "$had_changes" == true ]]; then
+    reason_label="${reason_label}, had uncommitted changes"
+    log_extra="${log_extra}"$'\t'"dirty=yes"
   fi
 
   if [[ "$dry_run" == true ]]; then

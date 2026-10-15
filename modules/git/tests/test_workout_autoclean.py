@@ -226,6 +226,35 @@ class WorkoutAutocleanMergedPrTest(unittest.TestCase):
         self.assertReason(self.dry_run(days_old=31), path, "age")
         self.assertNotReaped(self.dry_run(days_old=29), path)
 
+    def test_dirty_worktree_reaped_by_age_rule(self):
+        path, _, _ = self.worktree("feat-a")
+        with open(os.path.join(path, "scratch.txt"), "w") as f:
+            f.write("wip")
+        out = self.dry_run(days_old=31)
+        self.assertReason(out, path, "age")
+        self.assertIn("had uncommitted changes", out)
+
+    def test_dirty_worktree_under_thirty_days_is_kept(self):
+        path, _, _ = self.worktree("feat-a")
+        with open(os.path.join(path, "scratch.txt"), "w") as f:
+            f.write("wip")
+        out = self.dry_run(days_old=29)
+        self.assertNotReaped(out, path)
+        self.assertIn("Skipping dirty worktree", out)
+
+    def test_clean_age_reap_is_not_labelled_dirty(self):
+        self.worktree("feat-a")
+        self.assertNotIn("had uncommitted changes", self.dry_run(days_old=31))
+
+    def test_in_use_dirty_old_worktree_is_kept(self):
+        path, _, _ = self.worktree("feat-a")
+        with open(os.path.join(path, "scratch.txt"), "w") as f:
+            f.write("wip")
+        self.hold_open(path)
+        out = self.dry_run(days_old=31)
+        self.assertNotReaped(out, path)
+        self.assertIn("in use by a running process", out)
+
     def test_no_commits_rule_after_seven_days(self):
         path = self.plain_worktree("empty-a")
         self.assertReason(self.dry_run(days_old=8), path, "no-commits")
