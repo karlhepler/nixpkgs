@@ -16,7 +16,8 @@ in {
 
     # Simple modules (no scripts)
     ./modules/alacritty.nix  # Alacritty terminal emulator
-    ./modules/direnv.nix     # Direnv configuration + activation
+    ./modules/direnv.nix     # Direnv configuration
+    ./modules/nix-profile.nix # Gap-free ~/.nix-profile switch on hms
     ./modules/environment.nix # Environment variables
     ./modules/packages.nix   # Packages + simple programs
     ./modules/tmux           # Tmux terminal multiplexer
