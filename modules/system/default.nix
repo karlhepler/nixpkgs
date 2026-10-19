@@ -1,4 +1,4 @@
-{ config, pkgs, lib, user, ... }:
+{ config, pkgs, lib, user, hmPackage, ... }:
 
 let
   # Import shared shellApp helper
@@ -16,12 +16,12 @@ in
   _module.args.systemShellapps = rec {
     hms = shellApp {
       name = "hms";
-      runtimeInputs = [ pkgs.git pkgs.home-manager ];
+      runtimeInputs = [ pkgs.git hmPackage ];
       text = ''
         # User configuration from user.nix (passed as env vars)
         export USER_NAME="${user.name}"
         export USER_EMAIL="${user.email}"
-        export CLAUDE_ENABLED="${if flags.claude.enable then "1" else "0"}"
+        export CLAUDE_CODE_ENABLED="${if flags.claudeCode.enable then "1" else "0"}"
 
         ${builtins.readFile ./hms.bash}
       '';

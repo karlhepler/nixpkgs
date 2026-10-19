@@ -1,8 +1,9 @@
 # Home Manager Switch: Apply Nix Home Manager configuration changes
 # - Validates user.nix exists and has no placeholders
 # - Backs up user.nix and overconfig.nix with timestamp
-# - Temporarily tracks both files in git
-# - Runs home-manager switch
+# - Temporarily un-hides both files from git for the build
+# - Runs home-manager switch, then re-hides them (even if the switch fails)
+# - Installs Claude Code if enabled and absent
 # - Configures local git settings for this repo
 # - Optional --purge (alias: --expunge) flag to kill tmux server for complete environment refresh
 
@@ -61,6 +62,12 @@ show_help() {
   echo "  - Edit main config: hme"
 }
 
+# Ensure we're not running as root (safety check, before anything is changed)
+if [ "$EUID" -eq 0 ] || [ "$USER" = "root" ]; then
+  echo "ERROR: hms should not be run as root. Run as your normal user."
+  exit 1
+fi
+
 # Parse arguments
 PURGE=false
 for arg in "$@"; do
@@ -72,9 +79,17 @@ for arg in "$@"; do
   fi
 done
 
-if [[ "$PURGE" == "true" ]]; then
-  trap 'echo "Purging tmux server for complete environment refresh..."; tmux kill-server 2>/dev/null || true' EXIT
-fi
+# Runs on every exit, success or failure. user.nix and overconfig.nix are un-hidden
+# from git for the build below; this puts them back so a failed switch never leaves
+# them visible to `git add`. With --purge it then kills the tmux server.
+cleanup() {
+  git -C ~/.config/nixpkgs update-index --skip-worktree user.nix overconfig.nix 2>/dev/null || true
+  if [[ "$PURGE" == "true" ]]; then
+    echo "Purging tmux server for complete environment refresh..."
+    tmux kill-server 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
 
 # Validate user.nix exists and is configured
 if [[ ! -f ~/.config/nixpkgs/user.nix ]]; then
@@ -99,31 +114,25 @@ cp ~/.config/nixpkgs/overconfig.nix ~/.backup/.config/nixpkgs/overconfig."$times
 ln -sf overconfig."$timestamp".nix ~/.backup/.config/nixpkgs/overconfig.latest.nix
 
 # Temporarily un-hide user.nix and overconfig.nix so Home Manager can read them.
-# These files are marked --skip-worktree by home.nix activation hooks (home.nix:52,56).
-# --no-skip-worktree is the correct inverse; --no-assume-unchanged would NOT clear
-# the skip-worktree bit and would silently deploy the committed blank template.
+# They are marked --skip-worktree by the home.nix activation hooks and by cleanup()
+# above. --no-skip-worktree is the correct inverse; --no-assume-unchanged would NOT
+# clear the skip-worktree bit and would silently deploy the committed blank template.
 git -C ~/.config/nixpkgs update-index --no-skip-worktree user.nix overconfig.nix
 
 # Run home-manager switch
 home-manager switch --flake ~/.config/nixpkgs
 
 # ============================================================================
-# Install/Update Developer Tools
+# Install Developer Tools
 # ============================================================================
 # Claude Code is installed via curl (not Nix) because it updates frequently
 # and has its own update mechanism.
 # ============================================================================
 
-# Ensure we're not running as root (safety check)
-if [ "$EUID" -eq 0 ] || [ "$USER" = "root" ]; then
-  echo "ERROR: hms should not be run as root. Run as your normal user."
-  exit 1
-fi
-
 # Claude Code: AI coding assistant (self-updates, just install if not present)
-# Gated on CLAUDE_ENABLED (set from flags.nix claude.enable) so hms never installs
-# or re-installs it while the Claude configuration switch is off.
-if [[ "$CLAUDE_ENABLED" == "1" ]] && ! command -v claude &>/dev/null; then
+# Gated on CLAUDE_CODE_ENABLED (set from flags.nix claudeCode.enable) so hms never
+# installs or re-installs it while the Claude Code switch is off.
+if [[ "$CLAUDE_CODE_ENABLED" == "1" ]] && ! command -v claude &>/dev/null; then
   echo "Installing Claude Code..."
   curl -fsSL https://claude.ai/install.sh | bash
 fi

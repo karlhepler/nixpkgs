@@ -81,8 +81,6 @@ unstable.gh  # GitHub CLI from unstable channel
     python3
     python3Packages.pip
     python3Packages.pytest
-    python3Packages.watchdog
-    python3Packages.wcwidth
     pyright
     uv
 
@@ -114,7 +112,7 @@ unstable.gh  # GitHub CLI from unstable channel
     yaml-language-server
 
     # === Shell Tools ===
-    fswatch  # File change monitor (macOS kqueue backend); used by crew --tell readiness detection
+    fswatch  # File change monitor (macOS kqueue backend)
     shellcheck
 
     # === Fonts ===

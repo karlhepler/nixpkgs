@@ -1,8 +1,6 @@
 { config, pkgs, lib, ... }:
 
 let
-  flags = import ../../flags.nix;
-
   # ==========================================================================
   # Managed Claude Code user settings
   # ==========================================================================
@@ -21,8 +19,8 @@ let
     tui = "fullscreen";
   };
 
-  # writeText rather than the runCommand+echo pattern used by the legacy module:
-  # echo '${builtins.toJSON ...}' breaks on any single quote in a value.
+  # writeText rather than runCommand+echo: echo '${builtins.toJSON ...}' breaks on
+  # any single quote in a value.
   managedSettingsJson =
     pkgs.writeText "claude-code-settings.json" (builtins.toJSON managedSettings);
 in {
@@ -30,11 +28,9 @@ in {
   # Purpose: Assert this repo's owned keys in ~/.claude/settings.json
   # Why: Claude Code (/tui, /config, /plugin) and Maze tooling both write that file,
   #      so it must stay a real writable file — merge our keys in, never replace it
-  # When: After writeBoundary, and after the legacy claudeSettings entry if that
-  #       module is also enabled (it rm -f's the whole file, so it must run first)
+  # When: After writeBoundary
   # Dependencies: pkgs.jq
-  home.activation.claudeCodeSettings = lib.hm.dag.entryAfter
-    ([ "writeBoundary" ] ++ lib.optional flags.claude.enable "claudeSettings") ''
+  home.activation.claudeCodeSettings = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       if [[ ! -f ~/.claude/settings.json ]]; then
         $DRY_RUN_CMD mkdir -p ~/.claude
         $DRY_RUN_CMD echo '{}' > ~/.claude/settings.json

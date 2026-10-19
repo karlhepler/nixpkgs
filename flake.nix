@@ -44,7 +44,12 @@
               stateVersion = releaseVersion;
               homeDirectory = user.homeDirectory;
             };
-            _module.args = { inherit unstable; };
+            _module.args = {
+              inherit unstable;
+              # hms runs this exact home-manager, so the CLI always matches the
+              # home-manager modules the flake builds with.
+              hmPackage = home-manager.packages.${system}.default;
+            };
           }
           ./home.nix
           ./overconfig.nix

@@ -10,9 +10,9 @@ in {
   # Import all modules
   imports = [
     # Complex modules (with scripts)
-    ./modules/system      # System tools (hms shellapp)
-    ./modules/git         # Git config + 11 git shellapps
-    ./modules/neovim      # Neovim editor + 30+ plugins
+    ./modules/system      # System tools (hms, coffee, lan-run shellapps)
+    ./modules/git         # Git config + 14 git shellapps
+    ./modules/neovim      # Neovim editor + plugins
 
     # Simple modules (no scripts)
     ./modules/alacritty.nix  # Alacritty terminal emulator
@@ -23,13 +23,7 @@ in {
     ./modules/zsh.nix        # Zsh configuration + activation
   ] ++ lib.optionals flags.claudeCode.enable [
     # Claude Code user settings — gated by flags.nix claudeCode.enable
-    ./modules/claude-code    # Managed keys in ~/.claude/settings.json
-  ] ++ lib.optionals flags.claude.enable [
-    # Claude Code configuration — gated by flags.nix claude.enable
-    ./modules/claude        # Claude hooks + ~35 claude shellapps
-    ./modules/kanban        # Kanban CLI for agent coordination
-    ./modules/claudit       # On-demand metrics viewer + claudit shellapp + metrics hook
-    ./modules/agent-browser # Agent browser (Vercel Labs AI web agent)
+    ./modules/claude-code    # Managed keys in ~/.claude/settings.json, CLAUDE.md, skills
   ];
 
   # Aggregate shellapps from modules and pass to all modules
@@ -38,16 +32,8 @@ in {
     shellapps =
       (config._module.args.systemShellapps or {})
       // (config._module.args.gitShellapps or {})
-      // (config._module.args.claudeShellapps or {})
-      // (config._module.args.neovimShellapps or {})
-      // (config._module.args.tmuxShellapps or {})
-      // (config._module.args.kanbanShellapps or {})
-      // (config._module.args.clauditShellapps or {});
-
-    # Context7 API key for Claude MCP configuration
-    # Set in overconfig.nix via: home.sessionVariables.CONTEXT7_API_KEY = "...";
-    context7ApiKey = config.home.sessionVariables.CONTEXT7_API_KEY or null;
-  in { inherit user theme shellapps context7ApiKey; };
+      // (config._module.args.tmuxShellapps or {});
+  in { inherit user theme shellapps; };
 
   # Activation hooks to make git ignore changes to user.nix and overconfig.nix
   home.activation.gitIgnoreUserChanges = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
