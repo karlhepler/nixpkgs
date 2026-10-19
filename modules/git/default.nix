@@ -19,14 +19,14 @@ let
       name = "commit";
       runtimeInputs = [ pkgs.git ];
       text = builtins.readFile ./commit.bash;
-      description = "Interactive git commit with conventional commit type selection";
+      description = "Stage everything and commit with the given message; `commit noop` makes an empty commit";
       sourceFile = "commit.bash";
     };
     pull = shellApp {
       name = "pull";
       runtimeInputs = [ pkgs.git ];
       text = builtins.readFile ./pull.bash;
-      description = "Git pull with automatic stash/unstash";
+      description = "Git pull that sets the upstream to origin/<branch> first when the branch has none";
       sourceFile = "pull.bash";
     };
     push = shellApp {
@@ -48,7 +48,6 @@ let
       runtimeInputs = [ pkgs.git pkgs.fzf ];
       text = builtins.readFile ./git-branches.bash;
       description = "Interactive branch selector with fzf preview";
-      mainProgram = "git branches";
       sourceFile = "git-branches.bash";
     };
     git-kill = shellApp {
@@ -61,7 +60,6 @@ let
       ];
       text = builtins.readFile ./git-kill.bash;
       description = "Nuclear option - completely reset repository to clean state";
-      mainProgram = "git kill";
       sourceFile = "git-kill.bash";
     };
     git-trunk = shellApp {
@@ -69,7 +67,6 @@ let
       runtimeInputs = [ pkgs.git pkgs.gnused ];
       text = builtins.readFile ./git-trunk.bash;
       description = "Switch to trunk branch (auto-detects main or master)";
-      mainProgram = "git trunk";
       sourceFile = "git-trunk.bash";
     };
     git-sync = shellApp {
@@ -77,7 +74,6 @@ let
       runtimeInputs = [ pkgs.git pkgs.gnused ];
       text = builtins.readFile ./git-sync.bash;
       description = "Merge trunk branch into current branch";
-      mainProgram = "git sync";
       sourceFile = "git-sync.bash";
     };
     git-resume = shellApp {
@@ -85,7 +81,6 @@ let
       runtimeInputs = [ pkgs.git git-branches pkgs.coreutils ];
       text = builtins.readFile ./git-resume.bash;
       description = "Resume work on most recently used branch";
-      mainProgram = "git resume";
       sourceFile = "git-resume.bash";
     };
     git-tmp = shellApp {
@@ -93,7 +88,6 @@ let
       runtimeInputs = [ pkgs.git ];
       text = builtins.readFile ./git-tmp.bash;
       description = "Create temporary branch for experiments";
-      mainProgram = "git tmp";
       sourceFile = "git-tmp.bash";
     };
     groot = shellApp {
@@ -105,9 +99,9 @@ let
     };
     workout = shellApp {
       name = "workout";
-      runtimeInputs = [ pkgs.git pkgs.coreutils pkgs.gnused pkgs.fzf pkgs.tmux pkgs.darwin.trash ];
+      runtimeInputs = [ pkgs.git pkgs.coreutils pkgs.gnused pkgs.fzf pkgs.darwin.trash git-trunk workout-delete ];
       text = builtins.readFile ./workout.bash;
-      description = "Create and navigate git worktrees organized by org/repo/branch. Supports batch creation with TMUX windows.";
+      description = "Create, browse, navigate and clean up git worktrees organized by org/repo/branch";
       sourceFile = "workout.bash";
     };
     workout-delete = shellApp {
@@ -177,6 +171,7 @@ in {
 
   programs.git = {
     enable = true;
+    lfs.enable = true;
     ignores = [
       ".DS_Store"
       ".tags*"
@@ -194,7 +189,7 @@ in {
         name = user.name;
         email = user.email;
       };
-      core.editor = "vim";
+      core.editor = "nvim";
       diff.tool = "vimdiff";
       merge.tool = "vimdiff";
       difftool.prompt = false;

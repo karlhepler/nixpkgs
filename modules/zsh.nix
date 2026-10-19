@@ -3,14 +3,20 @@
 let
   homeDirectory = config.home.homeDirectory;
 
+  # Completion directories, shared by the interactive shell and the build-time dump so
+  # the two can never disagree about what is indexed.
+  completionDirs = ''
+    ${homeDirectory}/.nix-profile/share/zsh/site-functions
+    ${homeDirectory}/.nix-profile/share/zsh/vendor-completions
+    /nix/var/nix/profiles/default/share/zsh/site-functions
+    /nix/var/nix/profiles/default/share/zsh/vendor-completions
+  '';
+
   # Builds the completion dump against the profile that is current *after* the new
   # generation is linked, so it never indexes the previous generation's completions.
   compinitSetup = pkgs.writeText "zsh-compinit-setup" ''
     fpath=(
-      ${homeDirectory}/.nix-profile/share/zsh/site-functions
-      ${homeDirectory}/.nix-profile/share/zsh/vendor-completions
-      /nix/var/nix/profiles/default/share/zsh/site-functions
-      /nix/var/nix/profiles/default/share/zsh/vendor-completions
+      ${completionDirs}
       $fpath
     )
 
@@ -54,36 +60,25 @@ in {
       cargo_bin_path='${homeDirectory}/.cargo/bin'
       rd_bin_path='${homeDirectory}/.rd/bin'
       export PATH="$local_bin_path:$rd_bin_path:$cargo_bin_path:$go_bin_path:$npm_bin_path:$nix_profile_path:$nix_path:$PATH"
-      export LANG="en_US.UTF-8"
-      export LC_ALL="en_US.UTF-8"
-      export LC_CTYPE="en_US.UTF-8"
     '';
-    initContent = ''
+    # Order 550 puts compinit before the other integrations (zoxide, fzf, starship) that
+    # Home Manager emits at the default order, so their completions register.
+    initContent = lib.mkMerge [
+    (lib.mkOrder 550 ''
       # Set up fpath to include completion directories
       fpath=(
-        ${homeDirectory}/.nix-profile/share/zsh/site-functions
-        ${homeDirectory}/.nix-profile/share/zsh/vendor-completions
-        /nix/var/nix/profiles/default/share/zsh/site-functions
-        /nix/var/nix/profiles/default/share/zsh/vendor-completions
+        ${completionDirs}
         $fpath
       )
 
-      # Fast compinit with precompiled dump
+      # Fast compinit with the dump precompiled at `hms` time
       autoload -Uz compinit
-      if [[ -f ${homeDirectory}/.zcompdump.zwc ]]; then
-        # Use precompiled dump without security checks
-        compinit -C -d ${homeDirectory}/.zcompdump
-      else
-        # Fallback to fast compinit without security checks
-        compinit -C
-      fi
+      compinit -C -d ${homeDirectory}/.zcompdump
 
-      # Load kubectl completions
-      source <(kubectl completion zsh)
-
-      # Tell completion system that k function uses kubectl completion
+      # _kubectl ships with the kubectl package; only the `k` wrapper needs mapping
       compdef k=kubectl
-
+    '')
+    ''
       # Enhanced completion styling
       autoload -U colors && colors
 
@@ -156,14 +151,6 @@ in {
 
         add-zsh-hook preexec _tmux_attention_preexec
         add-zsh-hook precmd _tmux_attention_precmd
-      fi
-
-      # Load static direnv hook if available
-      if [[ -f ${homeDirectory}/.config/zsh/direnv-hook.zsh ]]; then
-        source ${homeDirectory}/.config/zsh/direnv-hook.zsh
-      else
-        # Fallback to dynamic hook
-        eval "$(${pkgs.direnv}/bin/direnv hook zsh)"
       fi
 
       # Key bindings (immediate - no lazy loading needed)
@@ -275,7 +262,8 @@ in {
         exec ${homeDirectory}/.nix-profile/bin/tmux new-session
       fi
 
-    '';
+    ''
+    ];
     shellAliases = {
       desk = "cd ~/Desktop";
       down = "cd ~/Downloads";

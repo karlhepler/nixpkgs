@@ -12,16 +12,13 @@ let
     set -g @theme_right_separator ""
   '';
   bellFormatConf = pkgs.writeText "bell-format.conf" ''
-    # Inactive window format with attention conditional (hook-driven only, no bell flag)
-    set -g window-status-format "#{?#{==:#{@claude_attention},1},#[bg=#f7768e fg=#292e42]#{@theme_left_separator}#[none],#[bg=#737aa2 fg=#292e42]#{@theme_left_separator}#[none]}#[fg=#ffffff] #I #{?#{==:#{@claude_attention},1},#[bg=#db4b5e fg=#f7768e]#{@theme_left_separator}#[none],#[bg=#545c7e fg=#737aa2]#{@theme_left_separator}#[none]}#[fg=#ffffff] #{?window_zoomed_flag,#{@theme_plugin_zoomed_window_icon} ,#{@theme_plugin_inactive_window_icon} }#W #[bg=#292e42]#{?#{==:#{@claude_attention},1},#[fg=#db4b5e]#{@theme_left_separator}#[none],#[fg=#545c7e]#{@theme_left_separator}#[none]}"
+    # Inactive window format: red tab while the window has an unseen bell. tmux clears
+    # window_bell_flag itself when the window is selected.
+    set -g window-status-format "#{?window_bell_flag,#[bg=#f7768e fg=#292e42]#{@theme_left_separator}#[none],#[bg=#737aa2 fg=#292e42]#{@theme_left_separator}#[none]}#[fg=#ffffff] #I #{?window_bell_flag,#[bg=#db4b5e fg=#f7768e]#{@theme_left_separator}#[none],#[bg=#545c7e fg=#737aa2]#{@theme_left_separator}#[none]}#[fg=#ffffff] #{?window_zoomed_flag,#{@theme_plugin_zoomed_window_icon} ,#{@theme_plugin_inactive_window_icon} }#W #[bg=#292e42]#{?window_bell_flag,#[fg=#db4b5e]#{@theme_left_separator}#[none],#[fg=#545c7e]#{@theme_left_separator}#[none]}"
 
     # Active window format with dynamic icon variable
     set -g window-status-current-format "#[bg=#bb9af7,fg=#292e42]#{@theme_left_separator}#[none]#[fg=#ffffff] #I #[bg=#9d7cd8,fg=#bb9af7]#{@theme_left_separator}#[none]#[fg=#ffffff] #{?window_zoomed_flag,#{@theme_plugin_zoomed_window_icon} ,#{@theme_plugin_active_window_icon} }#W #{?pane_synchronized,✵,}#[bg=#292e42,fg=#9d7cd8]#{@theme_left_separator}#[none]#[none]"
 
-    # Clear attention flag when window becomes active (keyboard navigation)
-    set-hook -g after-select-window "set-window-option @claude_attention 0; set-option @session_needs_attention 0"
-    # Clear attention flag when pane becomes active (mouse click navigation)
-    set-hook -g after-select-pane "set-window-option @claude_attention 0; set-option @session_needs_attention 0"
   '';
   sessionIconConf = pkgs.writeText "session-icon.conf" ''
     # Override status-left to use session-specific icon
@@ -98,6 +95,14 @@ in {
       '';
       description = "Set random emoji icon for tmux sessions (internal utility)";
       sourceFile = "random-session-icon.bash";
+    };
+
+    tmux-session-cycle = shellApp {
+      name = "tmux-session-cycle";
+      runtimeInputs = [ pkgs.tmux pkgs.coreutils pkgs.gnused ];
+      text = builtins.readFile ./tmux-session-cycle.bash;
+      description = "Switch tmux to the next or previous session by index, wrapping (bound to prefix+( and prefix+))";
+      sourceFile = "tmux-session-cycle.bash";
     };
 
     tmux-restore = shellApp {
@@ -214,9 +219,6 @@ in {
       # Random emoji for each new window
       set-hook -ga after-new-window "run-shell '${shellapps.random-emoji}/bin/random-emoji'"
 
-      # Smooth scrolling optimizations
-      set -ga terminal-overrides ',*256color*:smcup@:rmcup@'
-      set -ga terminal-overrides ',alacritty:Tc'
       # Kitty keyboard protocol passthrough (required for <C-CR> and other distinguishable
       # modifier+key combinations in nvim). Without these, tmux absorbs nvim's kkp probe
       # and never forwards it to the outer terminal (Alacritty), so nvim falls back to
@@ -236,7 +238,7 @@ in {
       # (xterm-256color, see modules/alacritty.nix); tmux* covers nested tmux.
       set -as terminal-features 'xterm*:hyperlinks'
       set -as terminal-features 'tmux*:hyperlinks'
-      set -g status-interval 1
+      set -g status-interval 5
       set -g renumber-windows on
 
       # vim mode with <shortcut>[
@@ -259,6 +261,8 @@ in {
       set-option -g default-command ${homeDirectory}/.nix-profile/bin/zsh
 
       # fix colors -------------------------------------------------------------
+      # The only terminal-overrides entry. (An older smcup@/rmcup@ line here was always
+      # overwritten by this one, so alternate-screen behaviour is tmux's default.)
       set -g terminal-overrides ",*256col*:Tc"
 
       # ========================================================================
@@ -306,10 +310,10 @@ in {
       bind-key -N "Kill current session (with confirmation)" - confirm-before -p "CAUTION: This will kill all windows in session #S. Continue? (y/n)" kill-session
 
       # Session navigation (index-based, wrapping)
-      bind-key -N "Next session (by index)" ) run-shell 'sessions=$(tmux list-sessions -F "##{session_id}:##S" 2>/dev/null | sed "s/^\$//" | sort -t: -k1,1n | cut -d: -f2-); current=$(tmux display-message -p "##S"); count=$(echo "$sessions" | wc -l | tr -d " "); idx=0; i=0; while IFS= read -r s; do i=$((i+1)); [ "$s" = "$current" ] && idx=$i; done <<< "$sessions"; next=$(( idx % count + 1 )); target=$(echo "$sessions" | sed -n "''${next}p"); tmux switch-client -t "''${target}"'
-      bind-key -N "Previous session (by index)" ( run-shell 'sessions=$(tmux list-sessions -F "##{session_id}:##S" 2>/dev/null | sed "s/^\$//" | sort -t: -k1,1n | cut -d: -f2-); current=$(tmux display-message -p "##S"); count=$(echo "$sessions" | wc -l | tr -d " "); idx=0; i=0; while IFS= read -r s; do i=$((i+1)); [ "$s" = "$current" ] && idx=$i; done <<< "$sessions"; prev=$(( (idx - 2 + count) % count + 1 )); target=$(echo "$sessions" | sed -n "''${prev}p"); tmux switch-client -t "''${target}"'
-      bind-key -N "Next session (by index, held Ctrl)" C-) run-shell 'sessions=$(tmux list-sessions -F "##{session_id}:##S" 2>/dev/null | sed "s/^\$//" | sort -t: -k1,1n | cut -d: -f2-); current=$(tmux display-message -p "##S"); count=$(echo "$sessions" | wc -l | tr -d " "); idx=0; i=0; while IFS= read -r s; do i=$((i+1)); [ "$s" = "$current" ] && idx=$i; done <<< "$sessions"; next=$(( idx % count + 1 )); target=$(echo "$sessions" | sed -n "''${next}p"); tmux switch-client -t "''${target}"'
-      bind-key -N "Previous session (by index, held Ctrl)" C-( run-shell 'sessions=$(tmux list-sessions -F "##{session_id}:##S" 2>/dev/null | sed "s/^\$//" | sort -t: -k1,1n | cut -d: -f2-); current=$(tmux display-message -p "##S"); count=$(echo "$sessions" | wc -l | tr -d " "); idx=0; i=0; while IFS= read -r s; do i=$((i+1)); [ "$s" = "$current" ] && idx=$i; done <<< "$sessions"; prev=$(( (idx - 2 + count) % count + 1 )); target=$(echo "$sessions" | sed -n "''${prev}p"); tmux switch-client -t "''${target}"'
+      bind-key -N "Next session (by index)" ) run-shell '${shellapps.tmux-session-cycle}/bin/tmux-session-cycle next'
+      bind-key -N "Previous session (by index)" ( run-shell '${shellapps.tmux-session-cycle}/bin/tmux-session-cycle prev'
+      bind-key -N "Next session (by index, held Ctrl)" C-) run-shell '${shellapps.tmux-session-cycle}/bin/tmux-session-cycle next'
+      bind-key -N "Previous session (by index, held Ctrl)" C-( run-shell '${shellapps.tmux-session-cycle}/bin/tmux-session-cycle prev'
     '';
   };
 }

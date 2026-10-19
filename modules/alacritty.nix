@@ -60,15 +60,8 @@ in {
         multiplier = 1;
       };
       env = {
-        EDITOR = "${homeDirectory}/.nix-profile/bin/nvim";
-        VISUAL = "${homeDirectory}/.nix-profile/bin/nvim";
         SHELL = "${homeDirectory}/.nix-profile/bin/zsh";
-        GOPATH = "${homeDirectory}/go";
-        LANG = "en_US.UTF-8";
-        LC_ALL = "en_US.UTF-8";
-        LC_CTYPE = "en_US.UTF-8";
         TERM = "xterm-256color";
-        PAGER = "less -RF";
       };
       font = {
         normal = {
@@ -91,7 +84,9 @@ in {
       };
       # Tokyo Night Storm theme from centralized theme.nix
       colors = theme.colors;
-      # Enable bell - required for tmux bell detection
+      # Alacritty's own visual bell stays off (duration = 0); tmux still sees the bell
+      # character and flags the window (window_bell_flag), which is what the status
+      # bar uses.
       bell = {
         animation = "EaseOutExpo";
         duration = 0;

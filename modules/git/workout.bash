@@ -5,29 +5,15 @@
 # - With `.`: creates worktree for current branch
 # - With `-`: toggles to previous worktree location (persists across sessions)
 # - With `/`: opens interactive fzf browser to view and manage worktrees
-# - With `clean`: deletes worktrees older than 30 days (with confirmation)
+# - With `clean`: deletes worktrees whose branches are merged into the default branch (with confirmation)
 # - With `clean --expunge`: deletes ALL worktrees (with confirmation)
 # - With `-h` or `--help`: shows help
 # - With branch name: creates/uses worktree for that branch (creates branch if needed)
 #
 # NOTE: Requires shell wrapper function to change directory in parent shell.
-# The wrapper function is defined in modules/zsh.nix (lines 134-151):
-#
-#   workout() {
-#     local result
-#     result="$(${homeDirectory}/.nix-profile/bin/workout "$@")"
-#     local exit_code=$?
-#     if [ $exit_code -eq 0 ]; then
-#       # Save current location to global state file if we're in a worktree
-#       local worktree_root="${WORKTREE_ROOT:-$HOME/worktrees}"
-#       if [[ "$PWD" =~ ^$worktree_root/ ]]; then
-#         mkdir -p "$worktree_root"
-#         echo "$PWD" > "$worktree_root/.workout_prev"
-#       fi
-#       eval "$result"
-#     fi
-#     return $exit_code
-#   }
+# The wrapper is the `workout` function in modules/zsh.nix (initContent). It runs this
+# script, saves the current directory to $WORKTREE_ROOT/.workout_prev, and evals the
+# `cd` command this script prints.
 #
 # This script outputs a cd command to stdout, which the wrapper evals to change directories.
 # The wrapper also saves the current location to a state file for the toggle feature (-).
@@ -66,7 +52,7 @@ show_help() {
   echo "            If branch doesn't exist, creates it from current HEAD"
   echo "            Reuses existing worktree if already created (idempotent)"
   echo
-  echo "  clean     Delete worktrees older than 30 days (with confirmation)"
+  echo "  clean     Delete worktrees whose branches are merged (with confirmation)"
   echo "            Lists all matching worktrees and prompts before deletion"
   echo "            Uses trash command for safe deletion + git worktree prune"
   echo
@@ -336,7 +322,7 @@ is_git_locked() {
   # Check for common lock files
   [ -f "$git_dir/index.lock" ] || \
   [ -f "$git_dir/HEAD.lock" ] || \
-  [ -f "$git_dir/refs/heads/*.lock" ] 2>/dev/null
+  compgen -G "$git_dir/refs/heads/*.lock" >/dev/null
 }
 
 # Generate preview for a worktree

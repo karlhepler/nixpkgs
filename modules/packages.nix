@@ -24,7 +24,6 @@
     # === Version Control ===
     codeowners
     gh
-    git-lfs
     pinact  # Pin GitHub Actions workflow references to immutable commit SHAs
 
     # === Security & Secrets Management ===
