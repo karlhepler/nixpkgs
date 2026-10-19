@@ -171,8 +171,8 @@ in {
   # When: After writeBoundary (after files are written to disk)
   home.activation.nixpkgsPreCommitHook = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     hook_dir="$HOME/.config/nixpkgs/.git/hooks"
-    $DRY_RUN_CMD mkdir -p "$hook_dir"
-    $DRY_RUN_CMD install -m 755 ${nixpkgsPreCommitHook}/bin/nixpkgs-pre-commit "$hook_dir/pre-commit"
+    run mkdir -p "$hook_dir"
+    run install -m 755 ${nixpkgsPreCommitHook}/bin/nixpkgs-pre-commit "$hook_dir/pre-commit"
   '';
 
   programs.git = {

@@ -1,10 +1,10 @@
 {
   description = "Home Manager Configuration";
 
-  # VERSION: 26.05 - Update nixpkgs.url and home-manager.url below to change version
+  # VERSION: 26.05 - to move to a new release, change nixpkgs.url and home-manager.url
+  # below (not stateVersion; see the comment on it).
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-26.05";
-    nixpkgs-unstable.url = "github:nixos/nixpkgs/nixos-unstable";
     home-manager = {
       url = "github:nix-community/home-manager/release-26.05";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -15,18 +15,11 @@
     };
   };
 
-  outputs = { nixpkgs, nixpkgs-unstable, home-manager, nix-index-database, ... }:
+  outputs = { nixpkgs, home-manager, nix-index-database, ... }:
     let
-      # Release version - keep in sync with nixpkgs.url and home-manager.url above
-      releaseVersion = "26.05";
-
       system = "aarch64-darwin";  # Only macOS ARM
 
       pkgs = import nixpkgs {
-        inherit system;
-        config.allowUnfree = true;
-      };
-      unstable = import nixpkgs-unstable {
         inherit system;
         config.allowUnfree = true;
       };
@@ -41,11 +34,13 @@
           {
             home = {
               inherit username;
-              stateVersion = releaseVersion;
+              # NEVER bump this when upgrading nixpkgs/home-manager. It records the
+              # release this machine was first set up with, and changing it silently
+              # changes Home Manager defaults. It is not a version to keep current.
+              stateVersion = "26.05";
               homeDirectory = user.homeDirectory;
             };
             _module.args = {
-              inherit unstable;
               # hms runs this exact home-manager, so the CLI always matches the
               # home-manager modules the flake builds with.
               hmPackage = home-manager.packages.${system}.default;

@@ -1,4 +1,4 @@
-{ config, pkgs, lib, unstable, ... }:
+{ config, pkgs, lib, ... }:
 
 let
   # Import cross-cutting concerns
@@ -37,11 +37,11 @@ in {
 
   # Activation hooks to make git ignore changes to user.nix and overconfig.nix
   home.activation.gitIgnoreUserChanges = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    $DRY_RUN_CMD ${pkgs.git}/bin/git -C ~/.config/nixpkgs update-index --skip-worktree user.nix
+    run ${pkgs.git}/bin/git -C ~/.config/nixpkgs update-index --skip-worktree user.nix
   '';
 
   home.activation.gitIgnoreOverconfigChanges = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    $DRY_RUN_CMD ${pkgs.git}/bin/git -C ~/.config/nixpkgs update-index --skip-worktree overconfig.nix
+    run ${pkgs.git}/bin/git -C ~/.config/nixpkgs update-index --skip-worktree overconfig.nix
   '';
 
   # Validate user.nix doesn't have placeholders
@@ -72,6 +72,15 @@ in {
 
   fonts.fontconfig.enable = true;
 
+
+  # Home Manager owns ~/.config/nix/nix.conf. nix.package is required to generate and
+  # validate it, but Home Manager does not install it: the Nix client on PATH is still
+  # the one the system installer put there. (It is also what the nix-gc job runs.)
+  nix.package = pkgs.nix;
+  nix.settings = {
+    experimental-features = [ "nix-command" "flakes" ];
+    warn-dirty = false;
+  };
 
   # Automatically run the garbage collector weekly. Without --delete-older-than,
   # old Home Manager/profile generations are never removed and keep every store

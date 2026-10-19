@@ -1,34 +1,4 @@
-{ config, pkgs, lib, theme, shellapps, unstable, ... }:
-
-let
-  # pinact - GitHub Actions SHA-pinning CLI (not in nixpkgs)
-  # https://github.com/suzuki-shunsuke/pinact
-  pinact = pkgs.stdenv.mkDerivation {
-    pname = "pinact";
-    version = "3.9.0";
-
-    src = pkgs.fetchurl {
-      url = "https://github.com/suzuki-shunsuke/pinact/releases/download/v3.9.0/pinact_darwin_arm64.tar.gz";
-      sha256 = "sha256-I8ik7aj9eUnIy7HP5vPQEnlAL+YgHpywqQRHpez974k=";
-    };
-
-    sourceRoot = ".";
-
-    installPhase = ''
-      mkdir -p $out/bin
-      cp pinact $out/bin/pinact
-      chmod +x $out/bin/pinact
-    '';
-
-    meta = {
-      description = "CLI tool to pin GitHub Actions workflow references to immutable commit SHAs";
-      homepage = "https://github.com/suzuki-shunsuke/pinact";
-      mainProgram = "pinact";
-      platforms = [ "aarch64-darwin" ];
-    };
-  };
-
-in
+{ config, pkgs, lib, theme, shellapps, ... }:
 
 {
   home.packages = with pkgs; [
@@ -53,8 +23,8 @@ in
 
     # === Version Control ===
     codeowners
+    gh
     git-lfs
-unstable.gh  # GitHub CLI from unstable channel
     pinact  # Pin GitHub Actions workflow references to immutable commit SHAs
 
     # === Security & Secrets Management ===
@@ -118,12 +88,11 @@ unstable.gh  # GitHub CLI from unstable channel
     # === Fonts ===
     nerd-fonts.sauce-code-pro
 
-    # === Shell Applications (from modules/) ===
   ] ++ lib.optionals pkgs.stdenv.isDarwin [
     # macOS-only utilities
     pkgs.darwin.trash
     pkgs.duti  # Set default app associations on macOS
-] ++ (builtins.attrValues shellapps);
+  ] ++ (builtins.attrValues shellapps);
 
   # ============================================================================
   # Simple Program Configurations
@@ -138,7 +107,6 @@ unstable.gh  # GitHub CLI from unstable channel
 
   programs.neovide = {
     enable = true;
-    package = unstable.neovide;
     settings = {
       fork = false;
       frame = "full";

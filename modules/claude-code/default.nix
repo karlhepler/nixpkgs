@@ -7,7 +7,8 @@ let
   # Source of truth for the ~/.claude/settings.json keys this repo owns. Keys not
   # listed here are left untouched — see the claudeCodeSettings activation below.
   managedSettings = {
-    # Opus while planning, Sonnet for execution.
+    # Opus while planning, Sonnet for execution. Re-asserted on every `hms`, so a
+    # model picked with /model lasts only until the next `hms`; change the default here.
     model = "opusplan";
 
     # settings.json accepts low|medium|high|xhigh ("max"/"ultracode" are session-only).
@@ -31,18 +32,20 @@ in {
   # When: After writeBoundary
   # Dependencies: pkgs.jq
   home.activation.claudeCodeSettings = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-      if [[ ! -f ~/.claude/settings.json ]]; then
-        $DRY_RUN_CMD mkdir -p ~/.claude
-        $DRY_RUN_CMD echo '{}' > ~/.claude/settings.json
-      fi
+    # The redirects below would capture `run`'s dry-run message, so the whole step is
+    # skipped in a dry run rather than wrapped in `run`.
+    if [[ ! -v DRY_RUN ]]; then
+      mkdir -p ~/.claude
+      [[ -f ~/.claude/settings.json ]] || echo '{}' > ~/.claude/settings.json
 
       # Recursive merge; managed keys win, everything else is preserved
-      $DRY_RUN_CMD ${pkgs.jq}/bin/jq -s '.[0] * .[1]' \
+      ${pkgs.jq}/bin/jq -s '.[0] * .[1]' \
         ~/.claude/settings.json ${managedSettingsJson} > ~/.claude/settings.json.tmp
 
-      $DRY_RUN_CMD mv ~/.claude/settings.json.tmp ~/.claude/settings.json
-      $DRY_RUN_CMD chmod 644 ~/.claude/settings.json
-    '';
+      mv ~/.claude/settings.json.tmp ~/.claude/settings.json
+      chmod 644 ~/.claude/settings.json
+    fi
+  '';
 
   # ==========================================================================
   # Managed Claude Code user memory + skills
