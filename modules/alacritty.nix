@@ -1,4 +1,4 @@
-{ config, pkgs, lib, theme, ... }:
+{ config, pkgs, lib, theme, user, ... }:
 
 let
   homeDirectory = config.home.homeDirectory;
@@ -16,8 +16,7 @@ let
   # and "org.alacritty" (by UUID) for the same process. macOS provides no
   # supported way to reset a single app's Local Network policy record (tccutil
   # doesn't cover this category; only a full Recovery-mode wipe of the whole
-  # file resets it, which resets every app, not just this one) — see
-  # scratchpad/alacritty-local-network-permission-bug.md for the investigation.
+  # file resets it, which resets every app, not just this one).
   # Rather than fight that corrupted record, give Alacritty a private bundle
   # identifier macOS has never seen, so it gets a clean permission history with
   # no other app affected. (Cosmetic tradeoff: Spotlight/Launch Services will
@@ -35,7 +34,7 @@ let
       rm "$plist"
       sed \
         -e 's#^</dict>$#  <key>NSLocalNetworkUsageDescription</key>\n  <string>An application in Alacritty would like to access the local network.</string>\n</dict>#' \
-        -e 's#<string>org.alacritty</string>#<string>com.karlhepler.alacritty</string>#' \
+        -e 's#<string>org.alacritty</string>#<string>com.${user.username}.alacritty</string>#' \
         ${pkgs.alacritty}/Applications/Alacritty.app/Contents/Info.plist > "$plist"
     '';
   };

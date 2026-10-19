@@ -153,8 +153,8 @@ show_help() {
   echo "  (or \$WORKTREE_ROOT/<org>/<repo>/<branch>/ if WORKTREE_ROOT is set)"
   echo
   echo "  Example:"
-  echo "    ~/worktrees/karlhepler/nixpkgs/main/"
-  echo "    ~/worktrees/karlhepler/nixpkgs/feature/workout-enhancements/"
+  echo "    ~/worktrees/<org>/<repo>/main/"
+  echo "    ~/worktrees/<org>/<repo>/feature/workout-enhancements/"
   echo
   echo "CUSTOMIZATION:"
   echo "  Set WORKTREE_ROOT to customize worktree location (default: ~/worktrees)"

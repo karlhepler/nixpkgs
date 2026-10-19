@@ -42,7 +42,12 @@ in
     lan-run = shellApp {
       name = "lan-run";
       runtimeInputs = [ ];
-      text = builtins.readFile ./lan-run.bash;
+      text = ''
+        # launchd label namespace for the one-shot jobs; derived from user.nix
+        export LAN_RUN_LABEL_PREFIX="com.${user.username}"
+
+        ${builtins.readFile ./lan-run.bash}
+      '';
       description = "Run a command outside tmux so it can reach the LAN, bypassing macOS's post-26.7 Local Network privacy block on tmux's detached server";
       sourceFile = "lan-run.bash";
     };

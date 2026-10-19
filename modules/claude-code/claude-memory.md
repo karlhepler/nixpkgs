@@ -89,6 +89,5 @@ looks like a network problem, not a permissions one. `lan-run` (a shellapp from
 `~/.config/nixpkgs`, always on `PATH`) routes the command around that block: prefix
 any LAN-reaching command with it, e.g. `lan-run ssh user@host "cmd"`. Known
 limitation: no controlling terminal, so a command needing live interactive input
-(a typed password) will hang — use SSH key auth instead. Full background:
-`~/.config/nixpkgs`'s `modules/system/lan-run.bash` and its own memory note under
-that project.
+(a typed password) will hang — use SSH key auth instead. Full background: the
+header comment of `~/.config/nixpkgs`'s `modules/system/lan-run.bash`.

@@ -46,7 +46,11 @@ let
     git-branches = shellApp {
       name = "git-branches";
       runtimeInputs = [ pkgs.git pkgs.fzf ];
-      text = builtins.readFile ./git-branches.bash;
+      text = ''
+        export BRANCH_PREFIX="${user.username}"
+
+        ${builtins.readFile ./git-branches.bash}
+      '';
       description = "Interactive branch selector with fzf preview";
       sourceFile = "git-branches.bash";
     };
@@ -86,7 +90,11 @@ let
     git-tmp = shellApp {
       name = "git-tmp";
       runtimeInputs = [ pkgs.git ];
-      text = builtins.readFile ./git-tmp.bash;
+      text = ''
+        export BRANCH_PREFIX="${user.username}"
+
+        ${builtins.readFile ./git-tmp.bash}
+      '';
       description = "Create temporary branch for experiments";
       sourceFile = "git-tmp.bash";
     };

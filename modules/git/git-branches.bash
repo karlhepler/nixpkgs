@@ -4,14 +4,15 @@ set -eou pipefail
 # Interactive branch selector with fzf
 # - Lists branches sorted by most recent commit with relative dates
 # - Shows git log preview in fzf
-# - Default filter: karlhepler/* branches (can override with argument)
+# - Default filter: $BRANCH_PREFIX/* branches (can override with argument)
+# - BRANCH_PREFIX is your username, exported by the Nix wrapper (modules/git/default.nix)
 # - Enter to checkout selected branch
 
 show_help() {
   echo "git-branches - Interactive branch selector with fzf"
   echo
   echo "USAGE:"
-  echo "  git-branches [filter]    List branches matching filter (default: karlhepler/)"
+  echo "  git-branches [filter]    List branches matching filter (default: $BRANCH_PREFIX/)"
   echo "  git-branches --help      Show this help message"
   echo
   echo "DESCRIPTION:"
@@ -27,11 +28,11 @@ show_help() {
   echo "  - Sorted by most recent commit"
   echo
   echo "ARGUMENTS:"
-  echo "  filter    Optional branch filter pattern (default: karlhepler/)"
+  echo "  filter    Optional branch filter pattern (default: $BRANCH_PREFIX/)"
   echo "            Searches both local (refs/heads/) and remote (refs/remotes/)"
   echo
   echo "EXAMPLES:"
-  echo "  # Show karlhepler/* branches interactively"
+  echo "  # Show $BRANCH_PREFIX/* branches interactively"
   echo "  git-branches"
   echo
   echo "  # Show all feature/* branches"
@@ -55,7 +56,7 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   exit 0
 fi
 
-branch="${1:-karlhepler/}"
+branch="${1:-$BRANCH_PREFIX/}"
 
 # check if the script's output is connected to a terminal
 if [ -t 1 ]; then

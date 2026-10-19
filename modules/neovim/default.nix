@@ -1,4 +1,4 @@
-{ config, pkgs, lib, theme, shellapps, ... }:
+{ config, pkgs, lib, theme, shellapps, user, ... }:
 
 {
   # ============================================================================
@@ -27,7 +27,7 @@
     vimdiffAlias = true;
 
     # Load reorganized vimrc with clear sections
-    extraConfig = builtins.readFile ./vimrc;
+    extraConfig = builtins.replaceStrings [ "@username@" ] [ user.username ] (builtins.readFile ./vimrc);
 
     # Load all Lua configs via concatenation (with variable substitution)
     # This ensures Nix can substitute paths in LSP configs before Neovim loads them

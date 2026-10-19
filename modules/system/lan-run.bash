@@ -9,8 +9,7 @@
 # tmux pane (ssh, deploy scripts, etc.) gets silently blocked, even though
 # the exact same command works fine outside tmux. Re-signing the affected
 # binaries (Alacritty, tmux) with stable identities was tried and does not
-# fix this -- it's not an identity problem. Full investigation:
-# scratchpad/alacritty-local-network-permission-bug.md
+# fix this -- it's not an identity problem.
 #
 # The fix: submit the command as a one-shot launchd job instead of running
 # it directly. A job launchd starts itself has no tmux/detached-daemon
@@ -28,7 +27,7 @@ if [ "$#" -eq 0 ]; then
   exit 2
 fi
 
-label="com.karlhepler.lanrun.$$.$(date +%s)"
+label="$LAN_RUN_LABEL_PREFIX.lanrun.$$.$(date +%s)"
 outfile=$(mktemp)
 statusfile=$(mktemp)
 wrapper=$(mktemp)

@@ -1,4 +1,4 @@
-{ config, pkgs, lib, theme, shellapps, ... }:
+{ config, pkgs, lib, theme, shellapps, user, ... }:
 
 let
   homeDirectory = config.home.homeDirectory;
@@ -49,7 +49,7 @@ let
       rm $out/bin/tmux
       cp ${pkgs.tmux}/bin/tmux $out/bin/tmux
       chmod u+w $out/bin/tmux
-      /usr/bin/codesign --force --sign - --identifier com.karlhepler.tmux $out/bin/tmux
+      /usr/bin/codesign --force --sign - --identifier com.${user.username}.tmux $out/bin/tmux
     '';
   };
 in {
