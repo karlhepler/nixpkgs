@@ -337,17 +337,10 @@ local function create_new_claude(flags, selection)
   end
 
   -- Wait for Claude to start and fully initialize with retry loop
-  local start_time = vim.loop.hrtime() / 1000000  -- Convert to milliseconds
-  local ready = false
-
-  while not ready and (vim.loop.hrtime() / 1000000 - start_time) < (CLAUDE_STARTUP_TIMEOUT * 1000) do
-    vim.fn.system("sleep 0.5")  -- Short sleep between checks
-    local is_ready, _ = is_claude_ready(pane_id)
-    if is_ready then
-      ready = true
-      break
-    end
-  end
+  -- vim.wait keeps processing events (redraws, timers) while it polls every 500ms
+  local ready = vim.wait(CLAUDE_STARTUP_TIMEOUT * 1000, function()
+    return (is_claude_ready(pane_id))
+  end, 500)
 
   if not ready then
     vim.notify("Claude instance took too long to initialize", vim.log.levels.WARN)
@@ -496,7 +489,10 @@ function M.setup(opts)
     group = group,
     callback = function()
       -- Check if the file has been modified externally and reload if needed
-      vim.cmd('checktime')
+      -- checktime raises E11 inside the command-line window
+      if vim.fn.getcmdwintype() == '' then
+        vim.cmd('checktime')
+      end
     end,
   })
 end

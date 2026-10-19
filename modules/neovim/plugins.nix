@@ -1,4 +1,4 @@
-{ config, pkgs, lib, user, theme, ... }:
+{ pkgs, theme, ... }:
 
 {
   # ============================================================================
@@ -15,14 +15,104 @@
     # ==========================================================================
 
     copilot-vim
-    vim-sensible
     vim-surround
-    vim-signify
     vim-pasta
     auto-pairs
-    vim-commentary
     vim-repeat
     vim-fugitive
+
+    {
+      plugin = gitsigns-nvim;
+      type = "lua";
+      config = ''
+        require('gitsigns').setup {
+          on_attach = function(bufnr)
+            local gs = require('gitsigns')
+            local function map(lhs, rhs, desc)
+              vim.keymap.set('n', lhs, rhs, { buffer = bufnr, desc = desc })
+            end
+
+            -- Hunk navigation (diff mode keeps Vim's own ]c / [c)
+            map(']c', function()
+              if vim.wo.diff then vim.cmd.normal({ ']c', bang = true }) else gs.nav_hunk('next') end
+            end, 'Next hunk')
+            map('[c', function()
+              if vim.wo.diff then vim.cmd.normal({ '[c', bang = true }) else gs.nav_hunk('prev') end
+            end, 'Previous hunk')
+
+            map('<leader>hs', gs.stage_hunk, 'Stage hunk')
+            map('<leader>hr', gs.reset_hunk, 'Reset hunk')
+            map('<leader>hS', gs.stage_buffer, 'Stage buffer')
+            map('<leader>hp', gs.preview_hunk, 'Preview hunk')
+            map('<leader>hb', function() gs.blame_line({ full = true }) end, 'Blame line')
+            map('<leader>ht', gs.toggle_current_line_blame, 'Toggle inline blame')
+          end,
+        }
+      '';
+    }
+
+    {
+      # Format on save for the filetypes that were already formatted on save; <space>f
+      # formats any buffer on demand. Formatter binaries are on Neovim's PATH (default.nix).
+      plugin = conform-nvim;
+      type = "lua";
+      config = ''
+        local prettier = { 'prettierd' }
+
+        -- Only formatted on save where a formatter already ran on save before conform.
+        -- The value is how to fall back when no listed formatter ran: to the language
+        -- server ('fallback') or not at all ('never').
+        local format_on_save = {
+          go = 'fallback',
+          typescript = 'fallback',
+          typescriptreact = 'fallback',
+          cs = 'fallback',
+          rust = 'never',
+          javascript = 'never',
+          javascriptreact = 'never',
+          json = 'never',
+          css = 'never',
+          scss = 'never',
+          html = 'never',
+          yaml = 'never',
+          markdown = 'never',
+        }
+
+        require('conform').setup {
+          -- A save in a project without a prettier config is not worth a message
+          notify_no_formatters = false,
+          formatters_by_ft = {
+            lua = { 'stylua' },
+            sh = { 'shfmt' },
+            bash = { 'shfmt' },
+            nix = { 'nixfmt' },
+            rust = { 'rustfmt' },
+            cs = { 'csharpier' },
+            javascript = prettier,
+            javascriptreact = prettier,
+            typescript = prettier,
+            typescriptreact = prettier,
+            json = prettier,
+            jsonc = prettier,
+            yaml = prettier,
+            markdown = prettier,
+            css = prettier,
+            scss = prettier,
+            html = prettier,
+          },
+          formatters = {
+            -- Only where the project has a prettier config, as vim-prettier did
+            prettierd = { require_cwd = true },
+          },
+          format_on_save = function(bufnr)
+            local lsp_format = format_on_save[vim.bo[bufnr].filetype]
+            if lsp_format then
+              return { timeout_ms = 2000, lsp_format = lsp_format }
+            end
+          end,
+        }
+      '';
+    }
 
     {
       plugin = vim-vinegar;
@@ -34,13 +124,12 @@
     }
 
     # ==========================================================================
-    # LSP & COMPLETION PLUGINS
-    # Language Server Protocol and code intelligence
+    # LSP & CODE INTELLIGENCE
+    # Server defaults, schemas, syntax trees. The Lua config is in plugin/.
     # ==========================================================================
 
     nvim-lspconfig
     SchemaStore-nvim
-    plenary-nvim
 
     {
       plugin = goto-preview;
@@ -56,32 +145,36 @@
       plugins: with plugins; [
         tree-sitter-bash
         tree-sitter-c_sharp
+        tree-sitter-css
+        tree-sitter-diff
+        tree-sitter-dockerfile
         tree-sitter-gdscript
         tree-sitter-go
+        tree-sitter-gomod
+        tree-sitter-gowork
+        tree-sitter-hcl
         tree-sitter-helm
+        tree-sitter-html
         tree-sitter-javascript
         tree-sitter-json
         tree-sitter-lua
+        tree-sitter-make
         tree-sitter-markdown
         tree-sitter-markdown_inline
         tree-sitter-nix
         tree-sitter-python
+        tree-sitter-regex
+        tree-sitter-ruby
         tree-sitter-rust
+        tree-sitter-sql
         tree-sitter-starlark
+        tree-sitter-toml
+        tree-sitter-tsx
         tree-sitter-typescript
+        tree-sitter-vim
         tree-sitter-yaml
       ]
     ))
-
-    {
-      plugin = fzf-lsp-nvim;
-      type = "viml";
-      config = ''
-        nmap <c-b> :lua vim.lsp.buf.document_symbol()<cr>
-        imap <c-b> <esc>:lua vim.lsp.buf.document_symbol()<cr>
-        vmap <c-b> <esc>:lua vim.lsp.buf.document_symbol()<cr>
-      '';
-    }
 
     # ==========================================================================
     # UI & THEME PLUGINS
@@ -139,7 +232,7 @@
         hooks.register(
           hooks.type.ACTIVE,
           function(bufnum)
-            local filetype = vim.api.nvim_buf_get_option(bufnum, "filetype")
+            local filetype = vim.bo[bufnum].filetype
             return filetype == "python"
                 or filetype == "helm"
                 or filetype == "yaml"
@@ -193,23 +286,14 @@
 
     # ==========================================================================
     # LANGUAGE-SPECIFIC PLUGINS
-    # Syntax and language-specific tools
+    # Syntax is treesitter plus Neovim's bundled runtime; vim-helm adds helm filetypes
     # ==========================================================================
-
-    {
-      plugin = vim-polyglot;
-      type = "viml";
-      config = ''
-        let g:vim_json_syntax_conceal = 0
-        let g:vim_markdown_conceal = 0
-      '';
-    }
 
     vim-helm
 
     # ==========================================================================
     # TOOL INTEGRATIONS
-    # External tool plugins (FZF, prettier, etc.)
+    # External tool plugins (FZF, Claude, project root, etc.)
     # ==========================================================================
 
     {
@@ -270,15 +354,6 @@
 
         " Map <C-p> to either navigate the popup menu or trigger :GFiles
         inoremap <expr> <C-p> pumvisible() ? "''\<C-p>" : "''\<esc>:GFiles''\<cr>"
-      '';
-    }
-
-    {
-      plugin = vim-prettier;
-      type = "viml";
-      config = ''
-        let g:prettier#autoformat = 1
-        let g:prettier#autoformat_require_pragma = 0
       '';
     }
 

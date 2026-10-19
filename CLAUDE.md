@@ -163,7 +163,7 @@ Wait for `hms` to succeed before running `git commit`. The `hms` build is the va
 
 1. **If the package provides a command-line binary, verify semantics first** — multiple nixpkgs packages can provide the same binary name; see § macOS Trash CLI → "General principle" before choosing which package to add.
 2. Add to `modules/packages.nix` under appropriate category
-3. For LSP servers: Also update Neovim LSP config
+3. For an LSP server or a formatter used only by Neovim: don't put it in `modules/packages.nix`. Add it to `programs.neovim.extraPackages` in `modules/neovim/default.nix`, and add the server name to the `vim.lsp.enable` list in `modules/neovim/plugin/lsp.lua` (settings that differ from nvim-lspconfig's defaults go in `plugin/lsp-servers.lua`)
 4. Run `hms` to apply
 5. Verify: `which <package-name>`
 

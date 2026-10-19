@@ -1,5 +1,3 @@
-set nocompatible
-
 " UTF-8 encoding
 set encoding=utf-8
 set fileencoding=utf-8
@@ -22,9 +20,6 @@ set nowritebackup
 
 " allow hidden buffers for easier multi-file editing
 set hidden
-
-" detect plugins and indentation per filetype
-filetype plugin indent on
 
 " sensible split defaults
 set splitbelow
@@ -63,7 +58,6 @@ set sidescroll=1
 set nojoinspaces
 
 " todos
-imap <silent> <leader>t <esc>ATODO(@username@): 
 nmap <silent> <leader>t :grep 'TODO\(@username@\):'<cr>:copen<cr>
 
 " search highlighting off
@@ -112,19 +106,14 @@ noremap L 3L
 " disable fancy cursor
 set guicursor=
 
-" vim fugitive mapping
+" fzf buffer list
 " this has to be done here because plugins are loaded before extraConfig
 nmap <leader>b :Buffers<cr>
-imap <leader>b <esc>:Buffers<cr>
 vmap <leader>b <esc>:Buffers<cr>
 
 map <c-f> <esc>:Twilight<cr>
 
-" Run :RustFmt when saving rust files
-" Reference: https://github.com/rust-lang/rust.vim?tab=readme-ov-file#formatting-with-rustfmt
-let g:rustfmt_autosave = 1
-
-" Neovide options (check home.nix)
+" Neovide options (the program itself is configured in modules/packages.nix)
 let g:neovide_cursor_animation_length = 0.05
 let g:neovide_cursor_trail_size = 0.25
 let g:neovide_cursor_vfx_mode = "pixiedust"
@@ -160,7 +149,7 @@ nnoremap <leader>ghc :call CopyGitHubURL()<CR>
 let g:copilot_no_tab_map = v:true
 " Use a different key for accepting Copilot suggestions
 imap <silent><script><expr> <C-J> copilot#Accept("\<CR>")
-" Note: Ctrl+N is reserved for regular completion (handled in lspconfig.lua)
+" Note: Ctrl+N is reserved for regular completion (handled in plugin/lsp.lua)
 
 " RestoreCursor restores the last cursor position.
 function! RestoreCursor()
@@ -174,7 +163,6 @@ augroup config
 	autocmd!
 
 	" jump to last cursor position on file load
-  " also enable text dimming "focus mode"
 	autocmd BufWinEnter * silent! call RestoreCursor()
 
 	" force quickfix to always open full width

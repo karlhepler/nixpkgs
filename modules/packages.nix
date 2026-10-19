@@ -32,53 +32,36 @@
     # === Container & Kubernetes ===
     kubectl
     kubectx
-    helm-ls
 
     # === Programming Languages ===
     # Go
     go
     go-tools
-    gopls
 
     # Node.js / JavaScript
     nodejs_24
     typescript
-    typescript-language-server
     yarn
 
     # Python
     python3
     python3Packages.pip
     python3Packages.pytest
-    pyright
     uv
 
     # .NET / C#
     dotnet-sdk_10
-    omnisharp-roslyn
     csharpier  # Opinionated code formatter for C#
 
     # Haskell
     ghc  # Glasgow Haskell Compiler
     cabal-install  # Cabal installation tool for managing Haskell software
-    haskell-language-server  # Haskell language server
 
     # Ruby
     ruby
 
     # Nix
-    nil
     comma
-
-    # Rust
-    rust-analyzer
-
-    # Starlark
-    starpls  # Language server for Starlark
-
-    # === Language Servers ===
-    bash-language-server
-    yaml-language-server
 
     # === Shell Tools ===
     fswatch  # File change monitor (macOS kqueue backend)
@@ -86,7 +69,6 @@
 
     # === Fonts ===
     nerd-fonts.sauce-code-pro
-
   ] ++ lib.optionals pkgs.stdenv.isDarwin [
     # macOS-only utilities
     pkgs.darwin.trash

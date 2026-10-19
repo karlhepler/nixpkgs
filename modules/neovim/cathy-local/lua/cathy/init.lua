@@ -58,7 +58,7 @@ local opts = vim.deepcopy(default_opts)
 -- pending_sends: table keyed by buffer handle; value: {buf=nr, target=':.N'}
 -- Keying by buf coalesces repeat presses (idempotent).
 local pending_sends = {}
--- poll_timer: single vim.loop timer instance, lazily created and started.
+-- poll_timer: single vim.uv timer instance, lazily created and started.
 local poll_timer = nil
 
 -- Build the separator line for a given pane label.
@@ -288,11 +288,11 @@ function M.send(buf, target)
   local mode = pane_in_mode(target)
   if mode == '1' then
     -- Queue the send; coalesce by buf (latest target wins, same buf = same target)
-    pending_sends[buf] = { buf = buf, target = target, queued_at = vim.loop.now() }
+    pending_sends[buf] = { buf = buf, target = target, queued_at = vim.uv.now() }
 
     -- Lazily create the poll timer if it doesn't exist yet
     if not poll_timer then
-      poll_timer = vim.loop.new_timer()
+      poll_timer = vim.uv.new_timer()
     end
 
     -- Start the timer only if it is not already active (idempotent ensure-running).
@@ -416,7 +416,7 @@ function M.setup(user_opts)
       -- Rapid double-press force-flush: if there is already a queued send for
       -- this buffer and the user pressed the keymap again within the rapid-flush
       -- threshold, force-exit copy-mode and drain immediately.
-      local now = vim.loop.now()
+      local now = vim.uv.now()
       local entry = pending_sends[buf]
       if entry and entry.queued_at and (now - entry.queued_at) < opts.rapid_flush_threshold_ms then
         -- Rapid double-press path — send 'q' to force-exit copy-mode, then drain.
