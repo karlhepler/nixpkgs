@@ -68,14 +68,14 @@ let
     };
     git-trunk = shellApp {
       name = "git-trunk";
-      runtimeInputs = [ pkgs.git pkgs.gnused ];
+      runtimeInputs = [ pkgs.git ];
       text = builtins.readFile ./git-trunk.bash;
-      description = "Switch to trunk branch (auto-detects main or master)";
+      description = "Switch to trunk branch and pull; `git trunk --print` prints the trunk branch name";
       sourceFile = "git-trunk.bash";
     };
     git-sync = shellApp {
       name = "git-sync";
-      runtimeInputs = [ pkgs.git pkgs.gnused ];
+      runtimeInputs = [ pkgs.git git-trunk ];
       text = builtins.readFile ./git-sync.bash;
       description = "Merge trunk branch into current branch";
       sourceFile = "git-sync.bash";
@@ -84,7 +84,7 @@ let
       name = "git-resume";
       runtimeInputs = [ pkgs.git git-branches pkgs.coreutils ];
       text = builtins.readFile ./git-resume.bash;
-      description = "Resume work on most recently used branch";
+      description = "Check out your most recently committed <username>/* branch";
       sourceFile = "git-resume.bash";
     };
     git-tmp = shellApp {
@@ -107,7 +107,7 @@ let
     };
     workout = shellApp {
       name = "workout";
-      runtimeInputs = [ pkgs.git pkgs.coreutils pkgs.gnused pkgs.fzf pkgs.darwin.trash git-trunk workout-delete ];
+      runtimeInputs = [ pkgs.git pkgs.coreutils pkgs.fzf pkgs.darwin.trash git-trunk workout-delete ];
       text = builtins.readFile ./workout.bash;
       description = "Create, browse, navigate and clean up git worktrees organized by org/repo/branch";
       sourceFile = "workout.bash";
@@ -145,8 +145,7 @@ in {
   # that are 30+ days old (even with uncommitted changes), OR clean ones 7+ days
   # old with no commits beyond origin's default branch, OR clean ones whose
   # branch's PR has merged (needs `gh` auth). This
-  # is the ONLY trigger for workout-autoclean — the opportunistic
-  # after-`workout`-command invocation has been removed (see workout.bash).
+  # is the ONLY trigger for workout-autoclean; `workout` does not call it.
   launchd.agents.workout-autoclean = {
     enable = true;
     config = {

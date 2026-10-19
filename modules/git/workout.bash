@@ -23,6 +23,7 @@ show_help() {
   echo
   echo "USAGE:"
   echo "  workout                    Browse and manage worktrees (interactive)"
+  echo "  workout /                  Same as no arguments"
   echo "  workout .                  Create worktree for current branch"
   echo "  workout -                  Toggle to previous worktree"
   echo "  workout <branch>           Create worktree for branch"
@@ -57,7 +58,7 @@ show_help() {
   echo "            Uses trash command for safe deletion + git worktree prune"
   echo
   echo "  clean --expunge  Delete ALL worktrees (dangerous!)"
-  echo "            Removes all worktrees regardless of age"
+  echo "            Removes all worktrees regardless of merge status"
   echo "            Primary repo and current worktree are preserved"
   echo
   echo "EXAMPLES:"
@@ -93,7 +94,8 @@ show_help() {
   echo "    - Lists all merged branches with merge status"
   echo "    - Prompts for confirmation before deletion"
   echo "    - Excludes primary repo and current worktree (safe)"
-  echo "    - Uses trash command for safe deletion"
+  echo "    - Skips detached-HEAD worktrees"
+  echo "    - Moves worktrees to the Trash (recoverable)"
   echo "    - Runs 'git worktree prune' to clean up metadata"
   echo
   echo "  workout clean --expunge"
@@ -143,7 +145,7 @@ show_help() {
   echo "  The trunk branch (main/master) is treated specially:"
   echo "  - Always stays checked out in the primary repository"
   echo "  - Never migrated to a worktree location"
-  echo "  - Detected automatically via 'git symbolic-ref refs/remotes/origin/HEAD'"
+  echo "  - Detected via 'git trunk --print' (origin/HEAD, else a local main/master/develop)"
   echo "  - When navigating to trunk, workout goes to primary repo, not a worktree"
   echo
   echo "  This design ensures the primary clone remains stable and on trunk."
@@ -251,6 +253,18 @@ show_help() {
   echo "    - Copy template files or configurations"
 }
 
+# Print a `cd` command for the zsh wrapper to eval. %q quotes any path safely,
+# including ones containing a single quote.
+emit_cd() {
+  printf 'cd %q\n' "$1"
+}
+
+# Print the post-switch hook invocation for the zsh wrapper to eval.
+# Args: worktree_path branch source_repo hook_path
+emit_hook() {
+  printf 'WORKTREE_PATH=%q BRANCH=%q SOURCE_REPO=%q %q\n' "$1" "$2" "$3" "$4"
+}
+
 # List all worktrees in format for fzf
 # Accepts optional git_root parameter to mark the primary repo with [brackets]
 # Accepts optional current_dir parameter to mark the current worktree with → prefix
@@ -319,10 +333,8 @@ is_git_locked() {
   local git_dir
   git_dir="$(git rev-parse --git-dir 2>/dev/null)" || return 1
 
-  # Check for common lock files
-  [ -f "$git_dir/index.lock" ] || \
-  [ -f "$git_dir/HEAD.lock" ] || \
-  compgen -G "$git_dir/refs/heads/*.lock" >/dev/null
+  # Check for the lock files git holds during an index or HEAD update
+  [ -f "$git_dir/index.lock" ] || [ -f "$git_dir/HEAD.lock" ]
 }
 
 # Generate preview for a worktree
@@ -375,14 +387,9 @@ preview_worktree() {
 
   # Section 3: Diff stats vs main/master (with timeout)
   echo "━━━ CHANGES VS TRUNK ━━━"
-  # Try to find the main branch
   local trunk_branch
-  if git rev-parse --verify main >/dev/null 2>&1; then
-    trunk_branch="main"
-  elif git rev-parse --verify master >/dev/null 2>&1; then
-    trunk_branch="master"
-  else
-    echo "Note: Could not find main/master branch"
+  if ! trunk_branch="$(git trunk --print 2>/dev/null)"; then
+    echo "Note: Could not determine the trunk branch"
     return 0
   fi
 
@@ -438,33 +445,6 @@ preview_worktree() {
   fi
 }
 
-# Detect the default branch (main/master/develop)
-detect_default_branch() {
-  # Try to get from origin/HEAD first
-  local default_branch
-  default_branch="$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')"
-
-  if [ -n "$default_branch" ]; then
-    echo "$default_branch"
-    return 0
-  fi
-
-  # Fallback: check for common branch names
-  if git rev-parse --verify main >/dev/null 2>&1; then
-    echo "main"
-    return 0
-  elif git rev-parse --verify master >/dev/null 2>&1; then
-    echo "master"
-    return 0
-  elif git rev-parse --verify develop >/dev/null 2>&1; then
-    echo "develop"
-    return 0
-  fi
-
-  # Could not detect default branch
-  return 1
-}
-
 # Check if a branch is merged into the default branch
 # Arguments: worktree_path default_branch merged_branches_list
 is_branch_merged() {
@@ -518,7 +498,7 @@ clean_worktrees() {
   # Detect default branch (only needed for non-expunge mode)
   local default_branch=""
   if [ "$expunge" = false ]; then
-    if ! default_branch="$(detect_default_branch)"; then
+    if ! default_branch="$(git trunk --print 2>/dev/null)"; then
       echo "Error: Could not detect default branch" >&2
       echo "Try running: git remote set-head origin --auto" >&2
       return 1
@@ -620,7 +600,7 @@ clean_worktrees() {
   # Prompt for confirmation
   local prompt
   if [ "$expunge" = true ]; then
-    prompt="Delete ALL $count worktree(s)? This cannot be undone! (yes/no): "
+    prompt="Delete ALL $count worktree(s)? They are moved to the Trash. (yes/no): "
   else
     prompt="Delete $count worktree(s) with merged branches? (yes/no): "
   fi
@@ -720,7 +700,7 @@ run_fzf_selector() {
     # If not, navigate to git root (happens when current worktree was deleted)
     if [ ! -d "$current_dir" ]; then
       # User cancelled and directory was deleted - go to git root
-      echo "cd '$git_root'"
+      emit_cd "$git_root"
       return 0
     fi
     # User cancelled and directory still exists - don't change directory
@@ -733,14 +713,14 @@ run_fzf_selector() {
     # Current dir was deleted but user selected something - cd to selection
     local selected_path
     selected_path="$(echo "$selected" | awk '{print $NF}')"
-    echo "cd '$selected_path'"
+    emit_cd "$selected_path"
     return 0
   fi
 
   # Normal case: user selected something and current dir still exists
   local selected_path
   selected_path="$(echo "$selected" | awk '{print $NF}')"
-  echo "cd '$selected_path'"
+  emit_cd "$selected_path"
 }
 
 # Parse arguments
@@ -781,7 +761,7 @@ if [ $# -eq 1 ]; then
         exit 1
       fi
 
-      echo "cd '$prev_location'"
+      emit_cd "$prev_location"
       exit 0
       ;;
     .)
@@ -826,10 +806,15 @@ fi
 # Get remote URL and extract org/repo
 remote_url="$(git remote get-url origin)"
 
-# Extract org/repo from URL (handles both SSH and HTTPS)
+# Extract org/repo from URL (handles both SSH and HTTPS, with or without .git)
 # git@github.com:org/repo.git -> org/repo
-# https://github.com/org/repo.git -> org/repo
-org_repo="$(echo "$remote_url" | sed -E 's#.*[:/]([^/]+/[^/]+)\.git$#\1#')"
+# https://github.com/org/repo -> org/repo
+remote_path="${remote_url%/}"
+remote_path="${remote_path%.git}"
+org_repo=""
+if [[ "$remote_path" =~ [:/]([^/:]+/[^/]+)$ ]]; then
+  org_repo="${BASH_REMATCH[1]}"
+fi
 
 if [ -z "$org_repo" ]; then
   echo "Error: Could not extract org/repo from remote URL: $remote_url" >&2
@@ -846,7 +831,7 @@ fi
 # Check if branch is already checked out in any worktree
 existing_worktree=$(git worktree list --porcelain | awk -v branch="refs/heads/$branch_name" '
   /^worktree / { path = substr($0, 10) }
-  /^branch / && $0 ~ branch && !found { result = path; found = 1 }
+  /^branch / && $0 == "branch " branch && !found { result = path; found = 1 }
   END { if (found) print result }
 ')
 
@@ -867,18 +852,21 @@ if [ -n "$existing_worktree" ]; then
   # Check if it's already in a managed worktree location
   if [[ "$existing_worktree" =~ ^$worktree_root_real/ ]]; then
     # Already in a worktree, just navigate there
-    echo "cd '$existing_worktree'"
+    emit_cd "$existing_worktree"
     exit 0
   fi
 
   # Branch is checked out in primary repo
   # Check if this is the trunk branch - trunk should never be migrated to a worktree
   git remote set-head origin -a >/dev/null 2>&1 || true
-  trunk_branch="$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')"
+  if ! trunk_branch="$(git trunk --print 2>/dev/null)"; then
+    echo "Error: could not determine the trunk branch (try: git remote set-head origin --auto)" >&2
+    exit 1
+  fi
 
   if [ "$branch_name" = "$trunk_branch" ]; then
     # Trunk branch stays in the primary repo - just navigate there
-    echo "cd '$existing_worktree'"
+    emit_cd "$existing_worktree"
     exit 0
   fi
 
@@ -896,26 +884,36 @@ if [ -n "$existing_worktree" ]; then
   (
     cd "$existing_worktree" || exit 1
 
-    # Check if there are uncommitted changes
+    # A failing command inside ( ... ) || { ... } does not stop the subshell
+    # (errexit is suspended there), so every step below is checked explicitly.
     has_changes=false
+    fail() {
+      echo "workout: $1" >&2
+      if [ "$has_changes" = true ]; then
+        echo "workout: your uncommitted changes are in the latest stash (git stash list); restore them with: git stash pop" >&2
+      fi
+      exit 1
+    }
+
+    # Check if there are uncommitted changes
     if [ -n "$(git status --porcelain)" ]; then
       echo "Stashing uncommitted changes..." >&2
-      git stash push -u -m "workout: moving to worktree" >&2
+      git stash push -u -m "workout: moving to worktree" >&2 || fail "could not stash uncommitted changes"
       has_changes=true
     fi
 
     # Switch primary repo to trunk (without pulling - just free up the branch)
     echo "Switching primary repo to trunk..." >&2
-    git trunk --no-pull >&2
+    git trunk --no-pull >&2 || fail "could not switch the primary repo to trunk"
 
     # Create the worktree
     echo "Creating worktree at $worktree_path..." >&2
-    git worktree add "$worktree_path" "$branch_name" >&2
+    git worktree add "$worktree_path" "$branch_name" >&2 || fail "could not create the worktree"
 
     # Pop stash in worktree if we stashed
     if [ "$has_changes" = true ]; then
       echo "Restoring uncommitted changes in worktree..." >&2
-      (cd "$worktree_path" && git stash pop) >&2
+      (cd "$worktree_path" && git stash pop) >&2 || fail "could not restore the stash in the new worktree"
     fi
   ) || {
     echo "workout: migration failed — could not switch branch '$branch_name' to worktree" >&2
@@ -923,7 +921,7 @@ if [ -n "$existing_worktree" ]; then
   }
 
   # Output the cd command
-  echo "cd '$worktree_path'"
+  emit_cd "$worktree_path"
 
   # Output hook path if it exists (new worktree, so run hook)
   # --path-format=absolute --git-common-dir resolves the *main* .git from
@@ -937,7 +935,7 @@ if [ -n "$existing_worktree" ]; then
     source_repo="$(dirname "$git_dir")"
     # Env vars are scoped to this one command (temporary assignment), not
     # exported into the parent shell that evals this line.
-    echo "WORKTREE_PATH='$worktree_path' BRANCH='$branch_name' SOURCE_REPO='$source_repo' '$hook_path'"
+    emit_hook "$worktree_path" "$branch_name" "$source_repo" "$hook_path"
   fi
 
   exit 0
@@ -950,7 +948,7 @@ worktree_path="$worktree_root/$org_repo/$branch_name"
 # Check if worktree already exists at expected path
 if [ -d "$worktree_path" ]; then
   # Worktree exists, just cd into it
-  echo "cd '$worktree_path'"
+  emit_cd "$worktree_path"
   exit 0
 fi
 
@@ -965,7 +963,7 @@ else
 fi
 
 # Output the cd command to stdout for the wrapper function to eval
-echo "cd '$worktree_path'"
+emit_cd "$worktree_path"
 
 # Output hook path if it exists (new worktree, so run hook)
 # --path-format=absolute --git-common-dir resolves the *main* .git from
@@ -979,5 +977,5 @@ if [[ -f "$hook_path" && -x "$hook_path" ]]; then
   source_repo="$(dirname "$git_dir")"
   # Env vars are scoped to this one command (temporary assignment), not
   # exported into the parent shell that evals this line.
-  echo "WORKTREE_PATH='$worktree_path' BRANCH='$branch_name' SOURCE_REPO='$source_repo' '$hook_path'"
+  emit_hook "$worktree_path" "$branch_name" "$source_repo" "$hook_path"
 fi

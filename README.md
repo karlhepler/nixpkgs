@@ -278,14 +278,14 @@ first `hms` after pulling fails for two reasons. Fix both, then run `hms` again:
 |---|---|
 | `commit "msg"` | Stage everything and commit (`commit noop` makes an empty commit) |
 | `push` | Push the current branch |
-| `pull` | Pull; sets the upstream first if the branch has none |
+| `pull` | Pull; if the branch has no upstream, fetches and tracks `origin/<branch>` first |
 | `save "msg"` | Commit and push |
 | `git sync` | Merge the main branch into the current branch |
-| `git trunk` | Switch to main (or master) |
+| `git trunk` | Switch to the trunk branch and pull (`git trunk --print` just prints its name) |
 | `git branches` | Pick a branch with fzf |
-| `git resume` | Switch to the most recently committed branch |
+| `git resume` | Switch to your most recently committed `<username>/*` branch |
 | `git tmp` | Start a fresh throwaway branch |
-| `git kill` | Reset the repository to a clean state (careful; `--nuclear` is stronger) |
+| `git kill` | Destroy all local work and reset to the remote (stashes first as a safety net; keeps `.envrc`; `--nuclear` also deletes ignored files) |
 | `groot` | Go to the root of the repository |
 | `workout` | Create, browse and clean up git worktrees under `~/worktrees` |
 

@@ -117,8 +117,8 @@ main() {
         exit 0
     fi
 
-    handle_uncommitted_changes
     backup_preserved_files
+    handle_uncommitted_changes
     reset_submodules
     clear_git_operation_states
     perform_hard_reset "$current_branch"
@@ -183,14 +183,8 @@ reset_submodules() {
 
     # shellcheck disable=SC2016
     git submodule foreach --recursive '
-        if command -v git-kill &>/dev/null; then
-            echo "  Running git-kill in $displaypath"
-            git-kill --auto-confirm
-        else
-            # Fallback if git-kill not available in submodule context
-            git reset --hard
-            git clean -fd
-        fi
+        echo "  Running git-kill in $displaypath"
+        git-kill --auto-confirm
     '
 
     git submodule update --init --recursive --force
@@ -305,7 +299,6 @@ restore_lfs_files() {
 }
 
 has_lfs_files() {
-    command -v git-lfs &>/dev/null &&
     git lfs ls-files &>/dev/null 2>&1 &&
     [ -n "$(git lfs ls-files 2>/dev/null)" ]
 }

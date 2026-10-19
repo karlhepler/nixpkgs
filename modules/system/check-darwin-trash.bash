@@ -34,7 +34,7 @@ found_violation=0
 
 for pattern in "${FORBIDDEN_PATTERNS[@]}"; do
     # Search modules/**/*.nix, modules/**/*.bash, modules/**/*.py, and flake.nix
-    # Exclude: this script, *.md files, .scratchpad/, .git/
+    # Exclude: this script
     matches=$(
         rg --color=never -l \
             --glob '*.nix' \
@@ -44,9 +44,6 @@ for pattern in "${FORBIDDEN_PATTERNS[@]}"; do
             "${REPO_ROOT}/modules" \
             "${REPO_ROOT}/flake.nix" \
             2>/dev/null \
-        | rg -v '\.md$' \
-        | rg -v '/\.scratchpad/' \
-        | rg -v '/\.git/' \
         | rg -v "^${THIS_SCRIPT}$" \
         || true
     )

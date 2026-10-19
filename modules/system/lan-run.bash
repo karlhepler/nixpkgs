@@ -32,6 +32,18 @@ outfile=$(mktemp)
 statusfile=$(mktemp)
 wrapper=$(mktemp)
 
+# Always remove the launchd job and the temp files -- the wrapper holds a copy of
+# the full exported environment (secrets included), so it must not outlive the run,
+# whether it ends normally, on Ctrl-C, or on error.
+# shellcheck disable=SC2329 # invoked through the EXIT trap below
+cleanup() {
+  launchctl remove "$label" 2>/dev/null || true
+  rm -f "$outfile" "$statusfile" "$wrapper"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 {
   printf '#!/bin/sh\n'
   printf 'cd %q || exit 1\n' "$PWD"
@@ -65,17 +77,23 @@ launchctl submit -l "$label" -o "$outfile" -e "$outfile" -- "$wrapper" >/dev/nul
 
 # Poll until the job is no longer listed as running. Long ceiling (~20 min)
 # since a real deploy can take a while (package downloads, remote work).
+finished=false
 for _ in $(seq 1 1200); do
   line=$(launchctl list 2>/dev/null | awk -v l="$label" '$3==l')
   if [ -z "$line" ]; then
+    finished=true
     break
   fi
   pidcol=$(echo "$line" | awk '{print $1}')
   if [ "$pidcol" = "-" ]; then
+    finished=true
     break
   fi
   sleep 1
 done
+if [ "$finished" = false ]; then
+  echo "lan-run: still running after 20 minutes; stopping it" >&2
+fi
 
 launchctl remove "$label" 2>/dev/null || true
 
@@ -84,5 +102,4 @@ code=1
 if [ -f "$statusfile" ] && [ -s "$statusfile" ]; then
   code=$(cat "$statusfile")
 fi
-rm -f "$outfile" "$statusfile" "$wrapper"
 exit "$code"

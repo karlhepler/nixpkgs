@@ -31,5 +31,10 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   exit 0
 fi
 
+if [ -z "$*" ]; then
+  show_help >&2
+  exit 1
+fi
+
 commit "$*"
 push

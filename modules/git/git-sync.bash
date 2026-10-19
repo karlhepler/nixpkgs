@@ -13,9 +13,9 @@ show_help() {
   echo "  git-sync    Fetch and merge trunk into current branch"
   echo
   echo "DESCRIPTION:"
-  echo "  Fetches the latest trunk branch (main or master) from the remote"
-  echo "  and merges it into your current working branch. Automatically"
-  echo "  detects whether the trunk is 'main' or 'master'."
+  echo "  Fetches the latest trunk branch from the remote and merges it into"
+  echo "  your current working branch. Trunk is whatever origin/HEAD points"
+  echo "  at (see git-trunk --print)."
   echo "  Keeps you on your current branch after sync."
   echo
   echo "EXAMPLES:"
@@ -23,7 +23,7 @@ show_help() {
   echo "  git-sync"
   echo
   echo "NOTES:"
-  echo "  - Automatically detects trunk branch (main or master)"
+  echo "  - Detects the trunk branch automatically"
   echo "  - Stays on current branch after merge"
   echo "  - Use git-trunk to switch to trunk branch instead"
 }
@@ -34,9 +34,9 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   exit 0
 fi
 
-# Determine trunk branch (main or master)
+# Determine trunk branch
 git remote set-head origin -a
-trunk="$(git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@')"
+trunk="$(git trunk --print)"
 
 # Fetch latest trunk from remote and merge into current branch
 git fetch origin "$trunk"

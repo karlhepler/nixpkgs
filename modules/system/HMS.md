@@ -8,7 +8,8 @@ it does not drift when the script is edited.
 ## What it does, in one paragraph
 
 `hms` refuses to run as root; validates that `user.nix` exists and has no placeholder
-values; backs up `user.nix` and `overconfig.nix` with a timestamp; temporarily un-hides
+values; backs up `user.nix` and `overconfig.nix` with a timestamp; checks the source for
+non-macOS trash tools (`check-darwin-trash.bash`); temporarily un-hides
 those two files from git so Home Manager can read them; runs
 `home-manager switch --flake ~/.config/nixpkgs`; installs Claude Code if it is enabled
 and absent; and sets the repository's local git identity. On every exit, success or
@@ -22,7 +23,7 @@ loose script on `PATH`. The wrapper:
 
 - exports `USER_NAME` and `USER_EMAIL` from `user.nix`, and `CLAUDE_CODE_ENABLED`
   (`1`/`0`) from `claudeCode.enable` in `flags.nix`, then runs the `hms.bash` body;
-- puts `git` and the flake's own `home-manager` package on `PATH` (`hmPackage`, passed
+- puts `git`, `curl`, `ripgrep` and the flake's own `home-manager` package on `PATH` (`hmPackage`, passed
   from `flake.nix`), so the CLI always matches the home-manager modules the flake
   builds with.
 
@@ -65,20 +66,23 @@ tmux session Claude Code is running in. Only the user may run it, typed themselv
 6. **Backup** — copies both files to `~/.backup/.config/nixpkgs/` as
    `user.YYYYMMDD-HHMMSS.nix` / `overconfig.YYYYMMDD-HHMMSS.nix` and updates the
    `user.latest.nix` / `overconfig.latest.nix` symlinks.
-7. **Un-hide from git** — `git update-index --no-skip-worktree user.nix overconfig.nix`.
+7. **Trash-tool check** — runs `modules/system/check-darwin-trash.bash`, which fails the
+   run if config source references `trash-cli` or any freedesktop trash path (see
+   `CLAUDE.md` § macOS Trash CLI). It is also a `nix flake check`.
+8. **Un-hide from git** — `git update-index --no-skip-worktree user.nix overconfig.nix`.
    Flakes only see git-visible content, so without this the committed blank template
    would be deployed. (`--no-assume-unchanged` would *not* clear the bit; it must be
    `--no-skip-worktree`.)
-8. **`home-manager switch --flake ~/.config/nixpkgs`** — evaluates the flake, builds,
+9. **`home-manager switch --flake ~/.config/nixpkgs`** — evaluates the flake, builds,
    activates a new generation, and runs the activation hooks (including the ones in
    `home.nix` that re-hide the two files). This is a real build, so errors that
    `nix flake check` never reaches (bad packages, failing shellapp builds, activation
    conflicts) surface here.
-9. **Claude Code install** — if `CLAUDE_CODE_ENABLED=1` and `claude` is not on `PATH`,
+10. **Claude Code install** — if `CLAUDE_CODE_ENABLED=1` and `claude` is not on `PATH`,
    runs the official installer. No version pinning; Claude Code self-updates.
-10. **Local git identity** — sets `user.name`/`user.email` for this repo from
+11. **Local git identity** — sets `user.name`/`user.email` for this repo from
     `user.nix` (silent, idempotent).
-11. **Exit trap runs** — files re-hidden; tmux killed if `--purge`.
+12. **Exit trap runs** — files re-hidden; tmux killed if `--purge`.
 
 If step 8 fails, the previous generation stays active; nothing needs rolling back.
 

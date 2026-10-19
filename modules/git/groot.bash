@@ -41,4 +41,4 @@ fi
 
 # Get root path and output cd command
 root_path="$(git rev-parse --show-toplevel)"
-echo "cd '$root_path'"
+printf 'cd %q\n' "$root_path"

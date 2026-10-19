@@ -36,6 +36,11 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
 fi
 
 msg="$*"
+if [ -z "$msg" ]; then
+  show_help >&2
+  exit 1
+fi
+
 if [ "$msg" == 'noop' ]; then
   git commit --allow-empty -m "$msg"
 else

@@ -23,6 +23,14 @@ if [ ! -d "$path" ]; then
   echo -e "${RED}Error: Worktree not found${NC}"
   exit 1
 fi
+
+# The primary checkout has a .git directory; a linked worktree has a .git file.
+# The browser lists both, and trashing the primary checkout is never intended.
+if [ -d "$path/.git" ]; then
+  echo -e "${RED}Error: $path is the primary checkout, not a worktree. Refusing to delete it.${NC}"
+  sleep 2
+  exit 1
+fi
 cd "$path" || exit 1
 
 # Get branch info
@@ -40,7 +48,7 @@ echo
 
 if [ -n "$has_changes" ]; then
   echo -e "  ${RED}⚠️  WARNING: UNCOMMITTED CHANGES!${NC}"
-  echo -e "  ${RED}⚠️  These will be PERMANENTLY LOST!${NC}"
+  echo -e "  ${RED}⚠️  These go to the Trash along with the worktree.${NC}"
   echo
   echo -e "  ${BOLD}Modified files:${NC}"
   echo "$has_changes" | head -10

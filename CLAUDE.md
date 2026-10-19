@@ -267,4 +267,4 @@ user.nix and overconfig.nix are made git-invisible by `hms` after first run. Bac
 
 **User setup:** See README.md for installation and daily usage procedures.
 
-**hms deep reference:** See `modules/system/HMS.md` — covers every flag, every execution step, all side effects, backup mechanism, git-invisible behavior, failure modes, and a worked example of `hms --purge` with recovery.
+**hms deep reference:** See `modules/system/HMS.md` — covers every flag, every execution step, all side effects, backup mechanism, git-invisible behavior, and failure modes.

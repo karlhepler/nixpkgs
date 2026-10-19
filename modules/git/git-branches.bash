@@ -29,7 +29,7 @@ show_help() {
   echo
   echo "ARGUMENTS:"
   echo "  filter    Optional branch filter pattern (default: $BRANCH_PREFIX/)"
-  echo "            Searches both local (refs/heads/) and remote (refs/remotes/)"
+  echo "            Searches local branches (refs/heads/); pass '' to list all of them"
   echo
   echo "EXAMPLES:"
   echo "  # Show $BRANCH_PREFIX/* branches interactively"
@@ -47,7 +47,7 @@ show_help() {
   echo "NOTES:"
   echo "  - Requires fzf for interactive mode"
   echo "  - Branches sorted by commit date (newest first)"
-  echo "  - Both local and remote branches shown"
+  echo "  - Local branches only"
 }
 
 # Parse arguments
@@ -56,15 +56,24 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   exit 0
 fi
 
-branch="${1:-$BRANCH_PREFIX/}"
+# ${1-...} (no colon) so an explicit empty argument means "every branch"
+branch="${1-$BRANCH_PREFIX/}"
+
+# A trailing * does not cross a /, so "no filter" has to be the bare refs/heads/
+# prefix (which matches everything under it) rather than refs/heads/*
+if [ -z "$branch" ]; then
+  pattern="refs/heads/"
+else
+  pattern="refs/heads/${branch}*"
+fi
 
 # check if the script's output is connected to a terminal
 if [ -t 1 ]; then
   # Interactive mode: show branch names with relative dates, formatted for fzf
-  git for-each-ref --sort=-committerdate --format='%(refname:short)|%(committerdate:relative)' "refs/heads/${branch}*" \
+  git for-each-ref --sort=-committerdate --format='%(refname:short)|%(committerdate:relative)' "$pattern" \
     | awk -F'|' '{printf "%-50s (%s)\n", $1, $2}' \
     | fzf --preview 'git log --color {1} -p -n 3' --bind 'enter:execute(git checkout {1})+abort'
 else
   # Non-interactive mode: output branch names only (for scripts like git-resume)
-  git for-each-ref --sort=-committerdate --format='%(refname:short)' "refs/heads/${branch}*"
+  git for-each-ref --sort=-committerdate --format='%(refname:short)' "$pattern"
 fi

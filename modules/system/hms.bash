@@ -25,11 +25,12 @@ show_help() {
   echo "  Before switching:"
   echo "  - Validates user.nix exists and has no placeholder values"
   echo "  - Creates timestamped backups of user.nix and overconfig.nix"
-  echo "  - Temporarily tracks both files in git for the switch"
+  echo "  - Checks the source for forbidden (non-macOS) trash tools"
+  echo "  - Temporarily un-hides both files from git for the build"
   echo
   echo "  After switching:"
   echo "  - Configures local git settings for this repository"
-  echo "  - Restores git-ignore status for user.nix and overconfig.nix"
+  echo "  - Hides user.nix and overconfig.nix from git again (even if the switch fails)"
   echo "  - Optionally kills tmux server for complete environment refresh"
   echo
   echo "OPTIONS:"
@@ -112,6 +113,9 @@ ln -sf user."$timestamp".nix ~/.backup/.config/nixpkgs/user.latest.nix
 
 cp ~/.config/nixpkgs/overconfig.nix ~/.backup/.config/nixpkgs/overconfig."$timestamp".nix
 ln -sf overconfig."$timestamp".nix ~/.backup/.config/nixpkgs/overconfig.latest.nix
+
+# Regression guard: fail early if config source references a non-macOS trash tool
+bash ~/.config/nixpkgs/modules/system/check-darwin-trash.bash
 
 # Temporarily un-hide user.nix and overconfig.nix so Home Manager can read them.
 # They are marked --skip-worktree by the home.nix activation hooks and by cleanup()

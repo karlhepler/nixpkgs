@@ -15,14 +15,15 @@ cover itself.
 
 ```bash
 git remote set-head origin -a
-trunk="$(git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@')"
+trunk="$(git trunk --print)"
 git fetch origin "$trunk"
 git merge "origin/$trunk"
 ```
 
 It re-resolves `origin/HEAD` (so it works whether trunk is `main`, `master`, or
 anything else), fetches it, and merges it into whatever branch you're currently on.
-You stay on your branch. No arguments beyond `-h`/`--help` are accepted.
+You stay on your branch. Only `-h`/`--help` is recognized; any other argument is
+ignored.
 
 ## 2. What it deliberately does not do
 
@@ -51,10 +52,11 @@ instruction, but it still gets a chance to be heard before being overridden.
 
 ## 5. Dirty working tree
 
-`git sync` has no stash step, so a dirty tree makes the `git merge` inside it fail
-with git's own "please commit your changes or stash them" error. Handle it before
-running `git sync`: commit the work if it's ready, or `git stash` it if not — then
-run `git sync`, then `git stash pop` if you stashed.
+`git sync` has no stash step. A dirty tree only matters when the merge touches the
+same files: then the `git merge` inside it fails with git's own "local changes would
+be overwritten" error; otherwise it goes through with the dirty files left alone.
+If it fails, handle the tree first: commit the work if it's ready, or `git stash` it
+if not — then run `git sync`, then `git stash pop` if you stashed.
 
 ## 6. Merge conflict
 

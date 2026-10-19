@@ -16,7 +16,7 @@ in
   _module.args.systemShellapps = rec {
     hms = shellApp {
       name = "hms";
-      runtimeInputs = [ pkgs.git hmPackage ];
+      runtimeInputs = [ pkgs.git pkgs.curl pkgs.ripgrep hmPackage ];
       text = ''
         # User configuration from user.nix (passed as env vars)
         export USER_NAME="${user.name}"

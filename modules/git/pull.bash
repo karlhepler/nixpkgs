@@ -32,6 +32,11 @@ fi
 
 if ! git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' >/dev/null 2>&1; then
   branch="$(git symbolic-ref --short HEAD)"
+  # The remote branch has to exist locally as origin/<branch> before it can be tracked
+  if ! git fetch origin "$branch"; then
+    echo "pull: '$branch' has no upstream and origin has no branch with that name" >&2
+    exit 1
+  fi
   git branch --set-upstream-to="origin/$branch" "$branch"
 fi
 

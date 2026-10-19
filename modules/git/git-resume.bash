@@ -2,18 +2,18 @@
 set -eou pipefail
 
 # Resume work on most recently used branch
-# - Checks out the most recently committed branch
-# - Uses git-branches command to find most recent branch
+# - Checks out your most recently committed <username>/* branch
+# - Uses git-branches (default filter: your username prefix) to find it
 
 show_help() {
   echo "git-resume - Resume work on most recently used branch"
   echo
   echo "USAGE:"
-  echo "  git-resume    Checkout most recently committed branch"
+  echo "  git-resume    Checkout your most recently committed branch"
   echo
   echo "DESCRIPTION:"
-  echo "  Checks out the branch with the most recent commit."
-  echo "  Uses git-branches to find and sort branches by commit date."
+  echo "  Checks out the most recently committed of your <username>/* local"
+  echo "  branches (the ones git-branches lists by default)."
   echo
   echo "EXAMPLES:"
   echo "  # Resume work on most recent branch"
@@ -21,7 +21,7 @@ show_help() {
   echo
   echo "NOTES:"
   echo "  - Depends on git-branches command"
-  echo "  - Selects branch with most recent commit"
+  echo "  - Only considers branches under your username prefix"
   echo "  - Useful for switching back to active work"
 }
 
@@ -31,4 +31,9 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   exit 0
 fi
 
-git checkout "$(git branches | head -1)"
+branch="$(git branches | head -1)"
+if [ -z "$branch" ]; then
+  echo "git-resume: no branches under your username prefix" >&2
+  exit 1
+fi
+git checkout "$branch"
