@@ -26,9 +26,10 @@ fi
 # Select random emoji from array
 RANDOM_EMOJI="${EMOJIS[$RANDOM % ${#EMOJIS[@]}]}"
 
-# Get current session name
-SESSION_NAME=$(tmux display-message -p '#S')
+# Address the session by id, not name: names such as "N.E.R.D." contain dots, which
+# tmux reads as a window/pane separator in a target.
+SESSION_ID=$(tmux display-message -p '#{session_id}')
 
 # Set session-scoped tmux option (NOT global -g flag)
 # This ensures each session has its own icon
-tmux set-option -t "$SESSION_NAME" @session_icon "$RANDOM_EMOJI"
+tmux set-option -t "$SESSION_ID" @session_icon "$RANDOM_EMOJI"

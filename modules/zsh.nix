@@ -48,21 +48,17 @@ in {
       export _ZO_DOCTOR=0
     '';
     profileExtra = ''
-      # Optimize zsh autosuggestions
-      export ZSH_AUTOSUGGEST_USE_ASYNC=true
-      export ZSH_AUTOSUGGEST_BUFFER_MAX_SIZE=20
-
       local_bin_path='${homeDirectory}/.local/bin'
       nix_path='/nix/var/nix/profiles/default/bin'
       nix_profile_path='${homeDirectory}/.nix-profile/bin'
       go_bin_path="$GOPATH/bin"
       npm_bin_path='${homeDirectory}/.npm-packages/bin'
       cargo_bin_path='${homeDirectory}/.cargo/bin'
-      rd_bin_path='${homeDirectory}/.rd/bin'
-      export PATH="$local_bin_path:$rd_bin_path:$cargo_bin_path:$go_bin_path:$npm_bin_path:$nix_profile_path:$nix_path:$PATH"
+      export PATH="$local_bin_path:$cargo_bin_path:$go_bin_path:$npm_bin_path:$nix_profile_path:$nix_path:$PATH"
     '';
     # Order 550 puts compinit before the other integrations (zoxide, fzf, starship) that
     # Home Manager emits at the default order, so their completions register.
+    defaultKeymap = "viins";
     initContent = lib.mkMerge [
     (lib.mkOrder 550 ''
       # Set up fpath to include completion directories
@@ -79,17 +75,14 @@ in {
       compdef k=kubectl
     '')
     ''
-      # Enhanced completion styling
-      autoload -U colors && colors
-
-      # Enable completion menu with selection
-      zstyle ':completion:*' menu select
+      # Skip autosuggestions for very long buffers (the plugin already runs async)
+      export ZSH_AUTOSUGGEST_BUFFER_MAX_SIZE=20
 
       # Use LS_COLORS for file completion
       eval "$(${pkgs.coreutils}/bin/dircolors -b)"
       zstyle ':completion:*' list-colors ''${(s.:.)LS_COLORS}
 
-      # Highlight selected completion
+      # Completion menu with selection, highlighting the chosen entry
       zstyle ':completion:*' menu select=2
       zmodload zsh/complist
 
@@ -118,10 +111,7 @@ in {
 
       # Process completion shows process IDs and names
       zstyle ':completion:*:*:kill:*:processes' list-colors '=(#b) #([0-9]#)*=0=01;31'
-      zstyle ':completion:*:kill:*' command 'ps -u $USER -o pid,%cpu,tty,cputime,cmd'
-
-      # Add indicators after filenames (/ for dirs, @ for symlinks, etc)
-      setopt list_types
+      zstyle ':completion:*:kill:*' command 'ps -u $USER -o pid,%cpu,tty,cputime,command'
 
       # Enable menu navigation with arrow keys
       bindkey -M menuselect '^[[A' up-line-or-history
@@ -179,8 +169,8 @@ in {
         zle -I
 
         # Save terminal settings and enable echo
-        local saved_tty=$(stty -F /dev/tty -g)
-        stty -F /dev/tty echo
+        local saved_tty=$(${pkgs.coreutils}/bin/stty -F /dev/tty -g)
+        ${pkgs.coreutils}/bin/stty -F /dev/tty echo
 
         # Prompt and read response (requires Enter key)
         print -n "\n👋 Exit shell? [y/N]: "
@@ -188,7 +178,7 @@ in {
         read response </dev/tty
 
         # Restore terminal settings
-        stty -F /dev/tty "$saved_tty"
+        ${pkgs.coreutils}/bin/stty -F /dev/tty "$saved_tty"
 
         # Exit only on explicit yes
         if [[ $response == "y" || $response == "Y" ]]; then
@@ -253,15 +243,6 @@ in {
           kubectl "$@"
         fi
       }
-
-      # Auto-create or reuse tmux sessions
-      # - First window: attach to existing session if available, or create new one
-      # - Subsequent windows (Cmd+N): always create NEW independent session
-      # This ensures each Alacritty window has its own tmux session
-      if [ -z "$TMUX" ]; then
-        exec ${homeDirectory}/.nix-profile/bin/tmux new-session
-      fi
-
     ''
     ];
     shellAliases = {
@@ -285,7 +266,7 @@ in {
   # Zsh Activation Hooks
   # ============================================================================
 
-  home.activation.precompileZshCompletions = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+  home.activation.precompileZshCompletions = lib.hm.dag.entryAfter [ "linkGeneration" "installPackages" ] ''
     echo "Precompiling Zsh completions..."
     run ${pkgs.zsh}/bin/zsh ${compinitSetup}
   '';

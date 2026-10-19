@@ -71,9 +71,6 @@ in {
   # Disable Home Manager news display (fixes flake attribute error)
   news.display = "silent";
 
-  fonts.fontconfig.enable = true;
-
-
   # Home Manager owns ~/.config/nix/nix.conf. nix.package is required to generate and
   # validate it, but Home Manager does not install it: the Nix client on PATH is still
   # the one the system installer put there. (It is also what the nix-gc job runs.)

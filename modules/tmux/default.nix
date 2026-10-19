@@ -99,9 +99,9 @@ in {
 
     tmux-session-cycle = shellApp {
       name = "tmux-session-cycle";
-      runtimeInputs = [ pkgs.tmux pkgs.coreutils pkgs.gnused ];
+      runtimeInputs = [ pkgs.tmux pkgs.coreutils ];
       text = builtins.readFile ./tmux-session-cycle.bash;
-      description = "Switch tmux to the next or previous session by index, wrapping (bound to prefix+( and prefix+))";
+      description = "Switch tmux to the next or previous session by creation order, wrapping (bound to prefix+( and prefix+))";
       sourceFile = "tmux-session-cycle.bash";
     };
 
@@ -217,7 +217,7 @@ in {
       set-option -g detach-on-destroy off
 
       # Random emoji for each new window
-      set-hook -ga after-new-window "run-shell '${shellapps.random-emoji}/bin/random-emoji'"
+      set-hook -g after-new-window "run-shell '${shellapps.random-emoji}/bin/random-emoji'"
 
       # Kitty keyboard protocol passthrough (required for <C-CR> and other distinguishable
       # modifier+key combinations in nvim). Without these, tmux absorbs nvim's kkp probe
@@ -241,8 +241,7 @@ in {
       set -g status-interval 5
       set -g renumber-windows on
 
-      # vim mode with <shortcut>[
-      set-window-option -g mode-keys vi
+      # vim keys in copy mode (mode-keys itself comes from keyMode above)
       bind-key -T copy-mode-vi 'v' send -X begin-selection
       bind-key -T copy-mode-vi 'y' send -X copy-selection-and-cancel
 
@@ -257,7 +256,9 @@ in {
       # customize status bar ---------------------------------------------------
       set-option -g status-position top
 
-      # set shell (both shell and command must be set) -------------------------
+      # Panes run zsh directly as an interactive, non-login shell (default-command);
+      # without it tmux would start default-shell (set from `shell` above) as a
+      # login shell, re-running .zprofile in every pane -------------------------
       set-option -g default-command ${homeDirectory}/.nix-profile/bin/zsh
 
       # fix colors -------------------------------------------------------------
@@ -266,22 +267,22 @@ in {
       set -g terminal-overrides ",*256col*:Tc"
 
       # ========================================================================
-      # Override window-status-format with bell-aware conditional
-      # Source multiple times to ensure it runs after async plugin completes
+      # Override window-status-format with the bell-aware conditional.
+      # The theme plugin sets these synchronously while the config loads, so a single
+      # source-file after it is enough.
       # ========================================================================
       source-file ${homeDirectory}/.config/tmux/bell-format.conf
-      run-shell -b "tmux source-file ${homeDirectory}/.config/tmux/bell-format.conf"
-      set-hook -g after-new-session "source-file ${homeDirectory}/.config/tmux/bell-format.conf"
-      set-hook -ga after-new-session "run-shell '${shellapps.random-emoji}/bin/random-emoji'"
+
+      # Per-session setup. `set-hook -g` (no -a) on the first entry resets the list, so
+      # reloading the config (prefix+R) does not stack up copies of these hooks.
+      set-hook -g after-new-session "run-shell '${shellapps.random-emoji}/bin/random-emoji'"
       set-hook -ga after-new-session "run-shell '${shellapps.random-session-name}/bin/random-session-name'"
       set-hook -ga after-new-session "run-shell '${shellapps.random-session-icon}/bin/random-session-icon'"
 
       # ========================================================================
       # Override status-left with session-specific icon
-      # Source multiple times to ensure it runs after async plugin completes
       # ========================================================================
       source-file ${homeDirectory}/.config/tmux/session-icon.conf
-      run-shell -b "tmux source-file ${homeDirectory}/.config/tmux/session-icon.conf"
 
       # ========================================================================
       # Session chooser on prefix+L
@@ -309,11 +310,11 @@ in {
       bind-key -N "Create new session" + new-session
       bind-key -N "Kill current session (with confirmation)" - confirm-before -p "CAUTION: This will kill all windows in session #S. Continue? (y/n)" kill-session
 
-      # Session navigation (index-based, wrapping)
-      bind-key -N "Next session (by index)" ) run-shell '${shellapps.tmux-session-cycle}/bin/tmux-session-cycle next'
-      bind-key -N "Previous session (by index)" ( run-shell '${shellapps.tmux-session-cycle}/bin/tmux-session-cycle prev'
-      bind-key -N "Next session (by index, held Ctrl)" C-) run-shell '${shellapps.tmux-session-cycle}/bin/tmux-session-cycle next'
-      bind-key -N "Previous session (by index, held Ctrl)" C-( run-shell '${shellapps.tmux-session-cycle}/bin/tmux-session-cycle prev'
+      # Session navigation (creation order, wrapping)
+      bind-key -N "Next session (by creation order)" ) run-shell '${shellapps.tmux-session-cycle}/bin/tmux-session-cycle next'
+      bind-key -N "Previous session (by creation order)" ( run-shell '${shellapps.tmux-session-cycle}/bin/tmux-session-cycle prev'
+      bind-key -N "Next session (by creation order, held Ctrl)" C-) run-shell '${shellapps.tmux-session-cycle}/bin/tmux-session-cycle next'
+      bind-key -N "Previous session (by creation order, held Ctrl)" C-( run-shell '${shellapps.tmux-session-cycle}/bin/tmux-session-cycle prev'
     '';
   };
 }

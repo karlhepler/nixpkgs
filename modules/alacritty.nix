@@ -62,6 +62,13 @@ in {
         SHELL = "${homeDirectory}/.nix-profile/bin/zsh";
         TERM = "xterm-256color";
       };
+      # Every window starts tmux directly. -l makes it a login shell, so .zprofile
+      # builds PATH as usual; panes then run the interactive zsh from tmux's
+      # default-command. Shells opened any other way (Terminal.app, ssh) stay plain.
+      terminal.shell = {
+        program = "${homeDirectory}/.nix-profile/bin/zsh";
+        args = [ "-l" "-c" "exec ${homeDirectory}/.nix-profile/bin/tmux new-session" ];
+      };
       font = {
         normal = {
           family = theme.font.family;
@@ -86,11 +93,7 @@ in {
       # Alacritty's own visual bell stays off (duration = 0); tmux still sees the bell
       # character and flags the window (window_bell_flag), which is what the status
       # bar uses.
-      bell = {
-        animation = "EaseOutExpo";
-        duration = 0;
-        color = "#ffffff";
-      };
+      bell.duration = 0;
     };
   };
 }

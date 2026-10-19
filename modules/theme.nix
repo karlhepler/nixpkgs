@@ -1,4 +1,4 @@
-{ lib, ... }:
+{ ... }:
 
 {
   # Tokyo Night Storm Theme

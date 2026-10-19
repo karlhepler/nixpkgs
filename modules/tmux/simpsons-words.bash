@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Shared Simpsons-themed words for tmux session naming
 
-# All 359 Simpsons-themed words (filtered to 2 words or less)
+# All 358 Simpsons-themed words (filtered to 2 words or less)
 SIMPSONS_WORDS=(
   "Absotively notarino"
   "Adultivity"

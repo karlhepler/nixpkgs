@@ -1,21 +1,23 @@
 # Switch the client to the next or previous tmux session, ordered by session id
-# and wrapping around at either end.
+# (creation order) and wrapping around at either end.
+#
+# Sessions are addressed by id ($N), never by name: some session names contain dots
+# ("N.E.R.D."), which tmux would read as a window/pane separator in a target.
 #
 # USAGE: tmux-session-cycle next|prev
 
 direction="${1:?usage: tmux-session-cycle next|prev}"
 
 # session_id is "$N"; strip the "$" so the sort is numeric on the id.
-sessions=$(tmux list-sessions -F '#{session_id}:#S' | sed 's/^\$//' | sort -t: -k1,1n | cut -d: -f2-)
-current=$(tmux display-message -p '#S')
-count=$(echo "$sessions" | wc -l | tr -d ' ')
+mapfile -t ids < <(tmux list-sessions -F '#{session_id}' | tr -d '$' | sort -n)
+current="$(tmux display-message -p '#{session_id}')"
+current="${current#\$}"
+count="${#ids[@]}"
 
 idx=0
-i=0
-while IFS= read -r s; do
-  i=$((i + 1))
-  if [ "$s" = "$current" ]; then idx=$i; fi
-done <<< "$sessions"
+for i in "${!ids[@]}"; do
+  if [ "${ids[$i]}" = "$current" ]; then idx=$((i + 1)); fi
+done
 
 case "$direction" in
   next) n=$((idx % count + 1)) ;;
@@ -23,4 +25,4 @@ case "$direction" in
   *) echo "usage: tmux-session-cycle next|prev" >&2; exit 1 ;;
 esac
 
-tmux switch-client -t "$(echo "$sessions" | sed -n "${n}p")"
+tmux switch-client -t "\$${ids[$((n - 1))]}"

@@ -44,9 +44,7 @@
     yarn
 
     # Python
-    python3
-    python3Packages.pip
-    python3Packages.pytest
+    (python3.withPackages (ps: [ ps.pip ps.pytest ]))
     uv
 
     # .NET / C#
@@ -108,7 +106,7 @@
       # Disable default directory module
       directory.disabled = true;
 
-      # Custom directory module that shows brackets + yellow when in worktree
+      # Custom directory module that shows brackets + yellow when in a linked worktree
       custom.directory = {
         description = "Directory with worktree indicator";
         command = ''
@@ -116,7 +114,12 @@
           if [ "$PWD" = "$HOME" ]; then
             dir="~"
           fi
-          if test -f .git; then
+          # A linked worktree's own git dir differs from the repository's common dir
+          # (in the primary checkout, and in submodules, they are the same). This holds
+          # in subfolders too, unlike checking for a .git file in the current directory.
+          gd=$(git rev-parse --path-format=absolute --git-dir 2>/dev/null) || gd=""
+          gc=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || gc=""
+          if [ -n "$gd" ] && [ "$gd" != "$gc" ]; then
             printf '\033[1;33m[%s]\033[0m' "$dir"
           else
             printf '\033[1;36m%s\033[0m' "$dir"
