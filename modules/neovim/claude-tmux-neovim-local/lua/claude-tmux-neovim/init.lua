@@ -5,6 +5,11 @@ local M = {}
 local MAX_CONTENT_SIZE = 100 * 1024   -- Maximum content size to prevent memory issues (100KB)
 local CLAUDE_STARTUP_TIMEOUT = 30     -- Maximum seconds to wait for Claude startup
 
+-- Settings from M.setup()
+local config = {
+  claude_cmd = "claude",  -- command used to start a new Claude instance
+}
+
 -- Get git root of current file or directory
 -- param path string File path or directory path
 -- return string|nil git_root Returns git root path or nil if not in a git repository
@@ -161,23 +166,30 @@ end
 -- param pane_id string Tmux pane ID to check
 -- return boolean is_ready True if Claude is ready to receive input
 -- return string|nil error_msg Error message if Claude is not ready, nil if no specific error
+-- return boolean|nil closed True when the pane no longer exists
 local function is_claude_ready(pane_id)
   local cmd = string.format('tmux capture-pane -p -t %s -S -20 2>/dev/null', vim.fn.shellescape(pane_id))
   local content = vim.fn.system(cmd)
 
   if vim.v.shell_error ~= 0 then
-    return false, "Claude instance was closed"
+    return false, "Claude instance was closed", true
   end
 
-  -- Check for Claude prompt pattern: line of dashes followed by ">" on next line
-  local has_claude_prompt = content:match("─+\n>") or content:match("─+\r\n>")
+  -- Check for Claude prompt pattern: a box-drawing rule line followed by ">" on the
+  -- next line. Plain find: the rule character is multi-byte, which Lua patterns
+  -- would treat byte by byte.
+  local has_claude_prompt = content:find("─\n>", 1, true) or content:find("─\r\n>", 1, true)
 
   if not has_claude_prompt then
     return false, nil
   end
 
-  -- Check for common blocking prompts
-  if content:match("Select") or content:match("Choose") or content:match("Press Enter") then
+  -- Check for common blocking prompts, but only near the bottom of the pane: the same
+  -- words in ordinary output further up (a <Select> component, a doc comment) must
+  -- not block sending.
+  local lines = vim.split(vim.trim(content), "\n", { plain = true })
+  local tail = table.concat(vim.list_slice(lines, math.max(1, #lines - 5)), "\n")
+  if tail:match("Select") or tail:match("Choose") or tail:match("Press Enter") then
     return false, "Claude is waiting for your input and cannot receive data"
   end
 
@@ -324,7 +336,7 @@ local function create_new_claude(flags, selection)
   end
 
   -- Create the command
-  local claude_cmd = flags ~= "" and string.format("claude %s", flags) or "claude"
+  local claude_cmd = flags ~= "" and string.format("%s %s", config.claude_cmd, flags) or config.claude_cmd
 
   -- Create new tmux window with Claude
   local cmd = string.format("tmux new-window -c %s -n claude -P -F '#{pane_id}' %s",
@@ -336,20 +348,32 @@ local function create_new_claude(flags, selection)
     return false
   end
 
-  -- Wait for Claude to start and fully initialize with retry loop
-  -- vim.wait keeps processing events (redraws, timers) while it polls every 500ms
-  local ready = vim.wait(CLAUDE_STARTUP_TIMEOUT * 1000, function()
-    return (is_claude_ready(pane_id))
-  end, 500)
+  -- Wait for Claude to start and fully initialize, polling every 500ms on a timer so
+  -- the editor stays usable meanwhile; the context is sent once it is ready.
+  local xml = create_context(filepath, selection, git_root)
+  local deadline = vim.uv.now() + CLAUDE_STARTUP_TIMEOUT * 1000
 
-  if not ready then
-    vim.notify("Claude instance took too long to initialize", vim.log.levels.WARN)
-    -- Continue anyway, but user should know
+  local function poll()
+    local ready, _, closed = is_claude_ready(pane_id)
+    if closed then
+      vim.notify("Claude instance was closed", vim.log.levels.ERROR)
+      return
+    end
+
+    if not ready and vim.uv.now() < deadline then
+      vim.defer_fn(poll, 500)
+      return
+    end
+
+    if not ready then
+      vim.notify("Claude instance took too long to initialize", vim.log.levels.WARN)
+      -- Continue anyway, but user should know
+    end
+    send_to_claude(pane_id, xml)
   end
 
-  -- Send context
-  local xml = create_context(filepath, selection, git_root)
-  return send_to_claude(pane_id, xml)
+  poll()
+  return true
 end
 
 -- Use existing Claude instance
@@ -470,6 +494,7 @@ end
 -- Setup function
 function M.setup(opts)
   opts = opts or {}
+  config.claude_cmd = opts.claude_code_cmd or config.claude_cmd
 
   -- Set up keymaps
   local keymap_opts = { noremap = true, silent = true }

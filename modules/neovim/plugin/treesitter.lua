@@ -10,7 +10,7 @@ vim.api.nvim_create_autocmd('FileType', {
 	pattern = '*',
 	callback = function(args)
 		-- start() errors when no parser is installed for the filetype
-		if not pcall(vim.treesitter.start) then
+		if not pcall(vim.treesitter.start, args.buf) then
 			return
 		end
 

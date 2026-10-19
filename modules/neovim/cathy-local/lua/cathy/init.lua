@@ -6,7 +6,7 @@
 --   :Cathy 5            opens composer targeting pane 5 of current window
 --   :Cathy mywin        opens composer targeting pane 0 of window 'mywin'
 --   :Cathy mywin.3      opens composer targeting pane 3 of window 'mywin'
---   <leader><CR> in the composer sends everything below the most recent separator
+--   <C-CR> in the composer sends everything below the most recent separator
 --                to the target pane
 --
 -- Argument grammar:
@@ -166,6 +166,7 @@ end
 -- param buf number buffer handle for the composer buffer
 -- param target string tmux target string e.g. ':.0'
 -- param opts table merged plugin options
+-- return boolean sent false when tmux refused a step (nothing is marked as sent)
 local function drain_and_paste(buf, target, opts)
   -- Read all buffer lines
   local all_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
@@ -187,21 +188,34 @@ local function drain_and_paste(buf, target, opts)
 
   -- Empty → return silently
   if #active == 0 then
-    return
+    return false
   end
 
-  -- Load content into tmux paste buffer via stdin
-  vim.fn.system({ 'tmux', 'load-buffer', '-' }, table.concat(active, '\n'))
+  -- Load content into a tmux buffer of our own (-b cathy), so the user's default paste
+  -- buffer is left alone; -d below deletes it again after the paste.
+  vim.fn.system({ 'tmux', 'load-buffer', '-b', 'cathy', '-' }, table.concat(active, '\n'))
+  if vim.v.shell_error ~= 0 then
+    vim.notify('cathy: could not load the tmux paste buffer; nothing was sent', vim.log.levels.ERROR)
+    return false
+  end
 
   -- Paste buffer into target pane.
   -- -p → bracketed paste (wraps content in ESC[200~ / ESC[201~ so TUI input
   --      boxes treat it as a single paste event with literal newlines, not as
   --      individual keystrokes where each \n would trigger submit).
   -- -r → do not replace LF with CR (belt-and-suspenders alongside -p).
-  vim.fn.system({ 'tmux', 'paste-buffer', '-p', '-r', '-t', target })
+  vim.fn.system({ 'tmux', 'paste-buffer', '-d', '-b', 'cathy', '-p', '-r', '-t', target })
+  if vim.v.shell_error ~= 0 then
+    vim.notify('cathy: could not paste into ' .. target .. '; nothing was sent', vim.log.levels.ERROR)
+    return false
+  end
 
   -- Submit the pasted content (send Enter to the target pane)
   vim.fn.system({ 'tmux', 'send-keys', '-t', target, 'Enter' })
+  if vim.v.shell_error ~= 0 then
+    vim.notify('cathy: pasted into ' .. target .. ' but could not press Enter', vim.log.levels.ERROR)
+    return false
+  end
 
   -- Query pane label for the separator
   local pane_label_raw = vim.fn.system({ 'tmux', 'display', '-p', '-t', target, '#{session_name}.#{pane_index}' })
@@ -231,6 +245,7 @@ local function drain_and_paste(buf, target, opts)
     local new_line_count = vim.api.nvim_buf_line_count(buf)
     vim.api.nvim_win_set_cursor(win_id, { new_line_count, 0 })
   end
+  return true
 end
 
 -- Flush pending sends: iterate pending_sends and drain any whose target has
@@ -256,8 +271,7 @@ local function flush_pending()
           pending_sends[bufnr] = nil
         elseif mode == '0' then
           -- Target exited copy-mode; drain and paste
-          drain_and_paste(entry.buf, entry.target, opts)
-          if opts.notify_on_queue then
+          if drain_and_paste(entry.buf, entry.target, opts) and opts.notify_on_queue then
             vim.notify('Sent (queued release)', vim.log.levels.INFO)
           end
           pending_sends[bufnr] = nil
@@ -392,18 +406,16 @@ function M.setup(user_opts)
     if win_id == -1 then
       -- Composer buffer is not visible — swap the current window to it (no split)
       vim.api.nvim_win_set_buf(0, buf)
-      -- Enable word wrap in the cathy window
-      vim.wo[0].wrap = true
-      vim.wo[0].linebreak = true   -- wrap at word boundaries (not mid-word)
-      vim.wo[0].breakindent = true -- continuation lines align with leading indent
     else
       -- Composer buffer already visible — focus that window
       vim.api.nvim_set_current_win(win_id)
-      -- Enable word wrap in the cathy window
-      vim.wo[0].wrap = true
-      vim.wo[0].linebreak = true   -- wrap at word boundaries (not mid-word)
-      vim.wo[0].breakindent = true -- continuation lines align with leading indent
     end
+
+    -- Word wrap for the composer only. vim.wo[0][0] is :setlocal for this window and
+    -- buffer, so the next file opened in this window does not inherit it.
+    vim.wo[0][0].wrap = true
+    vim.wo[0][0].linebreak = true   -- wrap at word boundaries (not mid-word)
+    vim.wo[0][0].breakindent = true -- continuation lines align with leading indent
 
     -- Set buffer-local keymap for both normal and insert modes.
     vim.keymap.set({ 'n', 'i' }, opts.keymap, function()

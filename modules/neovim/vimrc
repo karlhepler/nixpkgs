@@ -1,14 +1,5 @@
-" UTF-8 encoding
-set encoding=utf-8
-set fileencoding=utf-8
-set fileencodings=utf-8,latin1
-scriptencoding utf-8
-set nobomb
-
 let mapleader=','
 imap jk <esc>
-
-set background=dark
 
 set shell=zsh " use zsh for :term
 set grepprg=rg\ --vimgrep " use ripgrep for :grep
@@ -18,16 +9,9 @@ set noswapfile
 set nobackup
 set nowritebackup
 
-" allow hidden buffers for easier multi-file editing
-set hidden
-
 " sensible split defaults
 set splitbelow
 set splitright
-
-" no annoying bells
-set noerrorbells
-set visualbell
 
 " highlight current line (not supported by alacritty, so need to do here)
 set cursorline
@@ -37,25 +21,14 @@ set scrolloff=1
 
 " disable word wrapping
 set nowrap
-set textwidth=0
-set wrapmargin=0
 set formatoptions-=t
 
 " ignore case when searching lowercase
 set ignorecase
 set smartcase
 
-" when a file has changed outside of vim, automatically read it again
-set autoread
-
 " always show sign column
 set signcolumn=yes
-
-" tame horizontal scroll
-set sidescroll=1
-
-" no double spaces after periods when joining lines
-set nojoinspaces
 
 " todos
 nmap <silent> <leader>t :grep 'TODO\(@username@\):'<cr>:copen<cr>
@@ -91,9 +64,6 @@ nmap <silent> <LEADER>cF :let @+ = expand("%:p")<CR>
 " horizontal center to cursor position
 nnoremap <silent> zm zszH
 
-" open terminal at current buffer path
-map <C-T> <ESC>:let $BUFPATH=expand('%:p:h')<CR>:terminal<CR>cd $BUFPATH && clear<CR>
-
 " helpful split views
 nmap <C-W>} =42>
 nmap <C-W>{ =42<
@@ -106,8 +76,7 @@ noremap L 3L
 " disable fancy cursor
 set guicursor=
 
-" fzf buffer list
-" this has to be done here because plugins are loaded before extraConfig
+" fzf buffer list (commands come from fzf.vim)
 nmap <leader>b :Buffers<cr>
 vmap <leader>b <esc>:Buffers<cr>
 
@@ -121,7 +90,7 @@ let g:neovide_cursor_vfx_mode = "pixiedust"
 function! GitHubURL()
     let l:remote = substitute(system('git remote get-url origin'), '\n', '', 'g')
     let l:repo = substitute(l:remote, '.*github.com[:/]', '', '')
-    let l:repo = substitute(l:repo, '.git$', '', '')
+    let l:repo = substitute(l:repo, '\.git$', '', '')
     let l:branch = substitute(system('git rev-parse --abbrev-ref HEAD'), '\n', '', 'g')
     let l:path = substitute(fnamemodify(expand('%'), ':~:.'), '\n', '', 'g')
     let l:line = substitute(line('.'), '\n', '', 'g')
@@ -151,19 +120,18 @@ let g:copilot_no_tab_map = v:true
 imap <silent><script><expr> <C-J> copilot#Accept("\<CR>")
 " Note: Ctrl+N is reserved for regular completion (handled in plugin/lsp.lua)
 
-" RestoreCursor restores the last cursor position.
-function! RestoreCursor()
-		if line("\"") <= line("$")
-				normal! g`"
-				return 1
-		endif
-endfunction
-
 augroup config
 	autocmd!
 
-	" jump to last cursor position on file load
-	autocmd BufWinEnter * silent! call RestoreCursor()
+	" jump to the last cursor position when a file is opened (not for commit
+	" messages, rebase todos or diffs); from :help restore-cursor
+	autocmd BufReadPre * autocmd FileType <buffer> ++once
+		\ let s:line = line("'\"")
+		\ | if s:line >= 1 && s:line <= line("$") && &filetype !~# 'commit'
+		\      && index(['xxd', 'gitrebase'], &filetype) == -1
+		\      && !&diff
+		\ |   execute "normal! g`\""
+		\ | endif
 
 	" force quickfix to always open full width
 	autocmd FileType qf wincmd J

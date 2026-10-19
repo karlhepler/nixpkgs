@@ -52,31 +52,13 @@
     }
 
     {
-      # Format on save for the filetypes that were already formatted on save; <space>f
-      # formats any buffer on demand. Formatter binaries are on Neovim's PATH (default.nix).
+      # Formatting engine. What happens on save (organize imports, then format) is in
+      # plugin/format-on-save.lua; <space>f formats any buffer on demand. Formatter
+      # binaries are on Neovim's PATH (default.nix).
       plugin = conform-nvim;
       type = "lua";
       config = ''
         local prettier = { 'prettierd' }
-
-        -- Only formatted on save where a formatter already ran on save before conform.
-        -- The value is how to fall back when no listed formatter ran: to the language
-        -- server ('fallback') or not at all ('never').
-        local format_on_save = {
-          go = 'fallback',
-          typescript = 'fallback',
-          typescriptreact = 'fallback',
-          cs = 'fallback',
-          rust = 'never',
-          javascript = 'never',
-          javascriptreact = 'never',
-          json = 'never',
-          css = 'never',
-          scss = 'never',
-          html = 'never',
-          yaml = 'never',
-          markdown = 'never',
-        }
 
         require('conform').setup {
           -- A save in a project without a prettier config is not worth a message
@@ -104,12 +86,6 @@
             -- Only where the project has a prettier config, as vim-prettier did
             prettierd = { require_cwd = true },
           },
-          format_on_save = function(bufnr)
-            local lsp_format = format_on_save[vim.bo[bufnr].filetype]
-            if lsp_format then
-              return { timeout_ms = 2000, lsp_format = lsp_format }
-            end
-          end,
         }
       '';
     }
@@ -194,7 +170,6 @@
       plugin = lightline-vim;
       type = "viml";
       config = ''
-        set laststatus=2    " Always show status line
         set noshowmode      " Hide -- INSERT --
         let g:lightline={
         \   'colorscheme': 'tokyonight',
@@ -306,7 +281,6 @@
       config = ''
         -- Initialize claude-tmux-neovim plugin (local optimized version)
         require('claude-tmux-neovim').setup({
-          debug = false,
           claude_code_cmd = "claude"
         })
       '';

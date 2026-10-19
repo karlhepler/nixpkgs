@@ -60,7 +60,6 @@ vim.lsp.config('jsonls', {
 
 -- C#: OmniSharp Roslyn. Formatting is csharpier through conform.
 vim.lsp.config('omnisharp', {
-	cmd = { 'OmniSharp', '--languageserver', '--hostPID', tostring(vim.fn.getpid()) },
 	settings = {
 		FormattingOptions = {
 			EnableEditorConfigSupport = true,
