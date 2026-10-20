@@ -284,6 +284,11 @@ in {
       # ========================================================================
       source-file ${homeDirectory}/.config/tmux/session-icon.conf
 
+      # tmux 3.7+ only paints a prompt/message across the whole status line when
+      # message-style has "fill"; the theme sets bg/fg only, so the rename prompts
+      # (prefix+$, prefix+,) overlapped the status bar instead of covering it.
+      set -g message-style "bg=#f7768e,fg=#1f2335,fill=#f7768e"
+
       # ========================================================================
       # Session chooser on prefix+L
       # We intentionally don't use L for resize-pane-right like the other resize bindings
